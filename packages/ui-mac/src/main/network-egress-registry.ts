@@ -18,7 +18,10 @@
 //     (多了 `www.eclipse.org`,server.ts:1207 的 jdtls),按出处如实登记。
 //   · 与 `#1334` Q4 代理侧实拍逐条对得上:registry.npmjs.org / codepuppy.cn / alpha-gateway.tidelabs.click /
 //     github.com 都在表里。Q4 还拍到 `release-assets.githubusercontent.com:443`(shell 工具子进程)与
-//     `example.com:443`(Q3 语料的探针目标)—— **不在 §2.2,本轮不加**;要不要加归 `#1073` 裁,不在这里编。
+//     `example.com:443`(Q3 语料的探针目标)—— 两条都不在 §2.2,`#1336` 没自作主张,交 `#1073` 裁。
+//     owner 2026-09-10 裁决(`#1073` 评论「注册表初值的三条边界」):前者**加**(真实开发流量:装工具 / 下二进制
+//     都走它,不加则封路之后这类下载被拒 = 误伤,`#1337` 出货复跑再次实拍到它被 403 ×2);后者**不加**
+//     (它只是探针靶子,不是开发流量;为了让测试过而放宽策略是把闸门做假 —— AC3 语料改用注册表里已有的目的地)。
 //
 // ── 刻意不在表里的 ──────────────────────────────────────────────────────────────────
 //   · BYOK provider 的 baseURL、用户配置的远程 MCP URL:§2.2 列为「动态」类别,没有静态值可登记。
@@ -66,7 +69,14 @@ export const EGRESS_REGISTRY: readonly EgressDestination[] = Object.freeze([
   https("download-cdn.jetbrains.com", "子进程:LSP 自动下载", "packages/opencode/src/lsp/server.ts:1330"),
   https("api.releases.hashicorp.com", "子进程:LSP 自动下载", "packages/opencode/src/lsp/server.ts:1632"),
   https("www.eclipse.org", "子进程:LSP 自动下载(jdtls)", "packages/opencode/src/lsp/server.ts:1207(§2.2 静态枚举漏列,按出处补)"),
-  { host: "127.0.0.1", port: 11434, category: "子进程:本机模型(ollama)", source: "§2.2 lsof 实拍" },
+  https("release-assets.githubusercontent.com", "子进程:GitHub release 资产下载(装工具 / 下二进制)", "#1334 Q4 choke 臂实拍(shell 工具子进程发起);#1073 owner 裁决二(2026-09-10)"),
+  // 本机模型(ollama 一类)**刻意不登记** —— owner 2026-09-10 裁决。登记它会写下一句做不到的话:
+  //   围栏只放行 `(allow network-outbound (remote ip "localhost:<代理端口>"))`,别的 loopback 端口一律 EPERM
+  //   (主 session 实测:围栏下连 127.0.0.1:11434 = EPERM,连放行端口 = ECONNREFUSED,无围栏对照 = CONNECTED);
+  //   而 NO_PROXY 含 127.0.0.1/localhost/::1 ⇒ 这类目的地本来就不经代理。两边一夹,注册表对它永远不生效。
+  // **BYOK 指向 loopback 的 baseURL 撞的是同一堵墙**,且本就属于「动态」类别、静态表里登记不了。
+  // 要支持本机目的地,得单独设计「本机目的地怎么走」(放宽围栏?让 loopback 也经代理?),不是往这张表加一行。
+  // 判据:network-egress-registry.test.ts 里那条「表内不得出现 loopback 目的地」——有人凭印象加回来即红。
 ])
 
 export const egressKey = (host: string, port: number): string => `${host.toLowerCase()}:${port}`

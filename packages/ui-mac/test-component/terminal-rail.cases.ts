@@ -363,6 +363,8 @@ describe("REQ-159 #1322 sandbox disclosure on the terminal face (AC1)", () => {
     expect(card?.querySelector("b")?.textContent).toBe("沙箱开启")
     expect(card?.textContent).toContain("例如补全缓存")
     expect(card?.textContent).toContain("不写文件的设置(别名、提示符、PATH)照常生效")
+    // REQ-137 `#1337` AC5:覆盖面声明到达了用户眼前(文案本体由 src/main/network-egress-disclosure.test.ts 守;这里守它上了卡)。
+    expect(card?.textContent).toContain("Code Puppy 应用自身的联网(模型目录、登录、检查更新)不在这道沙箱之内")
     // 键盘可达(悬停层也能用 focus 打开)。
     expect(item!.getAttribute("tabindex")).toBe("0")
   })

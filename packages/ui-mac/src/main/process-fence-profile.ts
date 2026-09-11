@@ -22,6 +22,15 @@
 // 加载原生模块与 apply 在 process-fence-apply.ts。分层是为了让每一层各自可测:这里的判据是
 // 「渲染出的 profile 逐 token 等于 §8.2 的形状」(process-fence-profile.test.ts)。
 //
+// ── 网络行(REQ-137 `#1337`):`#1334` Q1.2 那四行,逐字 ──────────────────────────────
+// `(deny network*)` + loopback 的 `network-bind` / `network-inbound` + 只放行 loopback 上策略代理端口的
+// `network-outbound`。四条硬要求全部来自 `#1334` 实测:①必须放行本地 bind / inbound —— 老勘破 §5 那两行照抄
+// ⇒ sidecar(它就是 HTTP 服务器)`listen()` EPERM,出货形态 560 ms 死亡且五份日志零原因(Q1.1);②只写加法 ——
+// 减法 `deny` 在 `deny network*` + `localhost:*` 组合下静默失效(老勘破 §1.3);③`(deny network*)` 连带拦掉 DNS
+// (mDNSResponder 的 unix socket,Q2)—— 刻意不放行:走代理的客户端由代理解析,想直连的死在解析这一步(Q3);
+// ④字节余量 39 倍(Q5),不为它做任何优化。代理跑在 Electron main(围栏外,`#1073` 裁决三),端口由 server.ts
+// 在 fork 之前给出;策略(目的地授权)在 network-egress-proxy.ts / network-egress-registry.ts,不在这里。
+//
 // ── 不要手写 `(subpath …)` 的 TypeScript 替身 ────────────────────────────────────────
 // U2 裁决 §5.2 实测 seatbelt 的 subpath 按路径分段、解析软链、随卷的大小写策略匹配,字符串
 // 谓词在三处说谎。本文件里凡是「这个目录在不在可写集里」的问题都不回答;唯一例外是并集的
@@ -94,6 +103,18 @@ export type ProcessFenceProfileInput = {
    */
   stateHome: string
   roots: EngineRoots
+  /**
+   * REQ-137 `#1337`:loopback 上策略代理的端口 —— sidecar 那棵树 TCP/UDP 出网的**唯一**放行。main 在 fork 之前
+   * 起代理再渲染(server.ts),所以这里永远是一个已经在听的真端口;没有端口就没有 profile(fail-closed)。
+   */
+  egressProxyPort: number
+}
+
+/** 端口必须是 1..65535 的整数 —— 渲染进 `(remote ip "localhost:<port>")` 的是字面量,不是表达式;坏值 = 坏 profile。 */
+export function assertEgressProxyPort(port: unknown): number {
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error(`process fence: egress proxy port must be an integer in 1..65535, got ${JSON.stringify(port)}`)
+  return port
 }
 
 /** seatbelt 字符串字面量里我们**不解释**转义:含引号 / 反斜杠 / 控制字符的路径直接拒绝(fail-closed)。 */
@@ -122,6 +143,7 @@ export function renderProcessFenceProfile(input: ProcessFenceProfileInput): stri
   const cacheHome = assertSeatbeltSafePath(input.roots.cacheHome, "XDG_CACHE_HOME")
   const configHome = assertSeatbeltSafePath(input.roots.configHome, "XDG_CONFIG_HOME")
   const stateHome = assertSeatbeltSafePath(input.stateHome, "XDG_STATE_HOME")
+  const egressProxyPort = assertEgressProxyPort(input.egressProxyPort)
   const homeRe = regexLiteral(home)
 
   const lines: string[] = [
@@ -149,6 +171,11 @@ export function renderProcessFenceProfile(input: ProcessFenceProfileInput): stri
     `  (subpath "${join(home, "Library", "Caches", "bun")}")                  ; W17`,
     `  (subpath "${join(home, ".cache", "bun")}")                       ; W18`,
     ")",
+    // ── 网络行:`#1334` Q1.2 逐字(顺序、形状都不改;`network-bind` 按 Q1.1 是冗余的,但它是 bind() 语义的显式声明)
+    "(deny network*)                                          ; N1 出网默认全拒(含 DNS 的 unix socket,Q2)",
+    '(allow network-bind (local ip "localhost:*"))             ; N2 sidecar 自己的 HTTP 服务器要 bind',
+    '(allow network-inbound (local ip "localhost:*"))          ; N3 …还要 accept —— 缺它 listen() EPERM(Q1.1)',
+    `(allow network-outbound (remote ip "localhost:${egressProxyPort}"))     ; N4 唯一出口:loopback 上的策略代理(main 进程内)`,
   ]
   return lines.join("\n") + "\n"
 }
@@ -311,8 +338,15 @@ export function selectWorkspaceUnion(input: WorkspaceUnionInput): WorkspaceUnion
 // seatbelt 编译有一道硬墙:`data object length … exceeds maximum (65535)`,单位是编译后数据对象的
 // 字节,**没有精确刻画**(220 字符 × 340 条 = 74 513 B 仍通过而工具报 76 413;U2 §6)。所以不许靠算:
 // 用**真编译器**试一次,失败就从并集尾部丢一个工作区再试,直到通过;丢到只剩 `~/code-puppy`(并集首位,
-// 不可丢)仍失败 ⇒ 抛出 —— 这是 fail-closed 到「引擎不起」的那一档,而不是「少放几个工作区」:
-// 到这一步说明失败原因不是并集大小,是别的(profile 语法 / 根路径异常),放行会是「前提为假的闸门」。
+// 不可丢)仍失败 ⇒ 抛出 —— 这是 fail-closed 到「引擎不起」的那一档,而不是「少放几个工作区」。
+//
+// ── 归因(REQ-137 `#1337`,`#1334` Q5 末节)────────────────────────────────────────────
+// 裁剪只丢工作区,网络行不可丢。所以**只有**编译器报的是那道字节墙(`exceeds maximum`)时,丢工作区才可能
+// 有用;别的失败(语法坏了、根路径异常 —— 比如把老勘破 §1.1 已证不存在的 `(remote host …)` 写进网络行)
+// 丢光工作区也编不过,却会抛出「最小可写集都编不过(4 dropped, 5 attempts)」,把运维指向并集大小。
+// 因此第一次失败若不是字节墙 ⇒ **一个工作区都不丢**,当场抛,消息点名「这不是并集大小的问题」。
+// `exceeds maximum` 这个原文由 process-fence-compile.test.ts 对着真 /usr/bin/sandbox-exec 钉住(已知撞墙的
+// profile 必须报它),不是这里猜的。
 
 export type TrialCompile = (profile: string) => { ok: true } | { ok: false; reason: string }
 
@@ -326,6 +360,9 @@ export type TrimResult = {
   /** 最后一次失败原因(仅当 dropped 非空时有意义)。 */
   lastFailure?: string
 }
+
+/** libsandbox 撞 65535 字节墙时的原文片段(process-fence-compile.test.ts 对真编译器钉住)。 */
+export const COMPILE_BYTE_WALL = /exceeds maximum/
 
 export function trimUntilCompiles(
   input: Omit<ProcessFenceProfileInput, "workspaces"> & { workspaces: readonly string[] },
@@ -341,6 +378,12 @@ export function trimUntilCompiles(
     const result = compile(profile)
     if (result.ok) return { profile, workspaces, dropped, attempts, lastFailure }
     lastFailure = result.reason
+    if (!COMPILE_BYTE_WALL.test(result.reason)) {
+      // 不是字节墙 ⇒ 丢工作区救不了,别把运维指向并集大小。
+      throw new Error(
+        `process fence profile does not compile, and the compiler error is not the 65535-byte data-object wall — dropping workspaces cannot fix it, so none were dropped (${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}, ${dropped.length} dropped, ${attempts} attempt${attempts === 1 ? "" : "s"}): ${result.reason}`,
+      )
+    }
     if (workspaces.length <= 1) {
       throw new Error(
         `process fence profile does not compile even with the minimum writable set (${workspaces.length} workspace, ${dropped.length} dropped, ${attempts} attempts): ${result.reason}`,

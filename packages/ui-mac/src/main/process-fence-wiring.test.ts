@@ -8,10 +8,15 @@
 // sidecar.ts 顶层的 registerHooks / getParentPort() 让它结构上无法被 import,所以「sidecar 收到命令后
 // 第一件事就是 apply、缺席即拒」这一跳只能锚源码(文末 ANCHOR,不是闸门;行为判据是 apply 测试里的
 // C1–C5 —— 那五种失败都是 installProcessFence 抛出去、经 start() 的 catch 变成 error IPC + exit(1))。
+//
+// `#1337`(REQ-137)在同一条线上多守三跳(darwin):策略代理先于计划起来,端口进计划器 + 整份改写进 fork 的 env
+// (用户自己的 HTTP(S)_PROXY / NO_PROXY 不能存活 —— 唯一通路);代理起不来 ⇒ 拒 fork、零 fork;缺省提供者真起监听。
+// 非 darwin:没有围栏就不装策略层 —— 不起代理、env 照旧。
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { EventEmitter } from "node:events"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import * as net from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -42,6 +47,11 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {
 // 陷阱:`await import("./server")` 必须排在 mock.module("electron", ...) **之后**,否则真 electron 会被拉起来。
 const { spawnLocalServer } = await import("./server")
 const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
+const { SIDECAR_EGRESS_NO_PROXY } = await import("./sidecar-env")
+
+const darwin = process.platform === "darwin"
+/** 假代理提供者:不起监听,只给端口(默认接线的真监听在末尾那条用例里验)。 */
+const fakeEgress = (port = 4433) => async () => ({ port })
 
 class RecordingChild extends EventEmitter {
   stdout = new EventEmitter()
@@ -67,7 +77,7 @@ class RecordingChild extends EventEmitter {
 
 let userDataPath = ""
 const savedEnv: Record<string, string | undefined> = {}
-const managedEnv = ["SHELL", "ALPHA_SECRETS_DISABLE"] as const
+const managedEnv = ["SHELL", "ALPHA_SECRETS_DISABLE", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy", "ALL_PROXY", "all_proxy"] as const
 
 beforeEach(() => {
   userDataPath = mkdtempSync(join(tmpdir(), "fence-wiring-"))
@@ -102,6 +112,7 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
         forks++
         return child
       }) as unknown as typeof import("electron").utilityProcess.fork,
+      egressProxy: fakeEgress(),
       planFence: (input) => {
         // 计划拿到的是 sidecar 将拿到的 env(白名单之后),不是 main 的 process.env
         expect(input.userDataPath).toBe(userDataPath)
@@ -125,6 +136,7 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
       userDataPath,
       healthCheck: async () => true,
       fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
+      egressProxy: fakeEgress(),
       planFence: () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" }),
     })
     await result.health.wait
@@ -150,6 +162,7 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
           forks++
           return new RecordingChild()
         }) as unknown as typeof import("electron").utilityProcess.fork,
+        egressProxy: fakeEgress(),
         planFence: () => {
           throw new Error("process fence profile does not compile even with the minimum writable set (1 workspace, 0 dropped, 1 attempts): profile compilation failed")
         },
@@ -169,6 +182,7 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
         forks++
         return child
       }) as unknown as typeof import("electron").utilityProcess.fork,
+      egressProxy: fakeEgress(),
       planFence: () => undefined,
     })
     if (process.platform === "darwin") {
@@ -182,6 +196,130 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
       expect(start.fence).toBeUndefined()
       await result.listener.stop()
     }
+  })
+
+  test("`#1337` darwin:代理端口进计划器,且 fork 的 env 被整份改写成指向它 —— 用户自己的 HTTPS_PROXY / NO_PROXY 不存活;非 darwin 不起代理、env 照旧", async () => {
+    process.env.HTTPS_PROXY = "http://127.0.0.1:7897"
+    process.env.https_proxy = "http://127.0.0.1:7897"
+    process.env.NO_PROXY = "github.com,.internal"
+    const child = new RecordingChild()
+    let forkEnv: Record<string, string> = {}
+    let planned: number | undefined = -1
+    let egressCalls = 0
+    creditDanglingSweepForSpawn()
+    const result = await spawnLocalServer("127.0.0.1", 4315, "password", {
+      userDataPath,
+      healthCheck: async () => true,
+      fork: ((_: string, __: string[], opts: { env: Record<string, string> }) => {
+        forkEnv = { ...opts.env }
+        return child
+      }) as unknown as typeof import("electron").utilityProcess.fork,
+      egressProxy: async () => {
+        egressCalls++
+        return { port: 51337 }
+      },
+      planFence: (input) => {
+        planned = input.egressProxyPort
+        return darwin ? { profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" } : undefined
+      },
+    })
+    await result.health.wait
+    if (darwin) {
+      expect(egressCalls).toBe(1)
+      expect(planned).toBe(51337)
+      for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]) expect(forkEnv[key], key).toBe("http://127.0.0.1:51337")
+      expect(forkEnv.NO_PROXY).toBe(SIDECAR_EGRESS_NO_PROXY)
+      expect(forkEnv.no_proxy).toBe(SIDECAR_EGRESS_NO_PROXY)
+      expect(JSON.stringify(forkEnv)).not.toContain("7897")
+      expect(JSON.stringify(forkEnv)).not.toContain("github.com")
+      // main 自己的 env 一个字都没动(main / renderer 的出网不在覆盖内)
+      expect(process.env.HTTPS_PROXY).toBe("http://127.0.0.1:7897")
+      expect(process.env.NO_PROXY).toBe("github.com,.internal")
+    } else {
+      expect(egressCalls).toBe(0)
+      expect(planned).toBeUndefined()
+      expect(forkEnv.HTTPS_PROXY).toBe("http://127.0.0.1:7897")
+      expect(forkEnv.NO_PROXY).toBe("github.com,.internal")
+    }
+    await result.listener.stop()
+  })
+
+  test("`#1337` darwin:代理起不来 ⇒ spawn 拒绝、消息带原因、fork 一次都不发生(fail-closed);非 darwin 不受影响", async () => {
+    let forks = 0
+    let planCalls = 0
+    creditDanglingSweepForSpawn()
+    const attempt = spawnLocalServer("127.0.0.1", 4316, "password", {
+      userDataPath,
+      healthCheck: async () => true,
+      fork: (() => {
+        forks++
+        return new RecordingChild()
+      }) as unknown as typeof import("electron").utilityProcess.fork,
+      egressProxy: async () => {
+        throw new Error("listen EADDRINUSE: address already in use 127.0.0.1:0")
+      },
+      planFence: () => {
+        planCalls++
+        return darwin ? { profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" } : undefined
+      },
+    })
+    if (darwin) {
+      await expect(attempt).rejects.toThrow(/network egress policy proxy failed to start — sidecar fork refused: .*EADDRINUSE/)
+      expect(forks).toBe(0)
+      expect(planCalls).toBe(0)
+    } else {
+      const result = await attempt
+      await result.health.wait
+      expect(forks).toBe(1)
+      await result.listener.stop()
+    }
+  })
+
+  test("`#1337` darwin:缺省提供者真起一个策略代理 —— fork env 里那个端口在听,且它只做 CONNECT(明文 GET 405);两次 fork 同一端口(跨代复用)", async () => {
+    if (!darwin) return
+    const ports: number[] = []
+    for (const port of [4317, 4318]) {
+      const child = new RecordingChild()
+      let forkEnv: Record<string, string> = {}
+      creditDanglingSweepForSpawn()
+      const result = await spawnLocalServer("127.0.0.1", port, "password", {
+        userDataPath,
+        healthCheck: async () => true,
+        fork: ((_: string, __: string[], opts: { env: Record<string, string> }) => {
+          forkEnv = { ...opts.env }
+          return child
+        }) as unknown as typeof import("electron").utilityProcess.fork,
+        planFence: (input) => {
+          expect(input.egressProxyPort).toBe(Number(new URL(forkEnv.HTTPS_PROXY ?? "http://127.0.0.1:0").port) || input.egressProxyPort)
+          return { profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" }
+        },
+      })
+      await result.health.wait
+      ports.push(Number(new URL(forkEnv.HTTPS_PROXY).port))
+      await result.listener.stop()
+    }
+    expect(ports[0]).toBeGreaterThan(0)
+    expect(ports[1]).toBe(ports[0])
+    // 读满 Content-Length 即返(bun 的 http 连接 socket 上等对端 close 不可靠,network-egress-proxy.test.ts 同一口径)
+    const reply = await new Promise<string>((resolve, reject) => {
+      let text = ""
+      const s = net.connect(ports[0], "127.0.0.1", () => s.write("GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n"))
+      const finish = () => {
+        resolve(text)
+        s.destroy()
+      }
+      s.on("data", (c) => {
+        text += c.toString()
+        const sep = text.indexOf("\r\n\r\n")
+        if (sep < 0) return
+        const length = /content-length:\s*(\d+)/i.exec(text.slice(0, sep))
+        if (length && Buffer.byteLength(text.slice(sep + 4)) >= Number(length[1])) finish()
+      })
+      s.on("close", finish)
+      s.on("error", reject)
+    })
+    expect(reply).toMatch(/^HTTP\/1\.1 405 /)
+    expect(reply).toContain("alpha egress policy")
   })
 
   test("ANCHOR (not a gate): sidecar.ts 收到 start 后第一件事是 installProcessFence,早于注入与 import 引擎;darwin 缺席即抛", () => {

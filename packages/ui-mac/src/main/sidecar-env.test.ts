@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
-import { createSidecarEnv, isSecretish } from "./sidecar-env"
+import { SIDECAR_EGRESS_NO_PROXY, createSidecarEnv, isSecretish, sidecarEgressProxyEnv } from "./sidecar-env"
 
 describe("createSidecarEnv — default-deny", () => {
   test("strips every secret named by the A6 acceptance criteria", () => {
@@ -615,5 +615,34 @@ describe("createSidecarEnv — container-valued vars", () => {
     expect(env.ALPHA_BEHAVIOR_DISABLE).toBe("1")
     expect(env.ALPHA_CLOUD_MCP_URL).toBe("https://mcp.example")
     expect(env.ALPHA_GLOBAL_DIR).toBe("/Users/u/.alpha")
+  })
+})
+
+// ── REQ-137 `#1337`:sidecar 的代理栈由策略代理独占决定 ─────────────────────────────────
+describe("sidecarEgressProxyEnv (#1337)", () => {
+  test("八个代理变量整份给出:六个指向 loopback 策略代理、两个 NO_PROXY 只留 loopback;叠在 createSidecarEnv 之上时用户导出的值不存活", () => {
+    const env = sidecarEgressProxyEnv(51337)
+    expect(env).toEqual({
+      HTTP_PROXY: "http://127.0.0.1:51337",
+      HTTPS_PROXY: "http://127.0.0.1:51337",
+      ALL_PROXY: "http://127.0.0.1:51337",
+      http_proxy: "http://127.0.0.1:51337",
+      https_proxy: "http://127.0.0.1:51337",
+      all_proxy: "http://127.0.0.1:51337",
+      NO_PROXY: SIDECAR_EGRESS_NO_PROXY,
+      no_proxy: SIDECAR_EGRESS_NO_PROXY,
+    })
+    expect(SIDECAR_EGRESS_NO_PROXY).toBe("127.0.0.1,localhost,::1")
+    // 八个名字都在白名单里(否则 fork 时会被 createSidecarEnv 丢掉,而这里的覆盖就落不到 sidecar 上)
+    const user = { PATH: "/usr/bin", HOME: "/Users/u", HTTPS_PROXY: "http://127.0.0.1:7897", NO_PROXY: "github.com,.internal", ALL_PROXY: "socks5://127.0.0.1:1080" }
+    const merged = { ...createSidecarEnv(user), ...env }
+    for (const key of Object.keys(env)) expect(Object.keys(createSidecarEnv({ ...user, [key]: "x" })), key).toContain(key)
+    expect(merged.HTTPS_PROXY).toBe("http://127.0.0.1:51337")
+    expect(merged.ALL_PROXY).toBe("http://127.0.0.1:51337")
+    expect(merged.NO_PROXY).toBe(SIDECAR_EGRESS_NO_PROXY)
+    expect(JSON.stringify(merged)).not.toContain("7897")
+    expect(JSON.stringify(merged)).not.toContain("github.com")
+    // 坏端口 ⇒ 抛(fail-closed),不产一个指向 :0 / :NaN 的代理 URL
+    for (const bad of [0, 65536, 1.5, Number.NaN]) expect(() => sidecarEgressProxyEnv(bad), String(bad)).toThrow(/port must be an integer in 1\.\.65535/)
   })
 })

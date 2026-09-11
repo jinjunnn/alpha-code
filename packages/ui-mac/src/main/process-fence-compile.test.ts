@@ -22,6 +22,8 @@ describeSandbox("trialCompileProfile —— 真 sandbox-exec", () => {
     userDataPath: join(home, "Library", "Application Support", "ai.opencode.desktop.dev"),
     stateHome: join(home, "Library", "Application Support", "ai.opencode.desktop.dev"),
     roots: resolveEngineRoots({}, home),
+    // `#1337`:网络行也进真编译器(一个没人听的端口就够 —— 这里只编译,不连)。
+    egressProxyPort: 4443,
   }
 
   test("[已知的坏 ①] 撞 65535 字节墙的 profile ⇒ ok:false,原因含 `exceeds maximum`", () => {

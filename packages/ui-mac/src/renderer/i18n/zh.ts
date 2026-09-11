@@ -1473,8 +1473,10 @@ export const dict = {
   "alpha.terminal.sandboxFoot": "沙箱开启 · 你的部分终端配置可能不生效",
   "alpha.terminal.sandboxFootShort": "沙箱开启",
   "alpha.terminal.sandboxHoverTitle": "沙箱开启",
+  // REQ-137 `#1337`(AC5 覆盖面如实声明):第四句说联网 —— 这道沙箱只罩助手引擎那棵进程树(含终端与它派生的命令),
+  // Code Puppy 应用自身(模型目录、登录、检查更新)的联网**不在**其内;判据在 src/main/network-egress-disclosure.test.ts。
   "alpha.terminal.sandboxHoverBody":
-    "终端只能写入当前项目和 Code Puppy 自己的目录。你的 shell 配置里凡是要往主目录写缓存的步骤(例如补全缓存)会被拦下,而且不会报错 —— 表现通常是补全变慢或不灵。不写文件的设置(别名、提示符、PATH)照常生效。",
+    "终端只能写入当前项目和 Code Puppy 自己的目录。你的 shell 配置里凡是要往主目录写缓存的步骤(例如补全缓存)会被拦下,而且不会报错 —— 表现通常是补全变慢或不灵。不写文件的设置(别名、提示符、PATH)照常生效。联网也一样:助手和终端只能经 Code Puppy 的出网闸门访问已登记的地址,其它地址会被拒绝并留下记录;Code Puppy 应用自身的联网(模型目录、登录、检查更新)不在这道沙箱之内,照常直连。",
   "alpha.terminal.sandboxEmpty": "沙箱已开启 —— 终端里你自己的配置可能有一部分不生效。",
   "alpha.workspace.readonly": "只读",
   "alpha.workspace.readonlyTitle": "这个项目现在写不进去",

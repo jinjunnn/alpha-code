@@ -180,8 +180,11 @@ https://1.1.1.1/             → 301   ← 纯 raw-IP,无 DNS 也通
 > 不是 `models.dev`;②平台族已迁域,注册表从 `shared/alpha-config.ts` 的 `ALPHA_ENDPOINTS` 派生
 > (web / platform / account / cloud 四条),不自持域名;③LSP 静态枚举多出 `www.eclipse.org:443`
 > (`lsp/server.ts:1207`)。动态类别(BYOK baseURL、远程 MCP URL)与 ssh `*:22` **不在**初值里;
-> `#1334` Q4 拍到的 `release-assets.githubusercontent.com` 与 Q3 语料的 `example.com` 也不在 ——
-> 加不加归 `#1073` 裁。判据:`network-egress-registry.test.ts`(独立字面量锚)。
+> `#1334` Q4 拍到的 `release-assets.githubusercontent.com` 与 Q3 语料的 `example.com` 当时也不在,交 `#1073` 裁。
+> **裁决(owner 2026-09-10,落在 `#1337`)**:前者**加进**注册表(真实开发流量,出货复跑再次实拍到它被 403);
+> 后者**不加**(探针靶子,不是开发流量 —— AC3 语料改用注册表里已有的 `registry.npmjs.org`)。
+> 判据:`network-egress-registry.test.ts`(独立字面量锚)。强制层的接线(profile 网络行 + main 进程内代理 + sidecar env)
+> 在 [`2026-09-10-network-egress-on-process-fence.md`](2026-09-10-network-egress-on-process-fence.md) §落地。
 
 ## 3. 咽喉点在不在(勘破 3)
 

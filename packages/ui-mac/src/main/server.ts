@@ -12,7 +12,7 @@ import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
 import { getLogger, rotateServerLogs, write } from "./logging"
-import { createSidecarEnv } from "./sidecar-env"
+import { createSidecarEnv, sidecarEgressProxyEnv } from "./sidecar-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { probeShellEnvAsync, readShellEnvCache, sanitizeCachedShellEnv, writeShellEnvCache } from "./shell-env-cache"
 import { getStore } from "./store"
@@ -28,6 +28,12 @@ import { consumeDanglingSweepCredit } from "./dangling-sweep-latch"
 import { planProcessFence, type ProcessFencePlan } from "./process-fence-plan"
 import { trialCompileProfile } from "./process-fence-compile"
 import type { ProcessFenceStartInput } from "./process-fence-apply"
+// REQ-137 `#1337`:网络出网的强制半场接线。围栏(profile N1–N4)把 sidecar 那棵树的出网收成 loopback 上**一个**端口,
+// 那个端口上听着的是本进程(main,围栏外 —— `(deny network*)` 连带拦 DNS,代理必须在围栏外才解析得了域名,
+// `#1073` 裁决三)里的策略代理;它只放行 network-egress-registry.ts 登记过的 `host:port`。代理在第一次 fork 之前起、
+// 跨 respawn 复用;起不来 = 拒绝 fork(与围栏计划失败同一条 fail-closed 路)。sidecar 的八个代理变量在这里整份改写
+// 成指向它(sidecarEgressProxyEnv),main 自己的 process.env 一个字都不动 —— main / renderer 的出网不在覆盖内(AC5)。
+import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 // REQ-159 `#1322`:工作区写探针的 main 半场 —— 请求/应答簿记住在 workspace-write-probe.ts,这里只接线到子进程。
 import { createWriteProbeRequester, type WorkspaceWriteProbeResult } from "./workspace-write-probe"
 import { alphaGlobalRoot } from "./engine-config-truth"
@@ -91,18 +97,52 @@ type SpawnLocalServerOptions = {
    * 测试用假子进程时注入替身。返回 undefined 只允许在非 darwin(那里没有 seatbelt);darwin 上
    * 生产计划器要么给出计划、要么抛出 —— 抛出 = 这一代 fork 被拒(与 alpha-secrets sync 失败同一条路)。
    */
-  planFence?: (input: { userDataPath: string; sidecarEnv: Record<string, string> }) => ProcessFenceStartInput | undefined
+  planFence?: (input: { userDataPath: string; sidecarEnv: Record<string, string>; egressProxyPort: number | undefined }) => ProcessFenceStartInput | undefined
+  /**
+   * REQ-137 `#1337`:策略代理的提供者。缺省 = 生产单例(ensureEgressPolicyProxy:本进程内真起一个,跨 fork 复用);
+   * 测试注入一个假端口以免每条用例都起监听。reject = 这一代 fork 被拒。只在 darwin 上被调用 —— 围栏只在那里,
+   * 没有强制层的平台不装策略层(如实:那里的引擎本来就没有围栏,不假装有一半)。
+   */
+  egressProxy?: () => Promise<{ port: number }>
+}
+
+// ── REQ-137:策略代理单例(main 进程内,围栏外)──────────────────────────────────────────
+// 一次起、跨 respawn 复用:端口写进每一代的 profile(N4)与 sidecar env,换代不换端口。起失败时把单例清掉,
+// 下一次 fork 再试(不把一次失败钉成永久失败)。它的结构化记录(每条 CONNECT 的 allow / deny 与原因)进 main 日志,
+// deny 走 warn —— 「工具把数据发到未授权目的地时失败且可见」的可见就在这一行。
+let egressProxySingleton: Promise<EgressProxyHandle> | undefined
+function ensureEgressPolicyProxy(): Promise<EgressProxyHandle> {
+  if (!egressProxySingleton) {
+    const log = (record: EgressLogRecord) => {
+      const line = `network egress ${JSON.stringify(record)}`
+      if (record.event === "egress.connect" && record.verdict === "deny") getLogger()?.warn(line)
+      else getLogger()?.log(line)
+    }
+    egressProxySingleton = startEgressPolicyProxy({ log }).then(
+      (handle) => {
+        getLogger()?.log(`network egress policy proxy listening on ${handle.host}:${handle.port} — the only way out of the engine tree (REQ-137); destinations = network-egress-registry.ts`)
+        return handle
+      },
+      (error) => {
+        egressProxySingleton = undefined
+        throw error
+      },
+    )
+  }
+  return egressProxySingleton
 }
 
 /** 生产计划器:把 electron / store / fs 接进 electron-free 的 planProcessFence。 */
-function planProductionFence(input: { userDataPath: string; sidecarEnv: Record<string, string> }): ProcessFencePlan | undefined {
+function planProductionFence(input: { userDataPath: string; sidecarEnv: Record<string, string>; egressProxyPort: number | undefined }): ProcessFencePlan | undefined {
   if (process.platform !== "darwin") return undefined
+  if (input.egressProxyPort === undefined) throw new Error("process fence plan: no egress proxy port on darwin — the fence's only outbound door is unknown, refusing to plan")
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   return planProcessFence(
     {
       userDataPath: input.userDataPath,
       sidecarEnv: input.sidecarEnv,
       addon: { packaged: app.isPackaged, resourcesPath: process.resourcesPath, moduleDir, exists: existsSync },
+      egressProxyPort: input.egressProxyPort,
     },
     {
       homeDir: homedir,
@@ -353,9 +393,21 @@ export async function spawnLocalServer(
   // 与上面 alpha-secrets sync 失败同一条 fail-closed 路径)。env 先算好:计划要读的 XDG_* / HOME
   // 必须是 sidecar 将拿到的那一份,不是 main 自己的 process.env。
   const sidecarEnv = createSidecarEnv()
+  // REQ-137:策略代理先于计划 —— 端口要渲染进 profile(N4)并改写进 sidecar env。起不来 = 拒 fork(fail-closed)。
+  // 只在 darwin:围栏只在那里;别的平台既没有强制层也不装策略层(sidecar env 的代理变量照旧 = 用户导出的值)。
+  let egressProxyPort: number | undefined
+  if (process.platform === "darwin") {
+    try {
+      egressProxyPort = (await (options.egressProxy ?? ensureEgressPolicyProxy)()).port
+    } catch (error) {
+      getLogger()?.error("network egress policy proxy FAILED to start — refusing to fork the sidecar (fail closed; a fenced engine with no door out must not start)", error)
+      throw new Error(`network egress policy proxy failed to start — sidecar fork refused: ${serializeError(error).message}`)
+    }
+    Object.assign(sidecarEnv, sidecarEgressProxyEnv(egressProxyPort))
+  }
   let fence: ProcessFenceStartInput | undefined
   try {
-    fence = (options.planFence ?? planProductionFence)({ userDataPath: options.userDataPath, sidecarEnv })
+    fence = (options.planFence ?? planProductionFence)({ userDataPath: options.userDataPath, sidecarEnv, egressProxyPort })
   } catch (error) {
     getLogger()?.error("process fence plan FAILED — refusing to fork the sidecar (fail closed; an unfenced engine must not start)", error)
     throw new Error(`process fence plan failed — sidecar fork refused: ${serializeError(error).message}`)

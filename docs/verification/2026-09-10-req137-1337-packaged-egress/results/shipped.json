@@ -1,0 +1,1534 @@
+{
+  "ticket": "alpha-code#1337",
+  "arm": "shipped",
+  "identity": {
+    "ticket": "alpha-code#1337",
+    "arm": "shipped",
+    "app": "packages/ui-mac/dist/mac-arm64/Code Puppy.app",
+    "bundleId": "com.tide.alphacode",
+    "version": "0.1.12",
+    "codesignApp": [
+      "Identifier=com.tide.alphacode",
+      "CodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded",
+      "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+      "Authority=Developer ID Certification Authority",
+      "TeamIdentifier=RQX6X6A635"
+    ],
+    "codesignAddon": [
+      "Identifier=alpha_fence",
+      "CodeDirectory v=20500 size=311 flags=0x10000(runtime) hashes=4+2 location=embedded",
+      "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+      "Authority=Developer ID Certification Authority",
+      "TeamIdentifier=RQX6X6A635"
+    ],
+    "lipoAddon": "x86_64 arm64",
+    "verifyDeepStrictExit": 0,
+    "addonBuildId": [
+      "fence-20260910T100303262Z"
+    ],
+    "addonSha256": "3d4801a546802098c5897fde3cf78c2582868d237129edbd0b06020a084339fe",
+    "asarMarkers": {
+      "network egress policy proxy listening": 1,
+      "ALPHA_AC1334_NETWORK(control: must be 0)": 0,
+      "AC1337-NONEXISTENT-NEEDLE(control)": 0
+    },
+    "orphansBefore": [],
+    "ownerAppPidsUntouched": [],
+    "iso": "<ISO>",
+    "home": "<ISO>/home",
+    "launchTmp": "<ISO>/tmp",
+    "defaultWorkspace": "<ISO>/home/code-puppy",
+    "wsA": "<ISO>/ws-a",
+    "wsB": "<ISO>/ws-b",
+    "wsC": "<ISO>/ws-c",
+    "esc": "<ISO>/esc",
+    "realTmpdir": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/",
+    "launchEnvSubset": {
+      "HOMEBREW_PREFIX": "/opt/homebrew",
+      "HOMEBREW_CELLAR": "/opt/homebrew/Cellar",
+      "HOMEBREW_REPOSITORY": "/opt/homebrew",
+      "HOME": "<ISO>/home",
+      "TMPDIR": "<ISO>/tmp",
+      "OPENCODE_TEST_ONBOARDING": "1",
+      "OPENCODE_PORT": "55085"
+    },
+    "appPid": 49400,
+    "ports": {
+      "engine": 55085,
+      "cdp": 55086
+    },
+    "onboardingRoot": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013",
+    "userData": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop",
+    "alphaGlobalRoot": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/alpha-code-state/env/prod",
+    "xdgConfig": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/config",
+    "xdgData": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/data",
+    "xdgCache": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/cache",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) alpha-code/0.1.12 Chrome/148.0.7778.218 Electron/42.3.3 Safari/537.36",
+    "logRun": "20260910T101038",
+    "appStartingLine": "[2026-09-10 06:10:38.483] [info]          app starting { version: '0.1.12', packaged: true, onboardingTest: true }",
+    "fenceMainLines": [
+      "[2026-09-10 06:10:38.497] [info]          [server] Loaded shell environment with -il (12 vars)",
+      "[2026-09-10 06:10:38.498] [info]  (main)  req047: rebuilt shell env cache after successful probe",
+      "[2026-09-10 06:10:38.606] [info]                     spawning sidecar { url: 'http://127.0.0.1:55085' }",
+      "[2026-09-10 06:10:38.609] [info]                     network egress policy proxy listening on 127.0.0.1:55088 — the only way out of the engine tree (REQ-137); destinations = network-egress-registry.ts",
+      "[2026-09-10 06:10:38.617] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), egressProxyPort=55088, profile=2531B, compile attempts=1"
+    ],
+    "fenceServerLines": [
+      "  message: 'process fence applied: addon=fence-20260910T100303262Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2531B — every process this engine spawns inherits it'"
+    ],
+    "egressProxyPort": 55088,
+    "engineUrl": "http://127.0.0.1:55085",
+    "agent": "build"
+  },
+  "escapeDirListing": [],
+  "launchTmpListing": [
+    "opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013"
+  ],
+  "defaultWsListing": [
+    "d1",
+    "fp-git",
+    "g.txt",
+    "inside.txt",
+    "mcp-shipped.txt",
+    "multi-shipped.txt",
+    "pty-default-shipped.txt",
+    "shelltool-shipped.txt"
+  ],
+  "wsAListing": [
+    "multi-shipped.txt"
+  ],
+  "wsBListing": [
+    "multi-shipped.txt"
+  ],
+  "wsCListing": [],
+  "gateRecords": [
+    {
+      "event": "egress.connect",
+      "id": 1,
+      "at": "2026-09-10T10:10:39.267Z",
+      "method": "CONNECT",
+      "authority": "github.com:443",
+      "host": "github.com",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 2,
+      "at": "2026-09-10T10:10:39.628Z",
+      "method": "CONNECT",
+      "authority": "release-assets.githubusercontent.com:443",
+      "host": "release-assets.githubusercontent.com",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 3,
+      "at": "2026-09-10T10:10:39.648Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 4,
+      "at": "2026-09-10T10:10:39.649Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 5,
+      "at": "2026-09-10T10:10:43.048Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 6,
+      "at": "2026-09-10T10:10:43.049Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 7,
+      "at": "2026-09-10T10:10:43.049Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 8,
+      "at": "2026-09-10T10:10:43.098Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 9,
+      "at": "2026-09-10T10:10:43.098Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 10,
+      "at": "2026-09-10T10:10:43.099Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 11,
+      "at": "2026-09-10T10:10:44.006Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 12,
+      "at": "2026-09-10T10:10:44.006Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 14,
+      "at": "2026-09-10T10:10:44.008Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 13,
+      "at": "2026-09-10T10:10:44.008Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 15,
+      "at": "2026-09-10T10:10:44.009Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 17,
+      "at": "2026-09-10T10:10:44.124Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 16,
+      "at": "2026-09-10T10:10:44.124Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 18,
+      "at": "2026-09-10T10:11:04.581Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 20,
+      "at": "2026-09-10T10:11:05.144Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 19,
+      "at": "2026-09-10T10:11:05.144Z",
+      "method": "CONNECT",
+      "authority": "registry.npmjs.org:443",
+      "host": "registry.npmjs.org",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 21,
+      "at": "2026-09-10T10:11:05.670Z",
+      "method": "CONNECT",
+      "authority": "github.com:443",
+      "host": "github.com",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.connect",
+      "id": 22,
+      "at": "2026-09-10T10:11:06.895Z",
+      "method": "CONNECT",
+      "authority": "example.com:443",
+      "host": "example.com",
+      "port": 443,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "event": "egress.connect",
+      "id": 23,
+      "at": "2026-09-10T10:11:07.133Z",
+      "method": "CONNECT",
+      "authority": "ac1337-probe.invalid:80",
+      "host": "ac1337-probe.invalid",
+      "port": 80,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "event": "egress.connect",
+      "id": 24,
+      "at": "2026-09-10T10:11:07.138Z",
+      "method": "CONNECT",
+      "authority": "ac1337-probe.invalid:80",
+      "host": "ac1337-probe.invalid",
+      "port": 80,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "event": "egress.connect",
+      "id": 25,
+      "at": "2026-09-10T10:11:11.153Z",
+      "method": "CONNECT",
+      "authority": "ac1337-probe.invalid:443",
+      "host": "ac1337-probe.invalid",
+      "port": 443,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "event": "egress.connect",
+      "id": 26,
+      "at": "2026-09-10T10:11:11.157Z",
+      "method": "CONNECT",
+      "authority": "ac1337-probe.invalid:443",
+      "host": "ac1337-probe.invalid",
+      "port": 443,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    }
+  ],
+  "sandboxDenyLines": [
+    "2026-09-10 06:10:38.481 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1337/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/pty.node",
+    "2026-09-10 06:10:38.616 E  kernel[0:493c413] (Sandbox) Sandbox: true(49408) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:38.862 E  kernel[0:493bce2] (Sandbox) Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 06:10:39.051 E  kernel[0:493c220] (Sandbox) 31 duplicate reports for Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 06:10:39.051 E  kernel[0:493c220] (Sandbox) Sandbox: nsattributedstringagent(89799) deny(1) mach-lookup com.apple.CARenderServer",
+    "2026-09-10 06:10:40.358 E  kernel[0:493c505] (Sandbox) Sandbox: bsdtar(49415) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:49.516 E  kernel[0:493c5ec] (Sandbox) Sandbox: zsh(49464) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:49.521 E  kernel[0:493c5ee] (Sandbox) Sandbox: path_helper(49465) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:49.578 E  kernel[0:493c5df] (Sandbox) Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 06:10:49.777 E  kernel[0:493c206] (Sandbox) 31 duplicate reports for Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 06:10:51.612 E  kernel[0:493c71b] (Sandbox) Sandbox: rg(49493) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:51.623 E  kernel[0:493c729] (Sandbox) Sandbox: spawn-helper(49494) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:51.626 E  kernel[0:493c72b] (Sandbox) Sandbox: zsh(49494) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:51.632 E  kernel[0:493c72d] (Sandbox) Sandbox: path_helper(49495) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:51.636 E  kernel[0:493c72f] (Sandbox) Sandbox: locale(49496) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:54.135 E  kernel[0:493c72b] (Sandbox) Sandbox: zsh(49494) deny(1) file-write-create <ISO>/esc/pty-default-shipped.txt",
+    "2026-09-10 06:10:59.153 E  kernel[0:493c7ba] (Sandbox) Sandbox: zsh(49535) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:59.158 E  kernel[0:493c7be] (Sandbox) Sandbox: path_helper(49537) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:10:59.160 E  kernel[0:493c7ba] (Sandbox) Sandbox: zsh(49535) deny(1) file-write-create <ISO>/esc/shelltool-shipped.txt",
+    "2026-09-10 06:10:59.160 E  kernel[0:493c7ba] (Sandbox) Sandbox: zsh(49535) deny(1) file-write-create <ISO>/tmp/outside-root-shipped.txt",
+    "2026-09-10 06:10:59.252 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1337/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/pty.node",
+    "2026-09-10 06:10:59.252 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1337/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@parcel/watcher-darwin-arm64/watcher.node",
+    "2026-09-10 06:11:00.889 E  kernel[0:493c7e8] (Sandbox) Sandbox: true(49541) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:00.993 E  kernel[0:493c7e9] (Sandbox) Sandbox: Code Puppy Helper(49542) deny(1) file-write-create /private/var/tmp/alpha-fence-probe-49542-1789035060993-j5l5ez",
+    "2026-09-10 06:11:01.534 E  kernel[0:493c811] (Sandbox) Sandbox: rg(49550) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.564 E  kernel[0:493c825] (Sandbox) Sandbox: git(49553) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.594 E  kernel[0:493c826] (Sandbox) Sandbox: xcodebuild(49554) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.637 E  kernel[0:493c85b] (Sandbox) Sandbox: git(49553) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.640 E  kernel[0:493c85e] (Sandbox) Sandbox: git(49557) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.651 E  kernel[0:493c862] (Sandbox) 1 duplicate report for Sandbox: git(49557) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.651 E  kernel[0:493c862] (Sandbox) Sandbox: git(49560) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.663 E  kernel[0:493c866] (Sandbox) 1 duplicate report for Sandbox: git(49560) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.663 E  kernel[0:493c866] (Sandbox) Sandbox: git(49563) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.676 E  kernel[0:493c86a] (Sandbox) 1 duplicate report for Sandbox: git(49563) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.676 E  kernel[0:493c86a] (Sandbox) Sandbox: git(49566) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.691 E  kernel[0:493c86e] (Sandbox) 1 duplicate report for Sandbox: git(49566) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.697 E  kernel[0:493bf3c] (Sandbox) Sandbox: searchpartyd(622) deny(1) mach-lookup com.apple.ak.anisette.xpc",
+    "2026-09-10 06:11:01.699 E  kernel[0:493c882] (Sandbox) 1 duplicate report for Sandbox: searchpartyd(622) deny(1) mach-lookup com.apple.ak.anisette.xpc",
+    "2026-09-10 06:11:01.699 E  kernel[0:493c882] (Sandbox) Sandbox: git(49570) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.712 E  kernel[0:493c886] (Sandbox) 1 duplicate report for Sandbox: git(49570) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.712 E  kernel[0:493c886] (Sandbox) Sandbox: git(49573) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.723 E  kernel[0:493c88a] (Sandbox) 1 duplicate report for Sandbox: git(49573) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.723 E  kernel[0:493c88a] (Sandbox) Sandbox: git(49576) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.736 E  kernel[0:493c88f] (Sandbox) 1 duplicate report for Sandbox: git(49576) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.736 E  kernel[0:493c88f] (Sandbox) Sandbox: git(49579) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.746 E  kernel[0:493c893] (Sandbox) 1 duplicate report for Sandbox: git(49579) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.746 E  kernel[0:493c893] (Sandbox) Sandbox: git(49582) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.756 E  kernel[0:493c897] (Sandbox) 1 duplicate report for Sandbox: git(49582) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:01.756 E  kernel[0:493c897] (Sandbox) Sandbox: git(49585) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.288 E  kernel[0:493c8c2] (Sandbox) 1 duplicate report for Sandbox: git(49585) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.288 E  kernel[0:493c8c2] (Sandbox) Sandbox: git(49599) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.308 E  kernel[0:493c8c6] (Sandbox) 1 duplicate report for Sandbox: git(49599) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.308 E  kernel[0:493c8c6] (Sandbox) Sandbox: git(49602) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.321 E  kernel[0:493c8ca] (Sandbox) 1 duplicate report for Sandbox: git(49602) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.321 E  kernel[0:493c8ca] (Sandbox) Sandbox: git(49605) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.333 E  kernel[0:493c8ce] (Sandbox) 1 duplicate report for Sandbox: git(49605) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.333 E  kernel[0:493c8ce] (Sandbox) Sandbox: git(49608) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.344 E  kernel[0:493c8d2] (Sandbox) 1 duplicate report for Sandbox: git(49608) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.344 E  kernel[0:493c8d2] (Sandbox) Sandbox: git(49611) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.365 E  kernel[0:493c8d8] (Sandbox) 1 duplicate report for Sandbox: git(49611) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.365 E  kernel[0:493c8d8] (Sandbox) Sandbox: git(49614) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.365 E  kernel[0:493c8db] (Sandbox) Sandbox: git(49617) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.372 E  kernel[0:493c8dc] (Sandbox) Sandbox: zsh(49618) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.375 E  kernel[0:493c8de] (Sandbox) Sandbox: git(49617) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.375 E  kernel[0:493c8dd] (Sandbox) Sandbox: git(49614) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.376 E  kernel[0:493c8e1] (Sandbox) Sandbox: path_helper(49619) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.377 E  kernel[0:493c8dc] (Sandbox) Sandbox: zsh(49618) deny(1) file-write-create <ISO>/ws-c/multi-shipped.txt",
+    "2026-09-10 06:11:04.380 E  kernel[0:493c8e5] (Sandbox) Sandbox: git(49622) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.387 E  kernel[0:493c8e6] (Sandbox) Sandbox: zsh(49623) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.388 E  kernel[0:493c8e7] (Sandbox) Sandbox: git(49622) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.391 E  kernel[0:493c8e9] (Sandbox) Sandbox: path_helper(49624) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.391 E  kernel[0:493c8ec] (Sandbox) Sandbox: git(49627) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.396 E  kernel[0:493c8ee] (Sandbox) Sandbox: ls(49628) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.399 E  kernel[0:493c8ef] (Sandbox) Sandbox: git(49627) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.405 E  kernel[0:493c8f7] (Sandbox) Sandbox: zsh(49629) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.409 E  kernel[0:493c8fa] (Sandbox) Sandbox: path_helper(49630) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.422 E  kernel[0:493c8fb] (Sandbox) Sandbox: zsh(49631) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.424 E  kernel[0:493c8fe] (Sandbox) Sandbox: git(49634) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.425 E  kernel[0:493c900] (Sandbox) Sandbox: path_helper(49635) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.428 E  kernel[0:493c902] (Sandbox) Sandbox: mkdir(49636) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.430 E  kernel[0:493c904] (Sandbox) Sandbox: git(49637) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.432 E  kernel[0:493c905] (Sandbox) Sandbox: git(49634) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.435 E  kernel[0:493c908] (Sandbox) Sandbox: git(49640) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.437 E  kernel[0:493c909] (Sandbox) Sandbox: git(49637) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.442 E  kernel[0:493c90a] (Sandbox) Sandbox: git(49640) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.444 E  kernel[0:493c90e] (Sandbox) Sandbox: git(49644) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.444 E  kernel[0:493c90f] (Sandbox) Sandbox: git(49641) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.452 E  kernel[0:493c910] (Sandbox) Sandbox: git(49644) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.452 E  kernel[0:493c911] (Sandbox) Sandbox: git(49641) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.454 E  kernel[0:493c914] (Sandbox) Sandbox: git(49647) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.456 E  kernel[0:493c916] (Sandbox) Sandbox: git(49648) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.462 E  kernel[0:493c917] (Sandbox) Sandbox: git(49647) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.462 E  kernel[0:493c918] (Sandbox) Sandbox: git(49648) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.464 E  kernel[0:493c91b] (Sandbox) Sandbox: git(49651) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.468 E  kernel[0:493c91d] (Sandbox) Sandbox: git(49652) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.471 E  kernel[0:493c91e] (Sandbox) Sandbox: git(49651) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.472 E  kernel[0:493c921] (Sandbox) Sandbox: git(49654) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.475 E  kernel[0:493c922] (Sandbox) Sandbox: rg(49655) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.480 E  kernel[0:493c930] (Sandbox) Sandbox: git(49654) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.482 E  kernel[0:493c933] (Sandbox) Sandbox: git(49658) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.489 E  kernel[0:493c935] (Sandbox) Sandbox: zsh(49659) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.489 E  kernel[0:493c934] (Sandbox) Sandbox: git(49658) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.492 E  kernel[0:493c938] (Sandbox) Sandbox: path_helper(49660) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.492 E  kernel[0:493c93b] (Sandbox) Sandbox: git(49663) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.503 E  kernel[0:493c941] (Sandbox) 1 duplicate report for Sandbox: git(49663) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.503 E  kernel[0:493c941] (Sandbox) Sandbox: git(49667) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.504 E  kernel[0:493c93d] (Sandbox) Sandbox: node(49664) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.510 E  kernel[0:493c942] (Sandbox) Sandbox: git(49667) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.514 E  kernel[0:493c94b] (Sandbox) Sandbox: git(49670) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.525 E  kernel[0:493c950] (Sandbox) 1 duplicate report for Sandbox: git(49670) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.525 E  kernel[0:493c950] (Sandbox) Sandbox: git(49673) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.535 E  kernel[0:493c954] (Sandbox) 1 duplicate report for Sandbox: git(49673) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.535 E  kernel[0:493c954] (Sandbox) Sandbox: git(49676) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.548 E  kernel[0:493c956] (Sandbox) 1 duplicate report for Sandbox: git(49676) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.548 E  kernel[0:493c956] (Sandbox) Sandbox: zsh(49677) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.552 E  kernel[0:493c958] (Sandbox) Sandbox: path_helper(49678) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.554 E  kernel[0:493c95a] (Sandbox) Sandbox: head(49679) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.562 E  kernel[0:493c95b] (Sandbox) Sandbox: zsh(49680) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.566 E  kernel[0:493c95d] (Sandbox) Sandbox: path_helper(49681) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.568 E  kernel[0:493c95f] (Sandbox) Sandbox: curl(49682) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.945 E  kernel[0:493c966] (Sandbox) Sandbox: zsh(49683) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.950 E  kernel[0:493c968] (Sandbox) Sandbox: path_helper(49684) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.953 E  kernel[0:493c96a] (Sandbox) Sandbox: mkdir(49685) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.964 E  kernel[0:493c96b] (Sandbox) Sandbox: zsh(49686) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.968 E  kernel[0:493c96d] (Sandbox) Sandbox: path_helper(49687) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.971 E  kernel[0:493c96f] (Sandbox) Sandbox: grep(49688) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.979 E  kernel[0:493c970] (Sandbox) Sandbox: zsh(49689) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.983 E  kernel[0:493c972] (Sandbox) Sandbox: path_helper(49690) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.991 E  kernel[0:493c973] (Sandbox) Sandbox: zsh(49691) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.995 E  kernel[0:493c975] (Sandbox) Sandbox: path_helper(49692) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.998 E  kernel[0:493c977] (Sandbox) Sandbox: env(49693) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:04.998 E  kernel[0:493c979] (Sandbox) Sandbox: tail(49694) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.009 E  kernel[0:493c985] (Sandbox) Sandbox: node(49693) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.634 E  kernel[0:493c9f0] (Sandbox) Sandbox: zsh(49695) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.638 E  kernel[0:493c9f2] (Sandbox) Sandbox: path_helper(49696) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.642 E  kernel[0:493c9f4] (Sandbox) Sandbox: git(49697) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.642 E  kernel[0:493c9f6] (Sandbox) Sandbox: tail(49698) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.652 E  kernel[0:493c9fa] (Sandbox) Sandbox: git(49697) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.656 E  kernel[0:493ca01] (Sandbox) Sandbox: git(49699) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:05.659 E  kernel[0:493ca03] (Sandbox) Sandbox: git-remote-http(49700) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.813 E  kernel[0:493ca23] (Sandbox) Sandbox: zsh(49711) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.817 E  kernel[0:493ca25] (Sandbox) Sandbox: path_helper(49712) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.831 E  kernel[0:493ca27] (Sandbox) Sandbox: node(49713) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.866 E  kernel[0:493ca32] (Sandbox) Sandbox: node(49713) deny(1) network-outbound /private/var/run/mDNSResponder",
+    "2026-09-10 06:11:06.880 E  kernel[0:493ca36] (Sandbox) Sandbox: zsh(49716) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.883 E  kernel[0:493ca38] (Sandbox) Sandbox: path_helper(49717) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.885 E  kernel[0:493ca3a] (Sandbox) Sandbox: curl(49718) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.904 E  kernel[0:493ca3e] (Sandbox) Sandbox: zsh(49719) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.908 E  kernel[0:493ca40] (Sandbox) Sandbox: path_helper(49720) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.910 E  kernel[0:493ca42] (Sandbox) Sandbox: curl(49721) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.916 E  kernel[0:493ca42] (Sandbox) Sandbox: curl(49721) deny(1) network-outbound remote:*:443",
+    "2026-09-10 06:11:06.923 E  kernel[0:493ca46] (Sandbox) Sandbox: zsh(49722) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.926 E  kernel[0:493ca48] (Sandbox) Sandbox: path_helper(49723) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.929 E  kernel[0:493ca4a] (Sandbox) Sandbox: curl(49724) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.934 E  kernel[0:493ca4d] (Sandbox) Sandbox: curl(49724) deny(1) network-outbound /private/var/run/mDNSResponder",
+    "2026-09-10 06:11:06.942 E  kernel[0:493ca4e] (Sandbox) Sandbox: zsh(49725) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.945 E  kernel[0:493ca51] (Sandbox) Sandbox: path_helper(49726) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.957 E  kernel[0:493ca53] (Sandbox) Sandbox: node(49727) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:06.991 E  kernel[0:493ca53] (Sandbox) Sandbox: node(49727) deny(1) network-outbound remote:*:443",
+    "2026-09-10 06:11:07.000 E  kernel[0:493ca7c] (Sandbox) Sandbox: zsh(49745) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:07.004 E  kernel[0:493ca8d] (Sandbox) Sandbox: path_helper(49757) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:07.016 E  kernel[0:493ca93] (Sandbox) Sandbox: node(49758) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:07.055 E  kernel[0:493ca93] (Sandbox) Sandbox: node(49758) deny(1) network-outbound remote:*:53",
+    "2026-09-10 06:11:07.066 E  kernel[0:493ca9f] (Sandbox) Sandbox: zsh(49759) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:07.070 E  kernel[0:493caa1] (Sandbox) Sandbox: path_helper(49760) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:07.081 E  kernel[0:493caa3] (Sandbox) Sandbox: node(49761) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 06:11:07.118 E  kernel[0:493caa3] (Sandbox) Sandbox: node(49761) deny(1) network-outbound remote:*:55184",
+    "2026-09-10 06:11:15.312 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1337/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/pty.node",
+    "2026-09-10 06:11:15.312 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1337/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@parcel/watcher-darwin-arm64/watcher.node",
+    "2026-09-10 06:11:15.902 E  kernel[0:493bf3c] (Sandbox) Sandbox: nsattributedstringagent(89799) deny(1) mach-lookup com.apple.CARenderServer"
+  ],
+  "probes": [
+    {
+      "id": "identity.shippingForm",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "codesignApp": [
+          "Identifier=com.tide.alphacode",
+          "CodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded",
+          "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+          "Authority=Developer ID Certification Authority",
+          "TeamIdentifier=RQX6X6A635"
+        ],
+        "codesignAddon": [
+          "Identifier=alpha_fence",
+          "CodeDirectory v=20500 size=311 flags=0x10000(runtime) hashes=4+2 location=embedded",
+          "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+          "Authority=Developer ID Certification Authority",
+          "TeamIdentifier=RQX6X6A635"
+        ],
+        "lipo": "x86_64 arm64",
+        "verifyExit": 0,
+        "markers": {
+          "network egress policy proxy listening": 1,
+          "ALPHA_AC1334_NETWORK(control: must be 0)": 0,
+          "AC1337-NONEXISTENT-NEEDLE(control)": 0
+        }
+      }
+    },
+    {
+      "id": "g1.proxyListening+fencePlannedWithSamePort+applied",
+      "grid": "g1",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "proxyLine": "[2026-09-10 06:10:38.609] [info]                     network egress policy proxy listening on 127.0.0.1:55088 — the only way out of the engine tree (REQ-137); destinations = network-egress-registry.ts",
+        "planned": "[2026-09-10 06:10:38.617] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), egressProxyPort=55088, profile=2531B, compile attempts=1",
+        "applied": "  message: 'process fence applied: addon=fence-20260910T100303262Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2531B — every process this engine spawns inherits it'",
+        "proxyPort": 55088,
+        "plannedPort": 55088,
+        "profileBytesPlanned": "2531",
+        "profileBytesApplied": "2531"
+      }
+    },
+    {
+      "id": "layout.rootsOutsideW11W12+sidecarEnv",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "root": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013",
+        "sidecarSees": {
+          "HOME": "<ISO>/home",
+          "TMPDIR": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/",
+          "XDG_CONFIG_HOME": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/config"
+        },
+        "appStartingLine": "[2026-09-10 06:10:38.483] [info]          app starting { version: '0.1.12', packaged: true, onboardingTest: true }"
+      }
+    },
+    {
+      "id": "g1.sidecarEnv.proxyStackRewrittenByMain",
+      "grid": "g1",
+      "kind": "net",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "HTTPS_PROXY": "http://127.0.0.1:55088",
+        "HTTP_PROXY": "http://127.0.0.1:55088",
+        "ALL_PROXY": "http://127.0.0.1:55088",
+        "NO_PROXY": "127.0.0.1,localhost,::1",
+        "no_proxy": "127.0.0.1,localhost,::1",
+        "runnerHadNoProxyEnv": true
+      }
+    },
+    {
+      "id": "g1.coldStart.health200",
+      "grid": "g1",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "health": 200
+      }
+    },
+    {
+      "id": "g1.coldStart.configReadable",
+      "grid": "g1",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "shell": null
+      }
+    },
+    {
+      "id": "gN.modelsDev.providerListSize",
+      "grid": "gN",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "status": 200,
+        "providerCount": 0,
+        "providerIds": [],
+        "modelsCacheExists": false,
+        "egressSoFar": [
+          [
+            "allow registry.npmjs.org:443",
+            15
+          ],
+          [
+            "allow github.com:443",
+            1
+          ],
+          [
+            "allow release-assets.githubusercontent.com:443",
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "id": "g2.mcp.connected",
+      "grid": "g2",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "ac1337probe": {
+            "status": "connected"
+          }
+        }
+      }
+    },
+    {
+      "id": "g2.mcp.inside(W1 default ws)",
+      "grid": "g2",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/mcp-shipped.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g2.mcp.escape",
+      "grid": "g2",
+      "kind": "escape",
+      "path": "<ISO>/esc/mcp-shipped.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g2.providerInstall.bothDirsPopulated(W6/W3)+npmCache(W7)+viaGate",
+      "grid": "g2",
+      "kind": "net",
+      "processStarted": null,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "dirs": [
+          {
+            "dir": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/config/opencode/node_modules",
+            "pluginInstalled": true,
+            "topLevel": 26,
+            "sizeKB": 62636
+          },
+          {
+            "dir": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/node_modules",
+            "pluginInstalled": true,
+            "topLevel": 26,
+            "sizeKB": 62636
+          }
+        ],
+        "npmCacache": true,
+        "npmFailLines": [],
+        "npmGateRecords": {
+          "allow": 15,
+          "deny": 0
+        }
+      }
+    },
+    {
+      "id": "g3.pty.default200(W15)",
+      "grid": "g3",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "id": "pty_08acc7a65001C1T3TeX54mJSSZ",
+          "title": "ac1337",
+          "command": "/bin/zsh",
+          "args": [
+            "-l"
+          ],
+          "cwd": "<ISO>/home/code-puppy",
+          "status": "running",
+          "pid": 49494
+        }
+      }
+    },
+    {
+      "id": "g3.pty.defaultLoginShellRanACommand",
+      "grid": "g3",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "output": "<meta {\"cursor\":0}>\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jtide@tidedeMac-mini code-puppy % \u001b[K\u001b[?2004he\becho AC1337-STARTED; echo x > \"<REAL_HOME>/.ac1 \r\u001b[K3\r337-shipped-ufBJZg/home/code-puppy/pty-default-shipped.txt\"; echo x > \"/Users/ti \r\u001b[Kd\rde/.ac1337-shipped-ufBJZg/esc/pty-default-shipped.txt\"; echo \"PTY_HTTPS_PROXY=$H \r\u001b[KT\rTTPS_PROXY\"; echo AC1337-PTY-DONE\u001b[?2004l\r\r\nAC1337-STARTED\r\nzsh: operation not permitted: <ISO>/esc/pty-default-shipped.txt\r\nPTY_HTTPS_PROXY=http://127.0.0.1:55088\r\nAC1337-PTY-DONE\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jtide@tidedeMac-mini code-puppy % \u001b[K\u001b[?2004he\bexit\u001b[?2004l\r\r\n",
+        "ptyHttpsProxy": "http://127.0.0.1:55088"
+      }
+    },
+    {
+      "id": "g3.pty.default.inside",
+      "grid": "g3",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/pty-default-shipped.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g3.pty.default.escape",
+      "grid": "g3",
+      "kind": "escape",
+      "path": "<ISO>/esc/pty-default-shipped.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.ranToCompletion",
+      "grid": "g4",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1337-STARTED\ndone\n(eval):1: operation not permitted: <ISO>/esc/shelltool-shipped.txt\n(eval):1: operation not permitted: <ISO>/tmp/outside-root-shipped.txt\n"
+      }
+    },
+    {
+      "id": "g4.shellTool.inside(W1)",
+      "grid": "g4",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/shelltool-shipped.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.escape",
+      "grid": "g4",
+      "kind": "escape",
+      "path": "<ISO>/esc/shelltool-shipped.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.escape.siblingOfOnboardingRoot",
+      "grid": "g4",
+      "kind": "escape",
+      "path": "<ISO>/tmp/outside-root-shipped.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g5.injection.alphaGlobalRoot(W2)+engineConfig(W3)",
+      "grid": "g5",
+      "kind": "inside",
+      "path": "<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/alpha-code-state/env/prod/alpha.jsonc",
+      "processStarted": null,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "alphaJsoncMtimeAfterLaunch": true,
+        "engineConfigEntries": [
+          ".gitignore",
+          "models.json",
+          "node_modules",
+          "opencode.json",
+          "opencode.jsonc",
+          "package-lock.json",
+          "package.json"
+        ],
+        "injectionLines": []
+      }
+    },
+    {
+      "id": "g5.extLoadedInSidecar(alpha_register present)",
+      "grid": "g5",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "alphaTools": [
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      }
+    },
+    {
+      "id": "g6.union.selfHealRespawnRePlannedThree+sameProxyPort",
+      "grid": "g6",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "gen1Pids": [
+          49409
+        ],
+        "plannedAll": [
+          "[2026-09-10 06:10:38.617] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), egressProxyPort=55088, profile=2531B, compile attempts=1",
+          "[2026-09-10 06:11:00.890] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), egressProxyPort=55088, profile=2715B, compile attempts=1"
+        ],
+        "appliedAll": [
+          "  message: 'process fence applied: addon=fence-20260910T100303262Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2531B — every process this engine spawns inherits it'",
+          "  message: 'process fence applied: addon=fence-20260910T100303262Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2715B — every process this engine spawns inherits it'"
+        ],
+        "profileBytesGen2": "2715",
+        "proxyListeningLines": 1
+      }
+    },
+    {
+      "id": "g6.union.wsB.inside",
+      "grid": "g6",
+      "kind": "inside",
+      "path": "<ISO>/ws-b/multi-shipped.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "firstAttemptMs": 100,
+        "output": "AC1337-STARTED\ndone\n(eval):1: operation not permitted: <ISO>/ws-c/multi-shipped.txt\n"
+      }
+    },
+    {
+      "id": "g6.union.wsA.inside",
+      "grid": "g6",
+      "kind": "inside",
+      "path": "<ISO>/ws-a/multi-shipped.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.defaultWorkspace.inside",
+      "grid": "g6",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/multi-shipped.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.wsC.outsideStore",
+      "grid": "g6",
+      "kind": "escape",
+      "path": "<ISO>/ws-c/multi-shipped.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "output": "AC1337-STARTED\ndone\n(eval):1: operation not permitted: <ISO>/ws-c/multi-shipped.txt\n"
+      }
+    },
+    {
+      "id": "ac3.benign/workspace write (WORKDIR)",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1337-STARTED\ninside.txt\n"
+      }
+    },
+    {
+      "id": "ac3.benign//private/tmp write",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1337-STARTED\n"
+      }
+    },
+    {
+      "id": "ac3.benign/git init + commit",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "sha40": true,
+        "output": "AC1337-STARTED\n48d22e5408a9e8d7048b516386add383e711c940\n"
+      }
+    },
+    {
+      "id": "ac3.benign/node writes TMPDIR",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/ac1337-node-49664.txt",
+        "output": "AC1337-STARTED\nNODEWROTE=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/ac1337-node-49664.txt\n"
+      }
+    },
+    {
+      "id": "ac3.benign/read repo file",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1337-STARTED\n{\n  \"$schema\": \"https://json.schemastore"
+      }
+    },
+    {
+      "id": "ac3.benign/curl https://registry.npmjs.org (registered)",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "code": "200",
+        "tail": "AC1337-STARTED\nCURL=200 curl_exit=0\n",
+        "output": "AC1337-STARTED\nCURL=200 curl_exit=0\n"
+      }
+    },
+    {
+      "id": "ac3.benign/mkdir -p deep",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1337-STARTED\nMKDIR-OK\n"
+      }
+    },
+    {
+      "id": "ac3.benign/grep",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1337-STARTED\n1\n"
+      }
+    },
+    {
+      "id": "ac3.benign/which git node",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "out": "AC1337-STARTED\n/usr/bin/git\n/opt/homebrew/bin/node\n",
+        "output": "AC1337-STARTED\n/usr/bin/git\n/opt/homebrew/bin/node\n"
+      }
+    },
+    {
+      "id": "ac3.benign/npm view (registry)",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "tail": "AC1337-STARTED\n7.8.5\nnpm_exit=0\n",
+        "output": "AC1337-STARTED\n7.8.5\nnpm_exit=0\n"
+      }
+    },
+    {
+      "id": "ac3.benign/git ls-remote (https github.com)",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "tail": "AC1337-STARTED\nb8242b093d9e941a34460d715e3ce616a34ac3fe\tHEAD\ngit_exit=0\n",
+        "output": "AC1337-STARTED\nb8242b093d9e941a34460d715e3ce616a34ac3fe\tHEAD\ngit_exit=0\n"
+      }
+    },
+    {
+      "id": "ac3.benign/dns only (expected ENOTFOUND)",
+      "grid": "ac3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "dns": "ENOTFOUND",
+        "output": "AC1337-STARTED\nDNS=ENOTFOUND\n"
+      }
+    },
+    {
+      "id": "ac1.escape/unregistered destination via gate (curl https://example.com)",
+      "grid": "ac1",
+      "kind": "netEscape",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "curlExitAsSeen": "0",
+        "gateDenyRecords": [
+          {
+            "event": "egress.connect",
+            "id": 22,
+            "at": "2026-09-10T10:11:06.895Z",
+            "method": "CONNECT",
+            "authority": "example.com:443",
+            "host": "example.com",
+            "port": 443,
+            "verdict": "deny",
+            "reason": "unregistered",
+            "status": 403
+          }
+        ],
+        "tail": "AC1337-STARTED\ncurl: (56) CONNECT tunnel failed, response 403\nCURL=000 curl_exit=0\n",
+        "output": "AC1337-STARTED\ncurl: (56) CONNECT tunnel failed, response 403\nCURL=000 curl_exit=0\n"
+      }
+    },
+    {
+      "id": "ac1.escape/bypass proxy, raw-IP:443 (curl --noproxy '*' https://1.1.1.1)",
+      "grid": "ac1",
+      "kind": "netEscape",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "curlExitAsSeen": "0",
+        "afterMs": "0",
+        "tail": "AC1337-STARTED\ncurl: (7) Failed to connect to 1.1.1.1 port 443 after 0 ms: Couldn't connect to server\nCURL=000 curl_exit=0\n",
+        "output": "AC1337-STARTED\ncurl: (7) Failed to connect to 1.1.1.1 port 443 after 0 ms: Couldn't connect to server\nCURL=000 curl_exit=0\n"
+      }
+    },
+    {
+      "id": "ac1.escape/bypass proxy, by name (curl --noproxy '*' https://github.com)",
+      "grid": "ac1",
+      "kind": "netEscape",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "curlExitAsSeen": "0",
+        "tail": "AC1337-STARTED\ncurl: (6) Could not resolve host: github.com\nCURL=000 curl_exit=0\n",
+        "output": "AC1337-STARTED\ncurl: (6) Could not resolve host: github.com\nCURL=000 curl_exit=0\n"
+      }
+    },
+    {
+      "id": "ac1.escape/raw TCP to 1.1.1.1:443 (node net.connect)",
+      "grid": "ac1",
+      "kind": "netEscape",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "tcp": "EPERM",
+        "output": "AC1337-STARTED\nTCP=EPERM\n"
+      }
+    },
+    {
+      "id": "ac1.escape/UDP sendto 1.1.1.1:53 (node dgram)",
+      "grid": "ac1",
+      "kind": "netEscape",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "udp": "EPERM",
+        "output": "AC1337-STARTED\nUDP=EPERM\n"
+      }
+    },
+    {
+      "id": "ac1.escape/[::1] other port (node net.connect)",
+      "grid": "ac1",
+      "kind": "netEscape",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "v6": "EPERM",
+        "port": 55184,
+        "output": "AC1337-STARTED\nV6=EPERM\n"
+      }
+    },
+    {
+      "id": "ac1.engineFetch.remoteMcp.http.viaGate",
+      "grid": "ac1",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "url": "http://ac1337-probe.invalid/mcp",
+        "status": 200,
+        "body": "{\"ac1337remotehttp\":{\"status\":\"failed\",\"error\":\"SSE error: TypeError: fetch failed: Error: Request was cancelled.: Proxy response (403) !== 200 when HTTP Tunneling\"}}",
+        "gateRecords": [
+          {
+            "event": "egress.connect",
+            "id": 23,
+            "at": "2026-09-10T10:11:07.133Z",
+            "method": "CONNECT",
+            "authority": "ac1337-probe.invalid:80",
+            "host": "ac1337-probe.invalid",
+            "port": 80,
+            "verdict": "deny",
+            "reason": "unregistered",
+            "status": 403
+          },
+          {
+            "event": "egress.connect",
+            "id": 24,
+            "at": "2026-09-10T10:11:07.138Z",
+            "method": "CONNECT",
+            "authority": "ac1337-probe.invalid:80",
+            "host": "ac1337-probe.invalid",
+            "port": 80,
+            "verdict": "deny",
+            "reason": "unregistered",
+            "status": 403
+          }
+        ]
+      }
+    },
+    {
+      "id": "ac1.engineFetch.remoteMcp.https.viaGate",
+      "grid": "ac1",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "url": "https://ac1337-probe.invalid/mcp",
+        "status": 200,
+        "body": "{\"ac1337remotehttp\":{\"status\":\"failed\",\"error\":\"SSE error: TypeError: fetch failed: Error: Request was cancelled.: Proxy response (403) !== 200 when HTTP Tunneling\"},\"ac1337remotehttps\":{\"status\":\"failed\",\"error\":\"SSE error: TypeError: fetch failed: Error: Request was cancelled.: Proxy response (403) !== 200 when HTTP Tunneling\"}}",
+        "gateRecords": [
+          {
+            "event": "egress.connect",
+            "id": 25,
+            "at": "2026-09-10T10:11:11.153Z",
+            "method": "CONNECT",
+            "authority": "ac1337-probe.invalid:443",
+            "host": "ac1337-probe.invalid",
+            "port": 443,
+            "verdict": "deny",
+            "reason": "unregistered",
+            "status": 403
+          },
+          {
+            "event": "egress.connect",
+            "id": 26,
+            "at": "2026-09-10T10:11:11.157Z",
+            "method": "CONNECT",
+            "authority": "ac1337-probe.invalid:443",
+            "host": "ac1337-probe.invalid",
+            "port": 443,
+            "verdict": "deny",
+            "reason": "unregistered",
+            "status": 403
+          }
+        ]
+      }
+    },
+    {
+      "id": "obs.catalogTimeline",
+      "grid": "obs",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "lines": [],
+        "g6FirstShellMs": 100
+      }
+    },
+    {
+      "id": "identity.realHomeUntouched",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "before": {
+          "<REAL_HOME>/Library/Application Support/ai.opencode.desktop": 1789008056887.3994,
+          "<REAL_HOME>/Library/Application Support/alpha-code-state/env/prod": 1789007489376.096,
+          "<REAL_HOME>/.npm": 1782212156775.9814,
+          "<REAL_HOME>/.config/opencode": 1784863576481.5188,
+          "<REAL_HOME>/.local/share/opencode": 1789023731354.3723,
+          "<REAL_HOME>/code-puppy": 1789023529280.0942
+        },
+        "after": {
+          "<REAL_HOME>/Library/Application Support/ai.opencode.desktop": 1789008056887.3994,
+          "<REAL_HOME>/Library/Application Support/alpha-code-state/env/prod": 1789007489376.096,
+          "<REAL_HOME>/.npm": 1782212156775.9814,
+          "<REAL_HOME>/.config/opencode": 1784863576481.5188,
+          "<REAL_HOME>/.local/share/opencode": 1789023731354.3723,
+          "<REAL_HOME>/code-puppy": 1789023529280.0942
+        }
+      }
+    },
+    {
+      "id": "identity.zeroResidualProcesses",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "residual": []
+      }
+    },
+    {
+      "id": "gN.gateLog",
+      "grid": "gN",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "records": 26,
+        "byTarget": [
+          [
+            "allow registry.npmjs.org:443",
+            18
+          ],
+          [
+            "allow github.com:443",
+            2
+          ],
+          [
+            "deny/unregistered ac1337-probe.invalid:80",
+            2
+          ],
+          [
+            "deny/unregistered ac1337-probe.invalid:443",
+            2
+          ],
+          [
+            "allow release-assets.githubusercontent.com:443",
+            1
+          ],
+          [
+            "deny/unregistered example.com:443",
+            1
+          ]
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total": 50,
+    "pass": 47,
+    "fail": 0,
+    "observational": 3
+  },
+  "logs": {
+    "main": [
+      "[2026-09-10 06:10:38.483] [info]          app starting { version: '0.1.12', packaged: true, onboardingTest: true }",
+      "[2026-09-10 06:10:38.497] [info]          [server] Loaded shell environment with -il (12 vars)",
+      "[2026-09-10 06:10:38.498] [info]  (main)  req047: rebuilt shell env cache after successful probe",
+      "[2026-09-10 06:10:38.606] [info]                     spawning sidecar { url: 'http://127.0.0.1:55085' }",
+      "[2026-09-10 06:10:38.609] [info]                     network egress policy proxy listening on 127.0.0.1:55088 — the only way out of the engine tree (REQ-137); destinations = network-egress-registry.ts",
+      "[2026-09-10 06:10:38.617] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), egressProxyPort=55088, profile=2531B, compile attempts=1",
+      "[2026-09-10 06:11:00.267] [info]                     respawning sidecar { reason: 'structural' }",
+      "[2026-09-10 06:11:00.890] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), egressProxyPort=55088, profile=2715B, compile attempts=1",
+      "[2026-09-10 06:11:01.558] [info]                     sidecar respawned + renderer reloaded"
+    ],
+    "server": [
+      "  message: 'process fence applied: addon=fence-20260910T100303262Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2531B — every process this engine spawns inherits it'",
+      "  message: 'process fence applied: addon=fence-20260910T100303262Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2715B — every process this engine spawns inherits it'"
+    ],
+    "engine": [
+      "timestamp=2026-09-10T10:10:39.265Z level=INFO run=f1fd422b message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T10:10:39.279Z level=INFO run=f1fd422b message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T10:10:39.557Z level=INFO run=f1fd422b message=\"creating instance\" directory=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T10:10:39.557Z level=INFO run=f1fd422b message=fromDirectory directory=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T10:10:39.560Z level=INFO run=f1fd422b message=bootstrapping directory=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T10:10:39.561Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/config.json",
+      "timestamp=2026-09-10T10:10:39.562Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T10:10:39.563Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T10:10:39.563Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T10:10:39.572Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T10:10:39.572Z level=INFO run=f1fd422b message=\"creating instance\" directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:10:39.572Z level=INFO run=f1fd422b message=fromDirectory directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:10:39.612Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T10:10:39.615Z level=INFO run=f1fd422b message=bootstrapping directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:10:39.615Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T10:10:39.635Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T10:10:39.636Z level=INFO run=f1fd422b message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T10:10:49.492Z level=INFO run=f1fd422b message=created id=ses_f75338debffey5A41i7JVoTyW9 slug=silent-river version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035049492 time.updated=1789035049492",
+      "timestamp=2026-09-10T10:10:51.612Z level=INFO run=f1fd422b message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T10:10:51.620Z level=INFO run=f1fd422b message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T10:10:51.621Z level=INFO run=f1fd422b message=\"creating session\" id=pty_08acc7a65001C1T3TeX54mJSSZ cmd=/bin/zsh args=\"[\\\"-l\\\"]\" cwd=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:10:51.628Z level=INFO run=f1fd422b message=\"client attached to session\" id=pty_08acc7a65001C1T3TeX54mJSSZ directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:10:59.143Z level=INFO run=f1fd422b message=created id=ses_f75336838ffergbjG2zbNBHqK6 slug=jolly-canyon version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035059143 time.updated=1789035059143",
+      "timestamp=2026-09-10T10:11:01.539Z level=INFO run=30692147 message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T10:11:01.551Z level=INFO run=30692147 message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T10:11:01.589Z level=INFO run=30692147 message=\"creating instance\" directory=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T10:11:01.589Z level=INFO run=30692147 message=fromDirectory directory=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T10:11:01.591Z level=INFO run=30692147 message=bootstrapping directory=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T10:11:01.592Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/config.json",
+      "timestamp=2026-09-10T10:11:01.592Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T10:11:01.593Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T10:11:01.593Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T10:11:01.595Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T10:11:01.596Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T10:11:01.683Z level=INFO run=30692147 message=\"creating instance\" directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:11:01.683Z level=INFO run=30692147 message=fromDirectory directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:11:01.685Z level=INFO run=30692147 message=bootstrapping directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T10:11:01.685Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T10:11:01.691Z level=INFO run=30692147 message=\"watcher backend\" directory=<ISO>/ws-a platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T10:11:01.697Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T10:11:01.699Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T10:11:01.765Z level=INFO run=30692147 message=\"booting location services\" directory=<ISO>/ws-a workspaceID=undefined",
+      "timestamp=2026-09-10T10:11:04.284Z level=INFO run=30692147 message=\"creating instance\" directory=<ISO>/ws-b",
+      "timestamp=2026-09-10T10:11:04.284Z level=INFO run=30692147 message=fromDirectory directory=<ISO>/ws-b",
+      "timestamp=2026-09-10T10:11:04.353Z level=INFO run=30692147 message=bootstrapping directory=<ISO>/ws-b",
+      "timestamp=2026-09-10T10:11:04.354Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T10:11:04.357Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T10:11:04.357Z level=INFO run=30692147 message=loading path=<ISO>/tmp/opencode-onboarding-a5a17508-ed7a-45f0-a228-05590c251013/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T10:11:04.361Z level=INFO run=30692147 message=created id=ses_f753353d6ffeTPvaJaisJ1w94O slug=glowing-knight version=1.17.13 projectID=global directory=<ISO>/ws-b path=\"\" workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064361 time.updated=1789035064361",
+      "timestamp=2026-09-10T10:11:04.382Z level=INFO run=30692147 message=created id=ses_f753353c1ffePSirdAf1sgBqJc slug=gentle-rocket version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064382 time.updated=1789035064382",
+      "timestamp=2026-09-10T10:11:04.400Z level=INFO run=30692147 message=created id=ses_f753353afffeYf1xS7Zcc1mJnx slug=clever-garden version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064400 time.updated=1789035064400",
+      "timestamp=2026-09-10T10:11:04.416Z level=INFO run=30692147 message=created id=ses_f7533539fffeBn5iY8JrxAcvH1 slug=sunny-panda version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064416 time.updated=1789035064416",
+      "timestamp=2026-09-10T10:11:04.476Z level=INFO run=30692147 message=\"watcher backend\" directory=<ISO>/ws-b platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T10:11:04.484Z level=INFO run=30692147 message=created id=ses_f7533535bffeQiRNQ2qiqDqrXd slug=happy-panda version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064484 time.updated=1789035064484",
+      "timestamp=2026-09-10T10:11:04.543Z level=INFO run=30692147 message=created id=ses_f75335320ffe13fh3R011s7JL3 slug=cosmic-canyon version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064543 time.updated=1789035064543",
+      "timestamp=2026-09-10T10:11:04.547Z level=INFO run=30692147 message=\"booting location services\" directory=<ISO>/ws-b workspaceID=undefined",
+      "timestamp=2026-09-10T10:11:04.557Z level=INFO run=30692147 message=created id=ses_f75335312ffeiaFuefkJx84ooe slug=quiet-comet version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064557 time.updated=1789035064557",
+      "timestamp=2026-09-10T10:11:04.937Z level=INFO run=30692147 message=created id=ses_f75335197ffeddR0N0o3lTo9He slug=lucky-panda version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064937 time.updated=1789035064937",
+      "timestamp=2026-09-10T10:11:04.958Z level=INFO run=30692147 message=created id=ses_f75335181ffetTVx5uyigYH02O slug=sunny-mountain version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064958 time.updated=1789035064958",
+      "timestamp=2026-09-10T10:11:04.974Z level=INFO run=30692147 message=created id=ses_f75335171ffewj3pVAR5pF704Y slug=glowing-meadow version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064974 time.updated=1789035064974",
+      "timestamp=2026-09-10T10:11:04.987Z level=INFO run=30692147 message=created id=ses_f75335164ffeo37hx81879at1U slug=kind-star version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035064987 time.updated=1789035064987",
+      "timestamp=2026-09-10T10:11:05.627Z level=INFO run=30692147 message=created id=ses_f75334ee4ffeWySG0NI96FnNDE slug=swift-mountain version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035065627 time.updated=1789035065627",
+      "timestamp=2026-09-10T10:11:06.807Z level=INFO run=30692147 message=created id=ses_f75334a48ffeAnB4DCfSCHmK3L slug=quick-squid version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035066807 time.updated=1789035066807",
+      "timestamp=2026-09-10T10:11:06.876Z level=INFO run=30692147 message=created id=ses_f75334a03ffesBD9a1wLJBfrlq slug=misty-meadow version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035066876 time.updated=1789035066876",
+      "timestamp=2026-09-10T10:11:06.900Z level=INFO run=30692147 message=created id=ses_f753349ebffeqEFM4c0k7hYSr2 slug=hidden-rocket version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035066900 time.updated=1789035066900",
+      "timestamp=2026-09-10T10:11:06.919Z level=INFO run=30692147 message=created id=ses_f753349d8ffez6kZErlvxoekkt slug=quiet-meadow version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035066919 time.updated=1789035066919",
+      "timestamp=2026-09-10T10:11:06.938Z level=INFO run=30692147 message=created id=ses_f753349c5ffe0P7lpu2uT0lO3s slug=tidy-eagle version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035066938 time.updated=1789035066938",
+      "timestamp=2026-09-10T10:11:06.996Z level=INFO run=30692147 message=created id=ses_f7533498bffe3U8oowLh45Tk1M slug=mighty-planet version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035066996 time.updated=1789035066996",
+      "timestamp=2026-09-10T10:11:07.060Z level=INFO run=30692147 message=created id=ses_f7533494bffeh6wMKGOFDqVgXB slug=cosmic-comet version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1337-shipped-ufBJZg/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1337 shipped\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789035067060 time.updated=1789035067060",
+      "timestamp=2026-09-10T10:11:07.139Z level=WARN run=30692147 message=\"server unavailable\" key=ac1337remotehttp type=remote status=failed",
+      "timestamp=2026-09-10T10:11:11.158Z level=WARN run=30692147 message=\"server unavailable\" key=ac1337remotehttps type=remote status=failed"
+    ],
+    "appStderrTail": "11:01.719 (startup-timeline) › {\"seq\":68,\"name\":\"renderer.home.model_list.start\",\"t\":23259.682958,\"attempt\":1,\"chain\":1,\"source\":\"renderer\",\"rendererNow\":160.39999985694885,\"occurrence\":4}\n06:11:01.721 (startup-timeline) › {\"seq\":69,\"name\":\"renderer.home.catalog_ready\",\"t\":23261.721708,\"barrierMs\":2.4000000953674316,\"probes\":1,\"pollWaits\":0,\"probeTimeouts\":0,\"wake\":\"first\",\"source\":\"renderer\",\"rendererNow\":162.79999995231628,\"occurrence\":2}\n06:11:01.727 (startup-timeline) › {\"seq\":70,\"name\":\"renderer.home.model_list.end\",\"t\":23268.010041,\"attempt\":1,\"chain\":1,\"count\":0,\"durationMs\":8.700000047683716,\"outcome\":\"ok\",\"source\":\"renderer\",\"rendererNow\":169.09999990463257,\"occurrence\":3}\n06:11:01.766 (startup-timeline) › {\"seq\":71,\"name\":\"main.sidecar.catalog_liveness.confirmed\",\"t\":23306.206958,\"generation\":2,\"directory\":\"<ISO>/ws-a\",\"elapsedMs\":209,\"probes\":1}\n06:11:04.581                    › network egress {\"event\":\"egress.connect\",\"id\":18,\"at\":\"2026-09-10T10:11:04.581Z\",\"method\":\"CONNECT\",\"authority\":\"registry.npmjs.org:443\",\"host\":\"registry.npmjs.org\",\"port\":443,\"verdict\":\"allow\",\"status\":200}\n06:11:05.002                    › network egress {\"event\":\"egress.tunnel-closed\",\"id\":18,\"at\":\"2026-09-10T10:11:05.002Z\",\"host\":\"registry.npmjs.org\",\"port\":443,\"bytesUp\":604,\"bytesDown\":6073}\n06:11:05.144                    › network egress {\"event\":\"egress.connect\",\"id\":20,\"at\":\"2026-09-10T10:11:05.144Z\",\"method\":\"CONNECT\",\"authority\":\"registry.npmjs.org:443\",\"host\":\"registry.npmjs.org\",\"port\":443,\"verdict\":\"allow\",\"status\":200}\n06:11:05.144                    › network egress {\"event\":\"egress.connect\",\"id\":19,\"at\":\"2026-09-10T10:11:05.144Z\",\"method\":\"CONNECT\",\"authority\":\"registry.npmjs.org:443\",\"host\":\"registry.npmjs.org\",\"port\":443,\"verdict\":\"allow\",\"status\":200}\n06:11:05.660                    › network egress {\"event\":\"egress.tunnel-closed\",\"id\":19,\"at\":\"2026-09-10T10:11:05.660Z\",\"host\":\"registry.npmjs.org\",\"port\":443,\"bytesUp\":2087,\"bytesDown\":44673}\n06:11:05.670                    › network egress {\"event\":\"egress.connect\",\"id\":21,\"at\":\"2026-09-10T10:11:05.670Z\",\"method\":\"CONNECT\",\"authority\":\"github.com:443\",\"host\":\"github.com\",\"port\":443,\"verdict\":\"allow\",\"status\":200}\n06:11:05.694                    › network egress {\"event\":\"egress.tunnel-closed\",\"id\":20,\"at\":\"2026-09-10T10:11:05.694Z\",\"host\":\"registry.npmjs.org\",\"port\":443,\"bytesUp\":2037,\"bytesDown\":66148}\n06:11:06.884                    › network egress {\"event\":\"egress.tunnel-closed\",\"id\":21,\"at\":\"2026-09-10T10:11:06.884Z\",\"host\":\"github.com\",\"port\":443,\"bytesUp\":893,\"bytesDown\":336525}\n06:11:06.895                    › network egress {\"event\":\"egress.connect\",\"id\":22,\"at\":\"2026-09-10T10:11:06.895Z\",\"method\":\"CONNECT\",\"authority\":\"example.com:443\",\"host\":\"example.com\",\"port\":443,\"verdict\":\"deny\",\"reason\":\"unregistered\",\"status\":403}\n06:11:07.133                    › network egress {\"event\":\"egress.connect\",\"id\":23,\"at\":\"2026-09-10T10:11:07.133Z\",\"method\":\"CONNECT\",\"authority\":\"ac1337-probe.invalid:80\",\"host\":\"ac1337-probe.invalid\",\"port\":80,\"verdict\":\"deny\",\"reason\":\"unregistered\",\"status\":403}\n06:11:07.138                    › network egress {\"event\":\"egress.connect\",\"id\":24,\"at\":\"2026-09-10T10:11:07.138Z\",\"method\":\"CONNECT\",\"authority\":\"ac1337-probe.invalid:80\",\"host\":\"ac1337-probe.invalid\",\"port\":80,\"verdict\":\"deny\",\"reason\":\"unregistered\",\"status\":403}\n06:11:11.153                    › network egress {\"event\":\"egress.connect\",\"id\":25,\"at\":\"2026-09-10T10:11:11.153Z\",\"method\":\"CONNECT\",\"authority\":\"ac1337-probe.invalid:443\",\"host\":\"ac1337-probe.invalid\",\"port\":443,\"verdict\":\"deny\",\"reason\":\"unregistered\",\"status\":403}\n06:11:11.157                    › network egress {\"event\":\"egress.connect\",\"id\":26,\"at\":\"2026-09-10T10:11:11.157Z\",\"method\":\"CONNECT\",\"authority\":\"ac1337-probe.invalid:443\",\"host\":\"ac1337-probe.invalid\",\"port\":443,\"verdict\":\"deny\",\"reason\":\"unregistered\",\"status\":403}\n06:11:15.290 (utility)          › sidecar exited { code: 0 }\n"
+  },
+  "finishedAt": "2026-09-10T10:11:17.759Z"
+}
