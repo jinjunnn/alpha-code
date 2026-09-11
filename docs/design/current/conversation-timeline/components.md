@@ -66,3 +66,4 @@ review_after: 2027-01-16
   同步登记,不新增结论。
 
 处置归 GitHub Issues,不写在本文件里。
+| 空回合行(跑完却零正文;安全审核作为可能原因,不断言) | `#empty-turn` | [`2026-09-11-req160-empty-turn-row/`](../../2026-09-11-req160-empty-turn-row/frame.html) | 2026-09-11 | ac#1318 · ac#1325 | 2026-09-11 | `session-timeline/timeline-model.ts`(`isEmptyUnknownTurn` 四条判据 + 投影)· `session-timeline-view.tsx`(`EmptyTurnRow`,复用中断行骨架)· `cards/timeline-intents.ts`(`focusPrompt`) | 已实现 |

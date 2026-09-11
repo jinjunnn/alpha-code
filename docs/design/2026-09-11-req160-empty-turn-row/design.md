@@ -11,7 +11,7 @@ relates:
 
 # 模型一个字都没回时,把这件事说在它发生的地方
 
-> **owner 2026-09-11 批准**(呈现形态 + 文案裁决)。帧见同目录 [`frame.html`](frame.html)(常态 / 无重试入口 / 重试失败 / 与既有中断行同屏,浅深两色)。
+> **owner 2026-09-11 批准**,帧已并入活稿 `#empty-turn`、台账已回填,**本目录自此冻结**。(呈现形态 + 文案裁决)。帧见同目录 [`frame.html`](frame.html)(常态 / 无重试入口 / 重试失败 / 与既有中断行同屏,浅深两色)。
 > 批准后并入 [`current/conversation-timeline/design.html`](../current/conversation-timeline/design.html)
 > 的 `#struct`,铸锚 `#empty-turn`;台账见
 > [`current/conversation-timeline/components.md`](../current/conversation-timeline/components.md)。

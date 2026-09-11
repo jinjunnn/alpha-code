@@ -118,6 +118,17 @@
     <!-- interrupted -->
     <div class="row-ai measure"><div class="ai-md" style="color:var(--a-text-secondary)"><p>环颜色应跟随当前文字色,这样各 variant 自适应…</p></div><div class="interrupted"><svg class="ic xs stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg><span>已由你停止</span><span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)"></span><span class="cont">继续生成</span></div></div>
 
+    <!-- empty turn(REQ-160 AC3;增量稿 2026-09-11-req160-empty-turn-row,owner 2026-09-11 批准)-->
+    <div class="row-ai measure" id="empty-turn"><div class="interrupted" style="align-items:flex-start">
+      <svg class="ic xs" viewBox="0 0 24 24" style="fill:none;stroke:var(--a-warning);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;margin-top:1px"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>
+      <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+        <span style="color:var(--a-text-secondary)">模型没有返回内容</span>
+        <span style="color:var(--a-text-tertiary);font-size:var(--a-text-2xs);line-height:1.5">可能未通过内容安全审核,也可能是模型或网络异常</span>
+      </span>
+      <span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled);margin-top:1px"></span>
+      <span class="cont" style="margin-top:1px">修改后再试</span>
+    </div></div>
+
     <!-- retry -->
     <div class="retry-card"><span class="sp"></span>网关 429,3 秒后自动重试(第 2 次)…</div>
 
