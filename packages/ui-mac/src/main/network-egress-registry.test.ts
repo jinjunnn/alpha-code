@@ -11,7 +11,6 @@ import { EGRESS_REGISTRY, egressKey, isEgressAuthorized } from "./network-egress
 
 /** 勘破 §2.2 的清单,按今日代码坐标校正(见注册表抬头逐条说明)。独立锚,不 import 被测对象。 */
 const EXPECTED_INITIAL_SET = [
-  "127.0.0.1:11434",
   "account.codepuppy.cn:443",
   "alpha-cloud.tidelabs.click:443",
   "alpha-gateway.tidelabs.click:443",
@@ -61,7 +60,9 @@ describe("AC2 授权语义(fail-closed)", () => {
   test("已登记 host:port 放行;同 host 别的端口拒;未登记 host 拒;大小写归一;尾点 / 前导空白 / scheme / 子域一律拒", () => {
     expect(isEgressAuthorized("registry.npmjs.org", 443)).toBe(true)
     expect(isEgressAuthorized("REGISTRY.NPMJS.ORG", 443)).toBe(true)
-    expect(isEgressAuthorized("127.0.0.1", 11434)).toBe(true)
+    expect(isEgressAuthorized("github.com", 443)).toBe(true)
+    // owner 2026-09-10 裁决:本机目的地刻意不登记(围栏只放行代理端口,登记也到不了)。
+    expect(isEgressAuthorized("127.0.0.1", 11434)).toBe(false)
 
     expect(isEgressAuthorized("registry.npmjs.org", 80)).toBe(false)
     expect(isEgressAuthorized("github.com", 22)).toBe(false)
@@ -78,4 +79,15 @@ describe("AC2 授权语义(fail-closed)", () => {
     expect(isEgressAuthorized("github.com", 65536)).toBe(false)
     expect(isEgressAuthorized("github.com", 443.5)).toBe(false)
   })
+
+test("本机目的地不得登记(owner 2026-09-10 裁决)—— 围栏只放行代理端口,登记它等于写一句做不到的话", () => {
+  const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "0.0.0.0", "[::1]"])
+  const offenders = EGRESS_REGISTRY.filter((d) => LOOPBACK.has(d.host.toLowerCase()))
+  expect(
+    offenders.map((d) => `${d.host}:${d.port}`),
+    "注册表里出现了 loopback 目的地。围栏只放行 (remote ip \"localhost:<代理端口>\"),别的 loopback 端口一律 EPERM;" +
+      "且 NO_PROXY 含 loopback ⇒ 这类目的地根本不经代理。登记它不会让它可达,只会让登记簿说假话。" +
+      "要支持本机目的地请先设计『本机目的地怎么走』,不要往表里加行。",
+  ).toEqual([])
+})
 })

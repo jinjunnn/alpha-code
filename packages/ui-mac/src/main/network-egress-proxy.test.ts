@@ -175,7 +175,7 @@ describe("AC1 策略半场:授权目的地经隧道转发", () => {
     expect(closed).toMatchObject({ event: "egress.tunnel-closed", host: "localhost", port: target.port, bytesUp: "hello-through-tunnel".length, bytesDown: "echo:hello-through-tunnel".length })
   })
 
-  test("默认 authorize 就是注册表:不传 authorize 时 127.0.0.1:11434(登记在案)走到拨号,未登记端口走不到", async () => {
+  test("默认 authorize 就是注册表:不传 authorize 时 github.com:443(登记在案)走到拨号,同 host 别的端口走不到", async () => {
     const dialed: string[] = []
     const { proxy, logs } = await startProxy({
       dial: (h, p) => {
@@ -185,12 +185,12 @@ describe("AC1 策略半场:授权目的地经隧道转发", () => {
         return s
       },
     })
-    const registered = await rawRequest(proxy.port, "CONNECT 127.0.0.1:11434 HTTP/1.1\r\nHost: 127.0.0.1:11434\r\n\r\n")
-    const unregistered = await rawRequest(proxy.port, "CONNECT 127.0.0.1:11435 HTTP/1.1\r\nHost: 127.0.0.1:11435\r\n\r\n")
-    expect(dialed).toEqual(["127.0.0.1:11434"])
+    const registered = await rawRequest(proxy.port, "CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n")
+    const unregistered = await rawRequest(proxy.port, "CONNECT github.com:22 HTTP/1.1\r\nHost: github.com:22\r\n\r\n")
+    expect(dialed).toEqual(["github.com:443"])
     expect(registered.status).toBe(502)
     expect(unregistered.status).toBe(403)
-    expect(logs.map((r) => (r.event === "egress.connect" ? `${r.authority}:${r.verdict}:${r.reason ?? "-"}` : r.event))).toEqual(["127.0.0.1:11434:deny:dial-failed", "127.0.0.1:11435:deny:unregistered"])
+    expect(logs.map((r) => (r.event === "egress.connect" ? `${r.authority}:${r.verdict}:${r.reason ?? "-"}` : r.event))).toEqual(["github.com:443:deny:dial-failed", "github.com:22:deny:unregistered"])
   })
 })
 

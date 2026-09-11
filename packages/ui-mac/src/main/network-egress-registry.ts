@@ -70,7 +70,13 @@ export const EGRESS_REGISTRY: readonly EgressDestination[] = Object.freeze([
   https("api.releases.hashicorp.com", "子进程:LSP 自动下载", "packages/opencode/src/lsp/server.ts:1632"),
   https("www.eclipse.org", "子进程:LSP 自动下载(jdtls)", "packages/opencode/src/lsp/server.ts:1207(§2.2 静态枚举漏列,按出处补)"),
   https("release-assets.githubusercontent.com", "子进程:GitHub release 资产下载(装工具 / 下二进制)", "#1334 Q4 choke 臂实拍(shell 工具子进程发起);#1073 owner 裁决二(2026-09-10)"),
-  { host: "127.0.0.1", port: 11434, category: "子进程:本机模型(ollama)", source: "§2.2 lsof 实拍" },
+  // 本机模型(ollama 一类)**刻意不登记** —— owner 2026-09-10 裁决。登记它会写下一句做不到的话:
+  //   围栏只放行 `(allow network-outbound (remote ip "localhost:<代理端口>"))`,别的 loopback 端口一律 EPERM
+  //   (主 session 实测:围栏下连 127.0.0.1:11434 = EPERM,连放行端口 = ECONNREFUSED,无围栏对照 = CONNECTED);
+  //   而 NO_PROXY 含 127.0.0.1/localhost/::1 ⇒ 这类目的地本来就不经代理。两边一夹,注册表对它永远不生效。
+  // **BYOK 指向 loopback 的 baseURL 撞的是同一堵墙**,且本就属于「动态」类别、静态表里登记不了。
+  // 要支持本机目的地,得单独设计「本机目的地怎么走」(放宽围栏?让 loopback 也经代理?),不是往这张表加一行。
+  // 判据:network-egress-registry.test.ts 里那条「表内不得出现 loopback 目的地」——有人凭印象加回来即红。
 ])
 
 export const egressKey = (host: string, port: number): string => `${host.toLowerCase()}:${port}`
