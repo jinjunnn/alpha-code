@@ -193,6 +193,48 @@
   stroke-linejoin: round;
 }
 
+/* REQ-160 AC3:空回合行 —— 复用中断行骨架(.a-tl-interrupted),只多两层文字与盾形图标。
+   顶对齐:次级说明换行时图标与按钮仍跟首行基线走。 */
+.a-tl-empty {
+  align-items: flex-start;
+}
+
+.a-tl-empty-shield {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
+  fill: none;
+  stroke: var(--a-warning);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-tl-empty-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.a-tl-empty-fact {
+  color: var(--a-text-secondary);
+}
+
+/* 原因是**可能性**不是判决,所以比事实句轻一档 —— 视觉上也不许它读起来像结论。 */
+.a-tl-empty-why {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  line-height: 1.5;
+}
+
+.a-tl-empty .a-tl-int-dot,
+.a-tl-empty .a-tl-int-continue,
+.a-tl-empty .a-tl-int-failed {
+  margin-top: 1px;
+}
+
 .a-tl-int-dot {
   width: 3px;
   height: 3px;

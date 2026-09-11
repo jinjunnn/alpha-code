@@ -749,6 +749,7 @@ function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
   // label 随行身份定格;compaction 的 rev 在完成态 summary 到达时变化,两种形态互不重建。
   const row = props.row
   if (row.label === "interrupted") return <InterruptedRow />
+  if (row.label === "emptyTurn") return <EmptyTurnRow />
   const [open, setOpen] = createSignal(false)
   const expandable = () => row.summaryParts.length > 0
   return (
@@ -789,6 +790,57 @@ function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
             )}
           </For>
         </div>
+      </Show>
+    </div>
+  )
+}
+
+// REQ-160 AC3(`#1318` / `#1325`,设计稿 2026-09-11-req160-empty-turn-row)——
+// 助手回合跑完了却一个字都没回。**与中断行同族**:左对齐安静行,不是顶部横幅、不是居中 pill。
+//
+// 票面原本要的是「会话头下的常驻顶部横幅 + 气泡内提示」两个元素,owner 2026-09-11 裁掉:
+// 事件是**一个回合**的,横幅是整个会话的 —— 票面为此不得不发明「按 messageId 记住已关闭」,
+// 那正是元素挂错地方的症状;而会话顶栏已被 REQ-159 的沙箱 / 只读这类**会话级持续状态**占着。
+//
+// 两层文字:上层是确知的事实,下层把内容安全审核放在**明面上但不断言**(owner 同日裁决)——
+// 这一形态没有 error、也没有任何内容安全枚举落在存储里,断言「你没通过安全审核」在猜错时
+// 是在指责用户。与 REQ-159「不许宣称比实际更大的保护面」同源。
+//
+// 没有关闭按钮:它不是通知,是那一回合的事实,回合还在这行就在。
+// 动作 fail-closed:intent 缺席就只剩事实,不给一个点不动的按钮(同中断行)。
+function EmptyTurnRow() {
+  const intents = useTimelineIntents()
+  const [sendFailed, setSendFailed] = createSignal(false)
+  return (
+    <div class="a-tl-row a-tl-interrupted a-tl-empty" data-alpha-timeline-row="empty-turn" data-label="emptyTurn">
+      <svg class="a-tl-empty-shield" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" />
+      </svg>
+      <span class="a-tl-empty-text">
+        <span class="a-tl-empty-fact">{t("alpha.timeline.emptyTurn")}</span>
+        <span class="a-tl-empty-why">{t("alpha.timeline.emptyTurnWhy")}</span>
+      </span>
+      <Show when={intents.focusPrompt}>
+        {(handler) => (
+          <>
+            <span class="a-tl-int-dot" aria-hidden="true" />
+            <button
+              type="button"
+              class="a-tl-int-continue"
+              onClick={() => {
+                setSendFailed(false)
+                void Promise.resolve(handler()()).catch(() => setSendFailed(true))
+              }}
+            >
+              {t("alpha.timeline.emptyTurnRetry")}
+            </button>
+            <Show when={sendFailed()}>
+              <span class="a-tl-int-failed" role="status">
+                {t("alpha.timeline.continueFailed")}
+              </span>
+            </Show>
+          </>
+        )}
       </Show>
     </div>
   )

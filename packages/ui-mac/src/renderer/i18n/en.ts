@@ -1398,6 +1398,11 @@ export const dict = {
   "alpha.timeline.interrupted": "Stopped by you",
   "alpha.timeline.continueTurn": "Continue",
   "alpha.timeline.continuePrompt": "Continue",
+  // REQ-160 AC3 (`#1318`): the turn finished with no reply. Content safety review is named as a
+  // possibility, never asserted — there is no error and no safety enum in storage.
+  "alpha.timeline.emptyTurn": "The model returned no reply",
+  "alpha.timeline.emptyTurnWhy": "It may not have passed content safety review, or the model or network may have failed",
+  "alpha.timeline.emptyTurnRetry": "Edit and retry",
   "alpha.timeline.continueFailed": "Couldn't send. Try again.",
   "alpha.timeline.loadOlder": "Load earlier messages",
   "alpha.timeline.loadingOlder": "Loading earlier messages…",

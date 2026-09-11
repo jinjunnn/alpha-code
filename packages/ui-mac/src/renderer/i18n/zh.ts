@@ -1368,6 +1368,11 @@ export const dict = {
   "alpha.timeline.interrupted": "已由你停止",
   "alpha.timeline.continueTurn": "继续生成",
   "alpha.timeline.continuePrompt": "继续",
+  // REQ-160 AC3(`#1318`):助手回合跑完却零正文。**把内容安全审核放在明面上但不断言**
+  //(owner 2026-09-11 裁决)—— 存储里没有 error、也没有内容安全枚举,原因只能给可能性。
+  "alpha.timeline.emptyTurn": "模型没有返回内容",
+  "alpha.timeline.emptyTurnWhy": "可能未通过内容安全审核,也可能是模型或网络异常",
+  "alpha.timeline.emptyTurnRetry": "修改后再试",
   "alpha.timeline.continueFailed": "发送失败,请重试",
   "alpha.timeline.loadOlder": "加载更早的消息",
   "alpha.timeline.loadingOlder": "正在加载更早的消息…",
