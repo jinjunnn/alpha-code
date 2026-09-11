@@ -201,6 +201,7 @@ export type TimelineRow =
       summaryParts: TextPart[]
     }
   | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "interrupted" }
+  | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "emptyTurn" }
   | { kind: "thinking"; key: string; rev: string; userMessageID: string }
   | {
       kind: "footnote"
@@ -488,6 +489,30 @@ function cappedField(value: unknown, max = FOOTNOTE_FIELD_MAX_CHARS): string | u
  * 无错误,否则无脚注;不回溯早先的完成助手(成功→流式、成功→失败序列一律零脚注,
  * 旧指标不得与未终结/失败内容混用;复制动作随行同门)。字段独立诚实缺席(I2)。
  */
+/**
+ * REQ-160 AC3(`#1318` / `#1325`)—— 「助手回合跑完了,却一个字都没回」。
+ *
+ * 四条**同时**成立才算(票面 §Scope,owner 2026-09-11 复述确认):
+ *   ① 回合已结束(有 `finish`,且不是被用户中止 —— 那是中断行的辖区);
+ *   ② `finish` 为 `unknown`;
+ *   ③ 这一回合没有渲染出任何可见正文(投影层的 `emitted === 0`);
+ *   ④ `tokens.output === 0`。
+ *
+ * **少一条都不算。** 尤其 ③:`finish=unknown` 但有正文的回合**不是**这一类(票面 Non-goals
+ * 明写),把它算进来会把正常回复标成异常。
+ *
+ * 这是**启发式**:存储里没有 error、也没有任何内容安全枚举(票面 §Context)。所以呈现层只
+ * 陈述确知的事实,原因以可能性给出 —— 见设计稿 2026-09-11-req160-empty-turn-row §4。
+ */
+export function isEmptyUnknownTurn(assistant: AssistantMessage, emitted: number): boolean {
+  if (emitted > 0) return false
+  if (assistant.error) return false // 被中止 / 真错误各有自己的行
+  const finish = (assistant as { finish?: unknown }).finish
+  if (finish !== "unknown") return false
+  const tokens = (assistant as { tokens?: { output?: unknown } }).tokens
+  return typeof tokens === "object" && tokens !== null && tokens.output === 0
+}
+
 export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFootnote | undefined {
   const source = assistants.at(-1)
   if (!source || typeof source.time.completed !== "number" || source.error) return undefined
@@ -869,6 +894,14 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           rev: "interrupted",
           userMessageID: userMessage.id,
           label: "interrupted",
+        })
+      else if (isEmptyUnknownTurn(assistant, emitted))
+        rows.push({
+          kind: "divider",
+          key: `emptyTurn:${assistant.id}`,
+          rev: "emptyTurn",
+          userMessageID: userMessage.id,
+          label: "emptyTurn",
         })
     }
 

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>空回合行 · 时间线内同族增量</title>
+<link rel="stylesheet" href="../current/conversation-timeline/design.css" />
+<style>
+/* 本稿自有类一律 et- 前缀;基础样式与 --a-* token 来自链接的 conversation-timeline/design.css。 */
+body{padding:0 0 72px}
+.et-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 94%,transparent);backdrop-filter:blur(14px)}
+.et-bar b{font-size:var(--a-text-sm)}.et-bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}.et-grow{flex:1}
+.et-wrap{max-width:1000px;margin:0 auto;padding:26px 24px 0}
+.et-intro h1{margin:0 0 8px;font-size:24px}
+.et-intro p{margin:0;color:var(--a-text-secondary);line-height:1.65;max-width:760px}
+.et-stage{margin-top:10px;padding:20px 22px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas);box-shadow:var(--a-shadow-xs);display:flex;flex-direction:column;gap:14px}
+.et-user{align-self:flex-end;max-width:70%;padding:9px 13px;border-radius:var(--a-radius-lg);background:var(--a-bg-muted);font-size:var(--a-text-base);color:var(--a-text)}
+.et-shield{flex:none;width:12px;height:12px;fill:none;stroke:var(--a-warning);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.et-lbl{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin:22px 0 8px;display:flex;align-items:center;gap:8px}
+.et-lbl::after{content:"";flex:1;height:1px;background:var(--a-border-faint)}
+.et-fail{color:var(--a-error)}
+.interrupted{align-items:flex-start}
+.et-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.et-fact{color:var(--a-text-secondary)}
+.et-why{color:var(--a-text-tertiary);font-size:var(--a-text-2xs);line-height:1.5}
+.interrupted .dot,.interrupted .cont,.et-fail{margin-top:1px}
+.et-note{margin:14px 0 0;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.et-note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+.et-cols{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-top:16px}
+.et-cols>.et-stage{flex:1;min-width:330px}
+.et-spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a-text-sm)}
+.et-spec th{background:var(--a-bg-subtle);text-align:left;font-size:var(--a-text-2xs);text-transform:uppercase;letter-spacing:var(--a-tracking-wide);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);padding:9px 12px}
+.et-spec td{padding:10px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top}
+</style>
+</head>
+<body>
+<div class="et-bar"><b>会话时间线 · 空回合行</b><span>组件增量 · 与中断行同族</span><div class="et-grow"></div>
+  <div class="seg" id="themeSeg"><button data-theme="light">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="et-wrap">
+  <div class="et-intro">
+    <h1>模型一个字都没回时,把这件事说在它发生的地方</h1>
+    <p>助手回合跑完了,却没有任何正文。页面上看起来像卡住,用户不知道发生了什么。这一行就挨着那个空回合,说清事实并给出下一步 —— 它不是通知,是那一回合的事实,所以没有关闭按钮。</p>
+  </div>
+
+  <div class="et-lbl">常态</div>
+  <div class="et-stage">
+    <div class="et-user">帮我把这段话改得更礼貌一些</div>
+    <div class="interrupted">
+      <svg class="et-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>
+      <span class="et-txt"><span class="et-fact">模型没有返回内容</span><span class="et-why">可能未通过内容安全审核,也可能是模型或网络异常</span></span>
+      <span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)"></span>
+      <span class="cont">修改后再试</span>
+    </div>
+  </div>
+
+  <div class="et-lbl">同屏对照:它与既有的中断行是同一族</div>
+  <div class="et-stage">
+    <div class="et-user">继续写下去</div>
+    <div class="interrupted">
+      <svg class="ic xs stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+      <span>已由你停止</span>
+      <span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)"></span>
+      <span class="cont">继续生成</span>
+    </div>
+    <div class="et-user">换个说法再试一次</div>
+    <div class="interrupted">
+      <svg class="et-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>
+      <span class="et-txt"><span class="et-fact">模型没有返回内容</span><span class="et-why">可能未通过内容安全审核,也可能是模型或网络异常</span></span>
+      <span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)"></span>
+      <span class="cont">修改后再试</span>
+    </div>
+  </div>
+
+  <div class="et-cols">
+    <div class="et-stage">
+      <div class="et-lbl" style="margin-top:0">接不上输入框时(fail-closed)</div>
+      <div class="interrupted">
+        <svg class="et-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>
+        <span class="et-txt"><span class="et-fact">模型没有返回内容</span><span class="et-why">可能未通过内容安全审核,也可能是模型或网络异常</span></span>
+      </div>
+    </div>
+    <div class="et-stage">
+      <div class="et-lbl" style="margin-top:0">动作失败,就地重试</div>
+      <div class="interrupted">
+        <svg class="et-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>
+        <span class="et-txt"><span class="et-fact">模型没有返回内容</span><span class="et-why">可能未通过内容安全审核,也可能是模型或网络异常</span></span>
+        <span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)"></span>
+        <span class="cont">修改后再试</span>
+        <span class="et-fail">发送失败,请重试</span>
+      </div>
+    </div>
+  </div>
+
+  <table class="et-spec">
+    <tr><th>项</th><th>规则</th></tr>
+    <tr><td>位置</td><td>时间线内,紧挨那个空回合;与中断行同层同族。</td></tr>
+    <tr><td>形态</td><td>左对齐安静行:盾形 12px 描边图标(警示色描边)+ 三级灰事实句 + 点分隔 + 强调色文字按钮。不是横幅,不是居中 pill。</td></tr>
+    <tr><td>数量</td><td>一个元素。不再另加气泡内提示 —— 两个元素说同一件事只会分散。</td></tr>
+    <tr><td>动作</td><td>「修改后再试」聚焦输入框。接不上就只剩事实句,不给点不动的按钮。</td></tr>
+    <tr><td>失败</td><td>就地出提示,再点即重试。</td></tr>
+    <tr><td>关闭</td><td>没有关闭按钮。回合还在,这行就在。</td></tr>
+    <tr><td>多条</td><td>每个空回合各有自己那一行,不需要「只显示最新一条」。</td></tr>
+  </table>
+
+  <div class="et-note"><b>为什么不用顶部横幅</b>(帧外):事件是一个回合的,横幅是整个会话的 —— 你滚到别处它还在,它说的那条却已不在视野里。票面为此不得不发明「按消息记住已关闭」,那正是元素挂错了地方的症状。而会话顶栏现在已经放着沙箱与只读这类**会话级持续状态**,再塞进一条「这一次回复是空的」,会让那个位置什么都说,于是什么都不说。</div>
+  <div class="et-note"><b>文案:把安全审核放在明面上,但不断言</b>(owner 2026-09-11 裁):四条判据同时成立时提示,原因以**可能性**给出、安全审核排第一位 —— 既满足备案叙事(产品确有内容安全这一环且对用户可见),又不在猜错时指责用户。这一形态没有任何错误码、也没有内容安全枚举落在存储里,是推断出来的;真实原因也可能是上游抖动或网络中断。</div>
+</div>
+
+<script>
+(function(){
+  var seg=document.getElementById('themeSeg');
+  var mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function mark(t){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===t)});}
+  mark(mq.matches?'dark':'light');
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){document.documentElement.setAttribute('data-theme',b.dataset.theme);mark(b.dataset.theme);};});
+})();
+</script>
+</body>
+</html>

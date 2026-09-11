@@ -68,6 +68,12 @@ export interface TimelineIntents {
    * 通道呈现不了)—— 由中断行就地给出失败提示,不得静默吞掉。
    */
   continueTurn?: () => void | Promise<void>
+  /**
+   * 空回合行「修改后再试」(REQ-160 AC3):把焦点交回输入框,让用户就地改提问重发。
+   * 缺席即那一行只剩事实陈述,不出按钮(fail-closed,同中断行 —— 不给一个点不动的按钮)。
+   * 返回 Promise 时,拒绝 = 失败,由该行就地提示,不得静默吞掉。
+   */
+  focusPrompt?: () => void | Promise<void>
 }
 
 export const TimelineIntentsContext = createContext<TimelineIntents>({})
