@@ -1,7 +1,7 @@
 ---
 id: ADR-045
 title: 长期记忆进入对话的接缝 —— v1 引擎上走 L0 稳定接缝(插件 config 钩子 → 本实例 cfg.instructions),不接管上游、不压 experimental 钩子;v2 SystemContext.Source 形态留作迁移后的 proposed
-status: proposed
+status: accepted
 date: 2026-09-17
 kind: adr
 owners:
@@ -12,7 +12,7 @@ related: [ADR-002, ADR-015, ADR-025, ADR-029, ADR-031, ADR-036, ADR-037, ADR-043
 issue: https://github.com/jinjunnn/alpha-code/issues/427
 ---
 
-> **状态:proposed(待 owner 拍板)。** 本 ADR 是 [[ADR-029]] §3 要求的**逐案主权 ADR**,回答
+> **状态:accepted(owner 2026-09-17 批准;§5 仍为 proposed)。** 本 ADR 是 [[ADR-029]] §3 要求的**逐案主权 ADR**,回答
 > [#427](https://github.com/jinjunnn/alpha-code/issues/427):长期记忆怎样自动进入对话,而不改上游核心代码。
 > 结论是**不需要接管任何上游文件**(L0),所以它不开单向门、不放弃任何白嫖面 —— 拍板的代价是可回滚的。
 > 唯一 owner 级的部分是 §5(v2 迁移后的形态),那里只写 proposed,不自行 accepted。
@@ -163,5 +163,5 @@ v1 上**没有** epoch:每一步重读、当前集合即事实,没有「自上�
   `<alphaGlobalRoot>` 暴露给模型(先例:`alpha-identity.md` / `alpha-behavior.md`)。
 - ⚠️ 引擎对缺文件静默;响亮由 ui-mac 补(决策 3)。
 - 🔭 [[ADR-002]] 后果第 3 条「上下文注入目前只有 `experimental.chat.{system,messages}.transform`」自本 ADR
-  起不完整(`cfg.instructions` 是稳定的第三条);ADR-002 是受保护规则资产,待 owner 授权时一并订正。
+  起不完整(`cfg.instructions` 是稳定的第三条);ADR-002 是受保护规则资产,已于 2026-09-17 经 owner 授权订正。
 - 🔭 v2 迁移时本 ADR §1–4 随 v1 退场,§5 升格为那时的逐案 ADR。

@@ -1,7 +1,7 @@
 ---
 title: REQ-226 方案基线:自定义模型服务密钥进 macOS 钥匙串,配置只留引用
 kind: design
-status: draft
+status: accepted
 owners:
   - alpha-code desktop maintainers
 last_reviewed: 2026-09-17

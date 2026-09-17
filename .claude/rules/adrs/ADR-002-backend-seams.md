@@ -16,7 +16,7 @@ opencode `server` 路由编译期静态组装,插件层无挂路由口子;新增
 
 ## 后果
 - ✅ 后端定制零改 upstream 源码。
-- ⚠️ 上下文注入目前只有 `experimental.chat.{system,messages}.transform`(按 NON_GOALS#4 标注风险使用)。
+- ⚠️ 上下文注入有两类接缝:稳定的 `cfg.instructions`(插件 `config` 钩子按实例推入文件路径,`Instruction.system()` 每步重读,见 [[ADR-045]]),以及 `experimental.chat.{system,messages}.transform`(按 NON_GOALS#4 标注风险使用)。_(2026-09-17 经 owner 授权订正:原文称只有 experimental 钩子)_
 
 ## 修订(2026-07-04,C8 —— 承认 main-IPC 为桌面形态的 sidecar 等价物)
 落地实况:决策②的「自有独立 HTTP 进程(Hono/Bun)」**从未建成**;alpha 自有后端能力(account / cloud 派发 / ext 安装 / 自动化…)全部经 **Electron main 进程 IPC**(`ui-mac/src/main/*-ipc.ts` + preload + `window.api`)暴露给 renderer,内部仍只经 `@opencode-ai/sdk` 调 opencode(ADR 精神不变)。
