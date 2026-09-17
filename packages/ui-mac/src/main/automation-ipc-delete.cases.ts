@@ -19,6 +19,10 @@
 //      又绕开了 handler。漏改 automation-ipc.ts 的透传 ⇒ `r.code` 恒 undefined、面板永远走
 //      回落、用户照旧读到裸码,而两端的判据都能全绿 —— 这一跳是那条链上唯一无判据的一环。
 //
+//   [#994] 新增一条,守开关那一跳:
+//   ⑦ 开关时云端状态更新被拒 ⇒ `automations-toggle` 的返回对象带 `code`,本地开关态不变;
+//      ③④ 两条同时改断「`automations-delete` 的返回带 code」。
+//
 // mock.module 会污染同进程其它测试文件 ⇒ 真断言放这里,由 automation-ipc-delete.test.ts
 // 在隔离子进程里跑(alpha-cloud-schedules.cases.ts 同款)。
 import { expect, mock, test } from "bun:test"
@@ -141,7 +145,12 @@ test("云端删除因别的原因失败(403 带码)⇒ 不删本地,不留离线
   seed("auto-keep-403", "sched_live_3")
   responses.push({ status: 403, body: JSON.stringify({ error: "tenant mismatch for this schedule", code: "tenant_forbidden" }) })
 
-  expect(await invoke("automations-delete", "auto-keep-403")).toEqual({ ok: false, reason: "云端删除失败:tenant_forbidden" })
+  // [#994] 返回必须带结构槽 code —— 面板据它给删除失败的提示选人话。
+  expect(await invoke("automations-delete", "auto-keep-403")).toEqual({
+    ok: false,
+    reason: "云端删除失败:tenant_forbidden",
+    code: "tenant_forbidden",
+  })
   expect(onDisk("auto-keep-403")).toBe(true)
 })
 
@@ -150,10 +159,12 @@ test("云端删除 503(无码)⇒ 不删本地,呈现保持 http-503(fail-closed
   seed("auto-keep-503", "sched_live_4")
   responses.push({ status: 503, body: JSON.stringify({ error: "upstream unavailable" }) })
 
-  // [#969] `automations-delete` 刻意**不**带 code:面板的 `remove()` 整个丢弃返回值
-  // (automation-panel.tsx),这条腿的原因今天到不了任何界面。给它加槽 = 加一条永不被读的死数据。
-  // 那个「删除失败静默」本身是另一个缺陷,已另开票。
-  expect(await invoke("automations-delete", "auto-keep-503")).toEqual({ ok: false, reason: "云端删除失败:http-503" })
+  // [#994] 面板的 `remove()` 现在读返回值、据 code 弹出删除失败的提示 ⇒ 这条腿必须带 code。
+  expect(await invoke("automations-delete", "auto-keep-503")).toEqual({
+    ok: false,
+    reason: "云端删除失败:http-503",
+    code: "http-503",
+  })
   expect(onDisk("auto-keep-503")).toBe(true)
 })
 
@@ -196,4 +207,23 @@ test("[#969] 云档改本地、云端删除被拒 ⇒ 同一个 automations-save
   // 云侧还在 ⇒ 本地那条保持云档(不能悄悄改成本地,否则云端幽灵触发且本地不可管)。
   expect(auto.getAutomation("auto-save-tolocal")?.cloudScheduleId).toBe("sched_live_5")
   expect(wire).toEqual([{ method: "DELETE", path: "/v1/cloud/schedules/sched_live_5" }])
+})
+
+// ── [#994] 开关那一跳(automations-toggle)────────────────────────────────────────────
+// 夹具取 PATCH 腿今天真到得了的形状:503 无码(SCHEDULES_DB 未绑定,ap routes/cloud-schedules.ts 的
+// schedAuth)⇒ 咽喉铸 `http-503`。
+test("[#994] 开关时云端状态更新被拒 ⇒ automations-toggle 的返回带 code,本地开关态不变", async () => {
+  wire.length = 0
+  seed("auto-toggle-503", "sched_live_7")
+  responses.push({ status: 503, body: JSON.stringify({ error: "schedules unavailable: SCHEDULES_DB not bound" }) })
+
+  expect(await invoke("automations-toggle", "auto-toggle-503", false)).toEqual({
+    ok: false,
+    reason: "云端状态更新失败:http-503",
+    code: "http-503",
+  })
+  // 云端没停掉 ⇒ 本地也不能显示成已停(否则用户以为关掉了,云端照跑照花钱)。按磁盘文件判。
+  const onDiskTask = JSON.parse(fs.readFileSync(join(ROOT, "automations", "auto-toggle-503.json"), "utf8")) as AutomationTask
+  expect(onDiskTask.enabled).toBe(true)
+  expect(wire).toEqual([{ method: "PATCH", path: "/v1/cloud/schedules/sched_live_7" }])
 })

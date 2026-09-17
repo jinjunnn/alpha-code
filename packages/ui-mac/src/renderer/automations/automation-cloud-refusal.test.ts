@@ -184,8 +184,9 @@ describe("[#969] 云档拒绝到达用户的那一跳", () => {
     await saveAsCloudTask()
     const first = errorLine()
 
-    document.body.replaceChildren()
+    // 先拆再清:harness 里的 toast 视口是挂在 body 上的 Portal,先清 body 会让它的拆除找不到节点。
     disposers.splice(0).reverse().forEach((dispose) => dispose())
+    document.body.replaceChildren()
     runtime.installRootHost()
     runtime.resetHarness()
     runtime.queueSaveResult({ ok: false, reason: "云端注册失败:schedule_cron_invalid", code: "schedule_cron_invalid" })
@@ -331,8 +332,8 @@ function cloudTask(id: string, cloudScheduleId: string): Runtime.ListedTask {
 
 /** 渲染列表,返回那一行的状态文字。前提自检:行在场、云端回读真被调用过。 */
 async function rowStatusFor(disabledReason: string): Promise<string> {
-  document.body.replaceChildren()
   disposers.splice(0).reverse().forEach((dispose) => dispose())
+  document.body.replaceChildren()
   runtime.installRootHost()
   runtime.resetHarness()
   runtime.queueListedTasks([cloudTask("auto-778", "sched_778")])
@@ -386,6 +387,90 @@ describe("[#778] 云端停用理由逐个说清「发生了什么、该做什么
       expect(seen.size, `${locale} 有重复文案`).toBe(keys.length)
       expect(runtime.t("alpha.auto.cloudDisabledGrantMissing")).toContain(reenable)
       expect(runtime.t("alpha.auto.cloudDisabledGrantExpired")).toContain(reenable)
+    }
+    runtime.setLocale("zh")
+  })
+})
+
+// ── [#994] 删除 / 开关在云端失败时不再静默 ────────────────────────────────────────────
+//
+// 码取各自那条腿**真到得了**的:删除腿 `network`(桌面 authed() 铸,任何腿都到得了);开关腿
+// `not-authenticated`(同上)。两者都有映射文案 ⇒ 断的是「给人话」,不是回落模板。
+
+/** 渲染列表(一条云档任务),清掉之前测试残留的 toast,并自检前提。 */
+async function renderListWith(task: Runtime.ListedTask): Promise<void> {
+  runtime.queueListedTasks([task])
+  disposers.push(runtime.render(() => runtime.AutomationRefusalHarness(), query<HTMLElement>("#root")))
+  runtime.openPanel()
+  await flush()
+  // toast 是模块级单例,上一格弹出的会被这一格的视口重新渲染出来 —— 先逐个关掉。
+  for (const x of document.querySelectorAll(".a-toast-x")) click(x)
+  await flush()
+  expect(document.querySelectorAll(".a-toast").length, "动作之前就已经有 toast 了").toBe(0)
+  expect(document.querySelectorAll(".alpha-auto-row").length, "列表行没渲染出来").toBe(1)
+}
+
+const errorToasts = () =>
+  [...document.querySelectorAll(".a-toast[data-kind='error']")].map((el) => ({
+    title: el.querySelector("b")?.textContent ?? "",
+    detail: el.querySelector("small")?.textContent ?? "",
+  }))
+
+describe("[#994] 删除 / 开关在云端失败时给出说明", () => {
+  test("删除被云端拒绝 ⇒ 弹出说明原因的错误提示,那条自动化仍在列表里", async () => {
+    runtime.queueRemoveResult({ ok: false, reason: "云端删除失败:network", code: "network" })
+    await renderListWith(cloudTask("auto-994-del", "sched_994_del"))
+
+    click(query(".alpha-auto-row"))
+    await flush()
+    click(query(".alpha-auto-actions .alpha-ext-add[data-variant='danger']"))
+    await flush()
+
+    // 前提自检:删除真的发出去了(否则「没有 toast」与「有 toast」都可能是空测)。
+    expect(runtime.removeCalls()).toEqual(["auto-994-del"])
+    expect(errorToasts()).toEqual([{ title: zh["alpha.auto.removeFailed"], detail: zh["alpha.ext.cloudErrNetwork"] }])
+    expect(document.body.textContent).not.toContain("云端删除失败")
+    // 回到列表,那一条还在。
+    expect(document.querySelectorAll(".alpha-auto-row").length).toBe(1)
+    expect(query(".alpha-auto-row").textContent).toContain("云端任务 auto-994-del")
+  })
+
+  test("开关被云端拒绝 ⇒ 弹出说明原因的错误提示,开关保持原状态", async () => {
+    runtime.queueToggleResult({ ok: false, reason: "云端状态更新失败:not-authenticated", code: "not-authenticated" })
+    await renderListWith(cloudTask("auto-994-sw", "sched_994_sw"))
+    expect(query(".alpha-auto-row .alpha-ext-sw").getAttribute("data-on"), "开关起始不是开").toBe("")
+
+    click(query(".alpha-auto-row .alpha-ext-sw"))
+    await flush()
+
+    expect(runtime.toggleCalls()).toEqual([["auto-994-sw", false]])
+    expect(errorToasts()).toEqual([{ title: zh["alpha.auto.toggleFailed"], detail: zh["alpha.ext.cloudErrAuth"] }])
+    expect(document.body.textContent).not.toContain("not-authenticated")
+    expect(query(".alpha-auto-row .alpha-ext-sw").getAttribute("data-on")).toBe("")
+  })
+
+  test("对照:删除与开关都成功时不弹错误提示(证明上面两格的 toast 不是恒在)", async () => {
+    await renderListWith(cloudTask("auto-994-ok", "sched_994_ok"))
+    click(query(".alpha-auto-row .alpha-ext-sw"))
+    await flush()
+    click(query(".alpha-auto-row"))
+    await flush()
+    click(query(".alpha-auto-actions .alpha-ext-add[data-variant='danger']"))
+    await flush()
+
+    expect(runtime.toggleCalls().length).toBe(1)
+    expect(runtime.removeCalls().length).toBe(1)
+    expect(errorToasts()).toEqual([])
+  })
+
+  test("开关失败提示的标题 en/zh 都有、不等于键名", () => {
+    for (const [locale, dict] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      runtime.setLocale(locale)
+      expect(runtime.t("alpha.auto.toggleFailed")).not.toBe("alpha.auto.toggleFailed")
+      expect(runtime.t("alpha.auto.toggleFailed")).toBe(dict["alpha.auto.toggleFailed"])
     }
     runtime.setLocale("zh")
   })

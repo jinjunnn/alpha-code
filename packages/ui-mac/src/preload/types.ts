@@ -1284,8 +1284,9 @@ export type ElectronAPI = {
      * 据 `code` 选人话文案,`reason` 只是 main 拼的日志串,不许被解析。
      */
     save: (task: AutomationTask) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
-    remove: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
-    toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string }>
+    /** [#994] 云端删不掉 / 停不掉时带 `code`(同 save 的结构槽);本地失败一类没有。 */
+    remove: (id: string) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
+    toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
     pauseAll: (paused: boolean) => Promise<{ ok: true }>
     /** A2:立即运行(不改 next-fire;占并发位;计日 cap)。 */
     runNow: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>

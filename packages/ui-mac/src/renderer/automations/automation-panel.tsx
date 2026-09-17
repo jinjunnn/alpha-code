@@ -314,9 +314,12 @@ export function AutomationPanel(props: {
 
   const remove = async (id: string) => {
     try {
-      await window.api.automations.remove(id)
+      const r = await window.api.automations.remove(id)
+      // [#994] 云端没删掉时 main 返回 `{ ok:false, code }` 而不是抛出 —— 过去这里整个丢弃,用户
+      // 回到列表看见那条还在、没有任何解释,而云端那条照常按时跑。原因换成人话放进提示里。
+      if (!r.ok) pushToast({ kind: "error", title: t("alpha.auto.removeFailed"), detail: r.code ? scheduleRefusalCopy(r.code) : undefined })
     } catch {
-      // remove is called from the list (no form error slot) → toast so a failed delete isn't silent
+      // remove threw (IPC/main) → toast so a failed delete isn't silent
       pushToast({ kind: "error", title: t("alpha.auto.removeFailed") })
       return
     }
@@ -491,7 +494,12 @@ export function AutomationPanel(props: {
                               aria-label={task.enabled ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
                               onClick={(e) => {
                                 e.stopPropagation()
-                                void window.api.automations.toggle(task.id, !task.enabled).then(() => void refresh())
+                                void window.api.automations.toggle(task.id, !task.enabled).then((r) => {
+                                  // [#994] 云端没停掉/没开起来:开关随 refresh 回到原状态,并说明原因(不再静默弹回)。
+                                  if (!r.ok)
+                                    pushToast({ kind: "error", title: t("alpha.auto.toggleFailed"), detail: r.code ? scheduleRefusalCopy(r.code) : undefined })
+                                  void refresh()
+                                })
                               }}
                             />
                           </div>

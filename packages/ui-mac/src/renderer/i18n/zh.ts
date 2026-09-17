@@ -91,6 +91,7 @@ export const dict = {
   "alpha.auto.saved": "已保存,按周期自动执行",
   "alpha.auto.saveFailed": "保存失败,未写入",
   "alpha.auto.removeFailed": "删除失败",
+  "alpha.auto.toggleFailed": "开关没有生效",
   "alpha.auto.history": "运行历史",
   "alpha.auto.openSession": "打开会话",
   "alpha.auto.openRun": "run 产物",

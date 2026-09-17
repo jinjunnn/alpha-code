@@ -115,9 +115,10 @@ export async function deleteCloudSchedule(scheduleId: string): Promise<{ ok: tru
   return { ok: true }
 }
 
-export async function setCloudScheduleEnabled(scheduleId: string, enabled: boolean): Promise<{ ok: true } | { ok: false; reason: string }> {
+// [#994] 开关也带 code:`automations-toggle` 把它原样交给面板,由面板给「开关没生效」的提示选人话。
+export async function setCloudScheduleEnabled(scheduleId: string, enabled: boolean): Promise<{ ok: true } | CloudScheduleRefusal> {
   const r = await authed<CloudScheduleView>(`/v1/cloud/schedules/${encodeURIComponent(scheduleId)}`, { method: "PATCH", body: { enabled } })
-  if (isErr(r)) return { ok: false, reason: `云端状态更新失败:${r.error}` }
+  if (isErr(r)) return { ok: false, reason: `云端状态更新失败:${r.error}`, code: r.error }
   return { ok: true }
 }
 

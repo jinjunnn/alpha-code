@@ -92,6 +92,7 @@ export const dict = {
   "alpha.auto.saved": "Saved — will run on schedule",
   "alpha.auto.saveFailed": "Failed to save — not written",
   "alpha.auto.removeFailed": "Failed to delete",
+  "alpha.auto.toggleFailed": "Couldn't switch this task on or off",
   "alpha.auto.history": "Run history",
   "alpha.auto.openSession": "Open session",
   "alpha.auto.openRun": "Run artifacts",
