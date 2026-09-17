@@ -118,7 +118,13 @@ export const dict = {
   "alpha.auto.execLocal": "本地",
   "alpha.auto.execCloud": "云端",
   "alpha.auto.cloudBoundary": "云端执行:应用不在线也按时运行。任务描述将作为调研问题发送到云端(仅任务文本本身,不上传项目文件);结果在打开应用时自动拉回项目的 .code-puppy/runs 留档。预算受云端硬帽(15 轮/15 万 token/5 分钟)。",
-  "alpha.auto.cloudStuck": "云端已停用(任务卡滞)",
+  // [#778] 云端停用理由,逐个说清「发生了什么、该做什么」。理由值取自 alpha-platform 调度器的写入点;
+  // 关掉再打开开关 = 云端重新启用,会清掉停用态并重新签发执行授权。
+  "alpha.auto.cloudDisabledFailures": "云端已暂停:最近几次运行接连失败 —— 在运行记录里查明原因并修好后,关掉再打开开关即可恢复。",
+  "alpha.auto.cloudDisabledStuck": "云端已暂停:上一次运行迟迟没有结束 —— 关掉再打开开关即可恢复。",
+  "alpha.auto.cloudDisabledGrantMissing": "云端已暂停:这个任务缺少在云端运行的授权 —— 关掉再打开开关即可重新授权并恢复。",
+  "alpha.auto.cloudDisabledGrantExpired": "云端已暂停:这个任务在云端运行的授权已过期 —— 关掉再打开开关即可重新授权并恢复。",
+  "alpha.auto.cloudDisabledUnknown": "云端已暂停这个任务(原因:{{reason}})—— 可先关掉再打开开关;仍被暂停的话,请把这条原因告诉我们。",
   "alpha.auto.permStandardNote": "可写档:AI 可修改文件、执行常规命令(破坏类命令被权限拦截,但黑名单非穷尽)。仅给你信任的重复性任务用。",
   "alpha.auto.standardConfirm": "standard 档 = 无人值守时 AI 可以改文件、执行常规命令。破坏类命令(删除/系统级/发布)被拦截,但拦截清单非穷尽。确定启用?",
   "alpha.auto.llmParse": "用 AI 解析",

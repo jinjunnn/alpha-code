@@ -26,15 +26,31 @@ export { render, scheduleRefusalCopy, setLocale, t }
 export const DEFAULT_DIR = "/Users/tester/proj-a"
 
 type SaveResult = { ok: true } | { ok: false; reason: string; code?: string }
+export type ListedTask = AutomationTask & { nextFireAt: number | null; running: boolean }
+/** 云端 schedule 回读里面板真正读的那两个字段(形状照 main 的 CloudScheduleView)。 */
+export type CloudScheduleState = { id: string; enabled: boolean; disabled_reason: string | null }
 
 const [saveResult, setSaveResult] = createSignal<SaveResult>({ ok: true })
 const [saveCalls, setSaveCalls] = createSignal<AutomationTask[]>([])
+const [listedTasks, setListedTasks] = createSignal<ListedTask[]>([])
+const [cloudSchedules, setCloudSchedules] = createSignal<CloudScheduleState[] | null>(null)
+const [cloudSyncCalls, setCloudSyncCalls] = createSignal(0)
 
-export { saveCalls }
+export { cloudSyncCalls, saveCalls }
 
 /** 排下一次(以及之后每一次)`automations.save` 的返回值 —— 模拟 main 交回来的那个对象。 */
 export function queueSaveResult(result: SaveResult): void {
   setSaveResult(() => result)
+}
+
+/** [#778] 列表里的任务(`automations.list` 的返回)。 */
+export function queueListedTasks(tasks: ListedTask[]): void {
+  setListedTasks(() => tasks)
+}
+
+/** [#778] 云端回读(`automations.cloudSync` 的 schedules);null = 离线。 */
+export function queueCloudSchedules(schedules: CloudScheduleState[] | null): void {
+  setCloudSchedules(() => schedules)
 }
 
 /** 面板把自己的 Portal 挂到 `#root`;没有它,面板 DOM 不会进 document。 */
@@ -54,9 +70,12 @@ export function installPreloadStub(): void {
       getState: async () => ({ status: "logged-out", mode: "byok" }),
     },
     automations: {
-      list: async () => ({ tasks: [], state: { pausedAll: false }, loginItem: false }),
+      list: async () => ({ tasks: listedTasks(), state: { pausedAll: false }, loginItem: false }),
       onEvent: unsubscribe,
-      cloudSync: async () => ({ schedules: null, pulled: { pulled: 0 } }),
+      cloudSync: async () => {
+        setCloudSyncCalls((n) => n + 1)
+        return { schedules: cloudSchedules(), pulled: { pulled: 0 } }
+      },
       loginItem: async () => ({ openAtLogin: false }),
       pauseAll: async () => ({ ok: true }),
       save: async (task: AutomationTask) => {
@@ -75,6 +94,9 @@ export function resetHarness(): void {
   setAutomationOpen(false)
   setSaveCalls([])
   setSaveResult(() => ({ ok: true }))
+  setListedTasks([])
+  setCloudSchedules(null)
+  setCloudSyncCalls(0)
   setLocale("zh")
 }
 

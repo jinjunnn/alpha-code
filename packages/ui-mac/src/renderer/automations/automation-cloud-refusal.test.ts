@@ -289,3 +289,104 @@ describe("[#969] 映射表的边界与文案质量", () => {
     runtime.setLocale("zh")
   })
 })
+
+// ── [#778] 云端停用理由:列表行上那一句 ─────────────────────────────────────────────
+//
+// 理由值以 alpha-platform 主干 `packages/gateway/src/routes/cloud-schedules.ts` 的**写入点**为准
+// (手写字面量,不从被测模块取):授权校验失败处写 execution_grant_missing / execution_grant_expired,
+// 连续 overlap 熔断处写 stuck_job,连败熔断处写 consecutive_failures。四个值,平台今天只写这四个。
+// 值 → 期望文案键的对应也是手写的独立锚点。
+
+const DISABLED_REASON_COPY_KEYS = {
+  consecutive_failures: "alpha.auto.cloudDisabledFailures",
+  stuck_job: "alpha.auto.cloudDisabledStuck",
+  execution_grant_missing: "alpha.auto.cloudDisabledGrantMissing",
+  execution_grant_expired: "alpha.auto.cloudDisabledGrantExpired",
+} as const
+
+/** 平台今天不写、但设计稿里提过的一个值 —— 拿它当「面板不认识的理由」最贴近真实。 */
+const UNKNOWN_DISABLED_REASON = "quota"
+
+function cloudTask(id: string, cloudScheduleId: string): Runtime.ListedTask {
+  return {
+    id,
+    name: `云端任务 ${id}`,
+    nlText: "",
+    schedule: { kind: "cron", expr: "0 9 * * *" },
+    target: { projectDir: runtime.DEFAULT_DIR, agent: "alpha-automation" },
+    prompt: "检查 TODO",
+    execution: "cloud",
+    cloudScheduleId,
+    permissionProfile: "readonly",
+    budget: { maxDurationMin: 15 },
+    overlapPolicy: "skip",
+    catchUpPolicy: "skip",
+    notify: { system: true },
+    enabled: true,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    nextFireAt: null,
+    running: false,
+  }
+}
+
+/** 渲染列表,返回那一行的状态文字。前提自检:行在场、云端回读真被调用过。 */
+async function rowStatusFor(disabledReason: string): Promise<string> {
+  document.body.replaceChildren()
+  disposers.splice(0).reverse().forEach((dispose) => dispose())
+  runtime.installRootHost()
+  runtime.resetHarness()
+  runtime.queueListedTasks([cloudTask("auto-778", "sched_778")])
+  runtime.queueCloudSchedules([{ id: "sched_778", enabled: false, disabled_reason: disabledReason }])
+  disposers.push(runtime.render(() => runtime.AutomationRefusalHarness(), query<HTMLElement>("#root")))
+  runtime.openPanel()
+  await flush()
+
+  expect(document.querySelectorAll(".alpha-auto-row").length, "列表行没渲染出来").toBe(1)
+  expect(runtime.cloudSyncCalls(), "云端回读一次都没被调用 —— 后面的断言会空绿").toBeGreaterThan(0)
+  return query(".alpha-auto-row-st").textContent ?? ""
+}
+
+describe("[#778] 云端停用理由逐个说清「发生了什么、该做什么」", () => {
+  test("四个已知理由各自渲染出自己那一句,两两不同,都不是兜底", async () => {
+    const seen = new Map<string, string>()
+    for (const [reason, key] of Object.entries(DISABLED_REASON_COPY_KEYS)) {
+      const text = await rowStatusFor(reason)
+      expect(zh[key], `zh 缺 ${key}`).toBeTruthy()
+      expect(text, `${reason} 没有渲染成它自己那一句`).toContain(zh[key])
+      expect(text, `${reason} 落进了兜底`).not.toContain(zh["alpha.auto.cloudDisabledUnknown"].split("{{")[0]!)
+      // 理由的原始标识符不上屏(用户读到的是人话,不是 execution_grant_expired)。
+      expect(text).not.toContain(reason)
+      seen.set(reason, zh[key])
+    }
+    expect(new Set(seen.values()).size, "有两个理由共用了同一句").toBe(4)
+  })
+
+  test("不认识的理由走明确的兜底,带出原始理由,且不与任何已知理由的文案混淆", async () => {
+    const text = await rowStatusFor(UNKNOWN_DISABLED_REASON)
+    expect(text).toContain(zh["alpha.auto.cloudDisabledUnknown"].replace("{{reason}}", UNKNOWN_DISABLED_REASON))
+    for (const key of Object.values(DISABLED_REASON_COPY_KEYS)) expect(text).not.toContain(zh[key])
+  })
+
+  test("文案质量:en/zh 都有、互不相同、没有开发标识符;两种授权失效都提示关掉再打开开关", () => {
+    const keys = [...Object.values(DISABLED_REASON_COPY_KEYS), "alpha.auto.cloudDisabledUnknown"] as const
+    for (const [locale, dict, reenable] of [
+      ["en", en, "off and on again"],
+      ["zh", zh, "关掉再打开开关"],
+    ] as const) {
+      runtime.setLocale(locale)
+      const seen = new Set<string>()
+      for (const key of keys) {
+        const copy = runtime.t(key)
+        expect(copy, `${locale}/${key} 没有文案`).not.toBe(key)
+        expect(copy, `${locale}/${key} 与字典不一致`).toBe(dict[key])
+        for (const reason of Object.keys(DISABLED_REASON_COPY_KEYS)) expect(copy).not.toContain(reason)
+        expect(copy, `${locale}/${key} 里混进了开发术语`).not.toMatch(/grant|stuck job|REQ-|#\d/i)
+        seen.add(copy)
+      }
+      expect(seen.size, `${locale} 有重复文案`).toBe(keys.length)
+      expect(runtime.t("alpha.auto.cloudDisabledGrantMissing")).toContain(reenable)
+      expect(runtime.t("alpha.auto.cloudDisabledGrantExpired")).toContain(reenable)
+    }
+    runtime.setLocale("zh")
+  })
+})

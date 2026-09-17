@@ -119,7 +119,18 @@ export const dict = {
   "alpha.auto.execLocal": "Local",
   "alpha.auto.execCloud": "Cloud",
   "alpha.auto.cloudBoundary": "Cloud execution: runs on time even when the app is offline. The task description is sent to the cloud as a research question (task text only — no project files are uploaded); results are pulled back into the project's .code-puppy/runs when the app opens. Budget is hard-capped (15 iter / 150k tokens / 5 min).",
-  "alpha.auto.cloudStuck": "Cloud-disabled (stuck job)",
+  // [#778] Why the cloud paused a schedule — each says what happened and what to do. The values come from
+  // the alpha-platform scheduler's write sites; turning the switch off and on re-enables it in the cloud,
+  // which clears the paused state and issues a fresh run authorization.
+  "alpha.auto.cloudDisabledFailures":
+    "Paused in the cloud: the last few runs failed in a row — check the run history, fix the cause, then turn the switch off and on again to resume.",
+  "alpha.auto.cloudDisabledStuck": "Paused in the cloud: the previous run never finished — turn the switch off and on again to resume.",
+  "alpha.auto.cloudDisabledGrantMissing":
+    "Paused in the cloud: this task has no authorization to run there — turn the switch off and on again to re-authorize and resume.",
+  "alpha.auto.cloudDisabledGrantExpired":
+    "Paused in the cloud: this task's authorization to run there has expired — turn the switch off and on again to re-authorize and resume.",
+  "alpha.auto.cloudDisabledUnknown":
+    "Paused in the cloud (reason: {{reason}}) — try turning the switch off and on again; if it stays paused, send us this reason.",
   "alpha.auto.permStandardNote": "Writable: the AI can edit files and run regular commands (destructive commands are blocked, but the blocklist is not exhaustive). Use only for tasks you trust.",
   "alpha.auto.standardConfirm": "Standard = the AI can edit files and run commands unattended. Destructive commands are blocked, but the blocklist is not exhaustive. Enable?",
   "alpha.auto.llmParse": "Parse with AI",

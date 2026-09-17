@@ -18,6 +18,7 @@ import { subscribeAuthState } from "../auth-recovery"
 import { Svg } from "../extensions/ext-presentation"
 import { automationOpen, setAutomationOpen } from "./automation-state"
 import { scheduleRefusalCopy } from "./schedule-refusal-copy"
+import { cloudDisabledReasonCopy } from "./cloud-disabled-reason-copy"
 import "./automation-panel.css"
 
 type ListedTask = AutomationTask & { nextFireAt: number | null; running: boolean }
@@ -449,10 +450,13 @@ export function AutomationPanel(props: {
                                       ? t("alpha.auto.disabledBreaker")
                                       : t("alpha.auto.disabled")}
                                 <Show when={task.cloudScheduleId && cloudStates().get(task.cloudScheduleId!)?.disabled_reason}>
-                                  {" · "}
-                                  {cloudStates().get(task.cloudScheduleId!)!.disabled_reason === "consecutive_failures"
-                                    ? t("alpha.auto.disabledBreaker")
-                                    : t("alpha.auto.cloudStuck")}
+                                  {(reason) => (
+                                    <>
+                                      {" · "}
+                                      {/* [#778] 每个停用理由各说各的;不认识的走兜底,不归进任何已知理由 */}
+                                      {cloudDisabledReasonCopy(reason())}
+                                    </>
+                                  )}
                                 </Show>
                                 <Show when={task.lastRun}>
                                   {" · "}
