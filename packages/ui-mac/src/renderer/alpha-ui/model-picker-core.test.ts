@@ -130,6 +130,27 @@ describe("真实 alpha-models.json → picker 两组", () => {
     })
   })
 
+  // REQ-226 `#1343` AC6:密钥需重填的自定义节点**保留在列表里**但不可用,并说明怎么修;`none` 仍整组消失。
+  test("needs-reentry 的 off-catalog provider 行可见、不可用、带重填文案(引擎恢复中也不改成 loading);none 仍整组消失", () => {
+    setLocale("zh")
+    const custom = info("my-endpoint", "real-custom-model")
+    const models = [...platformModels, custom]
+    const keyStatus: ProviderKeyStatus = { ...keys, "my-endpoint": { configured: false, source: "needs-reentry" } }
+    const reentry = rows({ keyStatus, models }).filter((row) => row.model.providerID === "my-endpoint")
+    expect(reentry).toHaveLength(1)
+    expect(reentry[0]?.availability).toBe("unavailable")
+    // 独立字面量,不与 t() 同源:文案本身是 AC 的一部分。
+    expect(reentry[0]?.reason).toBe("密钥需重填:重新添加同名服务即可覆盖")
+    expect(reentry[0]?.reason).toBe(t("alpha.model.keyReentry"))
+    const recovering = rows({ keyStatus, models, listState: "recovering" }).filter((row) => row.model.providerID === "my-endpoint")
+    expect(recovering[0]?.availability).toBe("unavailable")
+    expect(recovering[0]?.reason).toBe(t("alpha.model.keyReentry"))
+    const none = rows({ keyStatus: { ...keys, "my-endpoint": { configured: false, source: "none" } }, models }).filter(
+      (row) => row.model.providerID === "my-endpoint",
+    )
+    expect(none).toHaveLength(0)
+  })
+
   test("contract 加载失败时平台侧 fail-closed：目录仍可辨认，但没有代理模型伪装可用", () => {
     const failed = rows({ listState: "failed", models: [] })
     const platform = failed.filter((row) => row.group === "platform")

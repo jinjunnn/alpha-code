@@ -8,6 +8,8 @@ import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
+import { customProviderSecretValues } from "./alpha-byok-keys"
+import { readUserProviderIds } from "./ext-config"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
@@ -349,7 +351,13 @@ export async function spawnLocalServer(
   // fork with the allowlisted env — secrets never enter the sidecar's process.env. Loud on failure:
   // without the files, the platform/BYOK providers silently vanish from the picker (anti-B11).
   try {
-    const sync = syncSecretFiles(options.userDataPath)
+    // REQ-226 (`#1343`): off-catalog custom-provider keys go keychain store → key file directly (no env
+    // hop): the set is "provider ids in alpha.jsonc ∩ ids in the store", named custom-provider--<id>.
+    // Without an alpha environment root there is no alpha.jsonc to read (unit-test forks), hence nothing
+    // to materialize — same tolerance as the registryChannel lookup further down.
+    const customSecrets =
+      tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR ? customProviderSecretValues(readUserProviderIds()) : {}
+    const sync = syncSecretFiles(options.userDataPath, process.env, customSecrets)
     getLogger()?.log(`alpha-secrets sync: wrote [${sync.written.join(", ")}] removed [${sync.removed.join(", ")}]`)
     // REQ-076 T2(ADR-026 §5,C28 反 placebo):0600/0700 在 NTFS 近乎 no-op —— 密钥文件的
     // owner-only 保证在 Windows 缺位(icacls ACL 待 T3 拍板)。loud,不静默装样子。

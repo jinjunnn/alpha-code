@@ -38,6 +38,15 @@ export function secretEnvVars(): string[] {
   return ["ALPHA_API_KEY", "ALPHA_CLOUD_TOKEN", "ALPHA_MCP_TOKEN", ...byok]
 }
 
+/** REQ-226 (`#1343`): file name for an off-catalog custom provider's key in this channel. The id is already
+ * limited by isExtensionName (no separators / braces / whitespace), and the lowercase prefix keeps these apart
+ * from the ALL-CAPS catalog var names above. Main writes them from the keychain store (never env) via
+ * `extra`; the sidecar gates the `{file:}` ref on the file's presence exactly like a catalog var. */
+export const CUSTOM_PROVIDER_SECRET_PREFIX = "custom-provider--"
+export function customProviderSecretName(providerId: string): string {
+  return `${CUSTOM_PROVIDER_SECRET_PREFIX}${providerId}`
+}
+
 export function secretFilePath(userDataPath: string, varName: string): string {
   return path.join(userDataPath, SECRET_DIR, varName)
 }
@@ -59,8 +68,17 @@ export type SecretSyncResult = { written: string[]; removed: string[] }
  * Vars absent/empty in `env` get their file DELETED — logout and key-removal must revoke, or a stale
  * file would keep resurrecting a dead provider. Unknown leftover files (catalog removals) are also
  * swept. Values never touch the log — callers may log the returned NAMES only.
+ *
+ * `extra` (REQ-226 `#1343`): name → value pairs that do NOT come from env — today the off-catalog custom
+ * provider keys main pulls from the keychain store (customProviderSecretValues). They join the wanted
+ * set, so the leftover sweep keeps them; a name absent from `extra` on the next sync (key removed,
+ * provider removed, store cleared) is swept like any retired var — one revocation semantics for all.
  */
-export function syncSecretFiles(userDataPath: string, env: NodeJS.ProcessEnv = process.env): SecretSyncResult {
+export function syncSecretFiles(
+  userDataPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+  extra: Record<string, string> = {},
+): SecretSyncResult {
   const dir = path.join(userDataPath, SECRET_DIR)
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   fs.chmodSync(dir, 0o700) // mkdirSync's mode is ignored when the dir already exists
@@ -83,6 +101,18 @@ export function syncSecretFiles(userDataPath: string, env: NodeJS.ProcessEnv = p
       fs.rmSync(file, { force: true })
       removed.push(name)
     }
+  }
+
+  for (const [name, value] of Object.entries(extra)) {
+    // Fail closed on a name that is not a plain file name: the caller (spawnLocalServer) refuses the fork.
+    if (!name || name !== path.basename(name) || name !== name.trim())
+      throw new Error("alpha-secrets: refusing an extra secret whose name is not a plain file name")
+    if (!value) continue // absent ⇒ swept below like a retired var
+    wanted.add(name)
+    const file = path.join(dir, name)
+    fs.writeFileSync(file, value, { mode: 0o600 })
+    fs.chmodSync(file, 0o600)
+    written.push(name)
   }
 
   for (const leftover of fs.readdirSync(dir)) {

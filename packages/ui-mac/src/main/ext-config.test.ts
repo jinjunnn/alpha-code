@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistProvider, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistProvider, PROVIDER_KEYCHAIN_MARKER, readConfiguredProviderKeys, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict, validateProviderInput } from "./ext-config"
+import type { ProviderInput } from "../shared/alpha-model-types"
 import { newMcpSecretVersionId, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
@@ -841,5 +842,121 @@ describe("releasePreparedMcpSecretVersion — #712 合并引用视图", () => {
       ]),
     ).not.toThrow()
     expect(fs.existsSync(file)).toBe(false)
+  })
+})
+
+// ── REQ-226 `#1343`:自定义服务的密钥不进 alpha.jsonc ──────────────────────────────────────────
+// AC1 的证据面:添加后 alpha.jsonc 文本含 "alpha-keychain"、不含输入密钥、不含 {file:。
+// AC7 的咽喉点:readConfiguredProviderKeys 只返回分类,不返回值。
+describe("persistProvider — REQ-226 #1343: alpha.jsonc carries the keychain marker, never the key", () => {
+  const SECRET = "test-value-not-a-real-key-Zq81"
+  const input = (): ProviderInput => ({
+    id: "my-endpoint",
+    name: "My Endpoint",
+    compat: "openai",
+    baseURL: "https://api.example.invalid/v1",
+    apiKey: SECRET,
+    models: ["m-1", " m-2 "],
+  })
+  const alphaJsonc = () => path.join(alphaTmp, "alpha.jsonc")
+
+  test("AC1: the written text contains the marker, not the input key, and no {file: reference", () => {
+    expect(persistProvider(input())).toEqual({ ok: true })
+    const text = fs.readFileSync(alphaJsonc(), "utf8")
+    expect(text).toContain(`"${PROVIDER_KEYCHAIN_MARKER}"`)
+    expect(text).not.toContain(SECRET)
+    expect(text).not.toContain("{file:")
+    expect(readAlphaConfig().provider["my-endpoint"]).toEqual({
+      npm: "@ai-sdk/openai-compatible",
+      name: "My Endpoint",
+      options: { baseURL: "https://api.example.invalid/v1", apiKey: PROVIDER_KEYCHAIN_MARKER },
+      models: { "m-1": { name: "m-1" }, "m-2": { name: "m-2" } },
+    })
+  })
+
+  test("re-adding the same id replaces the WHOLE block — the re-entry path turns a legacy plaintext block into a marker block", () => {
+    writeAlphaConfig({
+      provider: {
+        "my-endpoint": {
+          npm: "@ai-sdk/openai-compatible",
+          name: "Old",
+          options: { baseURL: "https://old.invalid/v1", apiKey: "legacy-plain-value-Ab12" },
+          models: { old: { name: "old" } },
+        },
+      },
+    })
+    expect(persistProvider(input())).toEqual({ ok: true })
+    const text = fs.readFileSync(alphaJsonc(), "utf8")
+    expect(text).not.toContain("legacy-plain-value-Ab12")
+    expect(text).not.toContain("old.invalid")
+    expect(readAlphaConfig().provider["my-endpoint"].models).toEqual({ "m-1": { name: "m-1" }, "m-2": { name: "m-2" } })
+  })
+
+  test("I4: ids reserved by the catalog are refused before any write (display id, `<id>-byok` engine id, platform id)", () => {
+    for (const id of ["deepseek", "deepseek-byok", "alpha"]) {
+      const result = persistProvider({ ...input(), id })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toMatch(/reserved/)
+    }
+    expect(fs.existsSync(alphaJsonc())).toBe(false)
+  })
+
+  test("validateProviderInput is the exact gate persistProvider applies (no I/O): same verdict for every rejection", () => {
+    const bad: ProviderInput[] = [
+      { ...input(), id: "bad id" },
+      { ...input(), name: "" },
+      { ...input(), compat: "x" as ProviderInput["compat"] },
+      { ...input(), baseURL: "http://evil.example/v1" },
+      { ...input(), apiKey: "" },
+      { ...input(), models: [] },
+      { ...input(), models: ["  "] },
+    ]
+    for (const candidate of bad) {
+      const verdict = validateProviderInput(candidate)
+      expect(verdict.ok).toBe(false)
+      expect(persistProvider(candidate)).toEqual(verdict)
+    }
+    expect(validateProviderInput(input())).toEqual({ ok: true })
+    expect(fs.existsSync(alphaJsonc())).toBe(false)
+  })
+})
+
+describe("readConfiguredProviderKeys — AC7: classification only, the value never comes back", () => {
+  test("marker / legacy plaintext / {file:} / {env:} → keychain-marker / legacy-plaintext / user-ref / user-ref; absent / blank / non-string → not in the map", () => {
+    writeAlphaConfig({
+      provider: {
+        marked: { options: { apiKey: PROVIDER_KEYCHAIN_MARKER } },
+        legacy: { options: { apiKey: "legacy-plain-value-Ab12" } },
+        fileRef: { options: { apiKey: "{file:/tmp/x}" } },
+        envRef: { options: { apiKey: "{env:MY_VAR}" } },
+        bare: { options: { baseURL: "https://x.invalid/v1" } },
+        blank: { options: { apiKey: "   " } },
+        nonString: { options: { apiKey: 42 } },
+        noOptions: {},
+      },
+    })
+    const kinds = readConfiguredProviderKeys()
+    expect([...kinds.entries()].sort()).toEqual([
+      ["envRef", "user-ref"],
+      ["fileRef", "user-ref"],
+      ["legacy", "legacy-plaintext"],
+      ["marked", "keychain-marker"],
+    ])
+    for (const kind of kinds.values()) expect(["keychain-marker", "legacy-plaintext", "user-ref"]).toContain(kind)
+    expect(JSON.stringify([...kinds])).not.toContain("legacy-plain-value-Ab12")
+  })
+
+  test("the primary alpha.jsonc wins over a legacy XDG copy for the same id; the fallback only fills unseen ids", () => {
+    writeAlphaConfig({ provider: { a: { options: { apiKey: PROVIDER_KEYCHAIN_MARKER } } } })
+    fs.writeFileSync(
+      path.join(tmp, "opencode.jsonc"),
+      JSON.stringify({
+        provider: { a: { options: { apiKey: "legacy-plain-value-Ab12" } }, b: { options: { apiKey: "legacy-plain-value-Cd34" } } },
+      }),
+    )
+    const kinds = readConfiguredProviderKeys()
+    expect(kinds.get("a")).toBe("keychain-marker")
+    expect(kinds.get("b")).toBe("legacy-plaintext")
+    expect(JSON.stringify([...kinds])).not.toContain("legacy-plain-value")
   })
 })

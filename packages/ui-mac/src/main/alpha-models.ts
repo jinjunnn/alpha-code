@@ -26,8 +26,8 @@ import catalog from "./alpha-models.json"
 import type { AlphaModelCatalog } from "../shared/alpha-model-types"
 import { byokEngineId, byokModelMeta } from "../shared/alpha-model-types"
 import { projectPlatformModels, readCatalogSnapshot } from "./alpha-live-allowlist"
-import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
-import { readUserProviderIds } from "./ext-config"
+import { customProviderSecretName, hasSecretFile, secretFileRef } from "./alpha-secret-files"
+import { readConfiguredProviderKeys, readUserProviderIds } from "./ext-config"
 // NOTE: this module is loaded by the SIDECAR (utilityProcess) via buildAlphaModelConfig, so it must
 // stay electron-free. getProviderKeyStatus (which reads the safeStorage keychain) lives in the
 // main-only alpha-provider-status.ts for that reason — do NOT import alpha-byok-keys here.
@@ -137,13 +137,37 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     enabled.unshift(pp.id)
   }
 
-  // (3) User-added custom providers (via window.api.providers.add → opencode.jsonc provider[<id>]).
+  // (3) User-added custom providers (via window.api.providers.add → alpha.jsonc provider[<id>]).
   // opencode REPLACES (not unions) enabled_providers on config merge and OPENCODE_CONFIG_CONTENT is
   // merged last, so a custom provider that isn't in THIS allowlist gets dropped. Merge the user's
   // configured provider ids in so they survive. providers-add immediately drives the shared respawn
   // path, so this next-fork allowlist is reflected by the renderer's next real model.list. See build.md §6.
+  //
+  // REQ-226 (`#1343`) — the key never lives in alpha.jsonc. Per block, `options.apiKey` is classified by
+  // readConfiguredProviderKeys (main-free, value-free) and THIS injection decides what the engine sees;
+  // mergeDeep (remeda, config.ts:45-51) lets the scalar below override the block's apiKey while its
+  // baseURL / models survive:
+  //   K keychain-managed (marker / field absent), key file present → `{file:<userData>/alpha-secrets/custom-provider--<id>}`
+  //   K keychain-managed, key file absent                            → ""  (engine starts; that provider 401s on first call — fail closed, never the marker)
+  //   L legacy plaintext (pre-#1343 inline key)                      → ""  (the plaintext is never used; the picker says "needs re-entry")
+  //   U user reference (`{file:` / `{env:`)                          → untouched (power-user hatch, sidecar-env.ts:12)
+  // `{file:}` is emitted only when the file exists ⇒ no dangling ref can ever fail the whole config load
+  // (config/variable.ts throws on a missing file). Ids alpha injects itself above (platform / `<id>-byok`)
+  // are never touched; catalog display ids (persistProvider rejects them) only get the L rule.
+  const keyKinds = readConfiguredProviderKeys()
+  const catalogIds = new Set(CATALOG.byokProviders.map((p) => p.id))
   for (const id of readUserProviderIds()) {
     if (!enabled.includes(id)) enabled.push(id)
+    if (Object.prototype.hasOwnProperty.call(provider, id)) continue
+    const kind = keyKinds.get(id)
+    if (kind === "user-ref") continue
+    if (kind === "legacy-plaintext") {
+      provider[id] = { options: { apiKey: "" } }
+      continue
+    }
+    if (catalogIds.has(id)) continue
+    const name = customProviderSecretName(id)
+    provider[id] = { options: { apiKey: hasSecretFile(userDataPath, name) ? secretFileRef(userDataPath, name) : "" } }
   }
 
   // Default model: env override wins, else catalog default, else none (never force a default whose

@@ -190,15 +190,23 @@ export function buildModelPickerRows(input: {
     input.catalog.platformProvider.id,
     ...input.catalog.byokProviders.map((provider) => provider.id),
   ])
+  // REQ-226 `#1343`:`needs-reentry` 的自定义节点(旧明文被压掉、或钥匙串里没有它的密钥)**保留在列表里**
+  // 但不可用,并说明怎么修(重新添加同名服务即可覆盖)。此前 `configured:false` = 整组行消失,用户看不出
+  // 「它还在、只是要重填」。没有编辑/删除自定义服务的 UI,重填 = 同名重新添加(slug 相同 ⇒ 整块覆盖)。
   const custom =
     input.keyStatusState === "ready" && input.listState !== "failed"
       ? Object.entries(input.keyStatus)
-          .filter(([providerID, status]) => status.configured && !catalogProviderIDs.has(providerID))
-          .flatMap(([providerID]): ModelPickerRow[] =>
+          .filter(
+            ([providerID, status]) =>
+              (status.configured || status.source === "needs-reentry") && !catalogProviderIDs.has(providerID),
+          )
+          .flatMap(([providerID, status]): ModelPickerRow[] =>
             input.models
               .filter((model) => model.providerID === providerID)
               .map((model) => {
-                const available = input.listState === "ready" && model.enabled && model.status !== "deprecated"
+                const reentry = status.source === "needs-reentry"
+                const available =
+                  !reentry && input.listState === "ready" && model.enabled && model.status !== "deprecated"
                 return {
                   key: `${providerID}:${model.id}`,
                   group: "byok",
@@ -211,10 +219,17 @@ export function buildModelPickerRows(input: {
                   providerName: providerID,
                   pico: { letter: providerID.slice(0, 1).toUpperCase() || "?", color: "var(--a-accent-solid)" },
                   reasoning: false,
-                  availability: available ? "available" : input.listState === "recovering" ? "loading" : "unavailable",
-                  reason:
-                    available
-                      ? undefined
+                  availability: available
+                    ? "available"
+                    : reentry
+                      ? "unavailable"
+                      : input.listState === "recovering"
+                        ? "loading"
+                        : "unavailable",
+                  reason: available
+                    ? undefined
+                    : reentry
+                      ? t("alpha.model.keyReentry")
                       : input.listState === "recovering"
                         ? t("alpha.model.syncing")
                         : t("alpha.model.unavailable"),

@@ -735,10 +735,10 @@ const main = Effect.gen(function* () {
   const bootRenewalRace = storedTokenExpired
     ? awaitBootRenewalGrace(observeEnsureFreshToken("boot"))
     : null
-  // Load alpha's encrypted BYOK key vault (migrates any key off opencode auth.json once) and bridge
-  // each stored key into its provider's keyEnv in MAIN's env BEFORE the sidecar forks — that's the
-  // source syncSecretFiles mirrors into the {file:} channel that buildAlphaModelConfig (sidecar)
-  // references (A6). See alpha-byok-keys.ts.
+  // Load alpha's encrypted key vault (REQ-226 `#1343`: no auth.json migration, no plaintext fallback —
+  // keychain unavailable ⇒ empty store, keys are re-entered) and bridge each catalog BYOK key into its
+  // provider's keyEnv in MAIN's env BEFORE the sidecar forks — the source syncSecretFiles mirrors into the
+  // {file:} channel (A6). Off-catalog keys skip env (spawnLocalServer → extra). See alpha-byok-keys.ts.
   initByokKeys(app.getPath("userData"))
   injectByokKeysIntoEnv()
   // REQ-001:异步同步 B 网关 edition 白名单缓存(fire-and-forget,不阻塞窗口/首个 fork——B1 纪律)。

@@ -192,10 +192,15 @@ export type ProviderTestResult = { ok: true; ms: number } | { ok: false; reason:
 // "none" = no usable key (→ row is locked, click opens the configure form).
 export type ProviderKeyState = {
   configured: boolean
-  /** "keychain" = alpha's encrypted BYOK store (alpha-byok-keys, the source of truth); "env" = keyEnv
-   *  in process env (alpha.env/shell export); "config" = inline apiKey in opencode.jsonc; "none" = no
-   *  key. ("auth" = legacy opencode auth.json — no longer produced; kept in the union pending UI cleanup.) */
-  source: "keychain" | "env" | "config" | "auth" | "none"
+  /** "keychain" = alpha's encrypted key store (alpha-byok-keys, the source of truth; the only source with a
+   *  last-4 `hint`); "env" = keyEnv in process env (alpha.env/shell export); "config" = a hand-written
+   *  `{file:}` / `{env:}` reference in alpha.jsonc (alpha does not manage it; no hint — the value is never
+   *  read); "needs-reentry" (REQ-226 `#1343`) = the alpha.jsonc block exists but its key is unusable — a
+   *  pre-#1343 inline plaintext key the engine is no longer allowed to use, or alpha's keychain marker
+   *  with no key in the store (keychain unavailable / re-signed / entry gone) — `configured:false`, no
+   *  hint; the picker keeps the row visible but unavailable and asks for re-entry; "none" = no key.
+   *  ("auth" = legacy opencode auth.json — no longer produced; kept in the union pending UI cleanup.) */
+  source: "keychain" | "env" | "config" | "needs-reentry" | "auth" | "none"
   hint?: string
 }
 export type ProviderKeyStatus = Record<string, ProviderKeyState>

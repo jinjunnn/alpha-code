@@ -4,8 +4,8 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-06
-review_after: 2026-10-23
+last_reviewed: 2026-09-17
+review_after: 2026-12-17
 ---
 
 # 引擎配置通道契约(v1/v2 双代)
@@ -91,7 +91,30 @@ sidecar 仍发布 ready。renderer marker barrier 自身以 1.5 秒 wall-clock �
 
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
 
+## 目录外自定义服务的密钥:同一条 `{file:}` 通道,引用只在 fork 时注入(REQ-226 `#1343`)
+
+用户在选择器里「添加自定义节点」的密钥,与目录内 BYOK 走**同一条路**;差别只在定义来自
+alpha.jsonc 而不是目录。方案基线
+[`../design/2026-09-17-req226-custom-provider-keychain-baseline.md`](../design/2026-09-17-req226-custom-provider-keychain-baseline.md)。
+
+| 层 | 事实 |
+| --- | --- |
+| durable(alpha.jsonc) | `persistProvider`(`ext-config.ts`)写 `provider.<id>.options.apiKey = "alpha-keychain"` —— 一个**常量标记**,不含密钥片段、路径或 id;密钥本身进钥匙串库(`alpha-byok-keys.json`,safeStorage 加密,`alpha-byok-keys.ts`)。durable 配置里**永远没有值、也永远没有 `{file:}` 路径**。 |
+| fork(main,`spawnLocalServer`) | `syncSecretFiles(userData, env, extra)`,`extra` = alpha.jsonc 里的目录外 id ∩ 库键集,文件名 `custom-provider--<id>`(0600,目录 0700)。**不经 `process.env`**(A6 白名单不变;目录外 id 没有 keyEnv)。缺席 ⇒ 同一次 sync 清扫,与目录 BYOK 同一撤销语义。 |
+| 注入(sidecar,v1 `OPENCODE_CONFIG_CONTENT`) | `buildAlphaModelConfig` 对每个 alpha.jsonc provider 块按 `options.apiKey` 三分类(`readConfiguredProviderKeys` 只返回分类,**不返回值**):K 托管(标记 / 字段缺席)且密钥文件在场 ⇒ `{file:<userData>/alpha-secrets/custom-provider--<id>}`;K 而文件缺席 ⇒ `""`;L 旧明文 ⇒ `""`(引擎不得使用);U 用户引用(`{file:` / `{env:`)⇒ 不动。mergeDeep 只压 `apiKey` 标量,`baseURL` / `models` 保留;`{file:}` 只在文件存在时发出 ⇒ 不会有悬空引用让整份 config 装载失败。 |
+| v2 投影 | 与既有规则相同:注入表剥 `apiKey` ⇒ 该 id 在 `opencode.jsonc` 里成为 `{}`(2026-09-17 用真实 `ConfigV1 → migrate → Config` 链探针验证可解码);用户拷贝 `opencode.json` 仍带标记字面量(v2 无变量解析,列目录也不需要 key)。用户拷贝里的**旧明文不剥**:源文件仍在,剥拷贝不减少暴露;重填后随源消失(基线 I3,已知不修)。 |
+| 状态面(`providers-key-status`) | 库有 ⇒ `keychain` + 末四位;标记块而库无 / 旧明文块 ⇒ `needs-reentry`(`configured:false`,无 hint);用户引用 ⇒ `config`(无 hint)。renderer / IPC 永远拿不到值;选择器把 `needs-reentry` 的行保留为不可用并提示「密钥需重填:重新添加同名服务即可覆盖」。 |
+| fail closed | 钥匙串不可用 ⇒ 库拒写(不落盘、不退回明文)、`providers-add` 回错误且 alpha.jsonc 不写;库读到 `{v:1, plain}` 旧形态 ⇒ 视为不可解(空库 + 一条不含值的 warn);opencode `auth.json` **不再被读取**。目录内 BYOK 同受这三条约束。 |
+
 ## 不变量(实现与 review 都要守)
+
+- **目录外自定义服务的密钥值只经 `custom-provider--<id>` 文件离开钥匙串库**(REQ-226 AC4 咽喉点):
+  main 里没有任何函数把配置文件里的明文密钥读进内存(`readConfiguredProviderKeys` 只返回分类);
+  注入表里目录外 id 的 `apiKey` 只可能是 `{file:…}` 或 `""`;durable 配置里没有 `{file:}`。
+  强制手段:`alpha-byok-keys.test.ts`(库在钥匙串不可用时拒写、不读 plain、不读 auth.json;先在旧代码上
+  证明会红)、`alpha-secret-files.test.ts`(`extra` 写入 / 撤销 / 不被清扫)、`server.test.ts`(生产 fork
+  路径上文件物化且 sidecar env 无值)、`alpha-models.test.ts`(三分类注入)、`ext-config.test.ts`
+  (标记不写值、只返回分类)、`alpha-provider-status.test.ts`(状态面无值字段)。
 
 - **sidecar 进程内不得调用 main-only 单例**(`getAlphaEnvironment` /
   `catalogRegistryChannel`):sidecar 从不跑 `initAlphaEnvironment`,必抛;需要
