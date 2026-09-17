@@ -13,6 +13,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { dispatchCloudJob, dispatchExplicitCloudUpload, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, downloadCloudArtifactTo } from "./alpha-cloud-jobs"
 import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
+// #420(REQ-115):云任务 completed / failed 终态 → 系统通知的唯一咽喉(去重、取消不通知都在里面)。
+import { noticeFromCloudEvent, noticeFromCloudStatus, notifyCloudJobFinished } from "./cloud-job-notify"
 import {
   ensureAlphaScaffold,
   isSafeRunId,
@@ -192,7 +194,14 @@ export function registerCloudIpcHandlers() {
       directory,
       runId,
       {
-        status: getCloudJobStatus,
+        // #420:助手经 MCP 调的任务由 renderer CloudRunWatcher 从会话事件流发现终态后来 saveRun,
+        // 它没有 SSE 订阅 —— 这次状态查询是 main 侧唯一看得见那个终态的地方,通知从这里发
+        // (界面派发的任务两路都到,由 notify 的 jobId+终态去重只弹一次)。
+        status: async (id) => {
+          const status = await getCloudJobStatus(id)
+          notifyCloudJobFinished(noticeFromCloudStatus(status))
+          return status
+        },
         artifacts: listCloudArtifacts,
         download: (artifact, targetPath, jobId) =>
           downloadCloudArtifactTo(
@@ -230,6 +239,8 @@ export function registerCloudIpcHandlers() {
     if (subs.has(key)) return { ok: true }
     const unsub = subscribeCloudJobEvents(jobId, (ev) => {
       if (!wc.isDestroyed()) wc.send("cloud-job-event", { jobId, ...ev })
+      // #420:终态帧 → 系统通知(取消 / 非终态在 notice 层滤掉;重连重放与多窗口订阅经去重只弹一次)。
+      notifyCloudJobFinished(noticeFromCloudEvent(jobId, ev))
       // REQ-003(C23/NEW-2 修):终态后流已自停,但账簿条目原本一直留着 → 每个跑完的 job 泄一条。
       // 终态即清账;renderer 重订已结束的 job 也不空转(新流重放到终态即自停自清)。
       if (isTerminalCloudEvent(ev)) subs.delete(key)
