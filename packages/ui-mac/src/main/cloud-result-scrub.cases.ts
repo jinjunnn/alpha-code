@@ -30,6 +30,14 @@ mock.module("electron", () => ({
   ipcMain: { handle: (channel: string, fn: Handler) => handlers.set(channel, fn) },
   BrowserWindow: { fromWebContents: () => undefined, getAllWindows: () => [] },
   dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
+  // #420:cloud-ipc 静态 import cloud-job-notify(它 import electron.Notification);本 harness 只判清洗,
+  // 通知在这里是 no-op。通知本身的接线判据在 cloud-job-notify.cases.ts。
+  Notification: class {
+    on() {
+      return this
+    }
+    show() {}
+  },
 }))
 mock.module("./logging", () => ({
   getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {}, info: () => {}, debug: () => {} }),

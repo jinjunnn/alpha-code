@@ -43,6 +43,15 @@ mock.module("electron", () => ({
     getAllWindows: () => windows,
     fromWebContents: () => undefined,
   },
+  // #420:cloud-ipc 现在静态 import cloud-job-notify(它 import electron.Notification);本 harness 里
+  // isTerminalCloudEvent 恒 false、saveCloudRun 被桩掉 ⇒ 永远走不到 new Notification,这里只需让 import 解析。
+  // 通知本身的接线判据在 cloud-job-notify.cases.ts。
+  Notification: class {
+    on() {
+      return this
+    }
+    show() {}
+  },
   ipcMain: {
     handle: (channel: string, handler: (...args: unknown[]) => unknown) => {
       handlers.set(channel, handler)
