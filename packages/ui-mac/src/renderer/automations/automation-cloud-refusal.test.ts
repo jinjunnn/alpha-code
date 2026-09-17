@@ -11,6 +11,9 @@
 // 过一次且入参 `execution === "cloud"`。少了这一步,「保存按钮 disabled / 表单校验先行早返」
 // 会让后面的断言**空绿**(名字/提示词/目录任一为空都会早返)。
 //
+// 同一个 harness 另挂三组判据(各自小节有说明):[#778] 列表行上的云端停用理由、[#994] 删除 / 开关在
+// 云端失败时的 toast、[#1001] 保存时本机失败的错误行。
+//
 // 边界(诚实声明):main → IPC 那一跳不在本文件里 —— renderer 结构上加载不到 main 模块,
 // 这里的 `window.api.automations.save` 是 preload 边界上的桩。那一跳由 src/main 下走真实
 // `ipcMain.handle` 的用例守着(automation-ipc-delete.cases.ts 的 [#969] 两条)。
@@ -140,10 +143,10 @@ function buttonByText(text: string): HTMLButtonElement {
 const errorLine = () => document.querySelector(".alpha-auto-err")?.textContent ?? null
 
 /**
- * 走一遍真实用户路径:开面板 → 一句话新建 → 切到云端档 → 点保存。
+ * 走一遍真实用户路径:开面板 → 一句话新建 → 切到云端档(或留在本地档)→ 点保存。
  * 中间三条前提自检,任何一条不成立就抛(不让后面的断言空绿)。
  */
-async function saveAsCloudTask(): Promise<void> {
+async function saveAsCloudTask(execution: "cloud" | "local" = "cloud"): Promise<void> {
   const host = query<HTMLElement>("#root")
   disposers.push(runtime.render(() => runtime.AutomationRefusalHarness(), host))
   runtime.openPanel()
@@ -155,11 +158,12 @@ async function saveAsCloudTask(): Promise<void> {
   click(query(".alpha-auto-new .alpha-ext-add[data-variant='primary']"))
   await flush()
 
-  click(buttonByText(zh["alpha.auto.execCloud"]))
+  const execLabel = zh[execution === "cloud" ? "alpha.auto.execCloud" : "alpha.auto.execLocal"]
+  click(buttonByText(execLabel))
   await flush()
 
-  // 前提自检 ①:表单真在云端档(data-on 落在「云端」那个按钮上)。
-  expect(buttonByText(zh["alpha.auto.execCloud"]).getAttribute("data-on"), "执行档没切到云端").toBe("")
+  // 前提自检 ①:表单真在目标执行档(data-on 落在那个按钮上)。
+  expect(buttonByText(execLabel).getAttribute("data-on"), `执行档没切到 ${execution}`).toBe("")
   // 前提自检 ②:点保存之前错误行不在场(否则「错误行不含裸码」可能测的是上一格的残留)。
   expect(errorLine(), "点保存之前错误行就已经在了").toBeNull()
 
@@ -169,7 +173,7 @@ async function saveAsCloudTask(): Promise<void> {
   // 前提自检 ③:保存真的被调用过一次,且入参确实是云档(表单早返会让它一次都不调)。
   const calls = runtime.saveCalls()
   expect(calls.length, "automations.save 没有被调用(表单在保存前就早返了)").toBe(1)
-  expect(calls[0]!.execution).toBe("cloud")
+  expect(calls[0]!.execution).toBe(execution)
 }
 
 describe("[#969] 云档拒绝到达用户的那一跳", () => {
@@ -235,11 +239,14 @@ describe("[#969] 云档拒绝到达用户的那一跳", () => {
     expect(errorLine()).not.toContain("云端删除失败")
   })
 
-  test("没有 code 的失败(本地落盘一类)仍然原样显示 main 给的 reason", async () => {
+  // [#1001] 改判:过去这一格断「原样显示 main 的 reason」—— 那正是用户读到英文串的缺陷本身。
+  // main 现在每条保存失败都带 code;万一没带,面板说一句通用的人话,绝不把日志串上屏。
+  test("没有 code 的失败 ⇒ 通用的保存失败人话,不上屏 main 给的 reason", async () => {
     runtime.queueSaveResult({ ok: false, reason: "invalid name" })
     await saveAsCloudTask()
 
-    expect(errorLine()).toBe("invalid name")
+    expect(errorLine()).toBe(zh["alpha.auto.saveFailed"])
+    expect(errorLine()).not.toContain("invalid")
   })
 })
 
@@ -471,6 +478,73 @@ describe("[#994] 删除 / 开关在云端失败时给出说明", () => {
       runtime.setLocale(locale)
       expect(runtime.t("alpha.auto.toggleFailed")).not.toBe("alpha.auto.toggleFailed")
       expect(runtime.t("alpha.auto.toggleFailed")).toBe(dict["alpha.auto.toggleFailed"])
+    }
+    runtime.setLocale("zh")
+  })
+})
+
+// ── [#1001] 保存时本机失败:错误行给当前语言的人话 ─────────────────────────────────────
+//
+// 本地结构码是手写的独立锚点(不从 shared/automation-types 或被测模块取)。它们由 main 的存储层
+// 校验铸出(alpha-automations.ts),与平台 snake 码、桌面传输 kebab 码结构上不相交。
+
+const LOCAL_STORE_CODE_KEYS = {
+  "automation-invalid": "alpha.auto.localErrInvalid",
+  "automation-name-invalid": "alpha.auto.localErrName",
+  "automation-prompt-invalid": "alpha.auto.localErrPrompt",
+  "automation-project-dir-invalid": "alpha.auto.localErrProjectDir",
+  "automation-schedule-invalid": "alpha.auto.localErrSchedule",
+  "automation-duration-invalid": "alpha.auto.localErrDuration",
+  "automation-storage-failed": "alpha.auto.localErrStorage",
+} as const
+
+describe("[#1001] 保存时本机失败给人话", () => {
+  test("本地档保存、本机校验不过 ⇒ 错误行是人话,不是英文串", async () => {
+    runtime.queueSaveResult({ ok: false, reason: "projectDir not a directory", code: "automation-project-dir-invalid" })
+    await saveAsCloudTask("local")
+
+    expect(errorLine()).toBe(zh["alpha.auto.localErrProjectDir"])
+    expect(errorLine()).not.toContain("projectDir")
+  })
+
+  test("云端注册成功但本机保存失败 ⇒ 错误行是人话,不是半英半中的拼接", async () => {
+    runtime.queueSaveResult({ ok: false, reason: "invalid name(云端注册已回滚)", code: "automation-name-invalid" })
+    await saveAsCloudTask("cloud")
+
+    expect(errorLine()).toBe(zh["alpha.auto.localErrName"])
+    expect(errorLine()).not.toContain("invalid")
+    expect(errorLine()).not.toContain("云端注册已回滚")
+  })
+
+  test("每个本地结构码逐个有自己的人话:不落回落模板、不含码、两两不同", () => {
+    const fallbackOf = (code: string) => zh["alpha.auto.cloudErrUnknown"].replace("{{code}}", code)
+    const copies = new Set<string>()
+    for (const [code, key] of Object.entries(LOCAL_STORE_CODE_KEYS)) {
+      const copy = runtime.scheduleRefusalCopy(code)
+      expect(copy, `${code} 落进了「云端拒绝」的回落模板`).not.toBe(fallbackOf(code))
+      expect(copy, `${code} 没有渲染成它自己那一句`).toBe(zh[key])
+      expect(copy).not.toContain(code)
+      copies.add(copy)
+    }
+    expect(copies.size).toBe(Object.keys(LOCAL_STORE_CODE_KEYS).length)
+  })
+
+  test("en 与 zh 的本地失败文案都有、与字典一致、不含英文校验串", () => {
+    const devStrings = ["projectDir", "maxDurationMin", "invalid", "must be", "not a directory", "not found"]
+    for (const [locale, dict] of [
+      ["en", en],
+      ["zh", zh],
+    ] as const) {
+      runtime.setLocale(locale)
+      const seen = new Set<string>()
+      for (const key of Object.values(LOCAL_STORE_CODE_KEYS)) {
+        const copy = runtime.t(key)
+        expect(copy, `${locale}/${key} 没有文案`).not.toBe(key)
+        expect(copy, `${locale}/${key} 与字典不一致`).toBe(dict[key])
+        for (const s of devStrings) expect(copy, `${locale}/${key} 混进了开发者字符串 ${s}`).not.toContain(s)
+        seen.add(copy)
+      }
+      expect(seen.size, `${locale} 有重复文案`).toBe(Object.keys(LOCAL_STORE_CODE_KEYS).length)
     }
     runtime.setLocale("zh")
   })

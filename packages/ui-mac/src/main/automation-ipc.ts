@@ -47,7 +47,8 @@ export function registerAutomationIpcHandlers() {
         void deleteCloudSchedule(up.scheduleId).then((d) => {
           if (!d.ok) getLogger().error(`automations: ORPHAN cloud schedule ${up.scheduleId} — local save failed AND compensating delete failed (${d.reason})`)
         })
-        return { ok: false as const, reason: `${res.reason}(云端注册已回滚)` }
+        // [#1001] 面板读 `code`(本机失败的本地结构码)出人话;reason 只进日志,不再拼给用户看。
+        return { ok: false as const, reason: `${res.reason}(云端注册已回滚)`, code: res.code }
       }
       if (res.ok) rearmAutomations()
       return res

@@ -1,5 +1,6 @@
 // [#963] 删自动化的云端幂等容忍判据 + [#969] `automations-save` 两条云端腿的 `code` 透传
-// + [#994] `automations-delete` / `automations-toggle` 的 `code` 透传。
+// + [#994] `automations-delete` / `automations-toggle` 的 `code` 透传
+// + [#1001] `automations-save` 本机失败时的本地结构码。
 // 真断言在 automation-ipc-delete.cases.ts(走真实注册的生产 handler)——
 // 子进程跑(alpha-cloud-schedules.test.ts 同款),因为 mock.module 会污染同进程的其它测试文件。
 import { expect, test } from "bun:test"
@@ -13,8 +14,8 @@ test("automation IPC cloud-leg cases run green in an isolated child process", ()
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 7 pass")
+  expect(output).toContain(" 9 pass")
   expect(output).toContain(" 0 fail")
   // [#969] 「跑了 0 个文件」也是 `0 fail`。核对 bun 自己报的文件数与条数,否则这一步能假绿。
-  expect(output).toContain("Ran 7 tests across 1 file")
+  expect(output).toContain("Ran 9 tests across 1 file")
 })

@@ -157,6 +157,15 @@ export const dict = {
   "alpha.auto.cloudErrFormUnsupported":
     "Cloud execution supports cron, intervals under 60 minutes, and whole-hour intervals up to 24 hours; use local execution for one-off runs and any other interval.",
   "alpha.auto.cloudErrUnknown": "The cloud refused this operation: {{code}}",
+  // [#1001] Saving failed on this computer (storage-layer checks / disk write). Likewise no numeric limits
+  // restated here, so the copy cannot drift from the code.
+  "alpha.auto.localErrInvalid": "This task's settings are incomplete, so it wasn't saved — cancel and create it again.",
+  "alpha.auto.localErrName": "The task name is empty or too long — shorten it and save again.",
+  "alpha.auto.localErrPrompt": "The task prompt is empty or too long — shorten it and save again.",
+  "alpha.auto.localErrProjectDir": "The chosen project folder doesn't exist or isn't a folder — pick the project folder again, then save.",
+  "alpha.auto.localErrSchedule": "The schedule isn't valid — set it again, then save.",
+  "alpha.auto.localErrDuration": "The max duration is outside the allowed range — adjust it and save again.",
+  "alpha.auto.localErrStorage": "Couldn't write to this computer's disk, so the task wasn't saved — check free space or folder permissions and try again.",
   "alpha.ext.customMcp": "Add custom connector",
   "alpha.ext.customMcpSub": "Any MCP server (command or URL), beyond the curated catalog",
   "alpha.ext.customMcpTitle": "Add custom connector (MCP)",

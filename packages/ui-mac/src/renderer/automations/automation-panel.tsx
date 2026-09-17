@@ -295,9 +295,10 @@ export function AutomationPanel(props: {
     setSaving(true)
     try {
       const r = await window.api.automations.save(task)
-      // [#969] 云档腿的拒绝带**结构槽** `code`(注册被拒 / 改本地时云端删除被拒都走这里)——
-      // 换成人话再上屏。没有 code 的是本地落盘失败一类,main 的 reason 就是它能给的全部。
-      if (!r.ok) return setFErr(r.code ? scheduleRefusalCopy(r.code) : r.reason)
+      // [#969] 拒绝带**结构槽** `code`(云端注册被拒 / 改本地时云端删除被拒 / [#1001] 本机校验或落盘
+      // 失败)—— 换成人话再上屏。`reason` 是 main 的日志串(英文或半英半中),**永不上屏**:万一没带
+      // code,说一句通用的保存失败。
+      if (!r.ok) return setFErr(r.code ? scheduleRefusalCopy(r.code) : t("alpha.auto.saveFailed"))
       pushToast({ kind: "success", title: t("alpha.auto.saved") })
       setNlInput("")
       await refresh()

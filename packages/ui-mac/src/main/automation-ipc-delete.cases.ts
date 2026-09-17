@@ -22,6 +22,9 @@
 //   [#994] 新增一条,守开关那一跳:
 //   ⑦ 开关时云端状态更新被拒 ⇒ `automations-toggle` 的返回对象带 `code`,本地开关态不变;
 //      ③④ 两条同时改断「`automations-delete` 的返回带 code」。
+//   [#1001] 新增两条,守保存时**本机**失败的那一跳(过去这两条原样把英文串 / 半英半中拼接交给面板):
+//   ⑧ 本地档保存、本机校验不过 ⇒ `automations-save` 返回本地结构码;
+//   ⑨ 云端注册成功但本机保存失败 ⇒ 同样返回本地结构码,补偿删除照发。
 //
 // mock.module 会污染同进程其它测试文件 ⇒ 真断言放这里,由 automation-ipc-delete.test.ts
 // 在隔离子进程里跑(alpha-cloud-schedules.cases.ts 同款)。
@@ -226,4 +229,52 @@ test("[#994] 开关时云端状态更新被拒 ⇒ automations-toggle 的返回�
   const onDiskTask = JSON.parse(fs.readFileSync(join(ROOT, "automations", "auto-toggle-503.json"), "utf8")) as AutomationTask
   expect(onDiskTask.enabled).toBe(true)
   expect(wire).toEqual([{ method: "PATCH", path: "/v1/cloud/schedules/sched_live_7" }])
+})
+
+// ── [#1001] 保存时本机失败的那一跳(本地结构码)──────────────────────────────────────────
+// 两条用不同的校验失败(时长越界 / 目录不存在),防「恰好等于可硬编码常量」。
+
+test("[#1001] 本地档保存、本机校验不过 ⇒ automations-save 返回本地结构码,未落盘、未出网", async () => {
+  wire.length = 0
+  const task = taskOf("auto-1001-local", { execution: "local", budget: { maxDurationMin: 500 } })
+
+  expect(await invoke("automations-save", task)).toEqual({
+    ok: false,
+    reason: "maxDurationMin must be 1-120",
+    code: "automation-duration-invalid",
+  })
+  expect(onDisk("auto-1001-local")).toBe(false)
+  expect(wire).toEqual([])
+})
+
+test("[#1001] 云端注册成功但本机保存失败 ⇒ 返回本地结构码,补偿删除照发", async () => {
+  wire.length = 0
+  const task = taskOf("auto-1001-cloud", { target: { projectDir: join(ROOT, "gone-1001"), agent: "alpha-automation" } })
+  responses.push({
+    status: 200,
+    body: JSON.stringify({
+      id: "sched_new_1001",
+      name: task.name,
+      cron: "0 9 * * *",
+      enabled: true,
+      next_fire_at: 0,
+      last_job_id: null,
+      consecutive_failures: 0,
+      disabled_reason: null,
+    }),
+  })
+  responses.push({ status: 200, body: JSON.stringify({ deleted: "sched_new_1001" }) })
+
+  const res = await invoke("automations-save", task)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(res).toEqual({
+    ok: false,
+    reason: "projectDir not found(云端注册已回滚)",
+    code: "automation-project-dir-invalid",
+  })
+  expect(onDisk("auto-1001-cloud")).toBe(false)
+  expect(wire).toEqual([
+    { method: "POST", path: "/v1/cloud/schedules" },
+    { method: "DELETE", path: "/v1/cloud/schedules/sched_new_1001" },
+  ])
 })
