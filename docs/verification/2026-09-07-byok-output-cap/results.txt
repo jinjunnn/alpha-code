@@ -22,3 +22,12 @@ glm-4.5-air  thinking:enabled  @98305     HTTP 400  {"error":{"code":"1210","mes
 $ python3 probe-context.py     # max_tokens 是上限不是预留
 prompt 字符数 ≈ 360000
 max_tokens=131072 (顶格,和 prompt 相加超上下文): HTTP 200  prompt_tokens=80020 completion_tokens=15 finish=stop
+
+$ python3 probe-1352-names.py deepseek-v4-flash deepseek-flash   # 2026-09-17T08:23:13Z,#1352 名称勘破(两次计费调用,max_tokens:1)
+key source: ai.opencode.desktop.dev/alpha-secrets
+deepseek-v4-flash    max_tokens=1  HTTP 200  model='deepseek-flash' finish=length usage={"prompt_tokens": 37, "completion_tokens": 1, "total_tokens": 38, "prompt_tokens_details": {"cached_tokens": 0}, "completion_tokens_details": {"reasoning_tokens": 1}, "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 37}
+deepseek-flash       max_tokens=1  HTTP 200  model='deepseek-flash' finish=length usage={"prompt_tokens": 37, "completion_tokens": 1, "total_tokens": 38, "prompt_tokens_details": {"cached_tokens": 0}, "completion_tokens_details": {"reasoning_tokens": 1}, "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 37}
+
+$ python3 probe-1352-ceiling.py deepseek-flash   # 2026-09-17T08:25:56Z,#1352 上限重取(只打不计费的 ① ③)
+deepseek-flash       ceiling probe (99999999)  HTTP 400  {"error":{"message":"Invalid max_tokens value, the valid range of max_tokens is [1, 393216]","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}
+                     reject @393217             HTTP 400  {"error":{"message":"Invalid max_tokens value, the valid range of max_tokens is [1, 393216]","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}

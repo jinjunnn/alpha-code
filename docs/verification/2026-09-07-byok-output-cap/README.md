@@ -134,6 +134,36 @@ id 都在上游在册清单中。三档结局照本仓 `#890` 形状:`0 已验�
 可行性是勘破出来的,不是设想:2026-09-08 实打,智谱 / DeepSeek 的 `/models` 带 key 均回 200 并列出
 真实 id。**替换后新 id 仍未被验证** —— 它们要等对应的 key 出现,那道判据当场给答案。
 
+## 后续(2026-09-17,#1352:`deepseek-v4-flash` 上游改名为 `deepseek-flash`)
+
+上面那道判据第一次真的红了:`GET https://api.deepseek.com/v1/models` 只列 `deepseek-flash`、`deepseek-v4-pro`,
+目录里的 `deepseek-v4-flash` 已不在册。
+
+**先勘破「改名」还是「下架」**([`probe-1352-names.py`](probe-1352-names.py),本机 `alpha-secrets/` 同一把 key,
+`max_tokens: 1`,两次计费调用):
+
+| 请求的 `model` | HTTP | 响应的 `model` | 用量 |
+| --- | --- | --- | --- |
+| `deepseek-v4-flash` | 200 | `deepseek-flash` | prompt 37 / completion 1 |
+| `deepseek-flash` | 200 | `deepseek-flash` | prompt 37 / completion 1 |
+
+⇒ **是改名,旧名目前仍是别名**:两个名字服务的是同一个模型。目录按上游在册清单改成 `deepseek-flash`;
+旧名哪天停收不可预知,而那道判据只认 `/models`。
+
+**输出上限重取**([`probe-1352-ceiling.py`](probe-1352-ceiling.py)):三点探针里**不计费**的两点对新名实打 ——
+
+| 探针 | 结果 |
+| --- | --- |
+| ① `max_tokens: 99999999` | 400,自报 `the valid range of max_tokens is [1, 393216]` |
+| ③ `max_tokens: 393217` | 400 |
+
+**② 顶格 `393216` → 200 没有对新名重打**:它是计费调用,而本票只授权了上面两次名称勘破。② 的现存证据是
+2026-09-07 对旧名 `deepseek-v4-flash` 的那一格(200、`finish=stop`,见上方结果表)—— 而旧名今天解析到的正是
+`deepseek-flash`。读数因此沿用 `393216`、仍记 `probed`,这个缺口写在 `byok-output-cap.ts` 该条读数的注释里;
+补一次 ② 即可闭合。
+
+原始输出追加在 [`results.txt`](results.txt) 末尾。
+
 ## 顺带的发现(不属于本仓)
 
 **gateway 的两条 deepseek route 填的是 `384000`,比端点自报的 `393216` 低 9216。**

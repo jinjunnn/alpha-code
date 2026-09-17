@@ -346,7 +346,8 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     const zhipu = (cfg.provider["zhipuai-byok"] as { models: Record<string, { reasoning?: boolean }> }).models
     // #1266 起同名条目的 variants 也一并派生(见下一条),这里只看 reasoning 与「未标即缺席」。
     expect(deepseek["deepseek-v4-pro"]).toMatchObject({ name: "deepseek-v4-pro", reasoning: true })
-    expect(deepseek["deepseek-v4-flash"]).toEqual({ name: "deepseek-v4-flash" })
+    // #1352:BYOK 目录里是上游改名后的 `deepseek-flash`,平台段没有同名条目 ⇒ 无徽标、只有 name。
+    expect(deepseek["deepseek-flash"]).toEqual({ name: "deepseek-flash" })
     expect(zhipu["glm-5.2"]).toMatchObject({ name: "glm-5.2", reasoning: true })
     // #1267:BYOK-only 的 glm-4.5-air 没有平台同名条目,徽标来自目录自己的 modelMeta 槽(下一节逐字判)。
     expect(zhipu["glm-4.5-air"]).toMatchObject({ name: "glm-4.5-air", reasoning: true })
@@ -458,9 +459,9 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
 
     expect(badged.length).toBeGreaterThan(0)
     expect(injected).toEqual(badged)
-    // 反例钉死方向:快照里未标 reasoning 的 claude-fable-5 两边都不亮;deepseek BYOK 的 v4-flash 也不亮。
+    // 反例钉死方向:快照里未标 reasoning 的 claude-fable-5 两边都不亮;deepseek BYOK 的 flash 也不亮。
     expect(badged).not.toContain("alpha:claude-fable-5")
-    expect(badged).not.toContain("deepseek-byok:deepseek-v4-flash")
+    expect(badged).not.toContain("deepseek-byok:deepseek-flash")
     expect(badged).toContain("alpha:glm-5.2")
     expect(badged).toContain("zhipuai-byok:glm-5.2")
     // #1267:BYOK-only 的槽也在同一集合里 —— 平台快照收窄不影响它(它根本不从平台派生)。
