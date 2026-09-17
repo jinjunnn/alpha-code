@@ -169,6 +169,8 @@ const REFERENCED_BUT_UNREGISTERED: Record<string, string> = {
     "上游测试文件。alpha-websearch-sovereignty 的抬头只是说明自己的 harness 与它**同源**,不是把判据委派给它;packages/core 是上游包,该文件由 north-star 守卫保护。",
   "packages/opencode/test/tool/websearch.test.ts":
     "上游测试文件,不是 alpha 的闸门 —— alpha 刻意不接管它(见 alpha-ci.yml 的 ADR-035 注释),它由 north-star 守卫保护不被 alpha 改动。",
+  "packages/opencode/test/plugin/trigger.test.ts":
+    "上游测试文件。ADR-045/#427 的探针 alpha-427-memory-seam-probe.test.ts 只是说明自己的 harness 与它**同形**(真 Config、file:// 插件、临时 instance)并拿它当退路 ② 的对照,不把判据委派给它;它由 north-star 守卫保护不被 alpha 改动。",
 }
 
 const ALL_TESTS = gitListedTests()
