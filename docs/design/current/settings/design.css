@@ -327,3 +327,73 @@ textarea.inp{height:120px;padding:10px 12px;resize:vertical;line-height:var(--a-
 .kb-chord.capturing .kb-key{background:var(--a-accent-subtle);border-color:var(--a-accent);border-style:solid;color:var(--a-accent)}
 
 @media (max-width:880px){ .set-inner{padding-left:20px;padding-right:20px} }
+
+/* ── 「工具」节(#set-tools;并入自 2026-08-25-req131-settings-tool-policy/frame.html,类名保留 tp- 前缀)── */
+.tp-pane{padding-top:22px}
+.tp-grp{margin-bottom:22px}
+.tp-grp-hd{display:flex;align-items:center;gap:9px;margin-bottom:7px;padding:0 2px}
+.tp-grp-hd h3{font-size:var(--a-text-md)}
+.tp-grp-hd .n{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.tp-grp-hd .sp{flex:1}
+.tp-grp-cap{margin:0 2px 8px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+.tp-card{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-xs);overflow:hidden}
+.tp-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--a-border-faint)}
+.tp-card > :last-child, .tp-svc-tools > :last-child{border-bottom:0}
+.tp-row .meta{min-width:0;flex:1}
+.tp-row .meta .nm{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tp-row .meta b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.tp-row .meta small{display:block;margin-top:2px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);line-height:1.5}
+.tp-exp{border:0;background:none;color:var(--a-text-tertiary);width:22px;height:22px;border-radius:var(--a-radius-sm);display:grid;place-items:center;flex:none}
+.tp-exp:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.tp-svc-tools{background:var(--a-bg-subtle)}
+.tp-svc-tools .tp-row{padding-left:34px}
+
+.tp-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:var(--a-radius-full);background:var(--a-bg-muted);color:var(--a-text-secondary);font-size:10px;font-weight:600;white-space:nowrap}
+.tp-badge.cloud{background:var(--a-accent-subtle);color:var(--a-accent)}
+.tp-badge.new{background:var(--a-accent-subtle);color:var(--a-accent)}
+.tp-badge.warn{background:var(--a-warning-subtle);color:var(--a-warning)}
+.tp-eff{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:var(--a-text-xs);white-space:nowrap}
+.tp-eff i{width:6px;height:6px;border-radius:99px;background:currentcolor}
+.tp-eff.ok{color:var(--a-success)}
+.tp-eff.ask{color:var(--a-info)}
+.tp-eff.off{color:var(--a-text-tertiary)}
+.tp-lock{color:var(--a-text-tertiary);flex:none}
+.tp-lock svg{width:13px;height:13px;fill:none;stroke:currentcolor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.tp-seg{flex:none;display:inline-flex;padding:2px;gap:2px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-subtle)}
+.tp-seg button{border:0;background:none;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium);padding:4px 9px;border-radius:calc(var(--a-radius-md) - 3px)}
+.tp-seg button:hover{color:var(--a-text)}
+.tp-seg button[aria-checked="true"]{background:var(--a-surface-raised);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.tp-seg[aria-disabled="true"]{opacity:.45;pointer-events:none}
+.tp-clear{border:0;background:none;color:var(--a-text-tertiary);width:24px;height:24px;border-radius:var(--a-radius-sm);display:grid;place-items:center;flex:none;font-size:13px}
+.tp-clear:hover{background:var(--a-bg-muted);color:var(--a-text)}
+
+.tp-confirm{display:flex;align-items:center;gap:10px;margin:0;padding:9px 14px 9px 34px;background:var(--a-warning-subtle);border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.tp-confirm b{color:var(--a-text)}
+.tp-confirm .sp{flex:1}
+.tp-btn{border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 11px;border-radius:var(--a-radius-md)}
+.tp-btn.primary{border-color:transparent;background:var(--a-accent-solid);color:var(--a-text-on-accent)}
+.tp-btn.ghost{border-color:transparent;background:none;color:var(--a-text-secondary)}
+
+.tp-alert{display:flex;gap:9px;align-items:flex-start;margin:0 14px 10px 34px;padding:9px 12px;border:1px solid color-mix(in srgb,var(--a-error) 30%,var(--a-border));border-radius:var(--a-radius-md);background:var(--a-error-subtle);font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.tp-alert b{display:block;color:var(--a-text)}
+.tp-alert .dot{width:7px;height:7px;flex:none;margin-top:5px;border-radius:99px;background:var(--a-error)}
+.tp-banner{display:flex;gap:10px;align-items:flex-start;padding:13px 15px;border:1px solid color-mix(in srgb,var(--a-warning) 30%,var(--a-border));border-radius:var(--a-radius-lg);background:var(--a-warning-subtle);margin-bottom:16px}
+.tp-banner.err{border-color:color-mix(in srgb,var(--a-error) 30%,var(--a-border));background:var(--a-error-subtle)}
+.tp-banner .dot{width:8px;height:8px;flex:none;margin-top:5px;border-radius:99px;background:var(--a-warning)}
+.tp-banner.err .dot{background:var(--a-error)}
+.tp-banner b{display:block;font-size:var(--a-text-sm)}
+.tp-banner p{margin:3px 0 0;font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:1.55}
+.tp-banner .act{margin-top:8px;display:flex;gap:8px;align-items:center}
+.tp-banner .act small{color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+
+details.tp-dev{border-top:1px dashed var(--a-border-faint)}
+details.tp-dev summary{cursor:pointer;list-style:none;padding:6px 14px 6px 34px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+details.tp-dev summary::-webkit-details-marker{display:none}
+details.tp-dev .dev{padding:0 14px 9px 34px;color:var(--a-text-tertiary);font:10.5px/1.7 var(--a-font-mono);overflow-wrap:anywhere}
+.tp-degraded{display:flex;gap:8px;align-items:center;padding:8px 14px 8px 34px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);background:var(--a-bg-subtle)}
+.tp-foot{margin:4px 2px 0;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+.tp-skel{height:13px;border-radius:6px;background:var(--a-bg-muted);animation:tpPulse 1.4s ease-in-out infinite}
+@keyframes tpPulse{50%{opacity:.45}}
+@media (prefers-reduced-motion: reduce){.tp-skel{animation:none}}
+.tp-dim{opacity:.5;pointer-events:none}

@@ -4,10 +4,22 @@ import { Permission } from "@opencode-ai/schema/permission"
 import { PermissionSaved } from "@opencode-ai/schema/permission-saved"
 import { Project } from "@opencode-ai/schema/project"
 import { Session } from "@opencode-ai/schema/session"
+import { ToolPolicyInventoryV1 } from "@opencode-ai/schema/alpha-tool-inventory"
+import { ToolPolicyRecord, ToolPolicySelector } from "@opencode-ai/schema/alpha-tool-policy"
 import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "../errors"
+import {
+  ConflictError,
+  PermissionNotFoundError,
+  ServiceUnavailableError,
+  SessionNotFoundError,
+  UnknownError,
+} from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
+
+// REQ-131 / #1130:tool policy 面的写侧错误集。503 = 引擎没接线(standalone server);
+// 409 = 策略文档待恢复(先 reset);500 = 落盘失败。三者都不是「静默成功」。
+const toolPolicyWriteErrors = [ServiceUnavailableError, ConflictError, UnknownError] as const
 
 export const makePermissionGroup = <
   LocationId extends HttpApiMiddleware.AnyId,
@@ -54,6 +66,64 @@ export const makePermissionGroup = <
           identifier: "v2.permission.saved.remove",
           summary: "Remove saved permission",
           description: "Remove a saved permission by ID.",
+        }),
+      ),
+    )
+    // ── REQ-131 / #1130:tool policy 面(Settings「工具」节的唯一数据源与写口)──────────────
+    // 挂在 location 中间件之前 ⇒ 与 permission.saved.list 同一 location 解析
+    // (x-opencode-directory / location[directory]);策略文档按 (account, workspace) 分区,
+    // 所以每个端点都是 per-location 的。引擎侧未接线 ⇒ 503(fail-closed),不返回空清单。
+    .add(
+      HttpApiEndpoint.get("permission.tool-policy.inventory", "/api/permission/tool-policy/inventory", {
+        success: Schema.Struct({ data: ToolPolicyInventoryV1 }),
+        error: ServiceUnavailableError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.tool-policy.inventory",
+          summary: "List tool policy inventory",
+          description:
+            "Live tool inventory (builtin / plugin / host / MCP) with effective policy state for the location's engine instance.",
+        }),
+      ),
+    )
+    // payload 就是 `ToolPolicyRecord` 本体:service/tool 层 enabled 必须带 bindingDigest、class 层
+    // 必须不带 —— 这条 §5 纪律由 schema 在 wire 上执行(400),不落盘、不进 quarantine。
+    .add(
+      HttpApiEndpoint.put("permission.tool-policy.record.set", "/api/permission/tool-policy/record", {
+        payload: ToolPolicyRecord,
+        success: HttpApiSchema.NoContent,
+        error: toolPolicyWriteErrors,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.tool-policy.record.set",
+          summary: "Set tool policy record",
+          description: "Write one user tool policy record (class / service / tool selector) for the location.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.post("permission.tool-policy.record.remove", "/api/permission/tool-policy/record/remove", {
+        payload: Schema.Struct({ selector: ToolPolicySelector }),
+        success: HttpApiSchema.NoContent,
+        error: toolPolicyWriteErrors,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.tool-policy.record.remove",
+          summary: "Remove tool policy record",
+          description: "Remove the user tool policy record for one selector so the tool inherits again.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.post("permission.tool-policy.reset", "/api/permission/tool-policy/reset", {
+        success: Schema.Struct({ data: Schema.Struct({ backup: Schema.optional(Schema.String) }) }),
+        error: ServiceUnavailableError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.tool-policy.reset",
+          summary: "Reset tool policy document",
+          description:
+            "Move the location's user tool policy document aside (a backup path is returned) so defaults apply again.",
         }),
       ),
     )

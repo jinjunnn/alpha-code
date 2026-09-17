@@ -107,11 +107,14 @@ export type SettingsSurfaceApi = {
     write: (input: { value: AlphaSettings; expectedRevision: string }) => Promise<SettingsWriteResult>
   }
   extensionStorage: Window["api"]["extensionStorage"]
+  /** REQ-131/#1130:「工具」节 —— 引擎 tool policy 面(经 main 出口),逐条即写、无草稿。 */
+  toolPolicy: Window["api"]["toolPolicy"]
 }
 
 export function settingsSurfaceApi(): SettingsSurfaceApi {
   return {
     settings: settingsAuthorityClient,
     extensionStorage: window.api.extensionStorage,
+    toolPolicy: window.api.toolPolicy,
   }
 }

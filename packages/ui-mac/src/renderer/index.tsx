@@ -18,7 +18,7 @@ import {
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { MemoryRouter } from "@solidjs/router"
+import { MemoryRouter, useLocation } from "@solidjs/router"
 import { createEffect, createMemo, createResource, createSignal, lazy, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
@@ -46,7 +46,7 @@ import { AlphaSessionSearch } from "./alpha-ui/alpha-session-search"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import { RuntimeRecoveryHost } from "./alpha-ui/RuntimeRecoveryHost"
 import { UpstreamDialogHost } from "./alpha-ui/UpstreamDialogHost"
-import { type DeepLinkBatch, type DeepLinkDelivery } from "../shared/route-manifest"
+import { type DeepLinkBatch, type DeepLinkDelivery, parseRoute } from "../shared/route-manifest"
 import { createDeepLinkPublisher } from "./deep-link-bridge"
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
@@ -87,11 +87,20 @@ const productionRoutes = composeRoutes({
       </SurfaceBoundary>
     ),
   session: (projects: AlphaProjectsApi) => alphaSessionWorkspaceSurface(projects),
-  settings: () => (
-    <AlphaBoundary name="AlphaSettings">
-      <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} />
-    </AlphaBoundary>
-  ),
+  settings: () => {
+    // REQ-131(#1130):「工具」节按项目分区读写引擎策略;当前项目 = 路由里的 directory
+    // (session / directory 路由有,home / newSession 没有 ⇒ 该节显示「先打开一个项目」)。
+    const location = useLocation()
+    const directory = () => {
+      const route = parseRoute(location.pathname, location.search)
+      return route.kind === "session" || route.kind === "directory" ? route.directory : undefined
+    }
+    return (
+      <AlphaBoundary name="AlphaSettings">
+        <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} directory={directory} />
+      </AlphaBoundary>
+    )
+  },
   dialog: UpstreamDialogHost,
   recovery: RuntimeRecoveryHost,
 })

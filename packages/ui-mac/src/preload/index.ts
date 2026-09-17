@@ -129,6 +129,12 @@ const api: ElectronAPI = {
     inspect: () => ipcRenderer.invoke("extension-storage-inspect"),
     collect: () => ipcRenderer.invoke("extension-storage-collect"),
   },
+  toolPolicy: {
+    inventory: (input) => ipcRenderer.invoke("tool-policy-inventory", input),
+    setRecord: (input) => ipcRenderer.invoke("tool-policy-set-record", input),
+    removeRecord: (input) => ipcRenderer.invoke("tool-policy-remove-record", input),
+    reset: (input) => ipcRenderer.invoke("tool-policy-reset", input),
+  },
 
   getWindowCount: () => ipcRenderer.invoke("get-window-count"),
   onMenuCommand: (cb) => {

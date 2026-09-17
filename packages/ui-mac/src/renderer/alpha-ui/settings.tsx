@@ -11,10 +11,11 @@ import { Banner } from "./Banner"
 import { Button } from "./Button"
 import { enterModal } from "./modal-presence"
 import { settingsSurfaceApi, type SettingsSurfaceApi } from "./settings-authority-client"
+import { AlphaSettingsTools } from "./settings-tools"
 import { t } from "../i18n"
 import "./settings.css"
 
-type SettingsSection = "general" | "shortcuts" | "storage"
+type SettingsSection = "general" | "shortcuts" | "storage" | "tools"
 
 const GENERAL_TOGGLES = [
   { key: "autoSave", label: "alpha.settings.autoSave", description: "alpha.settings.autoSaveDesc" },
@@ -77,7 +78,16 @@ const settingsErrorLabel = (code: SettingsWriteFailureCode) => {
   return t("alpha.settings.errorWrite")
 }
 
-export function AlphaSettings(props: { open: boolean; onClose: () => void; api?: SettingsSurfaceApi }) {
+/**
+ * `directory`(REQ-131 / #1130):「工具」节按 (账户, 项目) 分区读写引擎策略,所以要知道当前项目目录。
+ * 由挂载方从路由给(index.tsx);没有项目时该节显示「先打开一个项目」,不向引擎发请求。
+ */
+export function AlphaSettings(props: {
+  open: boolean
+  onClose: () => void
+  api?: SettingsSurfaceApi
+  directory?: () => string | undefined
+}) {
   const api = () => props.api ?? settingsSurfaceApi()
   const [section, setSection] = createSignal<SettingsSection>("general")
   const [authority, setAuthority] = createSignal<SettingsAuthority | null>(null)
@@ -418,6 +428,7 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                 { id: "general" as const, label: t("alpha.settings.general") },
                 { id: "shortcuts" as const, label: t("alpha.settings.shortcuts") },
                 { id: "storage" as const, label: t("alpha.settings.extensionStorage") },
+                { id: "tools" as const, label: t("alpha.settings.tools") },
               ]}
             >
               {(item) => (
@@ -716,6 +727,16 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
               <p class="alpha-settings-storage-note">
                 {t("alpha.settings.storagePrivacy")}
               </p>
+            </Show>
+
+            {/* REQ-131(#1130):「工具」节 —— 逐条即写、无草稿,不参与上面通用/快捷键的 dirty / save 模型。 */}
+            <Show when={section() === "tools"}>
+              <AlphaSettingsTools
+                open={props.open}
+                active={section() === "tools"}
+                directory={props.directory?.()}
+                api={api().toolPolicy}
+              />
             </Show>
           </main>
         </div>

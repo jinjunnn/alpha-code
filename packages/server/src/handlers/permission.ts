@@ -1,10 +1,17 @@
 import { Location } from "@opencode-ai/core/location"
 import { PermissionV2 } from "@opencode-ai/core/permission"
+import { AlphaToolPolicyApi } from "@opencode-ai/core/permission/alpha-tool-policy-api"
 import { PermissionSaved } from "@opencode-ai/core/permission/saved"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
-import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
+import {
+  ConflictError,
+  PermissionNotFoundError,
+  ServiceUnavailableError,
+  SessionNotFoundError,
+  UnknownError,
+} from "@opencode-ai/protocol/errors"
 import { response } from "../location"
 
 function missingRequest(id: PermissionV2.ID) {
@@ -13,6 +20,28 @@ function missingRequest(id: PermissionV2.ID) {
 
 function conflictingRequest(id: PermissionV2.ID) {
   return new ConflictError({ resource: id, message: `Permission request conflicts with the immutable request: ${id}` })
+}
+
+// ── REQ-131 / #1130:tool policy 面 ─────────────────────────────────────────────────────
+// 标签在 core,实现在 opencode(见 core 侧文件抬头)。用 serviceOption 而不是把它写进 handler 的 R:
+// R 一变,上游 `packages/server/src/routes.ts` 与 `packages/cli/.../serve.ts` 的 `toWebHandler`/`serve`
+// 约束当场红 —— 那两处不在收编名单里。没接线的宿主(standalone server)拿到的是 503,不是空清单。
+const toolPolicyApi = Effect.gen(function* () {
+  const api = yield* Effect.serviceOption(AlphaToolPolicyApi.Service)
+  if (Option.isNone(api)) {
+    return yield* new ServiceUnavailableError({
+      message: "tool policy api is not wired into this server",
+      service: AlphaToolPolicyApi.Service.key,
+    })
+  }
+  return api.value
+})
+
+// 写侧错误逐型映射:quarantined ⇒ 409(先 reset);io ⇒ 500。不解析 message。
+function toolPolicyWriteFailure(error: AlphaToolPolicyApi.WriteError) {
+  return error.kind === "quarantined"
+    ? new ConflictError({ resource: "tool-policy-document", message: error.message })
+    : new UnknownError({ message: error.message })
 }
 
 export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", (handlers) =>
@@ -99,6 +128,45 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
         Effect.fn(function* (ctx) {
           yield* (yield* PermissionSaved.Service).remove(ctx.params.id)
           return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "permission.tool-policy.inventory",
+        Effect.fn(function* () {
+          const location = yield* Location.Service
+          const api = yield* toolPolicyApi
+          return { data: yield* api.list({ directory: location.directory }) }
+        }),
+      )
+      .handle(
+        "permission.tool-policy.record.set",
+        Effect.fn(function* (ctx) {
+          const location = yield* Location.Service
+          const api = yield* toolPolicyApi
+          yield* api
+            .setRecord({ directory: location.directory, record: ctx.payload })
+            .pipe(Effect.mapError(toolPolicyWriteFailure))
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "permission.tool-policy.record.remove",
+        Effect.fn(function* (ctx) {
+          const location = yield* Location.Service
+          const api = yield* toolPolicyApi
+          yield* api
+            .removeRecord({ directory: location.directory, selector: ctx.payload.selector })
+            .pipe(Effect.mapError(toolPolicyWriteFailure))
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "permission.tool-policy.reset",
+        Effect.fn(function* () {
+          const location = yield* Location.Service
+          const api = yield* toolPolicyApi
+          const result = yield* api.reset({ directory: location.directory })
+          return { data: result.backup === undefined ? {} : { backup: result.backup } }
         }),
       )
   }),

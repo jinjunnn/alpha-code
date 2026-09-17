@@ -4,8 +4,8 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-08-25
-review_after: 2027-02-25
+last_reviewed: 2026-09-17
+review_after: 2027-03-17
 ---
 
 # Hierarchical tool policy contract
@@ -88,3 +88,35 @@ SOT = `packages/opencode/src/permission/alpha-managed-policy.ts`。与上游
 `scripts/gate-files.tsv`),生产双咽喉取证见
 `packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts`(#1128 后
 B9/B13 转绿,B2/B3/B4/B6/B10/B11 属 #1129)。
+
+写侧失败 `ToolPolicyWriteError` 携带 `kind: quarantined | io`(#1130):消费面据此区分
+「文档待恢复,先 reset」与「落盘失败」,不解析 message 文本。
+
+## 出口:HTTP 面与桌面 IPC(#1130)
+
+引擎侧的 inventory / 写口经**已收编的 v2 permission 组**走出引擎进程(接缝勘破见
+[`../architecture/2026-09-17-tool-policy-transport-seam.md`](../architecture/2026-09-17-tool-policy-transport-seam.md));
+每个端点按 v2 location(`x-opencode-directory` / `location[directory]`)解析引擎实例,
+因为策略按 `(account, workspace)` 分区 —— 没有实例就没有分区。
+
+| 端点(`packages/protocol/src/groups/permission.ts`) | 成功 | 失败 |
+| --- | --- | --- |
+| `GET /api/permission/tool-policy/inventory` | 200 `{ data: ToolPolicyInventoryV1 }`(SOT `packages/schema/src/alpha-tool-inventory.ts`) | 503 `ServiceUnavailableError`(引擎没接线,不返回空清单) |
+| `PUT /api/permission/tool-policy/record`,payload = `ToolPolicyRecord` | 204 | 400(记录不合 schema:service/tool 层 enabled 未带 bindingDigest、class 层带了)· 409 `ConflictError`(文档待恢复)· 500 `UnknownError`(落盘失败)· 503 |
+| `POST /api/permission/tool-policy/record/remove`,payload = `{ selector }` | 204 | 同上 |
+| `POST /api/permission/tool-policy/reset` | 200 `{ data: { backup?: string } }` | 503 |
+
+标签:core `@opencode/v2/AlphaToolPolicyApi`(`packages/core/src/permission/alpha-tool-policy-api.ts`),
+实现 = `packages/opencode/src/permission/alpha-tool-inventory.ts` 的 `bridge`(`InstanceStore.provide`
+按 directory 注入实例),由 `session/prompt.ts` 的顶层 node 合成暴露。handler 用 `serviceOption`
+取标签,缺席即 503。判据:`packages/opencode/test/server/alpha-tool-policy-route.test.ts`(R1–R5,
+登记于 `scripts/gate-files.tsv`)+ `httpapi-exercise` 四条 scenario。
+
+桌面侧(`packages/ui-mac`):main `tool-policy-client.ts` 按上表直接 fetch(不经生成的 SDK,理由见接缝文档 §4),
+并对 inventory 再 decode 一次 `parseToolPolicyInventory`;经 `tool-policy-ipc.ts` 暴露为 preload
+`window.api.toolPolicy = { inventory, setRecord, removeRecord, reset }`(形状 SOT
+`packages/ui-mac/src/shared/tool-policy-wire.ts`)。renderer 只拿**闭集**结果码:读侧
+`engine-unavailable | not-wired | invalid-shape | request-failed`,写侧再加
+`quarantined | invalid-record | write-failed`;不携带路径、栈或引擎原文。四种读失败都 fail-closed:
+Settings 不显示清单、不放宽任何工具。判据:`packages/ui-mac/src/main/tool-policy-client.test.ts`、
+`packages/ui-mac/src/renderer/alpha-ui/settings-tools.test.ts`。

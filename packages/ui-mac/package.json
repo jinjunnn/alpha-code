@@ -51,6 +51,7 @@
     "@lydell/node-pty": "catalog:",
     "@opencode-ai/app": "workspace:*",
     "@opencode-ai/plugin": "workspace:*",
+    "@opencode-ai/schema": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/session-ui": "workspace:*",
     "@opencode-ai/ui": "workspace:*",

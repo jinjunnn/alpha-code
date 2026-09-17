@@ -35,6 +35,7 @@ import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
 import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
+import { AlphaToolInventory } from "@/permission/alpha-tool-inventory"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { Shell } from "@opencode-ai/core/shell"
@@ -1641,9 +1642,22 @@ const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
 
+// ── #1130 路线 B:把 core 标签 `@opencode/v2/AlphaToolPolicyApi` 从这个顶层 node 合成暴露 ──
+// v2 handlers 能看见的上下文只有两种来源:core 的 location services(location-services.ts,上游)
+// 与 httpapi/server.ts `app` 组的**顶层**成员(LayerNode.compile 对依赖用 Layer.provide、只对顶层用
+// provideMerge)。两处都是上游文件;本文件是 `app` 组顶层成员里已收编(ADR-033 / #1011)且依赖面
+// 已含 ToolRegistry / MCP / Config / AlphaToolPolicy 的那个,所以合成放在这里 —— **不新增 deps**
+// (InstanceStore 由 bridge 在请求时从上下文取;加进 deps 会让所有编译本 node 的测试被迫绑定
+// InstanceStore.bootstrapNode)。
+// Layer.suspend 是必需的:tool/registry → tool/task → session/prompt → alpha-tool-inventory → tool/registry
+// 构成 ESM 环,顶层直接取 `AlphaToolInventory.exposed` 在 inventory 先被加载时会撞 TDZ。
+// 勘破与替代宿主的取舍见 docs/architecture/2026-09-17-tool-policy-transport-seam.md。
 export const node = LayerNode.make({
   service: Service,
-  layer: layer,
+  layer: Layer.mergeAll(
+    layer,
+    Layer.suspend(() => AlphaToolInventory.exposed),
+  ),
   deps: [
     SessionStatus.node,
     Session.node,

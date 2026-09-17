@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-17T09:06:11.031Z",
+  "productionBaselineCommit": "2509364f9b195aff48adc8e9e5854bcb231ea7d3",
+  "harness": "production AlphaSettings (tools section) via loopback Vite build + Chrome --headless=new",
+  "harnessSha256": "519e95b5abc7ff536e6821b82de3aab96502515746c013516cba11392790b7d7",
+  "captureDriverSha256": "0eb635c4d230195d43292715321699a97907fd5c4538ec8d8c7f3914fed79815",
+  "chrome": "Google Chrome 152.0.7977.83",
+  "viewports": {
+    "narrow": 760,
+    "wide": 1280
+  },
+  "foregroundApplicationLaunches": 0,
+  "credentialsUsed": false,
+  "electronStarted": false,
+  "records": [
+    {
+      "state": "default",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/default-light-narrow.png",
+      "bytes": 295112,
+      "sha256": "2dbe8c74caf07dc6df28d2b06fa6d508988896de8692799bd8a29c302e1e5caf"
+    },
+    {
+      "state": "default",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/default-dark-narrow.png",
+      "bytes": 292102,
+      "sha256": "6e668f4f5864e86da002d0887629283c4ef1bd30f2304d643e4286c4f0f9ae20"
+    },
+    {
+      "state": "rebind",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/rebind-light-narrow.png",
+      "bytes": 284728,
+      "sha256": "d0e498499f380fbe5f1a8ceae219873f46d0900c3bd25135b45a161757774b39"
+    },
+    {
+      "state": "rebind",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/rebind-dark-narrow.png",
+      "bytes": 282549,
+      "sha256": "cf3d32ac7552b6bb07a1eb6c7bd7199223d9609b8d45b993886e2fa293f75917"
+    },
+    {
+      "state": "quarantine",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/quarantine-light-narrow.png",
+      "bytes": 258653,
+      "sha256": "ffc9e9b6bc6947977bcdaa8d8d6ce1ed1fbc755ff0f2bbc9bcf17c04ca118eb1"
+    },
+    {
+      "state": "quarantine",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/quarantine-dark-narrow.png",
+      "bytes": 250803,
+      "sha256": "1cbf29ba85ab3a88528d0b65558931c1d4ccf740ef14e3d9e2d4b9704b6ab55f"
+    },
+    {
+      "state": "savefail",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/savefail-light-narrow.png",
+      "bytes": 295414,
+      "sha256": "5a41a60f3f29e5d58fefdd2fc0fe8d98df556143784aeb4590dc061177abd178"
+    },
+    {
+      "state": "savefail",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/savefail-dark-narrow.png",
+      "bytes": 292537,
+      "sha256": "7774e45446c51d4e9e7ba4eec69049078f1372fe475a3c8ad20e8c88d9d89b51"
+    },
+    {
+      "state": "loading",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/loading-light-narrow.png",
+      "bytes": 15171,
+      "sha256": "6cd3f3be62d3138143a670d33c7c8c425e2a531a2eb626dc94884aeb8e88d60f"
+    },
+    {
+      "state": "loading",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/loading-dark-narrow.png",
+      "bytes": 15271,
+      "sha256": "cdac41130e8af728203e8a8d28d30ac1132eaf098875afa202096a125a3e7745"
+    },
+    {
+      "state": "loadfail",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/loadfail-light-narrow.png",
+      "bytes": 30814,
+      "sha256": "183a8b3c4a7a581434ec10f47352479a56af1dd63ab2b253b3768298b7d5dd2d"
+    },
+    {
+      "state": "loadfail",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/loadfail-dark-narrow.png",
+      "bytes": 31103,
+      "sha256": "79742f04703621cb7a535e047c387f8fa38910f233c098bda76c67be6254bc76"
+    },
+    {
+      "state": "default",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/default-light-wide.png",
+      "bytes": 307927,
+      "sha256": "0313ccd64d9b9404705ccf90e3175dc64be11ee162823da50fc7e59dc77fe7f2"
+    },
+    {
+      "state": "default",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/default-dark-wide.png",
+      "bytes": 304169,
+      "sha256": "4d9039e06350520274f81624d60ea908ca7b1746f811dbfaa4bdb725b4abbb85"
+    },
+    {
+      "state": "rebind",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/rebind-light-wide.png",
+      "bytes": 297137,
+      "sha256": "769ff11e465ad8bcbe8e39117746668036be26d319bb685e7e02699eb6bd5b89"
+    },
+    {
+      "state": "rebind",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/rebind-dark-wide.png",
+      "bytes": 294043,
+      "sha256": "26a5c12e2f1ddacc71213d0cbe2b858f2a5a2fd99604cbabbfd39bea0e50a912"
+    },
+    {
+      "state": "quarantine",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/quarantine-light-wide.png",
+      "bytes": 272255,
+      "sha256": "77fe82144a7e06bee9062fe078cd7f6462b213527906ae460bcd90018811702f"
+    },
+    {
+      "state": "quarantine",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/quarantine-dark-wide.png",
+      "bytes": 263008,
+      "sha256": "2657a3da6a879ffa8ee09a5ff2f801c92022b4d0c0319e698e5d9fa91fa4a073"
+    },
+    {
+      "state": "savefail",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/savefail-light-wide.png",
+      "bytes": 308392,
+      "sha256": "951e003ce888589d17d0cd796937cc598f4d2c42dcb2f0960f4766a27d94de85"
+    },
+    {
+      "state": "savefail",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/savefail-dark-wide.png",
+      "bytes": 304746,
+      "sha256": "afda04d725630bb2ec8973a6dbc7732ffde36b470faa3443811186a2c6c682c9"
+    },
+    {
+      "state": "loading",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/loading-light-wide.png",
+      "bytes": 17075,
+      "sha256": "eaa747fe8d8a4ebacbd40105e88ebceb3e2720cb9adf706b536a8b1fdce58c93"
+    },
+    {
+      "state": "loading",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/loading-dark-wide.png",
+      "bytes": 17138,
+      "sha256": "09155a0f066e06a19ac4c9aea96f5859a2d99abcfda05f4ec893e72037096e98"
+    },
+    {
+      "state": "loadfail",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/loadfail-light-wide.png",
+      "bytes": 33356,
+      "sha256": "85bd6b8d1f5fbfd35eb2954729c4ac069cd3e82d426f458627ae79ff2ece437e"
+    },
+    {
+      "state": "loadfail",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/loadfail-dark-wide.png",
+      "bytes": 33565,
+      "sha256": "63c90e591e177e607c2e2f0b7b4c0e5b9ee41c3cfb79a890f5377b91c93237aa"
+    }
+  ]
+}
