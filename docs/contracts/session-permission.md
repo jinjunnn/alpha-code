@@ -95,15 +95,23 @@ library construction before the permission-owned in-code defenses receive it.
 The current repository-wide review found no prototype-pollution injection
 point, such as a recursive merge that writes an attacker-controlled
 `__proto__` value into a prototype, so these three paths are currently
-unreachable. Removing the precondition at its root requires freezing the
-built-in prototypes during startup; that work is tracked by
-[#440](https://github.com/jinjunnn/alpha-code/issues/440).
+unreachable. Removing the precondition at its root would require freezing the
+built-in prototypes during startup. That work was evaluated and closed as not
+planned, as over-engineering for this project, in
+[#440](https://github.com/jinjunnn/alpha-code/issues/440): the attack needs
+built-in prototypes to be polluted first, no injection point has been found, and
+freezing built-ins would touch the engine and many third-party dependencies,
+requiring a full audit and packaged verification for no observable
+improvement. The residual is accepted as-is.
 
-Until #440 is delivered, triggering this residual requires prototype pollution
-to exist before one of the three library constructions runs. Within this
-contract, the impact is limited to rewriting authorization-decision values,
-and the current absence of a reachable pollution-injection path mitigates that
-severity.
+Triggering this residual requires prototype pollution to exist before one of
+the three library constructions runs. Within this contract, the impact is
+limited to rewriting authorization-decision values, and the current absence of
+a reachable pollution-injection path mitigates that severity. #440 records the
+conditions for reopening that work: an entry point that can write external
+input into a built-in prototype is found (for example, a recursive merge that
+does not filter `__proto__`), or the desktop app starts running untrusted
+third-party code in the same process as permission decisions.
 
 The fingerprint covers every request fact except `id`: Session, subject,
 action, resources, scope, expiry, save candidates, metadata, and source.

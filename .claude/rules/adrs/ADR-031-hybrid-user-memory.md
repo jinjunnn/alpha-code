@@ -28,6 +28,8 @@ related: [ADR-025, ADR-029, "alpha-work:REQ-121"]
 
 本 ADR 处于 proposed 状态，只定义目标边界，不改变当前产品行为，也不代表云端 Memory 已实现、启用或部署。具体云端合同须先由 [alpha-platform#84](https://github.com/jinjunnn/alpha-platform/issues/84) 裁决；在相应实现与验证完成前，现有 [[ADR-025]] 本地行为仍是实际能力。
 
+**2026-09-17 补注**：父需求 [alpha-work#24](https://github.com/jinjunnn/alpha-work/issues/24)（REQ-121）已按 owner 裁决收窄为本机版，本 ADR 中「选择性发布到云端」及其云端合同部分不做（alpha-platform#84–#87 与 alpha-web#73 已关闭为不计划），上一段「须先由 alpha-platform#84 裁决」随之不再成立；本机部分不受此句影响，记忆进入对话的接入方式仍待 [alpha-code#427](https://github.com/jinjunnn/alpha-code/issues/427) 裁决。
+
 ## 决策
 
 ### 1. 本地优先且保持用户所有权
