@@ -92,6 +92,7 @@ export const dict = {
   "alpha.auto.saved": "Saved — will run on schedule",
   "alpha.auto.saveFailed": "Failed to save — not written",
   "alpha.auto.removeFailed": "Failed to delete",
+  "alpha.auto.toggleFailed": "Couldn't switch this task on or off",
   "alpha.auto.history": "Run history",
   "alpha.auto.openSession": "Open session",
   "alpha.auto.openRun": "Run artifacts",
@@ -119,7 +120,18 @@ export const dict = {
   "alpha.auto.execLocal": "Local",
   "alpha.auto.execCloud": "Cloud",
   "alpha.auto.cloudBoundary": "Cloud execution: runs on time even when the app is offline. The task description is sent to the cloud as a research question (task text only — no project files are uploaded); results are pulled back into the project's .code-puppy/runs when the app opens. Budget is hard-capped (15 iter / 150k tokens / 5 min).",
-  "alpha.auto.cloudStuck": "Cloud-disabled (stuck job)",
+  // [#778] Why the cloud paused a schedule — each says what happened and what to do. The values come from
+  // the alpha-platform scheduler's write sites; turning the switch off and on re-enables it in the cloud,
+  // which clears the paused state and issues a fresh run authorization.
+  "alpha.auto.cloudDisabledFailures":
+    "Paused in the cloud: the last few runs failed in a row — check the run history, fix the cause, then turn the switch off and on again to resume.",
+  "alpha.auto.cloudDisabledStuck": "Paused in the cloud: the previous run never finished — turn the switch off and on again to resume.",
+  "alpha.auto.cloudDisabledGrantMissing":
+    "Paused in the cloud: this task has no authorization to run there — turn the switch off and on again to re-authorize and resume.",
+  "alpha.auto.cloudDisabledGrantExpired":
+    "Paused in the cloud: this task's authorization to run there has expired — turn the switch off and on again to re-authorize and resume.",
+  "alpha.auto.cloudDisabledUnknown":
+    "Paused in the cloud (reason: {{reason}}) — try turning the switch off and on again; if it stays paused, send us this reason.",
   "alpha.auto.permStandardNote": "Writable: the AI can edit files and run regular commands (destructive commands are blocked, but the blocklist is not exhaustive). Use only for tasks you trust.",
   "alpha.auto.standardConfirm": "Standard = the AI can edit files and run commands unattended. Destructive commands are blocked, but the blocklist is not exhaustive. Enable?",
   "alpha.auto.llmParse": "Parse with AI",
@@ -145,6 +157,15 @@ export const dict = {
   "alpha.auto.cloudErrFormUnsupported":
     "Cloud execution supports cron, intervals under 60 minutes, and whole-hour intervals up to 24 hours; use local execution for one-off runs and any other interval.",
   "alpha.auto.cloudErrUnknown": "The cloud refused this operation: {{code}}",
+  // [#1001] Saving failed on this computer (storage-layer checks / disk write). Likewise no numeric limits
+  // restated here, so the copy cannot drift from the code.
+  "alpha.auto.localErrInvalid": "This task's settings are incomplete, so it wasn't saved — cancel and create it again.",
+  "alpha.auto.localErrName": "The task name is empty or too long — shorten it and save again.",
+  "alpha.auto.localErrPrompt": "The task prompt is empty or too long — shorten it and save again.",
+  "alpha.auto.localErrProjectDir": "The chosen project folder doesn't exist or isn't a folder — pick the project folder again, then save.",
+  "alpha.auto.localErrSchedule": "The schedule isn't valid — set it again, then save.",
+  "alpha.auto.localErrDuration": "The max duration is outside the allowed range — adjust it and save again.",
+  "alpha.auto.localErrStorage": "Couldn't write to this computer's disk, so the task wasn't saved — check free space or folder permissions and try again.",
   "alpha.ext.customMcp": "Add custom connector",
   "alpha.ext.customMcpSub": "Any MCP server (command or URL), beyond the curated catalog",
   "alpha.ext.customMcpTitle": "Add custom connector (MCP)",

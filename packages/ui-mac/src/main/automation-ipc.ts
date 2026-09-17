@@ -47,7 +47,8 @@ export function registerAutomationIpcHandlers() {
         void deleteCloudSchedule(up.scheduleId).then((d) => {
           if (!d.ok) getLogger().error(`automations: ORPHAN cloud schedule ${up.scheduleId} — local save failed AND compensating delete failed (${d.reason})`)
         })
-        return { ok: false as const, reason: `${res.reason}(云端注册已回滚)` }
+        // [#1001] 面板读 `code`(本机失败的本地结构码)出人话;reason 只进日志,不再拼给用户看。
+        return { ok: false as const, reason: `${res.reason}(云端注册已回滚)`, code: res.code }
       }
       if (res.ok) rearmAutomations()
       return res
@@ -68,7 +69,8 @@ export function registerAutomationIpcHandlers() {
     const prev = getAutomation(id)
     if (prev?.cloudScheduleId) {
       const del = await deleteCloudSchedule(prev.cloudScheduleId)
-      if (!del.ok) return { ok: false as const, reason: del.reason } // 云侧删不掉不静默(否则离线幽灵触发)
+      // 云侧删不掉不静默(否则离线幽灵触发)。[#994] `code` 是承重接线:面板据它给删除失败的提示选人话。
+      if (!del.ok) return { ok: false as const, reason: del.reason, code: del.code }
     }
     const res = deleteAutomation(id)
     if (res.ok) rearmAutomations()
@@ -82,7 +84,8 @@ export function registerAutomationIpcHandlers() {
     if (task.enabled) delete task.disabledReason // A2:手动重新启用 = 清熔断态
     if (task.cloudScheduleId) {
       const r = await setCloudScheduleEnabled(task.cloudScheduleId, task.enabled)
-      if (!r.ok) return { ok: false as const, reason: r.reason }
+      // [#994] 云端没停掉/没开起来 ⇒ 不落盘(本地开关态保持),`code` 交面板给提示选人话。
+      if (!r.ok) return { ok: false as const, reason: r.reason, code: r.code }
     }
     const res = saveAutomation(task)
     if (res.ok) rearmAutomations()

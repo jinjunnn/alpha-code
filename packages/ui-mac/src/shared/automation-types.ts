@@ -52,6 +52,20 @@ export interface AutomationTask {
   history?: AutomationRunRecord[]
 }
 
+/**
+ * [#1001] 存储层拒绝一个任务时的**本地结构码**(main 铸,经 IPC 原样带到 renderer,由那里唯一有
+ * i18n 的一层选文案;英文 reason 只进日志)。刻意用 kebab + `automation-` 前缀:平台分类码是 snake,
+ * 桌面传输伪码不带这个前缀,三个域结构上不相交。renderer 的文案表以本类型为键,漏一个码 typecheck 即红。
+ */
+export type AutomationStoreErrorCode =
+  | "automation-invalid" // 面板结构上发不出的形状(id / execution / permissionProfile / 非对象)
+  | "automation-name-invalid"
+  | "automation-prompt-invalid"
+  | "automation-project-dir-invalid" // 非绝对路径 / 不存在 / 不是目录
+  | "automation-schedule-invalid"
+  | "automation-duration-invalid"
+  | "automation-storage-failed" // 落盘抛错(磁盘满 / 无权限)
+
 /** 调度器 → renderer 的推送事件(preload "automation-event" 通道)。 */
 export type AutomationEvent =
   | { type: "run-started"; taskId: string; at: string }

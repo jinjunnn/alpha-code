@@ -1,4 +1,6 @@
 // [#969] 云档定时任务被拒绝时,用户在 `.alpha-auto-err` 那一行读到的东西。
+// [#994] 删除与开关在云端失败时弹出的提示也用这张表 —— 同一个码,在三个动作上说同一句话。
+// [#1001] 保存时**本机**失败(存储层校验 / 落盘)的本地结构码也在这里出人话 —— main 只给码与英文日志串。
 //
 // 为什么映射在 renderer 而不是 main:main 侧全仓零 i18n import,把中文写进 main 等于让
 // 英文界面读中文(en 之外的 14 个语种按既有设计回落 en)。所以 main 只出**结构槽** `code`,
@@ -22,15 +24,32 @@
 // 它们若真的出现,走下面的回落分支原样上屏 —— 那正是「我们的勘破错了」应该长的样子。
 
 import { t } from "../i18n"
+import type { AutomationStoreErrorCode } from "../../shared/automation-types"
+
+/**
+ * [#1001] 本地结构码 → 文案键。以类型为键:main 新增一个码而这里没跟上,typecheck 当场红
+ * (本地码是我们自己铸的,不存在「不认识」—— 与平台码的回落纪律不同)。
+ */
+const LOCAL_STORE_COPY: Record<AutomationStoreErrorCode, Parameters<typeof t>[0]> = {
+  "automation-invalid": "alpha.auto.localErrInvalid",
+  "automation-name-invalid": "alpha.auto.localErrName",
+  "automation-prompt-invalid": "alpha.auto.localErrPrompt",
+  "automation-project-dir-invalid": "alpha.auto.localErrProjectDir",
+  "automation-schedule-invalid": "alpha.auto.localErrSchedule",
+  "automation-duration-invalid": "alpha.auto.localErrDuration",
+  "automation-storage-failed": "alpha.auto.localErrStorage",
+}
 
 /**
  * 分类码 → 人话。认识的给文案,不认识的回落成带码的模板。
  *
  * 入参的 `code` 来自两个不相交的域:平台分类码 `/^[a-z][a-z0-9_]{2,63}$/`(snake,经
  * main 的 platform-error-code 咽喉),以及桌面自铸的 kebab 码(`authed()` 的四个传输伪码 +
- * `SCHEDULE_FORM_UNSUPPORTED_CODE`)。
+ * `SCHEDULE_FORM_UNSUPPORTED_CODE` + [#1001] 存储层的 `automation-*` 本地结构码)。
  */
 export function scheduleRefusalCopy(code: string): string {
+  // 本机存储层(桌面自铸,kebab,`automation-` 前缀)。
+  if (Object.hasOwn(LOCAL_STORE_COPY, code)) return t(LOCAL_STORE_COPY[code as AutomationStoreErrorCode])
   // 传输腿(桌面自铸,kebab)。文案与 dispatch 面共用既有键 —— 同一件事只说一遍。
   if (code === "not-authenticated" || code === "unauthorized") return t("alpha.ext.cloudErrAuth")
   if (code === "no-cloud-endpoint") return t("alpha.ext.cloudErrEndpoint")

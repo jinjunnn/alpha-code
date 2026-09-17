@@ -15,6 +15,7 @@ import { MemoryRouter, Route } from "@solidjs/router"
 import { createSignal, type JSX } from "solid-js"
 import { render } from "solid-js/web"
 import { AutomationPanel } from "./automation-panel"
+import { ToastViewport } from "../alpha-ui/Toast"
 import { setAutomationOpen } from "./automation-state"
 import { scheduleRefusalCopy } from "./schedule-refusal-copy"
 import { setLocale, t } from "../i18n"
@@ -26,15 +27,47 @@ export { render, scheduleRefusalCopy, setLocale, t }
 export const DEFAULT_DIR = "/Users/tester/proj-a"
 
 type SaveResult = { ok: true } | { ok: false; reason: string; code?: string }
+/** [#994] 删除 / 开关的返回形状同 save。 */
+type MutationResult = SaveResult
+export type ListedTask = AutomationTask & { nextFireAt: number | null; running: boolean }
+/** 云端 schedule 回读里面板真正读的那两个字段(形状照 main 的 CloudScheduleView)。 */
+export type CloudScheduleState = { id: string; enabled: boolean; disabled_reason: string | null }
 
 const [saveResult, setSaveResult] = createSignal<SaveResult>({ ok: true })
 const [saveCalls, setSaveCalls] = createSignal<AutomationTask[]>([])
+const [listedTasks, setListedTasks] = createSignal<ListedTask[]>([])
+const [cloudSchedules, setCloudSchedules] = createSignal<CloudScheduleState[] | null>(null)
+const [cloudSyncCalls, setCloudSyncCalls] = createSignal(0)
+const [removeResult, setRemoveResult] = createSignal<MutationResult>({ ok: true })
+const [removeCalls, setRemoveCalls] = createSignal<string[]>([])
+const [toggleResult, setToggleResult] = createSignal<MutationResult>({ ok: true })
+const [toggleCalls, setToggleCalls] = createSignal<Array<[string, boolean]>>([])
 
-export { saveCalls }
+export { cloudSyncCalls, removeCalls, saveCalls, toggleCalls }
+
+/** [#994] 排 `automations.remove` 的返回值。 */
+export function queueRemoveResult(result: MutationResult): void {
+  setRemoveResult(() => result)
+}
+
+/** [#994] 排 `automations.toggle` 的返回值。 */
+export function queueToggleResult(result: MutationResult): void {
+  setToggleResult(() => result)
+}
 
 /** 排下一次(以及之后每一次)`automations.save` 的返回值 —— 模拟 main 交回来的那个对象。 */
 export function queueSaveResult(result: SaveResult): void {
   setSaveResult(() => result)
+}
+
+/** [#778] 列表里的任务(`automations.list` 的返回)。 */
+export function queueListedTasks(tasks: ListedTask[]): void {
+  setListedTasks(() => tasks)
+}
+
+/** [#778] 云端回读(`automations.cloudSync` 的 schedules);null = 离线。 */
+export function queueCloudSchedules(schedules: CloudScheduleState[] | null): void {
+  setCloudSchedules(() => schedules)
 }
 
 /** 面板把自己的 Portal 挂到 `#root`;没有它,面板 DOM 不会进 document。 */
@@ -54,14 +87,25 @@ export function installPreloadStub(): void {
       getState: async () => ({ status: "logged-out", mode: "byok" }),
     },
     automations: {
-      list: async () => ({ tasks: [], state: { pausedAll: false }, loginItem: false }),
+      list: async () => ({ tasks: listedTasks(), state: { pausedAll: false }, loginItem: false }),
       onEvent: unsubscribe,
-      cloudSync: async () => ({ schedules: null, pulled: { pulled: 0 } }),
+      cloudSync: async () => {
+        setCloudSyncCalls((n) => n + 1)
+        return { schedules: cloudSchedules(), pulled: { pulled: 0 } }
+      },
       loginItem: async () => ({ openAtLogin: false }),
       pauseAll: async () => ({ ok: true }),
       save: async (task: AutomationTask) => {
         setSaveCalls((seen) => [...seen, task])
         return saveResult()
+      },
+      remove: async (id: string) => {
+        setRemoveCalls((seen) => [...seen, id])
+        return removeResult()
+      },
+      toggle: async (id: string, enabled: boolean) => {
+        setToggleCalls((seen) => [...seen, [id, enabled]])
+        return toggleResult()
       },
     },
     workspaceDefaultDir: async () => DEFAULT_DIR,
@@ -75,6 +119,13 @@ export function resetHarness(): void {
   setAutomationOpen(false)
   setSaveCalls([])
   setSaveResult(() => ({ ok: true }))
+  setListedTasks([])
+  setCloudSchedules(null)
+  setCloudSyncCalls(0)
+  setRemoveResult(() => ({ ok: true }))
+  setRemoveCalls([])
+  setToggleResult(() => ({ ok: true }))
+  setToggleCalls([])
   setLocale("zh")
 }
 
@@ -87,6 +138,8 @@ export function AutomationRefusalHarness(): JSX.Element {
   const Shell = (p: { children?: JSX.Element }) => (
     <>
       <AutomationPanel serverKey={() => "sidecar"} />
+      {/* [#994] 真 toast 视口:删除/开关失败的提示落在这里,判据读它的 DOM */}
+      <ToastViewport />
       {p.children}
     </>
   )

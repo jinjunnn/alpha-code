@@ -18,6 +18,7 @@ import { subscribeAuthState } from "../auth-recovery"
 import { Svg } from "../extensions/ext-presentation"
 import { automationOpen, setAutomationOpen } from "./automation-state"
 import { scheduleRefusalCopy } from "./schedule-refusal-copy"
+import { cloudDisabledReasonCopy } from "./cloud-disabled-reason-copy"
 import "./automation-panel.css"
 
 type ListedTask = AutomationTask & { nextFireAt: number | null; running: boolean }
@@ -294,9 +295,10 @@ export function AutomationPanel(props: {
     setSaving(true)
     try {
       const r = await window.api.automations.save(task)
-      // [#969] 云档腿的拒绝带**结构槽** `code`(注册被拒 / 改本地时云端删除被拒都走这里)——
-      // 换成人话再上屏。没有 code 的是本地落盘失败一类,main 的 reason 就是它能给的全部。
-      if (!r.ok) return setFErr(r.code ? scheduleRefusalCopy(r.code) : r.reason)
+      // [#969] 拒绝带**结构槽** `code`(云端注册被拒 / 改本地时云端删除被拒 / [#1001] 本机校验或落盘
+      // 失败)—— 换成人话再上屏。`reason` 是 main 的日志串(英文或半英半中),**永不上屏**:万一没带
+      // code,说一句通用的保存失败。
+      if (!r.ok) return setFErr(r.code ? scheduleRefusalCopy(r.code) : t("alpha.auto.saveFailed"))
       pushToast({ kind: "success", title: t("alpha.auto.saved") })
       setNlInput("")
       await refresh()
@@ -313,9 +315,12 @@ export function AutomationPanel(props: {
 
   const remove = async (id: string) => {
     try {
-      await window.api.automations.remove(id)
+      const r = await window.api.automations.remove(id)
+      // [#994] 云端没删掉时 main 返回 `{ ok:false, code }` 而不是抛出 —— 过去这里整个丢弃,用户
+      // 回到列表看见那条还在、没有任何解释,而云端那条照常按时跑。原因换成人话放进提示里。
+      if (!r.ok) pushToast({ kind: "error", title: t("alpha.auto.removeFailed"), detail: r.code ? scheduleRefusalCopy(r.code) : undefined })
     } catch {
-      // remove is called from the list (no form error slot) → toast so a failed delete isn't silent
+      // remove threw (IPC/main) → toast so a failed delete isn't silent
       pushToast({ kind: "error", title: t("alpha.auto.removeFailed") })
       return
     }
@@ -449,10 +454,13 @@ export function AutomationPanel(props: {
                                       ? t("alpha.auto.disabledBreaker")
                                       : t("alpha.auto.disabled")}
                                 <Show when={task.cloudScheduleId && cloudStates().get(task.cloudScheduleId!)?.disabled_reason}>
-                                  {" · "}
-                                  {cloudStates().get(task.cloudScheduleId!)!.disabled_reason === "consecutive_failures"
-                                    ? t("alpha.auto.disabledBreaker")
-                                    : t("alpha.auto.cloudStuck")}
+                                  {(reason) => (
+                                    <>
+                                      {" · "}
+                                      {/* [#778] 每个停用理由各说各的;不认识的走兜底,不归进任何已知理由 */}
+                                      {cloudDisabledReasonCopy(reason())}
+                                    </>
+                                  )}
                                 </Show>
                                 <Show when={task.lastRun}>
                                   {" · "}
@@ -487,7 +495,12 @@ export function AutomationPanel(props: {
                               aria-label={task.enabled ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
                               onClick={(e) => {
                                 e.stopPropagation()
-                                void window.api.automations.toggle(task.id, !task.enabled).then(() => void refresh())
+                                void window.api.automations.toggle(task.id, !task.enabled).then((r) => {
+                                  // [#994] 云端没停掉/没开起来:开关随 refresh 回到原状态,并说明原因(不再静默弹回)。
+                                  if (!r.ok)
+                                    pushToast({ kind: "error", title: t("alpha.auto.toggleFailed"), detail: r.code ? scheduleRefusalCopy(r.code) : undefined })
+                                  void refresh()
+                                })
                               }}
                             />
                           </div>
