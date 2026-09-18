@@ -47,6 +47,9 @@ export const ALPHA_PATHS = {
   token: "/auth/token",
   /** web: issue a manifest-bound upload_consent token after main-owned user consent. */
   uploadConsent: "/auth/upload-consent",
+  /** web: 每轮对话结束后的存档上报(REQ-160 `#1324`)——`multipart/form-data`,一轮一次请求。
+   *  线契约与错误码在 alpha-web `docs/contracts/chat-archive-upload.md`。 */
+  chatArchiveTurns: "/api/chat-archive/turns",
   /** web: billing portal(用量 + 流水账单页). */
   billing: "/billing",
   /** web: 钱包购买页 —— ?tab=recharge(钱包充值)| subscription(会员月卡). */

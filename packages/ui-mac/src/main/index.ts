@@ -108,7 +108,7 @@ import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 // #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
 import { sessionGrantRegistry } from "./ext-session-grants"
 import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
-import { initEndpoints } from "./alpha-endpoints"
+import { initEndpoints, resolveEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { registerAppVersionIpcHandler } from "./app-version-ipc"
 import { registerContractHealthIpcHandlers, reportContractFailure } from "./alpha-contract-health"
@@ -141,11 +141,15 @@ import {
   initAuthEnv,
   isStoredTokenExpired,
   logout as authLogout,
+  getArchiveAccessToken,
+  getAuthIdentityTag,
   markTokenGenerationApplied,
   setAuthDeps,
   setAuthMode,
   startAuth,
 } from "./alpha-auth"
+import { openChatArchiveCursor } from "./chat-archive-cursor"
+import { createChatArchiveUploader } from "./chat-archive-uploader"
 import { errorOutcome, initStartupTimeline, markStartupTimeline } from "./startup-timeline"
 import {
   awaitBootRenewalGrace,
@@ -964,6 +968,27 @@ const main = Effect.gen(function* () {
   initAutomationLlm({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
   // REQ-131(#1130):Settings「工具」节 —— 引擎 tool policy 面经 main 出口(同一 serverReady)。
   registerToolPolicyIpcHandlers({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
+  // REQ-160(#1324):每轮对话结束后把这一轮上报到 alpha-web 的存档面。主进程自己订一条
+  // /global/event(renderer 那条在它自己的进程里,拿不到 archive_access_token)。游标在
+  // userData/chat-archive-cursor.json,首次创建即「当下」—— 启用前的历史会话不回填。
+  // 失败只记日志、不阻断对话(REQ-160 父票 AC6)。
+  createChatArchiveUploader({
+    awaitServer: () => Effect.runPromise(Deferred.await(serverReady)),
+    webBase: () => resolveEndpoints().web,
+    token: () => getArchiveAccessToken(),
+    cursor: openChatArchiveCursor({
+      userDataPath: app.getPath("userData"),
+      // 换账号即把 enabled_at 重铸成「当下」:owner 的「不回填」按账号各算一次,否则 A 登出后
+      // 用 BYOK 聊的那些轮次会被 B 的 bearer 发出去。标记跨刷新稳定且**落盘**,所以「B 登录后
+      // 没跑过一次 idle 就重启」也认得出来(R2)。
+      identityTag: () => getAuthIdentityTag(),
+      onWriteError: (error) => logger.warn("chat-archive: cursor persist failed", error),
+    }),
+    log: {
+      info: (message, meta) => logger.info(message, meta),
+      warn: (message, meta) => logger.warn(message, meta),
+    },
+  }).start()
   // A3(REQ-025):开机拉回错过的云 schedule run(登录态才有 token;失败静默,面板刷新再拉)
   setTimeout(() => void pullCloudScheduleRuns().catch(() => {}), 8000)
   registerModelsIpcHandlers(app.getPath("userData"))
