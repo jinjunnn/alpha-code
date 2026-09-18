@@ -70,6 +70,7 @@ const {
   decodeTokenResponse,
   getAccessToken,
   getArchiveAccessToken,
+  getAuthIdentityTag,
   getAuthState,
   getTokenGeneration,
   handleAuthDeepLink,
@@ -105,13 +106,13 @@ let dataPath = ""
 let structuralRespawns = 0
 let renewedGenerations: number[] = []
 
-function jwt(purpose: RoutePurpose, generation = "old") {
+function jwt(purpose: RoutePurpose, generation = "old", sub = "tenant-a") {
   return `${Buffer.from("{}").toString("base64url")}.${Buffer.from(
     JSON.stringify({
       schema_version: 1,
       iss: "alpha-web",
       aud: "alpha-platform-api",
-      sub: "tenant-a",
+      sub,
       token_use: "platform_access",
       purpose,
       scope: [purpose],
@@ -122,13 +123,13 @@ function jwt(purpose: RoutePurpose, generation = "old") {
   ).toString("base64url")}.signature`
 }
 
-function tokenBundle(generation = "old") {
+function tokenBundle(generation = "old", sub = "tenant-a") {
   return {
-    "model.invoke": jwt("model.invoke", generation),
-    "cloud.dispatch": jwt("cloud.dispatch", generation),
-    "cloud.read": jwt("cloud.read", generation),
-    "artifact.read": jwt("artifact.read", generation),
-    "account.read": jwt("account.read", generation),
+    "model.invoke": jwt("model.invoke", generation, sub),
+    "cloud.dispatch": jwt("cloud.dispatch", generation, sub),
+    "cloud.read": jwt("cloud.read", generation, sub),
+    "artifact.read": jwt("artifact.read", generation, sub),
+    "account.read": jwt("account.read", generation, sub),
   }
 }
 
@@ -532,6 +533,43 @@ describe("refresh bundle rotation", () => {
     expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
     expect(getArchiveAccessToken()).toBeUndefined()
     expect(readStoredAuth()).not.toMatchObject({ archiveAccessToken: expect.anything() })
+  })
+
+  test("`#1324` R2 账号标记:跨刷新稳定、随 sub 变、登出为 undefined —— 且**不**随 session_id 轮换", async () => {
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      sessionId: "session-1",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    const first = getAuthIdentityTag()
+    expect(typeof first).toBe("string")
+    // 只做相等比较,所以存的是哈希 —— 游标文件里不出现 sub 原文。
+    expect(first).not.toContain("tenant-a")
+
+    // 刷新:同一个 sub、**换了** session_id 与整套令牌 ⇒ 标记必须一个字节都不变。
+    // (拿 session_id 当标记的实现会在这里变,于是每 10 分钟把本账号的积压清一次。)
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: tokenBundle("new"),
+        refresh_token: "refresh-new",
+        session_id: "session-2",
+        expires_in: 3600,
+      })) as typeof fetch
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
+    expect(readStoredAuth()).toMatchObject({ sessionId: "session-2" })
+    expect(getAuthIdentityTag()).toBe(first!)
+
+    // 换账号(换 sub)⇒ 标记必须变。
+    storeAuth({ platformAccessTokens: tokenBundle("old", "tenant-b"), refreshToken: "r", expiresAt: 1, lifetimeMs: 1000 })
+    const second = getAuthIdentityTag()
+    expect(typeof second).toBe("string")
+    expect(second).not.toBe(first)
+
+    // 登出 ⇒ undefined(= 不知道是谁,不是「换了账号」)。
+    await logout()
+    expect(getAuthIdentityTag()).toBeUndefined()
   })
 
   test("`#1324` 已过期的 archive 凭证当**缺席**处理 —— 省掉那一发注定 401 的上报", () => {

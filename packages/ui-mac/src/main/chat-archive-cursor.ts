@@ -34,15 +34,24 @@
 // 排消息用的 `(time_created, id)` 同向。唯一的退化窗口是进程重启后同一毫秒内序号归零(1ms),
 // 而重发一条已存过的轮次在服务端是无副作用的(`UNIQUE (session_id, engine_message_id)`)。
 //
-// ── 游标绑账号,不绑这台机器(R1 审计 MAJOR)────────────────────────────────────────────────
+// ── 游标绑账号,不绑这台机器,也不绑这个进程(R1 MAJOR + R2 MAJOR)────────────────────────
 // owner 的「只上报启用后的轮次、历史不回填」是**按账号**各算一次,不是按安装各算一次。
 // 不绑的话有一条真实路径把 A 的对话发给 B:A 登出(令牌清掉、上报停下、**游标停在原处**)
 // → 用户照样能用 BYOK 继续聊很久 → B 在同一台机器登录 → 下一次 idle 时游标还指着 A 那条线,
 // 于是 A 登出之后的那些轮次被用 **B 的 bearer** 发出去,服务端按 B 的 `sub` 落库。
-// 修法:`getAuthIdentityEpoch()`(登入/登出才推进,token 轮换不算)一变就把 `enabled_at`
-// 重铸为「当下」并清空各会话游标 —— 新身份从它自己的「当下」开始,一条旧轮次都不带过去。
-// 该计数器是**进程内**的(`alpha-auth.ts:140` 每次启动从 0 起),所以这里只比进程内的变化,
-// 不把它写进文件跨重启比 —— 那样每次冷启动都会误判成换了账号,把「当下」一路往后挪。
+// **这是归属错误,不是丢数据** —— 在审核人员只看得到匿名编号的系统里,它比丢数据更难查出来。
+//
+// R1 用的是进程内的 `getAuthIdentityEpoch()`,它只认得「本进程里发生过登入/登出」。R2 审计指出
+// 它漏掉一整类窗口:**B 登录之后,这个进程里一次可归档的 idle 都没发生过**(登录完就退出 /
+// 自动更新 / 崩溃),下一个进程的计数器从 0 起,于是盘上那份属于 A 的游标被新账号原样接手。
+// 所以判据必须**落盘**:游标文件里记一个跨刷新稳定的账号标记(`alpha-auth.getAuthIdentityTag()`,
+// `account.read` 令牌 `sub` 的哈希),**开文件时就比**,不同即重铸。
+//
+// 两个坑,踩了都会反过来伤本账号:
+//   · **不能拿 `sessionId` 当标记** —— 它随每次刷新轮换(`alpha-auth.ts` refresh 分支),
+//     那样每 10 分钟就被判成换号一次,本账号的积压反复被清掉;
+//   · **标记为 `undefined`(登出)不重铸** —— 登出不是换号。重铸会把本账号还没上报的积压
+//     静默丢掉,而那正是「上报面故障期的积压」最需要活着的时刻。
 //
 // ── 没有 outbox ────────────────────────────────────────────────────────────────────────────
 // 重试 = 下一次 idle 重扫(基线 §2.6)。所以本文件只需要记「到哪儿为止是终态」,不需要记
@@ -65,6 +74,8 @@ export type ChatArchiveCursorState = {
   enabled_at: number
   /** sessionId → 最后一条终态过的 assistant `engine_message_id`。 */
   sessions: Record<string, string>
+  /** 这份游标属于哪个账号(`getAuthIdentityTag()`)。**落盘**才能跨重启比,见抬头。 */
+  identity_tag?: string
 }
 
 export type ChatArchiveCursorStore = {
@@ -92,7 +103,13 @@ function decodeState(raw: unknown, now: number): ChatArchiveCursorState {
       if (typeof messageId === "string" && messageId.length > 0) sessions[sessionId] = messageId
     }
   }
-  return { schema_version: 1, enabled_at: enabledAt, sessions }
+  const identityTag = value.identity_tag
+  return {
+    schema_version: 1,
+    enabled_at: enabledAt,
+    sessions,
+    ...(typeof identityTag === "string" && identityTag ? { identity_tag: identityTag } : {}),
+  }
 }
 
 /**
@@ -103,8 +120,8 @@ function decodeState(raw: unknown, now: number): ChatArchiveCursorState {
 export function openChatArchiveCursor(deps: {
   userDataPath: string
   now?: () => number
-  /** `alpha-auth.getAuthIdentityEpoch()`。变化 = 换了账号(登入/登出),见抬头。 */
-  identityEpoch?: () => number
+  /** `alpha-auth.getAuthIdentityTag()`。跨刷新稳定;`undefined` = 不知道是谁(登出),见抬头。 */
+  identityTag?: () => string | undefined
   onWriteError?: (error: unknown) => void
 }): ChatArchiveCursorStore {
   const now = deps.now ?? Date.now
@@ -131,18 +148,22 @@ export function openChatArchiveCursor(deps: {
   // 期间完成的轮次会被两边都判成「不归我管」而永久漏掉。
   if (!loadedFromDisk) persist()
 
-  // 只记**本进程**看到的那个值,不落盘(理由见抬头:计数器每次启动从 0 起)。
-  let seenIdentityEpoch = deps.identityEpoch?.()
+  // 比的是**盘上**记着的那个 tag(不是进程启动时记下的活账号)——「B 登录 → 本进程一次 idle
+  // 都没发生 → 退出 / 自动更新 / 崩溃 → 新进程」这一类窗口只有落盘的比对认得出来(R2 MAJOR)。
+  let seenIdentityTag = state.identity_tag
   const syncIdentity = () => {
-    if (!deps.identityEpoch) return
-    const epoch = deps.identityEpoch()
-    if (epoch === seenIdentityEpoch) return
-    seenIdentityEpoch = epoch
+    if (!deps.identityTag) return
+    const tag = deps.identityTag()
+    if (tag === undefined) return // 不知道是谁(登出)≠ 换了账号:不重铸,也不抹掉已记的 tag
+    if (tag === seenIdentityTag) return
+    seenIdentityTag = tag
     // 换了账号:新身份从它自己的「当下」开始,旧账号那几条会话游标一并丢掉 —— 留着它们唯一的
     // 作用是让新账号的某条轮次被旧账号的 id 压住,而「不回填」已经由新的 enabled_at 管住了。
-    state = emptyState(now())
+    state = { ...emptyState(now()), identity_tag: tag }
     persist()
   }
+  // 开文件即比对(而不是等第一次读游标才比):这一行就是 R2 那条跨重启窗口的闸。
+  syncIdentity()
 
   return {
     enabledAt: () => {

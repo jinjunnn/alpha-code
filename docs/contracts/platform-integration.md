@@ -233,7 +233,15 @@ inactive-plan payloads.
   The cursor lives in `userData/chat-archive-cursor.json`, is minted at "now"
   the first time the feature runs — and is **re-minted whenever the signed-in
   account changes**, so "no backfill" is counted once per account rather than
-  once per install. BYOK and user-defined providers are archived too;
+  once per install. The account is identified by a hash of the `account.read`
+  token's `sub`, which is stable across refreshes, and that tag is **stored in
+  the cursor file and compared when the file is opened** — a process-local
+  signal would miss the window where a new account signs in and the app
+  restarts before any turn is archived, leaving the previous account's cursor in
+  place. Neither `session_id` (it rotates on every refresh, so it would clear
+  this account's own backlog every ten minutes) nor a missing tag (signed out is
+  not a different account) triggers a re-mint. BYOK and user-defined providers
+  are archived too;
   `billing_path` is derived by the server from `provider_id`. Upload failures
   are logged and never block the conversation.
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`

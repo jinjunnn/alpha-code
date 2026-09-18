@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { openChatArchiveCursor } from "./chat-archive-cursor"
@@ -82,7 +82,9 @@ function harness(options: {
   maxAttemptsPerTurn?: number
   messageWindow?: number
   maxMessagePages?: number
-  identityEpoch?: () => number
+  identityTag?: () => string | undefined
+  /** 开游标之前先往盘上放一份(模拟「上一个进程留下的游标」)。 */
+  seedCursorFile?: unknown
 }) {
   const calls: Call[] = []
   const archiveCalls: Call[] = []
@@ -91,10 +93,13 @@ function harness(options: {
   let archiveIndex = 0
   const dir = tempDir()
   const nowRef = { current: options.now ?? 1_000 }
+  if (options.seedCursorFile !== undefined) {
+    writeFileSync(join(dir, "chat-archive-cursor.json"), JSON.stringify(options.seedCursorFile), "utf8")
+  }
   const cursor = openChatArchiveCursor({
     userDataPath: dir,
     now: () => nowRef.current,
-    ...(options.identityEpoch ? { identityEpoch: options.identityEpoch } : {}),
+    ...(options.identityTag ? { identityTag: options.identityTag } : {}),
   })
   const tokenRef = { current: "token" in options ? options.token : "archive-bearer" }
   const pagesRef = { current: options.pages ?? [{ items: options.messages ?? engineMessages() }] }
@@ -426,6 +431,34 @@ describe("REQ-160 #1324 —— 积压超过一页时不得跳过旧轮次(R1 MAJ
     expect(h2.calls.filter((c) => c.url.includes("/message"))).toHaveLength(1)
   })
 
+  test("没有会话游标时按 enabled_at 收口:这一页最旧的一条早于启用时刻就不再往回翻(R2 minor)", async () => {
+    // 这一格此前无闸门:把 `stillInScope` 的 enabled_at 分支改成恒 true 也全绿。
+    // 后果不是回填越界(`buildTurns` 的 completed <= enabledAt 仍挡着),是**全新安装遇上
+    // 长历史会话时每次 idle 都翻到 20 页上界** —— 每条 idle 多打十几次引擎。
+    const ancient = [
+      {
+        info: { id: "msg_0001", role: "user", time: { created: 500 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+        parts: [{ type: "text", text: "启用之前的老对话" }],
+      },
+      {
+        info: {
+          id: "msg_0002",
+          role: "assistant",
+          time: { created: 600, completed: 700 },
+          providerID: "alpha",
+          modelID: "gpt-5",
+          tokens: { output: 1 },
+        },
+        parts: [{ type: "text", text: "老回答" }],
+      },
+    ]
+    // 还有更旧的一页可翻(带 X-Next-Cursor),但这一页最旧的一条已早于 enabled_at=1000。
+    const h = harness({ pages: [{ items: ancient }, { items: ancient }], archiveResponses: [ok], messageWindow: 2 })
+    await h.uploader.onSessionIdle("ses_1")
+    expect(h.calls.filter((c) => c.url.includes("/message"))).toHaveLength(1)
+    expect(h.archiveCalls).toHaveLength(0) // 启用之前完成的轮次照旧不回填
+  })
+
   test("翻页有上界,到顶时如实记一行(不静默丢弃)", async () => {
     const h = harness({
       pages: [{ items: engineMessages() }, { items: engineMessages() }, { items: engineMessages() }],
@@ -475,8 +508,8 @@ describe("REQ-160 #1324 —— 引擎自建的子会话不是用户对话(R1 MAJ
 describe("REQ-160 #1324 —— 游标绑账号(R1 MAJOR)", () => {
   test("A 登出、用户用 BYOK 继续聊、B 登录 ⇒ 那些轮次**不得**用 B 的 bearer 发出去", async () => {
     // 这条路径是真的:A 登出只是把令牌清掉(上报停、游标不动),对话本身照样能继续。
-    let epoch = 1 // A 已登录
-    const h = harness({ archiveResponses: [ok], identityEpoch: () => epoch, now: 1_000 })
+    let tag: string | undefined = "acct-A" // A 已登录
+    const h = harness({ archiveResponses: [ok], identityTag: () => tag, now: 1_000 })
 
     // ① 前提自证:A 在场时这一轮确实是该上报的 —— 否则底下那句「没上报」分不清是
     //    「账号换了」还是「它本来就不在范围内」。
@@ -508,8 +541,8 @@ describe("REQ-160 #1324 —— 游标绑账号(R1 MAJOR)", () => {
       },
     ]
 
-    // ③ B 在同一台机器登录:epoch 因登出 + 登录各推进一次;时间也往前走了。
-    epoch = 3
+    // ③ B 在同一台机器登录:账号标记换了;时间也往前走了。
+    tag = "acct-B"
     h.nowRef.current = 9_000
 
     await h.uploader.onSessionIdle("ses_1")
@@ -523,8 +556,33 @@ describe("REQ-160 #1324 —— 游标绑账号(R1 MAJOR)", () => {
     expect(h.cursor.lastReported("ses_1")).toBeUndefined()
   })
 
+  test("B 登录 → 本进程一次 idle 都没跑过 → 重启 → 第一次 idle **不得**发 A 的轮次(R2 MAJOR)", async () => {
+    // R1 那版把判据放在进程内计数器上,于是这一整类窗口是开着的:B 登录之后应用就退出 /
+    // 自动更新 / 崩溃了,新进程什么都没记下,而盘上那份游标仍属于 A ——
+    // A 那些没上报成功的轮次(上报面故障期的积压)会被 B 的 bearer 发出、按 B 的 sub 落库。
+    const h = harness({
+      archiveResponses: [ok],
+      identityTag: () => "acct-B", // 新进程一起来就是 B
+      now: 9_000, // 重启发生在 A 那一轮完成(completed=5000)之后
+      // 上一个进程留下的:A 的 enabled_at、A 的会话游标、A 的账号标记。
+      seedCursorFile: {
+        schema_version: 1,
+        enabled_at: 1_000,
+        sessions: { ses_other: "msg_9999" },
+        identity_tag: "acct-A",
+      },
+    })
+    await h.uploader.onSessionIdle("ses_1")
+
+    // 缺陷本身:A 那一轮(completed=5000 > A 的 enabled_at=1000)被 B 的 bearer 发出去。
+    expect(h.archiveCalls).toHaveLength(0)
+    // 机制:开文件时就比出 tag 不同 ⇒ enabled_at 重铸成「当下」,旧账号的会话游标一并丢掉。
+    expect(h.cursor.enabledAt()).toBe(9_000)
+    expect(h.cursor.lastReported("ses_other")).toBeUndefined()
+  })
+
   test("账号没变时不重铸:同一身份下 enabled_at 稳定,游标照常推进", async () => {
-    const h = harness({ archiveResponses: [ok], identityEpoch: () => 7, now: 1_000 })
+    const h = harness({ archiveResponses: [ok], identityTag: () => "acct-A", now: 1_000 })
     await h.uploader.onSessionIdle("ses_1")
     h.nowRef.current = 9_000
     expect(h.cursor.enabledAt()).toBe(1_000)

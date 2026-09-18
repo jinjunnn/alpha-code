@@ -104,37 +104,60 @@ describe("REQ-160 #1324 —— 游标文件", () => {
     expect(next.snapshot().sessions).toEqual({})
   })
 
-  test("换账号即把 enabled_at 重铸成「当下」并丢掉旧账号的会话游标(R1 MAJOR)", () => {
+  test("同一进程内换账号:重铸 enabled_at、丢掉旧账号的会话游标,并把新 tag 落盘(R1 MAJOR)", () => {
     const dir = tempDir()
-    let epoch = 1
+    let tag: string | undefined = "acct-A"
     let now = 1_000
-    const cursor = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityEpoch: () => epoch })
+    const cursor = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityTag: () => tag })
     cursor.advance("ses_1", "msg_0002")
     expect(cursor.enabledAt()).toBe(1_000)
 
-    // 登出 + 登录 = epoch 推进两次;时间也往前走了。
-    epoch = 3
+    tag = "acct-B"
     now = 9_000
     expect(cursor.enabledAt()).toBe(9_000)
     expect(cursor.lastReported("ses_1")).toBeUndefined()
-    // 落盘的那份也一样(下一次冷启动读到的就是新身份的起点)。
+    // 落盘的那份带着新 tag —— 下一次冷启动才比得出来。
     const onDisk = JSON.parse(readFileSync(join(dir, "chat-archive-cursor.json"), "utf8")) as Record<string, unknown>
-    expect(onDisk).toEqual({ schema_version: 1, enabled_at: 9_000, sessions: {} })
+    expect(onDisk).toEqual({ schema_version: 1, enabled_at: 9_000, sessions: {}, identity_tag: "acct-B" })
   })
 
-  test("账号没变就不重铸;计数器**不**跨进程比(它每次启动从 0 起)", () => {
+  test("**跨重启**也认得出换账号:开文件时就比盘上那个 tag(R2 MAJOR)", () => {
+    // 这是 R1 那版漏掉的整类窗口:B 登录之后这个进程里一次可归档 idle 都没发生过,
+    // 应用就退出/自动更新/崩溃了 —— 进程内计数器什么都没记下,盘上那份仍属于 A。
     const dir = tempDir()
+    writeFileSync(
+      join(dir, "chat-archive-cursor.json"),
+      JSON.stringify({ schema_version: 1, enabled_at: 1_000, sessions: { ses_1: "msg_0002" }, identity_tag: "acct-A" }),
+      "utf8",
+    )
+    const asB = openChatArchiveCursor({ userDataPath: dir, now: () => 9_000, identityTag: () => "acct-B" })
+    expect(asB.enabledAt()).toBe(9_000)
+    expect(asB.lastReported("ses_1")).toBeUndefined()
+
+    // 同一个账号回来则原样接手(否则每次冷启动都把本账号的积压丢一次)。
+    const againAsB = openChatArchiveCursor({ userDataPath: dir, now: () => 20_000, identityTag: () => "acct-B" })
+    expect(againAsB.enabledAt()).toBe(9_000)
+  })
+
+  test("登出(tag 为 undefined)不是换账号:不重铸,也不抹掉已记的 tag", () => {
+    // 重铸会把本账号**还没上报的积压**静默丢掉,而那正是上报面故障期最需要它活着的时刻。
+    const dir = tempDir()
+    let tag: string | undefined = "acct-A"
     let now = 1_000
-    const cursor = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityEpoch: () => 7 })
+    const cursor = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityTag: () => tag })
     cursor.advance("ses_1", "msg_0002")
+
+    tag = undefined // 登出
     now = 9_000
     expect(cursor.enabledAt()).toBe(1_000)
     expect(cursor.lastReported("ses_1")).toBe("msg_0002")
 
-    // 「重启」:同一份文件、同一个账号,但计数器归零 —— 不得被当成换了账号。
-    const restarted = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityEpoch: () => 0 })
-    expect(restarted.enabledAt()).toBe(1_000)
-    expect(restarted.lastReported("ses_1")).toBe("msg_0002")
+    // 登出期间重启,仍然不重铸;A 回来时也不该被当成换号。
+    const restartedLoggedOut = openChatArchiveCursor({ userDataPath: dir, now: () => 9_000, identityTag: () => undefined })
+    expect(restartedLoggedOut.enabledAt()).toBe(1_000)
+    const backAsA = openChatArchiveCursor({ userDataPath: dir, now: () => 9_000, identityTag: () => "acct-A" })
+    expect(backAsA.enabledAt()).toBe(1_000)
+    expect(backAsA.lastReported("ses_1")).toBe("msg_0002")
   })
 
   test("落盘失败不抛给调用方(上报是旁路,不阻断对话)", () => {

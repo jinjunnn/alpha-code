@@ -402,6 +402,33 @@ export function getArchiveAccessToken(): string | undefined {
   return stored.archiveAccessToken
 }
 
+/**
+ * REQ-160(`#1324`,R2)**跨刷新稳定**的账号标识,给对话存档游标判「这份游标是不是这个账号的」。
+ *
+ * 取的是 `account.read` 令牌的 `sub`(`alpha-auth-identity.ts`)—— 它在刷新之间不变,而且只要
+ * 登录着就一定在(`account.read` 是 `ROUTE_PURPOSES` 的必需成员,存进来之前已被
+ * `decodeTokenClaims` + `requireTokenPurpose` 验过)。
+ *
+ * **刻意不用 `sessionId`**:它随每次刷新轮换(本文件 refresh 分支的 `sessionId: tokens.session_id ?? …`),
+ * 拿它当标记会每 10 分钟被判成「换了账号」,于是把本账号还没上报的积压反复清掉。
+ * **也不用 `account.email`**:那是签发端的可选字段,缺席就退化成「谁都一样」。
+ *
+ * 返回 `undefined` = **不知道是谁**(登出、或 dev 短路的不透明令牌),**不是**「换了账号」——
+ * 消费方据此不重铸,登出因此不会把本账号的积压丢掉。
+ */
+export function getAuthIdentityTag(): string | undefined {
+  const token = devPlatformToken() ?? stored.platformAccessTokens?.["account.read"]
+  if (!token) return undefined
+  let subject: string
+  try {
+    subject = parseAccessTokenIdentity(token, "account.read").tenantId
+  } catch {
+    return undefined
+  }
+  // 只做相等比较,所以存哈希而不是 subject 原文 —— 游标文件因此不带任何账号标识符的明文。
+  return createHash("sha256").update(subject).digest("hex").slice(0, 32)
+}
+
 export function getAccessTokenIdentity(purpose: RoutePurpose) {
   const token = getAccessToken(purpose)
   return token ? parseAccessTokenIdentity(token, purpose) : undefined
