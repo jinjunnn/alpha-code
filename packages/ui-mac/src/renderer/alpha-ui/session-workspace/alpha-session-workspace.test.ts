@@ -240,4 +240,16 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     expect(tsx).toContain(`<SurfaceBoundary surface="session">`)
     expect(tsx).not.toMatch(/fallback|legacy/i)
   })
+
+  // `#1361` 的接线锚 —— **不是行为闸**(理由同本文件其余接线锚:bun 下加载不了这棵组件树)。
+  // 行为半场在 settings-directory.test.ts:那里直测「侧栏清单缺这一格时回落到活会话身份」。
+  // 这三行罩的是它够不到的那一半:会话页真的登记了、离开时真的注销了、壳真的消费了带回落的那个查表。
+  // 少了登记这一端,行为闸照绿而缺陷原样回来(设置页永远拿不到登记)。
+  test("`#1361`:会话页登记活会话身份,壳层设置面据此回落", () => {
+    expect(tsx).toContain(`createEffect(() => publishActiveSessionIdentity(current()?.identity))`)
+    expect(tsx).toContain(`onCleanup(() => publishActiveSessionIdentity(undefined))`)
+    expect(rendererIndex).toContain(`sessionDirectoryFromShell(projects.store, activeSessionIdentity)`)
+    // 回落而不是顶替:清单查表仍是第一顺位(实现在 settings-directory.ts,此处只钉壳没有绕开它)。
+    expect(rendererIndex).not.toContain(`sessionDirectoryFromProjects(projects.store)`)
+  })
 })

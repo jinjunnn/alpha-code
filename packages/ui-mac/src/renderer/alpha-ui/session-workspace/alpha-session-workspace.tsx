@@ -1,6 +1,6 @@
 import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServerSync } from "@opencode-ai/app"
 import { useLocation } from "@solidjs/router"
-import { createContext, createEffect, createMemo, createSignal, untrack, type ParentProps, useContext } from "solid-js"
+import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
@@ -12,6 +12,7 @@ import { turnDiffsOf } from "../session-rail/review/review-turn-diffs"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
 import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
+import { publishActiveSessionIdentity } from "../active-session-directory"
 import { sandboxApplied } from "../sandbox-state"
 import { SurfaceBoundary } from "../surface-boundary"
 import { useWorkspaceWritable } from "../workspace-writable"
@@ -102,6 +103,12 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
     if (untrack(() => serverSync().session.data.message[identity.sessionID] !== undefined)) return
     void serverSync().session.sync(identity.sessionID)
   })
+  // `#1361`:把此刻解出的身份登记到壳层活会话通道。设置页「工具」节挂在 `AppInterface` 的 children 上,
+  // 在 `ServerSyncProvider` **之外** —— 它读不到上面这份 session info,只能读被 worktree-filter 过滤过的
+  // 侧栏清单,于是归档 / 家目录为根的会话在那一节里解不出项目。登记的就是本页自己在用的那个目录,
+  // 两个面因此同源;离开会话页注销 ⇒ 设置页回到 fail-closed 的「先打开一个项目」。
+  createEffect(() => publishActiveSessionIdentity(current()?.identity))
+  onCleanup(() => publishActiveSessionIdentity(undefined))
 
   return (
     <SurfaceBoundary surface="session">

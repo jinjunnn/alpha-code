@@ -64,6 +64,21 @@ Context setters submit field-level transforms through the same coordinator, so
 they rebase on the current authority instead of persisting a stale full-store
 snapshot.
 
+That single mount sits in the shell, **outside every `ServerSyncProvider`**: the
+upstream providers are mounted per route subtree, while the Settings overlay is an
+`AppInterface` child. `useServerSync()` is therefore structurally unavailable to it,
+so a Settings section that needs to know which project the user is standing in cannot
+read `session.data.info[id]` the way the session surface does. The shell exposes one
+`AlphaSessionIdentity` channel instead (`alpha-ui/active-session-directory.ts`): the
+session surface — the one face that does hold `ServerSync` — publishes the identity it
+has already resolved, and the Settings resolver
+(`alpha-ui/settings-directory.ts`) reads the sidebar project list first and falls back
+to that channel. The fallback is what keeps the two faces on one value: the sidebar list
+is deliberately filtered (`sidebar/worktree-filter.ts` drops archived projects, a
+home-directory root, and the global `/` bucket), so without it a session that works fine
+on the session page resolves to no project in Settings. Both misses still mean *no*
+directory — the sections stay fail-closed and never fall back to a default project.
+
 The inventory is intentionally limited to top-level ownership boundaries. Tabs,
 popovers, controls, and render helpers belong to their enclosing surface unless
 they acquire an independent host or navigation lifecycle.
