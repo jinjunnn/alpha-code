@@ -514,9 +514,11 @@ describe("REQ-160 #1324 —— 游标绑账号(R1 MAJOR)", () => {
 
     await h.uploader.onSessionIdle("ses_1")
 
-    // enabled_at 被重铸成「当下」(9000),于是 completed=6000 那一轮对 B 不在范围内 ⇒ 一条都不发。
-    expect(h.cursor.enabledAt()).toBe(9_000)
+    // 先断言请求数 —— 这一条就是缺陷本身:多出来的那一发,就是 A 登出之后说的话被
+    // **B 的 bearer** 送进了 B 的账号。
     expect(h.archiveCalls).toHaveLength(1) // 还是第 ① 步那一次,没有新的
+    // 机制:enabled_at 被重铸成「当下」(9000),于是 completed=6000 那一轮对 B 不在范围内。
+    expect(h.cursor.enabledAt()).toBe(9_000)
     // 旧账号的会话游标一并丢掉 —— 它是 A 那条线上的坐标。
     expect(h.cursor.lastReported("ses_1")).toBeUndefined()
   })
