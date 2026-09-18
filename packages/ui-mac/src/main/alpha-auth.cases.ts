@@ -69,6 +69,7 @@ const {
   applyAuthEnv,
   decodeTokenResponse,
   getAccessToken,
+  getArchiveAccessToken,
   getAuthState,
   getTokenGeneration,
   handleAuthDeepLink,
@@ -134,6 +135,7 @@ function tokenBundle(generation = "old") {
 function storeAuth(value: {
   platformAccessTokens?: Partial<Record<RoutePurpose, string>>
   mcpAccessToken?: string
+  archiveAccessToken?: string
   refreshToken?: string
   sessionId?: string
   expiresAt?: number
@@ -494,6 +496,53 @@ describe("refresh bundle rotation", () => {
     expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
     expect(process.env.ALPHA_MCP_TOKEN).toBeUndefined()
     expect(readStoredAuth()).not.toMatchObject({ mcpAccessToken: expect.anything() })
+  })
+
+  test("`#1324` refresh rotates the archive credential with the envelope; an envelope without it clears it", async () => {
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      archiveAccessToken: "archive-old",
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    expect(getArchiveAccessToken()).toBe("archive-old")
+
+    // ① 信封带新值 ⇒ 持久态与读回一起轮换。
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: tokenBundle("new"),
+        archive_access_token: "archive-new",
+        refresh_token: "refresh-new",
+        expires_in: 3600,
+      })) as typeof fetch
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
+    expect(getArchiveAccessToken()).toBe("archive-new")
+    expect(readStoredAuth()).toMatchObject({ archiveAccessToken: "archive-new" })
+
+    // ② 信封缺席 ⇒ 清除,不留旧值当回退 —— 留下来只会让每一次上报 401,而 401 是终态。
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: tokenBundle("newer"),
+        refresh_token: "refresh-newer",
+        expires_in: 3600,
+      })) as typeof fetch
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
+    expect(getArchiveAccessToken()).toBeUndefined()
+    expect(readStoredAuth()).not.toMatchObject({ archiveAccessToken: expect.anything() })
+  })
+
+  test("`#1324` a present-but-empty archive_access_token is an issuer contract break, not an absence", () => {
+    expect(() =>
+      decodeTokenResponse({ platform_access_tokens: tokenBundle(), archive_access_token: "" }),
+    ).toThrow()
+    expect(() =>
+      decodeTokenResponse({ platform_access_tokens: tokenBundle(), archive_access_token: 7 }),
+    ).toThrow()
+    // 缺席合法(签发端还没铸这个字段时就是缺席)。
+    expect(decodeTokenResponse({ platform_access_tokens: tokenBundle() })).not.toHaveProperty(
+      "archive_access_token",
+    )
   })
 
   test("an incomplete refreshed bundle is rejected without replacing the last validated tokens", async () => {

@@ -19,6 +19,7 @@ integration. Service wire formats remain owned by their producer repositories.
 | ---------------------------------------------------------------- | -------------------------------- | -------------------------------------------- |
 | Authorization code, refresh/session rotation, endpoint discovery | `alpha-web`                      | `alpha-auth.ts`, `alpha-endpoints.ts`        |
 | Manifest-bound `upload_consent` issuance                         | `alpha-web`                      | main-process upload issuer client            |
+| Chat archive turn upload (retention/moderation)                  | `alpha-web`                      | `chat-archive-uploader.ts`                   |
 | Model gateway and model registry                                 | `alpha-platform`                 | injected `alpha` provider                    |
 | Cloud Jobs HTTP/SSE, artifacts, schedules, MCP facade            | `alpha-platform`                 | main-process clients and injected MCP server |
 | Account summary and billing transactions                         | `alpha-platform` account service | main-process account client                  |
@@ -195,6 +196,26 @@ inactive-plan payloads.
   servers keep their own `oauth`-object declarations and interactive flows
   untouched. The MCP facade fronts the same Cloud Jobs model; it is not a
   second execution truth.
+- **Chat archive:** the login envelope carries a second optional top-level
+  credential, `archive_access_token` (REQ-160, `#1324`), held opaquely by main
+  on the same terms as `mcp_access_token` — whole-envelope overwrite on every
+  refresh, absence clears it, and it never passes the `platform_access` claims
+  decoder. Main subscribes to the engine's `/global/event` stream and, on each
+  `session.idle`, reads that session's messages and POSTs every finished
+  user→assistant pair to `/api/chat-archive/turns` as one `multipart/form-data`
+  request (a `turn` JSON **string** field plus one `attachment_<i>` bytes part
+  per attachment). The wire, its sixteen one-cause error codes and the client
+  retry policy are owned by alpha-web's
+  [chat archive upload contract](https://github.com/jinjunnn/alpha-web/blob/main/docs/contracts/chat-archive-upload.md);
+  the two properties this repository must not drift on are that **429 is
+  retryable and does not advance the cursor** (every other 4xx is terminal and
+  does) and that an assistant message with no user predecessor is skipped
+  rather than paired with a fabricated user message. The cursor lives in
+  `userData/chat-archive-cursor.json` and is minted at "now" the first time the
+  feature runs, so history before that is never backfilled. BYOK and
+  user-defined providers are archived too; `billing_path` is derived by the
+  server from `provider_id`. Upload failures are logged and never block the
+  conversation.
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
   before renderer projection. Account summary remains outside this pinned
   contract until its producer publishes a schema and does not block the ledger
