@@ -77,11 +77,17 @@ export const BYOK_OUTPUT_CAP_READINGS: readonly ByokOutputCapReading[] = [
     grade: "probed",
   },
   {
+    // #1352:上游把 `deepseek-v4-flash` 改名为 `deepseek-flash`(`/models` 只列新名;旧名 2026-09-17 仍回 200,
+    // 响应 `model` 字段两名皆为 `deepseek-flash` —— 旧名是别名,服务的是同一个模型)。
+    // 读数 2026-09-17 对新名重取了三点中**不计费**的两点:① 99999999 → 400 自报 [1, 393216];
+    // ③ 393217 → 400。② 顶格 200 **没有对新名重打**(计费调用,本票只授权两次 max_tokens:1 的名称勘破);
+    // ② 的现存证据是 2026-09-07 对旧名 `deepseek-v4-flash` @393216 → 200 finish=stop —— 即今天仍解析到
+    // 同一模型的那个别名。见 docs/verification/2026-09-07-byok-output-cap/README.md「后续(2026-09-17)」。
     engineProviderID: "deepseek-byok",
-    apiModelID: "deepseek-v4-flash",
+    apiModelID: "deepseek-flash",
     baseURL: "https://api.deepseek.com/v1",
     value: 393216,
-    readOn: "2026-09-07",
+    readOn: "2026-09-17",
     selfReported: "Invalid max_tokens value, the valid range of max_tokens is [1, 393216]",
     grade: "probed",
   },

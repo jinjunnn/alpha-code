@@ -116,7 +116,7 @@ describe("真 AlphaExt 的 chat.params 钩子", () => {
   test("同一个 provider 的两个模型各拿各的数", async () => {
     const hook = await load()
     expect((await call(hook, "zhipuai-byok", "glm-4.5-air", ZHIPU)).maxOutputTokens).toBe(98304)
-    expect((await call(hook, "deepseek-byok", "deepseek-v4-flash", DEEPSEEK)).maxOutputTokens).toBe(393216)
+    expect((await call(hook, "deepseek-byok", "deepseek-flash", DEEPSEEK)).maxOutputTokens).toBe(393216)
   })
 
   test("无读数的 BYOK 模型 / 用户自定义节点:仍是上游的 32000", async () => {
@@ -203,6 +203,6 @@ describe("双向漂移锁:实读表 ↔ 出货目录 alpha-models.json", () => {
 
   test("实打过的那四个仍是 probed —— 把它们降级或把 catalog 冒充成 probed,这里都红", () => {
     const probed = BYOK_OUTPUT_CAP_READINGS.filter((r) => r.grade === "probed").map((r) => r.apiModelID).sort()
-    expect(probed).toEqual(["deepseek-v4-flash", "deepseek-v4-pro", "glm-4.5-air", "glm-5.2"])
+    expect(probed).toEqual(["deepseek-flash", "deepseek-v4-pro", "glm-4.5-air", "glm-5.2"])
   })
 })
