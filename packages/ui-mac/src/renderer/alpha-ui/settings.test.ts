@@ -164,7 +164,19 @@ function click(selector: string) {
 
 describe("Alpha Settings real Solid render", () => {
   test("shares saved authority with the production context and rebases later context setters", async () => {
-    const authority = { value: value(), revision: "s1:initial" }
+    // `#1356`:夹具必须给出**旧界面下线迁移已落盘**的权威,否则本用例测的不是它声称的东西。
+    // 上游 `packages/app/src/context/settings.tsx` 有 `oldInterfaceSunset = new Date(2026, 8, 14)`
+    // 与一条 `if (!ready() || !oldInterfaceRetired()) return; … setGeneral("newLayoutDesigns", true)`
+    // 的 effect(随 `107e47377` 于 2026-07-21 进入本仓,上游 `265a93927` / `4a181c357`)。
+    // 到点之后,SettingsProvider **挂载时**就会经同一个 coordinator 做一次性迁移写,把 revision 顶走,
+    // 于是设置页手里的 `expectedRevision` 变陈旧、保存被 CAS 判 revision-conflict 丢掉。
+    // 实测(同一棵树、同一个 commit,只动墙上时钟):`Date.now()` < 2026-09-14T00:00:00Z ⇒ 12 pass;
+    // ≥ 该时刻 ⇒ 这一条恒红(happy-dom 把时区钉成 UTC,所以阈值是 UTC 午夜)。
+    // 本用例要判的是「保存后的权威被生产上下文共享」与「之后的上下文 setter 会 rebase 到新 revision」,
+    // 不是那次迁移的竞态;而迁移已落盘正是任何安装在 2026-09-14 之后首次启动后的稳态。
+    const seeded = value()
+    seeded.general.newLayoutDesigns = true
+    const authority = { value: seeded, revision: "s1:initial" }
     const revisions: string[] = []
     const shared = createSettingsAuthorityCoordinator({
       read: async () => ({ ok: true, value: structuredClone(authority.value), revision: authority.revision }),
@@ -201,6 +213,10 @@ describe("Alpha Settings real Solid render", () => {
     await flush()
     await flush()
 
+    // 上面那条夹具前提的可检查形式:到这一刻为止,设置页那次保存必须是**唯一**的权威写。
+    // 上游若再加一处挂载期写,这条先红并当场点名是谁把 revision 顶走了 —— 缺了它,
+    // 2026-09-14 的旧界面下线只把下一行变成一句没有线索的 `expect("true").toBe("false")`。
+    expect(revisions).toEqual(["s1:initial"])
     expect(document.querySelector("[data-context-auto-save]")?.textContent).toBe("false")
     click("[data-context-update-release-notes]")
     await flush()
