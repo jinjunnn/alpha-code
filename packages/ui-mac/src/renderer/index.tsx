@@ -53,7 +53,8 @@ import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { AlphaSettings } from "./alpha-ui/settings"
 import { settingsAuthorityCoordinator } from "./alpha-ui/settings-authority-client"
 import { setSettingsOpen, settingsOpen } from "./alpha-ui/settings-state"
-import { sessionDirectoryFromProjects, settingsDirectoryOf } from "./alpha-ui/settings-directory"
+import { sessionDirectoryFromShell, settingsDirectoryOf } from "./alpha-ui/settings-directory"
+import { activeSessionIdentity } from "./alpha-ui/active-session-directory"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
 import { AutomationPanel } from "./automations/automation-panel"
@@ -89,12 +90,17 @@ const productionRoutes = composeRoutes({
     ),
   session: (projects: AlphaProjectsApi) => alphaSessionWorkspaceSurface(projects),
   // REQ-131(#1130):「工具」节按项目分区读写引擎策略;当前项目 = 路由 → 目录(settings-directory.ts):
-  // 生产导航走 canonical `/server/:serverKey/session/:id`,路由本身不带目录,按会话 id 从壳层项目清单查
-  // (与侧栏导航同一份数据);home / newSession、或清单里没有该会话 ⇒ 该节显示「先打开一个项目」。
+  // 生产导航走 canonical `/server/:serverKey/session/:id`,路由本身不带目录,按会话 id 查:先壳层项目
+  // 清单(与侧栏导航同一份数据),清单缺这一格再回落到会话页此刻登记的身份(`#1361`:侧栏按设计过滤掉
+  // 归档 / 家目录为根的会话,而会话页认服务端给的会话信息 —— 回落让两个面读同一个目录)。
+  // home / newSession、或两处都没有该会话 ⇒ 该节显示「先打开一个项目」(拒绝,不猜默认项目)。
   settings: (projects: AlphaProjectsApi) => () => {
     const location = useLocation()
     const directory = () =>
-      settingsDirectoryOf(parseRoute(location.pathname, location.search), sessionDirectoryFromProjects(projects.store))
+      settingsDirectoryOf(
+        parseRoute(location.pathname, location.search),
+        sessionDirectoryFromShell(projects.store, activeSessionIdentity),
+      )
     return (
       <AlphaBoundary name="AlphaSettings">
         <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} directory={directory} />
