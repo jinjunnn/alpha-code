@@ -200,10 +200,11 @@ describe("REQ-160 #1324 —— 429 不是终态(数据丢失的那条)", () => {
       maxAttemptsPerTurn: 2,
     })
     await h.uploader.onSessionIdle("ses_1")
-    expect(h.archiveCalls).toHaveLength(2)
+    // 先断言游标 —— 这一条就是数据丢失本身:429 之后游标若动了,被推过去的那一轮永远不会再发。
     expect(h.cursor.lastReported("ses_1")).toBeUndefined()
     // 重启后读到的也必须是「没推进」—— 断言落盘的那份,不是内存里的那份。
     expect(openChatArchiveCursor({ userDataPath: h.dir, now: () => 1_000 }).lastReported("ses_1")).toBeUndefined()
+    expect(h.archiveCalls).toHaveLength(2)
 
     const again = await (async () => {
       const second = harness({ archiveResponses: [ok] })
