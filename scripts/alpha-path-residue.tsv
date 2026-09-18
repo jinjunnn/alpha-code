@@ -24,9 +24,9 @@
 packages/ext/src/project-config.ts	30	retired-guard	退役全局根 `~/.alpha` 的词法守卫(retiredLexical):职责就是认出旧址。改名 ⇒ 守卫指向不存在的路径,而没有任何测试会红。
 packages/ext/src/project-config.ts	77	retired-guard	退役全局根 `~/.alpha` 的守卫:project admission 拿它比对,命中即拒。改名 ⇒ 守卫认不出旧址,而没有任何测试会红。
 packages/ext/src/project-config.ts	90	retired-guard	退役全局根 `~/.alpha` 的守卫:退役根不存在时的 canonical 派生兜底。改名 ⇒ 派生出一个不存在的路径,守卫恒不命中。
-packages/ui-mac/src/main/alpha-auth.ts	532	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径 —— id 字面量在 alpha-models.json:8 `"id": "alpha"`。改名会指向一个不存在的 provider。
-packages/ui-mac/src/main/alpha-auth.ts	957	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
-packages/ui-mac/src/main/alpha-auth.ts	977	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
+packages/ui-mac/src/main/alpha-auth.ts	559	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径 —— id 字面量在 alpha-models.json:8 `"id": "alpha"`。改名会指向一个不存在的 provider。
+packages/ui-mac/src/main/alpha-auth.ts	984	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
+packages/ui-mac/src/main/alpha-auth.ts	1004	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
 packages/ui-mac/src/main/alpha-environment.ts	305	retired-guard	assertOutsideRetiredRoot 的退役根 `~/.alpha`;环境根与它有关系即抛错。
 packages/ui-mac/src/main/alpha-environment.ts	316	retired-guard	retiredCanonical 在 ENOENT 时派生退役全局根 `~/.alpha`;assertOutsideRetiredRoot 据它拒绝落在旧址里的环境根。
 packages/ui-mac/src/main/alpha-migrate.ts	3	historical	过去时记述:REQ-018 T2 当时把安装迁到了名为 `.alpha` 的真源根(并配 `~/.opencode` 桥,该桥已于 REQ-059 T3 退役)。改它 = 篡改历史记录。
