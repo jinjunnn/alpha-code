@@ -393,16 +393,17 @@ describe("REQ-160 #1324 —— 积压超过一页时不得跳过旧轮次(R1 MAJ
     const h = harness({ pages: [{ items: newer }, { items: older }], archiveResponses: [ok], messageWindow: 2 })
     await h.uploader.onSessionIdle("ses_1")
 
-    // 两页都读了,第二页带着 before= 游标。
-    const messageReads = h.calls.filter((c) => c.url.includes("/message"))
-    expect(messageReads).toHaveLength(2)
-    expect(messageReads[1]?.url).toContain("before=cur-1")
-    // 两轮都发了,且**旧的在前** —— 顺序错了等于游标可以跨过旧轮次。
+    // 先断言发出去的是哪两轮 —— 这一条就是缺陷本身:只读最新一页时,窗口外那一轮
+    // (msg_0002)一次都不会发,而游标会跳到 msg_0004 把它永久盖过去。**旧的必须在前**。
     const sent = h.archiveCalls
       .map((c) => JSON.parse((c.init!.body as FormData).get("turn") as string) as { messages: Array<{ engine_message_id: string }> })
       .map((t) => t.messages[1]!.engine_message_id)
     expect(sent).toEqual(["msg_0002", "msg_0004"])
     expect(h.cursor.lastReported("ses_1")).toBe("msg_0004")
+    // 两页都读了,第二页带着 before= 游标。
+    const messageReads = h.calls.filter((c) => c.url.includes("/message"))
+    expect(messageReads).toHaveLength(2)
+    expect(messageReads[1]?.url).toContain("before=cur-1")
   })
 
   test("翻到游标那一页就停,不会把整条会话史都拖回来", async () => {
