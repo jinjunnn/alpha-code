@@ -48,6 +48,10 @@ type StoredAuth = {
    *  不透明保存 —— 不经 `decodeTokenClaims`(那个 decoder 钉死 platform_access/alpha-platform-api,
    *  对本 token 结构性不适用);随每次信封轮换整体覆盖,信封缺席 ⇒ 清除(I6 fail-closed)。 */
   mcpAccessToken?: string
+  /** REQ-160(`#1324`):对话存档上报面的凭证(alpha-web 令牌端点的**顶层兄弟字段**,不进
+   *  `platform_access_tokens` map)。与 `mcpAccessToken` 同法不透明保存 —— 真伪由上报面的 RS 验;
+   *  随每次信封轮换整体覆盖,信封缺席 ⇒ 清除(缺席无回退)。 */
+  archiveAccessToken?: string
   account?: { email?: string; plan?: string }
 }
 
@@ -56,6 +60,9 @@ export type TokenResponse = {
   /** `#1195`:可选顶层字段(基线 §2.2 —— 永不进 `platform_access_tokens` map)。缺席合法
    *  (alpha-web T1 未部署时就是缺席);存在则必须是非空字符串,余下当不透明凭证。 */
   mcp_access_token?: string
+  /** REQ-160(`#1324`):同为可选顶层字段。缺席合法(alpha-web 上报面未部署时就是缺席);
+   *  存在则必须是非空字符串。 */
+  archive_access_token?: string
   refresh_token?: string
   session_id?: string
   expires_in?: number
@@ -381,6 +388,13 @@ export function getAccessToken(purpose: RoutePurpose): string | undefined {
   }
 }
 
+/** REQ-160(`#1324`)对话存档上报面的 bearer。MAIN-ONLY,与 `getAccessToken` 同样绝不给 renderer。
+ *  它不经 `decodeTokenClaims` —— 那个 decoder 钉死 platform_access/alpha-platform-api,对本 token
+ *  结构性不适用(与 `mcp_access_token` 同法)。缺席 = 不上报,不是报错。 */
+export function getArchiveAccessToken(): string | undefined {
+  return stored.archiveAccessToken
+}
+
 export function getAccessTokenIdentity(purpose: RoutePurpose) {
   const token = getAccessToken(purpose)
   return token ? parseAccessTokenIdentity(token, purpose) : undefined
@@ -488,6 +502,7 @@ async function completeAuth(parsed: URL) {
     mode: "platform",
     platformAccessTokens: tokens.platform_access_tokens,
     mcpAccessToken: tokens.mcp_access_token,
+    archiveAccessToken: tokens.archive_access_token,
     refreshToken: tokens.refresh_token,
     sessionId: tokens.session_id,
     // #600 B3:换算出的期限必须真的还有可用余量,否则视为「未知」→ fail-closed recovering
@@ -572,6 +587,13 @@ export function decodeTokenResponse(value: unknown): TokenResponse {
   // 是签发端契约破损,fail-loud),内容当不透明凭证 —— 真伪由 RS(MCP 面)验。
   if (response.mcp_access_token !== undefined && (typeof response.mcp_access_token !== "string" || !response.mcp_access_token))
     throw invalidTokenResponse()
+  // `#1324`(REQ-160):同一条规矩 —— 缺席合法,存在则必须是非空字符串(空串/非字符串是签发端
+  // 契约破损,fail-loud),内容当不透明凭证。
+  if (
+    response.archive_access_token !== undefined &&
+    (typeof response.archive_access_token !== "string" || !response.archive_access_token)
+  )
+    throw invalidTokenResponse()
   if (response.refresh_token !== undefined && typeof response.refresh_token !== "string") throw invalidTokenResponse()
   if (response.session_id !== undefined && typeof response.session_id !== "string") throw invalidTokenResponse()
   if (response.expires_in !== undefined && typeof response.expires_in !== "number") throw invalidTokenResponse()
@@ -584,6 +606,7 @@ export function decodeTokenResponse(value: unknown): TokenResponse {
   return {
     platform_access_tokens: platformAccessTokens,
     ...(response.mcp_access_token !== undefined ? { mcp_access_token: response.mcp_access_token } : {}),
+    ...(response.archive_access_token !== undefined ? { archive_access_token: response.archive_access_token } : {}),
     ...(response.refresh_token !== undefined ? { refresh_token: response.refresh_token } : {}),
     ...(response.session_id !== undefined ? { session_id: response.session_id } : {}),
     ...(expiresIn !== undefined ? { expires_in: expiresIn } : {}),
@@ -830,6 +853,8 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     // `#1195`:整体覆盖,**不** `?? stored.mcpAccessToken` —— 信封缺席就清除。留旧值没有意义
     // (15 分钟 TTL,留到下个周期已过期)且违反 I6 的「缺席无回退」。
     mcpAccessToken: tokens.mcp_access_token,
+    // `#1324`:与上一行同法整体覆盖 —— 存档凭证随每次刷新更新,信封缺席即清除。
+    archiveAccessToken: tokens.archive_access_token,
     refreshToken: tokens.refresh_token ?? stored.refreshToken,
     sessionId: tokens.session_id ?? stored.sessionId,
     expiresAt: refreshedExpiresAt,
