@@ -390,8 +390,15 @@ export function getAccessToken(purpose: RoutePurpose): string | undefined {
 
 /** REQ-160(`#1324`)对话存档上报面的 bearer。MAIN-ONLY,与 `getAccessToken` 同样绝不给 renderer。
  *  它不经 `decodeTokenClaims` —— 那个 decoder 钉死 platform_access/alpha-platform-api,对本 token
- *  结构性不适用(与 `mcp_access_token` 同法)。缺席 = 不上报,不是报错。 */
+ *  结构性不适用(与 `mcp_access_token` 同法)。缺席 = 不上报,不是报错。
+ *
+ *  R1 审计 BLOCKER:**已过期也当缺席**。信封整体轮换(TTL 15 分钟、约 10 分钟刷一轮),睡眠唤醒
+ *  之后或一次刷新失败之后,`archiveAccessToken` 会处在「在场但已过期」的状态;拿它去发只会换回
+ *  一串 401。真正的止损在 `chat-archive-cursor.classifyArchiveResponse`(401 不推进游标),
+ *  这一行只是**省掉那一发注定失败的请求**——两者不是替代关系,少哪一个都不行。 */
 export function getArchiveAccessToken(): string | undefined {
+  if (!stored.archiveAccessToken) return undefined
+  if (isStoredTokenExpired()) return undefined
   return stored.archiveAccessToken
 }
 

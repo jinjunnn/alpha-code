@@ -207,15 +207,35 @@ inactive-plan payloads.
   per attachment). The wire, its sixteen one-cause error codes and the client
   retry policy are owned by alpha-web's
   [chat archive upload contract](https://github.com/jinjunnn/alpha-web/blob/main/docs/contracts/chat-archive-upload.md);
-  the two properties this repository must not drift on are that **429 is
-  retryable and does not advance the cursor** (every other 4xx is terminal and
-  does) and that an assistant message with no user predecessor is skipped
-  rather than paired with a fabricated user message. The cursor lives in
-  `userData/chat-archive-cursor.json` and is minted at "now" the first time the
-  feature runs, so history before that is never backfilled. BYOK and
-  user-defined providers are archived too; `billing_path` is derived by the
-  server from `provider_id`. Upload failures are logged and never block the
-  conversation.
+  the properties this repository must not drift on are that **429 and 401 are
+  both retryable and neither advances the cursor** (every other 4xx is terminal
+  and does) and that an assistant message with no user predecessor is skipped
+  rather than paired with a fabricated user message.
+
+  **The 401 row is a deliberate divergence from that contract's response
+  table**, decided 2026-09-18: the cursor is purely client-side state, and a 401
+  says the same thing a 429 does — *the reason is not in this turn*. Access
+  tokens live 15 minutes and refresh roughly every 10; after a sleep/wake or one
+  failed refresh the credential is present but stale, and treating the resulting
+  401s as terminal would advance the cursor past the entire backlog in one pass.
+  `getArchiveAccessToken()` therefore also reports an expired credential as
+  absent, which saves the request rather than replacing the cursor rule. Do not
+  "fix" this back to terminal by reading the contract table alone.
+
+  Two further admission rules live on the desktop side. Engine-owned
+  **sub-sessions are never archived**: a session whose `parentID` is present is
+  refused at session admission, because the "user" message inside a subagent
+  session is text the parent model wrote, and archiving it would file the
+  model's own words as something the user said. And the read walks **back**
+  through `X-Next-Cursor` until it reaches the cursor, so a backlog longer than
+  one page does not leave the older turns behind a cursor that jumped ahead.
+
+  The cursor lives in `userData/chat-archive-cursor.json`, is minted at "now"
+  the first time the feature runs — and is **re-minted whenever the signed-in
+  account changes**, so "no backfill" is counted once per account rather than
+  once per install. BYOK and user-defined providers are archived too;
+  `billing_path` is derived by the server from `provider_id`. Upload failures
+  are logged and never block the conversation.
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
   before renderer projection. Account summary remains outside this pinned
   contract until its producer publishes a schema and does not block the ledger

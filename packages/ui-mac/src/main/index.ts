@@ -142,6 +142,7 @@ import {
   isStoredTokenExpired,
   logout as authLogout,
   getArchiveAccessToken,
+  getAuthIdentityEpoch,
   markTokenGenerationApplied,
   setAuthDeps,
   setAuthMode,
@@ -977,6 +978,9 @@ const main = Effect.gen(function* () {
     token: () => getArchiveAccessToken(),
     cursor: openChatArchiveCursor({
       userDataPath: app.getPath("userData"),
+      // 换账号(登入/登出)即把 enabled_at 重铸成「当下」:owner 的「不回填」按账号各算一次,
+      // 否则 A 登出后用 BYOK 聊的那些轮次会被 B 的 bearer 发出去。
+      identityEpoch: () => getAuthIdentityEpoch(),
       onWriteError: (error) => logger.warn("chat-archive: cursor persist failed", error),
     }),
     log: {

@@ -506,7 +506,9 @@ describe("refresh bundle rotation", () => {
       expiresAt: 1,
       lifetimeMs: 1000,
     })
-    expect(getArchiveAccessToken()).toBe("archive-old")
+    // 这里读的是**持久态**,不是 getArchiveAccessToken():夹具的 expiresAt=1 已过期,而
+    // `#1324` 起过期即当缺席(那条单独一格的用例在下面)。本条要判的是「轮换有没有发生」。
+    expect(readStoredAuth()).toMatchObject({ archiveAccessToken: "archive-old" })
 
     // ① 信封带新值 ⇒ 持久态与读回一起轮换。
     globalThis.fetch = (async () =>
@@ -530,6 +532,33 @@ describe("refresh bundle rotation", () => {
     expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
     expect(getArchiveAccessToken()).toBeUndefined()
     expect(readStoredAuth()).not.toMatchObject({ archiveAccessToken: expect.anything() })
+  })
+
+  test("`#1324` 已过期的 archive 凭证当**缺席**处理 —— 省掉那一发注定 401 的上报", () => {
+    // 令牌 TTL 15 分钟、约 10 分钟刷一轮。睡眠唤醒之后、或一次刷新失败之后,凭证会处在
+    // 「在场但已过期」的状态;拿它去发只会换回一串 401,而 401 那一格的止损在游标侧。
+    const expired = Date.now() - 60_000
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      archiveAccessToken: "archive-stale",
+      refreshToken: "refresh-old",
+      expiresAt: expired,
+      lifetimeMs: 900_000,
+    })
+    expect(isStoredTokenExpired()).toBe(true)
+    expect(getArchiveAccessToken()).toBeUndefined()
+
+    // 前提自证:同一份存储,只把有效期挪到未来,它就该拿得到 —— 否则这条断言分不清
+    // 「因为过期」还是「这个读取器恒空」。
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      archiveAccessToken: "archive-stale",
+      refreshToken: "refresh-old",
+      expiresAt: Date.now() + 600_000,
+      lifetimeMs: 900_000,
+    })
+    expect(isStoredTokenExpired()).toBe(false)
+    expect(getArchiveAccessToken()).toBe("archive-stale")
   })
 
   test("`#1324` a present-but-empty archive_access_token is an issuer contract break, not an absence", () => {

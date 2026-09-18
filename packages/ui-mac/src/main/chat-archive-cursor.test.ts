@@ -28,10 +28,17 @@ describe("REQ-160 #1324 —— 响应归类:429 不是终态", () => {
     expect(classifyArchiveResponse(200, headers())).toEqual({ kind: "advance", outcome: "stored" })
   })
 
-  test("429 以外的 4xx 是终态:推进游标、不重发", () => {
-    for (const status of [400, 401, 411, 413, 415, 404, 422]) {
+  test("429 / 401 以外的 4xx 是终态:推进游标、不重发", () => {
+    for (const status of [400, 411, 413, 415, 404, 422]) {
       expect(classifyArchiveResponse(status, headers())).toEqual({ kind: "advance", outcome: "terminal" })
     }
+  })
+
+  test("401 也不是终态(R1 BLOCKER):令牌过期的原因不在这一轮里 —— 游标不动", () => {
+    // 与线契约表「401 → terminal」那一行**有意**相左(编排器 2026-09-18 裁决:游标是纯客户端状态)。
+    expect(classifyArchiveResponse(401, headers())).toEqual({ kind: "retry", outcome: "unauthorized" })
+    // 不给退避时长:同一把过期钥匙在本趟内重发没有意义,处置是「立刻停下这一趟」。
+    expect(classifyArchiveResponse(401, headers()).backoffMs).toBeUndefined()
   })
 
   test("429 退避重发,**不**推进游标,退避按 Retry-After", () => {
@@ -95,6 +102,39 @@ describe("REQ-160 #1324 —— 游标文件", () => {
     const next = openChatArchiveCursor({ userDataPath: dir, now: () => 5_555 })
     expect(next.enabledAt()).toBe(5_555)
     expect(next.snapshot().sessions).toEqual({})
+  })
+
+  test("换账号即把 enabled_at 重铸成「当下」并丢掉旧账号的会话游标(R1 MAJOR)", () => {
+    const dir = tempDir()
+    let epoch = 1
+    let now = 1_000
+    const cursor = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityEpoch: () => epoch })
+    cursor.advance("ses_1", "msg_0002")
+    expect(cursor.enabledAt()).toBe(1_000)
+
+    // 登出 + 登录 = epoch 推进两次;时间也往前走了。
+    epoch = 3
+    now = 9_000
+    expect(cursor.enabledAt()).toBe(9_000)
+    expect(cursor.lastReported("ses_1")).toBeUndefined()
+    // 落盘的那份也一样(下一次冷启动读到的就是新身份的起点)。
+    const onDisk = JSON.parse(readFileSync(join(dir, "chat-archive-cursor.json"), "utf8")) as Record<string, unknown>
+    expect(onDisk).toEqual({ schema_version: 1, enabled_at: 9_000, sessions: {} })
+  })
+
+  test("账号没变就不重铸;计数器**不**跨进程比(它每次启动从 0 起)", () => {
+    const dir = tempDir()
+    let now = 1_000
+    const cursor = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityEpoch: () => 7 })
+    cursor.advance("ses_1", "msg_0002")
+    now = 9_000
+    expect(cursor.enabledAt()).toBe(1_000)
+    expect(cursor.lastReported("ses_1")).toBe("msg_0002")
+
+    // 「重启」:同一份文件、同一个账号,但计数器归零 —— 不得被当成换了账号。
+    const restarted = openChatArchiveCursor({ userDataPath: dir, now: () => now, identityEpoch: () => 0 })
+    expect(restarted.enabledAt()).toBe(1_000)
+    expect(restarted.lastReported("ses_1")).toBe("msg_0002")
   })
 
   test("落盘失败不抛给调用方(上报是旁路,不阻断对话)", () => {

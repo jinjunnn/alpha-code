@@ -51,13 +51,16 @@ export type ChatArchiveUploaderDeps = {
   log?: ChatArchiveLog
   /** 一次 idle 里同一轮最多发几次(含首发)。用完还没结论 ⇒ 不推进,等下一次 idle。 */
   maxAttemptsPerTurn?: number
-  /** 一次 idle 最多读回多少条消息(最新的那些)。 */
+  /** 一页读回多少条消息。 */
   messageWindow?: number
+  /** 往回翻页的上界(页数)。默认 20 页 × 100 条 = 2000 条消息 ≈ 1000 轮的积压。 */
+  maxMessagePages?: number
   requestTimeoutMs?: number
 }
 
 const DEFAULT_MAX_ATTEMPTS = 4
 const DEFAULT_MESSAGE_WINDOW = 100
+const DEFAULT_MAX_MESSAGE_PAGES = 20
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
 const IDLE_STREAM_TIMEOUT_MS = 90_000
 
@@ -96,29 +99,110 @@ export function createChatArchiveUploader(deps: ChatArchiveUploaderDeps): ChatAr
   const log = deps.log ?? noopLog
   const maxAttempts = Math.max(1, deps.maxAttemptsPerTurn ?? DEFAULT_MAX_ATTEMPTS)
   const messageWindow = Math.max(2, deps.messageWindow ?? DEFAULT_MESSAGE_WINDOW)
+  const maxMessagePages = Math.max(1, deps.maxMessagePages ?? DEFAULT_MAX_MESSAGE_PAGES)
   const timeoutMs = deps.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   /** 每个会话一条串行链:两个 idle 叠在一起会让同一轮被并发发两次。 */
   const chains = new Map<string, Promise<void>>()
 
-  async function readMessages(sessionId: string, directory?: string): Promise<EngineMessage[] | null> {
+  /**
+   * 这一会话准不准上报。**咽喉在会话这一层,不在切轮那一层**(R1 审计 MAJOR)。
+   *
+   * 子代理(task 工具)会建一条 `parentID` 指向父会话的**子会话**
+   * (`packages/opencode/src/tool/task.ts:156-172`),并往里发一条 user 消息 —— 而那条消息的
+   * 文字是**父模型写出来的 prompt**(`packages/opencode/src/session/prompt.ts` 不给它打
+   * `synthetic`),引擎对子会话照样发 `session.idle`(`session/processor.ts:627,639`)。
+   * 不拦的话,模型自己写的话会以「用户说的」进证据库,并被服务端按 AC2 复判关键词 ——
+   * 可能对用户开出一张人工处置单。
+   *
+   * 判据放在准入层的理由:这样**将来新增的任何引擎自建会话默认被拒**,而不是等下一个人再去
+   * 切轮层枚举一遍它的形状。返回 `null` = 问不出来(fail-closed:本次不上报、游标不动)。
+   */
+  async function isArchivableSession(sessionId: string, directory?: string): Promise<boolean | null> {
     const server = await deps.awaitServer()
-    const url = new URL(`${server.url.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}/message`)
-    url.searchParams.set("limit", String(messageWindow))
+    const url = new URL(`${server.url.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}`)
     if (directory) url.searchParams.set("directory", directory)
-    const response = await doFetch(url.toString(), {
-      headers: basicAuth(server),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
+    const response = await doFetch(url.toString(), { headers: basicAuth(server), signal: AbortSignal.timeout(timeoutMs) })
     if (!response.ok) {
-      log.warn("chat-archive: engine message read failed", { sessionId, status: response.status })
+      log.warn("chat-archive: session read failed", { sessionId, status: response.status })
       return null
     }
-    const body: unknown = await response.json()
-    if (!Array.isArray(body)) {
-      log.warn("chat-archive: engine message read returned an unexpected shape", { sessionId })
+    const info: unknown = await response.json()
+    if (!info || typeof info !== "object" || Array.isArray(info)) {
+      log.warn("chat-archive: session read returned an unexpected shape", { sessionId })
       return null
     }
-    return body as EngineMessage[]
+    // `SessionInfo.parentID` 是可选字段(`packages/schema/src/v1/session.ts:567`);在场 = 子会话。
+    const parentId = (info as { parentID?: unknown }).parentID
+    return typeof parentId === "string" && parentId.length > 0 ? false : true
+  }
+
+  /** 把「这条消息还在本次要看的范围里吗」写成一个地方 —— 翻页的停止条件与切轮的筛选同源。 */
+  function stillInScope(oldest: EngineMessage | undefined, scope: { after?: string; enabledAt: number }): boolean {
+    const info = oldest?.info
+    if (!info) return false // 形状不认得 ⇒ 不再往回翻(fail-safe,不是无限翻)
+    if (scope.after !== undefined) {
+      return typeof info.id === "string" && info.id > scope.after
+    }
+    const created = info.time?.created
+    return typeof created === "number" && created > scope.enabledAt
+  }
+
+  /**
+   * 读回这一会话**待上报范围内**的消息(时间升序)。
+   *
+   * 引擎那条路由给的是**最新** N 条(`limit` ⇒ `MessageV2.page` 按 time_created/id 倒序取再翻正,
+   * `packages/opencode/src/session/message-v2.ts:425-466`),还有更旧的就带一个 `X-Next-Cursor`
+   * (`server/routes/instance/httpapi/handlers/session.ts:139-145`)。
+   *
+   * R1 审计 MAJOR:只读一页就切轮,在积压 > 一页时会**跳过窗口外的旧轮次** —— 登出期间用 BYOK
+   * continue 聊、或 alpha-web 故障期的长会话都到得了这个状态,而游标一旦跳到最新那几轮,
+   * 窗口外的永远不会再发。所以这里按 `X-Next-Cursor` 往回翻,直到翻过游标(或翻过 enabled_at)。
+   */
+  async function readMessages(
+    sessionId: string,
+    directory: string | undefined,
+    scope: { after?: string; enabledAt: number },
+  ): Promise<EngineMessage[] | null> {
+    const server = await deps.awaitServer()
+    const collected: EngineMessage[] = []
+    let before: string | undefined
+    for (let page = 1; page <= maxMessagePages; page++) {
+      const url = new URL(`${server.url.replace(/\/$/, "")}/session/${encodeURIComponent(sessionId)}/message`)
+      url.searchParams.set("limit", String(messageWindow))
+      if (before) url.searchParams.set("before", before)
+      if (directory) url.searchParams.set("directory", directory)
+      const response = await doFetch(url.toString(), {
+        headers: basicAuth(server),
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (!response.ok) {
+        log.warn("chat-archive: engine message read failed", { sessionId, status: response.status, page })
+        return null
+      }
+      const nextCursor = response.headers.get("x-next-cursor")
+      const body: unknown = await response.json()
+      if (!Array.isArray(body)) {
+        log.warn("chat-archive: engine message read returned an unexpected shape", { sessionId, page })
+        return null
+      }
+      const items = body as EngineMessage[]
+      collected.unshift(...items) // 后取到的是更旧的一页,接在前面
+      if (items.length === 0 || !nextCursor) break // 没有更旧的了
+      if (!stillInScope(items[0], scope)) break // 这一页最旧的一条已经出了范围
+      before = nextCursor
+      if (page === maxMessagePages) {
+        // 到这里说明这一会话的积压比 maxMessagePages × messageWindow 条消息还长。**如实记一行**:
+        // 比这更旧的在范围内的轮次这一趟看不到,而游标会随看得见的部分往前推、于是它们不会再被发出。
+        // 这是本实现**已知且有界**的上限(默认 20 × 100 = 2000 条消息 ≈ 1000 轮),不是「不会发生」;
+        // 写进日志是为了它真发生时查得到,而不是变成一个无人知道的静默丢弃。
+        log.warn("chat-archive: message backfill window exhausted — older in-scope turns will not be archived", {
+          sessionId,
+          pages: maxMessagePages,
+          perPage: messageWindow,
+        })
+      }
+    }
+    return collected
   }
 
   async function postTurn(turn: ArchiveTurn, token: string): Promise<Response> {
@@ -179,8 +263,20 @@ export function createChatArchiveUploader(deps: ChatArchiveUploaderDeps): ChatAr
         })
         return true
       }
-      // retry:429 或 5xx/未知状态。**不推进游标** —— 见 chat-archive-cursor.ts 抬头。
+      // retry:401 / 429 / 5xx / 未知状态。**一律不推进游标** —— 见 chat-archive-cursor.ts 抬头。
       const code = await readErrorCode(response)
+      if (disposition.outcome === "unauthorized") {
+        // 401:同一把钥匙重发只会再 401。立刻停下这一趟,等续期调度器换好令牌之后的下一次 idle
+        // 重扫 —— 那时这一轮以及它后面的轮次都还在,因为游标一步没动。
+        log.warn("chat-archive: upload unauthorized (cursor holds, retried after the next token refresh)", {
+          sessionId,
+          messageId: turn.assistantMessageId,
+          status: response.status,
+          code,
+          attempt,
+        })
+        return false
+      }
       const wait = disposition.backoffMs ?? backoffMs(attempt)
       log.warn("chat-archive: upload deferred (cursor holds)", {
         sessionId,
@@ -198,15 +294,29 @@ export function createChatArchiveUploader(deps: ChatArchiveUploaderDeps): ChatAr
   }
 
   async function runIdle(sessionId: string, directory?: string): Promise<void> {
+    // 令牌缺席 = 未登录 / 签发端还没铸 / **已过期**(alpha-auth 的 getArchiveAccessToken 把过期
+    // 当缺席)。三种都不上报、游标不动,等下一次 idle。
     const token = deps.token()
-    if (!token) return // 未登录 / 签发端还没铸 archive_access_token:不上报,游标不动
-    const messages = await readMessages(sessionId, directory)
+    if (!token) return
+    const archivable = await isArchivableSession(sessionId, directory)
+    if (archivable !== true) {
+      log.info("chat-archive: session not archivable", {
+        sessionId,
+        reason: archivable === false ? "engine-owned sub-session (parentID present)" : "session shape unknown",
+      })
+      return
+    }
+    // 这两次读**必须**在 readMessages 之前:游标的账号同步就发生在它们里面(换了账号会把
+    // enabled_at 重铸成「当下」),而翻页的停止条件要用到同步之后的值。
+    const enabledAt = deps.cursor.enabledAt()
+    const after = deps.cursor.lastReported(sessionId)
+    const messages = await readMessages(sessionId, directory, { enabledAt, after })
     if (!messages) return
     const { turns, skipped } = buildTurns({
       engineSessionId: sessionId,
       messages,
-      enabledAt: deps.cursor.enabledAt(),
-      after: deps.cursor.lastReported(sessionId),
+      enabledAt,
+      after,
     })
     for (const entry of skipped) log.info("chat-archive: message skipped", { sessionId, ...entry })
     for (const turn of turns) {
