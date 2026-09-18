@@ -19,7 +19,7 @@ related: [ADR-002, ADR-019, B/PA-7, B/PA-22]
    - **体积上限**:envelope 序列化 > **1MB 拒发**(loud error,不静默截断);
    - **secrets 内容扫描**:对 `input/objective` 做密钥模式扫描(API key/token/私钥块常见格式),命中即**拒发 + 指出字段**——不做静默改写(改写=送出损坏数据还装没事,违反反 placebo 纪律 C28);
    - **denied_paths 默认加固**:contract 未显式声明时,默认注入 `.env* / *.pem / .alpha/ / .git/` 等 denied_paths。
-3. **隐式通道·定位为「告知 + 逃生」而非过滤**:prompt 内容**不做静默改写/拦截**(会破坏编码任务且给用户虚假安全感)。技术义务已由既有决策覆盖:A6(密钥 env 不出境,`{file:}` 通道)+ BYOK 模式可整体绕开平台代理(逃生门)。剩余义务 = **告知**,归 B16(见 §4)。
+3. **隐式通道·定位为「告知 + 逃生」而非过滤**:prompt 内容**不做静默改写/拦截**(会破坏编码任务且给用户虚假安全感)。技术义务已由既有决策覆盖:A6(密钥 env 不出境,`{file:}` 通道)+ BYOK 模式绕开**模型调用与计费这一条通路**(模型请求直连用户自己的服务商账号)。**2026-09-18 订正(owner 授权,`#1365`)**:原文写作「BYOK 可**整体**绕开平台代理(逃生门)」,并据此把剩余义务收到「只需告知」。该前提已被 REQ-160 推翻一半 —— owner 2026-09-17 裁决:对话云端留存与内容审核上线后,**含 BYOK 的对话文字与附件同样上传平台、最长保存 180 天**(需求与验收 [`alpha-work#101`](https://github.com/jinjunnn/alpha-work/issues/101) AC7;已批方案基线 [`alpha-web/docs/design/chat-retention-moderation.md`](https://github.com/jinjunnn/alpha-web/blob/main/docs/design/chat-retention-moderation.md) §1.5 给出理由:BYOK 直连模型商、根本不经网关,服务端截获覆盖不到它,只能由桌面端上报)。**BYOK 不是数据边界上的整体逃生门,归档与内容审核不因它豁免**;剩余义务 = **告知**(归 B16,见 §4)+ **归档侧的告知与保存期承诺**(官网隐私政策 `alpha-web#214` 已上线;桌面端首次上传前说明 `alpha-code#1348`;授权页文案 `alpha-code#1362` 已订正)。
 4. **consent 挂钩(B16 已重启落地,2026-07-06 用户 GO,S25)**:两个挂钩点均已实现:
    - 显式:**首次云 dispatch(per 项目)** 弹 consent(`alpha-cloud-consent.ts` 纯核 + `cloud-ipc.ts` 原生对话框 + `.alpha/prefs.json` 落 `cloudConsent`,ADR-019 落点;写盘失败不静默放行;版本化)。**覆盖面 = hub 派发路径**(`window.api.cloud.dispatch(envelope, directory)`);MCP facade(会话内 agent cloud.* 工具)派发不经 main、不覆盖(会话内显式指令触发 + B 侧 schema 兜底 + 隐式告知已在登录承担)。
    - 隐式:登录授权页平台代付告知行(alpha-web `DesktopAuthorize`,PR #9)+ 隐私政策出境专章(修正原 §2「不上传源代码」误导)。定位=告知,不阻断(§3)。
