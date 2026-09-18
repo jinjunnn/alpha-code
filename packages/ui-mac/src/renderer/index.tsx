@@ -53,6 +53,7 @@ import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { AlphaSettings } from "./alpha-ui/settings"
 import { settingsAuthorityCoordinator } from "./alpha-ui/settings-authority-client"
 import { setSettingsOpen, settingsOpen } from "./alpha-ui/settings-state"
+import { sessionDirectoryFromProjects, settingsDirectoryOf } from "./alpha-ui/settings-directory"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
 import { AutomationPanel } from "./automations/automation-panel"
@@ -87,14 +88,13 @@ const productionRoutes = composeRoutes({
       </SurfaceBoundary>
     ),
   session: (projects: AlphaProjectsApi) => alphaSessionWorkspaceSurface(projects),
-  settings: () => {
-    // REQ-131(#1130):「工具」节按项目分区读写引擎策略;当前项目 = 路由里的 directory
-    // (session / directory 路由有,home / newSession 没有 ⇒ 该节显示「先打开一个项目」)。
+  // REQ-131(#1130):「工具」节按项目分区读写引擎策略;当前项目 = 路由 → 目录(settings-directory.ts):
+  // 生产导航走 canonical `/server/:serverKey/session/:id`,路由本身不带目录,按会话 id 从壳层项目清单查
+  // (与侧栏导航同一份数据);home / newSession、或清单里没有该会话 ⇒ 该节显示「先打开一个项目」。
+  settings: (projects: AlphaProjectsApi) => () => {
     const location = useLocation()
-    const directory = () => {
-      const route = parseRoute(location.pathname, location.search)
-      return route.kind === "session" || route.kind === "directory" ? route.directory : undefined
-    }
+    const directory = () =>
+      settingsDirectoryOf(parseRoute(location.pathname, location.search), sessionDirectoryFromProjects(projects.store))
     return (
       <AlphaBoundary name="AlphaSettings">
         <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} directory={directory} />
@@ -105,7 +105,6 @@ const productionRoutes = composeRoutes({
   recovery: RuntimeRecoveryHost,
 })
 
-const SettingsSurface = productionRoutes.settings.mount
 const RecoverySurface = productionRoutes.recovery.mount
 
 const DevSurfaceMapInspector = import.meta.env.DEV ? lazy(() => import("./dev/surface-map-inspector")) : () => null
@@ -490,6 +489,8 @@ render(() => {
     // A3: one shared projects store for the whole alpha shell — sidebar + home consume the same
     // instance instead of each running its own (was ×2 project.list / ×2N session.list + an extra SSE).
     const alphaProjects = useAlphaProjects(sidebarServer)
+    // 设置面挂在壳上(与路由无关地常驻);「工具」节要按会话 id 查项目目录,所以拿同一份项目清单。
+    const SettingsSurface = productionRoutes.settings.mount(alphaProjects)
 
     // `alphaProjects` 这份 store 连着的那个 server 的 `ServerConnection.key`。**唯一**的反查口:
     // 由 store 自己的 `baseUrl` 找回连接再算 key,而不是读"当前 active server"。

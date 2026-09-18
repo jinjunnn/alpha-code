@@ -439,6 +439,11 @@ describe("Alpha Settings 「工具」节", () => {
     const radios = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-tools-radio], [data-tools-class-radio]"))
     expect(radios.length).toBeGreaterThan(0)
     expect(radios.every((button) => button.disabled)).toBe(true)
+    // 整节只读靠 inert(整棵子树不可聚焦、不宣告),不是 aria-hidden(藏起来却仍可 Tab 到展开钮 / summary)。
+    const dimmed = q(".alpha-tools-dim")!
+    expect(dimmed.hasAttribute("inert")).toBe(true)
+    expect(dimmed.getAttribute("aria-hidden")).toBeNull()
+    expect(dimmed.contains(q("[data-tools-expand]"))).toBe(true)
 
     banner.querySelector<HTMLButtonElement>("[data-tools-reset]")!.click()
     await flush(8)
@@ -500,7 +505,7 @@ describe("Alpha Settings 「工具」节", () => {
     expect(surfaceApi.toolPolicy.removeRecord).toHaveBeenCalledWith({ directory: DIRECTORY, selector })
   })
 
-  test("T9 keyboard: the radiogroup follows the shared roving contract (Tab lands once; arrows move AND activate; modifiers pass through)", async () => {
+  test("T9 keyboard (approved frame): Tab lands once; arrows only move focus and never write; Space/Enter commits", async () => {
     const surfaceApi = api()
     await openTools(surfaceApi)
     const target = row("builtin::read")
@@ -515,15 +520,50 @@ describe("Alpha Settings 「工具」节", () => {
     first.focus()
     // 带修饰键的方向键归系统 / 读屏(VoiceOver 光标),组不吞。
     first.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", metaKey: true, bubbles: true, cancelable: true }))
-    expect(surfaceApi.toolPolicy.setRecord).not.toHaveBeenCalled()
-    // 无修饰的 → = 移动即激活(APG Radio Group):焦点到「询问」,并走同一条收紧即存路径。
+    expect(document.activeElement).toBe(first)
+    // → 只移动焦点:到「询问」,再 → 到「停用」(相对此刻聚焦项移动,不是相对记录值);全程零写入。
     first.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
     expect(document.activeElement).toBe(radio(target, "ask"))
+    radio(target, "ask").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(radio(target, "disabled"))
+    // ← 回到「询问」。
+    radio(target, "disabled").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(radio(target, "ask"))
     await flush(8)
+    expect(surfaceApi.toolPolicy.setRecord).not.toHaveBeenCalled()
+    expect(radio(target, "ask").getAttribute("aria-checked")).toBe("false")
+    // 空格 / 回车落在原生 <button> 上 = click ⇒ 才提交(收紧即存)。
+    radio(target, "ask").click()
+    await flush(8)
+    expect(surfaceApi.toolPolicy.setRecord).toHaveBeenCalledTimes(1)
     expect(surfaceApi.toolPolicy.setRecord).toHaveBeenCalledWith({
       directory: DIRECTORY,
       record: { selector: { level: "tool", canonical: "builtin::read" }, state: "ask" },
     })
     expect(text(q(".alpha-settings-section-head h2"))).toContain(zh["alpha.settings.tools"])
+  })
+
+  test("T10 a 409 on write re-reads the inventory so the quarantine banner and its reset button appear", async () => {
+    let current = inventory()
+    const setRecord = mock(async (): Promise<ToolPolicyWriteResult> => {
+      // 文档在我们读完清单之后损坏:引擎拒写 409,此刻的权威 inventory 已是 quarantined。
+      current = inventory({ user: { status: "quarantined", reason: "bad json" } })
+      return { ok: false, code: "quarantined" }
+    })
+    const surfaceApi = api({
+      inventory: mock(async () => ({ ok: true, inventory: structuredClone(current) }) as const),
+      setRecord,
+    })
+    await openTools(surfaceApi)
+    expect(q("[data-tools-banner='quarantine']")).toBeNull()
+
+    radio(row("builtin::read"), "ask").click()
+    await flush(8)
+    expect(setRecord).toHaveBeenCalledTimes(1)
+    expect(surfaceApi.toolPolicy.inventory).toHaveBeenCalledTimes(2)
+    // 横幅与「重置」真的出现了 —— 「先在上方重置」这句提示才有落点,重试不再是 409 死胡同。
+    const banner = q("[data-tools-banner='quarantine']")!
+    expect(banner.querySelector("[data-tools-reset]")).not.toBeNull()
+    expect(text(q("[data-tools-row-alert]"))).toContain(zh["alpha.settings.toolsSaveFailedQuarantined"])
   })
 })

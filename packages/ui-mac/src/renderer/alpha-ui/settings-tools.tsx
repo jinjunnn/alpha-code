@@ -270,6 +270,9 @@ export function AlphaSettingsTools(props: {
             return
           }
           setFailures((current) => new Map(current).set(key, { code: result.code, retry: attempt }))
+          // 409 = 文档在我们读完清单之后进了 quarantine:横幅与「重置」只在 inventory 说 quarantined 时才渲染,
+          // 不重读的话提示「先在上方重置」而上方没有按钮 —— 重读让横幅出现,重试才有路可走。
+          if (result.code === "quarantined") reload(true)
           queueMicrotask(() => alertToFocus?.focus())
         })
     }
@@ -354,9 +357,10 @@ export function AlphaSettingsTools(props: {
       : t("alpha.settings.toolsSaveFailedDetail")
 
   // ── 子组件 ─────────────────────────────────────────────────────────────────
-  // 三态 radiogroup 的键盘契约走全 alpha-ui 唯一的 roving-focus 实现(C21 AC2 棘轮):
-  // `radio` 键表 = →↓ 下一项、←↑ 上一项、移动即激活(APG Radio Group);Tab 进出整组一次。
-  // 「激活」= 与点选同一条 pick 路径 —— 收紧一点即存,class / service 层的「启用」照样先弹确认。
+  // 三态 radiogroup 的方向键走全 alpha-ui 唯一的 roving-focus 实现(C21 AC2 棘轮):
+  // `radio` 键表 = →↓ 下一项、←↑ 上一项;Tab 进出整组一次。
+  // 但**移动只移动焦点,不写入**(已批帧:「左右键切换、空格确认」)—— 这是放宽权限的路径
+  // (询问 → 启用),方向键不该在无确认下改动长期策略;空格 / 回车落在原生 <button> 上才走 pick。
   const Tri = (tri: {
     label: string
     value: ToolPolicyState | undefined
@@ -371,6 +375,12 @@ export function AlphaSettingsTools(props: {
       tri.disabled || tri.busy ? [] : STATES.filter((state) => !(state === "enabled" && tri.enableBlocked))
     const focusState = (state: ToolPolicyState) =>
       group?.querySelector<HTMLButtonElement>(`button[${tri.attr}="${state}"]`)?.focus()
+    // 方向键相对**此刻聚焦**的那一项移动(不是相对记录值 —— 否则连按两次会卡在同一项)。
+    const focused = (): ToolPolicyState | undefined => {
+      const element = document.activeElement
+      if (!(element instanceof HTMLElement) || !group?.contains(element)) return tri.value
+      return (element.getAttribute(tri.attr) as ToolPolicyState | null) ?? tri.value
+    }
     // Tab 落点:有记录落在选中项;无记录落在第一个可选项(无选中 = 无记录,不是「默认选中启用」)。
     const active = () => tri.value ?? selectable()[0]
     return (
@@ -382,10 +392,7 @@ export function AlphaSettingsTools(props: {
         aria-disabled={tri.disabled ? "true" : undefined}
         aria-busy={tri.busy ? "true" : undefined}
         onKeyDown={(event) =>
-          rovingKey(event, "radio", selectable(), tri.value, (state) => {
-            focusState(state)
-            tri.onPick(state)
-          })
+          rovingKey(event, "radio", selectable(), focused(), focusState)
         }
       >
         <For each={STATES}>
@@ -815,7 +822,9 @@ export function AlphaSettingsTools(props: {
               </div>
             </Show>
 
-            <div class={readOnly() ? "alpha-tools-dim" : undefined} aria-hidden={readOnly() ? "true" : undefined}>
+            {/* 整节只读时用 inert(而不是 aria-hidden):展开钮与 <details> summary 本身不是 disabled,
+                aria-hidden 只把它们从无障碍树里藏起来却仍可 Tab 到 —— 读屏用户会落在一个不宣告的控件上。 */}
+            <div class={readOnly() ? "alpha-tools-dim" : undefined} inert={readOnly() ? true : undefined}>
               <For each={groups()}>
                 {(group) => (
                   <div class="alpha-tools-group" data-tools-class={group.cls}>
