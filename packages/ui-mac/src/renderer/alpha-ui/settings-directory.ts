@@ -1,5 +1,6 @@
 // REQ-131 / #1130 —— Settings「工具」节的「当前项目目录」:策略按 (账户, 项目) 分区,所以这一节要知道
-// 用户此刻站在哪个项目里。唯一输入是路由 + 壳层已有的项目/会话清单,不另建第二份真相。
+// 用户此刻站在哪个项目里。输入只有两样、都是壳层已有的,不另建第二份真相:路由,以及会话 id → 目录
+// 的查表。查表 = 侧栏项目清单 → 会话页登记的活会话身份(`#1361`,见 sessionDirectoryFromShell)。
 import type { Route } from "../../shared/route-manifest"
 import type { AlphaProjectsStore } from "../sidebar/use-projects"
 import type { AlphaSessionIdentity } from "./session-workspace/session-workspace-core"
