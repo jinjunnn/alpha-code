@@ -24,7 +24,7 @@
 | [ADR-018](adrs/ADR-018-req-lifecycle.md) | 历史本地需求流程；已由 `alpha-work/governance/ADR-001-github-delivery-sot.md` 取代 | superseded | 2026-07-03 |
 | [ADR-019](adrs/ADR-019-alpha-workdir.md) | `.alpha` 项目工作目录 + 环境级全局根(2026-07-19 #428 修订:`<appData>/alpha-code-state/env/{dev,prod,beta}`,共享 CAS 为兄弟目录;退休 home 根零迁移/零 dual-read) | accepted | 2026-07-03 |
 | [ADR-020](adrs/ADR-020-frontend-freeze.md) | 前端冻结:packages/{app,ui} 钉 frontend-freeze-base,每日 sync 只进引擎(E 路径,REQ-013 拍板;修订 ADR-004 守卫范围)。**2026-07-21 被 ADR-034 supersede**(冻结丢弃上游前端更新 + 擦 alpha seam,与 owner「持续白嫖上游前端」诉求冲突) | **superseded by ADR-034** | 2026-07-03 |
-| [ADR-021](adrs/ADR-021-cloud-data-boundary.md) | 代码上云数据边界:diff-only 优先 + secrets 过滤 + 体积上限 + consent 挂钩 B16(C9,S11 T3;§2 三校验已实现 S14;§4 两挂钩点 B16 落地 S25) | accepted | 2026-07-04 |
+| [ADR-021](adrs/ADR-021-cloud-data-boundary.md) | 代码上云数据边界:diff-only 优先 + secrets 过滤 + 体积上限 + consent 挂钩 B16(C9,S11 T3;§2 三校验已实现 S14;§4 两挂钩点 B16 落地 S25) **2026-09-18 订正(#1365)**:§3 原称「BYOK 可整体绕开平台代理」并据此把剩余义务收到「只需告知」—— REQ-160 裁决后含 BYOK 的对话同样上传留存(`alpha-work#101` AC7),已收窄为「绕开的是模型调用与计费这一条通路」,归档与审核不因 BYOK 豁免 | accepted | 2026-07-04 |
 | [ADR-022](adrs/ADR-022-automations.md) | 自动化定时任务:本地调度器 + 只读 agent 静态权限档 + `.alpha` 落盘(REQ-021 A1;A2/A3 分期) | accepted(2026-07-05 真机批 PASS,REQ-016 S16;到点触发+readonly deny 零 ask+错过 skip) | 2026-07-04 |
 | [ADR-023](adrs/ADR-023-external-ecosystem-adaptation.md) | 外部生态适配 = 安装期转换器(不做运行时模拟)+ 插件包分发分层(npm 正源 / C 侧清单与精选资产) | accepted | 2026-07-05 |
 | [ADR-024](adrs/ADR-024-ecosystem-inheritance-default-deny.md) | 外部生态继承默认拒绝(.claude/.agents/CLAUDE.md)+ 打开项目 consent 导入门(consent = 安装期转换导入 `.alpha`,非重开继承;全局存量一次性迁移门为发布闸) | accepted | 2026-07-08 |
