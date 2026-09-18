@@ -5,7 +5,7 @@
 // <userData>/alpha-secrets (written by main's syncSecretFiles at fork) — env vars alone must NOT
 // activate a provider, and apiKey fields must be {file:} refs, never inlined values.
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -13,8 +13,35 @@ import { projectPlatformModels, readCatalogSnapshot, writeCatalogSnapshot } from
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { buildModelPickerRows } from "../renderer/alpha-ui/model-picker-core"
-import { secretFilePath, syncSecretFiles } from "./alpha-secret-files"
-import { persistProviderAndRefresh, setProviderLifecycleDeps } from "./provider-lifecycle"
+import { customProviderSecretName, secretFilePath, secretFileRef, syncSecretFiles } from "./alpha-secret-files"
+import { PROVIDER_KEYCHAIN_MARKER, readUserProviderIds } from "./ext-config"
+import { tryAcquireBundleLock } from "./ext-bundle-lock"
+
+// REQ-226 `#1343`: provider-lifecycle writes the key into alpha's keychain store (alpha-byok-keys) BEFORE the
+// definition, so the real lifecycle needs a fake, flippable keychain and a quiet logger. The keychain is
+// mocked at the store's one-function seam (`./alpha-keychain-backend`), NOT at `electron` — see that file.
+// Dynamic import: static imports are hoisted above mock.module, so the lifecycle (and the store) must be
+// imported after the mocks are registered.
+let encryptionAvailable = true
+// R2:按调用序列翻转可用性(非空时逐次 shift,空了回落到 encryptionAvailable)—— 用来让「① 存成功、回滚的 persist 被拒」这一步序可达。
+let availabilityQueue: boolean[] = []
+mock.module("./alpha-keychain-backend", () => ({
+  keychainBackend: () => ({
+    isEncryptionAvailable: () => (availabilityQueue.length ? availabilityQueue.shift()! : encryptionAvailable),
+    encryptString: (value: string) => Buffer.from(value, "utf8"),
+    decryptString: (value: Buffer) => value.toString("utf8"),
+  }),
+}))
+mock.module("./logging", () => ({
+  getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }),
+  write: () => {},
+  rotateServerLogs: () => {},
+}))
+const { persistProviderAndRefresh, setProviderLifecycleDeps } = await import("./provider-lifecycle")
+const { clearByokKeys, customProviderSecretValues, getByokKey, initByokKeys } = await import("./alpha-byok-keys")
+
+// Deliberately non-key-shaped test value (never a real credential); asserted absent from config/injection.
+const SECRET = "test-value-not-a-real-key-Zq81"
 
 // Every env var this module reads — snapshot + restore so tests don't leak into each other or the host.
 const MANAGED = [
@@ -51,8 +78,13 @@ beforeEach(() => {
   fs.mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
   process.env.OPENCODE_CONFIG_DIR = tmp
   userData = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-models-userdata-"))
+  encryptionAvailable = true
+  availabilityQueue = []
+  clearByokKeys()
+  initByokKeys(userData)
 })
 afterEach(() => {
+  clearByokKeys()
   setProviderLifecycleDeps()
   for (const k of MANAGED) {
     if (saved[k] === undefined) delete process.env[k]
@@ -189,12 +221,16 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
     expect(cfg.enabled_providers).toContain("myco")
   })
 
-  test("providers.add 的真实保存→respawn 装配链把 custom id 带进下一 fork enabled_providers", async () => {
+  // REQ-226 `#1343`:真实链 = 钥匙串库 → alpha.jsonc(只有标记)→ respawn(fork 前 main 把库里的密钥物化成
+  // custom-provider--<id> 文件)→ sidecar 只按文件在场发 {file:} 引用。这里的 refreshRuntime 替身照生产
+  // 顺序做同样两步(syncSecretFiles(extra) 与 buildAlphaModelConfig)。
+  test("providers.add 的真实保存→respawn 装配链:密钥进库、alpha.jsonc 只有标记、下一 fork 文件在场 ⇒ {file:} 引用", async () => {
     let refreshed: ReturnType<typeof buildAlphaModelConfig>
     let refreshes = 0
     setProviderLifecycleDeps({
       refreshRuntime: async () => {
         refreshes++
+        syncSecretFiles(userData, {}, customProviderSecretValues(readUserProviderIds()))
         refreshed = buildAlphaModelConfig(userData)
         return true
       },
@@ -205,13 +241,204 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
       name: "Custom Node",
       compat: "openai",
       baseURL: "https://custom.invalid/v1",
-      apiKey: "sk-test",
+      apiKey: SECRET,
       models: ["real-custom-model"],
     })
 
     expect(result).toEqual({ ok: true })
     expect(refreshes).toBe(1)
+    const text = fs.readFileSync(path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"), "utf8")
+    expect(text).toContain(PROVIDER_KEYCHAIN_MARKER)
+    expect(text).not.toContain(SECRET)
+    expect(text).not.toContain("{file:")
+    const file = customProviderSecretName("custom-node")
+    expect(fs.readFileSync(secretFilePath(userData, file), "utf8")).toBe(SECRET)
     expect(refreshed!.enabled_providers).toContain("custom-node")
+    expect(refreshed!.provider["custom-node"]).toEqual({ options: { apiKey: secretFileRef(userData, file) } })
+    expect(JSON.stringify(refreshed)).not.toContain(SECRET) // I7: the value is never in OPENCODE_CONFIG_CONTENT
+  })
+
+  test("AC6 fail closed:钥匙串不可用 ⇒ providers.add 回 {ok:false},alpha.jsonc 不写、不 respawn、下一 fork 无此 id", async () => {
+    encryptionAvailable = false
+    let refreshes = 0
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        refreshes++
+        return true
+      },
+    })
+    const result = await persistProviderAndRefresh({
+      id: "custom-node",
+      name: "Custom Node",
+      compat: "openai",
+      baseURL: "https://custom.invalid/v1",
+      apiKey: SECRET,
+      models: ["real-custom-model"],
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/keychain/)
+    expect(refreshes).toBe(0)
+    expect(fs.existsSync(path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"))).toBe(false)
+    expect(buildAlphaModelConfig(userData)!.enabled_providers).not.toContain("custom-node")
+  })
+
+  // R1 finding 2:① 库写成功、② alpha.jsonc 写失败(写锁忙 / 写拒)⇒ 库必须回到 ② 之前的样子 ——
+  // 首填不得留下一条自称「已配置」的孤儿条目;重填不得静默把旧键换成新键而配置块还是旧的。
+  test("add 半程②失败回滚①:配置写锁忙 ⇒ 首填不留孤儿条目、重填保留旧键;不 respawn", async () => {
+    let refreshes = 0
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        refreshes++
+        return true
+      },
+    })
+    const input = {
+      id: "custom-node",
+      name: "Custom Node",
+      compat: "openai" as const,
+      baseURL: "https://custom.invalid/v1",
+      models: ["real-custom-model"],
+    }
+    // 首填:锁被持有 ⇒ ② busy ⇒ ① 回滚(条目消失)
+    const held = tryAcquireBundleLock(process.env.ALPHA_GLOBAL_DIR!, { txId: "tx-in-flight" })
+    expect(held.ok).toBe(true)
+    if (!held.ok) return
+    try {
+      const first = await persistProviderAndRefresh({ ...input, apiKey: SECRET })
+      expect(first.ok).toBe(false)
+      if (!first.ok) expect(first.reason).toContain("config busy")
+      expect(getByokKey("custom-node")).toBeUndefined()
+      expect(refreshes).toBe(0)
+    } finally {
+      held.lock.release()
+    }
+    // 重填:先成功存旧键,再在锁下用新键 ⇒ 库仍是旧键(状态面不会报新键末四位)
+    expect((await persistProviderAndRefresh({ ...input, apiKey: `${SECRET}-old` })).ok).toBe(true)
+    expect(refreshes).toBe(1)
+    const heldAgain = tryAcquireBundleLock(process.env.ALPHA_GLOBAL_DIR!, { txId: "tx-in-flight-2" })
+    expect(heldAgain.ok).toBe(true)
+    if (!heldAgain.ok) return
+    try {
+      const second = await persistProviderAndRefresh({ ...input, apiKey: `${SECRET}-new` })
+      expect(second.ok).toBe(false)
+      expect(getByokKey("custom-node")).toBe(`${SECRET}-old`)
+      expect(refreshes).toBe(1)
+    } finally {
+      heldAgain.lock.release()
+    }
+  })
+
+  // R2 minor:回滚自己也可能失败(库文件写不进去)。那时内存清了、盘上没清,下次启动 load() 会复活一条
+  // 无配置块的孤儿条目并让状态面报「已配置」—— 调用方必须把这一层如实带回,而不是只报 ② 的 busy。
+  test("R2:回滚 persist 被拒时 reason 同时点名 ② 的失败与回滚失败(不吞)", async () => {
+    let refreshes = 0
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        refreshes++
+        return true
+      },
+    })
+    const held = tryAcquireBundleLock(process.env.ALPHA_GLOBAL_DIR!, { txId: "tx-in-flight-3" })
+    expect(held.ok).toBe(true)
+    if (!held.ok) return
+    try {
+      availabilityQueue = [true, false] // ① 的 persist 成功;② busy;回滚的 persist 被钥匙串拒绝
+      const result = await persistProviderAndRefresh({
+        id: "custom-node",
+        name: "Custom Node",
+        compat: "openai",
+        baseURL: "https://custom.invalid/v1",
+        apiKey: SECRET,
+        models: ["real-custom-model"],
+      })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.reason).toContain("config busy")
+        expect(result.reason).toContain("rollback")
+      }
+      expect(availabilityQueue).toEqual([]) // 两次可用性判断都真的发生了(手段自证)
+      expect(refreshes).toBe(0)
+    } finally {
+      held.lock.release()
+    }
+  })
+})
+
+// REQ-226 `#1343` 基线 §2.1 步骤 3:对 alpha.jsonc 里每个 provider 块按 options.apiKey 三分类决定注入 ——
+// K 托管(标记 / 字段缺席):文件在场 ⇒ {file:};缺席 ⇒ "";L 旧明文 ⇒ "";U 用户引用 ⇒ 不动。
+describe("buildAlphaModelConfig — REQ-226 #1343:自定义服务三分类注入(K / L / U)", () => {
+  const block = (apiKey?: string) => ({
+    npm: "@ai-sdk/openai-compatible",
+    name: "My",
+    options: { baseURL: "https://x.invalid/v1", ...(apiKey === undefined ? {} : { apiKey }) },
+    models: { m: { name: "m" } },
+  })
+  const writeAlpha = (provider: Record<string, unknown>) =>
+    fs.writeFileSync(path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"), JSON.stringify({ provider }))
+  const apiKeyOf = (cfg: ReturnType<typeof buildAlphaModelConfig>, id: string) =>
+    (cfg!.provider[id] as { options: { apiKey: string } } | undefined)?.options.apiKey
+
+  test("K 托管 + 密钥文件在场 ⇒ {file:…custom-provider--<id>};字段缺席同样算 K", () => {
+    writeAlpha({ myco: block(PROVIDER_KEYCHAIN_MARKER), bare: block(undefined) })
+    plantSecret(customProviderSecretName("myco"), SECRET)
+    plantSecret(customProviderSecretName("bare"), SECRET)
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.provider.myco).toEqual({ options: { apiKey: secretFileRef(userData, customProviderSecretName("myco")) } })
+    expect(cfg.provider.bare).toEqual({ options: { apiKey: secretFileRef(userData, customProviderSecretName("bare")) } })
+    expect(cfg.enabled_providers).toEqual(expect.arrayContaining(["myco", "bare"]))
+    expect(JSON.stringify(cfg)).not.toContain(SECRET)
+  })
+
+  test("K 托管 + 文件缺席 ⇒ apiKey:\"\"(压掉标记);注入表里没有任何 {file: 子串(I8:无悬空引用)", () => {
+    writeAlpha({ myco: block(PROVIDER_KEYCHAIN_MARKER) })
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.provider.myco).toEqual({ options: { apiKey: "" } })
+    expect(JSON.stringify(cfg)).not.toContain("{file:")
+    expect(JSON.stringify(cfg)).not.toContain(PROVIDER_KEYCHAIN_MARKER)
+  })
+
+  test("L 旧明文 ⇒ apiKey:\"\"(引擎不得使用),明文不进注入表;目录 id 的旧明文块同样被压掉;有文件也不算 K", () => {
+    writeAlpha({ myco: block("legacy-plain-value-Ab12"), deepseek: block("legacy-plain-value-Cd34") })
+    plantSecret(customProviderSecretName("myco"), SECRET)
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.provider.myco).toEqual({ options: { apiKey: "" } })
+    expect(cfg.provider.deepseek).toEqual({ options: { apiKey: "" } })
+    expect(JSON.stringify(cfg)).not.toContain("legacy-plain")
+    expect(JSON.stringify(cfg)).not.toContain(SECRET)
+  })
+
+  test("U 用户引用({file:} / {env:})⇒ 不动:注入表里没有该 id 的条目,但 id 仍进 enabled_providers", () => {
+    writeAlpha({ f: block("{file:/somewhere/key}"), e: block("{env:MY_VAR}") })
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.provider.f).toBeUndefined()
+    expect(cfg.provider.e).toBeUndefined()
+    expect(cfg.enabled_providers).toEqual(expect.arrayContaining(["f", "e"]))
+  })
+
+  test("目录 id 的无钥块(字段缺席)不被本段接管 —— alpha 只经 <id>-byok 注入目录节点", () => {
+    writeAlpha({ deepseek: block(undefined) })
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.provider.deepseek).toBeUndefined()
+  })
+
+  test("I7:目录外 id 的 apiKey 只可能是 {file:…} 或 \"\" —— 三种块形态穷举后没有第三种值", () => {
+    writeAlpha({ k1: block(PROVIDER_KEYCHAIN_MARKER), k2: block(undefined), l: block("legacy-plain-value-Ab12"), k3: block(PROVIDER_KEYCHAIN_MARKER) })
+    plantSecret(customProviderSecretName("k1"), SECRET)
+    const cfg = buildAlphaModelConfig(userData)!
+    for (const id of ["k1", "k2", "l", "k3"]) {
+      const value = apiKeyOf(cfg, id)
+      expect(typeof value).toBe("string")
+      expect(value === "" || value!.startsWith("{file:")).toBe(true)
+    }
+    expect(apiKeyOf(cfg, "k1")).toBe(secretFileRef(userData, customProviderSecretName("k1")))
+  })
+
+  test("alpha 自己注入的节点优先:同名的自定义块不覆盖 <id>-byok 节点", () => {
+    plantSecret("DEEPSEEK_API_KEY", "x")
+    writeAlpha({ "deepseek-byok": block("legacy-plain-value-Ab12") })
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(apiKeyOf(cfg, "deepseek-byok")).toBe(secretFileRef(userData, "DEEPSEEK_API_KEY"))
+    expect(JSON.stringify(cfg)).not.toContain("legacy-plain")
   })
 })
 

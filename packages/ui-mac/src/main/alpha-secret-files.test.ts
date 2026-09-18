@@ -7,7 +7,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { hasSecretFile, secretEnvVars, secretFilePath, secretFileRef, syncSecretFiles } from "./alpha-secret-files"
+import {
+  customProviderSecretName,
+  hasSecretFile,
+  secretEnvVars,
+  secretFilePath,
+  secretFileRef,
+  syncSecretFiles,
+} from "./alpha-secret-files"
 
 let tmp = ""
 
@@ -70,6 +77,60 @@ describe("syncSecretFiles", () => {
     syncSecretFiles(tmp, { ALPHA_API_KEY: "new" })
     expect(fs.readFileSync(secretFilePath(tmp, "ALPHA_API_KEY"), "utf8")).toBe("new")
     expect(fs.statSync(secretFilePath(tmp, "ALPHA_API_KEY")).mode & 0o777).toBe(0o600)
+  })
+})
+
+// REQ-226 `#1343`: off-catalog custom provider keys enter this channel through `extra` (keychain store →
+// file, no env hop). Same revocation semantics as env vars: absent on the next sync ⇒ swept.
+describe("syncSecretFiles — extra (custom provider keys, keychain → file)", () => {
+  const a = customProviderSecretName("my-endpoint")
+  const b = customProviderSecretName("other-endpoint")
+
+  test("customProviderSecretName: lowercase-prefixed, never a catalog var name", () => {
+    expect(a).toBe("custom-provider--my-endpoint")
+    expect(secretEnvVars()).not.toContain(a)
+  })
+
+  test("two extra names are each written 0600, reported in `written`, and survive the leftover sweep", () => {
+    const result = syncSecretFiles(tmp, {}, { [a]: "value-a", [b]: "value-b" })
+    expect(result.written.sort()).toEqual([a, b].sort())
+    expect(result.removed).toEqual([])
+    expect(fs.readFileSync(secretFilePath(tmp, a), "utf8")).toBe("value-a")
+    expect(fs.readFileSync(secretFilePath(tmp, b), "utf8")).toBe("value-b")
+    expect(fs.statSync(secretFilePath(tmp, a)).mode & 0o777).toBe(0o600)
+    // A second sync with the same extra keeps both — they are in the wanted set, not "leftovers".
+    const again = syncSecretFiles(tmp, {}, { [a]: "value-a", [b]: "value-b" })
+    expect(again.removed).toEqual([])
+    expect(hasSecretFile(tmp, a)).toBe(true)
+    expect(hasSecretFile(tmp, b)).toBe(true)
+  })
+
+  test("a name absent from `extra` on the next sync is REVOKED (key / provider removed); the other stays", () => {
+    syncSecretFiles(tmp, {}, { [a]: "value-a", [b]: "value-b" })
+    const result = syncSecretFiles(tmp, {}, { [b]: "value-b" })
+    expect(result.removed).toContain(a)
+    expect(hasSecretFile(tmp, a)).toBe(false)
+    expect(hasSecretFile(tmp, b)).toBe(true)
+  })
+
+  test("an empty extra value produces no file and removes a stale one", () => {
+    syncSecretFiles(tmp, {}, { [a]: "value-a" })
+    const result = syncSecretFiles(tmp, {}, { [a]: "" })
+    expect(hasSecretFile(tmp, a)).toBe(false)
+    expect(result.removed).toContain(a)
+  })
+
+  test("extra and env-derived files coexist; neither sweeps the other", () => {
+    const result = syncSecretFiles(tmp, { ALPHA_API_KEY: "jwt-abc" }, { [a]: "value-a" })
+    expect(result.written.sort()).toEqual(["ALPHA_API_KEY", a].sort())
+    expect(hasSecretFile(tmp, "ALPHA_API_KEY")).toBe(true)
+    expect(hasSecretFile(tmp, a)).toBe(true)
+  })
+
+  test("fail closed: an extra name that is not a plain file name throws (spawnLocalServer then refuses to fork)", () => {
+    expect(() => syncSecretFiles(tmp, {}, { "../escape": "v" })).toThrow(/plain file name/)
+    expect(() => syncSecretFiles(tmp, {}, { "": "v" })).toThrow(/plain file name/)
+    expect(fs.existsSync(path.join(tmp, "escape"))).toBe(false)
   })
 })
 

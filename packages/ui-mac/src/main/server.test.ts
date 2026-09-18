@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test, vi } from "bun:test"
 import { EventEmitter } from "node:events"
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, parse, resolve } from "node:path"
 
@@ -42,11 +42,22 @@ mock.module("./logging", () => ({
   rotateServerLogs: () => {},
 }))
 mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {}, delete: () => {} }) }))
+// REQ-226 `#1343`:spawnLocalServer 在 fork 前从钥匙串库取自定义服务密钥。库本身真跑;只把它那一个
+// 函数的 Electron 接缝(alpha-keychain-backend,见该文件为何不 mock `electron`)换成能落盘的假钥匙串。
+// 它不是本文件的被测对象(库的判据在 alpha-byok-keys.test.ts)。
+mock.module("./alpha-keychain-backend", () => ({
+  keychainBackend: () => ({
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value, "utf8"),
+    decryptString: (value: Buffer) => value.toString("utf8"),
+  }),
+}))
 // 不 mock ./alpha-secret-files:真 syncSecretFiles 对 test 的临时 userDataPath 是 temp-scoped(写
 // <tempdir>/alpha-secrets,无 ALPHA 密钥环境变量时 no-op,afterEach 清理)。全局 mock.module 会跨文件
 // 泄漏残缺导出面,撞坏 alpha-secret-files.test.ts 的 `import { secretFileRef, ... }`(2026-07-21 Linux CI 实锤)。
 
-const { hasSecretFile } = await import("./alpha-secret-files")
+const { hasSecretFile, secretFilePath } = await import("./alpha-secret-files")
+const { clearByokKeys, initByokKeys, storeByokKey } = await import("./alpha-byok-keys")
 const { writeShellEnvCache } = await import("./shell-env-cache")
 const { preferAppEnv, spawnLocalServer } = await import("./server")
 // REQ-159 `#1321`:生产 spawnLocalServer 在 fork 前做围栏计划(真 store / 真 sandbox-exec / 真原生模块路径);
@@ -63,6 +74,7 @@ const keylessWebSearchFlags = [
 ] as const
 const managedEnv = [
   "SHELL",
+  "ALPHA_GLOBAL_DIR",
   "ALPHA_CLOUD_MCP_URL",
   "ALPHA_CLOUD_TOKEN",
   "ALPHA_MCP_TOKEN",
@@ -414,6 +426,46 @@ describe("spawnLocalServer", () => {
       }),
     ).rejects.toThrow(/alpha-secrets sync failed/)
     expect(forkCalls).toHaveLength(0)
+  })
+
+  // REQ-226 `#1343` AC4 咽喉点在**这条**生产 fork 路径上:自定义服务密钥 = 钥匙串库 → custom-provider--<id>
+  // 文件,不经 env;sidecar env 里没有值;只有「alpha.jsonc 里的 id ∩ 库键集」才物化(孤儿条目不落盘);
+  // 库里没了 ⇒ 下一次 fork 清扫文件(与目录 BYOK 同一撤销语义)。
+  test("REQ-226: an off-catalog custom provider's key is materialized keychain → file at fork; the forked env never carries it; gone from the store ⇒ swept next fork", async () => {
+    const root = join(realpathSync(userDataPath), "alpha-code-state", "env", "dev")
+    mkdirSync(root, { recursive: true })
+    writeFileSync(
+      join(root, "alpha.jsonc"),
+      JSON.stringify({
+        provider: {
+          "my-endpoint": {
+            npm: "@ai-sdk/openai-compatible",
+            name: "Mine",
+            options: { baseURL: "https://x.invalid/v1", apiKey: "alpha-keychain" },
+            models: { m: { name: "m" } },
+          },
+        },
+      }),
+    )
+    process.env.ALPHA_GLOBAL_DIR = root
+    const value = "test-value-not-a-real-key-Zq81"
+    initByokKeys(userDataPath)
+    try {
+      expect(storeByokKey("my-endpoint", value)).toEqual({ ok: true })
+      expect(storeByokKey("orphan", `${value}-orphan`)).toEqual({ ok: true })
+      const env = await forkSidecar()
+      const file = "custom-provider--my-endpoint"
+      expect(hasSecretFile(userDataPath, file)).toBe(true)
+      expect(readFileSync(secretFilePath(userDataPath, file), "utf8")).toBe(value)
+      expect(hasSecretFile(userDataPath, "custom-provider--orphan")).toBe(false)
+      expect(JSON.stringify(env)).not.toContain("test-value")
+      clearByokKeys()
+      initByokKeys(userDataPath)
+      await forkSidecar()
+      expect(hasSecretFile(userDataPath, file)).toBe(false)
+    } finally {
+      clearByokKeys()
+    }
   })
 
   test("forks the sidecar in the userData scratch directory", async () => {

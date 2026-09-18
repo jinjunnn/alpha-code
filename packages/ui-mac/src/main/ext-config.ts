@@ -14,7 +14,8 @@ import * as path from "node:path"
 import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { applyEdits, format, modify, parse, type ParseError } from "jsonc-parser"
-import type { ProviderInput } from "../shared/alpha-model-types"
+import catalog from "./alpha-models.json"
+import { byokEngineId, type AlphaModelCatalog, type ProviderInput } from "../shared/alpha-model-types"
 import { isExtensionName } from "../shared/extension-name"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
@@ -1106,26 +1107,60 @@ function removeMcpUnlocked(name: string): ConfigResult {
   return { ok: true }
 }
 
+const PROVIDER_CATALOG = catalog as unknown as AlphaModelCatalog
+
 /**
- * Persist a custom provider under provider[<id>] in the user's opencode config (durable). NOTE: the
- * id must ALSO be merged into the injected enabled_providers allowlist at sidecar start
- * (alpha-models.ts → readUserProviderIds) — opencode replaces (doesn't union) the enabled_providers
- * array on merge, so a provider not in the injected allowlist is dropped (see build.md §6). The user
- * providers-add follows a successful write with the process-global sidecar respawn; that fork reads
- * this id into enabled_providers before the renderer reconnects and refreshes model.list.
+ * REQ-226 (`#1343`): the constant alpha writes to provider[<id>].options.apiKey in alpha.jsonc instead of the
+ * key. It means "the key for this provider id lives in alpha's keychain store" and carries no key fragment,
+ * no path and no id — the reference is the provider id itself. The engine never resolves it: at every fork
+ * the sidecar overrides options.apiKey with a `{file:}` ref (key file present) or `""` (absent), see
+ * alpha-models.ts. Durable config therefore never holds a value and never holds a `{file:}` path.
  */
-export function persistProvider(input: ProviderInput): ConfigResult {
+export const PROVIDER_KEYCHAIN_MARKER = "alpha-keychain"
+
+/** How a provider block's `options.apiKey` in alpha.jsonc is classified — the VALUE is never returned. */
+export type ProviderKeyKind = "keychain-marker" | "legacy-plaintext" | "user-ref"
+
+/** Ids alpha itself injects (catalog BYOK display ids, their `<id>-byok` engine ids, the platform id). A
+ * custom provider with one of these names would make two injection paths write `provider.<id>.options`
+ * for the same id, with the winner decided by object key order (baseline §三 I4). */
+function isReservedProviderId(id: string): boolean {
+  if (id === PROVIDER_CATALOG.platformProvider.id) return true
+  return PROVIDER_CATALOG.byokProviders.some((p) => p.id === id || byokEngineId(p.id) === id)
+}
+
+/** Validation only — no disk I/O. provider-lifecycle runs it BEFORE the keychain write so an invalid
+ * request never leaves an orphan key in the store; persistProvider re-runs it (cheap, keeps it a unit). */
+export function validateProviderInput(input: ProviderInput): ConfigResult {
   if (!isExtensionName(input.id)) return { ok: false, reason: "invalid provider id" }
+  if (isReservedProviderId(input.id)) return { ok: false, reason: "provider id is reserved by the built-in catalog" }
   if (!input.name || typeof input.name !== "string") return { ok: false, reason: "missing provider name" }
   if (input.compat !== "openai" && input.compat !== "anthropic") return { ok: false, reason: "invalid compat" }
   if (!isAllowedUrl(input.baseURL)) return { ok: false, reason: "only https (or loopback http) base URLs are allowed" }
   if (!input.apiKey || typeof input.apiKey !== "string") return { ok: false, reason: "missing api key" }
   const ids = (Array.isArray(input.models) ? input.models : []).map((m) => String(m).trim()).filter(Boolean)
   if (ids.length === 0) return { ok: false, reason: "at least one model id is required" }
+  return { ok: true }
+}
+
+/**
+ * Persist a custom provider under provider[<id>] in alpha.jsonc (durable) — DEFINITION ONLY. The key
+ * itself is NOT written here (REQ-226 AC1): provider-lifecycle puts it in the keychain store first and
+ * this block carries the constant PROVIDER_KEYCHAIN_MARKER in its place. NOTE: the id must ALSO be merged
+ * into the injected enabled_providers allowlist at sidecar start (alpha-models.ts → readUserProviderIds)
+ * — opencode replaces (doesn't union) the enabled_providers array on merge, so a provider not in the
+ * injected allowlist is dropped (see build.md §6). providers-add follows a successful write with the
+ * process-global sidecar respawn; that fork reads this id into enabled_providers before the renderer
+ * reconnects and refreshes model.list.
+ */
+export function persistProvider(input: ProviderInput): ConfigResult {
+  const valid = validateProviderInput(input)
+  if (!valid.ok) return valid
+  const ids = input.models.map((m) => String(m).trim()).filter(Boolean)
   const npm = input.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
   const models: Record<string, { name: string }> = {}
   for (const m of ids) models[m] = { name: m }
-  const block = { npm, name: input.name, options: { baseURL: input.baseURL, apiKey: input.apiKey }, models }
+  const block = { npm, name: input.name, options: { baseURL: input.baseURL, apiKey: PROVIDER_KEYCHAIN_MARKER }, models }
   return writeKey(providerTargetPath(), ["provider", input.id], block)
 }
 
@@ -1149,12 +1184,17 @@ export function readUserProviderIds(): string[] {
 }
 
 /**
- * Provider ids in opencode.jsonc that carry an INLINE api key (provider[id].options.apiKey). The
- * model picker uses this (plus the keyEnv env check) to show "已配置 / 需配置" state — builtin
- * providers are injected as config-only, so without this they look identical whether keyed or not.
+ * Classify each provider block's `options.apiKey` in alpha.jsonc (+ legacy read paths) WITHOUT returning
+ * the value — REQ-226 AC7's choke point: after `#1343` no function in main reads a plaintext key out of a
+ * config file into memory. Consumers: getProviderKeyStatus (keychain / needs-reentry / config faces) and
+ * the sidecar's buildAlphaModelConfig (three-way injection: K → {file:} or "", L → "", U → untouched).
+ *   "keychain-marker"   value === PROVIDER_KEYCHAIN_MARKER (written by persistProvider)
+ *   "user-ref"          `{file:…}` / `{env:…}` — a hand-written power-user reference; alpha does not manage it
+ *   "legacy-plaintext"  any other non-empty string — a pre-#1343 inline key; never read, never migrated
+ * A block with no / empty apiKey is not in the map (K class with the field absent).
  */
-export function readConfiguredProviderKeys(): Map<string, string> {
-  const out = new Map<string, string>()
+export function readConfiguredProviderKeys(): Map<string, ProviderKeyKind> {
+  const out = new Map<string, ProviderKeyKind>()
   // Real source first; existing sources only fill ids not already seen (migration-period fallback).
   for (const target of providerReadPaths()) {
     try {
@@ -1164,8 +1204,8 @@ export function readConfiguredProviderKeys(): Map<string, string> {
       if (prov && typeof prov === "object") {
         for (const [id, def] of Object.entries(prov)) {
           if (out.has(id)) continue
-          const key = (def as { options?: { apiKey?: unknown } } | null)?.options?.apiKey
-          if (typeof key === "string" && key.trim().length > 0) out.set(id, key)
+          const kind = classifyProviderKey((def as { options?: { apiKey?: unknown } } | null)?.options?.apiKey)
+          if (kind) out.set(id, kind)
         }
       }
     } catch {
@@ -1173,6 +1213,50 @@ export function readConfiguredProviderKeys(): Map<string, string> {
     }
   }
   return out
+}
+
+/** The one definition of what a provider block's `options.apiKey` is; the value itself is never kept. */
+function classifyProviderKey(value: unknown): ProviderKeyKind | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) return undefined
+  if (value === PROVIDER_KEYCHAIN_MARKER) return "keychain-marker"
+  if (/^\{(file|env):/.test(value)) return "user-ref"
+  return "legacy-plaintext"
+}
+
+function legacyKeyLeafPresent(file: string, id: string): boolean {
+  try {
+    if (!fs.existsSync(file)) return false
+    const parsed = parse(fs.readFileSync(file, "utf8")) as
+      | { provider?: Record<string, { options?: { apiKey?: unknown } } | null> }
+      | undefined
+    return classifyProviderKey(parsed?.provider?.[id]?.options?.apiKey) === "legacy-plaintext"
+  } catch {
+    return false /* unreadable → nothing we can retire there */
+  }
+}
+
+/**
+ * REQ-226 (`#1343`) — retire a pre-#1343 inline plaintext key for `id`: delete ONLY the
+ * `provider.<id>.options.apiKey` LEAF, in every provider read path that actually carries a legacy-plaintext
+ * leaf for that id (alpha.jsonc and the user's own opencode CLI config alike). The block itself — npm / name /
+ * baseURL / models, often hand-written by the user — is never touched; an `options` left `{}` is left as is;
+ * a marker or a `{file:}` / `{env:}` reference is not a legacy leaf and is not written. Files without the leaf
+ * are not written at all: jsonc-parser's `modify` throws `Can not delete in empty document` when the path's
+ * parent does not exist (alpha.jsonc holding only `$schema` — the R2 blocker), and a whole-block delete would
+ * have silently removed the user's CLI-side definition (R2 major). No lock is taken when there is nothing to
+ * retire, so a busy lock only ever refuses a call that would have written.
+ */
+export function retireLegacyProviderKeys(id: string): ConfigResult {
+  if (!isExtensionName(id)) return { ok: false, reason: "invalid provider id" }
+  if (!providerReadPaths().some((file) => legacyKeyLeafPresent(file, id))) return { ok: true }
+  return withConfigWriteLock(() => {
+    for (const file of providerReadPaths()) {
+      if (!legacyKeyLeafPresent(file, id)) continue // re-checked under the lock; skip = never written
+      const result = writeKeyUnlocked(file, ["provider", id, "options", "apiKey"], undefined)
+      if (!result.ok) return result
+    }
+    return { ok: true }
+  })
 }
 
 /**

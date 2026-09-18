@@ -18,7 +18,6 @@ import type { ModelContract } from "../src/renderer/alpha-ui/model-contract"
 import { buildAlphaModelConfig } from "../src/main/alpha-models"
 import { readConfiguredProviderKeys } from "../src/main/ext-config"
 import { alphaJsoncPath } from "../src/main/engine-config-truth"
-import { persistProviderAndRefresh, setProviderLifecycleDeps } from "../src/main/provider-lifecycle"
 import { dict as zh } from "../src/renderer/i18n/zh"
 import { dict as enDict } from "../src/renderer/i18n/en"
 // ⚠️ `../src/renderer/i18n`(index)**不能**静态 import:它在模块求值期就 import 了 "solid-js",
@@ -33,6 +32,24 @@ const solidWeb = await import("solid-js/web/dist/web.js")
 mock.module("solid-js/web", () => solidWeb)
 const { batch, createComponent, createSignal } = solid
 const { render } = solidWeb
+// REQ-226 `#1343`:provider-lifecycle 现在先把密钥写进钥匙串库(alpha-byok-keys → ./logging → electron 的
+// `crashReporter` 等具名导出)。本文件是无 electron mock 的子进程,所以库的 Electron 接缝(alpha-keychain-backend,
+// 见该文件为何不 mock `electron`)与 logging 必须先 mock、再**动态** import 生命周期 —— 与上面 solid 同一个坑:
+// 静态 import 会被提升到 mock.module 之前,真 logging.ts 一装载就撞上 `Export named 'crashReporter' not found`。
+mock.module("../src/main/alpha-keychain-backend", () => ({
+  keychainBackend: () => ({
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value, "utf8"),
+    decryptString: (value: Buffer) => value.toString("utf8"),
+  }),
+}))
+mock.module("../src/main/logging", () => ({
+  getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }),
+  write: () => {},
+  rotateServerLogs: () => {},
+}))
+const { persistProviderAndRefresh, setProviderLifecycleDeps } = await import("../src/main/provider-lifecycle")
+const { clearByokKeys, initByokKeys } = await import("../src/main/alpha-byok-keys")
 // zh 产品文案的 locale pin 由 bunfig.toml 的 test preload(scripts/test-preload.ts 设
 // ALPHA_UI_LOCALE=zh)统一提供 —— 本文件被 alpha-composer-model.component.test.ts 以子进程
 // spawn,继承父进程 env,i18n 的 detectLocale() 直接读到 zh,无需再逐文件 setLocale。
@@ -235,6 +252,7 @@ afterEach(() => {
   activeDisposals.splice(0).forEach((dispose) => dispose())
   resetAuthRecoveryForTests()
   setProviderLifecycleDeps()
+  clearByokKeys()
   tempDirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }))
   if (savedAlphaGlobalDir === undefined) delete process.env.ALPHA_GLOBAL_DIR
   else process.env.ALPHA_GLOBAL_DIR = savedAlphaGlobalDir
@@ -1439,6 +1457,8 @@ describe("ModelPickPop production component", () => {
     process.env.ALPHA_GLOBAL_DIR = join(root, "environment")
     process.env.OPENCODE_CONFIG_DIR = join(root, "xdg")
     const userData = join(root, "user-data")
+    // REQ-226 `#1343`:真实持久化 = 密钥先进钥匙串库(临时 userData 上的真库,接缝见文件头),再写 alpha.jsonc。
+    initByokKeys(userData)
     let runtimeModels = [...platformModels]
     let refreshes = 0
     setProviderLifecycleDeps({
@@ -1447,8 +1467,11 @@ describe("ModelPickPop production component", () => {
         const nextFork = buildAlphaModelConfig(userData)!
         expect(nextFork.enabled_providers).toContain("custom-node")
         const persisted = parse(readFileSync(alphaJsoncPath(), "utf8")) as {
-          provider?: Record<string, { models?: Record<string, { name?: string }> }>
+          provider?: Record<string, { models?: Record<string, { name?: string }>; options?: { apiKey?: unknown } }>
         }
+        // AC1:alpha.jsonc 只有标记,没有输入的密钥。
+        expect(persisted.provider?.["custom-node"]?.options?.apiKey).toBe("alpha-keychain")
+        expect(readFileSync(alphaJsoncPath(), "utf8")).not.toContain("sk-test")
         runtimeModels = [
           ...platformModels,
           ...Object.entries(persisted.provider?.["custom-node"]?.models ?? {}).map(([id, model]) =>
@@ -1459,10 +1482,18 @@ describe("ModelPickPop production component", () => {
       },
     })
     installApi({
+      // 与 main 的 getProviderKeyStatus 同一投影:标记块 + 库里有 ⇒ keychain;用户引用 ⇒ config;其余 ⇒ needs-reentry。
       keyStatus: async () => ({
         ...keys,
         ...Object.fromEntries(
-          [...readConfiguredProviderKeys()].map(([id]) => [id, { configured: true, source: "config" as const }]),
+          [...readConfiguredProviderKeys()].map(([id, kind]) => [
+            id,
+            kind === "keychain-marker"
+              ? { configured: true, source: "keychain" as const }
+              : kind === "user-ref"
+                ? { configured: true, source: "config" as const }
+                : { configured: false, source: "needs-reentry" as const },
+          ]),
         ),
       }),
       add: (value) => persistProviderAndRefresh(value as ProviderInput),
