@@ -123,6 +123,29 @@ export function stripFactoryBuiltinPolicyLeaves(config: Record<string, unknown>,
   return changed
 }
 
+/**
+ * REQ-226 (`#1343`): the constant alpha writes to provider[<id>].options.apiKey in alpha.jsonc instead of the
+ * key. It means "the key for this provider id lives in alpha's keychain store" and carries no key fragment,
+ * no path and no id — the reference is the provider id itself. The engine never resolves it: at every fork
+ * the sidecar overrides options.apiKey with a `{file:}` ref (key file present) or `""` (absent), see
+ * alpha-models.ts. Durable config therefore never holds a value and never holds a `{file:}` path.
+ *
+ * Lives here (and not in ext-config, which re-exports it) because the lift planner below needs it and this
+ * module is the electron-free core ext-config already depends on — importing the other way round is a cycle.
+ */
+export const PROVIDER_KEYCHAIN_MARKER = "alpha-keychain"
+
+/** How a provider block's `options.apiKey` in alpha.jsonc is classified — the VALUE is never returned. */
+export type ProviderKeyKind = "keychain-marker" | "legacy-plaintext" | "user-ref"
+
+/** The one definition of what a provider block's `options.apiKey` is; the value itself is never kept. */
+export function classifyProviderKey(value: unknown): ProviderKeyKind | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) return undefined
+  if (value === PROVIDER_KEYCHAIN_MARKER) return "keychain-marker"
+  if (/^\{(file|env):/.test(value)) return "user-ref"
+  return "legacy-plaintext"
+}
+
 /** alpha 会写进 alpha.jsonc 的引擎 config 顶层域。存量文件顶层键越界 = 疑用户手写混入 → 不迁。 */
 export const ALPHA_CONFIG_TOP_KEYS = new Set([
   "$schema",
@@ -218,6 +241,21 @@ export type MergePlan = {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 
+/**
+ * REQ-226 AC7(`#1359`):搬进 alpha.jsonc 的 provider 块里,pre-#1343 的**内联明文密钥**换成
+ * `PROVIDER_KEYCHAIN_MARKER` —— 不是删叶子,而是换成标记:两者在状态面都判 needs-reentry
+ * (alpha-provider-status.ts:`configOnlyState`),在 sidecar 注入面都得到 `apiKey: ""`
+ * (alpha-models.ts,K 类无密钥文件 / L 类同为空串),**用户可观察的行为逐字不变**,变的只是
+ * 这个值不再被拷贝一份到真源。`{file:}` / `{env:}` 用户引用、标记本身、无 apiKey 的块原样穿过
+ * (判别只有 `classifyProviderKey` 一处,`#1343` 定的那一份)。
+ * 源对象不动(返回新对象):copy-don't-delete —— 退场源里的旧叶子是 `retireLegacyProviderKeys` 的事。
+ */
+function withoutLegacyPlaintextKey(block: unknown): unknown {
+  if (!isObj(block) || !isObj(block.options)) return block
+  if (classifyProviderKey(block.options.apiKey) !== "legacy-plaintext") return block
+  return { ...block, options: { ...block.options, apiKey: PROVIDER_KEYCHAIN_MARKER } }
+}
+
 /** 浅合并一个「命名条目」域(mcp/provider/agent/command):existing 优先(幂等),source 补 absent。 */
 function mergeNamed(
   existing: Record<string, unknown>,
@@ -231,7 +269,7 @@ function mergeNamed(
   let touched = false
   for (const [name, val] of Object.entries(src)) {
     if (!(name in cur)) {
-      cur[name] = val
+      cur[name] = key === "provider" ? withoutLegacyPlaintextKey(val) : val
       touched = true
     }
   }

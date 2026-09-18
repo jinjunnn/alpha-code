@@ -10,6 +10,7 @@ import {
   isJunkOnlyDir,
   OPENCODE_JUNK_ENTRIES,
   planConfigMerge,
+  PROVIDER_KEYCHAIN_MARKER,
   rewriteFactorySkillPaths,
   stripFactoryBuiltinPolicyLeaves,
 } from "./engine-config-truth"
@@ -244,6 +245,53 @@ describe("planConfigMerge", () => {
     expect(p.changed).toBe(true)
     expect((p.merged.mcp as any).markitdown).toEqual({ type: "local" })
     expect(p.merged.plugin).toBeUndefined()
+  })
+
+  // `#1359`(REQ-226 AC7 字面):lift 不得把 pre-#1343 的明文密钥搬进 alpha.jsonc。断言分两条 ——
+  // 「字段是标记」与「原值一个字节都不在」是两件事:只断前者会被「写了标记、又把原值挪进块里
+  // 另一个键」这类错误实现满足。
+  test("legacy provider 块的明文密钥 lift 后换成钥匙串标记,原值不出现在计划里", () => {
+    const PLAIN = "sk-legacy-inline-Ab12Cd34"
+    const block = {
+      npm: "@ai-sdk/openai-compatible",
+      name: "My Co",
+      options: { baseURL: "https://api.myco.invalid/v1", apiKey: PLAIN },
+      models: { m1: { name: "m1" } },
+    }
+    const legacy = { provider: { myco: block } }
+    const p = planConfigMerge({ $schema: "https://opencode.ai/config.json" }, legacy, undefined)
+    expect(p.changed).toBe(true)
+    const lifted = (p.merged.provider as any).myco
+    expect(lifted.options.apiKey).toBe(PROVIDER_KEYCHAIN_MARKER)
+    expect(JSON.stringify(p.merged)).not.toContain(PLAIN)
+    // 块的其余部分多半是用户手写的 —— 剥密钥不许顺手改它们。
+    expect(lifted.npm).toBe("@ai-sdk/openai-compatible")
+    expect(lifted.name).toBe("My Co")
+    expect(lifted.options.baseURL).toBe("https://api.myco.invalid/v1")
+    expect(lifted.models).toEqual({ m1: { name: "m1" } })
+    // copy-don't-delete:源对象不动(退场旧叶子是 `#1343` retireLegacyProviderKeys 的事,不是 lift 的)。
+    expect(block.options.apiKey).toBe(PLAIN)
+  })
+
+  test("XDG provider 同路径剥明文;{file:}/{env:} 用户引用、标记本身、无 apiKey 的块原样穿过", () => {
+    const XDG_PLAIN = "sk-xdg-inline-Zz99Yy88"
+    const p = planConfigMerge({ $schema: "https://opencode.ai/config.json" }, undefined, {
+      provider: {
+        plain: { options: { baseURL: "https://p.invalid", apiKey: XDG_PLAIN } },
+        fileref: { options: { apiKey: "{file:/home/u/.secret}" } },
+        envref: { options: { apiKey: "{env:MY_KEY}" } },
+        marked: { options: { apiKey: PROVIDER_KEYCHAIN_MARKER } },
+        bare: { options: { baseURL: "https://b.invalid" } },
+      },
+    })
+    const prov = p.merged.provider as any
+    expect(prov.plain.options.apiKey).toBe(PROVIDER_KEYCHAIN_MARKER)
+    expect(prov.plain.options.baseURL).toBe("https://p.invalid")
+    expect(JSON.stringify(p.merged)).not.toContain(XDG_PLAIN)
+    expect(prov.fileref.options.apiKey).toBe("{file:/home/u/.secret}")
+    expect(prov.envref.options.apiKey).toBe("{env:MY_KEY}")
+    expect(prov.marked.options.apiKey).toBe(PROVIDER_KEYCHAIN_MARKER)
+    expect(prov.bare.options).toEqual({ baseURL: "https://b.invalid" })
   })
 
   test("fully idempotent second pass = no change", () => {

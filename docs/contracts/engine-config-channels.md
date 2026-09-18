@@ -109,12 +109,20 @@ alpha.jsonc 而不是目录。方案基线
 ## 不变量(实现与 review 都要守)
 
 - **目录外自定义服务的密钥值只经 `custom-provider--<id>` 文件离开钥匙串库**(REQ-226 AC4 咽喉点):
-  main 里没有任何函数把配置文件里的明文密钥读进内存(`readConfiguredProviderKeys` 只返回分类);
-  注入表里目录外 id 的 `apiKey` 只可能是 `{file:…}` 或 `""`;durable 配置里没有 `{file:}`。
+  main 里**没有任何函数返回、使用或记录**配置文件里的明文密钥值(`readConfiguredProviderKeys` 与
+  `retireLegacyProviderKeys` 都要 parse 同一份文件、因而明文会短暂进到 parse 结果里 —— 它们只
+  **分类**,值不出函数、不进注入表、不进日志。「main 里没有任何函数把明文读进内存」是**假的**:
+  `readUserProviderIds` 自己就在 parse 同一个文件,`#1359` 更正);
+  注入表里目录外 id 的 `apiKey` 只可能是 `{file:…}` 或 `""`;durable 配置里没有 `{file:}`;
+  启动迁移把 legacy / XDG 的 provider 块搬进 alpha.jsonc 时,`legacy-plaintext` 的
+  `options.apiKey` 换成标记常量(`planConfigMerge` → `withoutLegacyPlaintextKey`,`#1359`)——
+  状态面与注入面逐字不变(两类都判 needs-reentry / 都注入 `""`),变的只是值不再被复制一份。
   强制手段:`alpha-byok-keys.test.ts`(库在钥匙串不可用时拒写、不读 plain、不读 auth.json;先在旧代码上
   证明会红)、`alpha-secret-files.test.ts`(`extra` 写入 / 撤销 / 不被清扫)、`server.test.ts`(生产 fork
   路径上文件物化且 sidecar env 无值)、`alpha-models.test.ts`(三分类注入)、`ext-config.test.ts`
-  (标记不写值、只返回分类)、`alpha-provider-status.test.ts`(状态面无值字段)。
+  (标记不写值、只返回分类)、`alpha-provider-status.test.ts`(状态面无值字段)、
+  `engine-config-truth.test.ts` + `engine-config-truth-boot.test.ts`(启动迁移剥明文:断落盘后的
+  **文本**里没有原值,不只断字段值)。
 
 - **sidecar 进程内不得调用 main-only 单例**(`getAlphaEnvironment` /
   `catalogRegistryChannel`):sidecar 从不跑 `initAlphaEnvironment`,必抛;需要

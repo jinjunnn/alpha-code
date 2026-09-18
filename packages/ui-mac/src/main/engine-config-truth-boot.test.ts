@@ -87,6 +87,21 @@ describe("reconcile — migration + skills.paths", () => {
     expect(fs.existsSync(path.join(xdgTmp, "opencode.jsonc"))).toBe(true) // XDG belongs to engine
   })
 
+  // `#1359`:上一条只断「块搬过来了」——它对「明文也一起搬过来了」同样成立。这一条断的是**落盘后
+  // 的字节**:启动迁移跑完,alpha.jsonc 的文本里不得出现旧明文,而 XDG 源文件仍原样保留它。
+  test("XDG provider 的旧明文密钥不落进 alpha.jsonc:字段是标记,文本里没有原值", () => {
+    const PLAIN = "sk-xdg-boot-inline-Qq77Ww66"
+    writeXdg({ provider: { myco: { options: { baseURL: "https://api.myco.invalid/v1", apiKey: PLAIN } } } })
+    const r = reconcileEngineConfigTruth()
+    expect(r.skipped).toBe(false)
+    const truthText = fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")
+    expect(truthText).not.toContain(PLAIN)
+    expect(readTruth().provider.myco.options.apiKey).toBe("alpha-keychain")
+    expect(readTruth().provider.myco.options.baseURL).toBe("https://api.myco.invalid/v1")
+    // 源不动:XDG 是引擎自己的领地,剥的是拷贝,不是源。
+    expect(fs.readFileSync(path.join(xdgTmp, "opencode.jsonc"), "utf8")).toContain(PLAIN)
+  })
+
   test("idempotent: second reconcile makes no new change", () => {
     writeLegacy({ mcp: { markitdown: { type: "local" } } })
     writeLedger([mcpReceipt("markitdown")])
