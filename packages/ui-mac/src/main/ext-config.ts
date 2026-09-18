@@ -1204,11 +1204,8 @@ export function readConfiguredProviderKeys(): Map<string, ProviderKeyKind> {
       if (prov && typeof prov === "object") {
         for (const [id, def] of Object.entries(prov)) {
           if (out.has(id)) continue
-          const key = (def as { options?: { apiKey?: unknown } } | null)?.options?.apiKey
-          if (typeof key !== "string" || key.trim().length === 0) continue
-          if (key === PROVIDER_KEYCHAIN_MARKER) out.set(id, "keychain-marker")
-          else if (/^\{(file|env):/.test(key)) out.set(id, "user-ref")
-          else out.set(id, "legacy-plaintext")
+          const kind = classifyProviderKey((def as { options?: { apiKey?: unknown } } | null)?.options?.apiKey)
+          if (kind) out.set(id, kind)
         }
       }
     } catch {
@@ -1216,6 +1213,50 @@ export function readConfiguredProviderKeys(): Map<string, ProviderKeyKind> {
     }
   }
   return out
+}
+
+/** The one definition of what a provider block's `options.apiKey` is; the value itself is never kept. */
+function classifyProviderKey(value: unknown): ProviderKeyKind | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) return undefined
+  if (value === PROVIDER_KEYCHAIN_MARKER) return "keychain-marker"
+  if (/^\{(file|env):/.test(value)) return "user-ref"
+  return "legacy-plaintext"
+}
+
+function legacyKeyLeafPresent(file: string, id: string): boolean {
+  try {
+    if (!fs.existsSync(file)) return false
+    const parsed = parse(fs.readFileSync(file, "utf8")) as
+      | { provider?: Record<string, { options?: { apiKey?: unknown } } | null> }
+      | undefined
+    return classifyProviderKey(parsed?.provider?.[id]?.options?.apiKey) === "legacy-plaintext"
+  } catch {
+    return false /* unreadable → nothing we can retire there */
+  }
+}
+
+/**
+ * REQ-226 (`#1343`) — retire a pre-#1343 inline plaintext key for `id`: delete ONLY the
+ * `provider.<id>.options.apiKey` LEAF, in every provider read path that actually carries a legacy-plaintext
+ * leaf for that id (alpha.jsonc and the user's own opencode CLI config alike). The block itself — npm / name /
+ * baseURL / models, often hand-written by the user — is never touched; an `options` left `{}` is left as is;
+ * a marker or a `{file:}` / `{env:}` reference is not a legacy leaf and is not written. Files without the leaf
+ * are not written at all: jsonc-parser's `modify` throws `Can not delete in empty document` when the path's
+ * parent does not exist (alpha.jsonc holding only `$schema` — the R2 blocker), and a whole-block delete would
+ * have silently removed the user's CLI-side definition (R2 major). No lock is taken when there is nothing to
+ * retire, so a busy lock only ever refuses a call that would have written.
+ */
+export function retireLegacyProviderKeys(id: string): ConfigResult {
+  if (!isExtensionName(id)) return { ok: false, reason: "invalid provider id" }
+  if (!providerReadPaths().some((file) => legacyKeyLeafPresent(file, id))) return { ok: true }
+  return withConfigWriteLock(() => {
+    for (const file of providerReadPaths()) {
+      if (!legacyKeyLeafPresent(file, id)) continue // re-checked under the lock; skip = never written
+      const result = writeKeyUnlocked(file, ["provider", id, "options", "apiKey"], undefined)
+      if (!result.ok) return result
+    }
+    return { ok: true }
+  })
 }
 
 /**

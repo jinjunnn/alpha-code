@@ -23,9 +23,11 @@ import { tryAcquireBundleLock } from "./ext-bundle-lock"
 // Dynamic import: static imports are hoisted above mock.module, so the lifecycle (and the store) must be
 // imported after the mocks are registered.
 let encryptionAvailable = true
+// R2:按调用序列翻转可用性(非空时逐次 shift,空了回落到 encryptionAvailable)—— 用来让「① 存成功、回滚的 persist 被拒」这一步序可达。
+let availabilityQueue: boolean[] = []
 mock.module("./alpha-keychain-backend", () => ({
   keychainBackend: () => ({
-    isEncryptionAvailable: () => encryptionAvailable,
+    isEncryptionAvailable: () => (availabilityQueue.length ? availabilityQueue.shift()! : encryptionAvailable),
     encryptString: (value: string) => Buffer.from(value, "utf8"),
     decryptString: (value: Buffer) => value.toString("utf8"),
   }),
@@ -77,6 +79,7 @@ beforeEach(() => {
   process.env.OPENCODE_CONFIG_DIR = tmp
   userData = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-models-userdata-"))
   encryptionAvailable = true
+  availabilityQueue = []
   clearByokKeys()
   initByokKeys(userData)
 })
@@ -322,6 +325,41 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
       expect(refreshes).toBe(1)
     } finally {
       heldAgain.lock.release()
+    }
+  })
+
+  // R2 minor:回滚自己也可能失败(库文件写不进去)。那时内存清了、盘上没清,下次启动 load() 会复活一条
+  // 无配置块的孤儿条目并让状态面报「已配置」—— 调用方必须把这一层如实带回,而不是只报 ② 的 busy。
+  test("R2:回滚 persist 被拒时 reason 同时点名 ② 的失败与回滚失败(不吞)", async () => {
+    let refreshes = 0
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        refreshes++
+        return true
+      },
+    })
+    const held = tryAcquireBundleLock(process.env.ALPHA_GLOBAL_DIR!, { txId: "tx-in-flight-3" })
+    expect(held.ok).toBe(true)
+    if (!held.ok) return
+    try {
+      availabilityQueue = [true, false] // ① 的 persist 成功;② busy;回滚的 persist 被钥匙串拒绝
+      const result = await persistProviderAndRefresh({
+        id: "custom-node",
+        name: "Custom Node",
+        compat: "openai",
+        baseURL: "https://custom.invalid/v1",
+        apiKey: SECRET,
+        models: ["real-custom-model"],
+      })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.reason).toContain("config busy")
+        expect(result.reason).toContain("rollback")
+      }
+      expect(availabilityQueue).toEqual([]) // 两次可用性判断都真的发生了(手段自证)
+      expect(refreshes).toBe(0)
+    } finally {
+      held.lock.release()
     }
   })
 })

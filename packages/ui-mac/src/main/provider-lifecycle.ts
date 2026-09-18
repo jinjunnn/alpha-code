@@ -5,16 +5,22 @@
 //           (never the key) → structural respawn. If the alpha.jsonc write fails AFTER the store write
 //           (config lock busy, write refused) the store is put back exactly as it was (R1 finding 2): a
 //           first fill must not leave an orphan entry claiming "configured", and a re-entry must not
-//           silently swap the old key while the block still describes the old service.
+//           silently swap the old key while the block still describes the old service. If that rollback
+//           itself cannot be persisted (R2 minor), the caller is told so — memory and disk then disagree
+//           and the next launch would revive the entry; hiding that behind "config busy" is worse.
 //   remove: key out of the store → definition out of alpha.jsonc → structural respawn. Either half failing
 //           leaves no leak: store gone / block still there ⇒ marker block, status "needs-reentry"; block
 //           gone / store still there ⇒ an orphan encrypted entry that is never materialized (its id is not
 //           in alpha.jsonc).
-//   set-key (catalog presets): if this id's alpha.jsonc block is a pre-#1343 inline plaintext key, that block
-//           is retired first (R1 finding 1) — `needs-reentry` is configured:false, so the picker never offers
-//           "remove" and a plain store write never touches config: without this the plaintext would stay in
-//           alpha.jsonc forever. Retire BEFORE storing: a busy lock then refuses with nothing half-done, and a
-//           keychain refusal after the retirement only loses a block the engine was already forbidden to use.
+//   set-key (catalog presets): if this id still carries a pre-#1343 inline plaintext key in any provider read
+//           path, that ONE leaf (`provider.<id>.options.apiKey`) is retired first (R1 finding 1 / R2 blocker) —
+//           `needs-reentry` is configured:false, so the picker never offers "remove" and a plain store write
+//           never touches config: without this the plaintext would stay forever. Only the leaf: the block
+//           (npm / baseURL / models — often the user's hand-written opencode CLI config) stays, and files without
+//           the leaf are not written (deleting a whole block from an alpha.jsonc that has no `provider` key threw
+//           `Can not delete in empty document`, so the key never reached the store). Retire BEFORE storing: a
+//           busy lock then refuses with nothing half-done, and a keychain refusal after the retirement only
+//           loses a leaf the engine was already forbidden to use.
 // Persistence is only complete once the process-global sidecar has been rebuilt: the rebuild re-runs
 // buildAlphaModelConfig, which merges the persisted provider id into enabled_providers and emits the
 // {file:} ref for the key file main materialized at that fork, before the renderer reconnects and asks
@@ -22,7 +28,7 @@
 
 import type { ProviderInput, ProviderResult } from "../shared/alpha-model-types"
 import { discardByokKey, getByokKey, removeByokKey, setByokKey, storeByokKey } from "./alpha-byok-keys"
-import { persistProvider, readConfiguredProviderKeys, removeProvider, validateProviderInput } from "./ext-config"
+import { persistProvider, removeProvider, retireLegacyProviderKeys, validateProviderInput } from "./ext-config"
 
 let refreshRuntime: (() => Promise<boolean>) | undefined
 
@@ -42,8 +48,12 @@ export async function persistProviderAndRefresh(input: ProviderInput): Promise<P
   const persisted = persistProvider(input)
   if (!persisted.ok) {
     // ② failed after ①: restore the store to its pre-call state (silent — nothing reached a sidecar).
-    if (previous === undefined) discardByokKey(input.id)
-    else storeByokKey(input.id, previous)
+    const restored = previous === undefined ? discardByokKey(input.id) : storeByokKey(input.id, previous)
+    if (!restored.ok)
+      return {
+        ok: false,
+        reason: `${persisted.reason}; key store rollback failed too: ${restored.reason} — the key store may disagree with the config until the service is re-added`,
+      }
     return persisted
   }
   const refreshed = await refreshRuntime().catch(() => false)
@@ -61,11 +71,9 @@ export async function removeProviderAndRefresh(id: string): Promise<ProviderResu
 }
 
 /** providers-set-key: store a key in the keychain (notifies: env re-inject + respawn); if this id still has a
- *  legacy plaintext block in alpha.jsonc (or a legacy read path), retire that block first — see the file header. */
-export function setProviderKeyAndRetireLegacyBlock(id: string, key: string): ProviderResult {
-  if (readConfiguredProviderKeys().get(id) === "legacy-plaintext") {
-    const retired = removeProvider(id)
-    if (!retired.ok) return retired
-  }
+ *  legacy plaintext `options.apiKey` leaf in any provider read path, retire that leaf first — see the file header. */
+export function setProviderKeyAndRetireLegacyKey(id: string, key: string): ProviderResult {
+  const retired = retireLegacyProviderKeys(id)
+  if (!retired.ok) return retired
   return setByokKey(id, key)
 }
