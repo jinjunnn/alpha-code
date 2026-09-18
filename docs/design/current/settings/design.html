@@ -281,6 +281,7 @@
           <div class="title">设置</div>
           <div class="set-nav-item on" data-set="general"><svg class="ic" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="2" fill="currentColor" stroke="none"/></svg>通用</div>
           <div class="set-nav-item" data-set="shortcuts"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h0M11 10h0M15 10h0M7 14h10"/></svg>快捷键</div>
+          <div class="set-nav-item" data-set="tools"><svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3l9.4-9.4z"/><path d="M15 5l4 4"/></svg>工具</div>
         </div>
         <div class="set-content" id="setContent">
 
@@ -406,6 +407,132 @@
             </div>
 
             <div class="cap" style="margin-top:18px">捕获态:点任意键帽 → 变 indigo「按下按键…」,按组合即录入;冲突时弹 Toast 提示与谁撞键。(本稿点一下任意键帽看捕获态。)</div>
+          </div>
+
+          <!-- ░░ TOOLS(#set-tools;增量稿 2026-08-25-req131-settings-tool-policy,2026-08-26 批准并入)░░ -->
+          <div class="set-inner tabpane tp-pane" data-spane="tools" id="set-tools">
+
+          <div class="tp-pagehd">
+            <h2>工具</h2>
+            <p>决定各来源的工具能否被模型调用 · 仅作用于当前账户与当前项目</p>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>本地工具</h3><span class="n">12 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="本地工具 · 整类">
+                <button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button>
+              </div>
+            </div>
+            <p class="tp-grp-cap">默认启用 · 整类开关作用于本组全部工具,包括以后新增的</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>读取文件</b></div><small>生效:启用 · 默认,本地工具无需单独批准</small></div>
+                <span class="tp-eff ok"><i></i>启用</span>
+                <div class="tp-seg" role="radiogroup" aria-label="读取文件"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>终端命令</b></div><small>生效:每次询问 · 你的设置,仅此工具</small></div>
+                <span class="tp-eff ask"><i></i>每次询问</span>
+                <div class="tp-seg" role="radiogroup" aria-label="终端命令"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="true">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                <button class="tp-clear" type="button" title="恢复继承" aria-label="恢复继承">↺</button>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>资源读取</b></div><small>生效:启用 · 默认,本地工具无需单独批准</small></div>
+                <span class="tp-eff ok"><i></i>启用</span>
+                <div class="tp-seg" role="radiogroup" aria-label="资源读取"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <details class="tp-dev"><summary>开发者详情 · 其余 9 项</summary><div class="dev">builtin::read · builtin::bash · host::mcp-resource-read …<br/>启用不豁免读写 / 终端 / 目录等能力审批,它们照常弹出。</div></details>
+            </div>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>Alpha Cloud</h3><span class="n">2 项</span><span class="tp-badge cloud">已核验</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="Alpha Cloud · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 云端调用可能计费;启用只免去询问,不能越过套餐限制</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>网页搜索</b><span class="tp-badge">按用量计费</span></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                <span class="tp-eff ask"><i></i>每次询问</span>
+                <div class="tp-seg" role="radiogroup" aria-label="网页搜索"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>文档生成</b><span class="tp-badge">计费:未知</span></div><small>生效:已停用 · 当前套餐不含此服务</small></div>
+                <span class="tp-eff off"><i></i>已停用</span>
+                <span class="tp-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+                <div class="tp-seg" role="radiogroup" aria-label="文档生成" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>第三方 MCP</h3><span class="n">2 个服务 · 8 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="第三方 MCP · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 第三方服务的自我描述不参与判定;计费与风险按服务标注,标不出即「未知」</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="true" aria-label="收起 context7">▾</button>
+                <div class="meta"><div class="nm"><b>context7</b><span class="tp-badge new">1 项新发现</span></div><small>6 个工具 · 计费:未知 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="context7 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-svc-tools">
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>resolve-library-id</b><span class="tp-badge new">新发现</span></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                  <span class="tp-eff ask"><i></i>每次询问</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="resolve-library-id"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                </div>
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>get-library-docs</b></div><small>生效:启用 · 你的设置,仅此工具</small></div>
+                  <span class="tp-eff ok"><i></i>启用</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="get-library-docs"><button role="radio" aria-checked="true">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                  <button class="tp-clear" type="button" title="恢复继承" aria-label="恢复继承">↺</button>
+                </div>
+                <details class="tp-dev"><summary>开发者详情</summary><div class="dev">mcp:context7:get-library-docs<br/>绑定指纹 sha256:3f21…9ce4 · 与当前服务配置一致</div></details>
+                <div class="tp-degraded"><span aria-hidden="true">◌</span><span>1 项注册身份无法核验,已自动停用,不会提供给模型。</span></div>
+              </div>
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="false" aria-label="展开 抓取服务">▸</button>
+                <div class="meta"><div class="nm"><b>抓取服务</b></div><small>2 个工具 · 计费:未知 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="抓取服务 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-confirm" role="alertdialog" aria-label="确认启用整个服务">
+                <span><b>启用整个服务?</b> 该服务现有与以后新增的全部工具都将不再询问。</span>
+                <span class="sp"></span>
+                <button class="tp-btn primary" type="button">确认启用</button>
+                <button class="tp-btn ghost" type="button">取消</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>插件</h3><span class="n">1 个来源 · 3 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="插件 · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 只治理插件的工具调用;插件本身的装载不在此列</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="true" aria-label="收起 团队脚本包">▾</button>
+                <div class="meta"><div class="nm"><b>团队脚本包</b></div><small>3 个工具 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="团队脚本包 · 整个来源"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-svc-tools">
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>发布检查</b></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                  <span class="tp-eff ask"><i></i>每次询问</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="发布检查"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                </div>
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>部署脚本</b></div><small>生效:已停用 · 由设备管理策略停用,本机不可更改</small></div>
+                  <span class="tp-eff off"><i></i>已停用</span>
+                  <span class="tp-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+                  <div class="tp-seg" role="radiogroup" aria-label="部署脚本" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="tp-foot">对话中的「本次允许 / 本会话允许」只在当次会话内生效,不会改动这里的长期设置。</p>
           </div>
 
         </div>

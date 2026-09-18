@@ -976,6 +976,39 @@ const scenarios: Scenario[] = [
     .delete("/api/permission/saved/{id}", "v2.permission.saved.remove")
     .at((ctx) => ({ path: route("/api/permission/saved/{id}", { id: "psv_httpapi_missing" }), headers: ctx.headers() }))
     .status(204, undefined, "status"),
+  // REQ-131 / #1130:tool policy 面(Settings「工具」节的数据源与写口;闸在 alpha-tool-policy-route.test.ts)。
+  http.protected.get("/api/permission/tool-policy/inventory", "v2.permission.tool-policy.inventory").json(200, (body) => {
+    object(body)
+    object(body.data)
+    check(body.data.version === 1, "tool policy inventory should be the v1 wire shape")
+    array(body.data.services)
+  }),
+  http.protected
+    .put("/api/permission/tool-policy/record", "v2.permission.tool-policy.record.set")
+    .mutating()
+    .at((ctx) => ({
+      path: "/api/permission/tool-policy/record",
+      headers: ctx.headers(),
+      body: { selector: { level: "class", class: "plugin" }, state: "ask" },
+    }))
+    .status(204, undefined, "status"),
+  http.protected
+    .post("/api/permission/tool-policy/record/remove", "v2.permission.tool-policy.record.remove")
+    .mutating()
+    .at((ctx) => ({
+      path: "/api/permission/tool-policy/record/remove",
+      headers: ctx.headers(),
+      body: { selector: { level: "class", class: "plugin" } },
+    }))
+    .status(204, undefined, "status"),
+  http.protected
+    .post("/api/permission/tool-policy/reset", "v2.permission.tool-policy.reset")
+    .mutating()
+    .at((ctx) => ({ path: "/api/permission/tool-policy/reset", headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      object(body.data)
+    }),
   http.protected
     .get("/api/session", "v2.session.list")
     .at((ctx) => ({ path: "/api/session?roots=true", headers: ctx.headers() }))

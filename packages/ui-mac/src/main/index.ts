@@ -35,6 +35,7 @@ import { registerWorkspaceFileIpcHandlers } from "./workspace-file-service"
 import { registerAutomationIpcHandlers } from "./automation-ipc"
 import { startAutomationScheduler } from "./automation-scheduler"
 import { initAutomationLlm } from "./automation-llm"
+import { registerToolPolicyIpcHandlers } from "./tool-policy-ipc"
 import { pullCloudScheduleRuns } from "./alpha-cloud-schedules"
 import { registerModelsIpcHandlers } from "./models-ipc"
 import { syncLiveAllowlist } from "./alpha-platform-models"
@@ -961,6 +962,8 @@ const main = Effect.gen(function* () {
   registerAutomationIpcHandlers()
   startAutomationScheduler({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
   initAutomationLlm({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
+  // REQ-131(#1130):Settings「工具」节 —— 引擎 tool policy 面经 main 出口(同一 serverReady)。
+  registerToolPolicyIpcHandlers({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
   // A3(REQ-025):开机拉回错过的云 schedule run(登录态才有 token;失败静默,面板刷新再拉)
   setTimeout(() => void pullCloudScheduleRuns().catch(() => {}), 8000)
   registerModelsIpcHandlers(app.getPath("userData"))

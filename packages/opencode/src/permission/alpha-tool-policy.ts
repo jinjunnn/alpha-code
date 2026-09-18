@@ -172,9 +172,13 @@ export function resolveToolPolicy(input: {
 }
 
 // ── Effect service(#1129/#1130 消费的 API)────────────────────────────────────
+/**
+ * 写侧失败。`kind` 让消费面(#1130 的 HTTP 出口)能区分「文档待恢复,先 reset」(409)与
+ * 「落盘失败」(500),而不是靠解析 message 文本 —— 那是手写别人文法的替身。
+ */
 export class ToolPolicyWriteError extends Schema.TaggedErrorClass<ToolPolicyWriteError>()(
   "ToolPolicyWriteError",
-  { message: Schema.String },
+  { kind: Schema.Literals(["quarantined", "io"]), message: Schema.String },
 ) {}
 
 export interface ResolveCapsInput {
@@ -273,6 +277,7 @@ export const layer = (options?: LayerOptions) =>
           const loaded = loadPolicyDocument(baseDir, part)
           if (loaded.status === "quarantined")
             return yield* new ToolPolicyWriteError({
+              kind: "quarantined",
               message: `refusing to ${description}: policy document is quarantined (${loaded.reason}); reset to defaults first`,
             })
           const records = loaded.status === "ok" ? loaded.doc.records : []
@@ -280,6 +285,7 @@ export const layer = (options?: LayerOptions) =>
             try: () => savePolicyDocument(baseDir, part, change(records)),
             catch: (error) =>
               new ToolPolicyWriteError({
+                kind: "io",
                 message: error instanceof Error ? error.message : String(error),
               }),
           })

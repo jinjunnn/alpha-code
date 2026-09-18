@@ -18,6 +18,7 @@ import type {
 // #408:preload/index.ts 只许 import "./types"(ext-security-boundaries AC4③ 装载路径钉)—— wire 类型经此转口。
 export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
+import type { ToolPolicyApi } from "../shared/tool-policy-wire"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import type {
   PackageAdmissionAuthorizationV1,
@@ -695,6 +696,8 @@ export type ElectronAPI = {
     inspect: () => Promise<ExtensionStorageResult>
     collect: () => Promise<ExtensionStorageResult>
   }
+  /** REQ-131/#1130:Settings「工具」节 —— 引擎 tool policy 面(inventory 读 / record 写 / reset),闭集结果码。 */
+  toolPolicy: ToolPolicyApi
 
   getWindowCount: () => Promise<number>
   onMenuCommand: (cb: (id: string) => void) => () => void

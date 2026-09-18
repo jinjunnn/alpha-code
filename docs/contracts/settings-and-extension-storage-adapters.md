@@ -114,6 +114,8 @@ warnings 明细或其它未知字段。warning 只允许聚合为 `warningCount`
 
 ## 3. 边界与验证
 
+- Settings「工具」节(REQ-131 #1130)**不经**本文的 adapter:它逐条即写引擎的策略文档,通道是 preload
+  `window.api.toolPolicy`,合同在 [`tool-policy.md`](tool-policy.md)「出口:HTTP 面与桌面 IPC」一节。
 - 无用户/租户参数；设置与扩展存储只作用于当前本机 app 环境。
 - 不提供通用设置注册框架，不修改上游 Settings UI 或 GC collector。无 Platform coordinator 的
   web/legacy host 仍使用既有 persisted storage；Electron host 的上游 context 改由上述共享

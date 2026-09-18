@@ -55,6 +55,7 @@ const EXTERNALIZED_SURFACES = [
   "alpha-ui/session-timeline/session-timeline-view.tsx",
   "alpha-ui/session-workspace/alpha-session-workspace.tsx",
   "alpha-ui/session-workspace/session-composer-dock.tsx",
+  "alpha-ui/settings-tools.tsx",
   "alpha-ui/settings.tsx",
   "alpha-ui/surface-boundary.tsx",
   "alpha-ui/workspace-chip.tsx",

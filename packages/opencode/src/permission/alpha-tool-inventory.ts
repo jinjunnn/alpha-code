@@ -19,7 +19,9 @@
 // 返回值先过 `parseToolPolicyInventory`(schema decode)再交出:引擎侧形状漂移 loud fail,
 // 不让 Settings 拿到解释不了的对象。
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Context, Effect, Layer } from "effect"
+import { AlphaToolPolicyApi } from "@opencode-ai/core/permission/alpha-tool-policy-api"
+import { Context, Effect, Layer, Option } from "effect"
+import { InstanceStore } from "@/project/instance-store"
 import { canonicalToolIdentity, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 import {
   classifyTool,
@@ -244,5 +246,64 @@ export const node = LayerNode.make({
   layer,
   deps: [ToolRegistry.node, MCP.node, Config.node, AlphaToolPolicy.node],
 })
+
+// ── #1130 路线 B:core 侧标签 `@opencode/v2/AlphaToolPolicyApi` 的实现 ─────────────────────
+// v2 permission handler(packages/server,ADR-033 收编)通过 core 标签取 inventory / 写记录;它跑在
+// location 中间件下、手里只有 directory 而没有 InstanceRef,所以这里按 directory 用
+// InstanceStore.provide 注入实例上下文,再跑本文件的 list() 与 AlphaToolPolicy 的写口。
+// 与上游 plugin/pty-environment.ts 对 PtyEnvironment 的做法同形。
+//
+// InstanceStore **在调用时取**(`Effect.serviceOption`),不是在 layer 构建时 `yield*`:
+//   · 宿主 SessionPrompt.node 在 `app` 组里排在 InstanceStore.node 之前,构建期看不见它;把
+//     InstanceStore.node 加进宿主的 deps 又会让每个编译 SessionPrompt.node 的测试都被迫绑定
+//     InstanceStore.bootstrapNode(实测:test/session/alpha-subtask-attachment-policy.test.ts 当场
+//     `Unbound layer node: @opencode/InstanceBootstrap`);
+//   · 而 v2 handler 的请求上下文 = `app` 组**全部顶层输出**的合并(LayerNode.compile 对顶层 provideMerge,
+//     httpapi/server.ts 把它整份 provide 给 handlers),InstanceStore.node 正是顶层成员 ⇒ 请求时一定在。
+//   缺席只可能是装配变了(不是运行期条件),所以 die,不静默成空清单。
+// 写侧错误只做一件事:把 ToolPolicyWriteError 的 kind 原样抬到 core 标签的 WriteError —— 不解释、
+// 不折叠,让 handler 决定 409 / 500。
+export const bridge = Layer.effect(
+  AlphaToolPolicyApi.Service,
+  Effect.gen(function* () {
+    const inventory = yield* Service
+    const policy = yield* AlphaToolPolicy.Service
+    const instances = Effect.gen(function* () {
+      const store = yield* Effect.serviceOption(InstanceStore.Service)
+      if (Option.isNone(store))
+        return yield* Effect.die(
+          new Error("AlphaToolPolicyApi: InstanceStore is not in the request context (httpapi app assembly changed)"),
+        )
+      return store.value
+    })
+    const inInstance = <A, E>(directory: string, effect: Effect.Effect<A, E>) =>
+      instances.pipe(Effect.flatMap((store) => store.provide({ directory }, effect)))
+    const lift = <A>(effect: Effect.Effect<A, AlphaToolPolicy.ToolPolicyWriteError>) =>
+      effect.pipe(
+        Effect.mapError((error) => new AlphaToolPolicyApi.WriteError({ kind: error.kind, message: error.message })),
+      )
+    return AlphaToolPolicyApi.Service.of({
+      list: Effect.fn("AlphaToolPolicyApi.list")(function* (input) {
+        return yield* inInstance(input.directory, inventory.list())
+      }),
+      setRecord: Effect.fn("AlphaToolPolicyApi.setRecord")(function* (input) {
+        return yield* inInstance(input.directory, lift(policy.setRecord(input.record)))
+      }),
+      removeRecord: Effect.fn("AlphaToolPolicyApi.removeRecord")(function* (input) {
+        return yield* inInstance(input.directory, lift(policy.removeRecord(input.selector)))
+      }),
+      reset: Effect.fn("AlphaToolPolicyApi.reset")(function* (input) {
+        return yield* inInstance(input.directory, policy.reset())
+      }),
+    })
+  }),
+)
+
+/**
+ * 供 `app` 组里某个已收编的顶层 node 合成暴露(宿主 = SessionPrompt.node,见 session/prompt.ts)。
+ * 输出 = core 标签;依赖 = 本 node 的四个依赖(宿主已全部具备),不多要一个。
+ * 不能在这里造 node 挂进 httpapi/server.ts 的 `app` 组 —— 那是上游文件(不在 ADR-033 名单里)。
+ */
+export const exposed = bridge.pipe(Layer.provide(layer))
 
 export * as AlphaToolInventory from "./alpha-tool-inventory"
