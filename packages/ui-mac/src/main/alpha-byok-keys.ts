@@ -186,10 +186,20 @@ export function setByokKey(id: string, key: string): ByokStoreResult {
   return result
 }
 
-export function removeByokKey(id: string): ByokStoreResult {
+/**
+ * Drop a key WITHOUT notifying (no env re-inject, no respawn). Rollback path for provider-lifecycle
+ * (R1 finding 2): when the alpha.jsonc write fails after a first-fill store, the freshly stored entry
+ * must vanish again — silently, because nothing was ever applied to a running sidecar.
+ */
+export function discardByokKey(id: string): ByokStoreResult {
   if (!(id in keys)) return { ok: true }
   delete keys[id]
-  const result = persist()
+  return persist()
+}
+
+export function removeByokKey(id: string): ByokStoreResult {
+  if (!(id in keys)) return { ok: true }
+  const result = discardByokKey(id)
   onKeysChanged() // B21:即时吊销(清 env + respawn → A6 删密钥文件)— the in-memory copy is gone regardless
   return result
 }

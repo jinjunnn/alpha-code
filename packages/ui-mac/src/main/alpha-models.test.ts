@@ -15,6 +15,7 @@ import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { buildModelPickerRows } from "../renderer/alpha-ui/model-picker-core"
 import { customProviderSecretName, secretFilePath, secretFileRef, syncSecretFiles } from "./alpha-secret-files"
 import { PROVIDER_KEYCHAIN_MARKER, readUserProviderIds } from "./ext-config"
+import { tryAcquireBundleLock } from "./ext-bundle-lock"
 
 // REQ-226 `#1343`: provider-lifecycle writes the key into alpha's keychain store (alpha-byok-keys) BEFORE the
 // definition, so the real lifecycle needs a fake, flippable keychain and a quiet logger. The keychain is
@@ -35,7 +36,7 @@ mock.module("./logging", () => ({
   rotateServerLogs: () => {},
 }))
 const { persistProviderAndRefresh, setProviderLifecycleDeps } = await import("./provider-lifecycle")
-const { clearByokKeys, customProviderSecretValues, initByokKeys } = await import("./alpha-byok-keys")
+const { clearByokKeys, customProviderSecretValues, getByokKey, initByokKeys } = await import("./alpha-byok-keys")
 
 // Deliberately non-key-shaped test value (never a real credential); asserted absent from config/injection.
 const SECRET = "test-value-not-a-real-key-Zq81"
@@ -276,6 +277,52 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
     expect(refreshes).toBe(0)
     expect(fs.existsSync(path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"))).toBe(false)
     expect(buildAlphaModelConfig(userData)!.enabled_providers).not.toContain("custom-node")
+  })
+
+  // R1 finding 2:① 库写成功、② alpha.jsonc 写失败(写锁忙 / 写拒)⇒ 库必须回到 ② 之前的样子 ——
+  // 首填不得留下一条自称「已配置」的孤儿条目;重填不得静默把旧键换成新键而配置块还是旧的。
+  test("add 半程②失败回滚①:配置写锁忙 ⇒ 首填不留孤儿条目、重填保留旧键;不 respawn", async () => {
+    let refreshes = 0
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        refreshes++
+        return true
+      },
+    })
+    const input = {
+      id: "custom-node",
+      name: "Custom Node",
+      compat: "openai" as const,
+      baseURL: "https://custom.invalid/v1",
+      models: ["real-custom-model"],
+    }
+    // 首填:锁被持有 ⇒ ② busy ⇒ ① 回滚(条目消失)
+    const held = tryAcquireBundleLock(process.env.ALPHA_GLOBAL_DIR!, { txId: "tx-in-flight" })
+    expect(held.ok).toBe(true)
+    if (!held.ok) return
+    try {
+      const first = await persistProviderAndRefresh({ ...input, apiKey: SECRET })
+      expect(first.ok).toBe(false)
+      if (!first.ok) expect(first.reason).toContain("config busy")
+      expect(getByokKey("custom-node")).toBeUndefined()
+      expect(refreshes).toBe(0)
+    } finally {
+      held.lock.release()
+    }
+    // 重填:先成功存旧键,再在锁下用新键 ⇒ 库仍是旧键(状态面不会报新键末四位)
+    expect((await persistProviderAndRefresh({ ...input, apiKey: `${SECRET}-old` })).ok).toBe(true)
+    expect(refreshes).toBe(1)
+    const heldAgain = tryAcquireBundleLock(process.env.ALPHA_GLOBAL_DIR!, { txId: "tx-in-flight-2" })
+    expect(heldAgain.ok).toBe(true)
+    if (!heldAgain.ok) return
+    try {
+      const second = await persistProviderAndRefresh({ ...input, apiKey: `${SECRET}-new` })
+      expect(second.ok).toBe(false)
+      expect(getByokKey("custom-node")).toBe(`${SECRET}-old`)
+      expect(refreshes).toBe(1)
+    } finally {
+      heldAgain.lock.release()
+    }
   })
 })
 
