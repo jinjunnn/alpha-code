@@ -29,7 +29,7 @@ import {
 import type { TxPreparedResourceV1 } from "./ext-transaction"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { findRecordV2 } from "./ext-receipt-v2"
-import { alphaJsoncPath } from "./engine-config-truth"
+import { alphaJsoncPath, classifyProviderKey, PROVIDER_KEYCHAIN_MARKER, type ProviderKeyKind } from "./engine-config-truth"
 import { sealEnginePluginAdditions } from "./engine-plugin-seal"
 import { commandHeadBase } from "./platform"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -1109,17 +1109,10 @@ function removeMcpUnlocked(name: string): ConfigResult {
 
 const PROVIDER_CATALOG = catalog as unknown as AlphaModelCatalog
 
-/**
- * REQ-226 (`#1343`): the constant alpha writes to provider[<id>].options.apiKey in alpha.jsonc instead of the
- * key. It means "the key for this provider id lives in alpha's keychain store" and carries no key fragment,
- * no path and no id — the reference is the provider id itself. The engine never resolves it: at every fork
- * the sidecar overrides options.apiKey with a `{file:}` ref (key file present) or `""` (absent), see
- * alpha-models.ts. Durable config therefore never holds a value and never holds a `{file:}` path.
- */
-export const PROVIDER_KEYCHAIN_MARKER = "alpha-keychain"
-
-/** How a provider block's `options.apiKey` in alpha.jsonc is classified — the VALUE is never returned. */
-export type ProviderKeyKind = "keychain-marker" | "legacy-plaintext" | "user-ref"
+/** REQ-226 (`#1343`): the marker constant and the one classifier for a provider block's `options.apiKey`.
+ *  They live in engine-config-truth (the electron-free core this module already imports) because the boot
+ *  lift planner there needs them too (`#1359`); re-exported here so consumers keep one import site. */
+export { PROVIDER_KEYCHAIN_MARKER, type ProviderKeyKind } from "./engine-config-truth"
 
 /** Ids alpha itself injects (catalog BYOK display ids, their `<id>-byok` engine ids, the platform id). A
  * custom provider with one of these names would make two injection paths write `provider.<id>.options`
@@ -1213,14 +1206,6 @@ export function readConfiguredProviderKeys(): Map<string, ProviderKeyKind> {
     }
   }
   return out
-}
-
-/** The one definition of what a provider block's `options.apiKey` is; the value itself is never kept. */
-function classifyProviderKey(value: unknown): ProviderKeyKind | undefined {
-  if (typeof value !== "string" || value.trim().length === 0) return undefined
-  if (value === PROVIDER_KEYCHAIN_MARKER) return "keychain-marker"
-  if (/^\{(file|env):/.test(value)) return "user-ref"
-  return "legacy-plaintext"
 }
 
 function legacyKeyLeafPresent(file: string, id: string): boolean {
