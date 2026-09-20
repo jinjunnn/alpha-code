@@ -1230,6 +1230,13 @@ export const dict = {
   "alpha.composer.commandNoAttachments": "斜杠命令不携带附件",
   "alpha.composer.commandNoAttachmentsDetail": "请先单独发送附件消息,或移除附件后再执行命令。",
   "alpha.composer.sendFailed": "发送失败,请重试",
+  // REQ-160 AC2(`#1353`)· 已批稿 `docs/design/2026-09-19-req160-send-blocked-notice/design.md` §4。
+  // 逐句的理由在那一节:先说状态(用户按了发送、界面没动静,第一反应是「我的字还在吗」),
+  // 再用产品里已经在用的那个说法说原因,最后给一条用户真的做得到的出路。
+  // **不写「违规」「不当内容」「禁止发送」**:那把一次匹配说成一次定性;**也不说命中了哪个词**:
+  // 那是把词表一格一格喂给想绕过的人。
+  "alpha.composer.sendBlocked": "这条消息没有发出去",
+  "alpha.composer.sendBlockedWhy": "没有通过内容安全审核。修改后可以重新发送。",
   "alpha.composer.generationInterrupted": "本次回复已中断",
   "alpha.composer.generationInterruptedDetail": "连接已恢复。请确认对话状态后重试。",
   "alpha.composer.sessionPending": "会话未就绪,请稍后重试",

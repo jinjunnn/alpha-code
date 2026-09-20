@@ -6,6 +6,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { AutomationSchedule } from "../shared/automation-types"
 import type { AutomationServerInfo } from "./automation-scheduler"
 import { getLogger } from "./logging"
+import { moderationBlocks, MODERATION_BLOCKED_REASON } from "./moderation-keywords"
 
 let awaitServer: (() => Promise<AutomationServerInfo>) | null = null
 export function initAutomationLlm(deps: { awaitServer: () => Promise<AutomationServerInfo> }): void {
@@ -33,6 +34,9 @@ function sane(parsed: unknown): parsed is { name: string; schedule: AutomationSc
 
 export async function llmParseAutomation(text: string, projectDir: string): Promise<LlmParseResult> {
   if (!text.trim()) return { ok: false, reason: "输入为空" }
+  // REQ-160 AC2(`#1353`):这句话也要发给模型(`EXTRACT_INSTRUCTION + text`),所以在本机
+  // 查一遍。失败形态用这里既有的那个 —— `{ ok:false, reason }` 由调用面原样呈现,**不新增界面**。
+  if (moderationBlocks(text)) return { ok: false, reason: MODERATION_BLOCKED_REASON }
   if (!awaitServer) return { ok: false, reason: "引擎未就绪" }
   const server = await awaitServer()
   const headers =

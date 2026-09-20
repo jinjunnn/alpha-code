@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-20T04:51:26.637Z",
+  "productionBaselineCommit": "e70aa48d6e48c070cf588ff5198f5849aeb22933",
+  "harness": "production AlphaComposerRuntime via loopback Vite build + Chrome --headless=new",
+  "harnessSha256": "b422c1773ea0687cf9a87222dc9720a9f033c5b1208c437555410392d6d79da5",
+  "captureDriverSha256": "258012763883787c3327ebd06eeabe477f2c259122bc2890e6df0696a0bef58d",
+  "chrome": "Google Chrome 153.0.8010.50",
+  "viewports": {
+    "narrow": 420,
+    "wide": 760
+  },
+  "deviceScaleFactor": 2,
+  "foregroundApplicationLaunches": 0,
+  "credentialsUsed": false,
+  "electronStarted": false,
+  "records": [
+    {
+      "state": "session-blocked",
+      "theme": "light",
+      "width": "narrow",
+      "blockedPresent": true,
+      "file": "shots/session-blocked-light-narrow.png",
+      "bytes": 55575,
+      "sha256": "989d27af537756a9a77b2b2805baa3c9f0454e3298676be8964ef6033684d796"
+    },
+    {
+      "state": "session-blocked",
+      "theme": "dark",
+      "width": "narrow",
+      "blockedPresent": true,
+      "file": "shots/session-blocked-dark-narrow.png",
+      "bytes": 57852,
+      "sha256": "a6132f4609fa2065b86215381637a5b6767e302d51b39207bf1e25f7442f2d00"
+    },
+    {
+      "state": "session-clean",
+      "theme": "light",
+      "width": "narrow",
+      "blockedPresent": false,
+      "file": "shots/session-clean-light-narrow.png",
+      "bytes": 30979,
+      "sha256": "cf44a4f39047c808c541998f0945b8a52a151320f4e93e3a7ad499be5c3f35e6"
+    },
+    {
+      "state": "session-clean",
+      "theme": "dark",
+      "width": "narrow",
+      "blockedPresent": false,
+      "file": "shots/session-clean-dark-narrow.png",
+      "bytes": 32016,
+      "sha256": "d997fb3db2442b6353c7755b2c8b6bd940f4cd1cb4eb6b950e68e8aed1b6c586"
+    },
+    {
+      "state": "session-typed",
+      "theme": "light",
+      "width": "narrow",
+      "blockedPresent": false,
+      "file": "shots/session-typed-light-narrow.png",
+      "bytes": 37877,
+      "sha256": "f194cb9f12115e06d377e9e361f034191f97c41a60ca95cf3624fddf9ae2d3e1"
+    },
+    {
+      "state": "session-typed",
+      "theme": "dark",
+      "width": "narrow",
+      "blockedPresent": false,
+      "file": "shots/session-typed-dark-narrow.png",
+      "bytes": 40093,
+      "sha256": "4a83ad7a297e6e53bf099f31e0cac43324e58f07e2140717f82a1963e4733c25"
+    },
+    {
+      "state": "home-blocked",
+      "theme": "light",
+      "width": "narrow",
+      "blockedPresent": true,
+      "file": "shots/home-blocked-light-narrow.png",
+      "bytes": 51781,
+      "sha256": "c12ea4ab7f8de33ec13758bcb157955e90178f72912762b660d123b04d758474"
+    },
+    {
+      "state": "home-blocked",
+      "theme": "dark",
+      "width": "narrow",
+      "blockedPresent": true,
+      "file": "shots/home-blocked-dark-narrow.png",
+      "bytes": 53946,
+      "sha256": "1ac6af9d532313bb3be8e626f0d2c77faa970c99ccc3f3675948d05a0aeb4fe9"
+    },
+    {
+      "state": "session-blocked",
+      "theme": "light",
+      "width": "wide",
+      "blockedPresent": true,
+      "file": "shots/session-blocked-light-wide.png",
+      "bytes": 60372,
+      "sha256": "f0d2efe5be1897d7b974736cd55b12365c249352b9b370cddd678c55b34ce349"
+    },
+    {
+      "state": "session-blocked",
+      "theme": "dark",
+      "width": "wide",
+      "blockedPresent": true,
+      "file": "shots/session-blocked-dark-wide.png",
+      "bytes": 62605,
+      "sha256": "afb1af41efdc557223187b6662ca17e7887828caf3ef5f7de3da31899ddc1135"
+    },
+    {
+      "state": "session-clean",
+      "theme": "light",
+      "width": "wide",
+      "blockedPresent": false,
+      "file": "shots/session-clean-light-wide.png",
+      "bytes": 33793,
+      "sha256": "0ae0a4a4dd6dcf3be3e7f85cc15357acb61cbf346e896a1346583c43f18c3863"
+    },
+    {
+      "state": "session-clean",
+      "theme": "dark",
+      "width": "wide",
+      "blockedPresent": false,
+      "file": "shots/session-clean-dark-wide.png",
+      "bytes": 34827,
+      "sha256": "7c2633d16e1c0e8ca6a85aa37c0059c32fc5f06686d811bb80ae5010b04d1d26"
+    },
+    {
+      "state": "session-typed",
+      "theme": "light",
+      "width": "wide",
+      "blockedPresent": false,
+      "file": "shots/session-typed-light-wide.png",
+      "bytes": 40734,
+      "sha256": "ade4b6430381bf0642bd8cdf0bec2131c6074191d48034040d5003dd14a33937"
+    },
+    {
+      "state": "session-typed",
+      "theme": "dark",
+      "width": "wide",
+      "blockedPresent": false,
+      "file": "shots/session-typed-dark-wide.png",
+      "bytes": 43011,
+      "sha256": "d3135b4194f2965954d02aec9c4bff8c802b62d7e950afc84104250866ab39cd"
+    },
+    {
+      "state": "home-blocked",
+      "theme": "light",
+      "width": "wide",
+      "blockedPresent": true,
+      "file": "shots/home-blocked-light-wide.png",
+      "bytes": 56889,
+      "sha256": "c9ad4cc6ea8e5fd9d162783d6827209da83aaf6d767bc6a4b3b199bc90de7a5a"
+    },
+    {
+      "state": "home-blocked",
+      "theme": "dark",
+      "width": "wide",
+      "blockedPresent": true,
+      "file": "shots/home-blocked-dark-wide.png",
+      "bytes": 59047,
+      "sha256": "eaf2704ec0dd330a3fee9d066265166f7ff39b44a6074ff8c7c79dc0e5e11666"
+    }
+  ]
+}

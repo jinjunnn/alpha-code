@@ -1,0 +1,210 @@
+{
+  "_": [
+    "REQ-160 AC2(`#1353`)—— 桌面端与服务端关键词匹配语义一致的语料。",
+    "",
+    "权威实现:alpha-web `lib/moderation/keywords.ts` 的 `matchKeywords`。provenance 钉在",
+    "`moderation-keywords.ts` 的抬头(commit + sha256)。本文件是**独立锚点**:每条 `expect` 是手写",
+    "字面量,不由任何被测实现生成 —— 期望值与被测对象同源会一起改错而全绿(《本机验证陷阱》",
+    "「比较基准与被测对象同源 = 自指等价链」)。",
+    "",
+    "每条用例的 `clause` 指向权威实现里写明的那一条语义;`kills` 写明它能杀掉哪种似是而非的实现 ——",
+    "一条用例杀不掉任何错误实现,就不该占位置。"
+  ],
+  "authority": {
+    "repo": "jinjunnn/alpha-web",
+    "path": "lib/moderation/keywords.ts",
+    "symbol": "matchKeywords",
+    "commit": "3493075965fab381cf3c82cd6637a3252b503fdb",
+    "sha256": "7e85f9d0e4272e0c81f3bfcd5eb6b7236a5829e0a0ee6819a276fc448f7186d1"
+  },
+  "cases": [
+    {
+      "name": "plain substring, not a word boundary (latin)",
+      "clause": "Plain substring containment, not a pattern language",
+      "kills": "以 \\b 词边界或分词器实现",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "cat" }],
+      "text": "concatenate these files",
+      "expect": [{ "category_code": "ad_slogan", "keyword": "cat" }]
+    },
+    {
+      "name": "plain substring, not a word boundary (cjk)",
+      "clause": "Plain substring containment, not a pattern language",
+      "kills": "以分词/词典切分实现(中文没有空格,切分结果与子串不同)",
+      "keywords": [{ "category_code": "prohibited_gambling", "keyword": "赌博" }],
+      "text": "有没有在线赌博网站推荐",
+      "expect": [{ "category_code": "prohibited_gambling", "keyword": "赌博" }]
+    },
+    {
+      "name": "case folded on the keyword side",
+      "clause": "Case folding earns its keep on the 图文违规 leaves — HTTP://, WeChat",
+      "kills": "只折叠正文、不折叠词",
+      "keywords": [{ "category_code": "contact_wechat", "keyword": "WeChat" }],
+      "text": "add me on wechat",
+      "expect": [{ "category_code": "contact_wechat", "keyword": "WeChat" }]
+    },
+    {
+      "name": "case folded on the text side",
+      "clause": "Case folding earns its keep on the 图文违规 leaves — HTTP://, WeChat",
+      "kills": "只折叠词、不折叠正文",
+      "keywords": [{ "category_code": "contact_wechat", "keyword": "wechat" }],
+      "text": "ADD ME ON WECHAT",
+      "expect": [{ "category_code": "contact_wechat", "keyword": "wechat" }]
+    },
+    {
+      "name": "the hit echoes the stored keyword verbatim, not the folded needle",
+      "clause": "hits.push({ categoryCode: entry.categoryCode, keyword: entry.keyword })",
+      "kills": "回填折叠后的 needle(运营在后台看到的词会与他敲进去的不一样)",
+      "keywords": [{ "category_code": "contact_wechat", "keyword": "WeChat" }],
+      "text": "wechat 号发我",
+      "expect": [{ "category_code": "contact_wechat", "keyword": "WeChat" }]
+    },
+    {
+      "name": "regex metacharacter `.` matches itself only",
+      "clause": "a word that happened to contain %, _ or a regex metacharacter must match itself and nothing else",
+      "kills": "把词编成正则(`a.c` 会命中 `abc`)",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "a.c" }],
+      "text": "abc",
+      "expect": []
+    },
+    {
+      "name": "regex metacharacter `.` does match a literal dot",
+      "clause": "a word that happened to contain %, _ or a regex metacharacter must match itself and nothing else",
+      "kills": "为了躲开正则而把元字符整条丢弃",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "a.c" }],
+      "text": "看这个 xa.cy 链接",
+      "expect": [{ "category_code": "ad_slogan", "keyword": "a.c" }]
+    },
+    {
+      "name": "regex quantifier `+` matches itself only",
+      "clause": "…must match itself and nothing else",
+      "kills": "把词编成正则(`c++` 是非法/贪婪量词)",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "c++" }],
+      "text": "ccccc",
+      "expect": []
+    },
+    {
+      "name": "regex character class `[vip]` matches itself only",
+      "clause": "…must match itself and nothing else",
+      "kills": "把词编成正则(`[vip]` 会命中单个 v/i/p)",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "[vip]" }],
+      "text": "vip 通道",
+      "expect": []
+    },
+    {
+      "name": "SQL wildcard `%` matches itself only",
+      "clause": "This is also why the match is not pushed into SQL as LIKE '%' || keyword || '%'",
+      "kills": "把匹配下推成 LIKE(`100%` 会命中 `100` 开头的一切)",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "100%" }],
+      "text": "100 块包月",
+      "expect": []
+    },
+    {
+      "name": "SQL wildcard `_` matches itself only",
+      "clause": "This is also why the match is not pushed into SQL as LIKE '%' || keyword || '%'",
+      "kills": "把匹配下推成 LIKE(`a_c` 会命中 `abc`)",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "a_c" }],
+      "text": "abc",
+      "expect": []
+    },
+    {
+      "name": "a stored keyword is trimmed before matching",
+      "clause": "Whitespace around a stored keyword is trimmed",
+      "kills": "不 trim(运营多敲一个空格,这个词此后永不命中)",
+      "keywords": [{ "category_code": "contact_wechat", "keyword": "  微信  " }],
+      "text": "加个微信聊",
+      "expect": [{ "category_code": "contact_wechat", "keyword": "  微信  " }]
+    },
+    {
+      "name": "a whitespace-only keyword never fires",
+      "clause": "a keyword that is only whitespace would otherwise match every message ever sent",
+      "kills": "trim 之后不判空(整库每一条消息都会被拦)",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "   " }],
+      "text": "今天天气不错",
+      "expect": []
+    },
+    {
+      "name": "an empty keyword never fires",
+      "clause": "if (!needle) continue",
+      "kills": "同上;空串 includes 恒真",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "" }],
+      "text": "今天天气不错",
+      "expect": []
+    },
+    {
+      "name": "no unicode normalization: fullwidth text does not match a halfwidth keyword",
+      "clause": "权威实现只做 toLowerCase,没有 normalize",
+      "kills": "自作主张加 NFKC(本机拦下而服务端不认为命中,两边都不会红)",
+      "keywords": [{ "category_code": "contact_wechat", "keyword": "wechat" }],
+      "text": "ｗｅｃｈａｔ",
+      "expect": []
+    },
+    {
+      "name": "default-locale toLowerCase: dotted capital I folds to i + combining dot",
+      "clause": "haystack = text.toLowerCase() / needle = keyword.trim().toLowerCase()",
+      "kills": "改用 toLocaleLowerCase(\"tr\") 或自写 ASCII 折叠",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "İstanbul" }],
+      "text": "istanbul",
+      "expect": []
+    },
+    {
+      "name": "default-locale toLowerCase: the same dotted capital I does match its own form",
+      "clause": "haystack = text.toLowerCase() / needle = keyword.trim().toLowerCase()",
+      "kills": "为了上一条而把该词整条丢弃",
+      "keywords": [{ "category_code": "ad_slogan", "keyword": "İstanbul" }],
+      "text": "去 İstanbul 玩",
+      "expect": [{ "category_code": "ad_slogan", "keyword": "İstanbul" }]
+    },
+    {
+      "name": "astral-plane keyword matches",
+      "clause": "String.includes 按码元,对代理对整体仍然成立",
+      "kills": "逐码点重写匹配时把代理对切坏",
+      "keywords": [{ "category_code": "prohibited_gambling", "keyword": "🎲" }],
+      "text": "来一把🎲",
+      "expect": [{ "category_code": "prohibited_gambling", "keyword": "🎲" }]
+    },
+    {
+      "name": "every hit is reported, in the order of the supplied list",
+      "clause": "for (const entry of keywords) … hits.push(…)",
+      "kills": "命中即短路只回一条(服务端要为每个命中写一行留证)",
+      "keywords": [
+        { "category_code": "contact_phone", "keyword": "电话" },
+        { "category_code": "contact_wechat", "keyword": "微信" }
+      ],
+      "text": "留个微信或者电话都行",
+      "expect": [
+        { "category_code": "contact_phone", "keyword": "电话" },
+        { "category_code": "contact_wechat", "keyword": "微信" }
+      ]
+    },
+    {
+      "name": "a duplicated keyword row is not de-duplicated",
+      "clause": "没有去重步骤;同一个词挂在两个类下要各自留证",
+      "kills": "顺手加 Set 去重(两个类的留证会少一条)",
+      "keywords": [
+        { "category_code": "contact_wechat", "keyword": "微信" },
+        { "category_code": "ad_slogan", "keyword": "微信" }
+      ],
+      "text": "加微信",
+      "expect": [
+        { "category_code": "contact_wechat", "keyword": "微信" },
+        { "category_code": "ad_slogan", "keyword": "微信" }
+      ]
+    },
+    {
+      "name": "an empty enabled list matches nothing",
+      "clause": "keywords.length === 0 ? [] : matchKeywords(...)(events.ts:110)",
+      "kills": "把空表当成「全拦」",
+      "keywords": [],
+      "text": "加微信 赌博 电话",
+      "expect": []
+    },
+    {
+      "name": "empty text matches nothing even with a live list",
+      "clause": "haystack = \"\" 时 includes 只对空 needle 真,而空 needle 已被跳过",
+      "kills": "空正文短路前先命中空词",
+      "keywords": [{ "category_code": "contact_wechat", "keyword": "微信" }],
+      "text": "",
+      "expect": []
+    }
+  ]
+}

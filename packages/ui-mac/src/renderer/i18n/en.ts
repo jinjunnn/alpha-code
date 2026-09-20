@@ -1262,6 +1262,9 @@ export const dict = {
   "alpha.composer.commandNoAttachments": "Slash commands do not carry attachments",
   "alpha.composer.commandNoAttachmentsDetail": "Send attachments separately, or remove them before running the command.",
   "alpha.composer.sendFailed": "Could not send. Try again.",
+  // REQ-160 AC2 (`#1353`) — approved copy, see zh.ts for the per-sentence rationale.
+  "alpha.composer.sendBlocked": "This message wasn’t sent",
+  "alpha.composer.sendBlockedWhy": "It didn’t pass content safety review. Edit it and send again.",
   "alpha.composer.generationInterrupted": "This response was interrupted",
   "alpha.composer.generationInterruptedDetail": "The connection was restored. Review the conversation, then retry.",
   "alpha.composer.sessionPending": "Session is not ready. Try again shortly.",

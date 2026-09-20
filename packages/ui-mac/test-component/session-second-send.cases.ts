@@ -294,6 +294,9 @@ Object.defineProperty(window, "api", {
   value: {
     endpoints: async () => null,
     openLink: () => {},
+    // REQ-160 AC2(`#1353`):composer 发送前会问 main「这句话要不要拦」。默认不拦 ——
+    // 本文件测的不是拦截;拦截的判据在 alpha-composer-model.cases.ts 的 `#1353` 一节。
+    moderation: { check: async () => false },
     models: { catalog: async () => catalog },
     auth: { getState: async () => loggedIn, subscribe: () => () => {}, start: async () => {} },
     account: { summary: async () => summary },

@@ -748,6 +748,15 @@ export type ElectronAPI = {
   endpoints: () => Promise<AlphaEndpoints>
   /** ac#1187:当前应用版本(app.getVersion(),唯一真源 = package.json;账户浮层显示用,只读)。 */
   appVersion: () => Promise<string>
+  /** REQ-160 AC2(`#1353`):这句话在本机是否命中已同步的违规关键词。
+   *
+   *  **尽力而为,不是安全边界**:它跑在用户自己的机器上,懂技术的人能绕过;留证的权威在服务端
+   *  入库时的复判。词表本身**不**经这条线(只回布尔值),否则「怎么写才能过」就摆在 devtools 里。
+   *  词表没同步下来、或这条 IPC 读不到时恒 `false` —— 没做过的检查不摆出一个做过的样子
+   *  (已批设计 `docs/design/2026-09-19-req160-send-blocked-notice/design.md` §3)。 */
+  moderation: {
+    check: (text: string) => Promise<boolean>
+  }
   /** REQ-098:App 环境快照(只读)。main 启动时解析后冻结;此 IPC 无参数、无对应写面 —— renderer
    *  既不能伪造环境,也没有任何通道改写环境根(AC#6)。 */
   environment: () => Promise<AlphaEnvironmentInfo>

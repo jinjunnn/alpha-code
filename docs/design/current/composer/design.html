@@ -12,7 +12,7 @@
   <div class="brand"><span style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px">α</span> alpha-code 设计稿</div>
   <div class="spacer"></div>
   <nav>
-    <a href="#home">首页</a><a href="#chat">对话页</a><a href="#anatomy">输入框</a>
+    <a href="#home">首页</a><a href="#chat">对话页</a><a href="#anatomy">输入框</a><a href="#send-blocked">提示槽</a>
     <a href="#add">+ 菜单</a><a href="#model">模型选择</a><a href="#setup">供应商</a><a href="#perm">权限</a>
   </nav>
   <div class="seg" id="stateSeg">
@@ -184,6 +184,44 @@
         <div><span class="n">5</span> 发送 — 有内容时点亮 indigo</div>
         <div><span class="n">6</span> 用量环 — 上下文占用(从顶栏移入),点开看详情/压缩</div>
       </div>
+
+      <!-- ── 提示槽 ─────────────────────────────────────────────────────── -->
+      <h3 id="send-blocked" style="margin:34px 0 8px;font-size:var(--a-text-lg)">提示槽 · 发送被拦下时</h3>
+      <p class="lede" style="margin:0 0 14px">文字区之下、工具栏之上,是输入框内部那条<strong>提示槽</strong>。今天它住着四个成员:
+        三条红的说「系统这会儿不行、请重试」,第四条是琥珀的,说「你写的这句要改一下」。
+        并入自 <a href="../../2026-09-19-req160-send-blocked-notice/frame.html">2026-09-19-req160-send-blocked-notice</a>
+        (owner 2026-09-19 批准:文案保留「内容安全审核」、用琥珀、定时自动化命中不弹提示)。</p>
+      <div class="composer focus">
+        <div class="input">帮我把这段客服回复改得更直接一点,现在读起来太绕了。</div>
+        <div class="notice-blocked" role="alert">
+          <span class="fact">这条消息没有发出去</span>
+          <span class="why">没有通过内容安全审核。修改后可以重新发送。</span>
+        </div>
+        <div class="toolbar">
+          <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="chip perm" data-mode="ask"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+          <div class="grow"></div>
+          <button class="chip usage"><span class="ring"></span>38%</button>
+          <button class="chip model"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+          <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+        </div>
+      </div>
+      <p class="lede" style="margin:14px 0 0;font-size:var(--a-text-sm)">同槽的既有三条(现行形态,本增量不动):</p>
+      <div class="composer" style="margin-top:8px">
+        <div class="input empty">…</div>
+        <div class="alert-slot"><span>账户、KEY 或模型目录读取失败;当前不会提交。</span><button>重试</button></div>
+        <div class="alert-slot"><span>正在同步…</span></div>
+        <div class="alert-slot"><span>「Opus 4.8」现在发不出去 · 本次引擎启动没有加载这个模型。</span><button>重试</button></div>
+        <div class="toolbar"><div class="grow"></div><button class="send"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div>
+      </div>
+      <div class="note" style="margin-top:16px"><b>契约</b>(实现以此为准):按下发送且本机词表命中的那一刻出现,不发给引擎,输入框文字与附件原样留着;
+        输入框一改即消失、发送成功即消失,不计时、不自动淡出、无关闭叉;发送键保持可用,原样再发仍被拦、提示不堆叠不变化;
+        <b>词表没同步下来或读不到时不拦也不提示</b> —— 没做过的检查不摆出一个做过的样子;
+        不出现「违规」「禁止」这类定性词,也不说命中了哪个词(那是把词表一格一格喂给想绕过的人);
+        <span class="mono">role="alert"</span>,不新增可聚焦元素,颜色不承载信息;判据钩子
+        <span class="mono">data-alpha-composer-blocked</span>。定时自动化命中时<b>不产生任何界面元素</b>,
+        按既有失败形态记进那次运行的 <span class="mono">status.json</span>。
+        <br/><b>诚实边界</b>:这道拦截跑在用户自己的电脑上、可被绕过,<b>不是安全边界</b>;复核与留证的权威在服务端上传入库时。这段话不进界面。</div>
     </div>
   </section>
 

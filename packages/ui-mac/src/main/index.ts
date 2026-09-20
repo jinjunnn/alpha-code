@@ -150,6 +150,8 @@ import {
 } from "./alpha-auth"
 import { openChatArchiveCursor } from "./chat-archive-cursor"
 import { createChatArchiveUploader } from "./chat-archive-uploader"
+import { initModerationKeywords } from "./moderation-keywords"
+import { registerModerationIpcHandlers } from "./moderation-ipc"
 import { errorOutcome, initStartupTimeline, markStartupTimeline } from "./startup-timeline"
 import {
   awaitBootRenewalGrace,
@@ -989,6 +991,18 @@ const main = Effect.gen(function* () {
       warn: (message, meta) => logger.warn(message, meta),
     },
   }).start()
+  // REQ-160 AC2(`#1353`):把当前启用的违规关键词表同步到本机,并在发送前查一遍。同一个
+  // `archive_access_token`、同一个 web 基址;词表只留在主进程(renderer 问的是布尔值)。
+  // 这不是安全边界 —— 本机可绕过,留证的权威是服务端入库时的复判。读不到词表时不拦也不提示。
+  initModerationKeywords({
+    webBase: () => resolveEndpoints().web,
+    token: () => getArchiveAccessToken(),
+    log: {
+      info: (message, meta) => logger.info(message, meta),
+      warn: (message, meta) => logger.warn(message, meta),
+    },
+  }).start()
+  registerModerationIpcHandlers()
   // A3(REQ-025):开机拉回错过的云 schedule run(登录态才有 token;失败静默,面板刷新再拉)
   setTimeout(() => void pullCloudScheduleRuns().catch(() => {}), 8000)
   registerModelsIpcHandlers(app.getPath("userData"))
