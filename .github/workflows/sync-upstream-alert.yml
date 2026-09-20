@@ -1,0 +1,64 @@
+# alpha-code auto-sync — ALERT phase (`#995`).
+#
+# 每日 `sync-upstream` 失败时**通知一个人**。此前它失败的唯一输出是一条 Actions 日志,
+# 而没有任何东西读那条日志:实测(2026-09-19 勘破)最后一次成功是 `2026-07-22T08:06:35Z`,
+# 此后 **59 次连续失败、零通知**;9 月初上游是人手工追平的(`ac#1248`),cron 仍在每天红。
+#
+# 这个文件与 `sync-upstream-push.yml` 是**同一个形状的两半**:候选 job
+# (`sync-upstream.yml`,无任何凭据、执行上游代码)跑完之后,由两个 `workflow_run` 消费者
+# 分别接走两种结局 —— `success` 归推送,`failure` 归本文件。此前只有前一半有消费者,
+# 失败那一半的 `conclusion` **没有任何读者**,这就是 `#995` 的全部内容。
+#
+# `#899`(SEC)的同一条纪律:本 job 持有 `issues: write`,所以它**不执行合并树里的任何代码** ——
+# checkout 的是 `alpha`(我们自己的树)、**不跑 `bun install`**、只跑一个零依赖的
+# `scripts/sync-upstream-alert.ts`。不要往这个文件里加安装/构建/跑引擎的步骤:那会把一个
+# 有写权限的 token 放进与上游代码同一个进程,正是 `#899` 拆两半要消灭的形状。
+#
+# 行为闸:`packages/ui-mac/src/main/sync-upstream-alert.test.ts` —— 它起一个真的 HTTP 服务
+# 冒充 GitHub API,跑**生产的那个脚本本体**,断言它真的发出了写入;并从本文件解析接线
+# (监视哪条 workflow、只在 failure 时跑、权限、没有 install 步)。
+name: sync-upstream-alert
+
+on:
+  workflow_run:
+    workflows: ["sync-upstream"]
+    types: [completed]
+
+# `issues: write` 是这个 job 存在的全部理由。**不要**在这里加 `contents: write`
+# 或引用 `secrets.SYNC_TOKEN` —— 推送凭据只属于 sync-upstream-push.yml。
+# `actions: read` 用于读本次 run 的结论、失败步与连败长度。
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+# 刻意**不**与 sync-upstream 共用 concurrency group:共用会让告警排在下一轮候选后面,
+# 而告警的价值与时效直接相关。
+concurrency:
+  group: sync-upstream-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout alpha (our own tree, no push credential)
+        uses: actions/checkout@v4
+        with:
+          ref: alpha
+          persist-credentials: false
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      # 零依赖:这一步**没有** `bun install`。脚本只用 `fetch`,见其抬头的信任边界一节。
+      - name: File or refresh the sync-upstream failure issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ALERT_RUN_ID: ${{ github.event.workflow_run.id }}
+          ALERT_WORKFLOW: sync-upstream.yml
+        run: bun scripts/sync-upstream-alert.ts

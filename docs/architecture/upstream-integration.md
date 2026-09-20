@@ -77,6 +77,64 @@ order and assert the same fixture dies with `failed to resolve` and prints no
 `::error::` at all — the gate is proven to detect the known-bad before it is
 trusted about the unknown-good.
 
+### A failing sync had no reader for two months (`#995`)
+
+Measured 2026-09-19 from the real run history, not inferred from the workflow:
+the last successful `sync-upstream` run was `2026-07-22T08:06:35Z`
+(run `29902706228`), and every run since — **59 consecutive daily runs,
+2026-07-23 through 2026-09-19** — failed. Nobody was notified for any of them.
+Upstream reached Alpha in that window exactly once, by hand (`ac#1248`,
+`efced9fa9`, 2026-09-06).
+
+The streak is **not one cause**. Classifying each failing run by the step the
+Actions API reports as failed (the `##[error]Unexpected merge conflicts` string
+also appears in the *echoed script body*, so a plain `grep` for it matches every
+run — that fingerprint is useless):
+
+| window | runs | what actually failed |
+| --- | --- | --- |
+| 2026-07-23 → 2026-08-07 | 16 | `bun install` — `@opencode-ai/client@file:../app/vendor/opencode-ai-client-1.17.13[-v2].tgz failed to resolve`. This is the pre-`#1272` order defect above. The 07-23 run had already merged and pushed (`e77266975..02407fcfa alpha -> alpha`) before dying in the smoke step. |
+| 2026-08-08 → 2026-09-06 | 30 | merge aborted — unexpected conflict in `packages/desktop/src/main/index.ts` (plus `packages/ui/src/v2/components/dialog-v2.tsx` from 09-06). |
+| 2026-09-07 → 2026-09-19 | 13 | merge aborted — unexpected conflict in `packages/opencode/test/provider/transform.test.ts`. |
+
+The current abort is **correct behaviour, and it will recur**. The conflicting
+file is on the north-star annexation whitelist
+([`scripts/north-star-guard.sh`](../../scripts/north-star-guard.sh)
+`UPSTREAM_EXCLUDES`, 48 entries): Alpha deliberately edits it (`#1147`), so the
+merge step's message "the only-add discipline was broken" is literally false
+here — the discipline was waived on purpose. Every annexed upstream file is a
+permanent conflict generator, and a conflict there genuinely requires a human
+(auto-resolving would silently drop one side). `ac#1248` demonstrates the shape:
+its catch-up merge landed 2026-09-06 and the very next run, 09-07, aborted again
+because upstream had moved on — 7 of the 272 upstream commits since that
+merge-base touch `transform.test.ts`.
+
+So the defect `#995` fixes is not the abort. It is that
+`sync-upstream.yml`'s failure conclusion had **no reader at all**:
+[`sync-upstream-push.yml`](../../.github/workflows/sync-upstream-push.yml)
+consumes `conclusion == 'success'` and nothing consumed the other half.
+[`sync-upstream-alert.yml`](../../.github/workflows/sync-upstream-alert.yml) is
+that missing half, built to the same trust shape: a `workflow_run` consumer that
+holds a write scope (`issues: write`) precisely because it executes **no code
+from the merged tree** — it checks out `alpha`, runs no `bun install`, and
+invokes only the dependency-free
+[`scripts/sync-upstream-alert.ts`](../../scripts/sync-upstream-alert.ts).
+
+That script files or refreshes one tracking Issue labelled
+`sync-upstream-failure`: it creates and assigns on the first failure of a
+streak, re-comments only when the failing step changes, and otherwise just
+refreshes the body with the streak length and the latest run. Fifty-nine daily
+comments would be silenced as fast as fifty-nine silent failures were ignored.
+Every API error, and a missing token, exit non-zero — a notification that did
+not go out must turn its own run red rather than return 0.
+
+The gate is
+[`packages/ui-mac/src/main/sync-upstream-alert.test.ts`](../../packages/ui-mac/src/main/sync-upstream-alert.test.ts):
+it serves a real HTTP stub of the GitHub API, spawns the production script
+against it, and asserts the writes it actually issued. Its wiring cases carry
+mutation arms (flip the job's `if` to `success`, point it at another workflow,
+add a `bun install` step) so the checker is proven to detect the known-bad.
+
 ## Sovereignty ladder
 
 ADR-029 defines the only supported ways to change upstream behavior:
