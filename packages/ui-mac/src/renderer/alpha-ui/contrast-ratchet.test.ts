@@ -32,6 +32,26 @@ const BACKGROUNDS = [
   "--a-surface-raised",
 ] as const
 
+/**
+ * `#1375`:落在**半透明 tint** 上的文字。
+ *
+ * 上面那张表只判实色背景,而产品里有一整类提示条是「半透明色块 + 同色系文字」——
+ * tint 自己不是实色,浏览器把它合成到它所在的那层底上之后才有确定比值,所以这里要
+ * 先合成、再算。不合成就一条都判不了(本文件的 fail-closed 规则会把 rgba() 直接判红),
+ * 于是这一类此前**结构性地不在任何闸门的射程内**。
+ *
+ * 今天只有一行:输入框提示槽那三条红提示(`.a-comp-model-alert`,`alpha-composer.css`)。
+ * 全仓红字/底色配对的普查是另一件事(`#1375` out of scope 明写)。
+ */
+const TINTED_TEXT = [
+  {
+    fg: "--a-error-on-subtle",
+    tint: "--a-error-subtle",
+    base: "--a-surface",
+    where: "输入框提示槽三条红提示(.a-comp-model-alert)",
+  },
+] as const
+
 const TEXT_MIN = 4.5 // WCAG 1.4.3 正文
 const NON_TEXT_MIN = 3 // WCAG 1.4.11 焦点指示器等非文本
 
@@ -56,6 +76,37 @@ export function luminance(hex: string) {
   const [r, g, b] = [0, 2, 4].map((offset) => channel(parseInt(full.slice(offset, offset + 2), 16)))
   const value = 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
   return Number.isFinite(value) ? value : undefined
+}
+
+/** 半透明色的唯一可判形态:`rgb()` / `rgba()` 的逗号十进制写法。 */
+const RGBA = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*(\d*\.?\d+)\s*)?\)$/i
+
+/**
+ * `#1375`:把半透明色合成到不透明底上,得到浏览器真正画出来的那个实色。
+ *
+ * 与 `luminance` 同一条纪律 —— 不可判的输入返回 `undefined`,绝不返回一个看起来像颜色
+ * 的东西:合成不出来就该判红,而不是拿个近似值去比。
+ */
+export function flatten(tint: string, base: string) {
+  const parts = RGBA.exec(tint.trim())
+  if (!parts || !OPAQUE_HEX.test(base)) return undefined
+  const alpha = parts[4] === undefined ? 1 : Number(parts[4])
+  if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1) return undefined
+  const raw = base.slice(1)
+  const full = raw.length === 3
+    ? raw
+        .split("")
+        .map((c) => c + c)
+        .join("")
+    : raw
+  const under = [0, 2, 4].map((offset) => parseInt(full.slice(offset, offset + 2), 16))
+  const channels: number[] = []
+  for (const index of [0, 1, 2]) {
+    const over = Number(parts[index + 1])
+    if (!Number.isFinite(over) || over > 255) return undefined
+    channels.push(Math.round(alpha * over + (1 - alpha) * under[index]!))
+  }
+  return `#${channels.map((c) => c.toString(16).padStart(2, "0")).join("")}`
 }
 
 export function contrastRatio(a: string, b: string) {
@@ -128,6 +179,24 @@ export function offenders(source: string, label: string) {
       measure(tertiary, "--a-text-tertiary", bg, background, TEXT_MIN)
       measure(ring, "focus ring", bg, background, NON_TEXT_MIN)
     }
+
+    // `#1375`:半透明 tint 上的文字 —— 先合成到它所在的那层底上,再判。
+    for (const pair of TINTED_TEXT) {
+      const fg = solid(pair.fg, values.get(pair.fg))
+      const base = solid(pair.base, values.get(pair.base))
+      const rawTint = values.get(pair.tint)
+      if (rawTint === undefined) {
+        found.push(`${where}: ${pair.tint} 未在本主题块定义(${pair.where})`)
+        continue
+      }
+      const composited = base === undefined ? undefined : flatten(rawTint, base)
+      if (composited === undefined) {
+        // base 自己不可判时 solid() 已经记过一条;这里只补「tint 合成不出来」那一格。
+        if (base !== undefined) found.push(`${where}: ${pair.tint} 合成不出实色(${rawTint} on ${pair.base})`)
+        continue
+      }
+      measure(fg, pair.fg, composited, `${pair.tint} 合成在 ${pair.base} 上(= ${composited},${pair.where})`, TEXT_MIN)
+    }
   }
   return found
 }
@@ -143,6 +212,67 @@ describe("alpha-ui contrast ratchet", () => {
     expect(contrastRatio("#64656d", "#e3e6ea")).toBeCloseTo(4.63, 2) // 现值,浅色最差对
     expect(contrastRatio("#86878f", "#1e2024")).toBeCloseTo(4.56, 2) // 深色最差对
     expect(contrastRatio("#ffffff", "#000000")).toBeCloseTo(21, 5)
+  })
+
+  test("#1375 合成算法复算出已批稿里的独立实测值", () => {
+    // 锚点**不取自 tokens.css** —— 那是被测对象本身,拿它当期望值就是自指等价链。
+    // 这七个数字是 docs/design/2026-09-19-req160-send-blocked-notice/design.md §5 里
+    // 另一轮、另一套工具量出来并已随 owner 批准冻结的值(琥珀提示条那一格)。
+    // 合成器若算错,这七条会一起塌,而不是悄悄给出一个近似值。
+    const warnLight = flatten("rgba(217, 119, 6, 0.12)", "#ffffff")
+    const warnDark = flatten("rgba(251, 191, 36, 0.14)", "#121316")
+    expect(warnLight).toBe("#faefe1") // 稿里逐字写着「浅色主题下提示条底色实算为 rgb(250,239,225)」
+    expect(contrastRatio("#18181b", warnLight!)).toBeCloseTo(15.61, 2) // --a-text
+    expect(contrastRatio("#52525b", warnLight!)).toBeCloseTo(6.81, 2) // --a-text-secondary
+    expect(contrastRatio("#d97706", warnLight!)).toBeCloseTo(2.81, 2) // --a-warning(稿里据此否掉了图标)
+    expect(contrastRatio("#fafafa", warnDark!)).toBeCloseTo(13.42, 2)
+    expect(contrastRatio("#a1a1aa", warnDark!)).toBeCloseTo(5.46, 2)
+    expect(contrastRatio("#fbbf24", warnDark!)).toBeCloseTo(8.39, 2)
+    // 同一份稿子记的缺陷值:三条红提示的 4.01:1(--a-error 落在 --a-error-subtle 上)。
+    expect(contrastRatio("#dc2626", flatten("rgba(220, 38, 38, 0.12)", "#ffffff")!)).toBeCloseTo(4.01, 2)
+  })
+
+  test("#1375 改前的色值会让判据变红并点名它", () => {
+    // 这就是 `#1375` 之前树上的样子:提示槽的文字色 = --a-error。判据必须点名那一对与那个数。
+    const beforeFix = `
+      :root {
+        --a-bg-canvas: #ffffff; --a-bg-subtle: #f6f7f9; --a-bg-muted: #eceef1;
+        --a-bg-inset: #e3e6ea; --a-surface: #ffffff; --a-surface-raised: #ffffff;
+        --a-accent: #4f46e5; --a-text-tertiary: #64656d;
+        --a-ring-focus: 0 0 0 1.5px var(--a-accent);
+        --a-error-subtle: rgba(220, 38, 38, 0.12);
+        --a-error-on-subtle: #dc2626;
+      }
+    `
+    const found = offenders(beforeFix, "fixture.css").filter((entry) => entry.includes("--a-error-on-subtle on"))
+    expect(found).toHaveLength(themes) // 三个主题块都从这份底盘继承 ⇒ 各红一次
+    expect(found[0]).toContain("--a-error-subtle 合成在 --a-surface 上(= #fbe5e5")
+    expect(found[0]).toContain("= 4.01")
+    // 控制组:换成落地值即全绿 —— 否则这条断言可能只是「这个夹具怎么写都红」。
+    expect(
+      offenders(beforeFix.replace("#dc2626;", "#b91c1c;"), "fixture.css").filter((entry) =>
+        entry.includes("--a-error-on-subtle on"),
+      ),
+    ).toEqual([])
+  })
+
+  test("#1375 tint 算不出实色或整块缺失时判红,不是静默跳过", () => {
+    const base = `--a-bg-canvas: #ffffff; --a-bg-subtle: #f6f7f9; --a-bg-muted: #eceef1;
+        --a-bg-inset: #e3e6ea; --a-surface: #ffffff; --a-surface-raised: #ffffff;
+        --a-accent: #4f46e5; --a-text-tertiary: #64656d; --a-ring-focus: 0 0 0 1.5px var(--a-accent);`
+    // ① tint 是 oklch():合成不出确定实色 ⇒ 记一条,不许当成「这一对没问题」。
+    const unmeasurable = `:root { ${base} --a-error-subtle: oklch(0.7 0.19 25 / 12%); --a-error-on-subtle: #b91c1c; }`
+    expect(offenders(unmeasurable, "fixture.css").filter((e) => e.includes("合成不出实色"))).toHaveLength(themes)
+    // ② tint 一个主题块都没定义 ⇒ 记一条(而不是因为 `undefined` 就跳过这一对)。
+    const missing = `:root { ${base} --a-error-on-subtle: #b91c1c; }`
+    expect(
+      offenders(missing, "fixture.css").filter((e) => e.includes("--a-error-subtle 未在本主题块定义")),
+    ).toHaveLength(themes)
+    // ③ 文字色缺失同样要红 —— 这条走的是既有的 solid(),但少了它整对就无声消失。
+    const noText = `:root { ${base} --a-error-subtle: rgba(220, 38, 38, 0.12); }`
+    expect(
+      offenders(noText, "fixture.css").filter((e) => e.includes("--a-error-on-subtle 未在本主题块定义")),
+    ).toHaveLength(themes)
   })
 
   test("anything that cannot be measured is undefined, never NaN", () => {

@@ -50,7 +50,10 @@
   padding: 7px 9px;
   border-radius: var(--a-radius-md);
   background: var(--a-error-subtle);
-  color: var(--a-error);
+  /* `#1375`:槽里这三条红提示的文字色。--a-error 落在这层底色上只有 4.01:1,低于 AA;
+     --a-error-on-subtle 是同一支红专为这个配对定的深一档(浅色 5.37:1 / 深色 5.56:1)。
+     行内那颗文字按钮 `color: inherit`,跟着一起达标。 */
+  color: var(--a-error-on-subtle);
   font-size: var(--a-text-xs);
 }
 .a-comp-model-alert button {
