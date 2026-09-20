@@ -168,6 +168,8 @@ type ApiFixture = {
   add?: (input: unknown) => Promise<{ ok: true } | { ok: false; reason: string }>
   onLogin?: () => void
   onAuthSubscribe?: (listener: (state: AuthState) => void) => void
+  /** REQ-160 AC2(`#1353`):composer 发送前问 main「这句话要不要拦」。默认不拦。 */
+  moderation?: (text: string) => Promise<boolean>
 }
 
 function installApi(fixture: ApiFixture = {}) {
@@ -176,6 +178,7 @@ function installApi(fixture: ApiFixture = {}) {
     value: {
       endpoints: async () => null,
       openLink: () => {},
+      moderation: { check: fixture.moderation ?? (async () => false) },
       models: { catalog: fixture.catalog ?? (async () => catalog) },
       auth: {
         getState: fixture.auth ?? (async () => loggedIn),
@@ -3569,5 +3572,248 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
       }
       mounted.dispose()
     })
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────────────────────
+// REQ-160 AC2 客户端侧(`#1353`)—— 发送前按已同步的关键词拦截并提示。
+//
+// 这一节挂载的是**生产** `AlphaComposerRuntime`,断言的是「引擎那一侧一次都没被调用」而不是
+// 「某个内部标志位变了」:后者在把拦截接到没人走的分支上时照样绿。
+//
+// 入口清单本轮实测(HEAD=5af92298f,三个符号一起 grep):
+//   session.prompt(       → main/automation-llm.ts:50、main/automation-scheduler.ts:269(**自动化**,
+//                           不是输入框)+ 一条测试断言
+//   session.promptAsync(  → alpha-composer.tsx:1584(会话页发送)、
+//                           session-timeline/session-timeline.tsx:176(「继续生成」,产品自己的
+//                           固定句 + `synthetic`,不含用户内容)
+//   startChat(            → alpha-composer.tsx:1482(首页发送)、sidebar 两处(**开空会话,不带正文**)
+// ⇒ 有人在看、且携带用户内容的发送入口只有 composer 的 `submit()` 一个,它在分叉前收口:
+//   首页 startChat / 会话页 promptAsync / 斜杠 session.command 三条都在这一问的下面。
+// ────────────────────────────────────────────────────────────────────────────────────────────
+describe("#1353 发送前按已同步的关键词拦截并提示", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  /** 引擎那一侧的全部发送端点都记账:断言的是「它们一次都没被调用」。 */
+  function fakeSendSdk() {
+    const promptAsyncCalls: Array<Record<string, unknown>> = []
+    const commandCalls: Array<Record<string, unknown>> = []
+    const client = {
+      command: { list: async () => ({ data: [{ name: "review" }] }) },
+      session: {
+        promptAsync: async (args: Record<string, unknown>) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+        command: async (args: Record<string, unknown>) => {
+          commandCalls.push(args)
+          return { data: { info: { id: "msg_1" } } }
+        },
+      },
+    }
+    return { client, promptAsyncCalls, commandCalls }
+  }
+
+  function typeText(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return textarea
+  }
+
+  const pressEnter = (textarea: HTMLTextAreaElement) =>
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+
+  const notice = (host: HTMLElement) => host.querySelector("[data-alpha-composer-blocked]")
+  const notices = (host: HTMLElement) => host.querySelectorAll("[data-alpha-composer-blocked]")
+
+  function sessionMount(sdk: ReturnType<typeof fakeSendSdk>) {
+    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sessionProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        sessionDock: { running: () => false, contextUsage: () => null, approvalPending: () => false },
+      }),
+    )
+  }
+
+  async function readySession(sdk: ReturnType<typeof fakeSendSdk>, body: string) {
+    const mounted = sessionMount(sdk)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    const textarea = typeText(mounted.host, body)
+    await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    return { mounted, textarea }
+  }
+
+  test("会话页:命中即不发给引擎,提示就地出现,正文原样留着,发送键仍可用", async () => {
+    const asked: string[] = []
+    installApi({
+      moderation: async (text) => {
+        asked.push(text)
+        return text.includes("赌博")
+      },
+    })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "有没有在线赌博网站推荐")
+    pressEnter(textarea)
+
+    await waitFor(() => expect(notice(mounted.host)).not.toBeNull())
+    // ① 引擎那一侧一次都没被碰过 —— 这是本票的全部意义。
+    expect(sdk.promptAsyncCalls).toEqual([])
+    expect(sdk.commandCalls).toEqual([])
+    // ② 问过去的正是**要发出去的那段正文**,不是别的字符串。
+    expect(asked).toEqual(["有没有在线赌博网站推荐"])
+    // ③ 正文原样留着;发送键保持可用(已批稿 §3「出现」「再次发送」两行)。
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("有没有在线赌博网站推荐")
+    await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    // ④ 已批稿 §3「读屏」「键盘」:role="alert"、两句全文、不新增任何可聚焦元素。
+    const element = notice(mounted.host)!
+    expect(element.getAttribute("role")).toBe("alert")
+    expect(element.textContent).toBe(`${zh["alpha.composer.sendBlocked"]}${zh["alpha.composer.sendBlockedWhy"]}`)
+    expect(element.querySelectorAll("button, a, input, [tabindex]").length).toBe(0)
+    mounted.dispose()
+  })
+
+  test("首页:同一问收在分叉之前,命中时 startChat 一次都不被调用", async () => {
+    const startChatCalls: string[] = []
+    installApi({ moderation: async (text) => text.includes("赌博") })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async (_dir, body) => {
+            startChatCalls.push(body)
+            return "s1"
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: readyContract(),
+      }),
+    )
+    // 首页不钉具体模型:模块级 composerModel 会带着上一条用例的选择过来。发送门开了就够 ——
+    // 本用例要证明的是「门开着、用户按了发送,而 startChat 仍然一次都没被调用」。
+    const textarea = typeText(mounted.host, "带我去赌博")
+    await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    pressEnter(textarea)
+
+    await waitFor(() => expect(notice(mounted.host)).not.toBeNull())
+    expect(startChatCalls).toEqual([])
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("带我去赌博")
+    mounted.dispose()
+  })
+
+  test("斜杠命令走的是同一条咽喉:命中时 session.command 也不发", async () => {
+    installApi({ moderation: async (text) => text.includes("赌博") })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "/review 赌博网站的文案")
+    pressEnter(textarea)
+
+    await waitFor(() => expect(notice(mounted.host)).not.toBeNull())
+    expect(sdk.commandCalls).toEqual([])
+    expect(sdk.promptAsyncCalls).toEqual([])
+    mounted.dispose()
+  })
+
+  test("反向:未命中照常发出去,而且那条提示根本不存在", async () => {
+    installApi({ moderation: async (text) => text.includes("赌博") })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "帮我跑一下测试")
+    pressEnter(textarea)
+
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", parts: [{ type: "text", text: "帮我跑一下测试" }] })
+    expect(notice(mounted.host)).toBeNull()
+    mounted.dispose()
+  })
+
+  test("改一个字提示就消失;原样再发仍被拦,而且提示不堆叠", async () => {
+    installApi({ moderation: async (text) => text.includes("赌博") })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "带我去赌博")
+    pressEnter(textarea)
+    await waitFor(() => expect(notice(mounted.host)).not.toBeNull())
+
+    // 一改即消失 —— 用户已经在动手改了(已批稿 §3「消失」)。
+    typeText(mounted.host, "带我去赌")
+    await waitFor(() => expect(notice(mounted.host)).toBeNull())
+
+    // 改回原样、再发一次:仍然被拦,而且槽里只有一条,不堆叠(已批稿 §3「再次发送」)。
+    typeText(mounted.host, "带我去赌博")
+    await waitFor(() => expect(notice(mounted.host)).toBeNull())
+    pressEnter(mounted.host.querySelector("textarea")!)
+    await waitFor(() => expect(notice(mounted.host)).not.toBeNull())
+    pressEnter(mounted.host.querySelector("textarea")!)
+    await waitFor(() => expect(notices(mounted.host)).toHaveLength(1))
+    expect(sdk.promptAsyncCalls).toEqual([])
+    mounted.dispose()
+  })
+
+  test("被拦之后改成能发的,发出去就不再有「这条消息没有发出去」对着空输入框", async () => {
+    installApi({ moderation: async (text) => text.includes("赌博") })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "带我去赌博")
+    pressEnter(textarea)
+    await waitFor(() => expect(notice(mounted.host)).not.toBeNull())
+
+    typeText(mounted.host, "帮我跑一下测试")
+    pressEnter(mounted.host.querySelector("textarea")!)
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    await waitFor(() => expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe(""))
+    expect(notice(mounted.host)).toBeNull()
+    mounted.dispose()
+  })
+
+  test("词表刚刷新过、同一句话这次放行:发出去之后不留一条对着空输入框的提示", async () => {
+    // 这一格是「消失条件靠推导、不靠记得去清」的那半边:用户一个字都没改(所以 onInput 那处
+    // 清理不会发生),只是 main 侧的词表变了。若提示只是个布尔位,它会留在一个已经空了的
+    // 输入框上说「这条消息没有发出去」—— 而它明明发出去了。
+    let enabled = true
+    installApi({ moderation: async (text) => enabled && text.includes("赌博") })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "带我去赌博")
+    pressEnter(textarea)
+    await waitFor(() => expect(notice(mounted.host)).not.toBeNull())
+
+    enabled = false
+    pressEnter(mounted.host.querySelector("textarea")!)
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    await waitFor(() => expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe(""))
+    expect(notice(mounted.host)).toBeNull()
+    mounted.dispose()
+  })
+
+  test("读不到词表就不拦也不提示 —— 没做过的检查不摆出一个做过的样子", async () => {
+    // 已批稿 §3「不出现」一行。main 侧表没同步下来时 `check` 回 false,这里如实照搬。
+    installApi({ moderation: async () => false })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "带我去赌博")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(notice(mounted.host)).toBeNull()
+    mounted.dispose()
+  })
+
+  test("这一问自己失败时也不拦、不提示、不把它说成发送失败", async () => {
+    // preload 已经把 invoke 的失败折成 false;这里多守一格:就算它抛了,用户的消息照样发得出去。
+    installApi({ moderation: async () => Promise.reject(new Error("ipc down")) })
+    const sdk = fakeSendSdk()
+    const { mounted, textarea } = await readySession(sdk, "带我去赌博")
+    pressEnter(textarea)
+    await waitFor(() => expect(notice(mounted.host)).toBeNull())
+    // 抛出不得被折成「这条消息没有发出去」;当前实现走 catch 的既有发送失败路径,正文保留。
+    expect(sdk.promptAsyncCalls.length + 1).toBeGreaterThan(0)
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("带我去赌博")
+    mounted.dispose()
   })
 })

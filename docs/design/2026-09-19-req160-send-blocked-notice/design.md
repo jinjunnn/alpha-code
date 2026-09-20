@@ -2,7 +2,7 @@
 type: design
 slug: req160-send-blocked-notice
 date: 2026-09-19
-status: draft
+status: accepted  # owner 2026-09-19 批准;2026-09-20 随 ac#1353 并入 current/composer 活稿,本目录冻结
 relates:
   - jinjunnn/alpha-code#1353(本增量是其 Ready 门)
   - jinjunnn/alpha-work#101 AC2
@@ -12,9 +12,13 @@ relates:
 # 这句话没有发出去 —— 说在它没发出去的地方
 
 > 帧见同目录 [`frame.html`](frame.html)(对话页常态 / 首页同款 / 与既有三条提示同屏对照 /
-> 输入框被挤窄;浅深两色由右上角切换)。**未批准**:批准后并入
-> [`current/composer/design.html`](../current/composer/design.html) 的 `#anatomy`,铸锚
-> `#send-blocked`;台账见 [`current/composer/components.md`](../current/composer/components.md)。
+> 输入框被挤窄;浅深两色由右上角切换)。
+>
+> **owner 2026-09-19 批准**,§7 三问的裁决:①文案保留「内容安全审核」这个说法;②用琥珀,
+> 不用红;③定时自动化命中时不通知,只记进那次运行的记录。已于 2026-09-20 随 `ac#1353` 并入
+> [`current/composer/design.html#send-blocked`](../current/composer/design.html#send-blocked),
+> 台账见 [`current/composer/components.md`](../current/composer/components.md)。
+> **本目录就地冻结,此后不再编辑** —— 活稿是唯一当前稿,这里只留增量的来历与逐句理由。
 
 ## 1. 与上一稿的关系
 

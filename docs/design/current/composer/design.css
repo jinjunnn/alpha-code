@@ -331,3 +331,17 @@ body[data-state="out"] .lock-hint,body[data-state="empty"] .lock-hint{display:bl
 .legend{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:18px;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
 .legend div{display:flex;align-items:center;gap:8px}
 .legend .n{width:18px;height:18px;border-radius:50%;background:var(--a-accent-subtle);color:var(--a-accent);font-size:11px;font-weight:700;display:grid;place-items:center}
+
+/* ── 输入框内的提示槽(文字区之下、工具栏之上)──────────────────────────────
+   已有三条红提示(链失败 / 正在同步 / 模型没加载);`#send-blocked` 是第四个成员,
+   琥珀而不是红 —— 红在这条槽里已有确定含义(系统这会儿不行、请重试)。 */
+.composer .alert-slot{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:0 12px 4px;padding:7px 9px;border-radius:var(--a-radius-md);
+  background:var(--a-error-subtle);color:var(--a-error);font-size:var(--a-text-xs)}
+.composer .alert-slot button{flex:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:var(--a-weight-semibold)}
+.composer .notice-blocked{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;
+  margin:0 12px 6px;padding:8px 11px;
+  border-left:3px solid var(--a-warning);border-radius:var(--a-radius-md);
+  background:var(--a-warning-subtle)}
+.composer .notice-blocked .fact{font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.composer .notice-blocked .why{font-size:var(--a-text-xs);color:var(--a-text-secondary)}

@@ -50,6 +50,10 @@ export const ALPHA_PATHS = {
   /** web: 每轮对话结束后的存档上报(REQ-160 `#1324`)——`multipart/form-data`,一轮一次请求。
    *  线契约与错误码在 alpha-web `docs/contracts/chat-archive-upload.md`。 */
   chatArchiveTurns: "/api/chat-archive/turns",
+  /** web: 当前启用的违规关键词表(REQ-160 `#1353`)—— 同一个 `archive_access_token`,带 ETag。
+   *  桌面端据此在发送前尽力拦截;**留证的权威在服务端入库时的复判**,不在这里。
+   *  线契约:alpha-web `docs/contracts/chat-archive-upload.md` § Keyword list sync。 */
+  chatArchiveKeywords: "/api/chat-archive/keywords",
   /** web: billing portal(用量 + 流水账单页). */
   billing: "/billing",
   /** web: 钱包购买页 —— ?tab=recharge(钱包充值)| subscription(会员月卡). */

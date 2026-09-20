@@ -18,6 +18,7 @@ import { getAutomation, listAutomations, readAutomationState, saveAutomation, wr
 import { writeRunFiles } from "./alpha-workdir"
 import { saveVisibleOutputs } from "./alpha-user-workspace"
 import { getLogger } from "./logging"
+import { moderationBlocks, MODERATION_BLOCKED_REASON } from "./moderation-keywords"
 
 export interface AutomationServerInfo {
   url: string
@@ -257,6 +258,12 @@ async function executeTask(task: AutomationTask): Promise<AutomationRunRecord> {
   killer.unref()
 
   try {
+    // REQ-160 AC2(`#1353`):定时任务的指令同样是用户写的,同样要在发给引擎之前查一遍。
+    // 已批稿 §3「自动化」一行:**不产生任何界面元素** —— 这一刻没有人在屏幕前。它落进那次
+    // 运行的 `status.json`,与超时、引擎报错走同一条既有失败路径(下面的 catch),摘要用
+    // 与界面上同一句人话。查在 `session.create` 之前:拦下的这次不该留下一个空会话。
+    if (moderationBlocks(task.prompt))
+      throw new Error(`这条任务没有发出去:${MODERATION_BLOCKED_REASON}。修改任务内容后可以重新运行。`)
     const created = await client.session.create(
       { directory, title: `⏱ 自动化 · ${task.name}` } as never,
       { signal: controller.signal } as never,

@@ -653,6 +653,21 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   let disposed = false
   const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
+  // REQ-160 AC2(`#1353`):本机词表命中、因而没有发给引擎的那一段正文。
+  // 已批稿 `docs/design/2026-09-19-req160-send-blocked-notice/design.md` §3:
+  // 一改即消失、发送成功即消失、不计时、不自动淡出、不堆叠、发送键保持可用。
+  //
+  // **存的是正文而不是一个布尔位**,因为消失条件要靠推导而不是靠记得去清:
+  // ① 输入框一改 → onInput 就地清掉(否则把 A 改成 B 再改回 A,提示会自己冒出来);
+  // ② 发送成功 → 正文被清空,`blockedText() === text().trim()` 自然不成立(少写一处清理
+  //    就会留下一条对着空输入框说「这条消息没有发出去」的提示,那是在骗用户);
+  // ③ 原样再发 → 写进去的是同一个字符串,signal 相等不触发重渲染 ⇒ 提示不堆叠、不变化、
+  //    `role="alert"` 不重播。
+  const [blockedText, setBlockedText] = createSignal<string | undefined>(undefined)
+  const sendBlocked = () => {
+    const blocked = blockedText()
+    return blocked !== undefined && blocked === text().trim()
+  }
   // 提交发起时记录的已提交文本快照:区分「在途未编辑(=正在交付)」与「在途被改成新草稿」。
   let submittedText: string | undefined
   // REQ-085(#259):home 模式下,`startChat` 可能"session 建成但首条消息没投递成功"——原地
@@ -1475,6 +1490,23 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     submittedText = text() // 已提交文本快照(在途未编辑判据)
     setSending(true)
     try {
+      // REQ-160 AC2(`#1353`):发给引擎之前,先在本机对着已同步的违规关键词表查一遍。
+      //
+      // **这里是整个产品里有人在看的唯一发送入口**:首页的 `projects.startChat(...)`、会话页的
+      // `c.session.promptAsync(...)`、斜杠命令的 `c.session.command(...)`、时间线「编辑重发」
+      // (它只把正文回填进这个输入框,发送仍走这里)四条路都从这一行下面分出去。所以这一问
+      // 放在分叉**之前**,而不是逐个入口各查一遍 —— 将来新增第五条分支默认被罩住。
+      //
+      // 查的是 `body`,与服务端入库复判读的是同一段:mention 产生的是 `agent`/`file` part、
+      // 附件是字节,都不是 text part,而服务端 `partsText` 只取 text part
+      // (main/chat-archive-turn.ts:141)。
+      //
+      // 这不是安全边界:它跑在用户自己的机器上、可以被绕过,留证的权威在服务端。词表没同步
+      // 下来或读不到时 `check` 回 false —— 不拦也不提示(已批稿 §3「不出现」一行)。
+      if (await window.api.moderation.check(body)) {
+        setBlockedText(body)
+        return
+      }
       if (props.mode === "home") {
         // REQ-085(#259):目录不变才复用上一次的孤儿 session——换目录等于放弃它,老实重建。
         const reuseSessionID =
@@ -1694,6 +1726,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         value={text()}
         onInput={(e) => {
           setText(e.currentTarget.value)
+          // `#1353`:输入框一改,「这条消息没有发出去」就该消失 —— 用户已经在动手改了。
+          setBlockedText(undefined)
           auto.onInput()
         }}
         onKeyDown={onKey}
@@ -1730,6 +1764,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           <button type="button" onClick={retryCurrentModel}>
             {t("alpha.common.retry")}
           </button>
+        </div>
+      </Show>
+      {/* REQ-160 AC2(`#1353`)· 已批稿 2026-09-19-req160-send-blocked-notice/frame.html:
+          与上面三条同槽(文字区之下、工具栏之上),琥珀而不是红 —— 红在这条槽里已经有确定的
+          含义(系统这会儿不行、请重试),而这一条不是系统坏了,是这句话要改一下。
+          无图标(琥珀图标落在这块底色上浅色主题只有 2.81:1,低于非文本图形的 3:1)、无按钮、
+          无关闭叉:两句话已经把事情说完,而出路是回到上面那段文字里改,不是再点一次。 */}
+      <Show when={sendBlocked()}>
+        <div class="a-comp-send-blocked" role="alert" data-alpha-composer-blocked="true">
+          <span class="a-comp-send-blocked-fact">{t("alpha.composer.sendBlocked")}</span>
+          <span class="a-comp-send-blocked-why">{t("alpha.composer.sendBlockedWhy")}</span>
         </div>
       </Show>
       <div class="a-comp-bar">

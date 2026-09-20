@@ -63,6 +63,34 @@
   cursor: pointer;
 }
 
+/* ── REQ-160 AC2(`#1353`):发送被本机词表拦下时的提示 ──────────────────────
+   已批稿 docs/design/2026-09-19-req160-send-blocked-notice/frame.html 的 `.sb-notice`。
+   与上面三条同槽同边距,差别只有两处:琥珀左边框 + 琥珀底(不是红),以及没有按钮。
+   两句话按基线对齐(align-items:baseline),放不下时次句换到第二行,两句都不截断。
+   正文颜色在这块底色上实算:--a-text 15.61:1(深色 13.42:1)、--a-text-secondary
+   6.81:1(深色 5.46:1),都在 AA 之上;--a-text-tertiary 只有 3.61:1,所以次句用
+   secondary 而不是 tertiary。颜色不承载信息 —— 去掉颜色两句话照样完整。 */
+.a-comp-send-blocked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+  margin: 0 12px 6px;
+  padding: 8px 11px;
+  border-left: 3px solid var(--a-warning);
+  border-radius: var(--a-radius-md);
+  background: var(--a-warning-subtle);
+}
+.a-comp-send-blocked-fact {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-text);
+}
+.a-comp-send-blocked-why {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+}
+
 /* ── 附件 chips(REQ-078 T2:图片缩略 / PDF 图标 + 文件名 + 移除)── */
 .a-comp-atts {
   display: flex;

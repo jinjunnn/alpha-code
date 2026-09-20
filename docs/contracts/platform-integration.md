@@ -20,6 +20,7 @@ integration. Service wire formats remain owned by their producer repositories.
 | Authorization code, refresh/session rotation, endpoint discovery | `alpha-web`                      | `alpha-auth.ts`, `alpha-endpoints.ts`        |
 | Manifest-bound `upload_consent` issuance                         | `alpha-web`                      | main-process upload issuer client            |
 | Chat archive turn upload (retention/moderation)                  | `alpha-web`                      | `chat-archive-uploader.ts`                   |
+| Enabled moderation keyword list (desktop pre-send check)         | `alpha-web`                      | `moderation-keywords.ts`, `moderation-ipc.ts` |
 | Model gateway and model registry                                 | `alpha-platform`                 | injected `alpha` provider                    |
 | Cloud Jobs HTTP/SSE, artifacts, schedules, MCP facade            | `alpha-platform`                 | main-process clients and injected MCP server |
 | Account summary and billing transactions                         | `alpha-platform` account service | main-process account client                  |
@@ -244,6 +245,34 @@ inactive-plan payloads.
   are archived too;
   `billing_path` is derived by the server from `provider_id`. Upload failures
   are logged and never block the conversation.
+- **Moderation keyword list:** the same `archive_access_token` also reads `GET
+  /api/chat-archive/keywords` (REQ-160 AC2, `#1353`), an ETag-revalidated list
+  of the currently enabled keywords. Main holds it, refreshes it on a timer, and
+  answers one boolean over `alpha-moderation-check`; **the list itself never
+  reaches the renderer**, because the route is credentialed precisely so it does
+  not become a public oracle for composing a message that passes. Matching is
+  plain case-folded substring containment — deliberately not a pattern language,
+  so a keyword containing `%`, `_` or a regex metacharacter matches itself and
+  nothing else — and it must stay **term-for-term identical** to alpha-web's
+  `lib/moderation/keywords.ts`; the corpus that pins that equivalence is
+  `packages/ui-mac/src/shared/moderation-keywords.parity.json`, whose
+  expectations are hand-written literals rather than anything derived from
+  either implementation.
+
+  Two rules this repository must not drift on. **A 401 drops the cached list
+  while a 5xx keeps it**: the contract's own response table says an outage must
+  not be read as "the list is empty", whereas a dead credential means the list
+  we hold no longer belongs to this machine's current identity. And **a list we
+  could not read blocks nothing and says nothing** — fail-open, contrary to this
+  repository's usual default, because the desktop check is a courtesy and not a
+  boundary (it runs on the user's machine and can be bypassed there; the server
+  re-applies the same list at ingest and only that produces evidence). Refusing
+  to send on a check we never performed would stop real work on a judgement we
+  never made. The user-facing wording and the whole behaviour of the notice are
+  owner-approved design, frozen at
+  [`docs/design/2026-09-19-req160-send-blocked-notice/`](../design/2026-09-19-req160-send-blocked-notice/design.md)
+  and merged into
+  [`current/composer/design.html#send-blocked`](../design/current/composer/design.html#send-blocked).
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
   before renderer projection. Account summary remains outside this pinned
   contract until its producer publishes a schema and does not block the ledger

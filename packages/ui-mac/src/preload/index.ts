@@ -106,6 +106,12 @@ const api: ElectronAPI = {
     install: () => ipcRenderer.invoke("updater-install"),
   },
   consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
+  // REQ-160 AC2(`#1353`):发送前问 main「这句话要不要拦」。**词表不过这条线** —— 只回布尔值,
+  // 理由见 main/moderation-ipc.ts。IPC 本身失败(main 还没注册 / 通道坏了)一律当「不拦」:
+  // 已批设计 §3 明写「读不到时不拦也不提示」。
+  moderation: {
+    check: (text) => ipcRenderer.invoke("alpha-moderation-check", text).catch(() => false),
+  },
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),

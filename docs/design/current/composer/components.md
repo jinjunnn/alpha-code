@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-09-19
+last_reviewed: 2026-09-20
 review_after: 2027-03-19
 ---
 
@@ -21,8 +21,11 @@ review_after: 2027-03-19
 
 锚目前是分区级(`#anatomy` 等),组件级锚在增量并入活稿时铸造。
 
+视觉证据(双主题 × 宽窄 × 正反向,逐项对照已批帧):
+[`docs/verification/2026-09-20-1353-send-blocked-visuals/`](../../../verification/2026-09-20-1353-send-blocked-visuals/README.md)。
+
 ## 组件
 
 | 组件 | 锚 | 增量稿 | 设计定稿 | 实现票 | 落地 | 代码入口 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 发送被拦下时的输入框提示(提示槽第四个成员) | `#anatomy`(并入时铸 `#send-blocked`) | [`2026-09-19-req160-send-blocked-notice/`](../../2026-09-19-req160-send-blocked-notice/frame.html) | — | ac#1353 | — | 现状:提示槽本体是 `alpha-ui/alpha-composer.tsx:1710-1734` + `alpha-composer.css:44-66`(`.a-comp-model-alert`,今天三个成员);本增量未实现 | 设计中 |
+| 发送被拦下时的输入框提示(提示槽第四个成员) | [`#send-blocked`](design.html#send-blocked) | [`2026-09-19-req160-send-blocked-notice/`](../../2026-09-19-req160-send-blocked-notice/frame.html) | 2026-09-19 | ac#1353 | 2026-09-20 | `alpha-ui/alpha-composer.tsx` 的 `sendBlocked()` + `.a-comp-send-blocked`(`alpha-composer.css`);文案 `alpha.composer.sendBlocked` / `sendBlockedWhy`;判据钩子 `data-alpha-composer-blocked` | 已落地 |
