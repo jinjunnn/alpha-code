@@ -34,6 +34,9 @@ import type { EffectiveCatalog, ProviderKeyStatus } from "../src/shared/alpha-mo
 import type { AlphaProjectsApi } from "../src/renderer/sidebar/use-projects"
 import type { AlphaComposerRuntimeProps } from "../src/renderer/alpha-ui/alpha-composer"
 import type { ModelContract } from "../src/renderer/alpha-ui/model-contract"
+// `#1374`:共享 `window.api` 桩。它只 import 类型(运行期零依赖),所以静态 import 不会
+// 在 `mock.module` 之前把 solid-js 之类的东西拖进来。
+import { installPreloadStub } from "./preload-stub"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -289,27 +292,9 @@ const summary: AccountSummary = {
   usage: { todayTokens: 0, weekTokens: 0, tasksThisMonth: 0 },
   usageSeries: [],
 }
-Object.defineProperty(window, "api", {
-  configurable: true,
-  value: {
-    endpoints: async () => null,
-    openLink: () => {},
-    // REQ-160 AC2(`#1353`):composer 发送前会问 main「这句话要不要拦」。默认不拦 ——
-    // 本文件测的不是拦截;拦截的判据在 alpha-composer-model.cases.ts 的 `#1353` 一节。
-    moderation: { check: async () => false },
-    models: { catalog: async () => catalog },
-    auth: { getState: async () => loggedIn, subscribe: () => () => {}, start: async () => {} },
-    account: { summary: async () => summary },
-    providers: {
-      keyStatus: async () => keys,
-      add: async () => ({ ok: true as const }),
-      test: async () => ({ ok: true as const, ms: 1 }),
-      setKey: async () => ({ ok: true as const }),
-      remove: async () => ({ ok: true as const }),
-      removeKey: async () => ({ ok: true as const }),
-    },
-  },
-})
+// `#1374`:`window.api` 的**形状**归共享桩(preload 新增能力时只改那一处,且有 typecheck
+// 判据点名漏补的键);本文件只交自己的数据夹具。
+installPreloadStub({ catalog, account: summary, providerKeys: keys, auth: loggedIn })
 
 const readyContract = (): ModelContract => ({
   list: async () => platformModels,

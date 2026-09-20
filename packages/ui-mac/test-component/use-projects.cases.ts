@@ -22,6 +22,9 @@ import type { AlphaProjectsApi, ServerInfo } from "../src/renderer/sidebar/use-p
 import type { AlphaComposerRuntimeProps } from "../src/renderer/alpha-ui/alpha-composer"
 import type { ModelContract } from "../src/renderer/alpha-ui/model-contract"
 import { dict as zh } from "../src/renderer/i18n/zh"
+// `#1374`:共享 `window.api` 桩(只 import 类型,运行期零依赖 ⇒ 静态 import 不会抢在
+// 下面的 `mock.module` 之前拖进 solid-js)。
+import { installPreloadStub } from "./preload-stub"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -107,13 +110,14 @@ let ensureCalls = 0
 /** 默认目录**查询**这条 IPC 的回复;Error 实例 = 查询桥本身炸了(与供给桥炸了是两回事)。 */
 let defaultDirReply: unknown = DEFAULT_WORKSPACE_DIR
 
-Object.defineProperty(window, "api", {
-  configurable: true,
-  value: {
-    endpoints: async () => null,
-    // REQ-160 AC2(`#1353`):composer 发送前会问 main「这句话要不要拦」。默认不拦 ——
-    // 本文件测的不是拦截;拦截的判据在 alpha-composer-model.cases.ts 的 `#1353` 一节。
-    moderation: { check: async () => false },
+// `#1374`:`window.api` 的**形状**归共享桩;本文件只交自己的数据夹具与三个独有的键。
+// `sidecarGeneration` 刻意只在这里注入 —— runtime-recovery.ts:29 用
+// `Boolean(window.api?.sidecarGeneration)` 判「有没有恢复能力」,把它塞进共享桩会改掉
+// 另外三个文件的分支。
+installPreloadStub(
+  { catalog, account: summary, providerKeys: keys, auth: loggedIn },
+  {},
+  {
     workspaceDefaultDir: async () => {
       if (defaultDirReply instanceof Error) throw defaultDirReply
       return defaultDirReply
@@ -123,18 +127,6 @@ Object.defineProperty(window, "api", {
       if (ensureReply instanceof Error) throw ensureReply
       return ensureReply
     },
-    openLink: () => {},
-    models: { catalog: async () => catalog },
-    auth: { getState: async () => loggedIn, subscribe: () => () => {}, start: async () => {} },
-    account: { summary: async () => summary },
-    providers: {
-      keyStatus: async () => keys,
-      add: async () => ({ ok: true as const }),
-      test: async () => ({ ok: true as const, ms: 1 }),
-      setKey: async () => ({ ok: true as const }),
-      remove: async () => ({ ok: true as const }),
-      removeKey: async () => ({ ok: true as const }),
-    },
     sidecarGeneration: {
       getState: async () => currentState,
       subscribe: (cb: (state: SidecarGenerationState) => void) => {
@@ -143,7 +135,7 @@ Object.defineProperty(window, "api", {
       },
     },
   },
-})
+)
 
 // —— 引擎 stub:/global/health 按开关回答;#692 用例按需启用完整 project/session/SSE 路由 ——
 let healthReachable = false
