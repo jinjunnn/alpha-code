@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>发送被拦下时的输入框提示 · 组件增量</title>
+<link rel="stylesheet" href="../current/composer/design.css" />
+<style>
+/* 本稿自有类一律 sb- 前缀;composer 外壳、chips、发送键与 --a-* token 全部来自链接的 current/composer/design.css。 */
+body{background:var(--a-bg-subtle);padding:0 0 72px}
+.sb-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 92%,transparent);backdrop-filter:blur(14px)}
+.sb-bar b{font-size:var(--a-text-sm)}
+.sb-bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.sb-grow{flex:1}
+.sb-wrap{max-width:980px;margin:0 auto;padding:28px 24px 0}
+.sb-intro h1{margin:0 0 8px;font-size:24px}
+.sb-intro p{margin:0;color:var(--a-text-secondary);line-height:1.65;max-width:70ch}
+.sb-lbl{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin:26px 0 9px;display:flex;align-items:center;gap:8px}
+.sb-lbl::after{content:"";flex:1;height:1px;background:var(--a-border-faint)}
+.sb-stage{padding:22px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas);box-shadow:var(--a-shadow-xs)}
+.sb-cols{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.sb-cols>div{flex:1;min-width:300px}
+.sb-cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:0 0 9px}
+.sb-narrow{max-width:360px}
+
+/* ── 本增量:发送被拦下时的输入框提示 ───────────────────────────────── */
+.sb-notice{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;
+  margin:0 12px 6px;padding:8px 11px;
+  border-left:3px solid var(--a-warning);border-radius:var(--a-radius-md);
+  background:var(--a-warning-subtle)}
+.sb-notice .fact{font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.sb-notice .why{font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+
+/* 既有的三条同位提示(对照用,现行产品形态) */
+.sb-alert{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:0 12px 4px;padding:7px 9px;border-radius:var(--a-radius-md);
+  background:var(--a-error-subtle);color:var(--a-error);font-size:var(--a-text-xs)}
+.sb-alert button{flex:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:var(--a-weight-semibold)}
+
+.sb-spec{width:100%;border-collapse:collapse;margin-top:16px;font-size:var(--a-text-sm)}
+.sb-spec th{background:var(--a-bg-subtle);text-align:left;font-size:var(--a-text-2xs);text-transform:uppercase;letter-spacing:var(--a-tracking-wide);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);padding:9px 12px}
+.sb-spec td{padding:10px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top}
+.sb-spec td:first-child{color:var(--a-text);white-space:nowrap}
+.sb-copy td:nth-child(2){color:var(--a-text)}
+.sb-note{margin:14px 0 0;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.6}
+.sb-note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+</style>
+</head>
+<body>
+
+<div class="sb-bar">
+  <b>输入框 · 发送被拦下时的提示</b><span>组件增量 · 与既有输入框提示条同位</span>
+  <div class="sb-grow"></div>
+  <div class="seg" id="themeSeg"><button data-theme="light">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="sb-wrap">
+  <div class="sb-intro">
+    <h1>这句话没有发出去 —— 说在它没发出去的地方</h1>
+    <p>按下回车,消息没有送到模型那里。今天这种情况只有一个闪一下就消失的提示,而用户要做的事恰恰需要时间:回到自己刚写的那句话上改一改。所以这条提示留在输入框里、贴着那段还没发出去的文字,直到你动手改它。</p>
+  </div>
+
+  <div class="sb-lbl">常态 · 对话页</div>
+  <div class="sb-stage">
+    <div class="composer focus">
+      <div class="input">帮我把这段客服回复改得更直接一点,现在读起来太绕了。</div>
+      <div class="sb-notice" role="alert">
+        <span class="fact">这条消息没有发出去</span>
+        <span class="why">没有通过内容安全审核。修改后可以重新发送。</span>
+      </div>
+      <div class="toolbar">
+        <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="chip perm" data-mode="ask"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="grow"></div>
+        <button class="chip usage"><span class="ring"></span>38%</button>
+        <button class="chip model"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sb-lbl">同一个输入框,首页也一样</div>
+  <div class="sb-stage">
+    <div class="composer">
+      <div class="input">帮我把这段客服回复改得更直接一点,现在读起来太绕了。</div>
+      <div class="sb-notice" role="alert">
+        <span class="fact">这条消息没有发出去</span>
+        <span class="why">没有通过内容安全审核。修改后可以重新发送。</span>
+      </div>
+      <div class="toolbar">
+        <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="chip perm" data-mode="full"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="grow"></div>
+        <button class="chip model"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sb-lbl">同位对照:这一条与既有三条提示的关系</div>
+  <div class="sb-cols">
+    <div>
+      <p class="sb-cap">既有三条 —— 都在说「系统这会儿不行」,都带重试</p>
+      <div class="sb-stage">
+        <div class="composer">
+          <div class="input empty">问点什么…</div>
+          <div class="sb-alert"><span>账户、KEY 或模型目录读取失败;当前不会提交。</span><button>重试</button></div>
+          <div class="sb-alert"><span>正在同步…</span></div>
+          <div class="sb-alert"><span>「Opus 4.8」现在发不出去 · 本次引擎启动没有加载这个模型。</span><button>重试</button></div>
+          <div class="toolbar">
+            <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+            <div class="grow"></div>
+            <button class="send"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="sb-cap">新增这一条 —— 说的是「你写的这句要改一下」</p>
+      <div class="sb-stage">
+        <div class="composer">
+          <div class="input">帮我把这段客服回复改得更直接一点。</div>
+          <div class="sb-notice" role="alert">
+            <span class="fact">这条消息没有发出去</span>
+            <span class="why">没有通过内容安全审核。修改后可以重新发送。</span>
+          </div>
+          <div class="toolbar">
+            <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+            <div class="grow"></div>
+            <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sb-lbl">右栏展开、输入框被挤窄时</div>
+  <div class="sb-stage sb-narrow">
+    <div class="composer">
+      <div class="input">帮我把这段客服回复改得更直接一点。</div>
+      <div class="sb-notice" role="alert">
+        <span class="fact">这条消息没有发出去</span>
+        <span class="why">没有通过内容安全审核。修改后可以重新发送。</span>
+      </div>
+      <div class="toolbar">
+        <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <div class="grow"></div>
+        <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sb-lbl">文案</div>
+  <table class="sb-spec sb-copy">
+    <tr><th>槽位</th><th>中文</th><th>English</th></tr>
+    <tr><td>事实句</td><td>这条消息没有发出去</td><td>This message wasn’t sent</td></tr>
+    <tr><td>说明与出路</td><td>没有通过内容安全审核。修改后可以重新发送。</td><td>It didn’t pass content safety review. Edit it and send again.</td></tr>
+  </table>
+
+  <div class="sb-lbl">规则</div>
+  <table class="sb-spec">
+    <tr><th>项</th><th>规则</th></tr>
+    <tr><td>位置</td><td>输入框内部,那段还没发出去的文字之下、工具栏之上 —— 与既有三条提示同一条槽。首页与对话页是同一个输入框,因此同一条提示。</td></tr>
+    <tr><td>形态</td><td>左侧一道琥珀细边 + 淡琥珀底 + 两句文字。没有图标、没有按钮、没有关闭叉。</td></tr>
+    <tr><td>颜色</td><td>琥珀,不是红。红在这个输入框里已经有确定含义:系统这会儿不行、请重试。这一条不是系统坏了,是这句话要改一下。</td></tr>
+    <tr><td>出现</td><td>按下发送、而这句话被拦住的那一刻。消息不发给模型,输入框里的文字与附件原样留着。</td></tr>
+    <tr><td>消失</td><td>输入框里的内容一改就消失,发送成功也消失。不计时、不自动淡出、没有关闭按钮 —— 那句话还在框里,这条提示就还成立。</td></tr>
+    <tr><td>再次发送</td><td>发送键保持可用。原样再发一次仍被拦下,提示不堆叠、不变化。</td></tr>
+    <tr><td>不说什么</td><td>不出现「违规」「禁止」这类给人定性的词;不说是哪个词、哪一类命中 —— 那是审核侧的信息,说出来等于教人绕过。</td></tr>
+    <tr><td>键盘</td><td>不新增任何可聚焦元素,Tab 次序不变。被拦下后焦点回到输入框,直接可以改。</td></tr>
+    <tr><td>读屏</td><td>提示条 <span class="mono">role="alert"</span>,出现即播报两句全文。颜色不承载任何信息,去掉颜色两句话照样完整。</td></tr>
+    <tr><td>窄宽</td><td>横向放不下时次句换行到第二行,两句都不截断、不进悬停。</td></tr>
+    <tr><td>定时任务</td><td>定时跑的自动化任务命中时不产生任何界面元素 —— 那一刻没有人在看。它按既有的失败形态记进那次运行的记录。</td></tr>
+  </table>
+
+  <div class="sb-note"><b>为什么不是那种一闪而过的提示</b>(帧外):输入框现有的发送失败走的是右上角的浮层提示,几秒后自己消失。那对「重试一下就好」是合适的;而这一条要求用户回到自己写的那句话上动手改,提示必须在他改的时候还在眼前。同一个输入框里已经有一条常驻提示条,本稿只是给它加一个成员,不新发明一种形态。</div>
+  <div class="sb-note"><b>这道拦截拦不住铁了心的人</b>(帧外):它跑在用户自己的电脑上,懂技术的人可以绕过。产品不因此对用户多说什么 —— 界面上写「你可以绕过」既无用又难看。真正算数的复核与留证在服务器那一侧,对话上传时会再做一次;桌面端这一层的意义是让绝大多数无心撞上的人当场就知道、当场就能改,而不是事后才发现。<b>这句话属于设计说明,不属于界面</b>。</div>
+</div>
+
+<script>
+(function(){
+  var seg=document.getElementById('themeSeg');
+  var mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function mark(t){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===t)});}
+  document.documentElement.setAttribute('data-theme',mq.matches?'dark':'light');
+  mark(mq.matches?'dark':'light');
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){document.documentElement.setAttribute('data-theme',b.dataset.theme);mark(b.dataset.theme);};});
+})();
+</script>
+</body>
+</html>
