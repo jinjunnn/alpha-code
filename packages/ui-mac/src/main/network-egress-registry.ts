@@ -1,9 +1,17 @@
-// REQ-137 (`#1336`) —— 授权目的地注册表:**唯一权威**。
+// REQ-137 (`#1336`) —— 授权目的地注册表:**静态半场**(应用自己总会去连的那些地址)。
 //
 // 引擎 sidecar 那棵进程树的出网只有一条路:loopback 上的策略代理(network-egress-proxy.ts)。代理对每一条
-// CONNECT 只问一个问题 ——「这个 `host:port` 在不在本表里」—— 不在就 403 并留下结构化记录。它**只读本表**;
-// 本仓不存在第二张目的地清单(散文、JSON、env 都不算),要放行一个新目的地只能改这里,并在 PR 里
-// 带上它的出处坐标。这是 `#1073` AC2 的形状:单一权威 + 咽喉点。
+// CONNECT 只问一个问题 ——「这个 `host:port` 授权了吗」—— 没授权就 403 并留下结构化记录。
+//
+// ── 授权有两个半场,合起来才是权威(`#1379` 起)────────────────────────────────────────
+//   **静态半场 = 本表**。常量、冻结、评审逐行可读。要放行一个「应用自己会去连」的新目的地,只能改这里,
+//   并在 PR 里带上它的出处坐标。本表之外不存在第二张**手写**清单(散文、JSON、env 都不算)。
+//   **动态半场 = network-egress-derived.ts**。BYOK 直连的目的地由**用户配置了谁**决定,没有静态值可登记
+//   (见下方「刻意不在表里的」)。它不是第二张手写清单,而是从**引擎真正会去连的那个值**
+//   (有效配置里 `provider.<id>.options.baseURL`,回退 `api`)派生出来的,每次 fork 前整份替换。
+//   代理问的是两者的并集(`isEgressAuthorizedForSidecar`);本文件的 `isEgressAuthorized` 只答静态半场。
+// 这是 `#1073` AC2 的形状:单一权威 + 咽喉点 —— 权威从「一张表」变成「一张表 + 一条派生规则」,
+// 但仍然只有一处回答「这个目的地授权了吗」,而且两个半场用的是同一套匹配语义与同一个 host 形状判据。
 //
 // ── 行的来源 ────────────────────────────────────────────────────────────────────────
 // 初值照勘破 `docs/architecture/2026-08-25-network-egress-seam.md` §2.2 那份清单(类别 × 出处),逐条
@@ -25,7 +33,10 @@
 //
 // ── 刻意不在表里的 ──────────────────────────────────────────────────────────────────
 //   · BYOK provider 的 baseURL、用户配置的远程 MCP URL:§2.2 列为「动态」类别,没有静态值可登记。
-//     本轮注册表是静态的;它们经代理会被 403(可观察)。让注册表吃运行时来源是下一张票的事,不在这里预留抽象。
+//     `#1336`/`#1337` 当时只做静态半场,于是它们经代理一律 403 —— `#1379` 实测这不是「可观察的空缺」,
+//     而是**自带 Key 直连整类不可用**(0.1.13 起九天,日志见 network-egress-derived.ts 抬头)。
+//     BYOK 的公网 baseURL 自 `#1379` 起由**动态半场**放行(network-egress-derived.ts,从有效配置派生,
+//     每代整份替换),**仍然不进本表**:本表只装常量。用户配置的远程 MCP URL 尚未覆盖(另票)。
 //   · ssh(`*:22`):§2.2 写「用户仓可能」,`*` 与按 host 授权互斥;老勘破 §6 已列为「不覆盖(响亮失败)」。
 //
 // ── 匹配语义(fail-closed)────────────────────────────────────────────────────────────
@@ -46,6 +57,13 @@ export type EgressDestination = {
 }
 
 const HOST_SHAPE = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$|^(?:\d{1,3}\.){3}\d{1,3}$/
+
+/**
+ * 「这个字符串长得像一个可登记的 host 吗」—— 小写 DNS 名或 IPv4 字面量,无 scheme / path / 通配 / 尾点。
+ * 导出是为了让**动态半场**(network-egress-derived.ts)过同一个判据,而不是抄一份正则:
+ * 两个半场的 host 形状必须逐字同源,否则「派生出来的东西静态表登记不下」这种分叉没有任何闸会红。
+ */
+export const isEgressHostShape = (host: string): boolean => HOST_SHAPE.test(host)
 
 function fromEndpoint(url: string, category: string, source: string): EgressDestination {
   const u = new URL(url)
@@ -94,7 +112,11 @@ const KEYS: ReadonlySet<string> = (() => {
   return keys
 })()
 
-/** 代理的唯一裁决输入:`host:port` 是否在注册表里。任何别的地方不得再回答这个问题。 */
+/**
+ * 静态半场的裁决:`host:port` 是否在本表里。**不含**动态半场 —— 代理用的是
+ * `isEgressAuthorizedForSidecar`(network-egress-derived.ts)那个并集。
+ * 除这两处之外,任何别的地方不得再回答「这个目的地授权了吗」。
+ */
 export function isEgressAuthorized(host: string, port: number): boolean {
   if (typeof host !== "string" || host.length === 0) return false
   if (!Number.isInteger(port) || port < 1 || port > 65535) return false
