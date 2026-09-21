@@ -247,9 +247,10 @@ inactive-plan payloads.
   are logged and never block the conversation.
 - **Moderation keyword list:** the same `archive_access_token` also reads `GET
   /api/chat-archive/keywords` (REQ-160 AC2, `#1353`), an ETag-revalidated list
-  of the currently enabled keywords. Main holds it, refreshes it on a timer, and
-  answers one boolean over `alpha-moderation-check`; **the list itself never
-  reaches the renderer**, because the route is credentialed precisely so it does
+  of the currently enabled keywords. Main holds it, refreshes it on a timer
+  **and again whenever the sign-in credential changes**, and answers one boolean
+  over `alpha-moderation-check`; **the list itself never reaches the
+  renderer**, because the route is credentialed precisely so it does
   not become a public oracle for composing a message that passes. Matching is
   plain case-folded substring containment — deliberately not a pattern language,
   so a keyword containing `%`, `_` or a regex metacharacter matches itself and
@@ -268,8 +269,16 @@ inactive-plan payloads.
   boundary (it runs on the user's machine and can be bypassed there; the server
   re-applies the same list at ingest and only that produces evidence). Refusing
   to send on a check we never performed would stop real work on a judgement we
-  never made. The user-facing wording and the whole behaviour of the notice are
-  owner-approved design, frozen at
+  never made. Fail-open is not the same as failing quietly, though (`#1387`):
+  every path that ends in "we could not read the list" writes one log line
+  naming the reason — including the two that used to return in silence, an
+  absent credential and a 401 — folded so a reason that persists is said once,
+  and a sync that came back empty-handed is retried within a minute instead of
+  at the next quarter-hour. A cold start reaches for the list *before* the
+  renewal scheduler has swapped out the expired persisted token, so without the
+  credential-change trigger the desktop check stayed dark for up to fifteen
+  minutes with nothing in the log to say so. The user-facing wording and the
+  whole behaviour of the notice are owner-approved design, frozen at
   [`docs/design/2026-09-19-req160-send-blocked-notice/`](../design/2026-09-19-req160-send-blocked-notice/design.md)
   and merged into
   [`current/composer/design.html#send-blocked`](../design/current/composer/design.html#send-blocked).

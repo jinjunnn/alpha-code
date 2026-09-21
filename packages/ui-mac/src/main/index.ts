@@ -150,7 +150,7 @@ import {
 } from "./alpha-auth"
 import { openChatArchiveCursor } from "./chat-archive-cursor"
 import { createChatArchiveUploader } from "./chat-archive-uploader"
-import { initModerationKeywords } from "./moderation-keywords"
+import { initModerationKeywords, notifyModerationAuthChanged } from "./moderation-keywords"
 import { registerModerationIpcHandlers } from "./moderation-ipc"
 import { errorOutcome, initStartupTimeline, markStartupTimeline } from "./startup-timeline"
 import {
@@ -723,7 +723,14 @@ const main = Effect.gen(function* () {
     // #600 M1:返回换血 Promise —— refreshTokens 等它落定后才回报恢复,account 401 路径
     // 因此不会在 sidecar 仍握旧 token 时就把平台当成已恢复。
     onRenewed: (result) => tokenRotation.accept(result, "renewal"),
-    onChanged: () => authScheduler?.rearm("auth-change"),
+    onChanged: () => {
+      authScheduler?.rearm("auth-change")
+      // `#1387`:违规词表只在启动同步一次 + 每 15 分钟一次,而冷启动那一次常常跑在令牌换好
+      // **之前**的零点几秒里(实测 0.4 秒),`getArchiveAccessToken()` 对过期令牌返回 undefined
+      // ⇒ 静默放弃 ⇒ 此后最长一刻钟发送前的拦截是空的。令牌换好了走的正是这个回调。
+      // 未初始化 ⇒ no-op;在途的同步会合流,所以每次 publish 都调是安全的,也不会打日志。
+      notifyModerationAuthChanged()
+    },
   })
   // Windows/Linux cold start: the OS launches the FIRST process with the link on its command
   // line. That process wins the single-instance lock, so "second-instance" never fires, and there
