@@ -37,7 +37,7 @@ review_after: 2027-01-16
 | 助手 Markdown · 脚注 · 流式 · 中断 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-markdown.tsx` | 未登记(历史) |
 | 推理 / 思考块(折叠 + 进行中) | `#ai` | `2026-06-28-timeline-overhaul/` | — | ac#863 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
 | 自动重试卡 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` · `cards/tool-cards.tsx` | 未登记(历史) |
-| 回合级错误卡(限流 / 接口报错 / 上下文超限) | `#ai` | — | 2026-07-23 | ac#590 | 2026-07-26 | `cards/tool-cards.tsx` | 已实现 |
+| 回合级错误卡(限流 / 接口报错 / 上下文超限 / **被本机出网策略拦下**) | `#ai` | — | 2026-07-23 · 2026-09-21(第四种场景并入活稿,卡形态未变) | ac#590 · ac#1382 | 2026-07-26(ac#590)· —(ac#1382,PR 在途) | `cards/tool-cards.tsx`(`TurnErrorCard`)· 归因 `session-timeline/timeline-model.ts`(`turnErrorOf`)· 拒绝正文的线契约 `shared/egress-denial.ts` | 已实现 |
 | 助手侧截图 / 图片 / 媒体预览行 | `#ai` | — | 2026-07-24 | — | — | — | 未登记(历史) |
 | 通用工具卡四态(运行 / 完成 / 错误 / 待批) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | 各工具类型卡(read / grep / bash / edit / MCP …) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` | 未登记(历史) |

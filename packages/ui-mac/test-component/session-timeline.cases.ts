@@ -1880,6 +1880,86 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(retry.textContent).toContain("gateway 429")
   })
 
+  // `#1382` —— 最后一跳:归因真的被**渲染**出来。断源码文本不算(组件还在但渲染出空节点照样通过),
+  // 所以两条用例都对真 DOM 断言,且第二条是同一张卡的控制臂:非围栏的失败一个字都不许变。
+  function errorRowFor(message: string, responseBody?: string) {
+    return model.projectTimelineRows({
+      messages: [
+        { id: "msg_u1", sessionID: "ses_1", role: "user", time: { created: 1000 }, agent: "build", model: { providerID: "deepseek", modelID: "deepseek-chat" } },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: 10 },
+          parentID: "msg_u1",
+          modelID: "deepseek-chat",
+          providerID: "deepseek",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          error: { name: "APIError", data: responseBody === undefined ? { message } : { message, responseBody } },
+        },
+      ] as never,
+      partsOf: (messageID: string) =>
+        (messageID === "msg_u1"
+          ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" }]
+          : []) as never,
+      status: "idle",
+    })
+  }
+
+  test("回合级错误卡:被本机出网策略拒绝时,卡上说得出是这台电脑拦的并带上被拒地址", async () => {
+    const host = mount()
+    // 实测原文(真代理 + bun fetch + @ai-sdk/openai):上游把状态短语接在拒绝正文前面。
+    runtime.setTimelineRows(
+      errorRowFor(
+        "Forbidden: alpha egress policy: api.deepseek.com:443 denied (reason=unregistered) — blocked by this app's local egress policy — the destination is neither a registered app endpoint (packages/ui-mac/src/main/network-egress-registry.ts) nor one of the built-in model providers this machine holds a key for",
+      ),
+    )
+    await flush()
+
+    const err = host.querySelector("[data-alpha-timeline-row='turn-error']")!
+    const text = err.textContent ?? ""
+    expect(text).toContain("这台电脑上的网络策略拦下了这次请求")
+    expect(text).toContain("api.deepseek.com:443")
+    // 被换掉的正是那串读不懂的英文工程话 —— 它不该再出现在用户眼前。
+    expect(text).not.toContain("alpha egress policy:")
+    expect(text).not.toContain("reason=unregistered")
+    // 卡的形态不变(已批帧 2026-07-23):固定标题 + mono 错误码 + 无动作按钮。
+    expect(text).toContain("这轮回复没有完成")
+    expect(err.querySelector(".a-turn-err-code")!.textContent).toBe("APIError")
+    expect(err.querySelector("button")).toBeNull()
+
+    // responseBody 那一半单独成立:message 被上游换成别的措辞时归因不能跟着丢。
+    runtime.setTimelineRows(
+      errorRowFor("Forbidden", "alpha egress policy: [::1]:11434 denied (reason=unregistered) — blocked by this app's local egress policy\n"),
+    )
+    await flush()
+    expect(host.querySelector("[data-alpha-timeline-row='turn-error']")!.textContent).toContain("[::1]:11434")
+  })
+
+  test("回合级错误卡控制臂:不是围栏拒绝的失败,卡上一个字都不变(含带同一前缀的 dial-failed)", async () => {
+    const host = mount()
+    for (const message of [
+      "Failed after 3 attempts. Last error: Cannot connect to API: Unable to connect. Is the computer able to access the url?",
+      "Provider response headers timed out after 60000ms",
+      // 围栏自己写的,但 reason 是 dial-failed:登记在案、真的连不上。说成「策略拦的」
+      // 会把人引去查放行名单,而真因是那台服务器不通。
+      "alpha egress policy: api.deepseek.com:443 denied (reason=dial-failed) — registered destination could not be reached (ETIMEDOUT)",
+    ]) {
+      runtime.setTimelineRows(errorRowFor(message))
+      await flush()
+      const text = host.querySelector("[data-alpha-timeline-row='turn-error']")!.textContent ?? ""
+      expect({ message, shown: text.includes(message) }).toEqual({ message, shown: true })
+      expect({ message, misattributed: text.includes("这台电脑上的网络策略拦下了这次请求") }).toEqual({
+        message,
+        misattributed: false,
+      })
+    }
+  })
+
   test("媒体预览行:data:image 内联缩略,点击发 focusArtifact intent;intent 缺席降级纯展示", async () => {
     const host = mount()
     runtime.setTimelineIntentsEnabled(true)

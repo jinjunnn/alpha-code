@@ -1494,6 +1494,8 @@ export const dict = {
   "alpha.timeline.openSubtask": "Open subsession",
   "alpha.timeline.skillLoaded": "Loaded",
   "alpha.timeline.turnErrorTitle": "This reply didn't finish",
+  "alpha.timeline.turnErrorEgressBlocked":
+    "This computer's own network policy blocked the request — {{authority}} is not on the list of destinations this app is allowed to reach. The model service and your key are not at fault, and sending again will hit the same block.",
   "alpha.timeline.retrying": "Retrying automatically (attempt {{attempt}})…",
   "alpha.timeline.artifactsLabel": "Artifacts from this turn",
   "alpha.timeline.writeLines": "{{count}} lines total",
