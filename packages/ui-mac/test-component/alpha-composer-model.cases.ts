@@ -20,6 +20,9 @@ import { readConfiguredProviderKeys } from "../src/main/ext-config"
 import { alphaJsoncPath } from "../src/main/engine-config-truth"
 import { dict as zh } from "../src/renderer/i18n/zh"
 import { dict as enDict } from "../src/renderer/i18n/en"
+// `#1374`:共享 `window.api` 桩。它只 import 类型,运行期零依赖 —— 与上面两份 dict 同理,
+// 静态 import 不会把 solid-js 拖到 `mock.module` 之前。
+import { installPreloadStub } from "./preload-stub"
 // ⚠️ `../src/renderer/i18n`(index)**不能**静态 import:它在模块求值期就 import 了 "solid-js",
 // 而 ESM 静态 import 早于下面的 `mock.module("solid-js", …)` —— 于是整个文件拿到 Solid 的
 // **server** 构建,45 条用例一起挂在 `getNextContextId cannot be used under non-hydrating context`。
@@ -172,33 +175,25 @@ type ApiFixture = {
   moderation?: (text: string) => Promise<boolean>
 }
 
+// `#1374`:`window.api` 的**形状**归共享桩(`./preload-stub`);本文件只留自己的数据夹具与
+// 这层按用例逐条改行为的 `ApiFixture`。
 function installApi(fixture: ApiFixture = {}) {
-  Object.defineProperty(window, "api", {
-    configurable: true,
-    value: {
-      endpoints: async () => null,
-      openLink: () => {},
-      moderation: { check: fixture.moderation ?? (async () => false) },
-      models: { catalog: fixture.catalog ?? (async () => catalog) },
-      auth: {
-        getState: fixture.auth ?? (async () => loggedIn),
-        subscribe: (listener) => {
-          fixture.onAuthSubscribe?.(listener)
-          return () => {}
-        },
-        start: async () => fixture.onLogin?.(),
+  installPreloadStub(
+    { catalog, account: summary, providerKeys: keys, auth: loggedIn },
+    {
+      catalog: fixture.catalog,
+      authGetState: fixture.auth,
+      authSubscribe: (listener) => {
+        fixture.onAuthSubscribe?.(listener)
+        return () => {}
       },
-      account: { summary: fixture.account ?? (async () => summary) },
-      providers: {
-        keyStatus: fixture.keyStatus ?? (async () => keys),
-        add: fixture.add ?? (async () => ({ ok: true as const })),
-        test: async () => ({ ok: true as const, ms: 1 }),
-        setKey: async () => ({ ok: true as const }),
-        remove: async () => ({ ok: true as const }),
-        removeKey: async () => ({ ok: true as const }),
-      },
+      authStart: async () => fixture.onLogin?.(),
+      accountSummary: fixture.account,
+      keyStatus: fixture.keyStatus,
+      providerAdd: fixture.add,
+      moderationCheck: fixture.moderation,
     },
-  })
+  )
 }
 
 function mount(view: () => HTMLElement) {

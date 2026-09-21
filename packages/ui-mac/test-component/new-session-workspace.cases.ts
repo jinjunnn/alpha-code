@@ -19,6 +19,8 @@ import type { AlphaProject, AlphaProjectsApi } from "../src/renderer/sidebar/use
 import type { ComposerAttachment } from "../src/renderer/alpha-ui/composer-attachments-core"
 import type { MentionPart } from "../src/renderer/alpha-ui/composer-autocomplete-core"
 import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../src/shared/alpha-config"
+// `#1374`:共享 `window.api` 桩(只 import 类型,运行期零依赖)。
+import { installPreloadStub } from "./preload-stub"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -276,29 +278,30 @@ let pickedDirectory: string | undefined
 const pickerCalls: number[] = []
 /** 默认对话目录的解析可控:undefined = 立即返回;否则返回一个测试自己 resolve 的 promise。 */
 let defaultWorkspaceGate: { promise: Promise<string>; resolve: (dir: string) => void } | undefined
+// `#1374`:`window.api` 的**形状**归共享桩;本文件只交自己的数据夹具与三个独有的键
+// (目录选择器与默认目录的返回值**就是**本文件的判据本体)。
+// 顺带删掉了旧桩里的 `config: { health, subscribe }` —— preload 真面上没有这个键
+// (`keyof ElectronAPI` 里没有),全仓也没有任何 `api.config` 的读者:它是一份只对自己
+// 成立的假面。
 function installApi() {
-  Object.defineProperty(window, "api", {
-    configurable: true,
-    value: {
-      endpoints: async () => null,
-      openLink: () => {},
+  installPreloadStub(
+    {
+      catalog,
+      account: accountSummary,
+      providerKeys,
+      auth: { status: "logged-in", mode: "platform" },
+    },
+    {},
+    {
       openPath: () => {},
-      // REQ-160 AC2(`#1353`):composer 发送前会问 main「这句话要不要拦」。默认不拦 ——
-      // 本文件测的不是拦截;拦截的判据在 alpha-composer-model.cases.ts 的 `#1353` 一节。
-      moderation: { check: async () => false },
       workspaceDefaultDir: () => defaultWorkspaceGate?.promise ?? Promise.resolve(DEFAULT_WORKSPACE),
       openDirectoryPicker: async () => {
         pickerCalls.push(1)
         return pickedDirectory
       },
-      models: { catalog: async () => catalog },
-      auth: { getState: async () => ({ status: "logged-in", mode: "platform" }), subscribe: () => () => {}, start: async () => {} },
-      account: { summary: async () => accountSummary },
-      providers: { keyStatus: async () => providerKeys },
-      config: { health: async () => ({ broken: false }), subscribe: () => () => {} },
       contracts: { health: async () => null, subscribe: () => () => {} },
     },
-  })
+  )
 }
 
 const disposers: Array<() => void> = []
