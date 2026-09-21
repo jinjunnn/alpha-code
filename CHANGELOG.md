@@ -6,7 +6,7 @@
 > 写入时机：用户可见实现 PR 写入 `[Unreleased]`；实际发布时移动到日期和
 > 版本标题。具体流程见 [Alpha documentation SOP](https://github.com/jinjunnn/alpha-work/blob/main/governance/documentation-sop.md)。
 
-## [Unreleased]
+## [0.1.15] - 2026-09-21
 
 ### Fixed
 
