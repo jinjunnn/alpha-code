@@ -93,7 +93,9 @@ export const EGRESS_REGISTRY: readonly EgressDestination[] = Object.freeze([
   //   (主 session 实测:围栏下连 127.0.0.1:11434 = EPERM,连放行端口 = ECONNREFUSED,无围栏对照 = CONNECTED);
   //   而 NO_PROXY 含 127.0.0.1/localhost/::1 ⇒ 这类目的地本来就不经代理。两边一夹,注册表对它永远不生效。
   // **BYOK 指向 loopback 的 baseURL 撞的是同一堵墙**,且本就属于「动态」类别、静态表里登记不了。
-  // 要支持本机目的地,得单独设计「本机目的地怎么走」(放宽围栏?让 loopback 也经代理?),不是往这张表加一行。
+  // **owner 2026-09-21 裁决:不再支持本地模型(ollama 一类),本机目的地这件事不做了。**
+  // 9-10 那条「要单独设计本机目的地怎么走」就此作废 —— 不要再为它开票、也不要凭「以后可能要支持」
+  // 把 loopback 加回任何放行集合。产品面当前没有任何本地模型入口(实查:全仓 ollama 只出现在注释与文档里)。
   // 判据:network-egress-registry.test.ts 里那条「表内不得出现 loopback 目的地」——有人凭印象加回来即红。
 ])
 

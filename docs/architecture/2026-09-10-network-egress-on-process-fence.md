@@ -393,8 +393,9 @@ host 过**静态表同一个** `isEgressHostShape`(同一个函数,不是抄一�
 
 1. **用户手工添加的自定义节点**(`provider.<id>.options.baseURL` 只住在可写配置文件里)—— 见上节,
    本轮**刻意**不放行;要支持它先得给那个 baseURL 找一个围栏外的真源。
-2. **BYOK 指向 loopback 的 baseURL**(本机模型 / ollama 一类)—— owner 2026-09-10 裁决:围栏只放行代理端口、
-   `NO_PROXY` 又含 loopback ⇒ 放行它不会让它可达,只会让登记簿说假话。要单独设计「本机目的地怎么走」。
+2. **BYOK 指向 loopback 的 baseURL**(本机模型 / ollama 一类)—— **owner 2026-09-21 裁决:不再支持本地模型,
+   这件事不做了**,作废 9-10 那条「要单独设计本机目的地怎么走」。技术事实不变(围栏只放行代理端口、`NO_PROXY`
+   又含 loopback ⇒ 放行它不会让它可达,只会让登记簿说假话),但它现在是一条**已关闭**的分支,不是待办。
 3. **用户配置的远程 MCP URL** —— 同属「动态」类别,本轮没做。
 4. **被拒时界面上的归因**:代理的 403 正文现在说得出是本机策略拦的
    (`alpha egress policy: <authority> denied (reason=unregistered) — blocked by this app's local egress policy …`),
