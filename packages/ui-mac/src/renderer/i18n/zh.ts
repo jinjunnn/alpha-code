@@ -1462,6 +1462,8 @@ export const dict = {
   "alpha.timeline.openSubtask": "打开子会话",
   "alpha.timeline.skillLoaded": "已加载",
   "alpha.timeline.turnErrorTitle": "这轮回复没有完成",
+  "alpha.timeline.turnErrorEgressBlocked":
+    "这台电脑上的网络策略拦下了这次请求 —— {{authority}} 不在本应用允许访问的地址名单里。不是模型服务的问题,也不是你的 Key 的问题;原样再发一次仍会被同一道策略拦下。",
   "alpha.timeline.retrying": "自动重试中(第 {{attempt}} 次)…",
   "alpha.timeline.artifactsLabel": "本回合产物",
   "alpha.timeline.writeLines": "全文 {{count}} 行",

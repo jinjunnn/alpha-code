@@ -38,7 +38,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // #949:read 目录分支的生产铸形落目录网格 + 文件 read 不改派的 fail-closed 负向(56 → 58)。
     // `#906`:产物链接行把 descriptor id 一路带进 intent(点第 3 行递第 3 个的 id)(58 → 59)。
     // #1214 AC2:审批超时呈现 —— mcp 降级卡出「审批已超时,未获批准」,普通错误不冒充(59 → 60)。
-    expect(output).toContain("60 pass")
+    // `#1382`:围栏拒绝在回合级错误卡上的归因 + 其控制臂(非围栏失败文案不变)(60 → 62)。
+    expect(output).toContain("62 pass")
     expect(output).toContain("0 fail")
   })
 })

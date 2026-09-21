@@ -24,7 +24,13 @@
 
 import * as http from "node:http"
 import * as net from "node:net"
+import { egressDenialLine } from "../shared/egress-denial"
 import { isEgressAuthorizedForSidecar } from "./network-egress-derived"
+
+// 拒绝正文的格式住在 `shared/egress-denial.ts`,因为 `#1382` 起它**有读者**了(renderer 的
+// 时间线要据此说「是这台电脑上的网络策略拦的」)。写的人和读的人共用同一个拼串函数,
+// 两处字面量无声漂移那一类就不存在;漂移了界面只会退回普通失败文案,没有任何东西会变红。
+export { EGRESS_DENIED_BODY_PREFIX } from "../shared/egress-denial"
 
 export type EgressDenyReason = "unregistered" | "bad-authority" | "method-not-connect" | "dial-failed"
 
@@ -73,7 +79,6 @@ export type EgressProxyHandle = {
   close: () => Promise<void>
 }
 
-export const EGRESS_DENIED_BODY_PREFIX = "alpha egress policy: "
 const REGISTRY_PATH = "packages/ui-mac/src/main/network-egress-registry.ts"
 
 const PORT_SHAPE = /^[0-9]{1,5}$/
@@ -124,7 +129,7 @@ function denialBody(reason: EgressDenyReason, authority: string, detail?: string
         : reason === "method-not-connect"
           ? "this proxy only serves CONNECT tunnels"
           : `registered destination could not be reached${detail ? ` (${detail})` : ""}`
-  return `${EGRESS_DENIED_BODY_PREFIX}${authority} denied (reason=${reason}) — ${why}\n`
+  return egressDenialLine(authority, reason, why)
 }
 
 const STATUS_TEXT: Record<number, string> = { 400: "Bad Request", 403: "Forbidden", 405: "Method Not Allowed", 502: "Bad Gateway" }

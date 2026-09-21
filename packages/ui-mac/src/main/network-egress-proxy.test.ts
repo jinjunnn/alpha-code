@@ -8,6 +8,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test"
 import * as net from "node:net"
+import { egressPolicyDenialOf } from "../shared/egress-denial"
 import { EGRESS_DENIED_BODY_PREFIX, parseConnectAuthority, startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 
 type Target = { port: number; connections: number; closedSockets: number; close: () => Promise<void> }
@@ -300,6 +301,35 @@ describe("其它失败形态各自可辨,且都不转发", () => {
     const res = await rawRequest(proxy.port, "CONNECT blackhole.example:443 HTTP/1.1\r\nHost: blackhole.example:443\r\n\r\n")
     expect(res.status).toBe(502)
     expect(logs[0]).toMatchObject({ verdict: "deny", reason: "dial-failed", status: 502, detail: "ETIMEDOUT" })
+  })
+})
+
+// `#1382` —— 拒绝正文从此**有读者**(renderer 的回合级错误卡据此说「是这台电脑上的网络策略拦的」)。
+// 渲染层的语料是手写字面量(src/shared/egress-denial.test.ts),独立锚点;这里补上另一条轴:
+// **真代理真的写出来的那几行**,必须被同一个识别器判成它们各自该有的样子。少了这一条,
+// 「代理改了拼法」只会让界面悄悄退回普通失败文案,而没有任何东西会红 —— 正是本票要消灭的静默。
+describe("拒绝正文的消费端契约(生产者 ↔ 渲染层识别器)", () => {
+  test("403 unregistered 的真实正文 ⇒ 识别器判为策略拒绝并取出目的地;502 dial-failed 的真实正文 ⇒ 不归因", async () => {
+    const denied = await startProxy({ authorize: () => false })
+    const deniedRes = await rawRequest(denied.proxy.port, "CONNECT ac1382-consumer.invalid:8443 HTTP/1.1\r\nHost: ac1382-consumer.invalid:8443\r\n\r\n")
+    expect(deniedRes.status).toBe(403)
+    const recognised = egressPolicyDenialOf(deniedRes.body)
+    console.log(`[#1382 生产者↔消费端] 403 body=${JSON.stringify(deniedRes.body.trim())} ⇒ ${JSON.stringify(recognised)}`)
+    expect(recognised).toEqual({ authority: "ac1382-consumer.invalid:8443" })
+
+    const unreachable = await startProxy({
+      authorize: () => true,
+      dial: () => {
+        const s = new net.Socket()
+        queueMicrotask(() => s.destroy(Object.assign(new Error("fixture"), { code: "ECONNREFUSED" })))
+        return s
+      },
+    })
+    const dialRes = await rawRequest(unreachable.proxy.port, "CONNECT ac1382-consumer.invalid:8443 HTTP/1.1\r\nHost: ac1382-consumer.invalid:8443\r\n\r\n")
+    expect(dialRes.status).toBe(502)
+    expect(dialRes.body.startsWith(EGRESS_DENIED_BODY_PREFIX)).toBe(true) // 同一个前缀 —— 只看前缀就会在这里说错
+    console.log(`[#1382 生产者↔消费端] 502 body=${JSON.stringify(dialRes.body.trim())} ⇒ ${JSON.stringify(egressPolicyDenialOf(dialRes.body))}`)
+    expect(egressPolicyDenialOf(dialRes.body)).toBeUndefined()
   })
 })
 

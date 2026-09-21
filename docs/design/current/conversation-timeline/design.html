@@ -137,8 +137,12 @@
     <!-- turn-level error card (new) -->
     <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>这轮回复没有完成</b><p>请求频率达到上限,模型暂时不可用;稍后重新发送这条消息即可。</p><span class="code">rate_limit_exceeded</span></div></div>
 
+    <!-- turn-level error card · blocked by this machine's network policy -->
+    <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>这轮回复没有完成</b><p>这台电脑上的网络策略拦下了这次请求 —— api.deepseek.com:443 不在本应用允许访问的地址名单里。不是模型服务的问题,也不是你的 Key 的问题;原样再发一次仍会被同一道策略拦下。</p><span class="code">APIError</span></div></div>
+
   </div></div>
   <div class="note"><b>新帧 · 回合级错误卡</b>:助手回合末的<b>全宽错误行</b>(限流 / 接口报错 / 上下文超限三类场景),纯文本、无重试与换模型按钮。与 ③ 的「工具级错误卡」是两个组件:回合级 = 行模型的错误行,挂在回合末,只陈述事实与下一步;工具级 = 内嵌在具体工具卡里、带动作按钮。未知错误代码按原样 mono 展示(fail-closed,不猜翻译)。</div>
+  <div class="note"><b>回合级错误卡的第四种场景 · 被本机出网策略拦下</b>:桌面端把引擎的出网强制经一道本机策略,不在允许名单里的目的地会被拒。此前这类失败在卡上只留下一串英文工程话(<span class="mono">Forbidden: alpha egress policy: …</span>),用户读不出是<b>自己这台电脑</b>拦的,于是去重试、去查自己的 Key、去怀疑供应商。<b>卡的形态一个像素不变</b> —— 同一个图标、同一个固定标题、同一段正文位、同一枚 mono 错误码、同样无动作按钮;换的只是正文那句话:说明是本机网络策略拦的、点出被拒的目的地、并明说再发一次没有用。目的地在句内以正文呈现(不另起 mono 元素),与本卡「纯文本」的既定形态一致。<b>只在策略真的说「不」时才这么说</b>:同一道策略还会因为「目的地登记了但连不上」而失败,那是真的网络故障,仍走上一帧的通用文案 —— 归因说错比不归因更坏,它会把人引去查放行名单。<b>不提供「临时放行这个地址」的入口</b>:那是把一个安全决定交给一次点击,需要单独裁。</div>
   <div class="note"><b>新帧 · 媒体预览行</b>:工具产出的图片 / 截图以「缩略图 + 文件名 + 尺寸元信息」成行,挂在产出它的助手回合内;点击 → 右栏「产物」面板聚焦该文件 —— 联动契约与产物链接行同一套(见 ⑥ 与 session-workspace 稿),此处只定行形态。</div>
 
   <!-- ════════════════ TOOLS ════════════════ -->

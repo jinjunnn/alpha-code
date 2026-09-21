@@ -909,8 +909,19 @@ export function TurnErrorCard(props: { row: Extract<TimelineRow, { kind: "turnEr
       </svg>
       <div class="a-turn-err-content">
         <b>{t("alpha.timeline.turnErrorTitle")}</b>
-        <Show when={props.row.message}>
-          <p>{props.row.message}</p>
+        {/* `#1382`:围栏拒绝时换的是**这一句**,卡的形态不变(已批帧 2026-07-23:图标 + 固定
+            标题 + 一段正文 + mono 错误码)。换掉而不是追加,是因为被换掉的那段正文正是
+            `Forbidden: alpha egress policy: …` 这串英文工程话 —— 它今天就在这里,而用户读不出
+            「是自己这台电脑拦的」。归因只在认出 reason=unregistered 时给;认不出一律走原文案。 */}
+        <Show
+          when={props.row.egressDenied}
+          fallback={
+            <Show when={props.row.message}>
+              <p>{props.row.message}</p>
+            </Show>
+          }
+        >
+          {(denied) => <p>{t("alpha.timeline.turnErrorEgressBlocked", { authority: denied().authority })}</p>}
         </Show>
         <span class="a-turn-err-code">{props.row.name}</span>
       </div>

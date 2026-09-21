@@ -563,6 +563,76 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     ).toBeUndefined()
   })
 
+  // `#1382` —— 围栏拒绝的归因必须一路走到行模型。实测(真代理 + bun fetch + @ai-sdk/openai /
+  // @ai-sdk/anthropic)两处各拿得到一份:`data.message` 由上游启发式拼出、`data.responseBody`
+  // 逐字透传。两处分开断,是因为只读其中一处的实现会在另一半上静默失败。
+  test("回合级错误:围栏拒绝从 message 与 responseBody 两处都认得出,并带上被拒的目的地", () => {
+    const fromMessage = turnErrorOf([
+      assistantMsg("msg_a1", "msg_u1", {
+        error: {
+          name: "APIError",
+          data: {
+            message:
+              "Forbidden: alpha egress policy: api.deepseek.com:443 denied (reason=unregistered) — blocked by this app's local egress policy — the destination is neither a registered app endpoint (packages/ui-mac/src/main/network-egress-registry.ts) nor one of the built-in model providers this machine holds a key for",
+          },
+        } as AssistantMessage["error"],
+      }),
+    ])
+    expect(fromMessage?.egressDenied).toEqual({ authority: "api.deepseek.com:443" })
+
+    // `message` 那一半被上游改成别的措辞时,`responseBody` 仍逐字带着正文 —— 归因不能跟着丢。
+    const fromBody = turnErrorOf([
+      assistantMsg("msg_a1", "msg_u1", {
+        error: {
+          name: "APIError",
+          data: {
+            message: "Forbidden",
+            responseBody:
+              "alpha egress policy: api.deepseek.com:443 denied (reason=unregistered) — blocked by this app's local egress policy\n",
+          },
+        } as AssistantMessage["error"],
+      }),
+    ])
+    expect(fromBody?.egressDenied).toEqual({ authority: "api.deepseek.com:443" })
+    expect(fromBody?.message).toBe("Forbidden") // 原始 message 照旧保留,归因是另加的一格
+
+    // 投影到行:authority 进 rev,否则同一回合从「普通失败」变成「围栏拒绝」时行不会重建。
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", {
+          error: {
+            name: "APIError",
+            data: { message: "Forbidden: alpha egress policy: api.deepseek.com:443 denied (reason=unregistered) — x" },
+          } as AssistantMessage["error"],
+        }),
+      ],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] },
+    )
+    const last = rows.at(-1)!
+    if (last.kind !== "turnError") throw new Error("expected turnError row")
+    expect(last.egressDenied).toEqual({ authority: "api.deepseek.com:443" })
+    expect(last.rev).toContain("api.deepseek.com:443")
+  })
+
+  test("回合级错误:不是围栏拒绝的失败一律不归因(含带同一前缀的 dial-failed)", () => {
+    const plain = [
+      "Failed after 3 attempts. Last error: Cannot connect to API: Unable to connect. Is the computer able to access the url?",
+      "Failed after 3 attempts. Last error: Bad Gateway",
+      "Provider response headers timed out after 60000ms",
+      "alpha egress policy: github.com:443 denied (reason=dial-failed) — registered destination could not be reached (ETIMEDOUT)",
+    ]
+    for (const message of plain) {
+      const turn = turnErrorOf([
+        assistantMsg("msg_a1", "msg_u1", {
+          error: { name: "APIError", data: { message } } as AssistantMessage["error"],
+        }),
+      ])
+      expect({ message, egressDenied: turn?.egressDenied }).toEqual({ message, egressDenied: undefined })
+      expect(turn?.message).toBe(message) // 文案不变 —— AC2
+    }
+  })
+
   test("重试:status=retry 且活跃回合 → retry 行(attempt + 有界 message)", () => {
     const rows = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "retry", {
       attempt: 2,

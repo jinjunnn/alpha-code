@@ -20,6 +20,7 @@ import type {
   ToolPart,
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
+import { egressPolicyDenialOf } from "../../../shared/egress-denial"
 import { isCloudFacadeToolPart } from "../cloud-facade-identity"
 import type { AlphaSessionIdentity } from "../session-workspace/session-workspace-core"
 import { toolCardDispatchOf } from "./cards/tool-card-model"
@@ -190,7 +191,16 @@ export type TimelineRow =
   | { kind: "media"; key: string; rev: string; media: TimelineMediaSource }
   | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
   | { kind: "retry"; key: string; rev: string; userMessageID: string; attempt: number; message: string }
-  | { kind: "turnError"; key: string; rev: string; userMessageID: string; name: string; message: string }
+  | {
+      kind: "turnError"
+      key: string
+      rev: string
+      userMessageID: string
+      name: string
+      message: string
+      /** `#1382`:这次失败是**这台电脑上的出网策略**拒的,带上被拒的目的地。缺席 = 普通失败,文案不变。 */
+      egressDenied?: { authority: string }
+    }
   | {
       kind: "divider"
       key: string
@@ -654,13 +664,32 @@ export function slashOriginForTurn(
   return undefined
 }
 
-/** 回合级错误(排除中断):读第一个出错助手消息的 name+message,均有界(I7)。 */
-export function turnErrorOf(assistants: readonly AssistantMessage[]): { name: string; message: string } | undefined {
+/**
+ * 回合级错误(排除中断):读第一个出错助手消息的 name+message,均有界(I7)。
+ *
+ * `#1382` 另读一格:这次失败是不是**这台电脑上的出网围栏**拒的。实测(bun fetch → @ai-sdk/openai
+ * 与 @ai-sdk/anthropic 各一臂 → `ProviderError.parseAPICallError`)两处都拿得到同一份拒绝正文:
+ *   `data.message`      = `Forbidden: alpha egress policy: <authority> denied (reason=unregistered) — …`
+ *   `data.responseBody` = 原始正文(逐字)
+ * 两处都读,是因为 `message` 那一份由上游的 `message()` 启发式拼出来(它只在 SDK 给的 message
+ * 恰好等于状态短语时才把 responseBody 接上去);`responseBody` 则是逐字透传,不依赖那条启发式。
+ * 判据细到 `reason=unregistered`:502 `dial-failed` 的正文带同一个前缀,但那是**真的连不上**,
+ * 说成「被策略拦下」会把人引去查放行名单(见 shared/egress-denial.ts 的第 2 条纪律)。
+ */
+export function turnErrorOf(
+  assistants: readonly AssistantMessage[],
+): { name: string; message: string; egressDenied?: { authority: string } } | undefined {
   const failed = assistants.find((message) => message.error && message.error.name !== "MessageAbortedError")
   if (!failed?.error) return undefined
-  const data = (failed.error as { data?: { message?: unknown } }).data
+  const data = (failed.error as { data?: { message?: unknown; responseBody?: unknown } }).data
   const raw = typeof data?.message === "string" ? data.message : ""
-  return { name: failed.error.name, message: boundedText(raw, TURN_ERROR_MAX_CHARS).text }
+  const body = typeof data?.responseBody === "string" ? data.responseBody : ""
+  const egressDenied = egressPolicyDenialOf(raw) ?? egressPolicyDenialOf(body)
+  return {
+    name: failed.error.name,
+    message: boundedText(raw, TURN_ERROR_MAX_CHARS).text,
+    ...(egressDenied ? { egressDenied } : {}),
+  }
 }
 
 export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow[] {
@@ -963,10 +992,11 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       rows.push({
         kind: "turnError",
         key: `turn-error:${userMessage.id}`,
-        rev: `${turnError.name}§${turnError.message}`,
+        rev: `${turnError.name}§${turnError.message}§${turnError.egressDenied?.authority ?? ""}`,
         userMessageID: userMessage.id,
         name: turnError.name,
         message: turnError.message,
+        ...(turnError.egressDenied ? { egressDenied: turnError.egressDenied } : {}),
       })
   })
 
