@@ -15,7 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { EventEmitter } from "node:events"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
 import * as net from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -48,6 +48,7 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {
 const { spawnLocalServer } = await import("./server")
 const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
 const { SIDECAR_EGRESS_NO_PROXY } = await import("./sidecar-env")
+const { isEgressAuthorizedForSidecar, setConfiguredEgressDestinations } = await import("./network-egress-derived")
 
 const darwin = process.platform === "darwin"
 /** 假代理提供者:不起监听,只给端口(默认接线的真监听在末尾那条用例里验)。 */
@@ -320,6 +321,53 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
     })
     expect(reply).toMatch(/^HTTP\/1\.1 405 /)
     expect(reply).toContain("alpha egress policy")
+  })
+
+  // `#1379`:出网授权的动态半场也在这条线上 —— 这一代的 BYOK 放行集合由 fork 前的有效配置派生。
+  // 静态表装不下它(用户配了谁才算数),所以「有没有接上这一步」只有这条用例会红:
+  // 把 server.ts 里那行 refreshConfiguredEgressDestinations 删掉,自带 Key 直连回到 0.1.13 的全 403,
+  // 而别的任何闸门都照绿。平台无关 —— 放行集合是这一代配置的函数,不是 seatbelt 的函数。
+  test("`#1379` BYOK 目的地:fork 之前由这一代的有效配置派生进授权集合 —— 用户配了谁才放行谁", async () => {
+    const savedEnvKeys = ["DEEPSEEK_API_KEY", "ZHIPU_API_KEY", "ALPHA_GLOBAL_DIR", "ALPHA_MODELS_DISABLE"] as const
+    const before: Record<string, string | undefined> = {}
+    for (const k of savedEnvKeys) {
+      before[k] = process.env[k]
+      delete process.env[k]
+    }
+    const envRoot = join(realpathSync(userDataPath), "alpha-code-state", "env", "dev")
+    try {
+      mkdirSync(envRoot, { recursive: true })
+      process.env.ALPHA_GLOBAL_DIR = envRoot
+      // 「用户配过 DeepSeek、没配智谱」在 main 侧就是这一个 env 变量:spawnLocalServer 的 syncSecretFiles
+      // 会把它镜像成密钥文件,而 buildAlphaModelConfig 只给有密钥文件的那一家注入 BYOK 节点。
+      process.env.DEEPSEEK_API_KEY = "test-value-not-a-real-key-Zq81"
+      setConfiguredEgressDestinations([])
+      expect(isEgressAuthorizedForSidecar("api.deepseek.com", 443)).toBe(false)
+
+      const child = new RecordingChild()
+      creditDanglingSweepForSpawn()
+      const result = await spawnLocalServer("127.0.0.1", 4319, "password", {
+        userDataPath,
+        healthCheck: async () => true,
+        fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
+        egressProxy: fakeEgress(),
+        planFence: () =>
+          darwin ? { profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" } : undefined,
+      })
+      await result.health.wait
+
+      expect(isEgressAuthorizedForSidecar("api.deepseek.com", 443)).toBe(true)
+      // 对照臂:同一份目录里的另一家,没配 ⇒ 仍拒。这一行红 = 放行集合不再是「用户配过的那些」。
+      expect(isEgressAuthorizedForSidecar("open.bigmodel.cn", 443)).toBe(false)
+      expect(isEgressAuthorizedForSidecar("ac1379-never-configured.invalid", 443)).toBe(false)
+      await result.listener.stop()
+    } finally {
+      setConfiguredEgressDestinations([])
+      for (const k of savedEnvKeys) {
+        if (before[k] === undefined) delete process.env[k]
+        else process.env[k] = before[k]
+      }
+    }
   })
 
   test("ANCHOR (not a gate): sidecar.ts 收到 start 后第一件事是 installProcessFence,早于注入与 import 引擎;darwin 缺席即抛", () => {

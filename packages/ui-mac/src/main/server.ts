@@ -9,7 +9,8 @@ import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { customProviderSecretValues } from "./alpha-byok-keys"
-import { readUserProviderIds } from "./ext-config"
+import { readConfiguredProviderBaseUrls, readUserProviderIds } from "./ext-config"
+import { buildAlphaModelConfig } from "./alpha-models"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
@@ -36,6 +37,9 @@ import type { ProcessFenceStartInput } from "./process-fence-apply"
 // 跨 respawn 复用;起不来 = 拒绝 fork(与围栏计划失败同一条 fail-closed 路)。sidecar 的八个代理变量在这里整份改写
 // 成指向它(sidecarEgressProxyEnv),main 自己的 process.env 一个字都不动 —— main / renderer 的出网不在覆盖内(AC5)。
 import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
+// REQ-137 `#1379`:出网授权的**动态半场**。静态表装不下 BYOK 直连的目的地(它由用户配置了谁决定),
+// 所以放行集合从这一代要注入给引擎的那份有效配置里的 `provider.<id>.options.baseURL` 派生,fork 前整份替换。
+import { deriveEgressDestinations, setConfiguredEgressDestinations } from "./network-egress-derived"
 // REQ-159 `#1322`:工作区写探针的 main 半场 —— 请求/应答簿记住在 workspace-write-probe.ts,这里只接线到子进程。
 import { createWriteProbeRequester, type WorkspaceWriteProbeResult } from "./workspace-write-probe"
 import { alphaGlobalRoot } from "./engine-config-truth"
@@ -132,6 +136,39 @@ function ensureEgressPolicyProxy(): Promise<EgressProxyHandle> {
     )
   }
   return egressProxySingleton
+}
+
+// ── REQ-137 `#1379`:出网授权的动态半场,每代重算一次 ───────────────────────────────────
+// 静态表(network-egress-registry.ts)只装常量,装不下「用户配置了哪几家 BYOK」。放行集合因此从
+// **引擎真正会去连的那个值**派生 —— 有效配置里的 `provider.<id>.options.baseURL`。两个来源合起来才是
+// 引擎看得到的那一份,所以两个都读:
+//   ① 注入面(buildAlphaModelConfig):目录 BYOK 节点 —— 只在密钥文件在场时才出现,也就是「用户配置过这一家」;
+//      以及平台网关节点(它的 host 本来就在静态表里,派生出来重复无害)。sidecar 那边 injectAlphaConfig 调的是
+//      **同一个函数、同一个 userDataPath**,而密钥文件刚由上面那次 syncSecretFiles 落定 ⇒ 两边不可能分叉。
+//   ② 文件面(alpha.jsonc):用户自建 provider 的 baseURL 只住在配置文件里,注入面那里只补 apiKey
+//      (alpha-models.ts 第 (3) 段),所以这一半必须单独读。
+// 必须排在 syncSecretFiles **之后**、fork 之前:前者决定哪些 BYOK 节点存在,后者是这一代的起点。
+function refreshConfiguredEgressDestinations(userDataPath: string): void {
+  try {
+    const injected = deriveEgressDestinations(buildAlphaModelConfig(userDataPath)?.provider)
+    const fileBlocks: Record<string, unknown> = {}
+    // 没有 alpha 环境根就没有 alpha.jsonc 可读(单测 fork)—— 与上面 customProviderSecretValues 同一条容忍。
+    if (tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR)
+      for (const [id, baseURL] of readConfiguredProviderBaseUrls()) fileBlocks[id] = { options: { baseURL } }
+    const accepted = setConfiguredEgressDestinations([...injected, ...deriveEgressDestinations(fileBlocks)])
+    getLogger()?.log(
+      `network egress: ${accepted.length} configured model destination(s) authorized for this generation — ` +
+        (accepted.map((d) => `${d.host}:${d.port} (${d.providerId})`).join(", ") || "none"),
+    )
+  } catch (error) {
+    // 派生失败不拒 fork:配置读坏只该让 BYOK 调用被拒(403,原因可读),不该让整个应用起不来。
+    // 但**必须清空** —— 留着上一代的集合等于拿旧配置给新一代放行,那是 fail-open 的方向。
+    setConfiguredEgressDestinations([])
+    getLogger()?.error(
+      "network egress: failed to derive this generation's configured model destinations — BYOK direct calls will be refused (403 unregistered) until the next fork",
+      error,
+    )
+  }
 }
 
 /** 生产计划器:把 electron / store / fs 接进 electron-free 的 planProcessFence。 */
@@ -401,6 +438,9 @@ export async function spawnLocalServer(
   // 与上面 alpha-secrets sync 失败同一条 fail-closed 路径)。env 先算好:计划要读的 XDG_* / HOME
   // 必须是 sidecar 将拿到的那一份,不是 main 自己的 process.env。
   const sidecarEnv = createSidecarEnv()
+  // REQ-137 `#1379`:这一代的 BYOK 放行集合。平台无关(代理只在 darwin 起,但「放行集合 = 这一代的配置」
+  // 这条不该长两个样子),排在密钥文件落定之后、fork 之前。
+  refreshConfiguredEgressDestinations(options.userDataPath)
   // REQ-137:策略代理先于计划 —— 端口要渲染进 profile(N4)并改写进 sidecar env。起不来 = 拒 fork(fail-closed)。
   // 只在 darwin:围栏只在那里;别的平台既没有强制层也不装策略层(sidecar env 的代理变量照旧 = 用户导出的值)。
   let egressProxyPort: number | undefined

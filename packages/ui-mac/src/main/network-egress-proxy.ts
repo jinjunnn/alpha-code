@@ -1,8 +1,11 @@
 // REQ-137 (`#1336`) —— 本地 loopback CONNECT 策略代理:目的地闸门的**咽喉点**。
 //
 // 强制层(seatbelt `(deny network*)` + 只放行本代理端口,`#1337`)把 sidecar 那棵树的全部出网逼到这里;
-// 本文件做策略:对每条 `CONNECT host:port` 只问注册表(network-egress-registry.ts)一句「在不在」,
-// 在 ⇒ 建隧道(TLS 端到端,不看隧道内容、不注入任何证书,老勘破 §4.2),不在 ⇒ 403 + 结构化记录。
+// 本文件做策略:对每条 `CONNECT host:port` 只问一句「授权了吗」—— 授权 ⇒ 建隧道(TLS 端到端,不看隧道
+// 内容、不注入任何证书,老勘破 §4.2),没授权 ⇒ 403 + 结构化记录。
+// 问的那一句是 `isEgressAuthorizedForSidecar`(network-egress-derived.ts)= **静态半场**
+// (network-egress-registry.ts 的冻结常量表)∪ **动态半场**(`#1379`:由用户有效配置里的 BYOK baseURL
+// 派生,每次 fork 前整份替换)。本文件不自己判任何一格,也不持有第二份清单。
 //
 // ── DNS 在这里、而且只在这里发生 ─────────────────────────────────────────────────────
 // 围栏刻意不放行 mDNSResponder(`#1334` Q3:走代理的客户端由代理解析,想直连的死在解析这一步)。所以
@@ -21,7 +24,7 @@
 
 import * as http from "node:http"
 import * as net from "node:net"
-import { isEgressAuthorized } from "./network-egress-registry"
+import { isEgressAuthorizedForSidecar } from "./network-egress-derived"
 
 export type EgressDenyReason = "unregistered" | "bad-authority" | "method-not-connect" | "dial-failed"
 
@@ -55,7 +58,7 @@ export type EgressLogRecord =
 export type EgressProxyDeps = {
   /** 结构化记录的出口。生产接线把它写进 main 的日志;测试收进数组。 */
   log: (record: EgressLogRecord) => void
-  /** 默认 = 注册表。**只有测试**该传这个 —— 生产传别的东西就等于绕开 AC2。 */
+  /** 默认 = 静态表 ∪ 本代派生的动态半场。**只有测试**该传这个 —— 生产传别的东西就等于绕开 AC2。 */
   authorize?: (host: string, port: number) => boolean
   /** 默认 = `net.connect({ host, port })`(DNS 在本进程)。测试用它做零拨号断言。 */
   dial?: (host: string, port: number) => net.Socket
@@ -112,7 +115,9 @@ function defaultDial(host: string, port: number): net.Socket {
 function denialBody(reason: EgressDenyReason, authority: string, detail?: string): string {
   const why =
     reason === "unregistered"
-      ? `destination is not in the authorized registry (${REGISTRY_PATH})`
+      ? // `#1379`:拒绝理由要说得出**为什么**,否则用户只看到一个泛化的网络错误。两个半场各说一句:
+        // 既不是应用自己登记过的地址,也不是「你配置过的那些模型服务」之一。
+        `blocked by this app's local egress policy — the destination is neither a registered app endpoint (${REGISTRY_PATH}) nor one of the model providers configured on this machine`
       : reason === "bad-authority"
         ? "CONNECT authority must be host:port"
         : reason === "method-not-connect"
@@ -137,7 +142,7 @@ function writeDenial(socket: net.Socket, status: number, body: string): void {
 }
 
 export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<EgressProxyHandle> {
-  const authorize = deps.authorize ?? isEgressAuthorized
+  const authorize = deps.authorize ?? isEgressAuthorizedForSidecar
   const dial = deps.dial ?? defaultDial
   const dialTimeoutMs = deps.dialTimeoutMs ?? 10_000
   const log = deps.log

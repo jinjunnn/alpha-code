@@ -298,6 +298,8 @@ process fence profile does not compile even with the minimum writable set
 ### 仍未验(本轮**没有**改变这些的状态)
 
 - **真模型请求一次都没发过** ⇒ 票面担心的「提问没反应」这条用户可观察面**没有直接测到**。
+  **2026-09-21 补记:这条未验直接变成了出货缺陷** —— 自带 Key 直连的模型自 0.1.13 起整类发不出消息
+  (`#1379`,见下方《授权的第二个半场》)。留着这行原文,是因为它当时就把风险写对了。
 - **模型目录 `models.opencode.ai` 的 fetch 本轮没有发生** ⇒ 它是否经代理未验(§Q4)。
 - **代理日志不区分 main 与 sidecar** ⇒ catalog / gateway 两族出网的归属未验(§Q4)。
 - ssh 经 CONNECT 端到端(老 §7 第二条)、bun 作为运行时的完整代理语义(第三条)、
@@ -313,7 +315,7 @@ process fence profile does not compile even with the minimum writable set
 | 层 | 文件 | 事实 |
 | --- | --- | --- |
 | 强制层(profile) | `packages/ui-mac/src/main/process-fence-profile.ts` N1–N4 | 可写集之后追加 §Q1.2 那四行**逐字**:`(deny network*)` + loopback `network-bind` / `network-inbound` + 只放行 `localhost:<代理端口>` 出网。只写加法;DNS 刻意不放行。端口不是 1..65535 的整数 ⇒ 拒绝渲染 |
-| 策略层(代理) | `packages/ui-mac/src/main/server.ts` `ensureEgressPolicyProxy` → `network-egress-proxy.ts` | 代理跑在 **Electron main 进程内**(围栏外,`#1073` 裁决三:`(deny network*)` 连带拦 DNS,解析只能在围栏外做),第一次 fork 之前起、跨 respawn 复用;起不来 ⇒ 拒 fork。授权只问 `network-egress-registry.ts` |
+| 策略层(代理) | `packages/ui-mac/src/main/server.ts` `ensureEgressPolicyProxy` → `network-egress-proxy.ts` | 代理跑在 **Electron main 进程内**(围栏外,`#1073` 裁决三:`(deny network*)` 连带拦 DNS,解析只能在围栏外做),第一次 fork 之前起、跨 respawn 复用;起不来 ⇒ 拒 fork。授权只问 `network-egress-registry.ts`(**`#1379` 起**:问的是静态表 ∪ 动态半场,见下节) |
 | 汇流(env) | `sidecar-env.ts` `sidecarEgressProxyEnv` | fork 之前把 sidecar 的八个代理变量**整份改写**:`HTTP(S)_PROXY` / `ALL_PROXY`(大小写)指向代理,`NO_PROXY` 只留 loopback —— 用户自己的代理与 NO_PROXY 名单不存活(唯一通路)。main 自己的 `process.env` 一个字不动 |
 | 归因 | `process-fence-profile.ts` `trimUntilCompiles` | 编译失败若不是 `exceeds maximum` 那道字节墙 ⇒ 一个工作区都不丢就抛,消息点名「丢工作区救不了」(§Q5 末节) |
 | 判据 | `network-egress-fence.test.ts`(Electron 的 node + 真 .node + 真 seatbelt + 真代理)· `process-fence-wiring.test.ts` · `process-fence-profile.test.ts` · `sidecar-env.test.ts` · `network-egress-disclosure.test.ts` | 逃逸语料(绕代理直连 / raw-IP:443 / UDP / `[::1]` 其它端口 / DNS)逐条 EPERM 而唯一那扇门通、外面连得进被围栏的监听者;代理关掉后 fetch / CONNECT **立刻** `ECONNREFUSED` 并点名代理地址(不是挂到超时),直连仍 EPERM;控制臂(不套围栏)对同一判据必红 |
@@ -321,6 +323,62 @@ process fence profile does not compile even with the minimum writable set
 
 **没有改的**:代理本体与注册表(`#1336`)、可写集的文件规则、并集裁剪规则、main / renderer 的出网。非 darwin 没有围栏,
 也不装策略层(那里的引擎本来就没有围栏,不假装有一半)。
+
+## 授权的第二个半场(`#1379`,2026-09-21)
+
+`#1336` / `#1337` 落地的注册表是**纯静态**的;而上面《仍未验》第一条写着「真模型请求一次都没发过」。
+这两件事合起来在 0.1.13 出货:**自带 Key 直连的模型整类发不出消息**,持续九天无人报告
+(owner 日常用的是断点之前的 dev 渠道 0.1.11)。
+
+现场读数(owner 机器,0.1.14 正式包,`#1379` 票面):
+
+```
+{"event":"egress.connect","authority":"open.bigmodel.cn:443","verdict":"deny","reason":"unregistered","status":403}
+{"event":"egress.connect","authority":"api.deepseek.com:443","verdict":"deny","reason":"unregistered","status":403}
+{"event":"egress.connect","authority":"alpha-cloud.tidelabs.click:443","verdict":"allow","status":200}
+```
+
+同一次启动 `alpha-secrets sync: wrote [… DEEPSEEK_API_KEY, ZHIPU_API_KEY]` —— **密钥在**,拦它的是我们自己。
+
+**为什么不是「表里少了两行」。** BYOK 的 baseURL 由**用户配置了谁**决定,注册表抬头早就把它列进「动态」类别。
+补上 DeepSeek 与智谱,下一个供应商照样 403 —— 而「下一个供应商」正是这条路的卖点。手写清单与缺陷同形。
+
+**修法:授权从此有两个半场,合起来才是权威。**
+
+| 半场 | 文件 | 内容 | 谁写 |
+| --- | --- | --- | --- |
+| 静态 | `packages/ui-mac/src/main/network-egress-registry.ts` | 应用自己**总会**去连的地址(平台四族、包管理源、GitHub、LSP 下载站…) | 常量,冻结;改它 = 改代码 + 在 PR 里带出处坐标 |
+| 动态 | `packages/ui-mac/src/main/network-egress-derived.ts` | **这一代**有效配置里的 BYOK 目的地 | 用户 —— 在模型选择器里填 Key / 添加自定义节点 |
+
+派生的唯一权威是**引擎真正会去连的那个值**:有效配置里 `provider.<id>.options.baseURL`(回退字段 `api`)。
+两个来源合起来才是引擎看得到的那一份,所以 main 在**每次 fork 之前**两个都读:
+
+- **注入面** `buildAlphaModelConfig(userDataPath).provider` —— 目录 BYOK 节点只在**密钥文件在场**时才出现,
+  也就是说「用户配过这一家」在这里已经是一个文件在不在的问题;sidecar 侧 `injectAlphaConfig` 调的是
+  **同一个函数、同一个 `userDataPath`**,而密钥文件刚由同一次 `syncSecretFiles` 落定 ⇒ 两边结构上不可能分叉。
+- **文件面** `alpha.jsonc` 的 provider 块 —— 用户自建节点的 baseURL 只住在配置文件里,不经注入面
+  (注入面那里只补 `apiKey`)。读它的是 `readConfiguredProviderBaseUrls()`,**只回 URL 不回 block**:
+  把整块递出去会顺手把 `options.apiKey` 带进 main 的内存,而 REQ-226 AC7 的咽喉点不许那样。
+
+准入四条(有一条不过就是不收,不猜、不修补):`new URL()` 解析得出 / scheme 是 `https:` / host 不是 loopback /
+host 过**静态表同一个** `isEgressHostShape`(同一个函数,不是抄一份正则)。产物仍是**精确 `host:port`**;
+不做通配、不做后缀、不做 IP↔名字等价(理由同 §2.1 的 fake-IP 拓扑)。
+生命周期是**整份替换、每代一次**:配置结构性变化本来就会 `respawning sidecar { reason: 'structural' }`,
+用户删掉一家,下一代就不再放行它;代理是跨 respawn 复用的单例,但它每条 CONNECT 都现问 ⇒ 换代即生效。
+派生失败(配置读坏)**清空**而不是沿用上一代 —— 那是 fail-closed 的方向,代价是这一代 BYOK 被 403 而非全应用起不来。
+
+**本轮仍然不覆盖的**(如实列出,不要在别处读成已闭合):
+
+1. **BYOK 指向 loopback 的 baseURL**(本机模型 / ollama 一类)—— owner 2026-09-10 裁决:围栏只放行代理端口、
+   `NO_PROXY` 又含 loopback ⇒ 放行它不会让它可达,只会让登记簿说假话。要单独设计「本机目的地怎么走」。
+2. **用户配置的远程 MCP URL** —— 同属「动态」类别,本轮没做。
+3. **被拒时界面上的归因**:代理的 403 正文现在说得出是本机策略拦的
+   (`alpha egress policy: <authority> denied (reason=unregistered) — blocked by this app's local egress policy …`),
+   但把它翻成用户看得懂的一句话需要渲染层改动,不在本轮(`#1379` AC3 另票)。
+
+判据:`network-egress-derived.test.ts`(**从真配置派生**,不是喂夹具;MUST_DENY 十条对照臂;三种「本该被拒却放行」的
+放宽各自被同一个判据点名;loopback 四种写法一条都派生不出、绕过派生直接塞也塞不进)与
+`process-fence-wiring.test.ts` 的 `#1379` 那条(fork 之前真的装进了授权集合:配过的放行、同类没配的仍拒)。
 
 ### 覆盖面声明(AC5)
 
