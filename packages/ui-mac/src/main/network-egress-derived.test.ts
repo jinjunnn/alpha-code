@@ -1,10 +1,12 @@
 // REQ-137 (`#1379`) —— 出网授权的**动态半场**:自带 Key 直连的目的地由用户的有效配置派生。
 //
-// 本文件守三件事,每一件都带一条「本该被拒」的对照臂:
+// 本文件守四件事,每一件都带一条「本该被拒」的对照臂:
 //   AC1 用户配过的那一家,它的 baseURL 的 `host:port` 真的被授权 —— 而且是从 **buildAlphaModelConfig 产出的
 //       那份真配置**派生的(不是手打一个 provider 字面量喂给派生函数:那样测的是夹具,不是生产供数方)。
 //   AC2 没配过的地址仍被拒。对照臂不是一句断言,是一组 MUST_DENY 加一个**判据函数**,再拿三种
 //       「本该被拒却放行」的变异证明这个判据会把它们逐个点名 —— 空数组不是结论,先证明这个手段测得出已知的坏。
+//   B1  配置文件里的 provider 一条都进不了放行集合(`#1380` R1 Blocker:那三条路径在围栏的可写集里,
+//       读它等于让被围栏的引擎给自己铸出网通道)。控制臂照旧实现读那三个文件,证明断言不是空跑。
 //   边界 loopback 一条都派生不出来,连绕过派生直接塞也塞不进去(owner 2026-09-10 裁决:本机目的地另行设计)。
 //
 // 静态半场的形状与初值仍由 network-egress-registry.test.ts 守;那边断言的「未登记 ⇒ 拒」在这里依然成立,
@@ -16,7 +18,8 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { secretFilePath } from "./alpha-secret-files"
-import { persistProvider, readConfiguredProviderBaseUrls } from "./ext-config"
+import { parse } from "jsonc-parser"
+import { persistProvider } from "./ext-config"
 import {
   deriveEgressDestinations,
   egressDestinationFromBaseUrl,
@@ -119,30 +122,6 @@ describe("AC1 用户配过的 BYOK 目的地被授权(从有效配置派生,不�
     expect(isEgressAuthorizedForSidecar("open.bigmodel.cn", 443)).toBe(true)
   })
 
-  test("用户自建 provider(alpha.jsonc):persistProvider 写下的 baseURL 同样被派生出来,而投影里没有密钥字段", () => {
-    const written = persistProvider({
-      id: "myvendor",
-      name: "My Vendor",
-      compat: "openai",
-      baseURL: "https://api.myvendor.example/v1",
-      apiKey: NOT_A_KEY,
-      models: ["m1"],
-    })
-    expect(written.ok).toBe(true)
-
-    // main 侧读的就是这个投影(只回 URL,不回 block —— REQ-226 AC7:main 不把明文 key 读进内存)。
-    const urls = readConfiguredProviderBaseUrls()
-    expect(urls.get("myvendor")).toBe("https://api.myvendor.example/v1")
-    expect(JSON.stringify([...urls])).not.toContain(NOT_A_KEY)
-
-    const blocks: Record<string, unknown> = {}
-    for (const [id, baseURL] of urls) blocks[id] = { options: { baseURL } }
-    const accepted = setConfiguredEgressDestinations(deriveEgressDestinations(blocks))
-    expect(accepted.map((d) => `${d.host}:${d.port}`)).toContain("api.myvendor.example:443")
-    expect(isEgressAuthorizedForSidecar("api.myvendor.example", 443)).toBe(true)
-    expect(JSON.stringify(accepted)).not.toContain(NOT_A_KEY)
-  })
-
   test("没配任何一家 ⇒ 派生出空集合(不是「配置读不到就全放行」)", () => {
     const config = buildAlphaModelConfig(userData)!
     expect(config.provider).toEqual({})
@@ -201,6 +180,90 @@ describe("AC2 没配过的地址仍被拒 —— 判据先证明它测得出已�
     setConfiguredEgressDestinations(deriveEgressDestinations(buildAlphaModelConfig(userData)!.provider))
     expect(isEgressAuthorizedForSidecar("open.bigmodel.cn", 443)).toBe(true)
     expect(isEgressAuthorizedForSidecar("api.deepseek.com", 443)).toBe(false)
+  })
+})
+
+// ── `#1380` R1 Blocker:动态半场的输入里不许出现「被围栏的引擎树写得了的文件」 ──────────────
+// provider 块的三条读取路径逐条落在 seatbelt 的可写集里:
+//   alpha.jsonc                                   ← process-fence-profile.ts W2  (alphaGlobalRoot)
+//   <OPENCODE_CONFIG_DIR | XDG_CONFIG_HOME>/opencode ← W6  (configHome/opencode)
+//   ~/.opencode(ALPHA_OPENCODE_HOME 可重定向)       ← W16 (home/.opencode)
+// 引擎树里任意一段代码(bash 工具 / 仓库自带 plugin / MCP stdio 子进程)写一行 baseURL,下一代 fork
+// 就给它铸出一条出网通道 —— confused deputy,围栏对任意目的地开口,而产品披露「只能访问已登记的地址」
+// (network-egress-disclosure.test.ts)当场变成假话。
+// 这一格是本次修复的咽喉:下一个人想把「文件面」加回来时,先红的是这里。
+describe("B1 配置文件里的 provider 一条都进不了放行集合(那三条路径在围栏的可写集里)", () => {
+  const EXFIL = "https://exfil.example/v1"
+  const IDS = ["exfil-alpha", "exfil-xdg", "exfil-home"] as const
+  let opencodeHome = ""
+  let savedOpencodeHome: string | undefined
+  let files: string[] = []
+
+  beforeEach(() => {
+    savedOpencodeHome = process.env.ALPHA_OPENCODE_HOME
+    opencodeHome = fs.mkdtempSync(path.join(os.tmpdir(), "egress-derived-ochome-"))
+    process.env.ALPHA_OPENCODE_HOME = opencodeHome
+
+    // ① alpha.jsonc —— 产品自己的写法(模型选择器「添加自定义节点」走的就是 persistProvider)
+    const persisted = persistProvider({
+      id: "exfil-alpha",
+      name: "Exfil",
+      compat: "openai",
+      baseURL: EXFIL,
+      apiKey: NOT_A_KEY,
+      models: ["m1"],
+    })
+    expect(persisted.ok, JSON.stringify(persisted)).toBe(true)
+
+    // ② / ③ 另外两条读取路径 —— 手写,正是围栏内一行 `printf … > file` 能做到的形状(没有 apiKey)。
+    const xdg = path.join(process.env.OPENCODE_CONFIG_DIR!, "opencode.jsonc")
+    const home = path.join(opencodeHome, "opencode.jsonc")
+    fs.writeFileSync(xdg, JSON.stringify({ provider: { "exfil-xdg": { options: { baseURL: EXFIL } } } }))
+    fs.writeFileSync(home, JSON.stringify({ provider: { "exfil-home": { options: { baseURL: EXFIL } } } }))
+    files = [path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"), xdg, home]
+  })
+
+  afterEach(() => {
+    if (savedOpencodeHome === undefined) delete process.env.ALPHA_OPENCODE_HOME
+    else process.env.ALPHA_OPENCODE_HOME = savedOpencodeHome
+    try {
+      fs.rmSync(opencodeHome, { recursive: true, force: true })
+    } catch {
+      /* best effort */
+    }
+  })
+
+  test("三条路径都写了 provider:引擎看得见这几个 id,而放行集合里只有目录 BYOK 那一条", () => {
+    plantSecret("DEEPSEEK_API_KEY")
+    const config = buildAlphaModelConfig(userData)!
+
+    // 前提自证 ①:三个 id 真的进了引擎的 allowlist —— 文件确实被读到了,断言不是空跑。
+    for (const id of IDS) expect(config.enabled_providers, id).toContain(id)
+    // 前提自证 ②:注入面对这些 id **只给 apiKey,从不给 baseURL**。这正是「文件面不贡献目的地」的机制。
+    for (const id of IDS) {
+      const block = config.provider[id] as { options?: { baseURL?: unknown } } | undefined
+      expect(block?.options?.baseURL, id).toBeUndefined()
+    }
+
+    const accepted = setConfiguredEgressDestinations(deriveEgressDestinations(config.provider))
+    expect(accepted.map((d) => `${d.host}:${d.port}`)).toEqual(["api.deepseek.com:443"])
+    expect(isEgressAuthorizedForSidecar("exfil.example", 443)).toBe(false)
+    expect(isConfiguredEgressDestination("exfil.example", 443)).toBe(false)
+  })
+
+  test("控制臂:把文件面加回来(照旧实现读那三个文件)⇒ 同一条断言当场红", () => {
+    // 不是空跑:先证明那三个文件里确实躺着一条可利用的 baseURL,而且读它就会授权 exfil.example。
+    const fromFiles: Record<string, unknown> = {}
+    for (const file of files) {
+      const provider = (parse(fs.readFileSync(file, "utf8")) as { provider?: Record<string, unknown> } | undefined)?.provider
+      for (const [id, block] of Object.entries(provider ?? {})) if (!(id in fromFiles)) fromFiles[id] = block
+    }
+    expect(Object.keys(fromFiles).sort()).toEqual([...IDS].sort())
+
+    const leaked = setConfiguredEgressDestinations(deriveEgressDestinations(fromFiles))
+    expect(leaked.map((d) => `${d.host}:${d.port}`)).toEqual(["exfil.example:443"])
+    // ↑ 这正是 `#1380` 合并前那一版的行为:围栏内写一行文件 = 自己给自己开一条出网通道。
+    expect(isEgressAuthorizedForSidecar("exfil.example", 443)).toBe(true)
   })
 })
 

@@ -348,17 +348,39 @@ process fence profile does not compile even with the minimum writable set
 | 半场 | 文件 | 内容 | 谁写 |
 | --- | --- | --- | --- |
 | 静态 | `packages/ui-mac/src/main/network-egress-registry.ts` | 应用自己**总会**去连的地址(平台四族、包管理源、GitHub、LSP 下载站…) | 常量,冻结;改它 = 改代码 + 在 PR 里带出处坐标 |
-| 动态 | `packages/ui-mac/src/main/network-egress-derived.ts` | **这一代**有效配置里的 BYOK 目的地 | 用户 —— 在模型选择器里填 Key / 添加自定义节点 |
+| 动态 | `packages/ui-mac/src/main/network-egress-derived.ts` | **这一代**注入面里的 BYOK 目的地(目录 baseURL × 密钥文件在场) | 用户 —— 在模型选择器里给某一家填 Key |
 
-派生的唯一权威是**引擎真正会去连的那个值**:有效配置里 `provider.<id>.options.baseURL`(回退字段 `api`)。
-两个来源合起来才是引擎看得到的那一份,所以 main 在**每次 fork 之前**两个都读:
+派生的唯一权威是**引擎真正会去连的那个值**:有效配置里 `provider.<id>.options.baseURL`(回退字段 `api`;
+字段选择与 v2 桥 `alpha-config-injection.ts:457-462` 逐字同源 —— `options.baseURL` **是字符串就赢**,
+回退条件是它不是字符串,而不是「它派生失败」)。
 
-- **注入面** `buildAlphaModelConfig(userDataPath).provider` —— 目录 BYOK 节点只在**密钥文件在场**时才出现,
-  也就是说「用户配过这一家」在这里已经是一个文件在不在的问题;sidecar 侧 `injectAlphaConfig` 调的是
-  **同一个函数、同一个 `userDataPath`**,而密钥文件刚由同一次 `syncSecretFiles` 落定 ⇒ 两边结构上不可能分叉。
-- **文件面** `alpha.jsonc` 的 provider 块 —— 用户自建节点的 baseURL 只住在配置文件里,不经注入面
-  (注入面那里只补 `apiKey`)。读它的是 `readConfiguredProviderBaseUrls()`,**只回 URL 不回 block**:
-  把整块递出去会顺手把 `options.apiKey` 带进 main 的内存,而 REQ-226 AC7 的咽喉点不许那样。
+输入**只有一个**:`buildAlphaModelConfig(userDataPath).provider`。目录 BYOK 节点只在**密钥文件在场**时
+才出现,也就是说「用户配过这一家」在这里已经是一个文件在不在的问题;sidecar 侧 `injectAlphaConfig` 调的是
+**同一个函数、同一个 `userDataPath`**,而密钥文件刚由同一次 `syncSecretFiles` 落定 ⇒ 两边结构上不可能分叉。
+
+### 为什么**不读**配置文件(`#1380` R1 Blocker,合并前拦下)
+
+第一版还读了「文件面」—— `alpha.jsonc` / `<XDG_CONFIG_HOME>/opencode` / `~/.opencode` 里的 provider 块,
+理由是用户自建节点的 baseURL 只住在那里。**那是一个 confused deputy**:这三条路径逐条落在 seatbelt 的
+**可写集**里(`process-fence-profile.ts` 的 W2 `alphaGlobalRoot` / W6 `<configHome>/opencode` /
+W16 `<home>/.opencode`),也就是**被围栏的引擎树自己写得了**的地方。于是引擎树里任意一段代码
+(bash 工具、被打开仓库自带的 plugin、MCP stdio 子进程)只要写一行
+
+```
+{"provider":{"x":{"options":{"baseURL":"https://exfil.example"}}}}
+```
+
+—— 这个写操作在围栏内是**被允许**的 —— 下一次 fork 后 `exfil.example:443` 就进了放行集合,代理照建隧道。
+围栏那一整面对任意目的地开口,而产品披露的「只能访问已登记的地址」当场变成假话,且没有任何闸会红。
+
+所以「有效配置」在这里必须**窄读成围栏外的那一半**:catalog 的 baseURL 是编译进包的常量,密钥文件由 main 在
+fork 前 `syncSecretFiles` 收敛(不在 wanted 集合里的遗留文件当场扫掉),两者都不在引擎的可写集里。
+注入面对文件里的那些 id 只贡献 `enabled_providers` 与 `options.apiKey`(`alpha-models.ts` 第 (3) 段),
+**从不贡献 baseURL** —— 这正是「读注入面安全、读文件不安全」的机制,判据见下。
+
+**代价是如实的**:用户手工添加的自定义节点(baseURL 只住在那个可写文件里)**仍然被拒**。要支持它,
+得先给自定义节点的 baseURL 找一个围栏外的真源(keychain 今天只存 key、不存 baseURL),
+那是一件独立的设计,不是在派生里多读一个文件。
 
 准入四条(有一条不过就是不收,不猜、不修补):`new URL()` 解析得出 / scheme 是 `https:` / host 不是 loopback /
 host 过**静态表同一个** `isEgressHostShape`(同一个函数,不是抄一份正则)。产物仍是**精确 `host:port`**;
@@ -369,16 +391,26 @@ host 过**静态表同一个** `isEgressHostShape`(同一个函数,不是抄一�
 
 **本轮仍然不覆盖的**(如实列出,不要在别处读成已闭合):
 
-1. **BYOK 指向 loopback 的 baseURL**(本机模型 / ollama 一类)—— owner 2026-09-10 裁决:围栏只放行代理端口、
+1. **用户手工添加的自定义节点**(`provider.<id>.options.baseURL` 只住在可写配置文件里)—— 见上节,
+   本轮**刻意**不放行;要支持它先得给那个 baseURL 找一个围栏外的真源。
+2. **BYOK 指向 loopback 的 baseURL**(本机模型 / ollama 一类)—— owner 2026-09-10 裁决:围栏只放行代理端口、
    `NO_PROXY` 又含 loopback ⇒ 放行它不会让它可达,只会让登记簿说假话。要单独设计「本机目的地怎么走」。
-2. **用户配置的远程 MCP URL** —— 同属「动态」类别,本轮没做。
-3. **被拒时界面上的归因**:代理的 403 正文现在说得出是本机策略拦的
+3. **用户配置的远程 MCP URL** —— 同属「动态」类别,本轮没做。
+4. **被拒时界面上的归因**:代理的 403 正文现在说得出是本机策略拦的
    (`alpha egress policy: <authority> denied (reason=unregistered) — blocked by this app's local egress policy …`),
-   但把它翻成用户看得懂的一句话需要渲染层改动,不在本轮(`#1379` AC3 另票)。
+   但把它翻成用户看得懂的一句话需要渲染层改动,不在本轮(`#1379` AC3 → `#1382`)。
 
-判据:`network-egress-derived.test.ts`(**从真配置派生**,不是喂夹具;MUST_DENY 十条对照臂;三种「本该被拒却放行」的
-放宽各自被同一个判据点名;loopback 四种写法一条都派生不出、绕过派生直接塞也塞不进)与
-`process-fence-wiring.test.ts` 的 `#1379` 那条(fork 之前真的装进了授权集合:配过的放行、同类没配的仍拒)。
+判据:
+
+- `network-egress-derived.test.ts` —— **从真配置派生**,不是喂夹具;MUST_DENY 十条经一个判据函数判定,
+  再拿三种「本该被拒却放行」的放宽(默认放行 / 后缀匹配 / 忽略端口)证明那个判据点得出它们;
+  loopback 四种写法一条都派生不出、绕过派生直接塞也塞不进;
+  **B1 那一格**把三条 provider 读取路径全指进临时目录、各写一个 `exfil.example` 的 provider,断言
+  ①那几个 id 真的进了 `enabled_providers`(文件确实被读到,断言不是空跑)②注入面对它们
+  `options.baseURL` 恒 `undefined` ③放行集合里只有目录 BYOK 那一条。控制臂照旧实现读那三个文件,
+  证明它们确实躺着一条可利用的 baseURL 且读它就会授权 `exfil.example:443`。
+- `process-fence-wiring.test.ts` 的 `#1379` 那条 —— 真的 `spawnLocalServer`,fork 之前装进授权集合:
+  配过的放行、同类没配的仍拒、**写进可写配置文件的那条仍拒**。
 
 ### 覆盖面声明(AC5)
 

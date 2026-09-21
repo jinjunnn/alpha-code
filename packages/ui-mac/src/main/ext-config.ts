@@ -1186,40 +1186,6 @@ export function readUserProviderIds(): string[] {
  *   "legacy-plaintext"  any other non-empty string — a pre-#1343 inline key; never read, never migrated
  * A block with no / empty apiKey is not in the map (K class with the field absent).
  */
-/**
- * REQ-137 (`#1379`) — 每个 provider block 的 `options.baseURL`(回退 `api`),**只回 URL 字符串,不回 block**。
- * 消费者:main 在每次 fork 前派生出网放行集合(network-egress-derived.ts)—— 用户自建节点的 baseURL 只住在
- * 配置文件里,不经 buildAlphaModelConfig 的注入面,所以那一半必须从这里读。
- *
- * 为什么不返回整个 block:REQ-226 AC7 的咽喉点 —— `#1343` 之后 main 里没有任何函数把配置文件里的明文
- * key 读进内存。把 block 原样递出去就会顺手把 `options.apiKey` 带进来,于是那条不变量靠「调用方记得别看」
- * 维持。这里只投影出 baseURL,结构上不可能捎带密钥(与 readConfiguredProviderKeys 只回类别同源)。
- * 读取路径与 readConfiguredProviderKeys 逐字相同(真源优先 + 存量兜底);先出现的 id 赢。
- */
-export function readConfiguredProviderBaseUrls(): Map<string, string> {
-  const out = new Map<string, string>()
-  for (const target of providerReadPaths()) {
-    try {
-      if (!fs.existsSync(target)) continue
-      const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: Record<string, unknown> } | undefined
-      const prov = parsed?.provider
-      if (!prov || typeof prov !== "object") continue
-      for (const [id, def] of Object.entries(prov)) {
-        if (out.has(id)) continue
-        if (!def || typeof def !== "object") continue
-        const options = (def as { options?: unknown }).options
-        const baseURL = options && typeof options === "object" ? (options as { baseURL?: unknown }).baseURL : undefined
-        const api = (def as { api?: unknown }).api
-        const value = typeof baseURL === "string" ? baseURL : typeof api === "string" ? api : undefined
-        if (value) out.set(id, value)
-      }
-    } catch {
-      /* unreadable config → skip this source */
-    }
-  }
-  return out
-}
-
 export function readConfiguredProviderKeys(): Map<string, ProviderKeyKind> {
   const out = new Map<string, ProviderKeyKind>()
   // Real source first; existing sources only fill ids not already seen (migration-period fallback).

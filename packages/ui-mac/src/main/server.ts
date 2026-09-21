@@ -9,7 +9,7 @@ import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { customProviderSecretValues } from "./alpha-byok-keys"
-import { readConfiguredProviderBaseUrls, readUserProviderIds } from "./ext-config"
+import { readUserProviderIds } from "./ext-config"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
@@ -140,22 +140,21 @@ function ensureEgressPolicyProxy(): Promise<EgressProxyHandle> {
 
 // ── REQ-137 `#1379`:出网授权的动态半场,每代重算一次 ───────────────────────────────────
 // 静态表(network-egress-registry.ts)只装常量,装不下「用户配置了哪几家 BYOK」。放行集合因此从
-// **引擎真正会去连的那个值**派生 —— 有效配置里的 `provider.<id>.options.baseURL`。两个来源合起来才是
-// 引擎看得到的那一份,所以两个都读:
-//   ① 注入面(buildAlphaModelConfig):目录 BYOK 节点 —— 只在密钥文件在场时才出现,也就是「用户配置过这一家」;
-//      以及平台网关节点(它的 host 本来就在静态表里,派生出来重复无害)。sidecar 那边 injectAlphaConfig 调的是
-//      **同一个函数、同一个 userDataPath**,而密钥文件刚由上面那次 syncSecretFiles 落定 ⇒ 两边不可能分叉。
-//   ② 文件面(alpha.jsonc):用户自建 provider 的 baseURL 只住在配置文件里,注入面那里只补 apiKey
-//      (alpha-models.ts 第 (3) 段),所以这一半必须单独读。
-// 必须排在 syncSecretFiles **之后**、fork 之前:前者决定哪些 BYOK 节点存在,后者是这一代的起点。
+// **引擎真正会去连的那个值**派生 —— `buildAlphaModelConfig` 产出的那份 provider 表里的
+// `options.baseURL`。sidecar 那边 injectAlphaConfig 调的是**同一个函数、同一个 userDataPath**,
+// 而密钥文件刚由上面那次 syncSecretFiles 落定 ⇒ 两边不可能分叉。必须排在 syncSecretFiles **之后**、
+// fork 之前:前者决定哪些 BYOK 节点存在,后者是这一代的起点。
+//
+// **输入只有这一个,配置文件刻意不读**(`#1380` R1 Blocker):provider 块住的那三条路径
+// (alpha.jsonc / `<XDG_CONFIG_HOME>/opencode` / `~/.opencode`)全在 seatbelt 的可写集里
+// (process-fence-profile.ts W2 / W6 / W16),也就是**被围栏的引擎树自己写得了**的地方。读它等于让引擎
+// 写一行 baseURL 就给自己铸一条出网通道(confused deputy)。而注入面里这三条路径只贡献 `enabled_providers`
+// 与 `options.apiKey`(alpha-models.ts 第 (3) 段),**从不贡献 baseURL** —— 判据在
+// network-egress-derived.test.ts 的 B1 那条(带对照臂)。
+// 代价如实:用户手工添加的自定义节点仍被拒,直到它的 baseURL 有一个围栏外的真源。
 function refreshConfiguredEgressDestinations(userDataPath: string): void {
   try {
-    const injected = deriveEgressDestinations(buildAlphaModelConfig(userDataPath)?.provider)
-    const fileBlocks: Record<string, unknown> = {}
-    // 没有 alpha 环境根就没有 alpha.jsonc 可读(单测 fork)—— 与上面 customProviderSecretValues 同一条容忍。
-    if (tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR)
-      for (const [id, baseURL] of readConfiguredProviderBaseUrls()) fileBlocks[id] = { options: { baseURL } }
-    const accepted = setConfiguredEgressDestinations([...injected, ...deriveEgressDestinations(fileBlocks)])
+    const accepted = setConfiguredEgressDestinations(deriveEgressDestinations(buildAlphaModelConfig(userDataPath)?.provider))
     getLogger()?.log(
       `network egress: ${accepted.length} configured model destination(s) authorized for this generation — ` +
         (accepted.map((d) => `${d.host}:${d.port} (${d.providerId})`).join(", ") || "none"),

@@ -11,12 +11,23 @@
 // ── 为什么不是「往表里补几个域名」──────────────────────────────────────────────────────
 // 补 DeepSeek 和智谱,下一个供应商照样 403;而「下一个供应商」恰恰是这条路的卖点。手写清单与缺陷同形。
 // 放行集合从**引擎真正会去连的那个值**派生 —— 有效配置里 `provider.<id>.options.baseURL`(回退字段
-// `api`;alpha-config-injection.ts:457-462 的 v2 桥读的就是这两个,顺序也是这个顺序)。
-//   谁写这个值:目录 BYOK 节点 = alpha-models.json 的 `baseURL`,且**只在密钥文件在场时**才注入
-//               (alpha-models.ts:68-99 —— 「用户配置过这一家」在这里就已经是一个文件在不在的问题);
-//               用户自建节点 = alpha.jsonc 的 `provider.<id>.options.baseURL`(ext-config.ts persistProvider)。
+// `api`;alpha-config-injection.ts:457-462 的 v2 桥读的就是这两个,判据与顺序也逐字照它)。
+//   谁写这个值:目录 BYOK 节点 = alpha-models.json 的 `baseURL`(编译进包的常量),且**只在密钥文件在场时**
+//               才注入(alpha-models.ts:68-99 —— 「用户配置过这一家」在这里就是一个文件在不在的问题)。
 //   谁读这个值:引擎(AI SDK)照它发请求 ⇒ 策略代理看到的那条 CONNECT authority 就是它的 `host:port`。
 // 同一个值两边读,结构上不可能分叉 —— 这是「不再手写清单」的全部意义,也是评审该盯的那一点。
+//
+// ── 唯一的输入是注入面,**配置文件不算数**(`#1380` R1 Blocker)────────────────────────
+// 动态半场只吃 `buildAlphaModelConfig(userDataPath).provider`。配置文件里的 provider 块(alpha.jsonc /
+// `<XDG_CONFIG_HOME>/opencode` / `~/.opencode`)**刻意不读** —— 那三条路径全在 seatbelt 的可写集里
+// (process-fence-profile.ts 的 W2 / W6 / W16),而可写集里的东西正是**被围栏的引擎树自己能写的**。
+// 读它 = 引擎树里任意一段代码(bash 工具、仓库自带 plugin、MCP stdio 子进程)写一行
+//   {"provider":{"x":{"options":{"baseURL":"https://exfil.example"}}}}
+// 就给自己铸出一条出网通道,下一次 fork 后代理照放 —— 教科书式的 confused deputy,围栏对任意目的地开口。
+// 「有效配置」这个词在这里必须窄读成**围栏外的那一半**:catalog 是编译进包的常量,密钥文件由 main 在
+// fork 前 syncSecretFiles 收敛(不在 wanted 集合里的遗留文件当场扫掉),两者都不在引擎的可写集里。
+// **代价是如实的**:用户手工添加的自定义节点(其 baseURL 只住在那个可写文件里)仍然被拒。要支持它,
+// 得先给自定义节点的 baseURL 找一个围栏外的真源 —— 那是另一件事,不是在这里多读一个文件。
 //
 // ── 收进来的条件(fail-closed:四条全中才登记)─────────────────────────────────────────
 //   1. `new URL()` 解析得出(解析不出 ⇒ 不猜);
@@ -80,9 +91,12 @@ export function egressDestinationFromBaseUrl(baseURL: unknown, providerId: strin
 }
 
 /**
- * 从一份有效配置的 `provider` 表派生目的地。每个 block 先看 `options.baseURL`,没有再看 `api` ——
- * 与 alpha-config-injection.ts 的 v2 桥读同两个字段、同一顺序。认不出的 block 静默跳过:
- * 它只是产不出目的地(⇒ 仍被拒),不影响别的 provider。
+ * 从一份有效配置的 `provider` 表派生目的地。字段选择与 alpha-config-injection.ts 的 v2 桥
+ * (`typeof options.baseURL === "string" ? … : typeof api === "string" ? … : undefined`)**逐字同源**:
+ * `options.baseURL` **是字符串就赢**,回退到 `api` 的条件是它不是字符串,而**不是**「它派生失败」。
+ * 这个区别有后果:`options.baseURL = "https://[::1]/v1"` 时 v2 桥选的是那个 v6 地址(引擎去连它),
+ * 若这里回退去读 `api`,放行的就是一个引擎根本不会连的 host —— 两边分叉正是本模块要杜绝的东西。
+ * 认不出的 block 静默跳过:它只是产不出目的地(⇒ 仍被拒),不影响别的 provider。
  */
 export function deriveEgressDestinations(providers: unknown): ConfiguredEgressDestination[] {
   if (!providers || typeof providers !== "object" || Array.isArray(providers)) return []
@@ -91,8 +105,8 @@ export function deriveEgressDestinations(providers: unknown): ConfiguredEgressDe
     if (!block || typeof block !== "object") continue
     const options = (block as { options?: unknown }).options
     const fromOptions = options && typeof options === "object" && !Array.isArray(options) ? (options as { baseURL?: unknown }).baseURL : undefined
-    const destination =
-      egressDestinationFromBaseUrl(fromOptions, providerId) ?? egressDestinationFromBaseUrl((block as { api?: unknown }).api, providerId)
+    const chosen = typeof fromOptions === "string" ? fromOptions : (block as { api?: unknown }).api
+    const destination = egressDestinationFromBaseUrl(chosen, providerId)
     if (destination) out.push(destination)
   }
   return out

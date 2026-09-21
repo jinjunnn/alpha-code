@@ -115,9 +115,10 @@ function defaultDial(host: string, port: number): net.Socket {
 function denialBody(reason: EgressDenyReason, authority: string, detail?: string): string {
   const why =
     reason === "unregistered"
-      ? // `#1379`:拒绝理由要说得出**为什么**,否则用户只看到一个泛化的网络错误。两个半场各说一句:
-        // 既不是应用自己登记过的地址,也不是「你配置过的那些模型服务」之一。
-        `blocked by this app's local egress policy — the destination is neither a registered app endpoint (${REGISTRY_PATH}) nor one of the model providers configured on this machine`
+      ? // `#1379`:拒绝理由要说得出**为什么**,否则用户只看到一个泛化的网络错误。两个半场各说一句。
+        // 措辞刻意窄:动态半场只认**目录里自带、且这台机器握着密钥**的那些供应商 —— 写在配置文件里的
+        // 自建节点不算(`#1380` R1 Blocker:那些文件在围栏的可写集里)。说宽了就是把披露做成假话。
+        `blocked by this app's local egress policy — the destination is neither a registered app endpoint (${REGISTRY_PATH}) nor one of the built-in model providers this machine holds a key for`
       : reason === "bad-authority"
         ? "CONNECT authority must be host:port"
         : reason === "method-not-connect"
