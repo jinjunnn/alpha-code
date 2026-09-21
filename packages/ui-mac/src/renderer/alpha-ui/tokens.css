@@ -64,6 +64,13 @@
   --a-warning-subtle: rgba(217, 119, 6, 0.12);
   --a-error-subtle: rgba(220, 38, 38, 0.12);
   --a-info-subtle: rgba(37, 99, 235, 0.12);
+  /* `#1375`:红提示**文字**落在 --a-error-subtle 上时用这一支,而不是 --a-error。
+     坏的是这个**配对**,不是这支红本身:--a-error(#dc2626)落在 --a-surface 上是 6.47:1,
+     落在自己的 tint 上(合成后 = rgb(251,229,229))只有 4.01:1,低于 WCAG AA 的 4.5:1。
+     所以只换文字色,不动 --a-error、也不动底色 —— 换底色会改掉这三条提示的视觉分量。
+     红 700 在同一层底色上 5.37:1。判据:contrast-ratchet.test.ts 的 TINTED_TEXT(三个主题
+     块各判一次,半透明 tint 先合成到它所在的那层底上再算)。 */
+  --a-error-on-subtle: #b91c1c;
   --a-purple: #7c3aed;
   --a-purple-subtle: rgba(124, 58, 237, 0.12);
   --a-orange: #ea7317;
@@ -214,6 +221,10 @@
   --a-warning-subtle: rgba(251, 191, 36, 0.14);
   --a-error-subtle: rgba(248, 113, 113, 0.14);
   --a-info-subtle: rgba(96, 165, 250, 0.14);
+  /* `#1375`:深色下 --a-error 落在自己的 tint 上(合成在 --a-surface 上 = rgb(50,32,35))
+     已经是 5.56:1,不需要另择色。仍然显式写出来,是因为棘轮三个主题块都要判 ——
+     不写就会继承浅色块的 #b91c1c,落在这层深底上只有 2.66:1。 */
+  --a-error-on-subtle: #f87171;
   --a-purple: #a78bfa;
   --a-purple-subtle: rgba(167, 139, 250, 0.16);
   --a-orange: #fb923c;
@@ -262,6 +273,10 @@
     --a-warning: #fbbf24;
     --a-error: #f87171;
     --a-info: #60a5fa;
+    /* `#1375`:本块**不覆盖** --a-*-subtle(它们继承浅色块的 rgba),所以 --a-error-subtle
+       在这里合成出来是 rgb(42,21,24);#f87171 落在其上 6.23:1。这一支必须显式写 ——
+       少了它,继承来的 #b91c1c 落在那层深底上只有 2.66:1,而这正是本块历史上漏改过的那类。 */
+    --a-error-on-subtle: #f87171;
     --a-purple: #a78bfa;
     --a-purple-subtle: rgba(167, 139, 250, 0.16);
     --a-orange: #fb923c;
