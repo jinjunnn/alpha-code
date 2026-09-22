@@ -1,7 +1,7 @@
 ---
 title: "#1383 方案基线:自定义节点的服务地址改存围栏写不到的真源"
 kind: design
-status: proposed
+status: proposed  # 待 owner 批准;前置 alpha-code#1390
 owners:
   - alpha-code desktop maintainers
 last_reviewed: 2026-09-21
@@ -15,6 +15,11 @@ review_after: 2026-12-21
 
 **读法**:坐标以 `origin/alpha@129afb8ab`(2026-09-21)为准,写作 `文件:行`。第一节只陈述**读过、
 跑过**的事实,不含设计;设计从第二节起。
+
+> **前置:`alpha-code#1390`(P0)。** 开发前对抗审计(2026-09-21,一轮,结论见 §五)证明
+> **可写集本身可以被围栏内的代码撑开** —— 工作区那一行由 `<userData>` 里的一个 store 文件派生,
+> 而那个文件在可写根 W3 之内。在 `#1390` 修好之前,**没有任何目录是稳定「引擎写不到」的**,
+> 本基线的选定方案没有地基。顺序:`#1390` → 本票的子票 1–3 → `#1381`。
 
 ## 一、只读勘破(地面真相)
 
@@ -35,7 +40,14 @@ review_after: 2026-12-21
 file-write*` 兜底(`:152`)。`dropped` / `excluded` 只作用于 W1 的工作区并集(`:302-333`、`:367-394`),
 与其它根无关。
 
-**不在**可写集里的位置(逐条核过 19 行):app bundle 的 `Contents/Resources`(`process.resourcesPath`
+**W1 不是静态的(审计 B1,已复核)**:它由 `selectWorkspaceUnion`(`:308-333`)在每次启动时从
+`workspaceCandidatesFromStore`(`:245-267`)算出,候选来自 `<userData>/opencode.global.dat`
+(`store.ts:20-26`,electron-store,无 schema)的三个 tab 键 —— 而 `<userData>` 整棵是 W3。
+排除规则只有 `/`、HOME、HOME 的祖先(`:318`)。**即:围栏内的进程写一条 `{type:"draft",
+server:<本地 sidecar>, directory:"<任意绝对路径>"}`,重启后那个目录就进可写集**。审计把伪造记录
+喂给生产函数实跑,该目录被选中、`excluded` 为空。此洞已开 `#1390`,是本基线的前置。
+
+**不在**可写集里的位置(逐条核过其余 18 行,W1 见上):app bundle 的 `Contents/Resources`(`process.resourcesPath`
 仅在 `server.ts:182,424` 用于**寻址**原生模块,从不作为写入根);以及 `<appData>/alpha-code-state/`
 这个**父目录本身** —— W2 只授到它下面的 `env/<env>`。
 
@@ -47,7 +59,8 @@ sidecar 侧的写盘调用点登记簿 `scripts/process-fence-write-sites.tsv`(8
 W16×4,外加 **2 行 `main-only`**(都在 `alpha-environment.ts` 的 mkdir/rmdir)。**没有任何一行解析到
 `alpha-code-state/cas`** —— 它的写入方是 main 侧(`ext-cas-gc.ts:266` 一带)与 main 派生的 GC worker,
 不在围栏之内;引擎只**读**它(扩展从那儿装载),读在围栏里从不被拒。即:这个形状今天已经在生产里
-跑着,不是新发明。
+跑着,不是新发明。**但同一个 B1 的洞今天也对 `cas/` 开着** —— 「main 写得了、引擎写不到」这句话在
+`#1390` 修好之前只对「引擎的**直接**写」成立,对「引擎先撑开可写集再写」不成立。
 
 ### 1.3 自定义节点今天怎么存
 
@@ -90,8 +103,10 @@ return writeKey(providerTargetPath(), ["provider", input.id], block)
 
 ### 1.5 一个此前没被点名的同形面
 
-`enabled_providers` 的注入用 `readUserProviderIds()`(`ext-config.ts:1164-1172`),它**读的正是
-`alpha.jsonc` 的 `provider` 键名集合**。也就是说:引擎往配置里写一个 provider,它的 **id** 今天
+`enabled_providers` 的注入用 `readUserProviderIds()`(`ext-config.ts:1164-1172`),它遍历
+`providerReadPaths()`(`ext-config.ts:157-159`)的**三个**配置文件 —— `alpha.jsonc`(W2)、
+`~/.opencode/opencode.jsonc`(W16)、`<XDG_CONFIG_HOME>/opencode/opencode.jsonc`(W6),
+**三个都在可写集里**,读的是它们的 `provider` 键名集合(审计 m1 更正:不止一个文件)。也就是说:引擎往配置里写一个 provider,它的 **id** 今天
 会进 `enabled_providers`。它的调用**发不出去**(地址不在放行集合,`#1380` 之后由 1.4 挡住),但
 "配置文件里的东西能影响注入面"这条缝是存在的,本基线的不变量必须覆盖它。
 
@@ -147,23 +162,58 @@ return writeKey(providerTargetPath(), ["provider", input.id], block)
 
 不变量(实现票必须各有判据):
 
-- **I1 单一真源**:自定义节点的 `baseURL` 只有一处权威 = 真源文件;`alpha.jsonc` 的 `provider.*`
-  **不得**再参与注入面与放行集合的派生(含 `readUserProviderIds`)。
-- **I2 真源路径不在可写集内**:一条判据枚举 `WRITABLE_ROOT_IDS` 的全部 19 行,断言真源路径不被
-  任何一行覆盖 —— 将来有人加一行把它罩进去,这条测试要红。
-- **I3 迁移不采信旧文件**:升级后,`alpha.jsonc` 里已有的自定义节点**一律标为待确认**(复用
-  `#1343` 的 `needs-reentry` 形态,`model-picker-core.ts:194-201`),用户在 UI 里确认一次才进真源。
-  本机零租户(owner 确认),代价 = owner 重点几下。
-- **I4 拒绝优先**:真源缺失 / 解析失败 / 条目字段不合法 ⇒ 该条目既不注入也不放行,并**说得出原因**
-  (`#1387` 刚教过:静默的失败路径事后无法与"正常"区分)。
-- **I5 围栏语义不变**:本票不新增任何可写根,不放宽 egress 的静态半场。
+- **I1 单一真源**:自定义节点的 `baseURL` 只有一处权威 = 真源文件;**任何配置文件**
+  (`providerReadPaths()` 的三处,不只 `alpha.jsonc`)的 `provider.*` 不得再参与注入面与放行集合的
+  派生(含 `readUserProviderIds`)。**机制要点(审计 m1)**:引擎**原生**仍会合并 `alpha.jsonc`
+  (`packages/opencode/src/config/config.ts:406` 的 `OPENCODE_CONFIG`),所以"main 不读文件"只挡住一侧;
+  真正让引擎自己写的块失效的是 `enabled_providers` **整体替换** + 注入**完整块**(同 id 后合并者赢)。
+  判据因此必须端到端:**引擎往配置里写一个带 baseURL 的 provider ⇒ 它既不出现在 `model.list`,
+  也不在这一代放行集合里**,而不是只测 main 的函数不读文件。
+- **I2 真源路径不在可写集内**:对 **18 条静态行**逐条断言不被覆盖;**工作区那一行(W1)是运行时才定的,
+  不能用常量表断言**(审计 B1 指出原文是个假闸门)—— 它由 `#1390` 的排除规则兜住:任何会把应用状态根
+  纳入可写集的候选一律排除,判据在 `#1390`。比较用**实际** base root(dev 态 `ALPHA_ENV_BASE_DIR` 可改),
+  不用默认常量。
+- **I3 旧记录一律不采信,且不建"待确认"面**(审计 M1:原文的待确认面等于把已否决的方案 C 常设化 ——
+  引擎随时往配置里写一块,UI 就多一行"待确认 `https://exfil.example`"等人点):升级后
+  `alpha.jsonc` 里已有的自定义节点**既不进真源、也不在 UI 里露面**,只记一行日志说明它被忽略与为什么;
+  用户同名重新添加一次即可(同 slug 整块覆盖是既有行为)。本机零租户,代价 = owner 重填一次。
+- **I4 拒绝优先,且在添加那一刻就拒**:真源缺失 / 解析失败 / 字段不合法 ⇒ 既不注入也不放行,并说得出原因
+  (`#1387` 刚教过:静默的失败路径事后无法与"正常"区分)。**添加时的地址准入必须与出网准入同源**
+  (审计 m2:`ext-config.ts:331-340` 今天放行 loopback `http://`,而出网侧拒 http、拒 loopback ——
+  用户填 `http://localhost:11434` 会"加得进、发不出",与 `#1383` 自己的症状同形)。复用同一个函数,不抄第二份判据。
+- **I5 围栏语义不变**:本票不新增任何可写根,不放宽 egress 静态半场;`#1390` 的修法是**收窄**,同向。
 
-## 四、子票切分(基线批准后才切)
+## 四、子票切分(基线批准后才切;前置 `#1390` 先落地)
 
-1. `[CODE]` 真源存储与读写(新模块 + 原子写 + 解析 fail-closed);判据含 **I2** 那条路径断言。
-2. `[CODE]` 注入面与 `enabled_providers` 改从真源派生,`alpha.jsonc` 退出这两条路径(**I1**);
-   出网派生零改动,但要有一条"自定义节点的地址进了放行集合"的判据。
-3. `[CODE]` 迁移与 UI:旧条目标 `needs-reentry`、确认一次写入真源(**I3**),失败可见(**I4**)。
+0. **`#1390`(已开,P0,前置)** 可写集不得由围栏内可写的输入决定 —— 它不属于本票,但本票的 I2 依赖它。
+1. `[CODE]` 真源存储与读写:新模块 + 原子写 + 解析 fail-closed。**读与写拆成两个模块**(审计 m3:
+   `alpha-models.ts` / `ext-config.ts` / `alpha-environment.ts` 都在 sidecar 的 import 闭包里,
+   写入点若跟着进闭包,就只能在写盘登记簿里填 `main-only` 这个**文字标签**,测试查不出它是否真的只有 main
+   执行;写者不进闭包,§2 那句"一条 grep 就能复核"才成立)。判据含 I2 的静态 18 行断言。
+2. `[CODE]` 注入面与 `enabled_providers` 改从真源派生,三处配置文件的 `provider.*` 退出这两条路径(**I1**);
+   出网派生零改动,判据是 I1 里那条**端到端**判据。
+3. `[CODE]` 添加/删除自定义节点的准入与旧记录处置:添加时地址准入与出网同源(**I4**),
+   旧记录忽略 + 一行日志(**I3**),失败可见。
 4. `[CODE]` `#1381` 的远程 MCP:同一真源承载 MCP 服务器地址(形状相同,单独一票,等 1–3 落地)。
 
-`#1381` 的关闭条件随第 4 票;本票在基线被批准后即可关(结论落文档)。
+可选(不做也不是洞,审计 OPTIONAL):把 `custom-providers` 注册进 `alpha-environment.ts:115` 的
+`topology`,免费继承 canonical-identity 预检与回滚(`cas` 今天就靠它)。
+
+## 五、开发前对抗审计记录(2026-09-21,一轮,预算内唯一一轮)
+
+原定派 Codex,本机到 `auth.openai.com` 被代理接管(DNS → `198.18.5.203`,curl 000),
+openai-codex 插件亦未安装 ⇒ owner 裁决改用本仓 `alpha-audit`(不同模型,只读)。结论
+**ACCEPT-WITH-FIXES**,逐条处置:
+
+| finding | 处置 |
+| --- | --- |
+| **B1**(Blocker)可写集由引擎可写的输入派生,W1 可被撑开 | **接受** —— 主 session 逐坐标复核属实,开 `#1390`(P0)为前置;本基线 §1.1 / §1.2 / I2 已按它改写 |
+| **M1** 待确认面等于把已否决的方案 C 常设化 | **接受**,取其 (b):不做待确认面(I3 重写) |
+| **m1** I1 范围是三个配置文件,且要端到端判据 | **接受**(§1.5、I1) |
+| **m2** 添加时的地址准入与出网准入不同源 | **接受**(I4) |
+| **m3** 写入点会进 sidecar import 闭包 | **接受**(子票 1 的实现约束) |
+| **m4** 两处坐标更正(`process.resourcesPath` 的调用点不止两处;CAS 写入方是 `ext-cas.ts` 不是 GC) | **接受**,结论不变 |
+| OPTIONAL topology 注册 | **接受为可选**,不列入必做 |
+
+审计同时指出:第三问「漏掉的整类」只有一类,即**「可写集本身由引擎可写的输入派生」** ——
+六类攻击面都在问"谁能写配置",没问"谁能改写围栏的定义"。这一条已成为 `#1390`。
