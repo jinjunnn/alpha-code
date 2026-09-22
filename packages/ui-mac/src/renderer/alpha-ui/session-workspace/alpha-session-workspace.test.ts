@@ -203,6 +203,14 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     expect(composerMount).toContain("a-swk-composer-pending")
   })
 
+  test("`#1399`:dock 发布的「等你」信号经 workspace 的 signal 进时间线;审批卡不搬进时间线", () => {
+    expect(tsx).toContain("publishTurnWait={setTurnWait}")
+    expect(tsx).toContain("turnWait={turnWait}")
+    expect(dock).toContain("turnWaitOf({ approvalPending: approvalPending(), questionPending: question() !== undefined })")
+    expect(dockCore).toContain("export function turnWaitOf(")
+    expect(tsx).not.toContain("PermissionDialog")
+  })
+
   test("#862 编辑重发接入 fail-closed session info 闸与生产行为函数", () => {
     expect(tsx).toContain("canEditUserMessageForSession")
     expect(tsx).toContain("createSessionEditUserMessageHandler")

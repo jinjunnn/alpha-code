@@ -9,7 +9,7 @@ import type {
   TimelineFocusArtifactIntent,
   TimelineOpenFileIntent,
 } from "./cards/timeline-intents"
-import type { TimelineRow } from "./timeline-model"
+import type { TimelineRow, TimelineTurnWait } from "./timeline-model"
 import { SessionTimelineView, type SessionTimelineHistory } from "./session-timeline-view"
 
 const initialEpoch = "sidecar /tmp/workspace ses_harness"
@@ -20,6 +20,8 @@ const [history, setHistory] = createSignal<SessionTimelineHistory>({ more: false
 const [epoch, setEpoch] = createSignal(initialEpoch)
 const [settleTimeoutMs, setSettleTimeoutMs] = createSignal<number | undefined>(undefined)
 const [intentsEnabled, setIntentsEnabled] = createSignal(false)
+// `#1399`:活跃回合「在等你」(审批 / 提问)—— 生产里由 dock 发布、workspace 持信号供给时间线。
+const [turnWait, setTurnWait] = createSignal<TimelineTurnWait | undefined>(undefined)
 
 let loadOlderCalls = 0
 let pendingMode = false
@@ -82,6 +84,7 @@ export function SessionTimelineHarness() {
         return new Promise<void>((resolve) => pendingResolvers.push(resolve))
       }}
       settleTimeoutMs={settleTimeoutMs()}
+      turnWait={turnWait()}
       intents={harnessIntents}
       displayNames={{
         agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
@@ -113,6 +116,10 @@ export function resolvePendingLoads() {
   pendingResolvers.splice(0).forEach((resolve) => resolve())
 }
 
+export function setTimelineTurnWait(next: TimelineTurnWait | undefined) {
+  setTurnWait(next)
+}
+
 export function setTimelineRows(next: TimelineRow[]) {
   setRows(next)
 }
@@ -140,6 +147,7 @@ export function resetTimelineHarness() {
   setEpoch(initialEpoch)
   setSettleTimeoutMs(undefined)
   setIntentsEnabled(false)
+  setTurnWait(undefined)
   loadOlderCalls = 0
   pendingMode = false
   intentLog.focusArtifact.length = 0

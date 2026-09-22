@@ -12,6 +12,7 @@ import { turnDiffsOf } from "../session-rail/review/review-turn-diffs"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
 import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
+import type { TimelineTurnWait } from "../session-timeline/timeline-model"
 import { publishActiveSessionIdentity } from "../active-session-directory"
 import { sandboxApplied } from "../sandbox-state"
 import { SurfaceBoundary } from "../surface-boundary"
@@ -59,6 +60,9 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
     accepts: (identity) => sameSessionIdentity(identity, current()?.identity),
   }
   const [editRequest, setEditRequest] = createSignal<SessionComposerEditRequest | undefined>(undefined)
+  // `#1399`:活跃回合「在等你」(审批 / 提问)—— dock 发布(它是审批 feed 与 question 投影的唯一真相源),
+  // 时间线的回合脚行消费。审批卡本身仍只在独立 Permission surface(2026-07-26 裁决),这里传的只是一个词。
+  const [turnWait, setTurnWait] = createSignal<TimelineTurnWait | undefined>(undefined)
   // 编辑预填只属于发起时的 I8 身份；一旦离开该会话就销毁，返回时不得再次覆盖草稿。
   createEffect(() => discardStaleEditRequest(editRequest(), current()?.identity, () => setEditRequest(undefined)))
   const canEditUserMessage = createMemo(() => {
@@ -120,9 +124,17 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
               rail={rail}
               slashOriginsFor={sessionSlashOriginsFor}
               onEditUserMessage={canEditUserMessage() ? editUserMessage : undefined}
+              turnWait={turnWait}
             />
           )}
-          composer={() => <SessionComposerDock live={live} projects={props.projects} editRequest={editRequest} />}
+          composer={() => (
+            <SessionComposerDock
+              live={live}
+              projects={props.projects}
+              editRequest={editRequest}
+              publishTurnWait={setTurnWait}
+            />
+          )}
           panels={{
             review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,
             files: (rail) => <SessionRailFiles live={live} rail={rail} />,

@@ -18,6 +18,7 @@ import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
+import type { TimelineTurnWait } from "../session-timeline/timeline-model"
 import { SessionComposerMount, type SessionComposerEditRequest } from "./session-composer-mount"
 import {
   childParentHref,
@@ -29,6 +30,7 @@ import {
   sdkResultFailed,
   todoDockVisible,
   todoDone,
+  turnWaitOf,
 } from "./session-dock-core"
 import { createPermissionV2Feed, type PermissionV2Feed } from "./session-permission-feed"
 import { SessionQuestionCard } from "./session-question-card"
@@ -40,6 +42,11 @@ export function SessionComposerDock(props: {
   live: AlphaSessionLiveContext
   projects: AlphaProjectsApi
   editRequest?: () => SessionComposerEditRequest | undefined
+  /**
+   * `#1399`:把「回合在等你」(审批挂起 / 模型提问)发布给时间线的回合脚行。dock 是这两个投影的唯一真相源
+   * (审批 feed 只在这里建),所以由 dock 发布、workspace 持信号、时间线消费;缺席 = 不发布(harness)。
+   */
+  publishTurnWait?: (wait: TimelineTurnWait | undefined) => void
 }) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
@@ -121,6 +128,12 @@ export function SessionComposerDock(props: {
     const bound = identity()
     return bound ? headPendingQuestion(serverSync().session.data.question[bound.sessionID]) : undefined
   })
+  // `#1399`:两个投影都已按当前身份收窄(feed 随身份重建、question 按 sessionID 读),发布值天然 I8;
+  // 卸载时收回 —— 不让上一个 dock 的「在等你」挂在下一个时间线上。
+  createEffect(() =>
+    props.publishTurnWait?.(turnWaitOf({ approvalPending: approvalPending(), questionPending: question() !== undefined })),
+  )
+  onCleanup(() => props.publishTurnWait?.(undefined))
 
   /* ── revert / child-session:info(± message)typed 通道,读当前身份对应会话(I8)──── */
   const revert = createMemo(() => {

@@ -61,6 +61,7 @@ plugin、MCP、host 或 V2。因而从 alias、标题、URL、图标或 annotati
 - `packages/opencode/test/session/compaction.test.ts`
 - `packages/opencode/test/session/processor-effect.test.ts`
 - `packages/opencode/test/session/prompt.test.ts`
+- `packages/opencode/test/session/tools.test.ts`（2026-09-22 增补，见下方订正：上游新增的手写 mock 与本 ADR / ADR-038 / #1129 收编后变宽的接口不兼容；只补 mock 缺的成员，用例本体与断言逐字未变）
 - `packages/opencode/test/provider/transform.test.ts`（更新直呼 `LLMRequestPrep.prepare` 的测试夹具，并断言 `strict:false` 复制后保留本 ADR 要求的完整 identity）
 - `packages/opencode/test/tool/code-mode-integration.test.ts`
 - `packages/opencode/test/tool/code-mode.test.ts`
@@ -103,6 +104,23 @@ identity deny 判定，不扩大文件面。~~新增文件因 guard 的 DMR 策�
 >
 > 本订正**不改变**本 ADR 的任何接管决定：下方「精确 L3 接管面」那张表一条未动，它仍是逐文件的、
 > 每条都受 `UPSTREAM_EXCLUDES` 与 ADR-029 §3 管辖。谓词管的是**从来不是上游的**文件，不是收编。
+
+> **订正 · 2026-09-22** —— `alpha-code#1370` 一次性追平上游 `e11dbd020..fe3f3a41f`（PR #1401），owner 裁决
+> 并入本 ADR、不另开。
+>
+> 上游 2026-09-01（`765ae641d`）新增 `packages/opencode/test/session/tools.test.ts`。它按**上游**接口手写
+> mock；而本 ADR 与 ADR-038、`#1129` 收编的 `tool/registry.ts`（`tools()` 交出 `RegisteredTool[]`）、
+> `session/processor.ts`（handle 的 `registerToolDisplay`）、`session/tools.ts`（`resolve` 依赖
+> `AlphaToolPolicy.Service`）、`plugin/index.ts`（`tools()`）、`permission/index.ts`（`clearGrants`）把这些
+> 接口**扩宽**了，于是它在 alpha 上 `bun run --cwd packages/opencode typecheck` 7 条红（纯上游
+> `fe3f3a41f` 上 0 条）。
+>
+> 接管面 = **只补 mock 缺的成员**（`tools` / `clearGrants` / `pluginBinding` / `identity` /
+> `registerToolDisplay`）并在测试 layer 挂 alpha 自有夹具 `test/fixture/alpha-tool-policy.ts` 的
+> `inMemoryToolPolicyLayer()`；**生产签名零改动**，用例本体与断言逐字未变。这是让上游测试在 alpha 上
+> 继续跑的最小改法。它是上面那批收编面的**测试兄弟**，不是新的收编决定 —— 本 ADR 已具名收编
+> `transform.test.ts` 等同类上游测试，把它记进来是如实记账。后续每次 sync 合并到该文件时按
+> union 解（两侧改动都保留），与 `transform.test.ts` 同一纪律。
 
 守卫实现在 `scripts/alpha-check.sh` 与 `.github/workflows/alpha-ci.yml`，两张精确表必须保持 1:1。
 不得以目录级排除覆盖未来文件。
