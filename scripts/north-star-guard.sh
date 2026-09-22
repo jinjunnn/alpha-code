@@ -180,13 +180,12 @@ UPSTREAM_EXCLUDES=(
   ':(exclude)packages/opencode/test/tool/registry.test.ts'
   ':(exclude)packages/core/src/tool/application-tools.ts'
   ':(exclude)packages/core/src/tool/registry.ts'
-  # #1370(2026-09-22 一次性追平上游 e11dbd020..fe3f3a41f):上游 2026-09-01 新增的
-  # test/session/tools.test.ts 手写 mock 按上游接口写,而上面 ADR-038 / ADR-041 / #1129 收编的
-  # permission/index.ts(clearGrants)、tool/registry.ts(RegisteredTool)、session/processor.ts
-  # (registerToolDisplay)、session/tools.ts(AlphaToolPolicy 依赖)把接口扩宽 ⇒ 它在 alpha 上
-  # typecheck 红。接管面 = 只补 mock 缺的成员,生产签名不动;它是上面那几份收编的**测试兄弟**,
-  # 不是新的接管表面。ADR-029 §3「新增收编须自己的 ADR」—— 本条尚未挂到具名 ADR,由 owner 裁决
-  # 是并入 ADR-041 修订还是另开(见 PR #1401)。
+  # ADR-041 订正 · 2026-09-22(#1370 一次性追平上游 e11dbd020..fe3f3a41f,PR #1401):上游
+  # 2026-09-01 新增的 test/session/tools.test.ts 手写 mock 按上游接口写,而上面 ADR-038 / ADR-041 /
+  # #1129 收编的 permission/index.ts(clearGrants)、tool/registry.ts(RegisteredTool)、
+  # session/processor.ts(registerToolDisplay)、session/tools.ts(AlphaToolPolicy 依赖)把接口扩宽
+  # ⇒ 它在 alpha 上 typecheck 红。接管面 = 只补 mock 缺的成员,生产签名不动;它是上面那几份收编的
+  # **测试兄弟**,owner 裁决并入 ADR-041(「精确 L3 接管面」已列入,不另开 ADR)。
   ':(exclude)packages/opencode/test/session/tools.test.ts'
   # ADR-042(#1047): OAuth loopback success/error HTML is product chrome; ADR-007
   # Vite brand transform never reaches engine-served callback pages.

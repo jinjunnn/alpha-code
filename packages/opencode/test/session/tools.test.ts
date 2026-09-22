@@ -19,7 +19,8 @@ import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "../lib/effect"
 import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
 
-// alpha(#1370 追平上游时接管;登记在 scripts/north-star-guard.sh 的 UPSTREAM_EXCLUDES):
+// alpha(#1370 追平上游时接管;ADR-041 订正 2026-09-22 列入「精确 L3 接管面」,登记在
+// scripts/north-star-guard.sh 的 UPSTREAM_EXCLUDES):
 // 上游 2026-09-01 新增本文件,手写的 mock 按上游接口写;alpha 已收编的 Plugin / Permission /
 // ToolRegistry / SessionProcessor(ADR-038、ADR-041、#1129)把这些接口**扩宽**了,于是它在
 // alpha 上 typecheck 红。只补 mock 缺的成员与 alpha 必需的 AlphaToolPolicy 层,**不改生产签名**;
