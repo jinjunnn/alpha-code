@@ -9,7 +9,8 @@ import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { customProviderSecretValues } from "./alpha-byok-keys"
-import { readUserProviderIds } from "./ext-config"
+import { ignoredConfigProviderBlocks } from "./ext-config"
+import { readCustomProviderRecords } from "./custom-provider-records"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
@@ -152,6 +153,31 @@ function ensureEgressPolicyProxy(): Promise<EgressProxyHandle> {
 // 与 `options.apiKey`(alpha-models.ts 第 (3) 段),**从不贡献 baseURL** —— 判据在
 // network-egress-derived.test.ts 的 B1 那条(带对照臂)。
 // 代价如实:用户手工添加的自定义节点仍被拒,直到它的 baseURL 有一个围栏外的真源。
+// `#1392`(基线 I3):配置文件里既有的 provider 块从此被忽略(它们全在围栏的可写集里,不再参与注入面与放行集合)。
+// 不采信、不迁移、不建「待确认」面 —— 只在每个进程第一次 fork 时出声一次,说清忽略了哪些 id、在哪个文件、为什么、怎么办。
+let ignoredConfigProvidersLogged = false
+function logIgnoredConfigProvidersOnce(): void {
+  if (ignoredConfigProvidersLogged) return
+  if (!(tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR)) return // no environment root ⇒ no config file to speak of (unit-test forks); not latched
+  let blocks: Array<{ file: string; ids: string[] }>
+  try {
+    blocks = ignoredConfigProviderBlocks()
+  } catch {
+    return
+  }
+  ignoredConfigProvidersLogged = true
+  for (const { file, ids } of blocks)
+    getLogger()?.log(
+      `custom providers: ignoring provider.* in ${file} (ids: ${ids.join(", ")}) — config files are writable by the fenced engine tree, ` +
+        "so they no longer feed the model list or the egress allowlist (#1392); a service you added yourself must be re-added from the model picker",
+    )
+}
+
+/** 仅测试:让下一次 fork 再出声一次(生产每进程一次)。 */
+export function __resetIgnoredConfigProvidersLogForTests(): void {
+  ignoredConfigProvidersLogged = false
+}
+
 function refreshConfiguredEgressDestinations(userDataPath: string): void {
   try {
     const accepted = setConfiguredEgressDestinations(deriveEgressDestinations(buildAlphaModelConfig(userDataPath)?.provider))
@@ -401,11 +427,16 @@ export async function spawnLocalServer(
   // without the files, the platform/BYOK providers silently vanish from the picker (anti-B11).
   try {
     // REQ-226 (`#1343`): off-catalog custom-provider keys go keychain store → key file directly (no env
-    // hop): the set is "provider ids in alpha.jsonc ∩ ids in the store", named custom-provider--<id>.
-    // Without an alpha environment root there is no alpha.jsonc to read (unit-test forks), hence nothing
-    // to materialize — same tolerance as the registryChannel lookup further down.
+    // hop): the set is "ids in the custom-provider TRUTH file ∩ ids in the store", named custom-provider--<id>.
+    // `#1392`: the ids come from `<appData>/alpha-code-state/custom-providers/<env>.json` (custom-provider-records.ts,
+    // the same reader the sidecar's buildAlphaModelConfig uses), never from alpha.jsonc. Without an alpha environment
+    // root the truth location is unknown (unit-test forks) ⇒ nothing to materialize — same tolerance as the
+    // registryChannel lookup further down.
     const customSecrets =
-      tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR ? customProviderSecretValues(readUserProviderIds()) : {}
+      tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR
+        ? customProviderSecretValues(readCustomProviderRecords((line) => getLogger()?.warn(line)).map((record) => record.id))
+        : {}
+    logIgnoredConfigProvidersOnce()
     const sync = syncSecretFiles(options.userDataPath, process.env, customSecrets)
     getLogger()?.log(`alpha-secrets sync: wrote [${sync.written.join(", ")}] removed [${sync.removed.join(", ")}]`)
     // REQ-076 T2(ADR-026 §5,C28 反 placebo):0600/0700 在 NTFS 近乎 no-op —— 密钥文件的

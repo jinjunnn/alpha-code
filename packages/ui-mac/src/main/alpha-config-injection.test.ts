@@ -104,7 +104,7 @@ beforeEach(() => {
   // 当前环境根(alpha.jsonc 真源 = OPENCODE_CONFIG 的注入目标)。
   process.env.ALPHA_GLOBAL_DIR = path.join(tmp, "alpha-code-state", "env", "dev")
   fs.mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
-  // 用户全局引擎配置面(readUserProviderIds / injectMcpDefaultDeny 的枚举源)—— 指向空目录,
+  // 用户全局引擎配置面(injectMcpDefaultDeny 的枚举源)—— 指向空目录,
   // 宿主机 ~/.config/opencode 与 ~/.opencode 不得渗进断言。
   process.env.XDG_CONFIG_HOME = path.join(tmp, "xdg")
   process.env.ALPHA_OPENCODE_HOME = path.join(tmp, "opencode-home")
@@ -257,7 +257,12 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     expect(modelsBaseRaw).not.toContain("apiKey")
   })
 
-  test("enabled user/file provider missing from the in-memory projection keeps the late barrier fail-closed", () => {
+  // `#1392`(基线 I1):这条用例的上一版(#857)钉的是「alpha.jsonc 里的 provider 进了 enabled_providers 但没有完整投影 ⇒ 保守晚屏障」。
+  // 那个前提现在**在生产里到不了**:配置文件的 provider 块不再进 enabled_providers(注入面只认真源),governedModelsBase 那个保守
+  // 分支只剩防御作用。翻面钉住三个面:①content 的 enabled_providers / provider 没有它;②v2 桥的 opencode.json 拷贝**去掉了
+  // provider 键**(v2 catalog 的可用性不看 enabled_providers,原样拷贝会让它直接进 picker 的 v2 model.list);③governed models base
+  // 照常物化,里面没有它。同一份状态下真源一条记录走完整链:三个面都有它(npm / api 逐字)。
+  test("#1392 a provider block in alpha.jsonc reaches none of content / v2 copy / models.json; a truth-file record reaches all three", () => {
     givenLoggedInWithByok()
     fs.writeFileSync(
       path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"),
@@ -266,21 +271,46 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
         provider: {
           "user-file-provider": {
             npm: "@ai-sdk/openai-compatible",
+            options: { baseURL: "https://exfil.example/v1", apiKey: "not-a-real-key-Zq81" },
             models: { "user-model": { name: "User Model" } },
           },
         },
+        mcp: { keep: { type: "remote", url: "https://mcp.example/keep" } },
       }),
+    )
+    const truthPath = path.join(tmp, "alpha-code-state", "custom-providers", "dev.json")
+    fs.mkdirSync(path.dirname(truthPath), { recursive: true })
+    fs.writeFileSync(
+      truthPath,
+      JSON.stringify({ v: 1, providers: [{ id: "my-openai", name: "My OpenAI", compat: "openai", baseURL: "https://api.openai.com/v1", models: ["gpt-5.4"] }] }),
     )
 
     expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
-    expect(process.env.OPENCODE_MODELS_PATH).toBeUndefined()
-    expect(fs.existsSync(path.join(userData, "alpha-engine-config", "models.json"))).toBe(false)
-    expect(JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!).enabled_providers).toContain("user-file-provider")
-    expect(
-      JSON.parse(fs.readFileSync(path.join(process.env.OPENCODE_CONFIG_DIR!, "opencode.json"), "utf8")).provider[
-        "user-file-provider"
-      ],
-    ).toBeDefined()
+    // ① content
+    const content = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!) as { enabled_providers: string[]; provider: Record<string, unknown> }
+    expect(content.enabled_providers).not.toContain("user-file-provider")
+    expect(content.provider["user-file-provider"]).toBeUndefined()
+    expect(content.enabled_providers).toContain("my-openai")
+    expect(content.provider["my-openai"]).toEqual({
+      npm: "@ai-sdk/openai-compatible",
+      name: "My OpenAI",
+      options: { baseURL: "https://api.openai.com/v1", apiKey: "" },
+      models: { "gpt-5.4": { name: "gpt-5.4" } },
+    })
+    // ② v2 桥:opencode.json 拷贝没有 provider 键(其余键原样),opencode.jsonc 的注入表有真源节点、没有配置文件节点
+    const v2Dir = process.env.OPENCODE_CONFIG_DIR!
+    const copy = JSON.parse(fs.readFileSync(path.join(v2Dir, "opencode.json"), "utf8"))
+    expect(copy).toEqual({ $schema: "https://opencode.ai/config.json", mcp: { keep: { type: "remote", url: "https://mcp.example/keep" } } })
+    expect(fs.readFileSync(path.join(v2Dir, "opencode.json"), "utf8")).not.toContain("exfil.example")
+    const v2 = JSON.parse(fs.readFileSync(path.join(v2Dir, "opencode.jsonc"), "utf8")) as { provider: Record<string, unknown> }
+    expect(v2.provider["user-file-provider"]).toBeUndefined()
+    expect(v2.provider["my-openai"]).toEqual({ npm: "@ai-sdk/openai-compatible", name: "My OpenAI", options: { baseURL: "https://api.openai.com/v1" }, models: { "gpt-5.4": { name: "gpt-5.4" } } })
+    // ③ governed models base 照常物化(每个 enabled id 都有完整投影),真源节点在、配置文件节点不在
+    expect(process.env.OPENCODE_MODELS_PATH).toBe(path.join(v2Dir, "models.json"))
+    const modelsBase = JSON.parse(fs.readFileSync(path.join(v2Dir, "models.json"), "utf8")) as Record<string, { models: Record<string, { provider?: unknown }> }>
+    expect(modelsBase["user-file-provider"]).toBeUndefined()
+    expect(Object.keys(modelsBase["my-openai"]!.models)).toEqual(["gpt-5.4"])
+    expect(modelsBase["my-openai"]!.models["gpt-5.4"]!.provider).toEqual({ npm: "@ai-sdk/openai-compatible", api: "https://api.openai.com/v1" })
   })
 
   test("ALPHA_MODELS_DISABLE preserves the upstream models path escape hatch", () => {

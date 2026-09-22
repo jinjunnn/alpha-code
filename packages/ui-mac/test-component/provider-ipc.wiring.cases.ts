@@ -195,14 +195,25 @@ describe("providers-set-key — re-entering a key retires ONLY the legacy plaint
     expect(providersIn(primary()).deepseek).toEqual({ options: { baseURL: "https://api.deepseek.com/v1" } })
   })
 
-  test("⑤ providers-remove still goes store → config → refresh (unchanged by the fix)", async () => {
-    writeProviders(primary(), { "my-endpoint": { options: { apiKey: "alpha-keychain" } } })
-    expect(setKey("my-endpoint", SECRET).ok).toBe(true)
+  // `#1392`:providers-add / providers-remove 走真源文件(<casBaseRoot>/custom-providers/<env>.json),alpha.jsonc 不参与 ——
+  // 即使 alpha.jsonc 里躺着同名旧块,添加与删除都不碰它(基线 I3:旧记录只忽略 + 一行日志,server.ts)。
+  test("⑤ providers-add writes the truth file, providers-remove goes store → truth → refresh; alpha.jsonc is never written", async () => {
+    const truth = path.join(fs.realpathSync(tmp), "alpha-code-state", "custom-providers", "dev.json")
+    const old = { "my-endpoint": { options: { baseURL: "https://stale.invalid/v1", apiKey: "alpha-keychain" } } }
+    writeProviders(primary(), old)
+    const before = fs.readFileSync(primary(), "utf8")
+    const added = await invoke<Promise<Result>>("providers-add", { id: "my-endpoint", name: "Mine", compat: "openai", baseURL: "https://mine.invalid/v1", apiKey: SECRET, models: ["m"] })
+    expect(added).toEqual({ ok: true })
+    expect(refreshes).toBe(1)
+    expect(getByokKey("my-endpoint")).toBe(SECRET)
+    expect(fs.readFileSync(truth, "utf8")).toBe('{"v":1,"providers":[{"id":"my-endpoint","name":"Mine","compat":"openai","baseURL":"https://mine.invalid/v1","models":["m"]}]}\n')
+    expect(fs.readFileSync(primary(), "utf8")).toBe(before)
     const removed = await invoke<Promise<Result>>("providers-remove", "my-endpoint")
     expect(removed).toEqual({ ok: true })
     expect(getByokKey("my-endpoint")).toBeUndefined()
-    expect(providersIn(primary())["my-endpoint"]).toBeUndefined()
-    expect(refreshes).toBe(1)
+    expect(fs.readFileSync(truth, "utf8")).toBe('{"v":1,"providers":[]}\n')
+    expect(fs.readFileSync(primary(), "utf8")).toBe(before)
+    expect(refreshes).toBe(2)
   })
 
   test("⑥ alpha's marker block in alpha.jsonc + a plaintext leaf for the same id in the user's CLI copy: marker file byte-identical, the CLI copy's leaf retired", () => {

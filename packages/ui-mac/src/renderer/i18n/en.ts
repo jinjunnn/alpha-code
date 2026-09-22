@@ -1149,7 +1149,7 @@ export const dict = {
   "alpha.model.byokGroup": "Direct providers · your own key (BYOK)",
   "alpha.model.catalogLoading": "Loading model catalog…",
   "alpha.model.noMatches": "No matching models",
-  "alpha.model.addProvider": "＋ Add a provider (paste your key)",
+  "alpha.model.addProvider": "＋ Add a provider / connect another service",
   "alpha.model.rowLabel": "{{model}}, {{provider}}, {{status}}",
   "alpha.model.rowLabelNoStatus": "{{model}}, {{provider}}",
   "alpha.model.keyLoading": "Key status loading…",
@@ -1175,22 +1175,27 @@ export const dict = {
   "alpha.model.pricingBasisNote": "Multipliers are relative to {{model}} uncached token pricing",
 
   "alpha.provider.customEndpoint": "Custom endpoint",
-  "alpha.provider.addTitle": "Add a provider",
+  "alpha.provider.addTitle": "Add a provider / connect another service",
   "alpha.provider.testIncomplete": "Enter a Base URL, key, and model first",
   "alpha.provider.testConnected": "Connected · {{ms}}ms",
   "alpha.provider.nameRequired": "Enter a provider name",
   "alpha.provider.modelRequired": "At least one model ID is required",
   "alpha.provider.keyRequired": "Enter an API key",
   "alpha.provider.removeEnvKey": "This key comes from an environment variable. Remove {{key}} from alpha.env.",
-  "alpha.provider.intro": "Pick one of the providers below and paste your own key.",
+  "alpha.provider.intro": "Pick one of the providers below and paste your key; for a service not listed here (OpenAI, Gemini, …) use the last row: address, compatible format, key.",
   "alpha.provider.presetHint": "{{compat}} · key only",
   "alpha.provider.openaiCompatible": "OpenAI compatible",
   "alpha.provider.anthropicCompatible": "Anthropic compatible",
   "alpha.provider.configured": "Configured",
-  // `#1397`: the "Other / custom endpoint" row used to sit here. A node added that way could not
-  // send a single message, so the entry is closed and replaced in place by this explanation.
-  "alpha.provider.customEndpointUnsupported":
-    "Adding your own service address is not supported yet. That address has to live somewhere the AI cannot edit, and we have not built that yet — a node added today could not send messages. It will come back once we have.",
+  // `#1392`: the "connect another service" row is back — the address now lives where the AI cannot edit it (`#1391`), so a node added here can send.
+  "alpha.provider.otherEndpoint": "Connect another service (OpenAI, Gemini, …)",
+  "alpha.provider.compatibleSummary": "Address + key · OpenAI / Anthropic-compatible format",
+  // Why an address was refused at save time (main classifies it with the same predicate the egress fence uses).
+  "alpha.provider.address.invalidUrl": "That is not a valid address; it must start with https://, for example https://api.openai.com/v1",
+  "alpha.provider.address.notHttps": "Only https:// addresses are supported; plain http:// is never let through",
+  "alpha.provider.address.loopback": "Addresses that point at this computer (localhost / 127.0.0.1) are not supported — local models are out of scope; enter a remote service's address",
+  "alpha.provider.address.hostShape": "The host must be a DNS name or an IPv4 address (no wildcards, trailing dots or IPv6 literals)",
+  "alpha.provider.address.port": "The port in the address is out of range (1–65535)",
   "alpha.provider.name": "Provider name",
   "alpha.provider.namePlaceholder": "For example, DeepSeek",
   "alpha.provider.compatibility": "Compatibility",

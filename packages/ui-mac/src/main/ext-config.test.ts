@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistProvider, PROVIDER_KEYCHAIN_MARKER, readConfiguredProviderKeys, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict, validateProviderInput } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, ignoredConfigProviderBlocks, persistMcp, PROVIDER_KEYCHAIN_MARKER, readConfiguredProviderKeys, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict, validateProviderInput } from "./ext-config"
+import { egressDestinationFromBaseUrl } from "./network-egress-derived"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import { newMcpSecretVersionId, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -845,10 +846,12 @@ describe("releasePreparedMcpSecretVersion — #712 合并引用视图", () => {
   })
 })
 
-// ── REQ-226 `#1343`:自定义服务的密钥不进 alpha.jsonc ──────────────────────────────────────────
-// AC1 的证据面:添加后 alpha.jsonc 文本含 "alpha-keychain"、不含输入密钥、不含 {file:。
-// AC7 的咽喉点:readConfiguredProviderKeys 只返回分类,不返回值。
-describe("persistProvider — REQ-226 #1343: alpha.jsonc carries the keychain marker, never the key", () => {
+// ── `#1392`(`#1383` 基线 I1 / I4):自定义服务的定义**不再写任何配置文件**(真源在 custom-provider-truth.ts,写在
+// provider-lifecycle.ts);ext-config 只剩两件事:validateProviderInput(添加前的纯校验,零 I/O)与 ignoredConfigProviderBlocks
+// (只服务日志)。添加时的地址准入与出网准入**同一个函数**(network-egress-derived.ts classifyBaseUrl):这里的判据不是
+// 再抄一份「什么地址合法」,而是逐条断言 validateProviderInput 的裁决 == egressDestinationFromBaseUrl 的裁决。
+// AC7 的咽喉点仍在下一节:readConfiguredProviderKeys 只返回分类,不返回值。
+describe("validateProviderInput — #1392: address admission is the egress classifier; no config file is ever written", () => {
   const SECRET = "test-value-not-a-real-key-Zq81"
   const input = (): ProviderInput => ({
     id: "my-endpoint",
@@ -860,64 +863,74 @@ describe("persistProvider — REQ-226 #1343: alpha.jsonc carries the keychain ma
   })
   const alphaJsonc = () => path.join(alphaTmp, "alpha.jsonc")
 
-  test("AC1: the written text contains the marker, not the input key, and no {file: reference", () => {
-    expect(persistProvider(input())).toEqual({ ok: true })
-    const text = fs.readFileSync(alphaJsonc(), "utf8")
-    expect(text).toContain(`"${PROVIDER_KEYCHAIN_MARKER}"`)
-    expect(text).not.toContain(SECRET)
-    expect(text).not.toContain("{file:")
-    expect(readAlphaConfig().provider["my-endpoint"]).toEqual({
-      npm: "@ai-sdk/openai-compatible",
-      name: "My Endpoint",
-      options: { baseURL: "https://api.example.invalid/v1", apiKey: PROVIDER_KEYCHAIN_MARKER },
-      models: { "m-1": { name: "m-1" }, "m-2": { name: "m-2" } },
-    })
-  })
-
-  test("re-adding the same id replaces the WHOLE block — the re-entry path turns a legacy plaintext block into a marker block", () => {
-    writeAlphaConfig({
-      provider: {
-        "my-endpoint": {
-          npm: "@ai-sdk/openai-compatible",
-          name: "Old",
-          options: { baseURL: "https://old.invalid/v1", apiKey: "legacy-plain-value-Ab12" },
-          models: { old: { name: "old" } },
-        },
-      },
-    })
-    expect(persistProvider(input())).toEqual({ ok: true })
-    const text = fs.readFileSync(alphaJsonc(), "utf8")
-    expect(text).not.toContain("legacy-plain-value-Ab12")
-    expect(text).not.toContain("old.invalid")
-    expect(readAlphaConfig().provider["my-endpoint"].models).toEqual({ "m-1": { name: "m-1" }, "m-2": { name: "m-2" } })
-  })
-
-  test("I4: ids reserved by the catalog are refused before any write (display id, `<id>-byok` engine id, platform id)", () => {
+  test("I4: ids reserved by the catalog are refused (display id, `<id>-byok` engine id, platform id); nothing is written anywhere", () => {
     for (const id of ["deepseek", "deepseek-byok", "alpha"]) {
-      const result = persistProvider({ ...input(), id })
+      const result = validateProviderInput({ ...input(), id })
       expect(result.ok).toBe(false)
       if (!result.ok) expect(result.reason).toMatch(/reserved/)
     }
     expect(fs.existsSync(alphaJsonc())).toBe(false)
+    expect(fs.existsSync(path.join(tmp, "opencode.jsonc"))).toBe(false)
   })
 
-  test("validateProviderInput is the exact gate persistProvider applies (no I/O): same verdict for every rejection", () => {
-    const bad: ProviderInput[] = [
-      { ...input(), id: "bad id" },
-      { ...input(), name: "" },
-      { ...input(), compat: "x" as ProviderInput["compat"] },
-      { ...input(), baseURL: "http://evil.example/v1" },
-      { ...input(), apiKey: "" },
-      { ...input(), models: [] },
-      { ...input(), models: ["  "] },
+  test("non-address rejections keep their reasons and carry no address code", () => {
+    const bad: Array<[ProviderInput, string]> = [
+      [{ ...input(), id: "bad id" }, "invalid provider id"],
+      [{ ...input(), name: "" }, "missing provider name"],
+      [{ ...input(), compat: "x" as ProviderInput["compat"] }, "invalid compat"],
+      [{ ...input(), apiKey: "" }, "missing api key"],
+      [{ ...input(), models: [] }, "at least one model id is required"],
+      [{ ...input(), models: ["  "] }, "at least one model id is required"],
     ]
-    for (const candidate of bad) {
-      const verdict = validateProviderInput(candidate)
-      expect(verdict.ok).toBe(false)
-      expect(persistProvider(candidate)).toEqual(verdict)
-    }
+    for (const [candidate, reason] of bad) expect(validateProviderInput(candidate)).toEqual({ ok: false, reason })
     expect(validateProviderInput(input())).toEqual({ ok: true })
+  })
+
+  // 基线 I4(审计 m2):此前这里放行 loopback `http://`,而出网侧拒 ⇒ 用户填 `http://localhost:11434` 会「加得进、发不出」。
+  // 判据钉的是**同一个函数**:每一条 URL,添加侧的 ok 逐字等于出网侧「派生得出目的地」;拒绝时带 code,renderer 据此说人话。
+  test("#1392 the add-time address verdict equals the egress verdict for every URL in the table; loopback / http are refused WITH a code", () => {
+    const table: Array<[string, boolean, string | undefined]> = [
+      ["https://api.openai.com/v1", true, undefined],
+      ["https://generativelanguage.googleapis.com/v1beta/openai", true, undefined],
+      ["https://API.Example.COM:8443/v1", true, undefined],
+      ["https://10.0.0.7/v1", true, undefined],
+      ["http://localhost:11434/v1", false, "loopback"],
+      ["https://localhost:11434/v1", false, "loopback"],
+      ["https://127.0.0.1:11434/v1", false, "loopback"],
+      ["https://[::1]:11434/v1", false, "loopback"],
+      ["https://ollama.localhost/v1", false, "loopback"],
+      ["http://api.example.com/v1", false, "not-https"],
+      ["ws://api.example.com/v1", false, "not-https"],
+      ["api.example.com/v1", false, "invalid-url"],
+      ["", false, "invalid-url"],
+      ["https://*.example.com/v1", false, "host-shape"],
+      ["https://api.example.com./v1", false, "host-shape"],
+      ["https://api.example.com:70000/v1", false, "invalid-url"],
+    ]
+    expect(table.length).toBe(16)
+    for (const [baseURL, ok, code] of table) {
+      const verdict = validateProviderInput({ ...input(), baseURL })
+      const egress = egressDestinationFromBaseUrl(baseURL, "my-endpoint") !== undefined
+      expect({ baseURL, add: verdict.ok, egress }).toEqual({ baseURL, add: ok, egress: ok })
+      if (!verdict.ok) expect({ baseURL, code: verdict.code }).toEqual({ baseURL, code })
+    }
+    // 人话原文兜底(renderer 用 code 换成用户语言);loopback 那条必须点名「本机」
+    const loopback = validateProviderInput({ ...input(), baseURL: "http://localhost:11434" })
+    expect(loopback).toEqual({ ok: false, code: "loopback", reason: "the base URL points at this machine (localhost / 127.0.0.1); local services are not supported" })
     expect(fs.existsSync(alphaJsonc())).toBe(false)
+  })
+
+  test("ignoredConfigProviderBlocks (基线 I3): names the provider ids in each config file that carries any — for the log line only", () => {
+    expect(ignoredConfigProviderBlocks()).toEqual([])
+    writeAlphaConfig({ provider: { "old-node": { options: { baseURL: "https://old.invalid/v1" } }, another: {} } })
+    fs.writeFileSync(path.join(tmp, "opencode.jsonc"), JSON.stringify({ provider: { xdgnode: {} } }))
+    fs.mkdirSync(homeTmp, { recursive: true })
+    fs.writeFileSync(path.join(homeTmp, "opencode.jsonc"), "{not json") // 坏文件:跳过,不抛
+    // alpha.jsonc 的路径经 resolveAlphaGlobalRoot 归一(realpath);XDG 那条按 OPENCODE_CONFIG_DIR 原样。
+    expect(ignoredConfigProviderBlocks()).toEqual([
+      { file: fs.realpathSync(alphaJsonc()), ids: ["old-node", "another"] },
+      { file: path.join(tmp, "opencode.jsonc"), ids: ["xdgnode"] },
+    ])
   })
 })
 

@@ -182,7 +182,12 @@ export type ProviderTestInput = {
   apiKey: string
   model: string
 }
-export type ProviderResult = { ok: true } | { ok: false; reason: string }
+/**
+ * `#1392`(基线 I4):添加自定义节点时地址被拒的**类别**,由出网派生同一个判据函数给出(main/network-egress-derived.ts
+ * classifyBaseUrl —— 不是第二份判据)。renderer 据此用用户的语言说原因;`reason` 仍是英文原文兜底。
+ */
+export type ProviderAddressRejection = "invalid-url" | "not-https" | "loopback" | "host-shape" | "port"
+export type ProviderResult = { ok: true } | { ok: false; reason: string; code?: ProviderAddressRejection }
 export type ProviderTestResult = { ok: true; ms: number } | { ok: false; reason: string }
 
 // Per-provider BYOK key state for the picker. Builtin providers are injected as opencode CONFIG

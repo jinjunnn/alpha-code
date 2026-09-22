@@ -84,12 +84,18 @@ describe("原子写:字节固定、无残留、失败不留半截", () => {
 })
 
 describe("判据 4 · 写模块不在 sidecar 的 import 闭包里(生产的闭包工具实测)", () => {
-  test("sidecarSourceFiles 含基线点名的三个读侧模块(集合是活的),不含 custom-provider-truth-write.ts", () => {
+  // `#1392` 把读端接进注入面之后,闭包里多了 custom-provider-records.ts 与 custom-provider-truth.ts(读侧,预期之内);
+  // 同时 **ext-config.ts 离开了闭包** —— alpha-models.ts 不再为了 readUserProviderIds / readConfiguredProviderKeys 引它,
+  // 于是配置写器(19 处落在 W2+W6+W1 的写盘点)从此不在 sidecar 进程的可达代码里。这一条顺手成为棘轮:写模块与配置写器都不许回来。
+  test("sidecarSourceFiles 含读侧模块(alpha-models / alpha-environment / custom-provider-records / custom-provider-truth,集合是活的),不含写模块,也不再含 ext-config.ts", () => {
     const files = sidecarSourceFiles(repoRoot)
     expect(files).toContain("packages/ui-mac/src/main/alpha-models.ts")
-    expect(files).toContain("packages/ui-mac/src/main/ext-config.ts")
     expect(files).toContain("packages/ui-mac/src/main/alpha-environment.ts")
+    expect(files).toContain("packages/ui-mac/src/main/custom-provider-records.ts")
+    expect(files).toContain("packages/ui-mac/src/main/custom-provider-truth.ts")
     expect(files).not.toContain("packages/ui-mac/src/main/custom-provider-truth-write.ts")
+    expect(files).not.toContain("packages/ui-mac/src/main/provider-lifecycle.ts")
+    expect(files).not.toContain("packages/ui-mac/src/main/ext-config.ts")
   })
 
   test("读模块自己的相对 import 闭包只有它自己:将来(#1392)把它接进 ext-config / alpha-models 时,写模块不会跟着进闭包", () => {

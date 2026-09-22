@@ -14,6 +14,7 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { parse as parseJsonc, type ParseError } from "jsonc-parser"
 // `#1299`(REQ-157):三个 alpha agent 的 description / prompt 是 alpha 的字,住在零依赖的
 // alpha-agents.ts,由 packages/ext 的登记簿 import 并声明上限;这里只取,不再内联字面量。
 import { ALPHA_AGENT_TEXT } from "./alpha-agents"
@@ -414,7 +415,10 @@ export function injectAlphaConfig(
 // OPENCODE_CONFIG_CONTENT 与 OPENCODE_CONFIG(alpha.jsonc)它一概不读。而 picker 已切 v2
 // `/api/model`(model-contract.ts → catalog.model.available()),于是 v1 注入再成功,v2 目录里
 // 也没有 alpha/BYOK provider → 全部「当前不可用」。此桥把 v2 需要的最小子集物化成文件:
-//   opencode.json  ← alpha.jsonc 原样拷贝(用户自定义节点;先加载)
+//   opencode.json  ← alpha.jsonc 去掉 `provider` 键后的拷贝(先加载)。`#1392` 之前是原样拷贝,理由是「用户自定义节点住在
+//                    那里」;现在它们住在围栏写不到的真源里、经注入的 provider 表进 v2(下一行),而 v2 的 catalog 可用性
+//                    (packages/core/src/catalog.ts available())**不看 enabled_providers** —— 原样拷贝会让配置文件里的 provider
+//                    块(围栏内的引擎树写得了)直接出现在 picker 读的 v2 model.list 里。基线 I1:配置文件的 provider.* 不参与注入面。
 //   opencode.jsonc ← { $schema, model, provider }(注入的 provider 表,后加载压过用户同名项)
 // 并设 OPENCODE_CONFIG_DIR 指向该 alpha 自有目录。v1 加载读的是 Global.Path.config 静态路径,
 // 不受此 env 影响;推理仍走 v1(有 {file:}/{env:} 解析),故 v2 文件一律剥掉 apiKey —— v2 无
@@ -496,6 +500,21 @@ function governedModelsBase(config: { enabled_providers?: unknown; provider?: un
   return base
 }
 
+/** alpha.jsonc 解析后去掉 `provider` 键(见 v2 桥抬头);缺失 / 读失败 / 解析不出 / 不是对象 ⇒ undefined(调用方清掉旧拷贝)。 */
+function alphaJsoncWithoutProviders(): Record<string, unknown> | undefined {
+  let text: string
+  try {
+    text = fs.readFileSync(alphaJsoncPath(), "utf8")
+  } catch {
+    return undefined
+  }
+  const errors: ParseError[] = []
+  const parsed: unknown = parseJsonc(text, errors, { allowTrailingComma: true })
+  if (errors.length || !parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined
+  const { provider: _provider, ...rest } = parsed as Record<string, unknown>
+  return rest
+}
+
 function materializeV2EngineConfig(
   userDataPath: string,
   config: { model?: unknown; enabled_providers?: unknown; provider?: unknown },
@@ -504,11 +523,9 @@ function materializeV2EngineConfig(
   const dir = path.join(userDataPath, "alpha-engine-config")
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   const userCopy = path.join(dir, "opencode.json")
-  try {
-    fs.copyFileSync(alphaJsoncPath(), userCopy)
-  } catch {
-    fs.rmSync(userCopy, { force: true }) // 无真源(或读失败)则清掉旧拷贝,不留陈尸
-  }
+  const stripped = alphaJsoncWithoutProviders()
+  if (stripped === undefined) fs.rmSync(userCopy, { force: true }) // 无真源(或读不出)则清掉旧拷贝,不留陈尸
+  else fs.writeFileSync(userCopy, `${JSON.stringify(stripped, null, 2)}\n`, { mode: 0o600 })
   const provider: Record<string, unknown> = Object.fromEntries(
     Object.entries((config.provider ?? {}) as Record<string, { options?: Record<string, unknown> }>).map(
       ([id, def]) => {
