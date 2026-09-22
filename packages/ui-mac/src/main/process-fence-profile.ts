@@ -34,7 +34,7 @@
 // ── 不要手写 `(subpath …)` 的 TypeScript 替身 ────────────────────────────────────────
 // U2 裁决 §5.2 实测 seatbelt 的 subpath 按路径分段、解析软链、随卷的大小写策略匹配,字符串
 // 谓词在三处说谎。本文件里凡是「这个目录在不在可写集里」的问题都不回答;唯一例外是并集的
-// **排除**规则(HOME / 根 / HOME 的祖先),那是「拒绝该输入」而不是「解释它的文法」。
+// **排除**规则(HOME / 根 / HOME 的祖先 / 与应用状态根相关的路径),那是「拒绝该输入」而不是「解释它的文法」。
 
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
 
@@ -195,6 +195,12 @@ export function renderProcessFenceProfile(input: ProcessFenceProfileInput): stri
 //      (本机真实读数里就有一条 `$TMPDIR` 下的旧测试目录),白占字节;不代建(ADR-025「绝不代建」)。
 //   5. 排除 `/`、HOME、HOME 的任何祖先。放行 HOME = 没有围栏(U2 §4 表「不定价」的那一行)。
 //      用户若真把家目录当项目打开,走披露面(基线 §五 子票 4),不靠放宽。
+//   5b. 排除与**应用状态根**(`<appData>/alpha-code-state`,三个 env 根与 CAS 的父目录)相关的候选:同一路径、
+//      在它之内、或包含它(`#1390`)。理由:候选来自 `opencode.global.dat`,而那份文件住在 W3 之下 —— **被围栏的
+//      引擎树自己写得了**。一条伪造的 draft 记录就能在下次启动把 `~/Library/Application Support` 放进可写集,
+//      围栏自己的状态从此可写。比较在 **realpath 之后**做(APFS 大小写不敏感,`~/LIBRARY/application support` 词法
+//      比不出来;软链同理);realpath 拿不到(ENOENT 等)退回词法比较,**不因此放行**。这只是第一步 —— 主目录下别的
+//      目录(`~/.ssh`、`~/Library/LaunchAgents`)仍能被同一手法点名,第二步(工作区清单搬出围栏可写处)另票。
 //   6. 去重后取前 K = MAX_WORKSPACES(32)。本机真实读数 99 个 tab 收敛成 5 个目录(U2 §2.3),
 //      32 是 6 倍余量;它不是字节上限(那道墙在 65 535 字节且单位没有精确刻画),只是让试编译的
 //      循环有界、日志可读。字节上限由 trimUntilCompiles 用真编译器判(process-fence-compile.ts)。
@@ -218,6 +224,18 @@ export type WorkspaceUnionInput = {
   homeDir: string
   /** 盘上是否为目录(fs.statSync(p).isDirectory());调用方注入,便于测试。 */
   isDirectory: (p: string) => boolean
+  /**
+   * `#1390`:应用状态根 `<appData>/alpha-code-state`(alpha-environment.ts 的 casBaseRoot —— 三个 env 根与 CAS 的父目录)。
+   * 与它相关的候选一律排除(规则 5b)。由 server.ts 从冻结的环境快照取来传入;本模块不解析它。
+   */
+  appStateRoot: string
+  /**
+   * `#1390`:路径归一(生产 = `fs.realpathSync.native`)。**必须是 native**:Electron 内嵌 node(实测 v24.15.0,
+   * electron 42.3.3)与 node 22 的 JS 实现 `fs.realpathSync` 只解软链、**不归一大小写**,`LIBRARY/application support`
+   * 原样返回;`.native` 走 libc realpath(3),在 APFS 上给出盘上的真实大小写。bun 的两种都归一,所以只在 bun 里测
+   * 测不出这个差别 —— 生产接线不许换成 JS 版。抛出(ENOENT 等)⇒ 退回词法比较,不放行。
+   */
+  realpath: (p: string) => string
   maxWorkspaces?: number
 }
 
@@ -298,11 +316,26 @@ function isAncestorOrSelf(ancestor: string, p: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
 }
 
+/** 双向包含:同一路径、a 在 b 之内、或 b 在 a 之内(与 alpha-environment.ts 的 related 同一谓词)。 */
+function related(a: string, b: string): boolean {
+  return isAncestorOrSelf(a, b) || isAncestorOrSelf(b, a)
+}
+
+/** 先 realpath 再 resolve;realpath 拿不到(不在盘上等)就退回词法形态 —— 比较照做,不因此放行(`#1390`)。 */
+function canonical(p: string, realpath: (p: string) => string): string {
+  try {
+    return resolve(realpath(p))
+  } catch {
+    return resolve(p)
+  }
+}
+
 /** 并集选择(规则见上)。返回值里 `excluded` 逐条给理由,给 main 日志用。 */
 export function selectWorkspaceUnion(input: WorkspaceUnionInput): WorkspaceUnion {
   const max = input.maxWorkspaces ?? MAX_WORKSPACES
   const home = resolve(input.homeDir)
   const root = resolve(sep)
+  const appStateRoot = canonical(input.appStateRoot, input.realpath)
   const selected: string[] = []
   const excluded: WorkspaceExclusion[] = []
   const seen = new Set<string>()
@@ -318,6 +351,18 @@ export function selectWorkspaceUnion(input: WorkspaceUnionInput): WorkspaceUnion
     if (dir === root || isAncestorOrSelf(dir, home)) {
       // `/`、HOME、HOME 的祖先:放行它等于没有围栏。
       excluded.push({ directory: dir, reason: "would put HOME inside the writable set (fence would be void)" })
+      continue
+    }
+    // 规则 5b(`#1390`):与应用状态根相关(同一路径 / 在它之内 / 包含它)的候选一律排除;归一之后再比。
+    const canon = canonical(dir, input.realpath)
+    if (related(canon, appStateRoot)) {
+      excluded.push({
+        directory: dir,
+        reason:
+          `related to the app state root ${appStateRoot} (same path, inside it, or contains it)` +
+          (canon === dir ? "" : ` (resolves to ${canon})`) +
+          " — the fence's own state must never be a workspace (#1390)",
+      })
       continue
     }
     if (!input.isDirectory(dir)) {

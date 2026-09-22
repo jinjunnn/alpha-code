@@ -56,6 +56,10 @@ export type PlanProcessFenceInput = {
 export type PlanProcessFenceDeps = {
   homeDir: () => string
   alphaGlobalRoot: () => string
+  /** `#1390`:应用状态根 `<appData>/alpha-code-state`(冻结环境快照的 casBaseRoot);来自 store 的候选与它相关即排除。 */
+  appStateRoot: () => string
+  /** `#1390`:路径归一,生产必须是 `fs.realpathSync.native`(理由见 process-fence-profile.ts WorkspaceUnionInput.realpath)。 */
+  realpath: (p: string) => string
   /** `~/code-puppy`,已 ensure(ensureUserWorkspaceDir 返回 null 时给 alphaUserWorkspaceDir 让并集判它不存在)。 */
   defaultWorkspace: () => string
   readStore: () => WorkspaceUnionSources
@@ -97,6 +101,8 @@ export function planProcessFence(input: PlanProcessFenceInput, deps: PlanProcess
     sources,
     defaultWorkspace: deps.defaultWorkspace(),
     homeDir: home,
+    appStateRoot: deps.appStateRoot(),
+    realpath: deps.realpath,
     isDirectory: deps.isDirectory,
   })
   if (union.selected.length === 0)

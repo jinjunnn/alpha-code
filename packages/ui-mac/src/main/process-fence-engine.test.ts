@@ -83,6 +83,9 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
       {
         homeDir: () => home,
         alphaGlobalRoot: () => globalRoot,
+        // `#1390`:状态根 = globalRoot 的父目录的父目录;realpath 用生产同一个(realpathSync.native)
+        appStateRoot: () => join(iso, "alpha-code-state"),
+        realpath: (p) => realpathSync.native(p),
         defaultWorkspace: () => ws,
         readStore: () => ({ tabs: undefined, recent: undefined, info: undefined }),
         isDirectory: (p) => {
