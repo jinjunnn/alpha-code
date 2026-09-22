@@ -11,6 +11,8 @@ const describeDarwin = process.platform === "darwin" ? describe : describe.skip
 const HOME = "/Users/alpha"
 const USER_DATA = `${HOME}/Library/Application Support/ai.opencode.desktop`
 const GLOBAL = `${HOME}/Library/Application Support/alpha-code-state/env/prod`
+/** `#1390`:应用状态根 = GLOBAL 的父目录的父目录(三个 env 根与 CAS 的父)。 */
+const STATE_ROOT = `${HOME}/Library/Application Support/alpha-code-state`
 const ADDON = "/App/Contents/Resources/alpha-fence/alpha_fence.node"
 
 function harness(overrides: Partial<PlanProcessFenceDeps> = {}, existing = new Set<string>([ADDON])) {
@@ -20,6 +22,9 @@ function harness(overrides: Partial<PlanProcessFenceDeps> = {}, existing = new S
   const deps: PlanProcessFenceDeps = {
     homeDir: () => HOME,
     alphaGlobalRoot: () => GLOBAL,
+    appStateRoot: () => STATE_ROOT,
+    // 假盘上的路径不在盘上;这里用恒等让并集走词法比较(真 realpath 的判据在 process-fence-profile.test.ts ④)
+    realpath: (p) => p,
     defaultWorkspace: () => `${HOME}/code-puppy`,
     readStore: () => ({
       tabs: [
@@ -121,6 +126,32 @@ describeDarwin("planProcessFence", () => {
     const h = harness({ isDirectory: () => false })
     expect(() => planProcessFence(h.input, h.deps)).toThrow(/default workspace is not a directory/)
     expect(h.made).not.toContain(`${HOME}/code-puppy`)
+  })
+
+  test("`#1390` store 里一条伪造记录指向应用状态根的祖先 ⇒ 不进 workspaces、不进 profile,进 excluded,且 planned 那行日志如实记账", () => {
+    const forged = `${HOME}/Library/Application Support`
+    const h = harness({
+      readStore: () => ({
+        tabs: [{ type: "draft", draftID: "forged", server: "sidecar", directory: forged }],
+        recent: { key: "draft:forged" },
+        info: {},
+      }),
+      // 盘上「都在」:排除只能来自状态根规则
+      isDirectory: () => true,
+    })
+    const plan = planProcessFence(h.input, h.deps)
+    expect(plan.workspaces).toEqual([`${HOME}/code-puppy`])
+    expect(plan.profile).not.toContain(`(subpath "${forged}")`)
+    expect(plan.excluded).toEqual([
+      {
+        directory: "/Users/alpha/Library/Application Support",
+        reason:
+          "related to the app state root /Users/alpha/Library/Application Support/alpha-code-state (same path, inside it, or contains it) — the fence's own state must never be a workspace (#1390)",
+      },
+    ])
+    const planned = h.logs.find((l) => l.startsWith("process fence planned:"))
+    expect(planned).toContain("workspaces=1 (candidates=2, excluded=1, dropped=0)")
+    expect(planned).toContain("— excluded: /Users/alpha/Library/Application Support (related to the app state root /Users/alpha/Library/Application Support/alpha-code-state")
   })
 
   test("dev 形态:addonPath 解析到 native/alpha-fence/build/(相对 out/main)", () => {

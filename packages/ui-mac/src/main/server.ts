@@ -46,7 +46,7 @@ import { alphaGlobalRoot } from "./engine-config-truth"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { GLOBAL_RENDERER_STORE, TABS_INFO_KEY, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
 import { homedir } from "node:os"
-import { mkdirSync, statSync } from "node:fs"
+import { mkdirSync, realpathSync, statSync } from "node:fs"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -185,6 +185,15 @@ function planProductionFence(input: { userDataPath: string; sidecarEnv: Record<s
     {
       homeDir: homedir,
       alphaGlobalRoot,
+      // `#1390`:应用状态根 = 冻结环境快照的 casBaseRoot(index.ts 在任何根消费方之前 initAlphaEnvironment,失败即 app.exit)。
+      // 没有快照就没有可信的状态根 ⇒ 不做计划(fail-closed,与别的计划失败同一条「拒 fork」路),不拿 ALPHA_GLOBAL_DIR 反推。
+      appStateRoot: () => {
+        const info = tryGetAlphaEnvironment()
+        if (!info) throw new Error("process fence plan: alpha environment not initialized — the app state root is unknown, refusing to plan")
+        return info.casBaseRoot
+      },
+      // `#1390`:必须是 `.native`(libc realpath(3),归一大小写);JS 版 realpathSync 在 Electron 内嵌 node 里只解软链。
+      realpath: (p) => realpathSync.native(p),
       // `~/code-puppy` 是唯一允许 lazy 代建的目录(ADR-025);建不出来就让并集判它不存在 ⇒ planner 拒 fork。
       defaultWorkspace: () => ensureUserWorkspaceDir() ?? alphaUserWorkspaceDir(),
       readStore: () => {

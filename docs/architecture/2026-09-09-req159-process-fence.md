@@ -73,6 +73,15 @@ U2(`#1317`)裁了「取并集、封顶、按最近使用序」,K 与排序留给
 3. 只认 `server === "sidecar"` 的 tab(与 `catalog-liveness.ts` 同一判据)。
 4. 只收**绝对路径且盘上存在的目录**;不代建(ADR-025)。
 5. 排除 `/`、HOME、HOME 的任何祖先 —— 放行 HOME = 没有围栏。
+5b. 排除与**应用状态根**(`<appData>/alpha-code-state`,三个 env 根与 CAS 的父目录;冻结环境快照的 `casBaseRoot`)
+   **相关**的候选 —— 同一路径、在它之内、或包含它(`#1390`)。理由:候选来自 `opencode.global.dat`,而它住在 W3 之下,
+   **被围栏的引擎树自己写得了**;一条伪造的 draft 记录(`{type:"draft", server:"sidecar", directory:"~/Library/Application Support"}`)
+   就能在下次启动把状态根的祖先放进可写集(票面实测:`selected` 含该目录、`excluded` 为空)。比较在 **`fs.realpathSync.native`
+   之后**做:APFS 大小写不敏感,`~/LIBRARY/application support` 词法比不出来;软链同理。**必须是 `.native`** —— Electron 内嵌
+   node(实测 v24.15.0 / electron 42.3.3)与 node 22 的 JS 版 `realpathSync` 只解软链、不归一大小写,bun 的两种都归一,
+   所以这条差别在 bun 里测不出来。realpath 拿不到(ENOENT 等)退回词法比较,不因此放行;排除进 `excluded` 带理由,
+   并出现在 `process fence planned:` 那行日志。**这只是第一步**:主目录下别的目录(`~/.ssh`、`~/Library/LaunchAgents`)
+   仍能被同一手法点名;真正的修法是把工作区清单搬到只有主进程写得了的位置(`#1390` 第二步,另票)。
 6. 去重后取前 **K = 32**(本机真实读数 99 个 tab 收敛成 5 个目录,6 倍余量)。K 不是字节上限,只让试编译循环有界。
 7. **字节上限用真编译器判**(`trimUntilCompiles`):`sandbox-exec -f <profile> /usr/bin/true` 失败 ⇒ 从尾部
    (最不常用)丢一个再试;丢到只剩 `~/code-puppy` 仍失败 ⇒ **抛**(这时原因不是并集大小,放行是「前提为假的闸门」)。
