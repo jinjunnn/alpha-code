@@ -447,7 +447,7 @@ export function ModelPickPop(props: {
        (alpha-composer.selectComposerModel),发送仍由 canSend 等引擎;
      - 平台代理行、自定义节点行,以及 session 模式的一切行:继续受全链 + 引擎清单 epoch 管辖
        —— session 换模型必须落到服务端 `switchModel`,引擎不在就不能伪装成已切换。
-     无 row 的调用方(「添加自定义节点」入口)沿用最严格的门。 */
+     无 row 的调用方(底部「添加供应商」入口,`#1397` 起只剩填 Key 这一件事)沿用最严格的门。 */
   const homeLocalByok = (row?: ModelPickerRow) =>
     !!row?.engineIndependent && composerModelProjection().sessionID === null
   const selectionBlocked = (row?: ModelPickerRow) =>

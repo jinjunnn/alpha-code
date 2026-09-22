@@ -1,9 +1,14 @@
-// AddProvider — the "添加自定义节点 / 供应商" two-step flow, rendered as an overlay over the model
-// picker popover (ADR-016: alpha owns this UI). Step 1: pick a known provider (filled from the catalog
-// — user only pastes a Key) or "其他/自定义" (manual model ids). Step 2: configure + 测试连接 (1-token
-// chat) + 保存. Save → preset keys go to alpha's encrypted keychain (providers.setKey); custom endpoints
-// persist to alpha.jsonc (providers.add), then that IPC awaits the shared sidecar respawn so the new
-// provider enters enabled_providers before the picker refreshes the real model.list. Config-driven.
+// AddProvider — the "添加供应商" two-step flow, rendered as an overlay over the model picker popover
+// (ADR-016: alpha owns this UI). Step 1: pick a provider from the catalog. Step 2: 测试连接 (1-token
+// chat) + 保存 → the key goes to alpha's encrypted keychain (providers.setKey). Config-driven.
+//
+// `#1397`:「自己填一个服务地址、加一个自定义节点」那一半的**入口已经关掉**。加出来的节点一条
+// 消息也发不出去 —— 出网围栏不敢照 alpha.jsonc(一个 AI 有权改写的文件)里的地址放行,所以
+// 留着一个加了就用不了的入口比没有更糟。Step 1 现在只列目录内供应商,并**在那半原来的位置**
+// 说清为什么不能自己填地址(`alpha.provider.customEndpointUnsupported`)。
+// `window.api.providers.add` 这条 IPC 刻意保留(`#1392` 会在有了一个 AI 改不到的真源之后重新
+// 开放这条路),界面不再走到它;判据是 test-component/alpha-composer-model.cases.ts 里
+// 「`#1397` 自定义端点的提交路径从界面不可达」那条用例(它同时钉住目录内供应商填 Key 照常)。
 
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus } from "../../shared/alpha-model-types"
@@ -47,6 +52,9 @@ export function AddProvider(props: {
     return cat.presetIds.map((id) => byId.get(id)).filter((p): p is ByokProvider => Boolean(p))
   })
 
+  // `#1397`:入口关掉之后 `sel()` 再也到不了 `"custom"`,所以 `isCustom()` 现在恒假 —— 下面那些
+  // 由它驱动的可编辑分支(名称/兼容类型/模型 ID)是**休眠**的,不是活路径。刻意不删:`#1392`
+  // 把真源挪到 AI 改不到的地方之后,重新开放只要把 step 1 的入口加回来。
   const isCustom = () => sel() === "custom"
   const inForm = () => sel() !== null
   // Key state for the provider currently open in the form (preset only; a fresh custom has none yet).
@@ -68,18 +76,6 @@ export function AddProvider(props: {
     setTest({ s: "idle", msg: "" })
     setError("")
   }
-  function openCustom() {
-    setSel("custom")
-    setName("")
-    setCompat("openai")
-    setBaseURL("")
-    setModels([])
-    setApiKey("")
-    setShowKey(false)
-    setTest({ s: "idle", msg: "" })
-    setError("")
-  }
-
   // Opened to configure a specific provider (a 需 Key row) → jump straight to its form.
   onMount(() => {
     const id = props.initialId
@@ -211,14 +207,11 @@ export function AddProvider(props: {
               </button>
             )}
           </For>
-          <button class="a-mpa-preset custom" onClick={openCustom}>
-            <span class="a-mpa-plus">+</span>
-            <span class="a-mpa-pn">
-              <span class="nm">{t("alpha.provider.otherEndpoint")}</span>
-              <span class="sb">{t("alpha.provider.compatibleSummary")}</span>
-            </span>
-            <Chevron />
-          </button>
+          {/* `#1397`:「其他 / 自定义端点」那一行就在这个位置。关掉它不等于把它藏起来 ——
+              在它原来的位置说清为什么现在填不了自己的地址,以及以后会回来。 */}
+          <p class="a-mpa-hint" data-alpha-custom-endpoint-disabled="">
+            {t("alpha.provider.customEndpointUnsupported")}
+          </p>
         </Show>
 
         {/* Step 2 — configure */}
