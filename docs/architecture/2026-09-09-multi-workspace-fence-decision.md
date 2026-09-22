@@ -252,6 +252,10 @@ BYOK 改键、provider 变更、崩溃自愈、catalog 看门狗。把"打开新
 1. 集合 = `opencode.global.dat` 的 `tabs` + `tabs.info` 里 `server === "sidecar"` 的全部绝对
    `directory`,**并入 `~/Alpha`**(默认对话目录),按 `tabs` 最近使用序去重取前 K,**并对
    估算字节封顶**(§2.2)。来源与解析复用 `catalog-liveness.ts:246-274` 那份,不另写一份。
+   **`#1394`(2026-09-22)修订**:集合的**形状与顺序**不变,但计划器不再直接读 `opencode.global.dat` —— 那份文件在 W3 之下,
+   被围栏的引擎树写得了(`#1390` 第一步只护住了状态根)。清单的权威副本改为 main 独占的真源文件
+   `<appData>/alpha-code-state/fence-workspaces/<env>.json`,首次启动从 store 播种一次、之后只经 renderer → IPC → main 更新
+   (§8 第 5c 条)。
 2. **不把"打开新目录"接成 respawn 触发器。** 理由是 §3.1 第 2 条:那个动作会把用户弹回 `~/Alpha`,
    与它自己的目的相反;§3.2 的三条损失是附加代价,不是主要理由。
 3. 用户打开集合外的新文件夹 ⇒ **不换代、不阻止、如实告知**(§5),并把该目录写进集合,
@@ -370,7 +374,8 @@ $ grep -c "ws5" opencode.log        # 反向对照:放行的那个
 | 3 | 只认 `server === "sidecar"` 的 tab | 与 `catalog-liveness.ts` 同一判据;wsl:/ssh:/URL 的目录属于别的引擎 |
 | 4 | 只收绝对路径且盘上存在的目录;不代建 | §2.3:集合带着历史垃圾单调增长(本机就有一条 `$TMPDIR` 下的旧测试目录);不存在的路径编得过但白占字节;ADR-025「绝不代建」 |
 | 5 | 排除 `/`、HOME、HOME 的任何祖先 | §4 表「把 `$HOME` 整个放行」那一行:与围栏目的直接冲突,不定价。用户真把家目录当项目开 ⇒ 走披露面 |
-| 5b | 排除与应用状态根 `<appData>/alpha-code-state` **相关**(同一路径 / 在它之内 / 包含它)的候选;先 `realpathSync.native` 再比(`#1390`,2026-09-21) | 候选来自 `opencode.global.dat`,它在 W3 之下 —— 被围栏的引擎树自己写得了;一条伪造 draft 记录就能在下次启动把 `~/Library/Application Support` 放进可写集,围栏自己的状态从此可写。词法比较在 APFS 上会漏大小写变形与软链。第一步只护状态根,`~/.ssh` 一类仍待第二步(清单搬出围栏可写处) |
+| 5b | 排除与应用状态根 `<appData>/alpha-code-state` **相关**(同一路径 / 在它之内 / 包含它)的候选;先 `realpathSync.native` 再比(`#1390`,2026-09-21) | 候选当时来自 `opencode.global.dat`,它在 W3 之下 —— 被围栏的引擎树自己写得了;一条伪造 draft 记录就能在下次启动把 `~/Library/Application Support` 放进可写集,围栏自己的状态从此可写。词法比较在 APFS 上会漏大小写变形与软链。第一步只护状态根;第二步(5c)落地后本条留作第二道闸 |
+| 5c | 候选**从哪来**:main 独占的真源 `<appData>/alpha-code-state/fence-workspaces/<env>.json`(与 env 根、`cas/` 同级,不在任何可写根之下);首次启动从 store 播种一次(日志一行),之后只经 renderer → `store-set` IPC → main 更新;boot 时「store 里有、真源里没有」的目录本会话检疫,renderer 原样写回也进不了;缺失 / 坏 ⇒ 只剩 `~/code-puppy` 并出声(`#1394`,2026-09-22) | `~/.ssh`、`~/Library/LaunchAgents` 一类主目录下的目录仍能被 5b 之外的同一手法点名 —— 修法不是再加排除规则(枚举永远漏),是让围栏的输入不再是围栏可写的文件。检疫是因为 renderer 会把从 store 恢复的伪造 tab 整份经合法 IPC 写回,不检疫等于把洞推迟一次重启。判据:`process-fence-workspaces.test.ts`、`process-fence-wiring.test.ts` 的 `#1394` 端到端(生产计划器) |
 | 6 | 去重后取前 **K = 32** | 本机 99 个 tab 收敛成 5 个目录(§2.3),32 是 6 倍余量。K 不是字节上限,只让下一条的循环有界、日志可读 |
 | 7 | **字节上限用真编译器判**:main 在 fork 前 `sandbox-exec -f <profile> /usr/bin/true`,失败 ⇒ 从尾部丢一个再试;只剩 `~/code-puppy` 仍失败 ⇒ 抛(拒绝 fork) | §2.2 / §6:65 535 那道墙的单位没有精确刻画,不许靠算。实测:400 条互不相同的 220 字符路径 119 ms 撞墙;1 200 条只差尾号的 200 字符路径**编得过**(共享前缀被折叠)—— 本票第一版的「已知的坏」就因此判成了假绿 |
 

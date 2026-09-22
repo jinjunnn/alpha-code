@@ -44,9 +44,9 @@ import { deriveEgressDestinations, setConfiguredEgressDestinations } from "./net
 import { createWriteProbeRequester, type WorkspaceWriteProbeResult } from "./workspace-write-probe"
 import { alphaGlobalRoot } from "./engine-config-truth"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
-import { GLOBAL_RENDERER_STORE, TABS_INFO_KEY, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
+import { fenceWorkspaceTruthPath, readWorkspaceTruthOrThrow } from "./process-fence-workspaces"
 import { homedir } from "node:os"
-import { mkdirSync, realpathSync, statSync } from "node:fs"
+import { mkdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -196,9 +196,13 @@ function planProductionFence(input: { userDataPath: string; sidecarEnv: Record<s
       realpath: (p) => realpathSync.native(p),
       // `~/code-puppy` 是唯一允许 lazy 代建的目录(ADR-025);建不出来就让并集判它不存在 ⇒ planner 拒 fork。
       defaultWorkspace: () => ensureUserWorkspaceDir() ?? alphaUserWorkspaceDir(),
-      readStore: () => {
-        const store = getStore(GLOBAL_RENDERER_STORE)
-        return { tabs: store.get(TABS_KEY), recent: store.get(TABS_RECENT_KEY), info: store.get(TABS_INFO_KEY) }
+      // `#1394`:工作区清单从围栏写不到的真源读(<appData>/alpha-code-state/fence-workspaces/<env>.json,只有 main 写;
+      // index.ts 在首次 fork 之前播种 / 装载,ipc.ts 随 renderer 的 store-set 更新)。electron store 那份(opencode.global.dat)
+      // 住在 W3 之下、被围栏的引擎树写得了,**从此不再喂给围栏**。缺失 / 坏 ⇒ 抛 ⇒ planner 退到默认工作区并出声。
+      readWorkspaces: () => {
+        const info = tryGetAlphaEnvironment()
+        if (!info) throw new Error("alpha environment not initialized — the workspace truth location is unknown")
+        return readWorkspaceTruthOrThrow(fenceWorkspaceTruthPath(info.casBaseRoot, info.environment), { readFileSync })
       },
       isDirectory: (p) => {
         try {

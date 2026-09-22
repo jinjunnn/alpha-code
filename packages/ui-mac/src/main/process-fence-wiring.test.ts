@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { EventEmitter } from "node:events"
+import * as fs from "node:fs"
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import * as net from "node:net"
 import { tmpdir } from "node:os"
@@ -22,11 +23,15 @@ import { join } from "node:path"
 
 const appEvents = new EventEmitter()
 
-mock.module("electron", () => ({
+// `#1394`:electron 的 mock 只多给 store.ts / electron-store 要的三样(app.getPath / app.getVersion / ipcMain.on)+ default 导出,
+// 于是 **生产的 store.ts + 真 electron-store** 在这里跑,`opencode.global.dat` 是真文件 —— 末尾那条端到端用例要真写它。
+const electronMock = {
   app: {
     isPackaged: false,
     on: appEvents.on.bind(appEvents),
     off: appEvents.off.bind(appEvents),
+    getPath: (name: string) => (name === "userData" ? userDataPath : join(userDataPath, name)),
+    getVersion: () => "0.0.0-test",
   },
   utilityProcess: {
     fork: () => {
@@ -35,20 +40,25 @@ mock.module("electron", () => ({
   },
   BrowserWindow: class {},
   dialog: {},
-  ipcMain: { handle: () => {} },
-}))
+  ipcMain: { handle: () => {}, on: () => {} },
+}
+mock.module("electron", () => ({ ...electronMock, default: electronMock }))
+const logLines: string[] = []
 mock.module("./logging", () => ({
-  getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }),
+  getLogger: () => ({ log: (line: unknown) => void logLines.push(String(line)), warn: () => {}, error: () => {} }),
   write: () => {},
   rotateServerLogs: () => {},
 }))
-mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {}, delete: () => {} }) }))
 
 // 陷阱:`await import("./server")` 必须排在 mock.module("electron", ...) **之后**,否则真 electron 会被拉起来。
 const { spawnLocalServer } = await import("./server")
 const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
 const { SIDECAR_EGRESS_NO_PROXY } = await import("./sidecar-env")
 const { isEgressAuthorizedForSidecar, setConfiguredEgressDestinations } = await import("./network-egress-derived")
+const { getStore } = await import("./store")
+const { initAlphaEnvironment, __resetAlphaEnvironmentForTests } = await import("./alpha-environment")
+const { bootFenceWorkspaceTruth, fenceWorkspaceTruthPath, readWorkspaceTruth, writeWorkspaceTruth } = await import("./process-fence-workspaces")
+const { GLOBAL_RENDERER_STORE, TABS_INFO_KEY, TABS_KEY, TABS_RECENT_KEY } = await import("./tabs-preclean")
 
 const darwin = process.platform === "darwin"
 /** 假代理提供者:不起监听,只给端口(默认接线的真监听在末尾那条用例里验)。 */
@@ -399,5 +409,174 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
     expect(inject).toBeLessThan(engine)
     expect(source).toContain("refusing to start the engine unfenced")
     expect(source).toContain("const applied = applyProcessFence(command.fence)")
+  })
+
+  // ── `#1394`:围栏的工作区清单不再来自围栏可写的 store ──────────────────────────────────────
+  // 下面两条走**生产计划器**(不注入 planFence):真 store.ts + 真 electron-store 落盘的 opencode.global.dat、真 initAlphaEnvironment
+  // 冻结的状态根、真 sandbox-exec 试编译、真 .node 路径解析(predev 编出的那份);唯一的替身是 fork(假子进程记录线上 start 命令)。
+  // 判据落在 start 命令里 profile 的 W1 行 —— 那串字节就是 sidecar 拿去 sandbox_init 的(临时目录本身在 W12 之下,所以这里量的是
+  // 「围栏的定义里有没有这一行」,不是「临时路径写不写得进」)。期望值手写字面量。
+  // 如实:bun 的 os.homedir() 不认 HOME 覆盖,所以计划器眼里的 HOME 仍是开发机的家目录 —— W4–W7 的父目录预建落在真家目录
+  // (任何跑过这个应用的机器上它们早就在;与 process-fence-engine.test.ts 同一代价)。伪造目录取 `<临时 home>/Library/LaunchAgents`,
+  // 形状与票面那条相同(相对于「一个家目录」的 Library/LaunchAgents),与真 HOME 无关,所以 HOME 规则不会替本用例把它挡掉。
+  // 先红后绿:在 server.ts 仍从 store 读清单的那一版上,①的 profile 含伪造目录、②的 profile 不含真源里的目录(两条各红一次)。
+  type FenceHarness = {
+    home: string
+    proj: string
+    forged: string
+    opened: string
+    truthPath: string
+    spawnProfile: (port: number) => Promise<{ profile: string; planned: string }>
+  }
+  const withFenceHarness = async (run: (h: FenceHarness) => Promise<void>) => {
+    const root = realpathSync(userDataPath)
+    const home = join(root, "home")
+    const appData = join(root, "appData")
+    const proj = join(home, "proj")
+    /** 票面那条:`~/Library/LaunchAgents`(相对于一个家目录),放个 plist 进去 = 开机自启。 */
+    const forged = join(home, "Library", "LaunchAgents")
+    const opened = join(home, "opened-later")
+    for (const d of [proj, forged, opened, join(home, "dot-opencode"), join(home, "xdg-opencode")]) mkdirSync(d, { recursive: true })
+    const savedKeys = ["ALPHA_GLOBAL_DIR", "ALPHA_ENV_BASE_DIR", "ALPHA_USER_WORKSPACE_DIR", "ALPHA_OPENCODE_HOME", "OPENCODE_CONFIG_DIR"] as const
+    const before: Record<string, string | undefined> = {}
+    for (const k of savedKeys) {
+      before[k] = process.env[k]
+      delete process.env[k]
+    }
+    process.env.ALPHA_USER_WORKSPACE_DIR = join(home, "code-puppy")
+    // provider 的另外两条读取路径指进临时目录,免得读到开发机自己的配置(与 `#1379` 那条同一做法)
+    process.env.ALPHA_OPENCODE_HOME = join(home, "dot-opencode")
+    process.env.OPENCODE_CONFIG_DIR = join(home, "xdg-opencode")
+    __resetAlphaEnvironmentForTests()
+    const spawnProfile = async (port: number) => {
+      const child = new RecordingChild()
+      creditDanglingSweepForSpawn()
+      logLines.length = 0
+      const result = await spawnLocalServer("127.0.0.1", port, "password", {
+        userDataPath,
+        healthCheck: async () => true,
+        fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
+        egressProxy: fakeEgress(),
+      })
+      await result.health.wait
+      const start = child.wire.find((m) => (m as { type?: string }).type === "start") as { fence?: { profile: string } }
+      await result.listener.stop()
+      expect(typeof start.fence?.profile).toBe("string")
+      return { profile: start.fence!.profile, planned: logLines.find((l) => l.startsWith("process fence planned:")) ?? "" }
+    }
+    try {
+      const env = initAlphaEnvironment({ isPackaged: false, channel: "dev", appDataDir: appData, homeDir: home })
+      const truthPath = fenceWorkspaceTruthPath(env.casBaseRoot, env.environment)
+      expect(truthPath).toBe(join(env.casBaseRoot, "fence-workspaces", "dev.json"))
+      await run({ home, proj, forged, opened, truthPath, spawnProfile })
+    } finally {
+      setConfiguredEgressDestinations([])
+      __resetAlphaEnvironmentForTests()
+      for (const k of savedKeys) {
+        if (before[k] === undefined) delete process.env[k]
+        else process.env[k] = before[k]
+      }
+    }
+  }
+
+  test("`#1394` AC4①③ 端到端:伪造记录真写进 opencode.global.dat ⇒ 生产计划器的 profile 不含它;renderer 把它写回也进不了真源", async () => {
+    if (!darwin) return
+    await withFenceHarness(async ({ home, proj, forged, opened, truthPath, spawnProfile }) => {
+      const store = getStore(GLOBAL_RENDERER_STORE)
+      const storeFile = (store as unknown as { path: string }).path
+      expect(storeFile.endsWith("/opencode.global.dat")).toBe(true)
+      const readStore = () => ({ tabs: store.get(TABS_KEY), recent: store.get(TABS_RECENT_KEY), info: store.get(TABS_INFO_KEY) })
+      const draftP = { type: "draft", draftID: "p", server: "sidecar", directory: proj }
+      const draftForged = { type: "draft", draftID: "forged", server: "sidecar", directory: forged }
+      const draftOpened = { type: "draft", draftID: "o", server: "sidecar", directory: opened }
+      const bootLogs: string[] = []
+
+      // 启动 1(本票落地后的第一次):store 里只有用户真开过的 proj ⇒ 播种,日志一行
+      store.set(TABS_KEY, JSON.stringify([draftP]))
+      store.set(TABS_RECENT_KEY, JSON.stringify({ key: "draft:p" }))
+      bootFenceWorkspaceTruth({ truthPath, store: readStore(), fs, log: (l) => void bootLogs.push(l) })
+      expect(readFileSync(truthPath, "utf8")).toBe(`{"v":1,"workspaces":["${proj}"]}\n`)
+      expect(bootLogs).toEqual([`process fence: workspace truth seeded from the renderer tab store (first launch with #1394) — 1 workspace(s) written to ${truthPath}: ${proj}`])
+
+      // 攻击者 = 围栏内的引擎树,能碰的只有 W3 之下的文件:直接改写 store 文件,塞一条指向 ~/Library/LaunchAgents 的 draft 记录,recent 也指过去
+      const raw = JSON.parse(readFileSync(storeFile, "utf8")) as Record<string, unknown>
+      raw[TABS_KEY] = JSON.stringify([...(JSON.parse(raw[TABS_KEY] as string) as unknown[]), draftForged])
+      raw[TABS_RECENT_KEY] = JSON.stringify({ key: "draft:forged" })
+      writeFileSync(storeFile, JSON.stringify(raw))
+      // 手段自证:生产 store 读回去确实看见了伪造条 —— 这一格就是 `#1394` 之前计划器读的那一格
+      expect(JSON.stringify(store.get(TABS_KEY))).toContain("LaunchAgents")
+
+      // 启动 2:真源在 ⇒ 装载 + 检疫;生产计划器算出的 profile:含用户真开过的、含 ~/code-puppy、不含伪造目录
+      bootLogs.length = 0
+      const tracker = bootFenceWorkspaceTruth({ truthPath, store: readStore(), fs, log: (l) => void bootLogs.push(l) })
+      expect(tracker.quarantined).toEqual([forged])
+      expect(bootLogs[1]).toContain("quarantined for this session")
+      const gen1 = await spawnProfile(4320)
+      expect(gen1.profile).toContain(`(subpath "${join(home, "code-puppy")}")`)
+      expect(gen1.profile).toContain(`(subpath "${proj}")`)
+      expect(gen1.profile).not.toContain(`(subpath "${forged}")`) // AC4① / AC4③:未修版这里红
+      expect(gen1.profile).not.toContain("LaunchAgents")
+      expect(gen1.planned).toContain("workspaces=2 (candidates=2, excluded=0, dropped=0)")
+
+      // renderer 从 store 恢复了那个伪造 tab,用户随后开了一个新目录 ⇒ 整个 tabs 数组经 IPC 写回:真源只多新开的那条,伪造条被检疫
+      tracker.noteRendererStoreSet(GLOBAL_RENDERER_STORE, TABS_KEY, JSON.stringify([draftP, draftForged, draftOpened]))
+      expect(readFileSync(truthPath, "utf8")).toBe(`{"v":1,"workspaces":["${proj}","${opened}"]}\n`)
+      const gen2 = await spawnProfile(4321)
+      expect(gen2.profile).toContain(`(subpath "${opened}")`)
+      expect(gen2.profile).not.toContain("LaunchAgents")
+      expect(gen2.planned).toContain("workspaces=3 (candidates=3, excluded=0, dropped=0)")
+    })
+  })
+
+  test("`#1394` AC4② 端到端:同一条写进真源(只有 main 走得到的那条路)⇒ 生产计划器的 profile 含它;真源坏了 ⇒ 这一代只剩 ~/code-puppy 并说出原因", async () => {
+    if (!darwin) return
+    await withFenceHarness(async ({ home, proj, forged, truthPath, spawnProfile }) => {
+      writeWorkspaceTruth(truthPath, [proj, forged], fs)
+      expect(readWorkspaceTruth(truthPath, fs)).toEqual({ ok: true, workspaces: [proj, forged] })
+      const gen = await spawnProfile(4322)
+      expect(gen.profile).toContain(`(subpath "${proj}")`)
+      expect(gen.profile).toContain(`(subpath "${forged}")`) // 未修版这里红:生产计划器根本不读真源 —— 通路活着,判据不是把功能测没了
+      expect(gen.planned).toContain("workspaces=3 (candidates=3, excluded=0, dropped=0)")
+
+      // fail-closed:解析失败 ≠ 什么都可写 —— 退到只有默认工作区,日志点名文件与原因
+      writeFileSync(truthPath, "{not json")
+      const broken = await spawnProfile(4323)
+      expect(broken.profile).toContain(`(subpath "${join(home, "code-puppy")}")`)
+      expect(broken.profile).not.toContain(`(subpath "${proj}")`)
+      expect(broken.planned).toContain("workspaces=1 (candidates=1, excluded=0, dropped=0)")
+      expect(logLines.find((l) => l.includes("workspace truth unavailable"))).toContain(`${truthPath}: not JSON`)
+    })
+  })
+
+  test("ANCHOR (not a gate) `#1394`:生产计划器只读真源、不碰 store;ipc.ts 三个 store 通道写完都告诉真源;index.ts 在注册 IPC 之前播种", () => {
+    const server = readFileSync(join(import.meta.dir, "server.ts"), "utf8")
+    const plannerStart = server.indexOf("function planProductionFence(")
+    const plannerEnd = server.indexOf("export function getDefaultServerUrl(")
+    expect(plannerStart).toBeGreaterThan(-1)
+    expect(plannerEnd).toBeGreaterThan(plannerStart)
+    const planner = server.slice(plannerStart, plannerEnd)
+    expect(planner).toContain("readWorkspaceTruthOrThrow(fenceWorkspaceTruthPath(")
+    expect(planner).not.toContain("TABS_KEY")
+    expect(planner).not.toContain("getStore(")
+    const ipc = readFileSync(join(import.meta.dir, "ipc.ts"), "utf8")
+    for (const [channel, call] of [
+      ["store-set", "deps.fenceWorkspaces.noteRendererStoreSet(name, key, value)"],
+      ["store-delete", "deps.fenceWorkspaces.noteRendererStoreDelete(name, key)"],
+      ["store-clear", "deps.fenceWorkspaces.noteRendererStoreClear(name)"],
+    ] as const) {
+      const at = ipc.indexOf(`ipcMain.handle("${channel}"`)
+      expect(at, channel).toBeGreaterThan(-1)
+      expect(ipc.slice(at, ipc.indexOf("ipcMain.handle(", at + 1)), channel).toContain(call)
+    }
+    const index = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+    const preclean = index.indexOf("runTabsPreclean({")
+    const boot = index.indexOf("bootFenceWorkspaceTruth({")
+    const register = index.indexOf("registerIpcHandlers({")
+    expect(preclean).toBeGreaterThan(-1)
+    expect(boot).toBeGreaterThan(preclean)
+    expect(register).toBeGreaterThan(boot)
+    const wired = index.indexOf("fenceWorkspaces,", register)
+    expect(wired).toBeGreaterThan(register)
+    expect(wired).toBeLessThan(index.indexOf("killSidecar:", register))
   })
 })

@@ -74,14 +74,25 @@ U2(`#1317`)裁了「取并集、封顶、按最近使用序」,K 与排序留给
 4. 只收**绝对路径且盘上存在的目录**;不代建(ADR-025)。
 5. 排除 `/`、HOME、HOME 的任何祖先 —— 放行 HOME = 没有围栏。
 5b. 排除与**应用状态根**(`<appData>/alpha-code-state`,三个 env 根与 CAS 的父目录;冻结环境快照的 `casBaseRoot`)
-   **相关**的候选 —— 同一路径、在它之内、或包含它(`#1390`)。理由:候选来自 `opencode.global.dat`,而它住在 W3 之下,
+   **相关**的候选 —— 同一路径、在它之内、或包含它(`#1390`)。理由(当时):候选来自 `opencode.global.dat`,而它住在 W3 之下,
    **被围栏的引擎树自己写得了**;一条伪造的 draft 记录(`{type:"draft", server:"sidecar", directory:"~/Library/Application Support"}`)
    就能在下次启动把状态根的祖先放进可写集(票面实测:`selected` 含该目录、`excluded` 为空)。比较在 **`fs.realpathSync.native`
    之后**做:APFS 大小写不敏感,`~/LIBRARY/application support` 词法比不出来;软链同理。**必须是 `.native`** —— Electron 内嵌
    node(实测 v24.15.0 / electron 42.3.3)与 node 22 的 JS 版 `realpathSync` 只解软链、不归一大小写,bun 的两种都归一,
    所以这条差别在 bun 里测不出来。realpath 拿不到(ENOENT 等)退回词法比较,不因此放行;排除进 `excluded` 带理由,
-   并出现在 `process fence planned:` 那行日志。**这只是第一步**:主目录下别的目录(`~/.ssh`、`~/Library/LaunchAgents`)
-   仍能被同一手法点名;真正的修法是把工作区清单搬到只有主进程写得了的位置(`#1390` 第二步,另票)。
+   并出现在 `process fence planned:` 那行日志。这是第一步;第二步(5c)把清单本身搬出了围栏可写处之后,本条**留作第二道闸**:
+   候选不管从哪来,状态根都进不来(`process-fence-plan.test.ts` 那条 `#1390` 用例改成「真源里的记录指向状态根祖先仍排除」)。
+5c. **清单从哪来**(`#1394`,`#1390` 第二步,2026-09-22):不再是 store。真源是 `<appData>/alpha-code-state/fence-workspaces/<env>.json`
+   (`process-fence-workspaces.ts`)—— 与三个 env 根、`cas/` 同级,W2 只放行 `env/<env>`、W3 是另一棵树,其余 17 行都不覆盖它
+   (`#1383` 基线 §1.1/§1.2 逐行核过;`cas/` 已是「main 写、引擎只读」的先例)。形状 `{ "v": 1, "workspaces": ["<绝对路径>", …] }`,
+   顺序与此前从 store 派生时相同(recent → tab 栏 → info);原子写;**严格读**(版本 / 数组 / 每项绝对路径,不对就整份拒)。
+   谁写:①首次启动(文件不存在)从 store 播种一次,日志 `process fence: workspace truth seeded from the renderer tab store … N workspace(s)`
+   —— 那一刻的可写集与 `#1390` 之后逐字等价;②之后只经 renderer → `store-set` / `store-delete` / `store-clear` IPC → main(`ipc.ts` 写完
+   store 后通知 tracker),围栏内的进程到不了 IPC。**检疫**:renderer 启动时从 store 恢复 tab,伪造的那条也会被恢复成一个 tab,
+   用户随后开/关任何 tab 都会把整个 `tabs` 数组写回 —— 所以 boot 时把「store 里有、真源里没有」的目录记成本会话的检疫名单,
+   它们永远不进真源(日志点名)。真源缺失 / 坏 ⇒ planner 退到只有 `~/code-puppy`,日志
+   `process fence: workspace truth unavailable — … : <文件>: <原因>`;坏文件不改写、不重播,renderer 下一次 tab 变更按当时状态重写它。
+   store 那份(`opencode.global.dat`)保留给界面状态与 catalog 看门狗的探针目录,**不再喂给围栏**。
 6. 去重后取前 **K = 32**(本机真实读数 99 个 tab 收敛成 5 个目录,6 倍余量)。K 不是字节上限,只让试编译循环有界。
 7. **字节上限用真编译器判**(`trimUntilCompiles`):`sandbox-exec -f <profile> /usr/bin/true` 失败 ⇒ 从尾部
    (最不常用)丢一个再试;丢到只剩 `~/code-puppy` 仍失败 ⇒ **抛**(这时原因不是并集大小,放行是「前提为假的闸门」)。
@@ -116,11 +127,12 @@ U1 只出了 arm64,并明写将来出 Intel / universal 时若漏第二份,x64 �
 
 | 文件 | 跑在哪 | 守什么 |
 | --- | --- | --- |
-| `process-fence-profile.test.ts` | 全平台 | §8.2 形状逐行全等;XDG 对着真 xdg-basedir;并集规则;试编译丢尾 |
+| `process-fence-profile.test.ts` | 全平台 | §8.2 形状逐行全等;XDG 对着真 xdg-basedir;并集规则(吃 candidates 列表,`#1394`);试编译丢尾 |
 | `process-fence-compile.test.ts` | darwin | 真 sandbox-exec:已知的坏(65535 墙 / 语法错)必红,§8.2 + 32 工作区必绿 |
-| `process-fence-plan.test.ts` | darwin | 父目录预建、store 读挂出声、三种 fail-closed、两种 addonPath |
+| `process-fence-plan.test.ts` | darwin | 父目录预建、真源拿不到出声并退到默认工作区(`#1394`)、三种 fail-closed、两种 addonPath、真源里指向状态根祖先仍排除 |
+| `process-fence-workspaces.test.ts` | 全平台 | `#1394` 真源:位置不在 W2 之下;原子写 / 严格读(七种坏形状);播种(AC4④)、装载 + 检疫、检疫挡得住 renderer 写回、只认三个 tab 键、坏文件不动、写失败不抛 |
 | `process-fence-apply.test.ts` | darwin | x64 两片判据;四类原语正反臂(Electron 的 node);AC4 五种失败 |
-| `process-fence-wiring.test.ts` | 全平台 | 计划 → start 命令 → 拒 fork;sidecar.ts 接线锚 |
+| `process-fence-wiring.test.ts` | 全平台 | 计划 → start 命令 → 拒 fork;sidecar.ts 接线锚;`#1394` 端到端(darwin):伪造记录真写进 `opencode.global.dat` ⇒ **生产计划器**的 profile 不含它(AC4①③),写进真源 ⇒ 含它(AC4②),真源坏 ⇒ 只剩默认工作区;planner / ipc.ts / index.ts 接线锚 |
 | `process-fence-write-sites.test.ts` | 全平台 | AC3 登记簿 == 扫描;四条控制臂 |
 | `process-fence-engine.test.ts` | darwin | **真引擎 + 真 ext** 在生产 .node 围栏下:shell 工具 / PTY / MCP 三条真消费方界外 0 落盘、界内落盘;AC2 shell 工具照常执行、`cfg.shell` 不指向 wrapper |
 | `packages/ext/src/alpha-ext-no-shell-layer.test.ts` | 全平台 | REQ-138 层已拆:生产 config 钩子不碰 `cfg.shell` |
@@ -147,8 +159,15 @@ U1 只出了 arm64,并明写将来出 Intel / universal 时若漏第二份,x64 �
 - **公证 / staple 没做**(U1 §4 同一条;发版 runbook §1 ③ 已要求核对)。
 - **`~/.bash_history`** 不在可写集(§2);终端配置降级的披露面已落地(§8,`#1322`),但它只是**告知**,
   不是修复:登录 shell 的写入面仍然结构上枚举不了(基线 I3)。
-- 用户打开集合外的新文件夹:打得开、读得了、一写就 `operation not permitted`,**下次启动即在集合里**(U2 §2.4);
-  工作区层面的只读告知已落地(§8,`#1322`)。
+- 用户打开集合外的新文件夹:打得开、读得了、一写就 `operation not permitted`,**下次启动即在集合里**(U2 §2.4;`#1394` 起
+  「在集合里」= 在 main 独占的真源里,由界面开/关项目经 IPC 写入);工作区层面的只读告知已落地(§8,`#1322`)。
+- **`#1394` 之后仍然开着的(如实)**:①首次播种信任当时 store 里已有的内容 —— 升级前已被塞进去的伪造条会一起搬过去
+  (与 `#1390` 之后的可写集等价,没有更坏);②围栏内的代码仍能往 `opencode.global.dat` 塞条目,renderer 会把它恢复成一个用户没开过的
+  tab —— 它写不进去、也进不了真源(检疫),但这条通路本身没堵,界面上也没有标它可疑;③被检疫的目录若恰是用户后来真想打开的,
+  要先关掉那个 tab、重启、再打开;④catalog 看门狗的探针目录(`catalog-liveness.ts`)仍从 store 解析 —— 它只决定探哪个目录的
+  catalog,不决定可写集;⑤真源文件坏掉(不是攻击可达的状态)时这一代只剩 `~/code-puppy`,直到 renderer 下一次 tab 变更把它重写好。
+  端到端判据(`process-fence-wiring.test.ts`)在 bun 里对着生产计划器跑,fork 是假子进程;**没有**在真 Electron 主进程里冷启动一次
+  取证 —— 「index.ts 在预清之后、注册 IPC 之前播种」与「ipc.ts 三个通道写完都通知 tracker」两跳是源码锚,不是行为判据。
 - 非 darwin:不装围栏,sidecar 打一行 warn(基线「如实声明」);§8 的两处告知随之**不出现**(没有围栏就不说有)。
 
 ## 8. 披露面:两句实话怎么到用户眼前(`#1322`)
