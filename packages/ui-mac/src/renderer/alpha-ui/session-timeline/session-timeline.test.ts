@@ -39,7 +39,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // `#906`:产物链接行把 descriptor id 一路带进 intent(点第 3 行递第 3 个的 id)(58 → 59)。
     // #1214 AC2:审批超时呈现 —— mcp 降级卡出「审批已超时,未获批准」,普通错误不冒充(59 → 60)。
     // `#1382`:围栏拒绝在回合级错误卡上的归因 + 其控制臂(非围栏失败文案不变)(60 → 62)。
-    expect(output).toContain("62 pass")
+    // `#1399`:回合脚行 —— 运行面 / 等你面两种触发 / 播报预算 / 四种结局同帧让位(62 → 66)。
+    expect(output).toContain("66 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -120,6 +121,17 @@ describe("REQ-125 C5 I5 令牌白名单与运动契约", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)")
     const transitions = [...css.matchAll(/transition:\s*([^;]+);/g)].map((match) => match[1])
     transitions.forEach((value) => expect(value).toContain("var(--a-dur"))
+  })
+
+  test("#1399 回合脚行:脉冲点在 reduced-motion 下显式关断(计时照走);旧「正在思考」胶囊样式与三点动画不再存在", () => {
+    const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/)?.[1] ?? ""
+    expect(reduced).toMatch(/\.a-tl-turnfoot-live \{\s*animation: none;/)
+    expect(reduced).not.toContain(".a-tl-turnfoot-time")
+    expect(css).toContain("@keyframes a-tl-turnfoot-pulse")
+    expect(css).not.toContain(".a-tl-thinking")
+    expect(css).not.toContain("a-tl-bob")
+    const view = sources.get("session-timeline-view.tsx")!
+    expect(view).not.toContain("ThinkingRow")
   })
 
   test("#861 命令展开体固定为中性面板,恢复强调色用户气泡即失败", () => {

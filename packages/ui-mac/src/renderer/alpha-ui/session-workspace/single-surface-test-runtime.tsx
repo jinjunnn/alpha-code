@@ -21,6 +21,9 @@ import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-w
 
 export { render, dockClientCalls }
 
+/** `#1399`:dock 发布给回合脚行的「等你」信号(生产 prop `publishTurnWait`)—— 按发布顺序记录。 */
+export const turnWaitLog: Array<"approval" | "question" | undefined> = []
+
 export const HARNESS_IDENTITY: AlphaSessionIdentity = {
   serverKey: "sidecar",
   directory: "/tmp/workspace",
@@ -47,6 +50,7 @@ export const surfaceReceipts: PermissionV2DecisionReceipt[] = []
 let surfaceListeners: SurfaceListeners | undefined
 
 export function resetSingleSurfaceHarness() {
+  turnWaitLog.splice(0)
   surfaceReplyCalls.splice(0)
   surfaceReceipts.splice(0)
   surfaceListeners = undefined
@@ -150,7 +154,7 @@ export function SingleSurfaceHarness() {
     <div data-harness-single-surface>
       <PermissionSurfaceMount />
       <div data-harness-dock>
-        <SessionComposerDock live={live} projects={projects} />
+        <SessionComposerDock live={live} projects={projects} publishTurnWait={(wait) => turnWaitLog.push(wait)} />
       </div>
     </div>
   )

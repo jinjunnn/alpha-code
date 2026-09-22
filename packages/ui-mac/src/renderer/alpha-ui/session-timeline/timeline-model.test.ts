@@ -14,6 +14,7 @@ import {
   boundedText,
   commentOf,
   footnoteOf,
+  formatTurnElapsed,
   MARKDOWN_MAX_CHARS,
   MENTION_LABEL_MAX_CHARS,
   projectTimelineRows,
@@ -293,19 +294,100 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(settled.kind === "markdown" && settled.streaming).toBe(false)
   })
 
-  test("思考中:busy + 活跃回合无可见输出 → thinking 行;有输出即不再出现", () => {
-    const thinking = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "busy")
-    expect(thinking.map((row) => row.kind)).toEqual(["user", "thinking"])
+  // `#1399` 回合脚行:活跃回合的最后一行,贯穿整轮。此前这里断言的是 thinking 行「有输出即不再出现」——
+  // 那正是 owner 观察到的缺陷(吐出第一个 part 之后页面就不动了),所以反过来钉死:五个子状态里它都在。
+  test("#1399 回合脚行:首个 part 未到 / 正文流式 / 推理中 / 工具执行中 / 自动重试,行都在且是回合最后一行", () => {
+    const user = userMsg("msg_u1", 1000)
+    const userParts = { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }
+    const streaming = assistantMsg("msg_a1", "msg_u1", { time: { created: 1010 } })
 
-    const withOutput = project(
-      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { time: { created: 10 } })],
-      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")], msg_a1: [textPart("prt_t1", "msg_a1", "输出")] },
+    const first = project([user], userParts, "busy")
+    expect(first.map((row) => row.kind)).toEqual(["user", "turnfoot"])
+    expect(first[1]).toEqual({
+      kind: "turnfoot",
+      key: "turnfoot:msg_u1",
+      rev: "1000",
+      userMessageID: "msg_u1",
+      startedAt: 1000,
+    })
+
+    const text = project([user, streaming], { ...userParts, msg_a1: [textPart("prt_t1", "msg_a1", "输出")] }, "busy")
+    expect(text.map((row) => row.kind)).toEqual(["user", "markdown", "turnfoot"])
+
+    const reasoning = project(
+      [user, streaming],
+      { ...userParts, msg_a1: [reasoningPart("prt_r1", "msg_a1", "先想想", { time: { start: 0 } })] },
       "busy",
     )
-    expect(withOutput.some((row) => row.kind === "thinking")).toBe(false)
+    expect(reasoning.map((row) => row.kind)).toEqual(["user", "reasoning", "turnfoot"])
 
-    const idle = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "idle")
-    expect(idle.some((row) => row.kind === "thinking")).toBe(false)
+    const tool = project(
+      [user, streaming],
+      {
+        ...userParts,
+        msg_a1: [
+          toolPart("prt_o1", "msg_a1", "bash", {
+            state: { status: "running", input: {}, title: "bash", time: { start: 0 } },
+          }),
+        ],
+      },
+      "busy",
+    )
+    expect(tool.map((row) => row.kind)).toEqual(["user", "tool", "turnfoot"])
+
+    const retry = project([user, streaming], { ...userParts, msg_a1: [textPart("prt_t1", "msg_a1", "输出")] }, "retry", {
+      attempt: 2,
+      message: "限流",
+    })
+    expect(retry.map((row) => row.kind)).toEqual(["user", "markdown", "retry", "turnfoot"])
+  })
+
+  test("#1399 回合脚行只属于活跃回合:上一回合已完成时它只在最后一轮出现", () => {
+    const rows = project(
+      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1"), userMsg("msg_u2", 2000)],
+      {
+        msg_u1: [textPart("prt_u1", "msg_u1", "第一句")],
+        msg_a1: [textPart("prt_t1", "msg_a1", "回答")],
+        msg_u2: [textPart("prt_u2", "msg_u2", "第二句")],
+      },
+      "busy",
+    )
+    expect(rows.map((row) => row.kind)).toEqual(["user", "markdown", "footnote", "turn", "user", "turnfoot"])
+  })
+
+  test("#1399 结局同帧让位:完成 → 脚注;中止 → 中断行;出错 → 错误卡;零正文 → 空回合行 —— 四种都没有脚行", () => {
+    const user = userMsg("msg_u1", 1000)
+    const userParts = { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }
+
+    const done = project(
+      [user, assistantMsg("msg_a1", "msg_u1")],
+      { ...userParts, msg_a1: [textPart("prt_t1", "msg_a1", "回答")] },
+      "idle",
+    )
+    expect(done.map((row) => row.kind)).toEqual(["user", "markdown", "footnote"])
+
+    const aborted = project(
+      [user, assistantMsg("msg_a1", "msg_u1", { error: { name: "MessageAbortedError", data: { message: "" } } })],
+      { ...userParts, msg_a1: [textPart("prt_t1", "msg_a1", "写到一半")] },
+      "idle",
+    )
+    expect(aborted.map((row) => row.kind)).toEqual(["user", "markdown", "divider"])
+    expect(aborted[2]).toMatchObject({ kind: "divider", label: "interrupted" })
+
+    const failed = project(
+      [user, assistantMsg("msg_a1", "msg_u1", { error: { name: "APIError", data: { message: "rate_limit_exceeded" } } })],
+      userParts,
+      "idle",
+    )
+    expect(failed.map((row) => row.kind)).toEqual(["user", "turnError"])
+
+    const empty = project([user, assistantMsg("msg_a1", "msg_u1", { finish: "unknown" } as never)], userParts, "idle")
+    expect(empty.map((row) => row.kind)).toEqual(["user", "divider"])
+    expect(empty[1]).toMatchObject({ kind: "divider", label: "emptyTurn" })
+
+    // 对照臂:旧「正在思考」胶囊的行类型不再存在于任何结局里。
+    for (const rows of [done, aborted, failed, empty])
+      expect(rows.some((row) => (row.kind as string) === "thinking")).toBe(false)
   })
 
   test("工具过滤:builtin identity 的 todowrite 与 pending/running question 不渲染;未知 part 类型 fail-closed 跳过", () => {
@@ -638,10 +720,12 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       attempt: 2,
       message: "gateway 429",
     })
-    const last = rows.at(-1)!
-    if (last.kind !== "retry") throw new Error("expected retry row")
-    expect(last.attempt).toBe(2)
-    expect(last.message).toBe("gateway 429")
+    // `#1399` 起回合脚行是活跃回合的最后一行,重试卡在它之前(卡说为什么在等、第几次;脚行说这一轮还在跑)。
+    expect(rows.map((row) => row.kind)).toEqual(["user", "retry", "turnfoot"])
+    const retry = rows[1]!
+    if (retry.kind !== "retry") throw new Error("expected retry row")
+    expect(retry.attempt).toBe(2)
+    expect(retry.message).toBe("gateway 429")
 
     const idle = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "idle")
     expect(idle.some((row) => row.kind === "retry")).toBe(false)
@@ -704,7 +788,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       "busy",
     )
 
-    expect(rows.map((row) => row.kind)).toEqual(["divider", "thinking"])
+    expect(rows.map((row) => row.kind)).toEqual(["divider", "turnfoot"])
     const divider = rows[0]!
     if (divider.kind !== "divider" || divider.label !== "compaction") throw new Error("expected compaction divider")
     expect(divider.summaryParts).toEqual([])
@@ -1170,5 +1254,17 @@ describe("#568 审计修复:diffsum 畸形条目整条丢弃(minor)", () => {
         }),
       ),
     ).toBeUndefined()
+  })
+})
+
+describe("#1399 回合脚行计时 m:ss(从用户消息 time.created 起算,不是行挂载时刻)", () => {
+  test("整秒向下取整;分钟不进位到小时;负值(时钟偏斜)钉 0:00", () => {
+    expect(formatTurnElapsed(0)).toBe("0:00")
+    expect(formatTurnElapsed(999)).toBe("0:00")
+    expect(formatTurnElapsed(3_000)).toBe("0:03")
+    expect(formatTurnElapsed(65_000)).toBe("1:05")
+    expect(formatTurnElapsed(3_599_999)).toBe("59:59")
+    expect(formatTurnElapsed(3_600_000)).toBe("60:00")
+    expect(formatTurnElapsed(-5_000)).toBe("0:00")
   })
 })
