@@ -17,6 +17,13 @@ import { Plugin } from "@/plugin"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "../lib/effect"
+import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
+
+// alpha(#1370 追平上游时接管;登记在 scripts/north-star-guard.sh 的 UPSTREAM_EXCLUDES):
+// 上游 2026-09-01 新增本文件,手写的 mock 按上游接口写;alpha 已收编的 Plugin / Permission /
+// ToolRegistry / SessionProcessor(ADR-038、ADR-041、#1129)把这些接口**扩宽**了,于是它在
+// alpha 上 typecheck 红。只补 mock 缺的成员与 alpha 必需的 AlphaToolPolicy 层,**不改生产签名**;
+// 用例本体与断言逐字不动。
 
 const callID = "call-test"
 const sessionID = SessionID.make("ses_test")
@@ -45,6 +52,8 @@ function fakeMcp() {
 const fakePlugin = Plugin.Service.of({
   init: () => Effect.void,
   list: () => Effect.succeed([]),
+  // alpha #1129:Plugin.Interface.tools(plugin 工具带 origin 的身份轴)
+  tools: () => Effect.succeed([]),
   trigger: (_name, _input, output) => Effect.succeed(output),
 } satisfies Plugin.Interface)
 
@@ -52,6 +61,8 @@ const fakePermission = Permission.Service.of({
   ask: () => Effect.void,
   reply: () => Effect.void,
   list: () => Effect.succeed([]),
+  // alpha ADR-038 / #724 §5:Permission.Interface.clearGrants
+  clearGrants: () => Effect.void,
 } satisfies Permission.Interface)
 
 const fakeTruncate = Truncate.Service.of({
@@ -67,12 +78,17 @@ const layer = Layer.mergeAll(
   Layer.succeed(MCP.Service, fakeMcp()),
   Layer.succeed(Truncate.Service, fakeTruncate),
   RuntimeFlags.layer(),
+  // alpha #1129:SessionTools.resolve 在执行咽喉上要 AlphaToolPolicy.Service(策略文档轴);
+  // 空 records 的 in-memory 句柄 = 全新用户的默认策略。
+  inMemoryToolPolicyLayer(),
   Layer.succeed(
     ToolRegistry.Service,
     ToolRegistry.Service.of({
       ids: () => Effect.succeed(["timing"]),
       all: () => Effect.succeed([]),
       named: () => Effect.die("unused"),
+      // alpha #1129:ToolRegistry.Interface.pluginBinding(本用例只有 builtin 工具,不会被问到)
+      pluginBinding: () => Effect.succeed(undefined),
       tools: () =>
         Effect.succeed([
           {
@@ -86,7 +102,9 @@ const layer = Layer.mergeAll(
                 yield* ctx.metadata({ metadata: { output: "second" } })
                 return { title: "timing", metadata: {}, output: "done" }
               }),
-          } satisfies Tool.Def,
+            // alpha ADR-041:registry 交出的是 RegisteredTool(Tool.Def + identity)
+            identity: { source: "builtin", origin: "", name: "timing" },
+          } satisfies ToolRegistry.RegisteredTool,
         ]),
     }),
   ),
@@ -133,7 +151,9 @@ it.effect("preserves running tool start time across metadata updates", () =>
           return state
         }),
       completeToolCall: () => Effect.void,
-    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+      // alpha ADR-041:register() 把每个工具的 display 快照登记到 handle
+      registerToolDisplay: () => {},
+    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "registerToolDisplay">
 
     const tools = yield* SessionTools.resolve({
       agent,
