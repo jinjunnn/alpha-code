@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>整轮运行指示 · 时间线内的回合脚行</title>
+<link rel="stylesheet" href="../current/conversation-timeline/design.css" />
+<style>
+/* 本稿自有类一律 ri- 前缀;基础样式、--a-* token 与既有帧的类(.tc / .reason / .row-ai /
+   .interrupted / .meta / .turn-err …)全部来自链接的 conversation-timeline/design.css。 */
+body{padding:0 0 72px}
+.ri-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 94%,transparent);backdrop-filter:blur(14px)}
+.ri-bar b{font-size:var(--a-text-sm)}.ri-bar>span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}.ri-grow{flex:1}
+.ri-wrap{max-width:1040px;margin:0 auto;padding:26px 24px 0}
+.ri-intro h1{margin:0 0 8px;font-size:24px}
+.ri-intro p{margin:0;color:var(--a-text-secondary);line-height:1.65;max-width:760px}
+.ri-lbl{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin:26px 0 8px;display:flex;align-items:center;gap:8px}
+.ri-lbl::after{content:"";flex:1;height:1px;background:var(--a-border-faint)}
+.ri-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.ri-grid{grid-template-columns:1fr}}
+.ri-grid .frame,.ri-one .frame{margin-top:0}
+.ri-cap{margin:8px 2px 0;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:1.5}
+.ri-cap b{color:var(--a-text-secondary);font-weight:var(--a-weight-medium)}
+.frame .tl{gap:14px;padding:20px 22px}
+
+/* ── 运行面:回合脚行(与中断行 / 空回合行同族:左对齐安静行,12px 图标槽) ── */
+.ri-row{display:flex;align-items:center;gap:8px;align-self:flex-start;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.ri-mark{flex:none;width:12px;height:12px;display:grid;place-items:center}
+.ri-dot{width:7px;height:7px;border-radius:50%;background:var(--a-accent);animation:ri-pulse 1.4s ease-in-out infinite}
+@keyframes ri-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.ri-lab{font-weight:var(--a-weight-medium)}
+.ri-sep{flex:none;width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)}
+.ri-time{font-size:var(--a-text-xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+
+/* ── 等你面:与自动重试卡同族的琥珀底小卡;图标静止,不再有任何动效 ── */
+.ri-wait{display:inline-flex;align-items:center;gap:9px;align-self:flex-start;padding:8px 13px;background:var(--a-warning-subtle);border:1px solid color-mix(in srgb,var(--a-warning) 40%,transparent);border-radius:var(--a-radius-lg);font-size:var(--a-text-sm);color:var(--a-text)}
+.ri-pause{flex:none;width:12px;height:12px;fill:none;stroke:var(--a-warning);stroke-width:2.2;stroke-linecap:round}
+.ri-wait b{font-weight:var(--a-weight-medium)}
+.ri-wait>span{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ri-hint{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+
+/* 既有帧里用到、但活稿 CSS 没单列的两处:流式中的思考头(标题变色、无时长)、待批工具卡的灰 chip */
+.reason .lab.live{color:var(--a-accent)}
+.interrupted .dot{width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)}
+
+/* 减弱动效:系统偏好或右上角开关。脉冲点静止;计时仍走 —— 这时它是唯一的「还活着」信号。 */
+@media (prefers-reduced-motion:reduce){.ri-dot{animation:none}}
+html[data-motion="reduce"] .ri-dot,
+html[data-motion="reduce"] .stream-cursor,
+html[data-motion="reduce"] .tc.running .tc-head::after,
+html[data-motion="reduce"] .tc.running .tc-ico,
+html[data-motion="reduce"] .tc-st .sp{animation:none}
+
+.ri-note{margin:14px 0 0;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.6}
+.ri-note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+.ri-spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a-text-sm)}
+.ri-spec th{background:var(--a-bg-subtle);text-align:left;font-size:var(--a-text-2xs);text-transform:uppercase;letter-spacing:var(--a-tracking-wide);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);padding:9px 12px}
+.ri-spec td{padding:10px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top;line-height:1.55}
+.ri-spec td:first-child{color:var(--a-text);font-weight:var(--a-weight-medium);white-space:nowrap}
+.ri-spec code{font-family:var(--a-font-mono);font-size:var(--a-text-2xs);color:var(--a-accent);background:var(--a-accent-subtle);padding:1px 5px;border-radius:var(--a-radius-sm)}
+</style>
+</head>
+<body>
+<div class="ri-bar"><b>会话时间线 · 整轮运行指示</b><span>组件增量 · 回合脚行,两面一槽</span><div class="ri-grow"></div>
+  <div class="seg" id="motionSeg"><button data-motion="full">正常动效</button><button data-motion="reduce">减弱动效</button></div>
+  <div class="seg" id="themeSeg"><button data-theme="light">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="ri-wrap">
+  <div class="ri-intro">
+    <h1>一轮还在跑的时候,时间线里一直看得出来</h1>
+    <p>这一轮从发出到结束,回合的最后一行始终是它:一个跟顶栏同款的脉冲点、一句「正在生成」、一个从发出算起的计时。模型在想、在写、在跑工具,这一行都不变 —— 细节由上面的卡片说。只有一种情况它换一副面孔:轮到你了。</p>
+  </div>
+
+  <div class="ri-lbl">运行面 · 模型在想、在写、在跑工具,这一行都长一样</div>
+  <div class="ri-grid">
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明</div></div>
+        <div class="ri-row"><span class="ri-mark" aria-hidden="true"><i class="ri-dot"></i></span><span class="ri-lab" role="status">正在生成</span><span class="ri-sep" aria-hidden="true"></span><span class="ri-time" aria-hidden="true" data-tick="3">0:03</span></div>
+      </div></div>
+      <div class="ri-cap"><b>刚发出,首个字还没到。</b>回合里只有用户的话和这一行;它顶替了此前只在这一刻出现的「正在思考」胶囊。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明</div></div>
+        <div class="row-ai measure"><div class="ai-md"><p><b>kama-bot-local</b> 是单用户 KAMA+EMA55 趋势跟踪交易机器人。先看三层结构:数据接入、信号<span class="stream-cursor"></span></p></div></div>
+        <div class="ri-row"><span class="ri-mark" aria-hidden="true"><i class="ri-dot"></i></span><span class="ri-lab" role="status">正在生成</span><span class="ri-sep" aria-hidden="true"></span><span class="ri-time" aria-hidden="true" data-tick="12">0:12</span></div>
+      </div></div>
+      <div class="ri-cap"><b>正文在往外吐。</b>光标在句尾闪,这一行在正文之下守着回合末尾;正文每长一段,它就往下让一段。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明</div></div>
+        <div class="reason measure"><div class="reason-head"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9.5 2a4.5 4.5 0 0 0-4.3 5.8A4 4 0 0 0 6 15.5a4 4 0 0 0 7 1 4 4 0 0 0 7-1 4 4 0 0 0 .8-7.7A4.5 4.5 0 0 0 14.5 2 4.5 4.5 0 0 0 12 3.3 4.5 4.5 0 0 0 9.5 2z"/></svg><span class="lab live">正在思考…</span><svg class="ic sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+        <div class="ri-row"><span class="ri-mark" aria-hidden="true"><i class="ri-dot"></i></span><span class="ri-lab" role="status">正在生成</span><span class="ri-sep" aria-hidden="true"></span><span class="ri-time" aria-hidden="true" data-tick="41">0:41</span></div>
+      </div></div>
+      <div class="ri-cap"><b>在想,还没吐字。</b>思考头只是标题变色、没有动效 —— 这几十秒里页面唯一在动的就是这一行的脉冲点和计时。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明</div></div>
+        <div class="tc running"><div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></span><div class="tc-tt"><b><span class="tgt">bun test src</span></b></div><span class="tc-st run"><span class="sp"></span>运行中</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+        <div class="ri-row"><span class="ri-mark" aria-hidden="true"><i class="ri-dot"></i></span><span class="ri-lab" role="status">正在生成</span><span class="ri-sep" aria-hidden="true"></span><span class="ri-time" aria-hidden="true" data-tick="65">1:05</span></div>
+      </div></div>
+      <div class="ri-cap"><b>工具在跑。</b>卡自己转圈、扫光、呼吸,说的是「这一步」;脚行说的是「这一轮」。两者同向,不矛盾:卡完成了脚行还在,是对的;脚行没了卡还在转,不允许。</div>
+    </div>
+  </div>
+
+  <div class="ri-lbl">等你面 · 等待你批准时 —— 不是「正在生成」,是「轮到你了」</div>
+  <div class="ri-one">
+    <div class="frame"><div class="tl">
+      <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明,然后提交</div></div>
+      <div class="row-ai measure"><div class="ai-md"><p>说明已写到 <code>AGENTS.md</code>,接下来提交这次改动。</p></div></div>
+      <div class="tc"><div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></span><div class="tc-tt"><b><span class="tgt">git commit -m "docs: agents"</span></b></div><span class="tc-st muted">等待运行</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+      <div class="ri-wait"><svg class="ri-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><span role="status"><b>等待你的决定</b><span class="ri-sep" aria-hidden="true"></span><span class="ri-hint">生成已暂停,到审批窗口里选择</span></span></div>
+    </div></div>
+    <div class="ri-cap"><b>审批本身仍在独立的弹窗里,不在时间线上。</b>这一格只负责把「现在不是模型在跑,是在等你」留在回合末尾:脉冲停了,颜色换成琥珀,计时收起,词换成输入框那句同样的话。你批了或拒了,它立刻换回运行面。</div>
+  </div>
+
+  <div class="ri-lbl">一轮结束 · 这一行让位给回合的结局,不留残影</div>
+  <div class="ri-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-ai measure"><div class="ai-md"><p>三层结构与关键入口已写进 <code>AGENTS.md</code>,共 96 行。</p></div>
+          <div class="meta"><span class="prov"><span class="pico" style="background:#4d6bfe">D</span><span class="agent">Build</span></span><span class="dot"></span><span>DeepSeek Reasoner</span><span class="dot"></span><span class="tnum">1:42</span><span class="dot"></span><span class="tnum">3.2k tokens</span></div>
+        </div>
+      </div></div>
+      <div class="ri-cap"><b>完成。</b>回合脚注接管这个位置;脚行最后一格的计时,就是脚注里那个时长。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-ai measure"><div class="ai-md" style="color:var(--a-text-secondary)"><p>三层结构与关键入口已写进…</p></div><div class="interrupted"><svg class="ic xs stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg><span>已由你停止</span><span class="dot"></span><span class="cont">继续生成</span></div></div>
+      </div></div>
+      <div class="ri-cap"><b>你按了停止。</b>中断行接管;同一族、同一位置,只是换了一句话。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>这轮回复没有完成</b><p>请求频率达到上限,模型暂时不可用;稍后重新发送这条消息即可。</p><span class="code">rate_limit_exceeded</span></div></div>
+      </div></div>
+      <div class="ri-cap"><b>出错。</b>回合级错误卡接管;脚行在错误落地的同一帧消失。</div>
+    </div>
+  </div>
+
+  <table class="ri-spec">
+    <tr><th>项</th><th>规则</th></tr>
+    <tr><td>位置</td><td>时间线内,活跃回合的<b>最后一行</b>。新到的正文、思考块、工具卡都插在它之前,所以它始终在回合末尾、在你跟读时正好落在输入框上方。随内容滚动,不悬浮。</td></tr>
+    <tr><td>运行面</td><td>左对齐安静行,与中断行 / 空回合行同族(12px 图标槽 + 次级灰文字):7px 强调色脉冲点(与顶栏状态胶囊同一个动效)+「正在生成」+ 点分隔 + 计时。模型在想、在写、在跑工具,这一面<b>不换字、不换形</b> —— 细节归上面的卡片。</td></tr>
+    <tr><td>等你面</td><td>只在等待你批准时:换成与自动重试卡同族的琥珀底小卡。暂停符号(静止,琥珀描边)+「等待你的决定」+ 点分隔 +「生成已暂停,到审批窗口里选择」。计时收起。你批了或拒了,当即换回运行面。审批动作仍在独立弹窗里,这里没有按钮。</td></tr>
+    <tr><td>计时</td><td>从这条用户消息发出算起,<code>m:ss</code>,等宽数字。中途重开会话,它显示真实已过时长而不是从零起。它不是进度,不承诺还要多久。</td></tr>
+    <tr><td>自动重试时</td><td>回合仍在跑,运行面不变;为什么在等、第几次,由自动重试卡说。</td></tr>
+    <tr><td>消失</td><td>回合到达任一结局的同一帧移除:完成 → 回合脚注接管该位置;停止 → 中断行;出错 → 回合级错误卡;跑完却零正文 → 空回合行。没有淡出,没有「已完成」停留。</td></tr>
+    <tr><td>与工具卡</td><td>脚行说这一轮,卡说这一步;卡的转圈 / 扫光 / 呼吸不变。允许「卡已完成而脚行仍在」;不允许「脚行已消失而卡仍在转」—— 回合结束时所有仍在运行态的卡必须同帧收口。</td></tr>
+    <tr><td>无障碍</td><td>文字部分是 <code>role="status"</code>(礼貌播报、整体读出),只在值得听的时刻改字:出现时「正在生成」、轮到你时「等待你的决定,生成已暂停,到审批窗口里选择」、批完回到「正在生成」。计时在 status 之外且 <code>aria-hidden</code>,每秒跳动不播报;脉冲点与暂停符号同样隐藏。结束由接管者播报(中断行 status、错误卡 alert、顶栏胶囊回到「空闲」)。</td></tr>
+    <tr><td>减弱动效</td><td>脉冲点静止(与顶栏、思考点、光标同一条规则);计时照走 —— 这时它是唯一的「还活着」信号,所以不能省。</td></tr>
+    <tr><td>判据钩子</td><td><code>data-alpha-timeline-row="turn-running"</code>,面用 <code>data-face="running" | "waiting"</code>。</td></tr>
+  </table>
+
+  <div class="ri-note"><b>为什么是一行,不是胶囊或悬浮条</b>(帧外):这一轮的状态是回合的事实,同族的中断行、空回合行都住在回合末尾;把它也放在那里,用户学一次就够。悬浮条会遮正文、会跟「滚动到底」按钮抢同一块地;顶栏胶囊已经在,而 owner 的观察正是它不在视线落点上。</div>
+  <div class="ri-note"><b>为什么用顶栏那个脉冲点,不用工具卡的转圈</b>(帧外):脉冲点在这个产品里已经意味着「会话在跑」,与这一行的语义同级;转圈在工具卡 chip 上意味着「这一步在跑」。同一屏里两种转圈会让人分不清谁在说哪一层。脉冲点比三个跳动的点更安静,也不会和句尾光标抢节奏。</div>
+  <div class="ri-note"><b>等你面为什么要换形</b>(帧外):「正在生成」时你该等,「等待你的决定」时你该去点 —— 两件事视觉上必须分得开,只换一个词不够。琥珀底小卡是时间线里既有的「临时状态、与你有关」形态(自动重试卡);它在弹窗后面、在你切回窗口时、在你离开又回来时,都替那个弹窗留着一句话。</div>
+</div>
+
+<script>
+(function(){
+  var themeSeg=document.getElementById('themeSeg');
+  var mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function markTheme(t){themeSeg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===t)});}
+  markTheme(mq.matches?'dark':'light');
+  themeSeg.querySelectorAll('button').forEach(function(b){b.onclick=function(){document.documentElement.setAttribute('data-theme',b.dataset.theme);markTheme(b.dataset.theme);};});
+
+  var motionSeg=document.getElementById('motionSeg');
+  var rm=window.matchMedia('(prefers-reduced-motion: reduce)');
+  function markMotion(m){motionSeg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.motion===m)});}
+  markMotion(rm.matches?'reduce':'full');
+  motionSeg.querySelectorAll('button').forEach(function(b){b.onclick=function(){
+    if(b.dataset.motion==='reduce')document.documentElement.setAttribute('data-motion','reduce');
+    else document.documentElement.removeAttribute('data-motion');
+    markMotion(b.dataset.motion);
+  };});
+
+  /* 计时只是示意:从各自的起点每秒走一格,展示「减弱动效时它仍在走」。 */
+  var ticks=Array.prototype.slice.call(document.querySelectorAll('[data-tick]'));
+  function fmt(s){var m=Math.floor(s/60),r=s%60;return m+':'+(r<10?'0':'')+r;}
+  setInterval(function(){ticks.forEach(function(el){var n=(parseInt(el.dataset.tick,10)||0)+1;el.dataset.tick=String(n);el.textContent=fmt(n);});},1000);
+})();
+</script>
+</body>
+</html>
