@@ -47,6 +47,16 @@ import {
   type LocalPackagePreviewV1,
 } from "./use-extensions"
 import { ExtAuthzView, ExtStandaloneAuthzDialog, buildAuthzConfirmation, authzIsEscalation } from "./ext-authz"
+import type { ProviderAddressRejection } from "../../shared/alpha-model-types"
+
+/** `#1381`:远程连接器地址被拒的类别 → 文案键(类别本身来自 main,与出网围栏同一个函数)。 */
+const MCP_ADDRESS_REJECTION_KEY = {
+  "invalid-url": "alpha.ext.customMcpAddress.invalidUrl",
+  "not-https": "alpha.ext.customMcpAddress.notHttps",
+  loopback: "alpha.ext.customMcpAddress.loopback",
+  "host-shape": "alpha.ext.customMcpAddress.hostShape",
+  port: "alpha.ext.customMcpAddress.port",
+} as const satisfies Record<ProviderAddressRejection, string>
 import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
@@ -790,7 +800,9 @@ export function ExtensionHub(props: {
           : { mcpType: "local" as const, command: cmCommand().trim().split(/\s+/).filter(Boolean) }
       const r = await ext.addCustomMcp(cmName().trim(), input, parseEnvLines(cmEnv()), parseEnvLines(cmSecrets()))
       if (!r.ok) {
-        setCmErr(r.reason ?? "failed")
+        // `#1381`:地址被拒(main 与出网围栏同一个判据)时按类别用用户的语言说;其余原样。
+        const addressCode = "addressCode" in r ? r.addressCode : undefined
+        setCmErr(addressCode ? t(MCP_ADDRESS_REJECTION_KEY[addressCode]) : r.reason ?? "failed")
         return
       }
       setCustomMcpOpen(false)

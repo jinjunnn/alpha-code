@@ -37,6 +37,7 @@ import {
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
+import { readMcpServerRecords } from "./mcp-server-records"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
 import type { ChannelName } from "./catalog-channels"
 import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
@@ -370,6 +371,25 @@ export function injectAlphaConfig(
     // #223:同一处也 deny 本地 `websearch` —— env 层的 keyless force-off 压不住
     // `OPENCODE_EXPERIMENTAL` umbrella(见 cloud-web-search.ts)。必须排在 agent 注入之后。
     applyWebSearchDenies(config, { killSwitch, platformPays })
+
+    // `#1381`(`#1383` 基线 §四 子票 4):用户自配的**远程 MCP 服务器**从 main 才写得了的真源注入(mcp-server-records.ts:
+    // `<appData>/alpha-code-state/mcp-servers/<env>.json`,位置由 ALPHA_GLOBAL_DIR 逆映射,与自定义节点同一份解析)。整条注入
+    // (type / url / headers)并显式 `enabled:true`:引擎原生仍会合并 alpha.jsonc(OPENCODE_CONFIG),同名的配置文件条目若在,
+    // later-wins 让真源的连接字段赢;账本 disabled 由紧接着的 injectDisabledOverrides 压回 `enabled:false`(它排在后面正是为此)。
+    // 放进 injectedMcpNames ⇒ 对 injectMcpDefaultDeny 而言它们是治理来源;alpha.jsonc 里不在真源的远程条目由它压成
+    // enabled:false(基线 I1)。真源缺失 = 没有记录;坏了 = 一条不注入 + 一行原因。与平台云 MCP 同名的记录添加时已被拒
+    // (ext-config.ts persistMcp),这里再挡一次,不让真源里的条目覆盖上面刚放好的云定义。判据:mcp-server-derivation.test.ts。
+    for (const server of readMcpServerRecords((line) => console.error(line))) {
+      if (injectedMcpNames.has(server.name)) {
+        console.error(`[alpha-code#1381] remote MCP truth record "${server.name}" collides with a name this injection already governs — skipped`)
+        continue
+      }
+      config.mcp = {
+        ...(config.mcp ?? {}),
+        [server.name]: { type: "remote", url: server.url, ...(server.headers ? { headers: server.headers } : {}), enabled: true },
+      }
+      injectedMcpNames.add(server.name)
+    }
 
     // #395(Codex r11 pivot → 主权注入):把账本 disabled 的 mcp/agent 权威覆盖注入 OPENCODE_CONFIG_CONTENT
     // —— 它在引擎加载序 step 6(所有 in-scope 源之后:XDG / ~/.opencode / agent-md·plugin-script 自动

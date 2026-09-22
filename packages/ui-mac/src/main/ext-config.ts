@@ -5,7 +5,9 @@
 // at runtime (ADR-006): jsonc-parser only + Node built-ins.
 //
 // Security (ADR-014 §8): everything is validated before any disk I/O — the MCP name, the allowed
-// config fields, the local command head (whitelist), and remote URLs (https / loopback only).
+// config fields, the local command head (whitelist), and remote URLs (`#1381`: the same https / non-loopback
+// admission the egress fence applies — network-egress-derived.ts classifyBaseUrl; remote records then live in
+// the main-only truth file mcp-server-truth.ts, never in this config file).
 // Writes are atomic (temp + rename) with a .bak rollback, and only ever touch mcp[<name>].
 
 import * as fs from "node:fs"
@@ -15,7 +17,7 @@ import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { applyEdits, format, modify, parse, type ParseError } from "jsonc-parser"
 import catalog from "./alpha-models.json"
-import { byokEngineId, type AlphaModelCatalog, type ProviderInput, type ProviderResult } from "../shared/alpha-model-types"
+import { byokEngineId, type AlphaModelCatalog, type ProviderAddressRejection, type ProviderInput, type ProviderResult } from "../shared/alpha-model-types"
 import { isExtensionName } from "../shared/extension-name"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
@@ -36,8 +38,12 @@ import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { assertProjectAlphaRootIdentity } from "./alpha-workdir"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
 import { classifyBaseUrl } from "./network-egress-derived"
+import { CLOUD_MCP_SERVER_NAME } from "./cloud-web-search"
+import { findMcpServerRecord, removeMcpServerRecord, upsertMcpServerRecord } from "./mcp-server-lifecycle"
+import type { McpServerRecord } from "./mcp-server-truth"
 
-export type ConfigResult = { ok: true } | { ok: false; reason: string }
+/** `code` 只在地址被拒时在场(`#1381`:与自定义节点同一套类别,renderer 据此用用户的语言说原因)。 */
+export type ConfigResult = { ok: true } | { ok: false; reason: string; code?: ProviderAddressRejection }
 
 // ── REQ-100 #342:配置写锁 —— 与扩展事务共享同一把环境级 bundle 锁(<globalRoot>/ext-tx/tx.lock)。
 // 无锁的并发 read-modify-write 会使在途事务已捕获的 config before-image 过期(恢复/回滚时 digest
@@ -263,6 +269,15 @@ function applyBuiltinPolicyEditsUnlocked(edits: BuiltinPolicyEdit[]): BuiltinPol
 
 /** 纯校验(零写盘;REQ-102 #359 裁决 B:seed MCP 走 config action 时在 plan 生成前复用本门 ——
  *  ext-config-tx 只保证 JSONC/顶层键,命令头/inline-eval/URL/危险 env 的安全门在此)。 */
+/** 远程 MCP 地址被拒时给调用方的英文原文(renderer 按 `code` 用用户的语言说;这里只是兜底与日志)。 */
+const MCP_ADDRESS_REJECTION_REASON: Record<ProviderAddressRejection, string> = {
+  "invalid-url": "the server URL is not a valid URL (it must start with https://)",
+  "not-https": "only https:// server URLs are supported",
+  loopback: "the server URL points at this machine (localhost / 127.0.0.1); local addresses are not supported",
+  "host-shape": "the server URL host must be a DNS name or an IPv4 address",
+  port: "the server URL port is out of range",
+}
+
 export function validateServer(server: Record<string, unknown>): ConfigResult {
   for (const key of Object.keys(server)) {
     if (!SAFE_MCP_FIELDS.has(key)) return { ok: false, reason: `field not allowed: ${key}` }
@@ -281,22 +296,12 @@ export function validateServer(server: Record<string, unknown>): ConfigResult {
     }
   }
   const url = (server as { url?: unknown }).url
-  if (typeof url === "string") {
-    // Parse with the WHATWG URL (not a substring prefix) so hosts like http://localhost.evil.com
-    // or http://127.0.0.1@evil.com can't slip past the loopback allowlist. https is allowed for any
-    // host (remote MCP); plain http only for loopback, and never with embedded credentials.
-    let parsed: URL
-    try {
-      parsed = new URL(url)
-    } catch {
-      return { ok: false, reason: "invalid url" }
-    }
-    const loopback =
-      parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]"
-    const ok =
-      parsed.protocol === "https:" ||
-      (parsed.protocol === "http:" && loopback && !parsed.username && !parsed.password)
-    if (!ok) return { ok: false, reason: "only https (or loopback http) URLs are allowed" }
+  if (url !== undefined) {
+    // `#1381`(基线 I4):远程 MCP 的地址准入与出网准入**同一个函数**(network-egress-derived.ts classifyBaseUrl:https、
+    // 非 loopback、DNS 名或 IPv4 字面量、端口在范围内)—— 出网派生收不进放行集合的地址,添加那一刻就拒。此前这里放行
+    // loopback `http://`,而出网侧拒 ⇒「加得进、连不上」(与 `#1383` 自定义节点的症状同形)。拒绝带类别 `code`,renderer 据此说人话。
+    const address = classifyBaseUrl(url, "mcp")
+    if (!address.ok) return { ok: false, reason: MCP_ADDRESS_REJECTION_REASON[address.code], code: address.code }
   }
   // environment / headers were previously accepted by field-name only — their VALUES were unvalidated
   // (C2). Require string maps and block loader/hook env vars that achieve code execution.
@@ -326,19 +331,6 @@ export function validateServer(server: Record<string, unknown>): ConfigResult {
 // `#840`: "command" verified against ConfigCommandV1 (packages/core/src/v1/config/command.ts) and
 // a live-engine probe (config `command.<name>` served verbatim by v1 `GET /command`).
 const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider", "agent", "command"])
-
-// https for any host; plain http only for loopback, never with embedded credentials. WHATWG-parsed
-// (not substring) so http://localhost.evil.com / http://127.0.0.1@evil.com can't slip past.
-function isAllowedUrl(url: string): boolean {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return false
-  }
-  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]"
-  return parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback && !parsed.username && !parsed.password)
-}
 
 function writeKey(target: string, keyPath: string[], value: unknown): ConfigResult {
   return withConfigWriteLock(() => writeKeyUnlocked(target, keyPath, value))
@@ -531,12 +523,42 @@ export function ensureGovernedMcpConnectTimeouts(
     logError(`[req109-535] local MCP timeout reconcile write failed: ${target} (${written.reason})`)
 }
 
-/** Persist an MCP server under mcp[<name>] in the alpha-owned engine config file (durable) + receipt. */
+/** `#1381`:远程 MCP 真源只装 url / headers(启停归账本,由 sidecar 注入压;其余键没有生产路径会送来)。多出来的键**拒**,不静默丢。 */
+const REMOTE_RECORD_LEAF_KEYS = new Set(["type", "url", "headers"])
+
+function remoteRecordFromLeaf(name: string, leaf: Record<string, unknown>): { ok: true; record: McpServerRecord } | { ok: false; reason: string } {
+  const extra = Object.keys(leaf).filter((k) => !REMOTE_RECORD_LEAF_KEYS.has(k))
+  if (extra.length) return { ok: false, reason: `remote MCP server carries key(s) the truth file does not hold: ${extra.join(", ")}` }
+  const headers = leaf.headers
+  const isRec = (v: unknown): v is Record<string, string> => !!v && typeof v === "object" && !Array.isArray(v)
+  return { ok: true, record: { name, url: leaf.url as string, ...(isRec(headers) ? { headers: { ...headers } } : {}) } }
+}
+
+function remoteLeafFromRecord(record: McpServerRecord): Record<string, unknown> {
+  return { type: "remote", url: record.url, ...(record.headers ? { headers: { ...record.headers } } : {}) }
+}
+
+/** Persist an MCP server: local ⇒ `mcp[<name>]` in the alpha-owned engine config file (durable); remote ⇒ the main-only truth file. */
 export function persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMeta): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
   if (!server || typeof server !== "object") return { ok: false, reason: "invalid server config" }
   const valid = validateServer(server)
   if (!valid.ok) return valid
+  // `#1381`(基线 I1):远程 MCP 的记录住在围栏写不到的真源里(mcp-server-truth.ts);配置文件里的 `mcp.*` 远程条目对注入面与
+  // 放行集合一概不算数。所以 type:"remote" 一条都不再写进 alpha.jsonc:先把配置文件(主 + legacy)里同名的副本清掉(重加即替换;
+  // 清不掉 ⇒ 拒,不让一个仍会被引擎原生合并的旧副本与真源记录并存),再整条写进真源。启停不进真源(账本 desiredState 由
+  // sidecar 注入 enabled:false 压住,ext-disabled-injection.ts),所以下面的 disabled 投影只对本地 MCP 做。
+  if (server.type === "remote") {
+    if (name === CLOUD_MCP_SERVER_NAME) return { ok: false, reason: `server name "${CLOUD_MCP_SERVER_NAME}" is reserved by the platform cloud MCP` }
+    const record = remoteRecordFromLeaf(name, server)
+    if (!record.ok) return record
+    const cleared = withConfigWriteLock(() => removeMcpLeafCopiesUnlocked(name))
+    if (!cleared.ok) return cleared
+    return upsertMcpServerRecord(record.record)
+  }
+  // 本地 MCP 维持现状(alpha.jsonc);同名的远程真源记录若在,一并让位(重加即替换 —— 账本键 `mcp.<name>` 是同一个)。
+  const vacated = removeMcpServerRecord(name)
+  if (!vacated.ok) return vacated
   // #354:catalog 的 eager v1 兜底已下线 —— planner 提交面 fail-closed 后,v1 视图由
   // upsertRecordV2 的 toV1Receipt 锁步派生(单一账本所有权);未策展仍归 orchestrator。
   // #395(Codex r5):未策展重加接入同一投影 —— 账本 disabled 的 server,重写叶必须带引擎
@@ -547,15 +569,20 @@ export function persistMcp(name: string, server: Record<string, unknown>, meta?:
 }
 
 /** 读 mcp.<name> 当前叶子(Codex review #355:orchestrator 失败补偿用精确 before-image ——
- *  不得用 removeMcp 全量卸载,那会误删既有配置/legacy/receipt)。不存在或不可读 → undefined。 */
+ *  不得用 removeMcp 全量卸载,那会误删既有配置/legacy/receipt)。不存在或不可读 → undefined。
+ *  `#1381`:远程记录的前像来自真源(投影成 `{type:"remote", url, headers?}` 叶);配置文件里的 remote 叶**不是记录**
+ *  (基线 I3:不采信、不迁移),读成「没有」—— 否则失败补偿会把一个被忽略的旧条目写进真源。 */
 export function readMcpLeaf(name: string): Record<string, unknown> | undefined {
   if (!isExtensionName(name)) return undefined
+  const truth = findMcpServerRecord(name, () => {})
+  if (truth.ok && truth.record) return remoteLeafFromRecord(truth.record)
   try {
     const target = mcpPluginTargetPath()
     if (!fs.existsSync(target)) return undefined
     const parsed = parse(fs.readFileSync(target, "utf8")) as { mcp?: Record<string, unknown> } | undefined
     const v = parsed?.mcp?.[name]
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
+    return (v as Record<string, unknown>).type === "remote" ? undefined : (v as Record<string, unknown>)
   } catch {
     return undefined
   }
@@ -651,9 +678,25 @@ export function readAgentEntryStrict(
   }
 }
 
-/** 恢复 mcp.<name> 到给定 before-image(undefined = 删除本次写入)。只动主配置该叶子。 */
+/** 恢复 mcp.<name> 到给定 before-image(undefined = 删除本次写入)。只动主配置该叶子。
+ *  `#1381`:前像是远程记录 ⇒ 写回真源(配置文件里不留副本);前像是本地叶或不存在 ⇒ 本次写进真源的同名记录让位,再复原配置叶。 */
 export function restoreMcpLeaf(name: string, value: Record<string, unknown> | undefined): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
+  if (value?.type === "remote") {
+    const record = remoteRecordFromLeaf(name, value)
+    if (!record.ok) return record
+    const cleared = withConfigWriteLock(() => removeMcpLeafCopiesUnlocked(name))
+    if (!cleared.ok) return cleared
+    return upsertMcpServerRecord(record.record)
+  }
+  const vacated = removeMcpServerRecord(name)
+  if (!vacated.ok) return vacated
+  // 前像不存在 = 撤掉本次写入:远程首装时 alpha.jsonc 里本来就没有这片叶(可能连 `mcp` 键都没有),缺席是成功的 no-op,不是错。
+  if (value === undefined)
+    return withConfigWriteLock(() => {
+      const removed = removeMcpLeafFromExistingFile(mcpPluginTargetPath(), name)
+      return removed.ok ? { ok: true } : removed
+    })
   return writeKey(mcpPluginTargetPath(), ["mcp", name], value)
 }
 
@@ -830,7 +873,9 @@ export function removeMcp(name: string): ConfigResult {
  *  fail-closed 返回失败(吞错继续会让「配置已净除」不可证明,后续密钥吊销/删账都失据)。 */
 export function removeMcpConfigInLock(name: string): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
-  const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
+  // `#1381`:远程 MCP 在 alpha.jsonc 里没有叶(记录住在真源),缺席的叶 / 缺席的 `mcp` 键是成功的 no-op(jsonc modify 对着空文档删键会抛);
+  // 文件在但解析不出 ⇒ fail-closed(与 legacy 分支同一口径)。
+  const primary = removeMcpLeafFromExistingFile(mcpPluginTargetPath(), name)
   if (!primary.ok) return primary
   for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
     let exists = false
@@ -856,7 +901,8 @@ export function removeMcpConfigInLock(name: string): ConfigResult {
       if (!legacyResult.ok) return legacyResult
     }
   }
-  return { ok: true }
+  // `#1381`(AC3):远程记录住在真源 —— 卸载同样要把它删掉,下一代就不再注入、不再放行。本就不在 = 幂等;真源坏了 ⇒ 拒(fail closed)。
+  return removeMcpServerRecord(name)
 }
 
 /** REQ-136 project MCP removal primitive. The caller already owns this root's Bundle lock; this
@@ -1089,7 +1135,9 @@ function writeProjectConfigTextAtomic(target: string, before: string, result: st
 
 function removeMcpUnlocked(name: string): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
-  const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
+  // `#1381`:远程 MCP 在 alpha.jsonc 里没有叶(记录住在真源),缺席的叶 / 缺席的 `mcp` 键是成功的 no-op(jsonc modify 对着空文档删键会抛);
+  // 文件在但解析不出 ⇒ fail-closed(与 legacy 分支同一口径)。
+  const primary = removeMcpLeafFromExistingFile(mcpPluginTargetPath(), name)
   if (!primary.ok) return primary
   for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
     try {
@@ -1105,7 +1153,8 @@ function removeMcpUnlocked(name: string): ConfigResult {
   }
   // REQ-128 `#706`:账本副作用已从配置写器里删掉(v1 物理写器会抹掉 V3 的 packageGraphs/claims,
   // 且发生在实物变更之后、返回值被忽略)。去账只归外层单点提交。
-  return { ok: true }
+  // `#1381`(AC3):远程记录住在真源,这里一并删(幂等;真源坏了 ⇒ 拒)。
+  return removeMcpServerRecord(name)
 }
 
 const PROVIDER_CATALOG = catalog as unknown as AlphaModelCatalog
@@ -1159,6 +1208,27 @@ export function validateProviderInput(input: ProviderInput): ProviderResult {
  * 下面这一个函数只服务**日志**:升级后配置文件里既有的 provider 块被忽略时,说得出忽略了哪些、在哪个文件(server.ts 每个
  * 进程出声一次)。不采信、不迁移、不建「待确认」面(基线 §五 M1);用户同名重新添加一次即可。
  */
+/** `#1381`(基线 I3):配置文件(主 + legacy)里既有的 `mcp.*` **远程**条目被忽略时,说得出忽略了哪些、在哪个文件 —— 只服务日志
+ *  (server.ts 每进程一次)。压住它们(enabled:false)的是 sidecar 侧 mcp-default-deny.ts;本地条目不在此列,它们照旧生效。 */
+export function ignoredConfigRemoteMcpEntries(): Array<{ file: string; names: string[] }> {
+  const out: Array<{ file: string; names: string[] }> = []
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  for (const target of [mcpPluginTargetPath(), ...legacyConfigPaths(mcpPluginTargetPath())]) {
+    try {
+      if (!fs.existsSync(target)) continue
+      const parsed = parse(fs.readFileSync(target, "utf8")) as { mcp?: unknown } | undefined
+      if (!isRec(parsed?.mcp)) continue
+      const names = Object.entries(parsed.mcp)
+        .filter(([, leaf]) => isRec(leaf) && leaf.type === "remote")
+        .map(([name]) => name)
+      if (names.length) out.push({ file: target, names })
+    } catch {
+      /* unreadable → nothing to report for this source */
+    }
+  }
+  return out
+}
+
 export function ignoredConfigProviderBlocks(): Array<{ file: string; ids: string[] }> {
   const out: Array<{ file: string; ids: string[] }> = []
   for (const target of providerReadPaths()) {

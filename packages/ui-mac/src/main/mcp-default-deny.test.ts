@@ -179,3 +179,47 @@ describe("injectMcpDefaultDeny — JSONC 与失败隔离", () => {
     expect(logs).toEqual([])
   })
 })
+
+// ── `#1381`:alpha.jsonc 里的远程条目不是治理凭据 ────────────────────────────────────────
+describe("injectMcpDefaultDeny — `#1381` alpha.jsonc 的 type:\"remote\" 条目", () => {
+  test("不在本轮注入名单的 alpha.jsonc 远程条目 ⇒ 压成 enabled:false 并出声;它不再让同名的用户全局条目免于默认拒绝;本地条目照旧是治理来源", () => {
+    writeFileSync(
+      alphaConfigPath,
+      JSON.stringify({
+        mcp: {
+          "stale-remote": { type: "remote", url: "https://stale.example/mcp" },
+          "local-gov": { type: "local", command: ["alpha-governed"] },
+        },
+      }),
+    )
+    writeFileSync(
+      join(userConfigDir, "config.json"),
+      JSON.stringify({
+        mcp: {
+          "stale-remote": { type: "remote", url: "https://user.example/mcp" },
+          "local-gov": { type: "local", command: ["global-collision"] },
+        },
+      }),
+    )
+    const config: { mcp?: Record<string, unknown> } = {}
+
+    apply(config)
+
+    expect(config.mcp).toEqual({ "stale-remote": { enabled: false } })
+    expect(logs).toEqual([
+      '[req109-535] default-denied user-global MCP names=["stale-remote"]',
+      `[alpha-code#1381] default-denied remote MCP entries in ${alphaConfigPath} (not in the main-only truth file, so neither injected nor authorized) names=["stale-remote"]`,
+    ])
+  })
+
+  test("本轮从真源注入的远程条目是治理来源:alpha.jsonc 同名远程条目不压、用户全局同名条目不拒、注入的条目一个字不动", () => {
+    writeFileSync(alphaConfigPath, JSON.stringify({ mcp: { "my-mcp": { type: "remote", url: "https://old.example/mcp" } } }))
+    writeFileSync(join(userConfigDir, "config.json"), JSON.stringify({ mcp: { "my-mcp": { type: "remote", url: "https://user.example/mcp" } } }))
+    const config = { mcp: { "my-mcp": { type: "remote", url: "https://mcp.example.com/mcp", enabled: true } } as Record<string, unknown> }
+
+    apply(config, { injectedMcpNames: ["my-mcp"] })
+
+    expect(config.mcp).toEqual({ "my-mcp": { type: "remote", url: "https://mcp.example.com/mcp", enabled: true } })
+    expect(logs).toEqual([])
+  })
+})
