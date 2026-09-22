@@ -45,6 +45,8 @@ export type PreloadStubOverrides = {
   accountSummary?: () => Promise<AccountSummary | { error: string }>
   keyStatus?: () => Promise<ProviderKeyStatus>
   providerAdd?: (input: unknown) => Promise<{ ok: true } | { ok: false; reason: string }>
+  /** `#1397`:目录内供应商填 Key 的落点 —— 用例要能看见「保存究竟落在哪条 IPC 上」。 */
+  providerSetKey?: (id: string, key: string) => Promise<{ ok: true } | { ok: false; reason: string }>
   /** REQ-160 AC2(`#1353`):composer 发送前问 main「这句话要不要拦」。默认不拦。 */
   moderationCheck?: (text: string) => Promise<boolean>
 }
@@ -65,7 +67,7 @@ function createBaseStub(data: PreloadStubData, overrides: PreloadStubOverrides) 
       keyStatus: overrides.keyStatus ?? (async () => data.providerKeys),
       add: overrides.providerAdd ?? (async () => ({ ok: true as const })),
       test: async () => ({ ok: true as const, ms: 1 }),
-      setKey: async () => ({ ok: true as const }),
+      setKey: overrides.providerSetKey ?? (async () => ({ ok: true as const })),
       remove: async () => ({ ok: true as const }),
       removeKey: async () => ({ ok: true as const }),
     },

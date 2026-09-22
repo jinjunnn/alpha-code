@@ -4,19 +4,16 @@ import { transformAsync } from "@babel/core"
 import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import presetSolid from "babel-preset-solid"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parse } from "jsonc-parser"
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { AccountSummary, AuthState } from "../src/preload/types"
-import type { EffectiveCatalog, ProviderInput, ProviderKeyStatus } from "../src/shared/alpha-model-types"
+import type { EffectiveCatalog, ProviderKeyStatus } from "../src/shared/alpha-model-types"
 import type { AlphaProjectsApi } from "../src/renderer/sidebar/use-projects"
 import type { AlphaComposerRuntimeProps } from "../src/renderer/alpha-ui/alpha-composer"
 import type { ComposerModel } from "../src/renderer/alpha-ui/composer-state"
 import type { ModelContract } from "../src/renderer/alpha-ui/model-contract"
-import { buildAlphaModelConfig } from "../src/main/alpha-models"
-import { readConfiguredProviderKeys } from "../src/main/ext-config"
 import { alphaJsoncPath } from "../src/main/engine-config-truth"
 import { dict as zh } from "../src/renderer/i18n/zh"
 import { dict as enDict } from "../src/renderer/i18n/en"
@@ -51,8 +48,8 @@ mock.module("../src/main/logging", () => ({
   write: () => {},
   rotateServerLogs: () => {},
 }))
-const { persistProviderAndRefresh, setProviderLifecycleDeps } = await import("../src/main/provider-lifecycle")
-const { clearByokKeys, initByokKeys } = await import("../src/main/alpha-byok-keys")
+const { setProviderKeyAndRetireLegacyKey, setProviderLifecycleDeps } = await import("../src/main/provider-lifecycle")
+const { clearByokKeys, getByokKey, initByokKeys } = await import("../src/main/alpha-byok-keys")
 // zh 产品文案的 locale pin 由 bunfig.toml 的 test preload(scripts/test-preload.ts 设
 // ALPHA_UI_LOCALE=zh)统一提供 —— 本文件被 alpha-composer-model.component.test.ts 以子进程
 // spawn,继承父进程 env,i18n 的 detectLocale() 直接读到 zh,无需再逐文件 setLocale。
@@ -169,6 +166,8 @@ type ApiFixture = {
   keyStatus?: () => Promise<ProviderKeyStatus>
   catalog?: () => Promise<EffectiveCatalog>
   add?: (input: unknown) => Promise<{ ok: true } | { ok: false; reason: string }>
+  /** `#1397`:目录内供应商填 Key 的落点 —— 判据要看见「保存究竟落在哪条 IPC 上」。 */
+  setKey?: (id: string, key: string) => Promise<{ ok: true } | { ok: false; reason: string }>
   onLogin?: () => void
   onAuthSubscribe?: (listener: (state: AuthState) => void) => void
   /** REQ-160 AC2(`#1353`):composer 发送前问 main「这句话要不要拦」。默认不拦。 */
@@ -191,6 +190,7 @@ function installApi(fixture: ApiFixture = {}) {
       accountSummary: fixture.account,
       keyStatus: fixture.keyStatus,
       providerAdd: fixture.add,
+      providerSetKey: fixture.setKey,
       moderationCheck: fixture.moderation,
     },
   )
@@ -1448,113 +1448,98 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
-  test("保存 Custom Provider 走真实持久化→next-fork allowlist→list 刷新并呈现可选行", async () => {
+  // `#1397`:这条用例的上一版是**自定义端点的正样本**(自己填地址 → 真持久化 → next-fork
+  // allowlist → list 刷新 → 呈现可选行)。那一半现在从界面上关掉了:这么加出来的节点一条消息
+  // 都发不出去 —— 出网围栏不敢照 alpha.jsonc 里的地址放行(那是一个 AI 有权改写的文件),而
+  // 「加了就用不了的入口」比没有更糟。于是用例整个翻面,钉住互为反面的两件事:
+  //   ① 自定义端点的提交路径(`window.api.providers.add`)从界面**到不了**:step 1 里那一行没了,
+  //      还在的每一条路都只通向目录内供应商(名称栏只读 —— 可编辑名称正是自定义表单的指纹),
+  //      整趟走完 `add` 零调用、AI 可改写的 alpha.jsonc 一个字没写;
+  //   ② 同一入口给**目录内供应商**填 Key 照常,而且是**真落盘**:providers.setKey →
+  //      setProviderKeyAndRetireLegacyKey → 加密钥匙串里真的读得回那把 Key。
+  // 主侧那半场没有因此失去覆盖:`persistProviderAndRefresh`(钥匙串标记 + alpha.jsonc + 回滚)的
+  // 判据在 src/main/alpha-models.test.ts,IPC 面在 test-component/provider-ipc.wiring.cases.ts。
+  // 那条 IPC 按票面**刻意保留**(`#1392` 有了 AI 改不到的真源之后重新开放),只是界面不走到它。
+  // 反向验证(先红后绿,已实跑):把 model-picker-add.tsx 与 i18n 的 zh.ts / en.ts 退回 origin/alpha
+  // 再跑本条 ⇒ 第一段断言当场红(step 1 仍有「其他 / 自定义端点」那一行,且它一路通到 `add`)。
+  test("#1397 自定义端点的提交路径从界面不可达;目录内供应商填 Key 照常真落盘", async () => {
     resetComposerModelProjection()
     const root = mkdtempSync(join(tmpdir(), "alpha-provider-component-"))
     tempDirs.push(root)
     process.env.ALPHA_GLOBAL_DIR = join(root, "environment")
     process.env.OPENCODE_CONFIG_DIR = join(root, "xdg")
-    const userData = join(root, "user-data")
-    // REQ-226 `#1343`:真实持久化 = 密钥先进钥匙串库(临时 userData 上的真库,接缝见文件头),再写 alpha.jsonc。
-    initByokKeys(userData)
-    let runtimeModels = [...platformModels]
-    let refreshes = 0
-    setProviderLifecycleDeps({
-      refreshRuntime: async () => {
-        refreshes++
-        const nextFork = buildAlphaModelConfig(userData)!
-        expect(nextFork.enabled_providers).toContain("custom-node")
-        const persisted = parse(readFileSync(alphaJsoncPath(), "utf8")) as {
-          provider?: Record<string, { models?: Record<string, { name?: string }>; options?: { apiKey?: unknown } }>
-        }
-        // AC1:alpha.jsonc 只有标记,没有输入的密钥。
-        expect(persisted.provider?.["custom-node"]?.options?.apiKey).toBe("alpha-keychain")
-        expect(readFileSync(alphaJsoncPath(), "utf8")).not.toContain("sk-test")
-        runtimeModels = [
-          ...platformModels,
-          ...Object.entries(persisted.provider?.["custom-node"]?.models ?? {}).map(([id, model]) =>
-            info("custom-node", id, model.name ?? id),
-          ),
-        ]
-        return true
-      },
-    })
+    initByokKeys(join(root, "user-data"))
+    const addCalls: unknown[] = []
     installApi({
-      // 与 main 的 getProviderKeyStatus 同一投影:标记块 + 库里有 ⇒ keychain;用户引用 ⇒ config;其余 ⇒ needs-reentry。
-      keyStatus: async () => ({
-        ...keys,
-        ...Object.fromEntries(
-          [...readConfiguredProviderKeys()].map(([id, kind]) => [
-            id,
-            kind === "keychain-marker"
-              ? { configured: true, source: "keychain" as const }
-              : kind === "user-ref"
-                ? { configured: true, source: "config" as const }
-                : { configured: false, source: "needs-reentry" as const },
-          ]),
-        ),
-      }),
-      add: (value) => persistProviderAndRefresh(value as ProviderInput),
+      add: async (value) => {
+        addCalls.push(value)
+        return { ok: true }
+      },
+      // 好的那半走真实现,不走桩:桩只能证明「点到了这个函数」,证明不了 Key 真的存下来了。
+      setKey: async (id, key) => setProviderKeyAndRetireLegacyKey(id, key),
     })
-    const contract: ModelContract = {
-      list: async () => runtimeModels,
-      current: async () => undefined,
-      switch: async () => {},
-    }
-    let selected: ComposerModel | null = null
     const mounted = mount(() =>
       createComponent(ModelPickPop, {
-        contract,
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
         directory: () => "/workspace",
         selected: () => null,
-        onSelect: async (model) => {
-          selected = model
-        },
+        onSelect: async () => {},
         onPicked: () => {},
       }),
     )
+    const entry = () =>
+      [...mounted.host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes(zh["alpha.model.addProvider"]),
+      ) ?? null
+    await waitFor(() => expect(entry()?.disabled).toBe(false))
+    click(entry())
+    // 弹层里找按钮:picker 背后的模型行也带供应商名,不限定范围会点错东西。
+    const overlay = () => mounted.host.querySelector<HTMLElement>(".a-mpa")!
+    const inOverlay = (text: string) =>
+      [...overlay().querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes(text),
+      ) ?? null
+    await waitFor(() => expect(overlay().textContent).toContain(zh["alpha.provider.intro"]))
 
-    await waitFor(() => {
-      const add = [...mounted.host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-        button.textContent?.includes("添加自定义节点 / 供应商"),
-      )
-      expect(add?.disabled).toBe(false)
-    })
-    click(
-      [...mounted.host.querySelectorAll("button")].find((button) =>
-        button.textContent?.includes("添加自定义节点 / 供应商"),
-      ) ?? null,
+    // ① step 1 的可点条目恰好是目录内的 preset,一条不多 —— 「其他 / 自定义端点」那一行没有了。
+    const presetNames = catalog.presetIds.map(
+      (id) => catalog.byokProviders.find((provider) => provider.id === id)!.name,
     )
-    click(
-      [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.includes("其他 / 自定义端点")) ??
-        null,
-    )
-    input(mounted.host.querySelector<HTMLInputElement>('input[placeholder="如 DeepSeek"]')!, "Custom Node")
-    input(
-      mounted.host.querySelector<HTMLInputElement>('input[placeholder="https://api.example.com/v1"]')!,
-      "https://custom.invalid/v1",
-    )
-    input(mounted.host.querySelector<HTMLInputElement>('input[placeholder="sk-..."]')!, "sk-test")
-    const modelInput = mounted.host.querySelector<HTMLInputElement>('input[placeholder*="回车添加"]')!
-    input(modelInput, "real-custom-model")
-    modelInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }))
-    click([...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.includes("保存并启用")) ?? null)
+    expect(
+      [...overlay().querySelectorAll<HTMLElement>(".a-mpa-preset")].map((row) => row.querySelector(".nm")?.textContent),
+    ).toEqual(presetNames)
+    // AC2:人话说明就落在那一行原来的位置,而且它不是一个能点的东西。
+    const note = overlay().querySelector("[data-alpha-custom-endpoint-disabled]")
+    expect(note?.textContent).toBe(zh["alpha.provider.customEndpointUnsupported"])
+    expect(note?.closest("button")).toBeNull()
 
-    await waitFor(() =>
-      expect(
-        [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].some((button) =>
-          button.textContent?.includes("real-custom-model"),
-        ),
-      ).toBe(true),
-    )
-    expect(refreshes).toBe(1)
-    const row = [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((button) =>
-      button.textContent?.includes("real-custom-model"),
-    )
-    expect(row?.disabled).toBe(false)
-    expect(row?.dataset.group).toBe("byok")
-    click(row ?? null)
-    await waitFor(() => expect(selected?.id).toBe("real-custom-model"))
+    // 还在的每一条路都只通向目录内供应商:名称栏只读、值就是目录里那个名字。
+    for (const name of presetNames) {
+      click(inOverlay(name))
+      await flush()
+      const nameField = overlay().querySelector<HTMLInputElement>(
+        `input[placeholder="${zh["alpha.provider.namePlaceholder"]}"]`,
+      )!
+      expect({ provider: name, value: nameField.value, readOnly: nameField.readOnly }).toEqual({
+        provider: name,
+        value: name,
+        readOnly: true,
+      })
+      click(inOverlay(zh["alpha.common.back"]))
+      await flush()
+    }
+
+    // ② 好的那半原样能用:选目录内供应商 → 填自己的 Key → 保存,真的落进加密钥匙串。
+    click(inOverlay("智谱 GLM"))
+    await flush()
+    input(overlay().querySelector<HTMLInputElement>('input[placeholder="sk-..."]')!, "sk-1397-zhipu")
+    click(inOverlay(zh["alpha.provider.saveEnable"]))
+    await waitFor(() => expect(getByokKey("zhipuai")).toBe("sk-1397-zhipu"))
+
+    // 整趟走完:自定义端点那条 IPC 一次都没被调到,AI 可改写的 alpha.jsonc 也一个字没写。
+    // 第一行是这条断言的正样本 —— 不先证明量的是本用例的临时根,`existsSync` 恒 false 是假绿。
+    expect(alphaJsoncPath()).toContain(root.split("/").pop()!)
+    expect({ add: addCalls, alphaJsonc: existsSync(alphaJsoncPath()) }).toEqual({ add: [], alphaJsonc: false })
     mounted.dispose()
   })
 
