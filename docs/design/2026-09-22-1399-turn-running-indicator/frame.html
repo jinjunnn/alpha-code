@@ -69,7 +69,7 @@ html[data-motion="reduce"] .tc-st .sp{animation:none}
 <div class="ri-wrap">
   <div class="ri-intro">
     <h1>一轮还在跑的时候,时间线里一直看得出来</h1>
-    <p>这一轮从发出到结束,回合的最后一行始终是它:一个跟顶栏同款的脉冲点、一句「正在生成」、一个从发出算起的计时。模型在想、在写、在跑工具,这一行都不变 —— 细节由上面的卡片说。只有一种情况它换一副面孔:轮到你了。</p>
+    <p>这一轮从发出到结束,回合的最后一行始终是它:一个跟顶栏同款的脉冲点、一句「正在生成」、一个从发出算起的计时。模型在想、在写、在跑工具,这一行都不变 —— 细节由上面的卡片说。只有一种情况它换一副面孔:轮到你了 —— 等你批准,或等你回答。</p>
   </div>
 
   <div class="ri-lbl">运行面 · 模型在想、在写、在跑工具,这一行都长一样</div>
@@ -107,15 +107,25 @@ html[data-motion="reduce"] .tc-st .sp{animation:none}
     </div>
   </div>
 
-  <div class="ri-lbl">等你面 · 等待你批准时 —— 不是「正在生成」,是「轮到你了」</div>
-  <div class="ri-one">
-    <div class="frame"><div class="tl">
-      <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明,然后提交</div></div>
-      <div class="row-ai measure"><div class="ai-md"><p>说明已写到 <code>AGENTS.md</code>,接下来提交这次改动。</p></div></div>
-      <div class="tc"><div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></span><div class="tc-tt"><b><span class="tgt">git commit -m "docs: agents"</span></b></div><span class="tc-st muted">等待运行</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
-      <div class="ri-wait"><svg class="ri-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><span role="status"><b>等待你的决定</b><span class="ri-sep" aria-hidden="true"></span><span class="ri-hint">生成已暂停,到审批窗口里选择</span></span></div>
-    </div></div>
-    <div class="ri-cap"><b>审批本身仍在独立的弹窗里,不在时间线上。</b>这一格只负责把「现在不是模型在跑,是在等你」留在回合末尾:脉冲停了,颜色换成琥珀,计时收起,词换成输入框那句同样的话。你批了或拒了,它立刻换回运行面。</div>
+  <div class="ri-lbl">等你面 · 轮到你了 —— 等你批准、等你回答,同一副面孔,只换一句话</div>
+  <div class="ri-grid">
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明,然后提交</div></div>
+        <div class="row-ai measure"><div class="ai-md"><p>说明已写到 <code>AGENTS.md</code>,接下来提交这次改动。</p></div></div>
+        <div class="tc"><div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></span><div class="tc-tt"><b><span class="tgt">git commit -m "docs: agents"</span></b></div><span class="tc-st muted">等待运行</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+        <div class="ri-wait"><svg class="ri-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><span role="status"><b>等待你的决定</b><span class="ri-sep" aria-hidden="true"></span><span class="ri-hint">生成已暂停,到审批窗口里选择</span></span></div>
+      </div></div>
+      <div class="ri-cap"><b>等你批准。</b>审批本身仍在独立的弹窗里,不在时间线上。这一格只负责把「现在不是模型在跑,是在等你」留在回合末尾:脉冲停了,颜色换成琥珀,计时收起,词换成输入框那句同样的话。你批了或拒了,它立刻换回运行面。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明</div></div>
+        <div class="row-ai measure"><div class="ai-md"><p>有两种写法:按模块分层讲,或者顺着一次请求的路径走一遍。你更想看哪一种?</p></div></div>
+        <div class="ri-wait"><svg class="ri-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><span role="status"><b>等你回答</b><span class="ri-sep" aria-hidden="true"></span><span class="ri-hint">生成已暂停,到输入框上方的提问卡回答</span></span></div>
+      </div></div>
+      <div class="ri-cap"><b>等你回答。</b>模型反问你时,提问卡停靠在输入框上方,不在时间线上。同一副面孔:同样的琥珀、同样静止的暂停符号、同样收起计时;只有那句话是它自己的语境。你答了或选了「暂不回答」,它立刻换回运行面。</div>
+    </div>
   </div>
 
   <div class="ri-lbl">一轮结束 · 这一行让位给回合的结局,不留残影</div>
@@ -146,19 +156,19 @@ html[data-motion="reduce"] .tc-st .sp{animation:none}
     <tr><th>项</th><th>规则</th></tr>
     <tr><td>位置</td><td>时间线内,活跃回合的<b>最后一行</b>。新到的正文、思考块、工具卡都插在它之前,所以它始终在回合末尾、在你跟读时正好落在输入框上方。随内容滚动,不悬浮。</td></tr>
     <tr><td>运行面</td><td>左对齐安静行,与中断行 / 空回合行同族(12px 图标槽 + 次级灰文字):7px 强调色脉冲点(与顶栏状态胶囊同一个动效)+「正在生成」+ 点分隔 + 计时。模型在想、在写、在跑工具,这一面<b>不换字、不换形</b> —— 细节归上面的卡片。</td></tr>
-    <tr><td>等你面</td><td>只在等待你批准时:换成与自动重试卡同族的琥珀底小卡。暂停符号(静止,琥珀描边)+「等待你的决定」+ 点分隔 +「生成已暂停,到审批窗口里选择」。计时收起。你批了或拒了,当即换回运行面。审批动作仍在独立弹窗里,这里没有按钮。</td></tr>
+    <tr><td>等你面</td><td>回合在等你时:换成与自动重试卡同族的琥珀底小卡。暂停符号(静止,琥珀描边)+ 一句主句 + 点分隔 + 一句去向。计时收起。<b>两种触发共用这一面,只有文案不同</b>:等你批准 →「等待你的决定 · 生成已暂停,到审批窗口里选择」;等你回答 →「等你回答 · 生成已暂停,到输入框上方的提问卡回答」。你批了 / 拒了 / 答了 / 暂不回答,当即换回运行面。动作本身仍在弹窗或提问卡里,这里没有按钮。</td></tr>
     <tr><td>计时</td><td>从这条用户消息发出算起,<code>m:ss</code>,等宽数字。中途重开会话,它显示真实已过时长而不是从零起。它不是进度,不承诺还要多久。</td></tr>
     <tr><td>自动重试时</td><td>回合仍在跑,运行面不变;为什么在等、第几次,由自动重试卡说。</td></tr>
     <tr><td>消失</td><td>回合到达任一结局的同一帧移除:完成 → 回合脚注接管该位置;停止 → 中断行;出错 → 回合级错误卡;跑完却零正文 → 空回合行。没有淡出,没有「已完成」停留。</td></tr>
     <tr><td>与工具卡</td><td>脚行说这一轮,卡说这一步;卡的转圈 / 扫光 / 呼吸不变。允许「卡已完成而脚行仍在」;不允许「脚行已消失而卡仍在转」—— 回合结束时所有仍在运行态的卡必须同帧收口。</td></tr>
-    <tr><td>无障碍</td><td>文字部分是 <code>role="status"</code>(礼貌播报、整体读出),只在值得听的时刻改字:出现时「正在生成」、轮到你时「等待你的决定,生成已暂停,到审批窗口里选择」、批完回到「正在生成」。计时在 status 之外且 <code>aria-hidden</code>,每秒跳动不播报;脉冲点与暂停符号同样隐藏。结束由接管者播报(中断行 status、错误卡 alert、顶栏胶囊回到「空闲」)。</td></tr>
+    <tr><td>无障碍</td><td>文字部分是 <code>role="status"</code>(礼貌播报、整体读出),只在值得听的时刻改字:出现时「正在生成」、等你批准时「等待你的决定,生成已暂停,到审批窗口里选择」、等你回答时「等你回答,生成已暂停,到输入框上方的提问卡回答」、你动完手回到「正在生成」。计时在 status 之外且 <code>aria-hidden</code>,每秒跳动不播报;脉冲点与暂停符号同样隐藏。结束由接管者播报(中断行 status、错误卡 alert、顶栏胶囊回到「空闲」)。</td></tr>
     <tr><td>减弱动效</td><td>脉冲点静止(与顶栏、思考点、光标同一条规则);计时照走 —— 这时它是唯一的「还活着」信号,所以不能省。</td></tr>
-    <tr><td>判据钩子</td><td><code>data-alpha-timeline-row="turn-running"</code>,面用 <code>data-face="running" | "waiting"</code>。</td></tr>
+    <tr><td>判据钩子</td><td><code>data-alpha-timeline-row="turn-running"</code>,面用 <code>data-face="running" | "waiting"</code>,等你面再标触发 <code>data-wait="approval" | "question"</code>。</td></tr>
   </table>
 
   <div class="ri-note"><b>为什么是一行,不是胶囊或悬浮条</b>(帧外):这一轮的状态是回合的事实,同族的中断行、空回合行都住在回合末尾;把它也放在那里,用户学一次就够。悬浮条会遮正文、会跟「滚动到底」按钮抢同一块地;顶栏胶囊已经在,而 owner 的观察正是它不在视线落点上。</div>
   <div class="ri-note"><b>为什么用顶栏那个脉冲点,不用工具卡的转圈</b>(帧外):脉冲点在这个产品里已经意味着「会话在跑」,与这一行的语义同级;转圈在工具卡 chip 上意味着「这一步在跑」。同一屏里两种转圈会让人分不清谁在说哪一层。脉冲点比三个跳动的点更安静,也不会和句尾光标抢节奏。</div>
-  <div class="ri-note"><b>等你面为什么要换形</b>(帧外):「正在生成」时你该等,「等待你的决定」时你该去点 —— 两件事视觉上必须分得开,只换一个词不够。琥珀底小卡是时间线里既有的「临时状态、与你有关」形态(自动重试卡);它在弹窗后面、在你切回窗口时、在你离开又回来时,都替那个弹窗留着一句话。</div>
+  <div class="ri-note"><b>等你面为什么要换形</b>(帧外):「正在生成」时你该等,「等待你的决定」时你该去点 —— 两件事视觉上必须分得开,只换一个词不够。琥珀底小卡是时间线里既有的「临时状态、与你有关」形态(自动重试卡);它在弹窗后面、在你切回窗口时、在你离开又回来时,都替那个弹窗或提问卡留着一句话。等你批准与等你回答是同一件事的两种来路 —— 回合停下来等你动手 —— 所以共用一面,只让那句话各说各的去向;不给第二种颜色或第二个符号。</div>
 </div>
 
 <script>
