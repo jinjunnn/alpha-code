@@ -190,9 +190,9 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     lines: 1,
   },
   "packages/ui-mac/src/main/process-fence-wiring.test.ts": {
-    why: "REQ-159 `#1321`:锚 sidecar.ts 里 installProcessFence(command) 的位置(早于 prepareSidecarEnv 与 import 引擎)与 darwin 缺席即抛那句话。两个不会让它变红的变异:①把 installProcessFence 的函数体改成直接 return(调用行文本一字不变);②把 applyProcessFence 的结果丢掉、把 throw 包进恒假条件(那两行字面量仍在)。sidecar.ts 顶层 registerHooks/getParentPort 让它 import 不得;真行为判据在 process-fence-apply.test.ts 的 C1–C5(真 .node / 真 seatbelt,五种失败各自抛)与本文件前三条(计划 → start 命令 → 拒 fork),这一条只保证生产真的把那一步接在 start() 第一句上。",
-    evidence: "#1321",
-    lines: 1,
+    why: "四处源码文本锚,各自都有真行为判据在别处兜底,这里只钉「生产真的接在那上面」。①REQ-159 `#1321`:sidecar.ts 里 installProcessFence(command) 的位置(早于 prepareSidecarEnv 与 import 引擎)与 darwin 缺席即抛那句话;不会让它变红的变异:把 installProcessFence 的函数体改成直接 return(调用行文本一字不变),或把 applyProcessFence 的结果丢掉、throw 包进恒假条件。②③④ `#1394`(围栏输入搬出围栏可写处)同一条 ANCHOR 用例里的三段:server.ts 的 planProductionFence 只读真源、正文里不出现 TABS_KEY / getStore(;ipc.ts 的 store-set / store-delete / store-clear 三个通道各自在自己那段里通知 tracker;index.ts 的 bootFenceWorkspaceTruth 落在 runTabsPreclean 之后、registerIpcHandlers 之前。不会让这三段变红的变异:把 noteRendererStoreSet 的实现改成直接 return(调用行仍在),或让 bootFenceWorkspaceTruth 在播种时静默失败(调用位置不变)。真行为判据在本文件前面那几条端到端用例(伪造记录真写进 opencode.global.dat ⇒ 生产计划器的 profile 不含它;写进真源 ⇒ 含它;真源坏了 ⇒ 只剩 ~/code-puppy)与 process-fence-apply.test.ts 的 C1–C5。sidecar.ts 顶层 registerHooks/getParentPort 让它 import 不得,所以只能读文本。",
+    evidence: "#1394",
+    lines: 4,
   },
 }
 
