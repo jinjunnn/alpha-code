@@ -4,7 +4,7 @@ kind: architecture
 status: active
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-09-09
+last_reviewed: 2026-09-22
 review_after: 2026-12-09
 supersedes:
   - 2026-08-23-shell-sandbox-seam.md
@@ -61,6 +61,23 @@ LSP / PTY / formatter …)自动继承;REQ-138 那层(`cfg.shell` → `sandbox-e
    它落在哪一行(`W-id`,可 `+` 连多个;`arg` = 路径来自调用方;`main-only` = 只有 main 执行到,今天只
    `alpha-environment.ts` 一处)。**新增一处写盘不登记 ⇒ 红**;点不出根 = 新的写入根 = 要么给可写集加行
    (带实测)要么改代码。当前 76 条签名 / 92 个调用点。
+
+**状态根下 main 独占的真源**(可写集的反面:这些位置**故意**不在任何一行之下)。`<appData>/alpha-code-state`(冻结环境快照的
+`casBaseRoot`)本身不在可写集里 —— W2 只放行它之下的 `env/<env>`;于是它的其它子目录就是「main 写得了、引擎写不到」的家,
+由文件系统边界给出,一条 `grep` 就能复核,不依赖任何加密假设:
+
+| 子目录 | 存什么 | 谁写 | 落地 |
+| --- | --- | --- | --- |
+| `cas/` | 扩展 CAS 存储 | main / GC worker | 先例 |
+| `fence-workspaces/<env>.json` | 围栏的工作区清单(§3 5c) | main,经 renderer IPC | `#1394` |
+| `custom-providers/<env>.json` | 用户「添加自定义节点」的记录 `{ v: 1, providers: [{ id, name, compat, baseURL, models }] }`,**密钥不进这里**(仍在 `#1343` 的钥匙串库) | main(`custom-provider-truth-write.ts`);读端 `custom-provider-truth.ts` 零写盘、不 import `node:fs` | `#1391` 只落存储层,**零消费者**(§7) |
+
+`custom-providers` 的读与写刻意拆成两个文件:读端将来要被 `alpha-models.ts` / `ext-config.ts`(都在 sidecar 的 import 闭包里)
+消费,写入点若跟着进闭包,上面那本登记簿只能给它填 `main-only` 这个文字标签 —— 那不是判据。写模块不在闭包里由
+`custom-provider-truth-write.test.ts` 对着生产的 `sidecarSourceFiles` 实测。读端**严格**:缺失 = 没有记录;解析失败 / 版本不认识 /
+字段不合法 / 同 id 重复 / 多余的键 ⇒ 「没问出来」(不是空清单)并出一行日志。真源路径不在可写集任何固定行之下的判据在
+`custom-provider-truth.test.ts`(对着渲染出的 profile 逐条规则枚举 W-id;W1 由 §3 5b 兜)与 `custom-provider-truth-fence.test.ts`
+(真 sandbox-exec)。方案基线:[`../design/2026-09-21-1383-custom-provider-address-truth-baseline.md`](../design/2026-09-21-1383-custom-provider-address-truth-baseline.md)。
 
 ## 3. 多工作区:启动时并集怎么裁
 
@@ -134,6 +151,9 @@ U1 只出了 arm64,并明写将来出 Intel / universal 时若漏第二份,x64 �
 | `process-fence-apply.test.ts` | darwin | x64 两片判据;四类原语正反臂(Electron 的 node);AC4 五种失败 |
 | `process-fence-wiring.test.ts` | 全平台 | 计划 → start 命令 → 拒 fork;sidecar.ts 接线锚;`#1394` 端到端(darwin):伪造记录真写进 `opencode.global.dat` ⇒ **生产计划器**的 profile 不含它(AC4①③),写进真源 ⇒ 含它(AC4②),真源坏 ⇒ 只剩默认工作区;planner / ipc.ts / index.ts 接线锚 |
 | `process-fence-write-sites.test.ts` | 全平台 | AC3 登记簿 == 扫描;四条控制臂 |
+| `custom-provider-truth.test.ts` | 全平台 | `#1391` 自定义节点真源(读端):I2 —— 真源路径不在可写集任何固定行之下(对着渲染出的 profile 逐条规则枚举 W-id,17 个固定 id 手写登记;默认 / 覆盖 base × 两种 XDG_STATE_HOME;控制臂塞一行罩住状态根即点名);严格读十六种坏形状各拒且日志一行,缺失 = 没有记录 |
+| `custom-provider-truth-write.test.ts` | 全平台 | `#1391` 写端:字节固定、原子(rename / write 中途抛 ⇒ 旧内容不动)、坏记录不落盘;写模块不在 sidecar import 闭包里(生产 `sidecarSourceFiles` 实测 + 合成三文件控制臂) |
+| `custom-provider-truth-fence.test.ts` | darwin | `#1391` I2 的真裁判:生产 profile 交给真 sandbox-exec,围栏内写 / 建目录 / mv 进真源全拦、零落盘;W2 / W3 落盘;bare 臂写得进 |
 | `process-fence-engine.test.ts` | darwin | **真引擎 + 真 ext** 在生产 .node 围栏下:shell 工具 / PTY / MCP 三条真消费方界外 0 落盘、界内落盘;AC2 shell 工具照常执行、`cfg.shell` 不指向 wrapper |
 | `packages/ext/src/alpha-ext-no-shell-layer.test.ts` | 全平台 | REQ-138 层已拆:生产 config 钩子不碰 `cfg.shell` |
 
@@ -168,6 +188,10 @@ U1 只出了 arm64,并明写将来出 Intel / universal 时若漏第二份,x64 �
   catalog,不决定可写集;⑤真源文件坏掉(不是攻击可达的状态)时这一代只剩 `~/code-puppy`,直到 renderer 下一次 tab 变更把它重写好。
   端到端判据(`process-fence-wiring.test.ts`)在 bun 里对着生产计划器跑,fork 是假子进程;**没有**在真 Electron 主进程里冷启动一次
   取证 —— 「index.ts 在预清之后、注册 IPC 之前播种」与「ipc.ts 三个通道写完都通知 tracker」两跳是源码锚,不是行为判据。
+- **`#1391` 自定义节点的真源只有存储层**(§2 那张表的第三行):`custom-providers/<env>.json` 可读可写、判据齐,但**零消费者** ——
+  注入面(`buildAlphaModelConfig`)、`enabled_providers`(`readUserProviderIds`)与出网派生今天仍看 `alpha.jsonc` 等三份配置文件
+  (`#1392`);添加时的地址准入与出网同源、旧 `alpha.jsonc` 记录的处置(`#1393`)。用户可观察行为在 `#1391` 合入后零变化:
+  「自己填服务地址加节点」那半入口仍是 `#1397` 关掉的状态。
 - 非 darwin:不装围栏,sidecar 打一行 warn(基线「如实声明」);§8 的两处告知随之**不出现**(没有围栏就不说有)。
 
 ## 8. 披露面:两句实话怎么到用户眼前(`#1322`)
