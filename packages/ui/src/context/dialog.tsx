@@ -127,10 +127,10 @@ function init(host: () => DialogHost | undefined = () => undefined) {
         }
         return (
           <Kobalte
-            modal={stack().at(-1)?.id === id}
+            modal
             open={!closing()}
             onOpenChange={(open: boolean) => {
-              if (open || stack().at(-1)?.id !== id) return
+              if (open) return
               close(id)
             }}
           >
