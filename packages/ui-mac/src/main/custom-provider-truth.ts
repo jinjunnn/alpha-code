@@ -1,8 +1,8 @@
 // `#1391`(`#1383` 基线 §四 子票 1)—— 自定义节点记录的**真源**:读端。只有 main 写(custom-provider-truth-write.ts),任何进程可读。
 //
 // ── 为什么要有这份文件 ──────────────────────────────────────────────────────────
-// 用户在模型选择器里「添加自定义节点」配好的服务地址,今天落在 `<alphaGlobalRoot>/alpha.jsonc`(ext-config.ts persistProvider)——
-// 那是可写根 W2,**被围栏的引擎树自己写得了**;出网围栏因此不敢从配置文件派生放行集合(network-egress-derived.ts 文件头),
+// 用户在模型选择器里「添加自定义节点」配好的服务地址,`#1392` 之前落在 `<alphaGlobalRoot>/alpha.jsonc`(ext-config.ts 当年的
+// persistProvider,已退场)—— 那是可写根 W2,**被围栏的引擎树自己写得了**;出网围栏因此不敢从配置文件派生放行集合(network-egress-derived.ts 文件头),
 // 这个功能实际是坏的。本文件给它一个引擎写不到的家:`<appData>/alpha-code-state/custom-providers/<env>.json`,与三个 env 根、
 // `cas/`、`fence-workspaces/` 同级 —— 父目录是 alpha-environment.ts 冻结快照的 `casBaseRoot`;W2 只放行 `env/<env>`,W3 是
 // `<userData>`(另一棵树),其余固定行都不覆盖它(custom-provider-truth.test.ts 对着生产渲染的 profile 逐行枚举 W-id 断言;
@@ -22,8 +22,9 @@
 // 这个**文字标签**,测试查不出它是否真的只有 main 执行。所以本文件**零写盘**(连 node:fs 都不 import,读也经注入的 fs);
 // 写在 custom-provider-truth-write.ts,它不进闭包由 custom-provider-truth-write.test.ts 对着生产的闭包工具实测。
 //
-// 本票(`#1391`)只落存储层:**没有任何消费者**,用户可观察行为零变化。注入面 / enabled_providers / 出网派生改从这里取是 `#1392`;
-// 添加 / 删除时的准入与旧 alpha.jsonc 记录的处置是 `#1393`。electron-free。
+// `#1391` 只落存储层;`#1392` 接上消费者:注入面 / enabled_providers / fork 前的密钥物化经 custom-provider-records.ts(生产读取绑定,
+// 含 sidecar 侧的位置解析)从这里取,添加 / 删除在 provider-lifecycle.ts,添加时的地址准入与出网同源(`#1393` 并入),旧 alpha.jsonc
+// 记录只记一行日志忽略(server.ts)。electron-free。
 
 import { resolve } from "node:path"
 import type { ProviderInput } from "../shared/alpha-model-types"

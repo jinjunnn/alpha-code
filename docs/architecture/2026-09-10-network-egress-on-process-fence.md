@@ -4,7 +4,7 @@ kind: architecture
 status: active
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-22
 review_after: 2026-12-10
 ---
 
@@ -375,12 +375,16 @@ W16 `<home>/.opencode`),也就是**被围栏的引擎树自己写得了**的地�
 
 所以「有效配置」在这里必须**窄读成围栏外的那一半**:catalog 的 baseURL 是编译进包的常量,密钥文件由 main 在
 fork 前 `syncSecretFiles` 收敛(不在 wanted 集合里的遗留文件当场扫掉),两者都不在引擎的可写集里。
-注入面对文件里的那些 id 只贡献 `enabled_providers` 与 `options.apiKey`(`alpha-models.ts` 第 (3) 段),
-**从不贡献 baseURL** —— 这正是「读注入面安全、读文件不安全」的机制,判据见下。
-
-**代价是如实的**:用户手工添加的自定义节点(baseURL 只住在那个可写文件里)**仍然被拒**。要支持它,
-得先给自定义节点的 baseURL 找一个围栏外的真源(keychain 今天只存 key、不存 baseURL),
-那是一件独立的设计,不是在派生里多读一个文件。
+`#1392`(2026-09-22)之前,注入面对文件里的那些 id 只贡献 `enabled_providers` 与 `options.apiKey`、从不贡献 baseURL,
+用户手工添加的自定义节点因此**仍然被拒**(它的 baseURL 只住在那个可写文件里)。**现在**:自定义节点的记录整体搬进了
+`<appData>/alpha-code-state/custom-providers/<env>.json`(`#1391` 真源,只有 main 写、不在任何可写根之下;方案基线
+[`../design/2026-09-21-1383-custom-provider-address-truth-baseline.md`](../design/2026-09-21-1383-custom-provider-address-truth-baseline.md)),
+注入面(`alpha-models.ts` 第 (3) 段)从它发出**完整块**(npm / name / baseURL / models / `{file:}` 密钥引用),本模块零改动就把
+它们算进放行集合;三处配置文件的 `provider.*` 对 `enabled_providers`、注入表与放行集合**一概不算数**(基线 I1)。引擎原生仍会合并
+`alpha.jsonc`,让它写的块失效的机制是 `enabled_providers` 整体替换 + 注入完整块(同 id 后合并者赢),判据因此是端到端的:
+`custom-provider-derivation.test.ts` 起真引擎问清单 —— 真源节点在清单里且被放行,alpha.jsonc / XDG 里的节点两边都进不了。
+添加时的地址准入与这里的四条准入是**同一个函数**(`classifyBaseUrl`):围栏放不了的地址(http、loopback)在添加那一刻就被拒并说明原因。
+升级后配置文件里既有的 provider 块只忽略 + 一行日志(main 每进程一次),不采信、不迁移、不建「待确认」面(基线 I3)。
 
 准入四条(有一条不过就是不收,不猜、不修补):`new URL()` 解析得出 / scheme 是 `https:` / host 不是 loopback /
 host 过**静态表同一个** `isEgressHostShape`(同一个函数,不是抄一份正则)。产物仍是**精确 `host:port`**;
@@ -391,8 +395,8 @@ host 过**静态表同一个** `isEgressHostShape`(同一个函数,不是抄一�
 
 **本轮仍然不覆盖的**(如实列出,不要在别处读成已闭合):
 
-1. **用户手工添加的自定义节点**(`provider.<id>.options.baseURL` 只住在可写配置文件里)—— 见上节,
-   本轮**刻意**不放行;要支持它先得给那个 baseURL 找一个围栏外的真源。
+1. ~~**用户手工添加的自定义节点**(`provider.<id>.options.baseURL` 只住在可写配置文件里)~~ —— **已闭合(`#1391` / `#1392`,2026-09-22)**:
+   记录搬进围栏写不到的真源文件,注入面从它发出完整块,本模块照旧只读注入面就把它放行;配置文件里的节点从此两边都不算数(见上节)。
 2. **BYOK 指向 loopback 的 baseURL**(本机模型 / ollama 一类)—— **owner 2026-09-21 裁决:不再支持本地模型,
    这件事不做了**,作废 9-10 那条「要单独设计本机目的地怎么走」。技术事实不变(围栏只放行代理端口、`NO_PROXY`
    又含 loopback ⇒ 放行它不会让它可达,只会让登记簿说假话),但它现在是一条**已关闭**的分支,不是待办。

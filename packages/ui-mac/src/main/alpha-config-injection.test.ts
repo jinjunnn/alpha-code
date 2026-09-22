@@ -104,7 +104,7 @@ beforeEach(() => {
   // 当前环境根(alpha.jsonc 真源 = OPENCODE_CONFIG 的注入目标)。
   process.env.ALPHA_GLOBAL_DIR = path.join(tmp, "alpha-code-state", "env", "dev")
   fs.mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
-  // 用户全局引擎配置面(readUserProviderIds / injectMcpDefaultDeny 的枚举源)—— 指向空目录,
+  // 用户全局引擎配置面(injectMcpDefaultDeny 的枚举源)—— 指向空目录,
   // 宿主机 ~/.config/opencode 与 ~/.opencode 不得渗进断言。
   process.env.XDG_CONFIG_HOME = path.join(tmp, "xdg")
   process.env.ALPHA_OPENCODE_HOME = path.join(tmp, "opencode-home")

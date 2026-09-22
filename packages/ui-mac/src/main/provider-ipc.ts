@@ -1,6 +1,7 @@
 // Custom-provider IPC (main process). Privileged ops the renderer can't do itself: persist a custom
-// provider (key → alpha's encrypted keychain store, definition → alpha.jsonc with a constant marker;
-// provider-lifecycle), probe connectivity with a 1-token chat (provider-test), and remove one. Keys flow
+// provider (key → alpha's encrypted keychain store, definition → the `#1391` truth file
+// `<appData>/alpha-code-state/custom-providers/<env>.json`, never a config file; provider-lifecycle),
+// probe connectivity with a 1-token chat (provider-test), and remove one. Keys flow
 // through the main process only — no IPC channel ever returns a key value (REQ-226 AC3).
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
@@ -26,7 +27,7 @@ export function registerProviderIpcHandlers() {
     setProviderKeyAndRetireLegacyKey(id, key),
   )
   ipcMain.handle("providers-remove-key", (_event: IpcMainInvokeEvent, id: string) => removeByokKey(id))
-  // Remove a provider: its key from the keychain store FIRST, then its definition from alpha.jsonc (REQ-226
-  // baseline §2.1 步骤 8), then one respawn so the {file:} channel sweeps the key file. Env keys untouched.
+  // Remove a provider: its key from the keychain store FIRST, then its record from the truth file (REQ-226
+  // baseline §2.1 步骤 8; `#1392`), then one respawn so the {file:} channel sweeps the key file. Env keys untouched.
   ipcMain.handle("providers-remove", (_event: IpcMainInvokeEvent, id: string) => removeProviderAndRefresh(id))
 }

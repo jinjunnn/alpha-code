@@ -19,7 +19,7 @@ import * as path from "node:path"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { secretFilePath } from "./alpha-secret-files"
 import { parse } from "jsonc-parser"
-import { persistProvider } from "./ext-config"
+import { writeCustomProviderTruth } from "./custom-provider-truth-write"
 import {
   deriveEgressDestinations,
   egressDestinationFromBaseUrl,
@@ -204,16 +204,12 @@ describe("B1 配置文件里的 provider 一条都进不了放行集合(那三�
     opencodeHome = fs.mkdtempSync(path.join(os.tmpdir(), "egress-derived-ochome-"))
     process.env.ALPHA_OPENCODE_HOME = opencodeHome
 
-    // ① alpha.jsonc —— 产品自己的写法(模型选择器「添加自定义节点」走的就是 persistProvider)
-    const persisted = persistProvider({
-      id: "exfil-alpha",
-      name: "Exfil",
-      compat: "openai",
-      baseURL: EXFIL,
-      apiKey: NOT_A_KEY,
-      models: ["m1"],
-    })
-    expect(persisted.ok, JSON.stringify(persisted)).toBe(true)
+    // ① alpha.jsonc —— `#1392` 之前产品自己就往这里写(persistProvider,已退场);现在这是围栏内一行 `printf … > file`
+    // 就能写出的**完整**块(npm / baseURL / models / 明文 key),形状与当年产品写的相同 —— 引擎原生仍会合并它。
+    fs.writeFileSync(
+      path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"),
+      JSON.stringify({ provider: { "exfil-alpha": { npm: "@ai-sdk/openai-compatible", name: "Exfil", options: { baseURL: EXFIL, apiKey: NOT_A_KEY }, models: { m1: { name: "m1" } } } } }),
+    )
 
     // ② / ③ 另外两条读取路径 —— 手写,正是围栏内一行 `printf … > file` 能做到的形状(没有 apiKey)。
     const xdg = path.join(process.env.OPENCODE_CONFIG_DIR!, "opencode.jsonc")
@@ -233,22 +229,37 @@ describe("B1 配置文件里的 provider 一条都进不了放行集合(那三�
     }
   })
 
-  test("三条路径都写了 provider:引擎看得见这几个 id,而放行集合里只有目录 BYOK 那一条", () => {
+  test("三条路径都写了 provider:`#1392` 起它们连 allowlist 都进不了,注入表里没有它们,放行集合里只有目录 BYOK 那一条", () => {
     plantSecret("DEEPSEEK_API_KEY")
     const config = buildAlphaModelConfig(userData)!
 
-    // 前提自证 ①:三个 id 真的进了引擎的 allowlist —— 文件确实被读到了,断言不是空跑。
-    for (const id of IDS) expect(config.enabled_providers, id).toContain(id)
-    // 前提自证 ②:注入面对这些 id **只给 apiKey,从不给 baseURL**。这正是「文件面不贡献目的地」的机制。
-    for (const id of IDS) {
-      const block = config.provider[id] as { options?: { baseURL?: unknown } } | undefined
-      expect(block?.options?.baseURL, id).toBeUndefined()
-    }
+    // 前提自证:三个文件真的躺在注入面会读的那三条路径上(下一条控制臂读同一批文件能派生出 exfil)。
+    for (const file of files) expect(fs.existsSync(file), file).toBe(true)
+    // `#1392`(基线 I1):配置文件的 provider 块既不进 allowlist、也不进注入表 —— 引擎会把它们整个丢掉(enabled_providers 整体替换)。
+    // `#1392` 之前这里断言的是「三个 id 进了 allowlist、注入面只给 apiKey 不给 baseURL」;那半边机制已不再需要。
+    for (const id of IDS) expect(config.enabled_providers, id).not.toContain(id)
+    for (const id of IDS) expect(config.provider[id], id).toBeUndefined()
 
     const accepted = setConfiguredEgressDestinations(deriveEgressDestinations(config.provider))
     expect(accepted.map((d) => `${d.host}:${d.port}`)).toEqual(["api.deepseek.com:443"])
     expect(isEgressAuthorizedForSidecar("exfil.example", 443)).toBe(false)
     expect(isConfiguredEgressDestination("exfil.example", 443)).toBe(false)
+  })
+
+  // `#1392` 正样本:同一台机器上,真源文件(围栏写不到)里的一条记录 ⇒ 它的地址进放行集合;三个配置文件里的 exfil 仍一条不进。
+  test("#1392 a truth-file record IS authorized (api.openai.com:443) while the three config-file providers still are not", () => {
+    plantSecret("DEEPSEEK_API_KEY")
+    writeCustomProviderTruth(
+      path.join(fs.realpathSync(tmp), "alpha-code-state", "custom-providers", "dev.json"),
+      [{ id: "my-openai", name: "My OpenAI", compat: "openai", baseURL: "https://api.openai.com/v1", models: ["gpt-5.4"] }],
+      fs,
+    )
+    const config = buildAlphaModelConfig(userData)!
+    expect(config.enabled_providers).toEqual(["deepseek-byok", "my-openai"])
+    const accepted = setConfiguredEgressDestinations(deriveEgressDestinations(config.provider))
+    expect(accepted.map((d) => `${d.host}:${d.port} (${d.providerId})`)).toEqual(["api.deepseek.com:443 (deepseek-byok)", "api.openai.com:443 (my-openai)"])
+    expect(isEgressAuthorizedForSidecar("api.openai.com", 443)).toBe(true)
+    expect(isEgressAuthorizedForSidecar("exfil.example", 443)).toBe(false)
   })
 
   test("控制臂:把文件面加回来(照旧实现读那三个文件)⇒ 同一条断言当场红", () => {

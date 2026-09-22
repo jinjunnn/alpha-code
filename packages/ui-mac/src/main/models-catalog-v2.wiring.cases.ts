@@ -82,7 +82,7 @@ const { registerCatalogHealthIpcHandlers } = await import("./alpha-catalog-healt
 const { initAlphaEnvironment } = await import("./alpha-environment")
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 
-// buildAlphaModelConfig 经 readUserProviderIds → alphaJsoncPath 解析 alpha 全局根。用 main 自己的
+// buildAlphaModelConfig 经 readCustomProviderRecords → resolveAlphaGlobalRoot 解析 alpha 全局根。用 main 自己的
 // composition root 冻结一份临时环境(**不是**给 process.env.ALPHA_GLOBAL_DIR 赋值 —— 那条路
 // 被 alpha-environment.test.ts 的 grep 守卫按设计封死,而它封的就是「绕过 init 伪造根」)。
 const envRoot = mkdtempSync(join(tmpdir(), "models-catalog-v2-env-"))
@@ -151,7 +151,7 @@ beforeEach(() => {
   pushed.length = 0
   registerModelsIpcHandlers(userData)
   registerCatalogHealthIpcHandlers(() => fakeWindow as never)
-  // 空 config dir → readUserProviderIds() 看不到用户自定义 provider(隔离本闸关心的平台段)。
+  // 空 config dir(`#1392` 起自定义 provider 只来自真源文件,本闸的临时环境根下没有它)—— 隔离本闸关心的平台段。
   configDir = mkdtempSync(join(tmpdir(), "models-catalog-v2-config-"))
   process.env.OPENCODE_CONFIG_DIR = configDir
   // 平台 provider 注入的两个前置(不设它们 provider.alpha 根本不存在,反分叉断言会空绿)。

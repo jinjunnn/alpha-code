@@ -26,8 +26,10 @@
 // 就给自己铸出一条出网通道,下一次 fork 后代理照放 —— 教科书式的 confused deputy,围栏对任意目的地开口。
 // 「有效配置」这个词在这里必须窄读成**围栏外的那一半**:catalog 是编译进包的常量,密钥文件由 main 在
 // fork 前 syncSecretFiles 收敛(不在 wanted 集合里的遗留文件当场扫掉),两者都不在引擎的可写集里。
-// **代价是如实的**:用户手工添加的自定义节点(其 baseURL 只住在那个可写文件里)仍然被拒。要支持它,
-// 得先给自定义节点的 baseURL 找一个围栏外的真源 —— 那是另一件事,不是在这里多读一个文件。
+// `#1392` 起用户自己添加的自定义节点也在这一半里:它们的记录住在 `<appData>/alpha-code-state/custom-providers/<env>.json`
+// (`#1391` 真源,只有 main 写、不在任何可写根之下),注入面从那里发出完整块(alpha-models.ts 第 (3) 段)——
+// 本模块**零改动**就把它们算进放行集合,因为它一直只读注入面。配置文件里的 provider 块从此对注入面与放行集合
+// 都不算数(基线 I1),判据在 custom-provider-derivation.test.ts(端到端,含真引擎清单)。
 //
 // ── 收进来的条件(fail-closed:四条全中才登记)─────────────────────────────────────────
 //   1. `new URL()` 解析得出(解析不出 ⇒ 不猜);
@@ -48,6 +50,7 @@
 // `isEgressAuthorizedForSidecar` ⇒ 换代即生效,不必重启代理。
 // 进程内单例是刻意的:代理与 main 同进程,而放行集合与「这一代 sidecar 拿到的那份配置」一一对应。
 
+import type { ProviderAddressRejection } from "../shared/alpha-model-types"
 import { isEgressAuthorized, isEgressHostShape } from "./network-egress-registry"
 
 export type ConfiguredEgressDestination = {
@@ -73,22 +76,37 @@ function isLoopbackHost(host: string): boolean {
   return LOOPBACK_NAMES.has(h) || h === "localhost." || h.endsWith(".localhost") || LOOPBACK_V4.test(h)
 }
 
-/** 一条 baseURL → 一个精确目的地,或 undefined(四条准入有一条不过就是 undefined —— 不猜、不修补)。 */
-export function egressDestinationFromBaseUrl(baseURL: unknown, providerId: string): ConfiguredEgressDestination | undefined {
-  if (typeof baseURL !== "string" || baseURL.trim().length === 0) return undefined
+export type BaseUrlClassification =
+  | { ok: true; destination: ConfiguredEgressDestination }
+  | { ok: false; code: ProviderAddressRejection }
+
+/**
+ * 准入四条的**唯一**实现(`#1392` 基线 I4):出网派生与「添加自定义节点」的地址准入都问这一个函数 ——
+ * 用户填 `http://localhost:11434` 时,添加那一刻就被拒,而不是「加得进、发不出」(`#1383` 的症状)。
+ * 拒绝带类别(不带原因文案:文案是 renderer 用用户语言说的事),放行带派生好的目的地。不猜、不修补。
+ */
+export function classifyBaseUrl(baseURL: unknown, providerId: string): BaseUrlClassification {
+  if (typeof baseURL !== "string" || baseURL.trim().length === 0) return { ok: false, code: "invalid-url" }
   let url: URL
   try {
     url = new URL(baseURL)
   } catch {
-    return undefined
+    return { ok: false, code: "invalid-url" }
   }
-  if (url.protocol !== "https:") return undefined
+  // loopback 先于 scheme 判:`http://localhost:11434` 的问题是「指向本机」,不是「少个 s」—— 告诉用户改 https 只会让他再撞一次。
   const host = url.hostname.toLowerCase()
-  if (isLoopbackHost(host)) return undefined
-  if (!isEgressHostShape(host)) return undefined
+  if (isLoopbackHost(host)) return { ok: false, code: "loopback" }
+  if (url.protocol !== "https:") return { ok: false, code: "not-https" }
+  if (!isEgressHostShape(host)) return { ok: false, code: "host-shape" }
   const port = url.port ? Number(url.port) : 443
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return undefined
-  return { host, port, providerId, baseURL: `${url.origin}${url.pathname}` }
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, code: "port" }
+  return { ok: true, destination: { host, port, providerId, baseURL: `${url.origin}${url.pathname}` } }
+}
+
+/** 一条 baseURL → 一个精确目的地,或 undefined(四条准入有一条不过就是 undefined —— 不猜、不修补)。 */
+export function egressDestinationFromBaseUrl(baseURL: unknown, providerId: string): ConfiguredEgressDestination | undefined {
+  const verdict = classifyBaseUrl(baseURL, providerId)
+  return verdict.ok ? verdict.destination : undefined
 }
 
 /**

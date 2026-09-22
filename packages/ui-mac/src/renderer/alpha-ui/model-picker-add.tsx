@@ -1,18 +1,39 @@
-// AddProvider — the "添加供应商" two-step flow, rendered as an overlay over the model picker popover
-// (ADR-016: alpha owns this UI). Step 1: pick a provider from the catalog. Step 2: 测试连接 (1-token
-// chat) + 保存 → the key goes to alpha's encrypted keychain (providers.setKey). Config-driven.
+// AddProvider — the "添加供应商 / 接入其它服务" two-step flow, rendered as an overlay over the model
+// picker popover (ADR-016: alpha owns this UI). Step 1: pick a known provider (filled from the catalog —
+// user only pastes a Key) or "接入其它服务" (any OpenAI / Anthropic-compatible remote service: address +
+// key + model ids). Step 2: configure + 测试连接 (1-token chat) + 保存. Save → preset keys go to alpha's
+// encrypted keychain (providers.setKey); other services go through providers.add: key → keychain, the
+// definition → main's truth file (`<appData>/alpha-code-state/custom-providers/<env>.json`, a place the
+// engine tree cannot write — `#1391` / `#1392`), then that IPC awaits the shared sidecar respawn so the
+// new provider enters enabled_providers and the egress allowlist before the picker refreshes the real
+// model.list. Config-driven.
 //
-// `#1397`:「自己填一个服务地址、加一个自定义节点」那一半的**入口已经关掉**。加出来的节点一条
-// 消息也发不出去 —— 出网围栏不敢照 alpha.jsonc(一个 AI 有权改写的文件)里的地址放行,所以
-// 留着一个加了就用不了的入口比没有更糟。Step 1 现在只列目录内供应商,并**在那半原来的位置**
-// 说清为什么不能自己填地址(`alpha.provider.customEndpointUnsupported`)。
-// `window.api.providers.add` 这条 IPC 刻意保留(`#1392` 会在有了一个 AI 改不到的真源之后重新
-// 开放这条路),界面不再走到它;判据是 test-component/alpha-composer-model.cases.ts 里
-// 「`#1397` 自定义端点的提交路径从界面不可达」那条用例(它同时钉住目录内供应商填 Key 照常)。
+// `#1397` closed the "fill in your own address" half while its records still lived in alpha.jsonc (a file
+// the fenced engine can rewrite, so the egress fence refused to trust the address). `#1392` reopened it on
+// the truth file. Address admission at save time is the SAME predicate the egress fence uses (main
+// classifyBaseUrl): an address the fence would refuse (http://, localhost / 127.0.0.1, …) is refused here
+// with a plain-language reason (`alpha.provider.address.*`) instead of "added but cannot send".
+// Judged in the composer-model component cases under test-component/ (the reopened submit path really
+// reaches providers.add and the truth file; catalog key entry unchanged). Keep this file free of the
+// canonical picker's module name: the REQ-090 takeover ratchet scans renderer sources for it as text.
 
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
-import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus } from "../../shared/alpha-model-types"
+import type { AlphaModelCatalog, ByokProvider, ProviderAddressRejection, ProviderKeyStatus, ProviderResult } from "../../shared/alpha-model-types"
 import { t } from "../i18n"
+
+/** main 拒绝地址时带的类别 → 用户语言的原因(与出网围栏同一个判据函数给出的类别,`#1392`)。无类别 ⇒ undefined,用原文。 */
+const ADDRESS_REJECTION_KEY: Record<ProviderAddressRejection, Parameters<typeof t>[0]> = {
+  "invalid-url": "alpha.provider.address.invalidUrl",
+  "not-https": "alpha.provider.address.notHttps",
+  loopback: "alpha.provider.address.loopback",
+  "host-shape": "alpha.provider.address.hostShape",
+  port: "alpha.provider.address.port",
+}
+function addressRejectionText(result: ProviderResult): string | undefined {
+  if (result.ok || !result.code) return undefined
+  const key = ADDRESS_REJECTION_KEY[result.code]
+  return key ? t(key) : undefined
+}
 
 function slug(s: string): string {
   return (
@@ -52,9 +73,6 @@ export function AddProvider(props: {
     return cat.presetIds.map((id) => byId.get(id)).filter((p): p is ByokProvider => Boolean(p))
   })
 
-  // `#1397`:入口关掉之后 `sel()` 再也到不了 `"custom"`,所以 `isCustom()` 现在恒假 —— 下面那些
-  // 由它驱动的可编辑分支(名称/兼容类型/模型 ID)是**休眠**的,不是活路径。刻意不删:`#1392`
-  // 把真源挪到 AI 改不到的地方之后,重新开放只要把 step 1 的入口加回来。
   const isCustom = () => sel() === "custom"
   const inForm = () => sel() !== null
   // Key state for the provider currently open in the form (preset only; a fresh custom has none yet).
@@ -71,6 +89,17 @@ export function AddProvider(props: {
     setCompat(p.compat)
     setBaseURL(p.baseURL)
     setModels([...p.models])
+    setApiKey("")
+    setShowKey(false)
+    setTest({ s: "idle", msg: "" })
+    setError("")
+  }
+  function openCustom() {
+    setSel("custom")
+    setName("")
+    setCompat("openai")
+    setBaseURL("")
+    setModels([])
     setApiKey("")
     setShowKey(false)
     setTest({ s: "idle", msg: "" })
@@ -135,8 +164,9 @@ export function AddProvider(props: {
     }
     setSaving(true)
     // Catalog presets: the key goes to alpha's encrypted keychain (the catalog already defines
-    // baseURL/models; buildAlphaModelConfig injects the node from keychain→env). Off-catalog custom
-    // endpoints: persist the full definition to opencode.jsonc as before (custom-key migration = Phase 5).
+    // baseURL/models; buildAlphaModelConfig injects the node from keychain→env). Other services:
+    // key → keychain, definition → main's truth file (`#1392`); main answers with a `code` when the
+    // address itself is refused, and that code is what we say in the user's language.
     const r = isCustom()
       ? await window.api.providers.add({
           id,
@@ -151,7 +181,7 @@ export function AddProvider(props: {
     if (r.ok) {
       props.onSaved?.()
       props.onClose()
-    } else setError(r.reason)
+    } else setError(addressRejectionText(r) ?? r.reason)
   }
 
   // Remove the stored key. Config keys are removed via opencode.jsonc; env keys can't be touched from
@@ -207,11 +237,14 @@ export function AddProvider(props: {
               </button>
             )}
           </For>
-          {/* `#1397`:「其他 / 自定义端点」那一行就在这个位置。关掉它不等于把它藏起来 ——
-              在它原来的位置说清为什么现在填不了自己的地址,以及以后会回来。 */}
-          <p class="a-mpa-hint" data-alpha-custom-endpoint-disabled="">
-            {t("alpha.provider.customEndpointUnsupported")}
-          </p>
+          <button class="a-mpa-preset custom" data-alpha-custom-endpoint-entry="" onClick={openCustom}>
+            <span class="a-mpa-plus">+</span>
+            <span class="a-mpa-pn">
+              <span class="nm">{t("alpha.provider.otherEndpoint")}</span>
+              <span class="sb">{t("alpha.provider.compatibleSummary")}</span>
+            </span>
+            <Chevron />
+          </button>
         </Show>
 
         {/* Step 2 — configure */}

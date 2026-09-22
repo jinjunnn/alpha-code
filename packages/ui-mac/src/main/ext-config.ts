@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { applyEdits, format, modify, parse, type ParseError } from "jsonc-parser"
 import catalog from "./alpha-models.json"
-import { byokEngineId, type AlphaModelCatalog, type ProviderInput } from "../shared/alpha-model-types"
+import { byokEngineId, type AlphaModelCatalog, type ProviderInput, type ProviderResult } from "../shared/alpha-model-types"
 import { isExtensionName } from "../shared/extension-name"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
@@ -35,6 +35,7 @@ import { commandHeadBase } from "./platform"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { assertProjectAlphaRootIdentity } from "./alpha-workdir"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
+import { classifyBaseUrl } from "./network-egress-derived"
 
 export type ConfigResult = { ok: true } | { ok: false; reason: string }
 
@@ -1122,14 +1123,27 @@ function isReservedProviderId(id: string): boolean {
   return PROVIDER_CATALOG.byokProviders.some((p) => p.id === id || byokEngineId(p.id) === id)
 }
 
+/** 地址被拒时给调用方的英文原文(renderer 按 `code` 用用户的语言说;这里只是兜底与日志)。 */
+const ADDRESS_REJECTION_REASON: Record<NonNullable<Extract<ProviderResult, { ok: false }>["code"]>, string> = {
+  "invalid-url": "the base URL is not a valid URL (it must start with https://)",
+  "not-https": "only https:// base URLs are supported",
+  loopback: "the base URL points at this machine (localhost / 127.0.0.1); local services are not supported",
+  "host-shape": "the base URL host must be a DNS name or an IPv4 address",
+  port: "the base URL port is out of range",
+}
+
 /** Validation only — no disk I/O. provider-lifecycle runs it BEFORE the keychain write so an invalid
- * request never leaves an orphan key in the store; persistProvider re-runs it (cheap, keeps it a unit). */
-export function validateProviderInput(input: ProviderInput): ConfigResult {
+ * request never leaves an orphan key in the store.
+ * `#1392`(基线 I4):地址准入与出网准入**同一个函数**(network-egress-derived.ts classifyBaseUrl)—— 出网派生收不进
+ * 放行集合的地址,添加那一刻就拒(此前这里放行 loopback `http://`,而出网侧拒,用户填 `http://localhost:11434`
+ * 会「加得进、发不出」)。拒绝带类别 `code`,renderer 据此说人话。 */
+export function validateProviderInput(input: ProviderInput): ProviderResult {
   if (!isExtensionName(input.id)) return { ok: false, reason: "invalid provider id" }
   if (isReservedProviderId(input.id)) return { ok: false, reason: "provider id is reserved by the built-in catalog" }
   if (!input.name || typeof input.name !== "string") return { ok: false, reason: "missing provider name" }
   if (input.compat !== "openai" && input.compat !== "anthropic") return { ok: false, reason: "invalid compat" }
-  if (!isAllowedUrl(input.baseURL)) return { ok: false, reason: "only https (or loopback http) base URLs are allowed" }
+  const address = classifyBaseUrl(input.baseURL, input.id)
+  if (!address.ok) return { ok: false, reason: ADDRESS_REJECTION_REASON[address.code], code: address.code }
   if (!input.apiKey || typeof input.apiKey !== "string") return { ok: false, reason: "missing api key" }
   const ids = (Array.isArray(input.models) ? input.models : []).map((m) => String(m).trim()).filter(Boolean)
   if (ids.length === 0) return { ok: false, reason: "at least one model id is required" }
@@ -1137,51 +1151,37 @@ export function validateProviderInput(input: ProviderInput): ConfigResult {
 }
 
 /**
- * Persist a custom provider under provider[<id>] in alpha.jsonc (durable) — DEFINITION ONLY. The key
- * itself is NOT written here (REQ-226 AC1): provider-lifecycle puts it in the keychain store first and
- * this block carries the constant PROVIDER_KEYCHAIN_MARKER in its place. NOTE: the id must ALSO be merged
- * into the injected enabled_providers allowlist at sidecar start (alpha-models.ts → readUserProviderIds)
- * — opencode replaces (doesn't union) the enabled_providers array on merge, so a provider not in the
- * injected allowlist is dropped (see build.md §6). providers-add follows a successful write with the
- * process-global sidecar respawn; that fork reads this id into enabled_providers before the renderer
- * reconnects and refreshes model.list.
+ * `#1392`(基线 I1 / I3):自定义节点的记录**不再**住在任何配置文件里 —— 真源是 `<appData>/alpha-code-state/custom-providers/<env>.json`
+ * (custom-provider-truth.ts,只有 main 写;添加 / 删除在 provider-lifecycle.ts,注入面在 alpha-models.ts,两者都经
+ * custom-provider-records.ts 读)。`persistProvider` / `readUserProviderIds` / `removeProvider` 随之退场:三处配置文件
+ * (providerReadPaths)的 `provider.*` 对 enabled_providers、注入面与放行集合**一概不算数** —— 它们全在围栏的可写集里。
+ *
+ * 下面这一个函数只服务**日志**:升级后配置文件里既有的 provider 块被忽略时,说得出忽略了哪些、在哪个文件(server.ts 每个
+ * 进程出声一次)。不采信、不迁移、不建「待确认」面(基线 §五 M1);用户同名重新添加一次即可。
  */
-export function persistProvider(input: ProviderInput): ConfigResult {
-  const valid = validateProviderInput(input)
-  if (!valid.ok) return valid
-  const ids = input.models.map((m) => String(m).trim()).filter(Boolean)
-  const npm = input.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
-  const models: Record<string, { name: string }> = {}
-  for (const m of ids) models[m] = { name: m }
-  const block = { npm, name: input.name, options: { baseURL: input.baseURL, apiKey: PROVIDER_KEYCHAIN_MARKER }, models }
-  return writeKey(providerTargetPath(), ["provider", input.id], block)
-}
-
-/**
- * Provider ids the user has configured in opencode.jsonc. Merged into the injected enabled_providers
- * allowlist (alpha-models.ts) so user-added custom providers survive the hard allowlist (build.md §6).
- */
-export function readUserProviderIds(): string[] {
-  const ids = new Set<string>()
+export function ignoredConfigProviderBlocks(): Array<{ file: string; ids: string[] }> {
+  const out: Array<{ file: string; ids: string[] }> = []
   for (const target of providerReadPaths()) {
     try {
       if (!fs.existsSync(target)) continue
       const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: unknown } | undefined
       const prov = parsed?.provider
-      if (prov && typeof prov === "object") for (const id of Object.keys(prov as Record<string, unknown>)) ids.add(id)
+      if (!prov || typeof prov !== "object" || Array.isArray(prov)) continue
+      const ids = Object.keys(prov as Record<string, unknown>)
+      if (ids.length) out.push({ file: target, ids })
     } catch {
-      /* unreadable → skip this source */
+      /* unreadable → nothing to report for this source */
     }
   }
-  return [...ids]
+  return out
 }
 
 /**
  * Classify each provider block's `options.apiKey` in alpha.jsonc (+ legacy read paths) WITHOUT returning
  * the value — REQ-226 AC7's choke point: after `#1343` no function in main reads a plaintext key out of a
- * config file into memory. Consumers: getProviderKeyStatus (keychain / needs-reentry / config faces) and
- * the sidecar's buildAlphaModelConfig (three-way injection: K → {file:} or "", L → "", U → untouched).
- *   "keychain-marker"   value === PROVIDER_KEYCHAIN_MARKER (written by persistProvider)
+ * config file into memory. Consumer: getProviderKeyStatus (keychain / needs-reentry / config faces). `#1392` 起
+ * 注入面不再是它的消费者 —— 自定义节点整块来自真源(alpha-models.ts 第 (3) 段),配置文件的 provider 块不参与注入。
+ *   "keychain-marker"   value === PROVIDER_KEYCHAIN_MARKER (the marker `#1343` used to write into alpha.jsonc; `#1392` 起不再写)
  *   "user-ref"          `{file:…}` / `{env:…}` — a hand-written power-user reference; alpha does not manage it
  *   "legacy-plaintext"  any other non-empty string — a pre-#1343 inline key; never read, never migrated
  * A block with no / empty apiKey is not in the map (K class with the field absent).
@@ -1242,36 +1242,6 @@ export function retireLegacyProviderKeys(id: string): ConfigResult {
     }
     return { ok: true }
   })
-}
-
-/**
- * Remove a custom provider block (definition + inline key) from opencode.jsonc. For a builtin alpha
- * re-injects the definition at fork, so this just drops a user-set inline key; for an off-catalog
- * custom provider it removes it entirely. BYOK keys now live in alpha's keychain (alpha-byok-keys),
- * removed separately via providers.removeKey. Env keys (alpha.env) are untouched. Next reconnect.
- */
-export function removeProvider(id: string): ConfigResult {
-  return withConfigWriteLock(() => removeProviderUnlocked(id)) // 主文件+legacy 多写一把锁,不允许中途 busy 半删
-}
-function removeProviderUnlocked(id: string): ConfigResult {
-  if (!isExtensionName(id)) return { ok: false, reason: "invalid provider id" }
-  // Drop from the real source, and from any legacy source (XDG/~/.opencode) still carrying it during
-  // the migration period — otherwise a stale copy would shadow-resurrect the provider on next reconnect.
-  const primary = writeKeyUnlocked(providerTargetPath(), ["provider", id], undefined)
-  if (!primary.ok) return primary
-  for (const legacy of providerReadPaths().slice(1)) {
-    try {
-      if (!fs.existsSync(legacy)) continue
-      const parsed = parse(fs.readFileSync(legacy, "utf8")) as { provider?: Record<string, unknown> } | undefined
-      if (parsed?.provider && typeof parsed.provider === "object" && id in parsed.provider) {
-        const r = writeKeyUnlocked(legacy, ["provider", id], undefined)
-        if (!r.ok) return r
-      }
-    } catch {
-      /* unreadable legacy → nothing to remove there */
-    }
-  }
-  return { ok: true }
 }
 
 // npm package name (optional scope), optionally pinned with @version. No shell metacharacters —

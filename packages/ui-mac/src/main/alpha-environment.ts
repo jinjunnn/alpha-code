@@ -62,6 +62,23 @@ export function environmentMutableRoot(env: AppEnvironment, baseRoot: string): s
   return join(baseRoot, "env", env)
 }
 
+/**
+ * `environmentMutableRoot` 的逆映射(`#1392`):sidecar 进程没有冻结快照,手里只有 main 派生给它的 `ALPHA_GLOBAL_DIR`
+ * = `<baseRoot>/env/<env>`;需要「状态根 + 环境名」的消费者(自定义节点真源 custom-provider-records.ts)从这里拿回来。
+ * 形状不对(父目录不叫 `env`、末段不是三个环境名之一)⇒ undefined,不猜 —— 调用方按「位置未知」fail-closed。
+ * 拓扑的文法只住在本文件:这里改了,上面那条也得跟着改。
+ */
+export function environmentFromMutableRoot(mutableRoot: string): { environment: AppEnvironment; casBaseRoot: string } | undefined {
+  const root = normalize(mutableRoot)
+  const envDir = dirname(root)
+  if (basename(envDir) !== "env") return undefined
+  const environment = basename(root)
+  if (environment !== "prod" && environment !== "beta" && environment !== "dev") return undefined
+  const casBaseRoot = dirname(envDir)
+  if (casBaseRoot === envDir || basename(casBaseRoot) === "") return undefined // `/env/<env>`:base 没有名字,不算
+  return { environment, casBaseRoot }
+}
+
 let current: AlphaEnvironmentInfo | undefined
 
 export type InitEnvironmentInput = {

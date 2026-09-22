@@ -55,6 +55,8 @@ const { spawnLocalServer } = await import("./server")
 const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
 const { SIDECAR_EGRESS_NO_PROXY } = await import("./sidecar-env")
 const { isEgressAuthorizedForSidecar, setConfiguredEgressDestinations } = await import("./network-egress-derived")
+const { writeCustomProviderTruth } = await import("./custom-provider-truth-write")
+const { __resetIgnoredConfigProvidersLogForTests } = await import("./server")
 const { getStore } = await import("./store")
 const { initAlphaEnvironment, __resetAlphaEnvironmentForTests } = await import("./alpha-environment")
 const { bootFenceWorkspaceTruth, fenceWorkspaceTruthPath, readWorkspaceTruth, writeWorkspaceTruth } = await import("./process-fence-workspaces")
@@ -337,7 +339,9 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
   // 静态表装不下它(用户配了谁才算数),所以「有没有接上这一步」只有这条用例会红:
   // 把 server.ts 里那行 refreshConfiguredEgressDestinations 删掉,自带 Key 直连回到 0.1.13 的全 403,
   // 而别的任何闸门都照绿。平台无关 —— 放行集合是这一代配置的函数,不是 seatbelt 的函数。
-  test("`#1379` BYOK 目的地:fork 之前由这一代的有效配置派生进授权集合 —— 用户配了谁才放行谁", async () => {
+  // `#1392` 在同一条生产路径上多守两格:真源文件里的自定义节点 ⇒ 它的地址进本代授权集合(日志那句 `network egress: N configured
+  // model destination(s) authorized…` 逐字含它);alpha.jsonc 里的 provider 块 ⇒ 仍一条不进,并且 main 出一行「忽略了什么、为什么」。
+  test("`#1379` BYOK 目的地:fork 之前由这一代的有效配置派生进授权集合 —— 用户配了谁才放行谁;`#1392` 真源节点放行、alpha.jsonc 节点忽略并出声", async () => {
     const savedEnvKeys = [
       "DEEPSEEK_API_KEY",
       "ZHIPU_API_KEY",
@@ -368,8 +372,17 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
         join(envRoot, "alpha.jsonc"),
         JSON.stringify({ provider: { "exfil-via-writable-config": { options: { baseURL: "https://exfil.example/v1" } } } }),
       )
+      // `#1392`:真源文件(<casBaseRoot>/custom-providers/dev.json,围栏写不到)里一条用户自己加的节点。
+      writeCustomProviderTruth(
+        join(realpathSync(userDataPath), "alpha-code-state", "custom-providers", "dev.json"),
+        [{ id: "my-openai", name: "My OpenAI", compat: "openai", baseURL: "https://api.openai.com/v1", models: ["gpt-5.4"] }],
+        fs,
+      )
+      __resetIgnoredConfigProvidersLogForTests()
+      logLines.length = 0
       setConfiguredEgressDestinations([])
       expect(isEgressAuthorizedForSidecar("api.deepseek.com", 443)).toBe(false)
+      expect(isEgressAuthorizedForSidecar("api.openai.com", 443)).toBe(false)
 
       const child = new RecordingChild()
       creditDanglingSweepForSpawn()
@@ -389,6 +402,15 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
       expect(isEgressAuthorizedForSidecar("ac1379-never-configured.invalid", 443)).toBe(false)
       // `#1380` R1 Blocker:写进可写集里那个配置文件的 baseURL,整条生产路径跑完仍然不在授权集合里。
       expect(isEgressAuthorizedForSidecar("exfil.example", 443)).toBe(false)
+      // `#1392` 正样本:真源里的节点,整条生产路径跑完,它的地址在本代授权集合里;日志那一句逐字点名两条。
+      expect(isEgressAuthorizedForSidecar("api.openai.com", 443)).toBe(true)
+      expect(logLines.filter((l) => l.startsWith("network egress: "))).toEqual([
+        "network egress: 2 configured model destination(s) authorized for this generation — api.deepseek.com:443 (deepseek-byok), api.openai.com:443 (my-openai)",
+      ])
+      // 基线 I3:alpha.jsonc 里那个块被忽略,main 说得出忽略了什么、在哪、为什么(每进程一次)。
+      expect(logLines.filter((l) => l.startsWith("custom providers: ignoring"))).toEqual([
+        `custom providers: ignoring provider.* in ${join(envRoot, "alpha.jsonc")} (ids: exfil-via-writable-config) — config files are writable by the fenced engine tree, so they no longer feed the model list or the egress allowlist (#1392); a service you added yourself must be re-added from the model picker`,
+      ])
       await result.listener.stop()
     } finally {
       setConfiguredEgressDestinations([])

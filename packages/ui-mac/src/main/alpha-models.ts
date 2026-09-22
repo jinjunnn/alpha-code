@@ -27,7 +27,7 @@ import type { AlphaModelCatalog } from "../shared/alpha-model-types"
 import { byokEngineId, byokModelMeta } from "../shared/alpha-model-types"
 import { projectPlatformModels, readCatalogSnapshot } from "./alpha-live-allowlist"
 import { customProviderSecretName, hasSecretFile, secretFileRef } from "./alpha-secret-files"
-import { readConfiguredProviderKeys, readUserProviderIds } from "./ext-config"
+import { readCustomProviderRecords } from "./custom-provider-records"
 // NOTE: this module is loaded by the SIDECAR (utilityProcess) via buildAlphaModelConfig, so it must
 // stay electron-free. getProviderKeyStatus (which reads the safeStorage keychain) lives in the
 // main-only alpha-provider-status.ts for that reason — do NOT import alpha-byok-keys here.
@@ -53,7 +53,7 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
 
   // REQ-001:B 网关 edition 白名单(main 经 syncLiveAllowlist 同步的本地 catalog LKG;缺失/损坏/旧代
   // → 不限制,内置 snapshot 兜底,fail-open)。约束对象**只有平台模型清单**;用户自定义节点(下方
-  // readUserProviderIds)不受限;BYOK 目录自 REQ-109 #595 起也不受限 —— owner 裁决 BYOK 走全主权,
+  // 第 (3) 段,来自真源)不受限;BYOK 目录自 REQ-109 #595 起也不受限 —— owner 裁决 BYOK 走全主权,
   // 本地 alpha-models.json 即权威,平台不得远程干预(契约 docs/contracts/byok-availability.md)。
   const snapshot = readCatalogSnapshot(userDataPath)
   // REQ-127 #681:平台段的**唯一**投影,算一次。平台节点直接用它;BYOK 节点的 reasoning 元数据也从它
@@ -137,37 +137,43 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     enabled.unshift(pp.id)
   }
 
-  // (3) User-added custom providers (via window.api.providers.add → alpha.jsonc provider[<id>]).
-  // opencode REPLACES (not unions) enabled_providers on config merge and OPENCODE_CONFIG_CONTENT is
-  // merged last, so a custom provider that isn't in THIS allowlist gets dropped. Merge the user's
-  // configured provider ids in so they survive. providers-add immediately drives the shared respawn
-  // path, so this next-fork allowlist is reflected by the renderer's next real model.list. See build.md §6.
+  // (3) User-added custom providers (`#1392`, `#1383` 基线 §四 子票 2) — emitted from the `#1391` TRUTH file
+  // (`<appData>/alpha-code-state/custom-providers/<env>.json`, main-only writable, outside every fence root),
+  // read through custom-provider-records.ts. Each record becomes a FULL block, same shape as the catalog BYOK
+  // nodes above (npm / name / options.baseURL / models), so the engine sees the node without any config file
+  // taking part, and network-egress-derived.ts (which only reads this injection surface) authorizes exactly
+  // that baseURL — one value, two readers, no fork.
   //
-  // REQ-226 (`#1343`) — the key never lives in alpha.jsonc. Per block, `options.apiKey` is classified by
-  // readConfiguredProviderKeys (main-free, value-free) and THIS injection decides what the engine sees;
-  // mergeDeep (remeda, config.ts:45-51) lets the scalar below override the block's apiKey while its
-  // baseURL / models survive:
-  //   K keychain-managed (marker / field absent), key file present → `{file:<userData>/alpha-secrets/custom-provider--<id>}`
-  //   K keychain-managed, key file absent                            → ""  (engine starts; that provider 401s on first call — fail closed, never the marker)
-  //   L legacy plaintext (pre-#1343 inline key)                      → ""  (the plaintext is never used; the picker says "needs re-entry")
-  //   U user reference (`{file:` / `{env:`)                          → untouched (power-user hatch, sidecar-env.ts:12)
-  // `{file:}` is emitted only when the file exists ⇒ no dangling ref can ever fail the whole config load
-  // (config/variable.ts throws on a missing file). Ids alpha injects itself above (platform / `<id>-byok`)
-  // are never touched; catalog display ids (persistProvider rejects them) only get the L rule.
-  const keyKinds = readConfiguredProviderKeys()
-  const catalogIds = new Set(CATALOG.byokProviders.map((p) => p.id))
-  for (const id of readUserProviderIds()) {
-    if (!enabled.includes(id)) enabled.push(id)
-    if (Object.prototype.hasOwnProperty.call(provider, id)) continue
-    const kind = keyKinds.get(id)
-    if (kind === "user-ref") continue
-    if (kind === "legacy-plaintext") {
-      provider[id] = { options: { apiKey: "" } }
-      continue
+  // Config files (alpha.jsonc / <XDG>/opencode / ~/.opencode) contribute NOTHING here any more (基线 I1): every
+  // one of them sits inside the seatbelt's writable set, so a provider block written there by the fenced engine
+  // tree must neither reach the allowlist nor the injection map. Two mechanisms make that hold end to end:
+  // opencode REPLACES (not unions) `enabled_providers` on merge and OPENCODE_CONFIG_CONTENT is merged last, so
+  // an id absent from THIS list is dropped by the engine; and a block injected here is complete, so a same-id
+  // block in a config file loses `options.baseURL` to ours (same id, later merger wins). Judged end to end
+  // (真引擎清单 + 放行集合) in custom-provider-derivation.test.ts.
+  //
+  // The key never lives in the truth file (REQ-226 `#1343`): main materializes it from the keychain store into
+  // `<userData>/alpha-secrets/custom-provider--<id>` at fork (server.ts → syncSecretFiles), and this injection
+  // emits `{file:}` only when that file exists; absent ⇒ "" (the engine starts; that provider 401s on first
+  // call — fail closed, never a dangling ref: config/variable.ts throws on a missing file).
+  // Ids alpha injects itself above (platform / `<id>-byok`) are reserved at add time (ext-config.ts
+  // isReservedProviderId), so no record can collide with them; a truth file that fails the strict read yields
+  // no records at all (and one log line) — "unanswerable" derives nothing, it does not fall open.
+  for (const record of readCustomProviderRecords()) {
+    if (Object.prototype.hasOwnProperty.call(provider, record.id)) continue
+    const secret = customProviderSecretName(record.id)
+    const models: Record<string, { name: string }> = {}
+    for (const m of record.models) models[m] = { name: m }
+    provider[record.id] = {
+      npm: record.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible",
+      name: record.name,
+      options: {
+        baseURL: record.baseURL,
+        apiKey: hasSecretFile(userDataPath, secret) ? secretFileRef(userDataPath, secret) : "",
+      },
+      models,
     }
-    if (catalogIds.has(id)) continue
-    const name = customProviderSecretName(id)
-    provider[id] = { options: { apiKey: hasSecretFile(userDataPath, name) ? secretFileRef(userDataPath, name) : "" } }
+    enabled.push(record.id)
   }
 
   // Default model: env override wins, else catalog default, else none (never force a default whose
