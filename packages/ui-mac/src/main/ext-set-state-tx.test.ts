@@ -7,6 +7,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { setInstallStateByKey, type VerifiedCatalogEntry } from "./ext-install-planner"
+import { writeMcpServerTruth } from "./mcp-server-truth-write"
 import { applyPackageMutation, findRecordV2, skillsEnabledPath, upsertRecordV2, type InstallReceiptType, type UpsertInput } from "./ext-receipt-v2"
 import { bundleOwner, computeInstalledGraphDigest, type PackageGraphNodeV1 } from "./ext-package-ledger-v3"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
@@ -836,5 +837,65 @@ describe("setInstallStateByKey(#817 claim-only package 信号)", () => {
     expect(fs.readFileSync(skillsEnabledPath(root), "utf8")).toBe(allowBefore)
     const cfgAfter = fs.existsSync(path.join(root, "alpha.jsonc")) ? fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8") : null
     expect(cfgAfter).toBe(cfgBefore)
+  })
+})
+
+// ── `#1381`:真源里的远程 MCP 没有 alpha.jsonc 叶,启停只翻账本 ────────────────────────────
+describe("setInstallStateByKey(#1381 远程 MCP 记录住在真源)", () => {
+  test("disable 只翻账本、alpha.jsonc 不写叶;enable 不再因「叶不存在」拒;真源坏了 ⇒ 名单为空 ⇒ enable 照旧按缺生效面拒", async () => {
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ext-setstate-1381-"))) // 环境根解析会 realpath,日志里的路径与它同一形态
+    const envRoot = path.join(base, "env", "prod")
+    fs.mkdirSync(envRoot, { recursive: true })
+    const savedGlobal = process.env.ALPHA_GLOBAL_DIR
+    process.env.ALPHA_GLOBAL_DIR = envRoot
+    const truth = path.join(base, "mcp-servers", "prod.json")
+    const cfg = path.join(envRoot, "alpha.jsonc")
+    const intent = (state: "enabled" | "disabled") => ({ type: "mcp", name: "remote-demo", scope: "global", state })
+    try {
+      writeMcpServerTruth(truth, [{ name: "remote-demo", url: "https://mcp.example.com/mcp" }], fs)
+      const w = upsertRecordV2(envRoot, {
+        id: "user:remote-demo", // 未策展记录的身份前缀(catalog 身份不可伪造)
+        kind: "mcp",
+        name: "remote-demo",
+        environment: "prod",
+        scope: { kind: "global" },
+        desiredState: "enabled",
+        origin: "created",
+        version: "1.0.0",
+        installedAt: "2026-09-22T00:00:00.000Z",
+        configKey: "mcp.remote-demo",
+      })
+      if (!w.ok) throw new Error(w.reason)
+      fs.writeFileSync(cfg, JSON.stringify({ mcp: { other: { type: "local", command: ["x"] } } }, null, 2))
+      const d = deps({ globalRoot: () => envRoot })
+
+      expect(await setInstallStateByKey(intent("disabled"), d)).toEqual({ ok: true })
+      expect(findRecordV2(envRoot, "mcp", "remote-demo")?.desiredState).toBe("disabled")
+      expect(JSON.parse(fs.readFileSync(cfg, "utf8"))).toEqual({ mcp: { other: { type: "local", command: ["x"] } } }) // 没有写出一片 lone 叶
+
+      expect(await setInstallStateByKey(intent("enabled"), d)).toEqual({ ok: true })
+      expect(findRecordV2(envRoot, "mcp", "remote-demo")?.desiredState).toBe("enabled")
+      expect(JSON.parse(fs.readFileSync(cfg, "utf8"))).toEqual({ mcp: { other: { type: "local", command: ["x"] } } })
+
+      // 对照臂:真源坏了 ⇒ 名单读成空 ⇒ enable 走原来的「缺生效面」拒绝(fail closed),disable 照旧只翻账本
+      expect(await setInstallStateByKey(intent("disabled"), d)).toEqual({ ok: true })
+      fs.writeFileSync(truth, "{ not json")
+      const errors: string[] = []
+      const original = console.error
+      console.error = (...args: unknown[]) => void errors.push(args.map(String).join(" "))
+      let r: Awaited<ReturnType<typeof setInstallStateByKey>>
+      try {
+        r = await setInstallStateByKey(intent("enabled"), d)
+      } finally {
+        console.error = original
+      }
+      expect(r).toEqual({ ok: false, reason: "mcp remote-demo: config entry missing — cannot enable (reinstall to repair)" })
+      expect(findRecordV2(envRoot, "mcp", "remote-demo")?.desiredState).toBe("disabled")
+      expect(errors.some((l) => l.startsWith(`remote MCP servers: truth file ${truth} rejected — not JSON`))).toBe(true)
+    } finally {
+      if (savedGlobal === undefined) delete process.env.ALPHA_GLOBAL_DIR
+      else process.env.ALPHA_GLOBAL_DIR = savedGlobal
+      fs.rmSync(base, { recursive: true, force: true })
+    }
   })
 })

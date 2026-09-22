@@ -8,7 +8,8 @@
 // main 派生给它的 `ALPHA_GLOBAL_DIR` = `<casBaseRoot>/env/<env>`(environmentMutableRoot)。所以第二条路是同一个模块给出的
 // **逆映射**(environmentFromMutableRoot):父目录必须叫 `env`、末段必须是 prod | beta | dev,否则不猜 —— 形状不对 ⇒ 「位置未知」
 // ⇒ 什么都不派生(fail-closed)并出一行原因。两条路给出的是同一个 baseRoot(快照的 mutableRoot 正是由它拼出来的),
-// 判据在 custom-provider-derivation.test.ts。
+// 判据在 custom-provider-derivation.test.ts。两条路合在 alpha-environment.ts 的 resolveAlphaStateBase(`#1381` 起远程 MCP
+// 真源 mcp-server-records.ts 走同一份,不各自抄)。
 //
 // ── 读不到 ≠ 没有 ─────────────────────────────────────────────────────────────────
 // 缺失 = 用户没加过节点,正常,零日志。解析失败 / 形状不对 / 位置未知 ⇒ 返回空清单**并**出一行原因(读端自己那行 + 这里的位置那行),
@@ -20,7 +21,7 @@
 // (custom-provider-truth-write.test.ts 对着生产闭包工具实测)。
 
 import { readFileSync } from "node:fs"
-import { environmentFromMutableRoot, resolveAlphaGlobalRoot, tryGetAlphaEnvironment, type AppEnvironment } from "./alpha-environment"
+import { resolveAlphaStateBase, type AppEnvironment } from "./alpha-environment"
 import { customProviderTruthPath, readCustomProviderTruth, type CustomProviderRecord, type CustomProviderTruthRead } from "./custom-provider-truth"
 
 export type CustomProviderTruthLocation =
@@ -29,17 +30,9 @@ export type CustomProviderTruthLocation =
 
 /** 真源文件的位置:main 走冻结快照;sidecar(无快照)走 `ALPHA_GLOBAL_DIR` 的逆映射。形状不对 ⇒ ok:false,不猜。 */
 export function resolveCustomProviderTruthLocation(): CustomProviderTruthLocation {
-  const info = tryGetAlphaEnvironment()
-  if (info) return { ok: true, path: customProviderTruthPath(info.casBaseRoot, info.environment), casBaseRoot: info.casBaseRoot, environment: info.environment }
-  let root: string
-  try {
-    root = resolveAlphaGlobalRoot()
-  } catch (error) {
-    return { ok: false, reason: `alpha environment root unavailable (${error instanceof Error ? error.message : String(error)})` }
-  }
-  const derived = environmentFromMutableRoot(root)
-  if (!derived) return { ok: false, reason: `ALPHA_GLOBAL_DIR ${root} is not of the form <base>/env/<prod|beta|dev>; the custom-provider truth location is unknown` }
-  return { ok: true, path: customProviderTruthPath(derived.casBaseRoot, derived.environment), ...derived }
+  const base = resolveAlphaStateBase("custom-provider truth")
+  if (!base.ok) return base
+  return { ok: true, path: customProviderTruthPath(base.casBaseRoot, base.environment), casBaseRoot: base.casBaseRoot, environment: base.environment }
 }
 
 export type CustomProviderTruthLookup = CustomProviderTruthRead | { ok: false; reason: string; unresolved: true }

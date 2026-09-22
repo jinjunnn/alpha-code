@@ -9,8 +9,9 @@ import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { customProviderSecretValues } from "./alpha-byok-keys"
-import { ignoredConfigProviderBlocks } from "./ext-config"
+import { ignoredConfigProviderBlocks, ignoredConfigRemoteMcpEntries } from "./ext-config"
 import { readCustomProviderRecords } from "./custom-provider-records"
+import { readMcpServerRecords } from "./mcp-server-records"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
@@ -40,7 +41,7 @@ import type { ProcessFenceStartInput } from "./process-fence-apply"
 import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 // REQ-137 `#1379`:出网授权的**动态半场**。静态表装不下 BYOK 直连的目的地(它由用户配置了谁决定),
 // 所以放行集合从这一代要注入给引擎的那份有效配置里的 `provider.<id>.options.baseURL` 派生,fork 前整份替换。
-import { deriveEgressDestinations, setConfiguredEgressDestinations } from "./network-egress-derived"
+import { deriveEgressDestinations, deriveMcpEgressDestinations, setConfiguredEgressDestinations } from "./network-egress-derived"
 // REQ-159 `#1322`:工作区写探针的 main 半场 —— 请求/应答簿记住在 workspace-write-probe.ts,这里只接线到子进程。
 import { createWriteProbeRequester, type WorkspaceWriteProbeResult } from "./workspace-write-probe"
 import { alphaGlobalRoot } from "./engine-config-truth"
@@ -152,45 +153,58 @@ function ensureEgressPolicyProxy(): Promise<EgressProxyHandle> {
 // 写一行 baseURL 就给自己铸一条出网通道(confused deputy)。而注入面里这三条路径只贡献 `enabled_providers`
 // 与 `options.apiKey`(alpha-models.ts 第 (3) 段),**从不贡献 baseURL** —— 判据在
 // network-egress-derived.test.ts 的 B1 那条(带对照臂)。
-// 代价如实:用户手工添加的自定义节点仍被拒,直到它的 baseURL 有一个围栏外的真源。
 // `#1392`(基线 I3):配置文件里既有的 provider 块从此被忽略(它们全在围栏的可写集里,不再参与注入面与放行集合)。
-// 不采信、不迁移、不建「待确认」面 —— 只在每个进程第一次 fork 时出声一次,说清忽略了哪些 id、在哪个文件、为什么、怎么办。
-let ignoredConfigProvidersLogged = false
-function logIgnoredConfigProvidersOnce(): void {
-  if (ignoredConfigProvidersLogged) return
+// `#1381`:配置文件里既有的 `mcp.*` **远程**条目同样被忽略(sidecar 侧 mcp-default-deny.ts 把它们压成 enabled:false)。
+// 不采信、不迁移、不建「待确认」面 —— 只在每个进程第一次 fork 时出声一次,说清忽略了哪些、在哪个文件、为什么、怎么办。
+let ignoredConfigRecordsLogged = false
+function logIgnoredConfigRecordsOnce(): void {
+  if (ignoredConfigRecordsLogged) return
   if (!(tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR)) return // no environment root ⇒ no config file to speak of (unit-test forks); not latched
   let blocks: Array<{ file: string; ids: string[] }>
+  let mcpEntries: Array<{ file: string; names: string[] }>
   try {
     blocks = ignoredConfigProviderBlocks()
+    mcpEntries = ignoredConfigRemoteMcpEntries()
   } catch {
     return
   }
-  ignoredConfigProvidersLogged = true
+  ignoredConfigRecordsLogged = true
   for (const { file, ids } of blocks)
     getLogger()?.log(
       `custom providers: ignoring provider.* in ${file} (ids: ${ids.join(", ")}) — config files are writable by the fenced engine tree, ` +
         "so they no longer feed the model list or the egress allowlist (#1392); a service you added yourself must be re-added from the model picker",
     )
+  for (const { file, names } of mcpEntries)
+    getLogger()?.log(
+      `remote MCP servers: ignoring remote mcp.* entries in ${file} (names: ${names.join(", ")}) — config files are writable by the fenced engine tree, ` +
+        "so they are neither injected nor authorized (#1381); a connector you added yourself must be re-added from the extension hub",
+    )
 }
 
 /** 仅测试:让下一次 fork 再出声一次(生产每进程一次)。 */
 export function __resetIgnoredConfigProvidersLogForTests(): void {
-  ignoredConfigProvidersLogged = false
+  ignoredConfigRecordsLogged = false
 }
 
+// `#1381`:放行集合的动态半场有两个成员 —— BYOK / 自定义节点(注入面的 provider 表)与用户自配的远程 MCP 服务器(真源
+// mcp-servers/<env>.json)。两份经同一个准入函数派生,并成**一次**整份替换;日志一句点名全部,出处标签区分(`mcp:<name>`)。
 function refreshConfiguredEgressDestinations(userDataPath: string): void {
   try {
-    const accepted = setConfiguredEgressDestinations(deriveEgressDestinations(buildAlphaModelConfig(userDataPath)?.provider))
+    const mcpServers = tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR ? readMcpServerRecords((line) => getLogger()?.warn(line)) : []
+    const accepted = setConfiguredEgressDestinations([
+      ...deriveEgressDestinations(buildAlphaModelConfig(userDataPath)?.provider),
+      ...deriveMcpEgressDestinations(mcpServers),
+    ])
     getLogger()?.log(
-      `network egress: ${accepted.length} configured model destination(s) authorized for this generation — ` +
+      `network egress: ${accepted.length} configured destination(s) authorized for this generation — ` +
         (accepted.map((d) => `${d.host}:${d.port} (${d.providerId})`).join(", ") || "none"),
     )
   } catch (error) {
-    // 派生失败不拒 fork:配置读坏只该让 BYOK 调用被拒(403,原因可读),不该让整个应用起不来。
+    // 派生失败不拒 fork:配置读坏只该让 BYOK 调用与远程 MCP 被拒(403,原因可读),不该让整个应用起不来。
     // 但**必须清空** —— 留着上一代的集合等于拿旧配置给新一代放行,那是 fail-open 的方向。
     setConfiguredEgressDestinations([])
     getLogger()?.error(
-      "network egress: failed to derive this generation's configured model destinations — BYOK direct calls will be refused (403 unregistered) until the next fork",
+      "network egress: failed to derive this generation's configured destinations — BYOK direct calls and remote MCP servers will be refused (403 unregistered) until the next fork",
       error,
     )
   }
@@ -436,7 +450,7 @@ export async function spawnLocalServer(
       tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR
         ? customProviderSecretValues(readCustomProviderRecords((line) => getLogger()?.warn(line)).map((record) => record.id))
         : {}
-    logIgnoredConfigProvidersOnce()
+    logIgnoredConfigRecordsOnce()
     const sync = syncSecretFiles(options.userDataPath, process.env, customSecrets)
     getLogger()?.log(`alpha-secrets sync: wrote [${sync.written.join(", ")}] removed [${sync.removed.join(", ")}]`)
     // REQ-076 T2(ADR-026 §5,C28 反 placebo):0600/0700 在 NTFS 近乎 no-op —— 密钥文件的

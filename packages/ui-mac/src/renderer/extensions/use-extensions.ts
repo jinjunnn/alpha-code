@@ -29,6 +29,7 @@ import type {
 import { isExtensionName } from "../../shared/extension-name"
 import { isWorkspacePolicyMcp } from "../../shared/office-advisories"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
+import type { ProviderAddressRejection } from "../../shared/alpha-model-types"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
 import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
 import { extIpc } from "./ext-ipc"
@@ -88,7 +89,14 @@ export type ActionResult =
    *  —— UI 据此给「重启后生效」级用户提示,那**仍然**是调用方的事(它决定文案,不是原样透传)。 */
   | { ok: true; reason?: string; warning?: string; projectionLag?: string; projectMcpState?: ProjectMcpState }
   | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
-  | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire; code?: SetStateRefusalCodeWire }
+  | {
+      ok: false
+      reason?: string
+      stage?: TxStageNonAuthorizeWire
+      code?: SetStateRefusalCodeWire
+      /** `#1381`:添加远程连接器时地址被拒的类别(main 与出网围栏同一个判据);hub 据此用用户的语言说原因。 */
+      addressCode?: ProviderAddressRejection
+    }
 
 // ── REQ-128 Phase 3 `#784`:本地 Claude 插件包的 renderer 侧结果形状 ─────────────────────────
 //
@@ -730,7 +738,7 @@ export function useExtensions(
     // avoids a "live but not persisted" state that vanishes on restart. Main file-ifies the
     // secretVars → opencode.jsonc gets {file:} refs, never the plaintext secret.
     const persisted = await extIpc.persistMcp(name, config as unknown as Record<string, unknown>, secretVars)
-    if (!persisted.ok) return { ok: false, reason: persisted.reason }
+    if (!persisted.ok) return { ok: false, reason: persisted.reason, ...(persisted.code ? { addressCode: persisted.code } : {}) }
     return liveAddAndConnect(name, config)
   }
 

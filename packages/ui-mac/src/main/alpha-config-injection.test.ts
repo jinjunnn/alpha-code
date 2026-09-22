@@ -36,6 +36,7 @@ import * as path from "node:path"
 import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
+import { writeMcpServerTruth } from "./mcp-server-truth-write"
 import {
   CLOUD_MCP_ARM_ENV,
   CLOUD_MCP_DEF_ENV,
@@ -608,5 +609,49 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     const config = injectedPermissions()
     expect(config.permission?.websearch).toBeUndefined()
     for (const agent of Object.values(config.agent ?? {})) expect(agent.permission?.websearch).toBe("allow")
+  })
+})
+
+// ── `#1381`:远程 MCP 服务器从 main 才写得了的真源注入 ────────────────────────────────────
+describe("`#1381` 远程 MCP 从真源注入(mcp-servers/<env>.json),alpha.jsonc 的远程条目压成 enabled:false", () => {
+  const truthFile = () => path.join(tmp, "alpha-code-state", "mcp-servers", "dev.json")
+  const captureErrors = (run: () => void): string[] => {
+    const lines: string[] = []
+    const original = console.error
+    console.error = (...args: unknown[]) => void lines.push(args.map(String).join(" "))
+    try {
+      run()
+    } finally {
+      console.error = original
+    }
+    return lines
+  }
+  const injectedMcp = (): Record<string, unknown> => (JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!) as { mcp?: Record<string, unknown> }).mcp ?? {}
+
+  test("真源一条 ⇒ 注入完整条目(type / url / headers,enabled:true)且是治理来源;alpha.jsonc 的远程条目 ⇒ enabled:false 并出声;真源坏了 ⇒ 一条不注入 + 一行原因", () => {
+    writeMcpServerTruth(truthFile(), [{ name: "my-mcp", url: "https://mcp.example.com/mcp", headers: { "X-Token": "t" } }], fs)
+    fs.writeFileSync(path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"), JSON.stringify({ mcp: { "exfil-mcp": { type: "remote", url: "https://exfil-mcp.example/mcp" }, "local-ok": { type: "local", command: ["x"] } } }))
+    // 用户全局同名条目:真源条目是治理来源,所以它不进默认拒绝(它的字段被我们末序注入的完整条目压住)。
+    const xdg = path.join(process.env.XDG_CONFIG_HOME!, "opencode")
+    fs.mkdirSync(xdg, { recursive: true })
+    fs.writeFileSync(path.join(xdg, "config.json"), JSON.stringify({ mcp: { "my-mcp": { type: "remote", url: "https://user-global.example/mcp" } } }))
+
+    const errors = captureErrors(() => expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true }))
+    expect(injectedMcp()["my-mcp"]).toEqual({ type: "remote", url: "https://mcp.example.com/mcp", headers: { "X-Token": "t" }, enabled: true })
+    expect(injectedMcp()["exfil-mcp"]).toEqual({ enabled: false })
+    expect(injectedMcp()["local-ok"]).toBeUndefined()
+    expect(errors.filter((l) => l.includes("#1381"))).toEqual([
+      `[alpha-code#1381] default-denied remote MCP entries in ${path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc")} (not in the main-only truth file, so neither injected nor authorized) names=["exfil-mcp"]`,
+    ])
+
+    fs.writeFileSync(truthFile(), JSON.stringify({ v: 1, servers: [{ name: "my-mcp", url: "https://mcp.example.com/mcp", enabled: true }] }))
+    delete process.env.OPENCODE_CONFIG_CONTENT // 上一轮注入的产物不是治理来源(#223);每次 fork 都从零起
+    const errors2 = captureErrors(() => expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true }))
+    // 真源坏了 ⇒ 这一轮没有注入 my-mcp ⇒ 它不再是治理来源 ⇒ 用户全局(XDG)里同名的那条按默认拒绝压成 lone enabled:false;
+    // 真源里那条完整条目(type / url / headers)一个字不进配置。
+    expect(injectedMcp()["my-mcp"]).toEqual({ enabled: false })
+    expect(errors2.filter((l) => l.startsWith("remote MCP servers: truth file"))).toEqual([
+      `remote MCP servers: truth file ${truthFile()} rejected — servers[0] has unexpected key(s): enabled; nothing is derived from it (this is "unanswerable", not an empty list) until the app rewrites it`,
+    ])
   })
 })

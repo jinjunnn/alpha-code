@@ -49,6 +49,7 @@ import type {
   CatalogRefreshFailure,
   EffectiveCatalog,
   PricingMultiplier,
+  ProviderAddressRejection,
   ProviderInput,
   ProviderKeyStatus,
   ProviderResult,
@@ -797,7 +798,8 @@ export type ElectronAPI = {
       server: Record<string, unknown>,
       /** env var names in server.environment whose values are secrets → routed to the {file:} channel */
       secretVars?: string[],
-    ) => Promise<{ ok: true } | { ok: false; reason: string }>
+      /** `#1381`:远程地址被拒时带类别(与自定义节点同一套),renderer 据此用用户的语言说原因。 */
+    ) => Promise<{ ok: true } | { ok: false; reason: string; code?: ProviderAddressRejection }>
     removeMcp: (name: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     checkRuntime: (tool: string) => Promise<{ ok: boolean }>
     // B11/B23:全局配置健康(broken=引擎会整份忽略用户配置)

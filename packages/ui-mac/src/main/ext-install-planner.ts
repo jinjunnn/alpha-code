@@ -32,7 +32,7 @@ import {
   isWorkspacePolicyMcp,
   retiredCommunityOfficeFor,
 } from "../shared/office-advisories"
-import type { AppEnvironment } from "./alpha-environment"
+import { tryGetAlphaEnvironment, type AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import type { AdvisoryGate } from "./ext-advisory-gate"
 import { readGenerationReceiptSnapshot } from "./ext-transaction"
@@ -190,6 +190,7 @@ import { promoteSeedAssetToCas, readPackagedSeed, verifySeedAsset, type SeedAsse
 import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlobVerified } from "./ext-cas"
 import { isSafeRelPath } from "./ext-atomic-fs"
 import { assertProjectMcpTransactionRootIdentity, validateServer } from "./ext-config"
+import { readMcpServerRecords } from "./mcp-server-records"
 import { prepareConfigTx, applyConfigImage, type ConfigEdit } from "./ext-config-tx"
 import { collectImportSkillPayload, resourcesRoot } from "./ext-fs-installer"
 import { checkUncuratedConflict, type UncuratedOrigin } from "./ext-uncurated-record"
@@ -3210,7 +3211,7 @@ export async function setInstallStateByKey(
         const errors: ParseError[] = []
         const cfg = text !== "" ? parse(text, errors) : {}
         if (text !== "" && errors.length > 0) return { ok: false, reason: `alpha.jsonc is not valid jsonc — refusing to change enable state (fail closed)` }
-        const proj = computeEnableProjectionEdit(isObj(cfg) ? cfg : {}, root, record, intent.state)
+        const proj = computeEnableProjectionEdit(isObj(cfg) ? cfg : {}, root, record, intent.state, remoteMcpTruthNames())
         if (!proj.ok) return proj
         if (proj.edit) {
           const prepared = prepareConfigTx(target, [proj.edit], text === "" ? "{}" : text)
@@ -3265,11 +3266,19 @@ function pluginBaseOf(spec: string): string {
   return at > 0 ? spec.slice(0, at) : spec
 }
 
+/** `#1381`:真源里的远程 MCP 名字(启停投影用;每次调用读一遍,坏了出一行原因并当作空)。没有环境根(纯单测)⇒ 空集,不出声 —— 与 server.ts 同一口径。 */
+function remoteMcpTruthNames(): ReadonlySet<string> {
+  if (!(tryGetAlphaEnvironment() || process.env.ALPHA_GLOBAL_DIR)) return new Set()
+  return new Set(readMcpServerRecords((line) => console.error(line)).map((server) => server.name))
+}
+
 function computeEnableProjectionEdit(
   cfgObj: Record<string, unknown>,
   root: string,
   record: InstallRecordV2,
   state: DesiredState,
+  /** `#1381`:真源里的远程 MCP 名字 —— 它们在 alpha.jsonc 里没有叶,启停不投影 config(见函数体)。 */
+  remoteMcpNames: ReadonlySet<string>,
 ): { ok: true; edit?: ConfigEdit } | { ok: false; reason: string } {
   const disable = state === "disabled"
   if (record.kind === "plugin") {
@@ -3324,6 +3333,10 @@ function computeEnableProjectionEdit(
   const map = cfgObj[record.kind]
   const leaf = isObj(map) ? map[record.name] : undefined
   if (!isObj(leaf)) {
+    // `#1381`:远程 MCP 的记录住在真源(mcp-servers/<env>.json),alpha.jsonc 里没有它的叶 —— 启停只翻账本,生效面是 sidecar 注入
+    // (disable:injectDisabledOverrides 压 enabled:false;enable:注入面从真源发出完整条目)。两个方向都没有 config edit。
+    // 真源坏了 / 位置未知 ⇒ 名单读成空 ⇒ enable 照旧按「缺生效面」拒(fail closed),disable 照旧只翻账本。
+    if (record.kind === "mcp" && remoteMcpNames.has(record.name)) return { ok: true }
     return disable ? { ok: true } : { ok: false, reason: `${record.kind} ${record.name}: config entry missing — cannot enable (reinstall to repair)` }
   }
   if (disable) {
@@ -3475,9 +3488,10 @@ export function reconcileDesiredStateAtBoot(
     const working = isObj(cfg) ? (structuredClone(cfg) as Record<string, unknown>) : {}
     const byPath = new Map<string, ConfigEdit>()
     const pluginDisableEdited: string[] = [] // 真产生 plugin disable edit 的记录(prepare/write 失败只 gap 这些)
+    const remoteMcpNames = remoteMcpTruthNames()
     for (const record of configBacked) {
       const effState = record.desiredState // #397:session-grant 已在函数开头归位,账本即合法态
-      const proj = computeEnableProjectionEdit(working, root, record, effState)
+      const proj = computeEnableProjectionEdit(working, root, record, effState, remoteMcpNames)
       if (!proj.ok) {
         warnings.push(`${record.kind} ${record.name}: ${proj.reason}`)
         // plugin disable 失败 = 无法从 plugin[] 移除 → gap;mcp/agent 注入兜底;enable 失败仅功能缺失。

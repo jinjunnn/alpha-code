@@ -79,6 +79,27 @@ export function environmentFromMutableRoot(mutableRoot: string): { environment: 
   return { environment, casBaseRoot }
 }
 
+export type AlphaStateBase = { ok: true; casBaseRoot: string; environment: AppEnvironment } | { ok: false; reason: string }
+
+/**
+ * 「这个进程的状态根 + 环境名」(`#1392` / `#1381`):main 走冻结快照;sidecar(无快照)走 `ALPHA_GLOBAL_DIR` 的逆映射
+ * (environmentFromMutableRoot)。形状不对 ⇒ ok:false 且不猜 —— 调用方按「位置未知」fail-closed。`subject` 只进拒绝理由
+ * (哪个真源的位置未知),两个真源(custom-providers / mcp-servers)共用这一份解析,不各自抄一遍。
+ */
+export function resolveAlphaStateBase(subject: string): AlphaStateBase {
+  const info = tryGetAlphaEnvironment()
+  if (info) return { ok: true, casBaseRoot: info.casBaseRoot, environment: info.environment }
+  let root: string
+  try {
+    root = resolveAlphaGlobalRoot()
+  } catch (error) {
+    return { ok: false, reason: `alpha environment root unavailable (${error instanceof Error ? error.message : String(error)})` }
+  }
+  const derived = environmentFromMutableRoot(root)
+  if (!derived) return { ok: false, reason: `ALPHA_GLOBAL_DIR ${root} is not of the form <base>/env/<prod|beta|dev>; the ${subject} location is unknown` }
+  return { ok: true, ...derived }
+}
+
 let current: AlphaEnvironmentInfo | undefined
 
 export type InitEnvironmentInput = {

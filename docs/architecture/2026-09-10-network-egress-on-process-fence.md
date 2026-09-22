@@ -400,7 +400,13 @@ host 过**静态表同一个** `isEgressHostShape`(同一个函数,不是抄一�
 2. **BYOK 指向 loopback 的 baseURL**(本机模型 / ollama 一类)—— **owner 2026-09-21 裁决:不再支持本地模型,
    这件事不做了**,作废 9-10 那条「要单独设计本机目的地怎么走」。技术事实不变(围栏只放行代理端口、`NO_PROXY`
    又含 loopback ⇒ 放行它不会让它可达,只会让登记簿说假话),但它现在是一条**已关闭**的分支,不是待办。
-3. **用户配置的远程 MCP URL** —— 同属「动态」类别,本轮没做。
+3. ~~**用户配置的远程 MCP URL** —— 同属「动态」类别,本轮没做。~~ —— **已闭合(`#1381`,2026-09-22)**:与自定义节点同一个解 ——
+   记录搬进同一状态根下的兄弟真源 `<appData>/alpha-code-state/mcp-servers/<env>.json`(`mcp-server-truth.ts`,只有 main 写),
+   `deriveMcpEgressDestinations` 经**同一个**准入函数 `classifyBaseUrl` 派生,`server.ts` 把它与 provider 那一半并成一次登记
+   (日志 `network egress: N configured destination(s) …`,出处标签 `mcp:<name>`);sidecar 侧 `alpha-config-injection.ts` 从真源注入
+   完整条目(`enabled:true`,账本 disabled 由后续 `injectDisabledOverrides` 压回),`mcp-default-deny.ts` 把 alpha.jsonc 里不在真源的
+   `type:"remote"` 条目压成 `enabled:false`(引擎原生仍合并 `OPENCODE_CONFIG`,不压它就会去连 —— 只是被这里 403)。本地 MCP 不动。
+   判据在 `mcp-server-derivation.test.ts`(端到端,含真引擎 `debug config`)。
 4. ~~**被拒时界面上的归因**~~ —— **已闭合(`#1382`,2026-09-21)**。代理的 403 正文
    (`alpha egress policy: <authority> denied (reason=unregistered) — blocked by this app's local egress policy …`)
    此前**没有任何读者**,界面把它当成一次普通的调用失败;现在它是一份**被消费的线契约**:

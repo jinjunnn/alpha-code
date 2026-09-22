@@ -7,8 +7,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, ignoredConfigProviderBlocks, persistMcp, PROVIDER_KEYCHAIN_MARKER, readConfiguredProviderKeys, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict, validateProviderInput } from "./ext-config"
-import { egressDestinationFromBaseUrl } from "./network-egress-derived"
+import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, ignoredConfigProviderBlocks, ignoredConfigRemoteMcpEntries, persistMcp, PROVIDER_KEYCHAIN_MARKER, readConfiguredProviderKeys, readMcpLeaf, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict, restoreMcpLeaf, validateProviderInput } from "./ext-config"
+import { classifyBaseUrl, egressDestinationFromBaseUrl } from "./network-egress-derived"
+import { readMcpServerTruth } from "./mcp-server-truth"
+import { writeMcpServerTruth } from "./mcp-server-truth-write"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import { newMcpSecretVersionId, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -26,9 +28,10 @@ const prevHome = process.env.ALPHA_OPENCODE_HOME
 const prevAlpha = process.env.ALPHA_GLOBAL_DIR
 
 beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-extcfg-"))
+  tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-extcfg-"))) // 环境根解析会 realpath,期望值与它同一形态
   homeTmp = path.join(tmp, "opencode-home")
-  alphaTmp = path.join(tmp, "alpha-home")
+  // `#1381`:环境根按生产形状 <base>/env/<env> 造 —— 远程 MCP 真源的位置由它逆映射(<base>/mcp-servers/<env>.json)。
+  alphaTmp = path.join(tmp, "alpha-code-state", "env", "dev")
   process.env.OPENCODE_CONFIG_DIR = tmp
   process.env.ALPHA_OPENCODE_HOME = homeTmp
   process.env.ALPHA_GLOBAL_DIR = alphaTmp
@@ -185,20 +188,43 @@ describe("persistMcp — field/command RCE guards (C2)", () => {
   })
 })
 
-describe("persistMcp — url guards (loopback/https only)", () => {
-  test.each([
-    ["http://evil.com/mcp"],
-    ["http://127.0.0.1@evil.com/mcp"], // hostname parses to evil.com, not loopback
-    ["http://localhost.evil.com/mcp"], // not exactly localhost
-    ["ftp://localhost/mcp"],
-  ])("rejects unsafe url %p", (url) => {
-    const r = persistMcp("srv", { type: "remote", url })
-    expect(r.ok).toBe(false)
-  })
+/** `#1381`:远程 MCP 真源文件(与 alpha.jsonc 同一状态根下的兄弟,围栏写不到)。 */
+const mcpTruthFile = () => path.join(tmp, "alpha-code-state", "mcp-servers", "dev.json")
+const readMcpTruth = () => readMcpServerTruth(mcpTruthFile(), { ...fs, log: () => {} })
+const mcpTruthNames = () => {
+  const read = readMcpTruth()
+  return read.ok ? read.servers.map((s) => s.name) : `unreadable: ${read.reason}`
+}
 
-  test("rejects loopback http with embedded credentials", () => {
-    const r = persistMcp("srv", { type: "remote", url: "http://user:pass@localhost:3000/mcp" })
-    expect(r.ok).toBe(false)
+describe("persistMcp — url guards(`#1381` 基线 I4:添加时的地址准入与出网准入同一个函数)", () => {
+  // 每一条:persistMcp 的裁决 == classifyBaseUrl 的裁决(同一个函数,不是抄一份判据),拒绝带同一个 code;放行的那几条真的进了真源。
+  test.each([
+    ["http://evil.com/mcp", "not-https"],
+    ["http://127.0.0.1@evil.com/mcp", "not-https"], // hostname parses to evil.com, not loopback
+    ["http://localhost.evil.com/mcp", "not-https"], // hostname 不是 localhost(不是 *.localhost),按明文拒
+    ["ftp://localhost/mcp", "loopback"],
+    ["http://user:pass@localhost:3000/mcp", "loopback"],
+    ["http://localhost:8080/mcp", "loopback"], // `#1381` 之前这里放行(「dev 用」),而出网侧拒 ⇒「加得进、连不上」
+    ["https://127.0.0.1/mcp", "loopback"],
+    ["https://[::1]/mcp", "loopback"],
+    ["https://mcp.example.com:99999/mcp", "invalid-url"], // WHATWG 解析就拒
+    ["https://mcp.example.com./mcp", "host-shape"],
+    ["not a url", "invalid-url"],
+    ["https://mcp.example.com/mcp", null],
+    ["https://10.0.0.5:8443/mcp", null],
+  ] as const)("%p ⇒ %p", (url, code) => {
+    const verdict = classifyBaseUrl(url, "mcp")
+    expect(verdict.ok).toBe(code === null)
+    const r = persistMcp("srv", { type: "remote", url })
+    expect(r.ok).toBe(code === null)
+    if (!r.ok) {
+      expect(r.code).toBe(code!)
+      if (!verdict.ok) expect(r.code).toBe(verdict.code)
+      expect(mcpTruthNames()).toEqual([]) // 拒了就一个字不落盘(文件缺失 ⇒ 空清单)
+    } else {
+      expect(mcpTruthNames()).toEqual(["srv"])
+      expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc")) ? readConfig().mcp?.srv : undefined).toBeUndefined()
+    }
   })
 })
 
@@ -229,15 +255,18 @@ describe("persistMcp — accept paths write mcp[name]", () => {
     expect(readConfig().mcp.playwright.command).toEqual(["npx", "-y", "@playwright/mcp"])
   })
 
-  test("valid https remote server persists", () => {
+  test("`#1381` valid https remote server persists —— to the main-only truth file, byte-exact; alpha.jsonc gets no mcp leaf", () => {
     const r = persistMcp("remote", { type: "remote", url: "https://api.example.com/mcp", headers: { Auth: "t" } })
     expect(r).toEqual({ ok: true })
-    expect(readConfig().mcp.remote.url).toBe("https://api.example.com/mcp")
+    expect(fs.readFileSync(mcpTruthFile(), "utf8")).toBe('{"v":1,"servers":[{"name":"remote","url":"https://api.example.com/mcp","headers":{"Auth":"t"}}]}\n')
+    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc")) ? readConfig().mcp : undefined).toBeUndefined()
   })
 
-  test("loopback http (dev) is accepted", () => {
+  test("`#1381` loopback http is refused at add time, with the same code the egress fence gives; nothing is written", () => {
     const r = persistMcp("dev", { type: "remote", url: "http://localhost:8080/mcp" })
-    expect(r).toEqual({ ok: true })
+    expect(r).toEqual({ ok: false, reason: "the server URL points at this machine (localhost / 127.0.0.1); local addresses are not supported", code: "loopback" })
+    expect(fs.existsSync(mcpTruthFile())).toBe(false)
+    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false)
   })
 
   test("removeMcp round-trips without corrupting config", () => {
@@ -971,5 +1000,103 @@ describe("readConfiguredProviderKeys — AC7: classification only, the value nev
     expect(kinds.get("a")).toBe("keychain-marker")
     expect(kinds.get("b")).toBe("legacy-plaintext")
     expect(JSON.stringify([...kinds])).not.toContain("legacy-plain-value")
+  })
+})
+
+// ── `#1381`:远程 MCP 走真源(mcp-servers/<env>.json),配置文件里的远程条目不是记录 ───────────────
+describe("#1381 远程 MCP 的记录住在真源:写、读前像、失败补偿、删除、旧副本", () => {
+  const REMOTE = { type: "remote", url: "https://mcp.example.com/mcp" }
+  const LOCAL = { type: "local", command: ["npx", "-y", "some-mcp"] }
+
+  test("重加即替换:alpha.jsonc(主)与 ~/.opencode(legacy)里同名的远程副本被清掉,真源里只剩这一条", () => {
+    writeAlphaConfig({ mcp: { srv: { type: "remote", url: "https://old.example/mcp" }, keep: LOCAL } })
+    fs.mkdirSync(homeTmp, { recursive: true })
+    fs.writeFileSync(path.join(homeTmp, "opencode.jsonc"), JSON.stringify({ mcp: { srv: { type: "remote", url: "https://older.example/mcp" } } }))
+    expect(persistMcp("srv", REMOTE)).toEqual({ ok: true })
+    expect(readConfig().mcp).toEqual({ keep: LOCAL })
+    expect(JSON.parse(fs.readFileSync(path.join(homeTmp, "opencode.jsonc"), "utf8")).mcp).toEqual({})
+    expect(readMcpTruth()).toEqual({ ok: true, absent: false, servers: [{ name: "srv", url: "https://mcp.example.com/mcp" }] })
+    // 再加一次换 url ⇒ 整条覆盖,不是追加
+    expect(persistMcp("srv", { type: "remote", url: "https://mcp2.example.com/mcp" })).toEqual({ ok: true })
+    expect(readMcpTruth()).toEqual({ ok: true, absent: false, servers: [{ name: "srv", url: "https://mcp2.example.com/mcp" }] })
+  })
+
+  test("readMcpLeaf:真源记录投影成 {type:\"remote\",url,headers?} 叶;alpha.jsonc 里单独躺着的远程叶读成「没有」(基线 I3);本地叶照旧", () => {
+    expect(persistMcp("srv", { ...REMOTE, headers: { A: "b" } })).toEqual({ ok: true })
+    expect(readMcpLeaf("srv")).toEqual({ type: "remote", url: "https://mcp.example.com/mcp", headers: { A: "b" } })
+    writeAlphaConfig({ mcp: { stale: { type: "remote", url: "https://stale.example/mcp" }, loc: LOCAL } })
+    expect(readMcpLeaf("stale")).toBeUndefined()
+    expect(readMcpLeaf("loc")).toEqual(LOCAL)
+  })
+
+  test("restoreMcpLeaf:前像 undefined ⇒ 真源里本次写入的记录撤掉;前像是远程 ⇒ 写回真源;前像是本地 ⇒ 真源让位、配置叶复原", () => {
+    expect(persistMcp("srv", REMOTE)).toEqual({ ok: true })
+    expect(restoreMcpLeaf("srv", undefined)).toEqual({ ok: true })
+    expect(mcpTruthNames()).toEqual([])
+    expect(restoreMcpLeaf("srv", { type: "remote", url: "https://before.example/mcp" })).toEqual({ ok: true })
+    expect(readMcpTruth()).toEqual({ ok: true, absent: false, servers: [{ name: "srv", url: "https://before.example/mcp" }] })
+    expect(persistMcp("srv", REMOTE)).toEqual({ ok: true }) // 「更新」把它换成新 url
+    expect(restoreMcpLeaf("srv", LOCAL)).toEqual({ ok: true }) // 前像其实是本地叶(用户把远程换成了本地又失败)
+    expect(mcpTruthNames()).toEqual([])
+    expect(readConfig().mcp.srv).toEqual(LOCAL)
+  })
+
+  test("removeMcp / removeMcpConfigInLock(持锁)都把真源里的记录删掉(AC3:下一代不再注入、不再放行);本就不在 = 幂等", () => {
+    expect(persistMcp("a", REMOTE)).toEqual({ ok: true })
+    expect(persistMcp("b", { ...REMOTE, url: "https://b.example/mcp" })).toEqual({ ok: true })
+    expect(removeMcp("a")).toEqual({ ok: true })
+    expect(mcpTruthNames()).toEqual(["b"])
+    const held = tryAcquireBundleLock(alphaTmp, { txId: "tx-1381" })
+    if (!held.ok) throw new Error(held.reason)
+    try {
+      expect(removeMcpConfigInLock("b")).toEqual({ ok: true })
+      expect(removeMcpConfigInLock("b")).toEqual({ ok: true })
+    } finally {
+      held.lock.release()
+    }
+    expect(mcpTruthNames()).toEqual([])
+    expect(removeMcp("never-there")).toEqual({ ok: true })
+  })
+
+  test("真源坏了 ⇒ 添加远程、添加本地、删除都拒并点名文件;修好(下一次成功的写)之前不在坏文件上叠加写", () => {
+    fs.mkdirSync(path.dirname(mcpTruthFile()), { recursive: true })
+    fs.writeFileSync(mcpTruthFile(), '{"v":1,"servers":"nope"}')
+    const expectRefused = (r: { ok: boolean; reason?: string }) => {
+      expect(r.ok).toBe(false)
+      expect(r.reason).toContain(`remote MCP truth unreadable: ${mcpTruthFile()}: \`servers\` is not an array`)
+    }
+    expectRefused(persistMcp("srv", REMOTE))
+    expectRefused(persistMcp("loc", LOCAL))
+    expectRefused(removeMcp("srv"))
+    expect(fs.readFileSync(mcpTruthFile(), "utf8")).toBe('{"v":1,"servers":"nope"}')
+    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false)
+  })
+
+  test("远程条目带真源不装的键(oauth / timeout / enabled)⇒ 拒,不静默丢;名字 cloud ⇒ 拒(平台云 MCP 的名字)", () => {
+    expect(persistMcp("srv", { ...REMOTE, oauth: false })).toEqual({ ok: false, reason: "remote MCP server carries key(s) the truth file does not hold: oauth" })
+    expect(persistMcp("srv", { ...REMOTE, timeout: 5000, enabled: true })).toEqual({ ok: false, reason: "remote MCP server carries key(s) the truth file does not hold: timeout, enabled" })
+    expect(persistMcp("cloud", REMOTE)).toEqual({ ok: false, reason: 'server name "cloud" is reserved by the platform cloud MCP' })
+    expect(fs.existsSync(mcpTruthFile())).toBe(false)
+  })
+
+  test("同名改成本地 ⇒ 真源记录让位、alpha.jsonc 得到本地叶(账本键 mcp.<name> 是同一个)", () => {
+    expect(persistMcp("srv", REMOTE)).toEqual({ ok: true })
+    expect(persistMcp("srv", LOCAL)).toEqual({ ok: true })
+    expect(mcpTruthNames()).toEqual([])
+    expect(readConfig().mcp.srv).toEqual(LOCAL)
+  })
+
+  test("ignoredConfigRemoteMcpEntries(基线 I3):点名主 + legacy 配置文件里的远程条目名字,本地条目不算 —— 只服务日志", () => {
+    expect(ignoredConfigRemoteMcpEntries()).toEqual([])
+    writeAlphaConfig({ mcp: { r1: { type: "remote", url: "https://r1.example/mcp" }, l1: LOCAL, r2: { type: "remote", url: "https://r2.example/mcp" } } })
+    fs.mkdirSync(homeTmp, { recursive: true })
+    fs.writeFileSync(path.join(homeTmp, "opencode.jsonc"), JSON.stringify({ mcp: { legacy: { type: "remote", url: "https://legacy.example/mcp" }, l2: LOCAL } }))
+    expect(ignoredConfigRemoteMcpEntries()).toEqual([
+      { file: path.join(alphaTmp, "alpha.jsonc"), names: ["r1", "r2"] },
+      { file: path.join(homeTmp, "opencode.jsonc"), names: ["legacy"] },
+    ])
+    // 真源记录不在这份清单里(它不是「被忽略的」)
+    writeMcpServerTruth(mcpTruthFile(), [{ name: "truth", url: "https://truth.example/mcp" }], fs)
+    expect(ignoredConfigRemoteMcpEntries().flatMap((e) => e.names)).not.toContain("truth")
   })
 })

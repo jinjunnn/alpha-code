@@ -30,6 +30,8 @@
 // (`#1391` 真源,只有 main 写、不在任何可写根之下),注入面从那里发出完整块(alpha-models.ts 第 (3) 段)——
 // 本模块**零改动**就把它们算进放行集合,因为它一直只读注入面。配置文件里的 provider 块从此对注入面与放行集合
 // 都不算数(基线 I1),判据在 custom-provider-derivation.test.ts(端到端,含真引擎清单)。
+// `#1381` 起用户自配的远程 MCP 服务器是同一半场的第二个成员:记录住在同一个状态根下的兄弟真源
+// `mcp-servers/<env>.json`,经 deriveMcpEgressDestinations 走同一个准入函数进同一份登记(server.ts 并成一份)。
 //
 // ── 收进来的条件(fail-closed:四条全中才登记)─────────────────────────────────────────
 //   1. `new URL()` 解析得出(解析不出 ⇒ 不猜);
@@ -126,6 +128,21 @@ export function deriveEgressDestinations(providers: unknown): ConfiguredEgressDe
     const fromOptions = options && typeof options === "object" && !Array.isArray(options) ? (options as { baseURL?: unknown }).baseURL : undefined
     const chosen = typeof fromOptions === "string" ? fromOptions : (block as { api?: unknown }).api
     const destination = egressDestinationFromBaseUrl(chosen, providerId)
+    if (destination) out.push(destination)
+  }
+  return out
+}
+
+/**
+ * `#1381`:用户自配的**远程 MCP 服务器**的目的地 —— 输入是真源记录(mcp-server-records.ts,`<appData>/alpha-code-state/mcp-servers/<env>.json`,
+ * 只有 main 写),与 provider 那一半走**同一个**准入函数、同一个登记调用(server.ts 把两份并成一份喂 setConfiguredEgressDestinations)。
+ * 出处标签 `mcp:<name>`(`providerId` 是「派生出处 ①」的坐标,不是只给 provider 用的)。配置文件里的 `mcp.*` 远程条目**不算数**,
+ * 理由与上面 provider 那一段逐字相同 —— 那三条路径全在围栏的可写集里。判据在 mcp-server-derivation.test.ts(端到端,含真引擎)。
+ */
+export function deriveMcpEgressDestinations(servers: readonly { name: string; url: string }[]): ConfiguredEgressDestination[] {
+  const out: ConfiguredEgressDestination[] = []
+  for (const server of servers) {
+    const destination = egressDestinationFromBaseUrl(server.url, `mcp:${server.name}`)
     if (destination) out.push(destination)
   }
   return out
