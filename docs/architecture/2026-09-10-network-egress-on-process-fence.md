@@ -383,7 +383,7 @@ fork 前 `syncSecretFiles` 收敛(不在 wanted 集合里的遗留文件当场�
 它们算进放行集合;三处配置文件的 `provider.*` 对 `enabled_providers`、注入表与放行集合**一概不算数**(基线 I1)。引擎原生仍会合并
 `alpha.jsonc`,让它写的块失效的机制是 `enabled_providers` 整体替换 + 注入完整块(同 id 后合并者赢),判据因此是端到端的:
 `custom-provider-derivation.test.ts` 起真引擎问清单 —— 真源节点在清单里且被放行,alpha.jsonc / XDG 里的节点两边都进不了。
-添加时的地址准入与这里的四条准入是**同一个函数**(`classifyBaseUrl`):围栏放不了的地址(http、loopback)在添加那一刻就被拒并说明原因。
+v2 那半同样收口:picker 读的 v2 目录桥(`alpha-config-injection.ts`)此前把 alpha.jsonc **原样**拷成 `opencode.json`,而 v2 catalog 的可用性不看 `enabled_providers`,现在拷贝去掉 `provider` 键。添加时的地址准入与这里的四条准入是**同一个函数**(`classifyBaseUrl`):围栏放不了的地址(http、loopback)在添加那一刻就被拒并说明原因。
 升级后配置文件里既有的 provider 块只忽略 + 一行日志(main 每进程一次),不采信、不迁移、不建「待确认」面(基线 I3)。
 
 准入四条(有一条不过就是不收,不猜、不修补):`new URL()` 解析得出 / scheme 是 `https:` / host 不是 loopback /

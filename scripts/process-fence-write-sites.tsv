@@ -7,7 +7,6 @@
 packages/ext/src/plugin.ts	mkdirSync	root	W1
 packages/ext/src/plugin.ts	renameSync	join(root, "alpha.jsonc.tmp")	W1
 packages/ext/src/plugin.ts	writeFileSync	join(root, "alpha.jsonc.tmp")	W1
-packages/ui-mac/src/main/alpha-config-injection.ts	copyFileSync	alphaJsoncPath()	W3
 packages/ui-mac/src/main/alpha-config-injection.ts	mkdirSync	dir	W3
 packages/ui-mac/src/main/alpha-config-injection.ts	mkdirSync	path.dirname(truth)	W2
 packages/ui-mac/src/main/alpha-config-injection.ts	mkdirSync	userDataPath	W3
@@ -17,6 +16,7 @@ packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	file	W3
 packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	modelsPath	W3
 packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	path.join(dir, "opencode.jsonc")	W3
 packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	truth	W2
+packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	userCopy	W3
 packages/ui-mac/src/main/alpha-environment.ts	mkdirSync	directory	main-only
 packages/ui-mac/src/main/alpha-environment.ts	rmdirSync	directory	main-only
 packages/ui-mac/src/main/alpha-installs.ts	mkdirSync	root	W2
