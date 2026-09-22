@@ -471,7 +471,9 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
       }),
     )
     await flush()
-    expect(host.querySelector("[data-alpha-timeline-row='thinking']")).not.toBeNull()
+    // `#1399`:首个 part 未到这一格现在是回合脚行的运行面,不再是「正在思考」胶囊。
+    expect(host.querySelector("[data-alpha-timeline-row='thinking']")).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='turn-running']")).not.toBeNull()
     expect(host.querySelector(".a-tl-cursor")).toBeNull()
   })
 })
@@ -2947,5 +2949,187 @@ describe("#591 富脚注:provider 图标 + 效率段", () => {
     const plain = host.querySelector("[data-alpha-timeline-row='footnote']")!
     expect([...plain.querySelectorAll(".a-tl-fn-item")].some((el) => el.textContent === "高")).toBe(false)
     expect(plain.querySelector(".a-tl-fn-prov")).not.toBeNull()
+  })
+})
+
+// `#1399` 回合脚行(design ② #turn-running,2026-09-22 已批):活跃回合的最后一行,一槽两面。
+// 判据字面量全部照稿手写;期望值不从 i18n 字典取(锚点要独立于被测对象)。
+describe("#1399 回合脚行:活跃回合最后一行,一槽两面", () => {
+  function turnRows(input: { status: string; assistant?: Record<string, unknown>; assistantText?: string }) {
+    const startedAt = Date.now() - 65_000
+    return model.projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u1",
+          sessionID: "ses_1",
+          role: "user",
+          time: { created: startedAt },
+          agent: "build",
+          model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+        },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: startedAt + 1_000 },
+          parentID: "msg_u1",
+          modelID: "deepseek-reasoner",
+          providerID: "deepseek",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          ...(input.assistant ?? {}),
+        },
+      ] as never,
+      partsOf: (messageID: string) =>
+        (messageID === "msg_u1"
+          ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" }]
+          : input.assistantText === undefined
+            ? []
+            : [{ id: "prt_t1", sessionID: "ses_1", messageID: "msg_a1", type: "text", text: input.assistantText }]) as never,
+      status: input.status,
+    })
+  }
+  const runningRows = () => turnRows({ status: "busy", assistantText: "正文已经在吐了" })
+  const foot = (host: HTMLElement) => host.querySelector("[data-alpha-timeline-row='turn-running']")
+
+  test("运行面:吐出正文之后脚行仍在 —— 脉冲点 + 「正在生成」(role=status)+ 计时(status 之外、aria-hidden、m:ss),无按钮", async () => {
+    const host = mount()
+    runtime.setTimelineRows(runningRows())
+    await flush()
+
+    const row = foot(host)!
+    expect(row).not.toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='markdown']")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='thinking']")).toBeNull()
+    expect(row.getAttribute("data-face")).toBe("running")
+    expect(row.hasAttribute("data-wait")).toBe(false)
+    // 回合最后一行:正文在它之前,它之后没有别的行。
+    expect(row.previousElementSibling?.getAttribute("data-alpha-timeline-row")).toBe("markdown")
+    expect(row.nextElementSibling).toBeNull()
+
+    const status = row.querySelector("[role='status']")!
+    expect(status).not.toBeNull()
+    expect(status.textContent).toBe("正在生成")
+    expect(row.querySelector(".a-tl-turnfoot-mark")!.getAttribute("aria-hidden")).toBe("true")
+    expect(row.querySelector(".a-tl-turnfoot-live")).not.toBeNull()
+    const time = row.querySelector(".a-tl-turnfoot-time")!
+    expect(time).not.toBeNull()
+    expect(time.getAttribute("aria-hidden")).toBe("true")
+    expect(status.contains(time)).toBe(false)
+    // 起点 = 用户消息 time.created(65 秒前),不是行挂载时刻。
+    expect(time.textContent).toMatch(/^1:0[5-9]$/)
+    expect(row.querySelector("button")).toBeNull()
+  })
+
+  test("等你面:审批挂起与模型提问共用一面、只换文案 —— 琥珀卡、脉冲停、计时收起、无按钮;同一个节点翻面", async () => {
+    const host = mount()
+    runtime.setTimelineRows(runningRows())
+    await flush()
+    const row = foot(host)!
+    const status = row.querySelector("[role='status']")!
+
+    runtime.setTimelineTurnWait("approval")
+    await flush()
+    expect(foot(host)).toBe(row)
+    expect(row.getAttribute("data-face")).toBe("waiting")
+    expect(row.getAttribute("data-wait")).toBe("approval")
+    expect(row.querySelector("[role='status']")).toBe(status)
+    expect(status.textContent).toBe("等待你的决定生成已暂停,到审批窗口里选择")
+    expect(row.querySelector(".a-tl-turnfoot-live")).toBeNull()
+    expect(row.querySelector(".a-tl-turnfoot-time")).toBeNull()
+    expect(row.querySelector(".a-tl-turnfoot-pause")!.getAttribute("aria-hidden")).toBe("true")
+    expect(row.querySelector("button")).toBeNull()
+
+    runtime.setTimelineTurnWait("question")
+    await flush()
+    expect(foot(host)).toBe(row)
+    expect(row.getAttribute("data-face")).toBe("waiting")
+    expect(row.getAttribute("data-wait")).toBe("question")
+    expect(status.textContent).toBe("等你回答生成已暂停,到输入框上方的提问卡回答")
+    expect(row.querySelector(".a-tl-turnfoot-live")).toBeNull()
+    expect(row.querySelector(".a-tl-turnfoot-time")).toBeNull()
+    expect(row.querySelector("button")).toBeNull()
+
+    runtime.setTimelineTurnWait(undefined)
+    await flush()
+    expect(row.getAttribute("data-face")).toBe("running")
+    expect(row.hasAttribute("data-wait")).toBe(false)
+    expect(status.textContent).toBe("正在生成")
+    expect(row.querySelector(".a-tl-turnfoot-live")).not.toBeNull()
+    expect(row.querySelector(".a-tl-turnfoot-time")).not.toBeNull()
+  })
+
+  test("播报预算:整轮 status 文字只在出现 / 转成等你 / 回到运行三个时刻变;计时每秒跳动不进 live 区", async () => {
+    const host = mount()
+    runtime.setTimelineRows(runningRows())
+    await flush()
+    const row = foot(host)!
+    const status = row.querySelector("[role='status']")!
+    // Solid 的 DOM 更新在 signal 写入时同步落地,所以在每个「值得听的时刻」之后采样 status 的文字,
+    // 就是屏幕阅读器会听到的序列(live region 按落定后的 DOM 播报,不看同步中间态)。
+    const heard: string[] = [status.textContent ?? ""]
+
+    // 让计时真的走一格(1.1s):status 里一个字都不该变,变的只有 status 之外那个 aria-hidden 的计时。
+    const before = row.querySelector(".a-tl-turnfoot-time")!.textContent
+    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    const after = row.querySelector(".a-tl-turnfoot-time")!.textContent
+    expect(before).toMatch(/^1:0[5-9]$/)
+    expect(after).not.toBe(before)
+    heard.push(status.textContent ?? "")
+
+    runtime.setTimelineTurnWait("approval")
+    await flush()
+    heard.push(status.textContent ?? "")
+    runtime.setTimelineTurnWait(undefined)
+    await flush()
+    heard.push(status.textContent ?? "")
+
+    // 同一个 live region 节点贯穿全程(不插拔),文字只在两次翻面时变 ⇒ 出现 + 两次翻面 = 三次播报。
+    expect(row.querySelector("[role='status']")).toBe(status)
+    expect(heard).toEqual(["正在生成", "正在生成", "等待你的决定生成已暂停,到审批窗口里选择", "正在生成"])
+    expect(heard.filter((text, index) => index === 0 || text !== heard[index - 1])).toHaveLength(3)
+  })
+
+  test("结局同帧让位:完成 → 脚注;停止 → 中断行;出错 → 错误卡;零正文 → 空回合行 —— 脚行同帧消失", async () => {
+    const host = mount()
+    runtime.setTimelineRows(runningRows())
+    await flush()
+    expect(foot(host)).not.toBeNull()
+
+    runtime.setTimelineRows(turnRows({ status: "idle", assistant: { time: { created: 10, completed: 20 } }, assistantText: "回答" }))
+    await flush()
+    expect(foot(host)).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='footnote']")).not.toBeNull()
+
+    runtime.setTimelineRows(runningRows())
+    await flush()
+    expect(foot(host)).not.toBeNull()
+    runtime.setTimelineRows(
+      turnRows({ status: "idle", assistant: { error: { name: "MessageAbortedError", data: { message: "" } } }, assistantText: "写到一半" }),
+    )
+    await flush()
+    expect(foot(host)).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='divider'][data-label='interrupted']")).not.toBeNull()
+
+    runtime.setTimelineRows(runningRows())
+    await flush()
+    expect(foot(host)).not.toBeNull()
+    runtime.setTimelineRows(
+      turnRows({ status: "idle", assistant: { error: { name: "APIError", data: { message: "rate_limit_exceeded" } } } }),
+    )
+    await flush()
+    expect(foot(host)).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='turn-error']")).not.toBeNull()
+
+    runtime.setTimelineRows(runningRows())
+    await flush()
+    expect(foot(host)).not.toBeNull()
+    runtime.setTimelineRows(turnRows({ status: "idle", assistant: { finish: "unknown", time: { created: 10, completed: 20 } } }))
+    await flush()
+    expect(foot(host)).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='empty-turn']")).not.toBeNull()
   })
 })

@@ -905,40 +905,84 @@ button.a-tl-cmd-chip:focus-visible {
   white-space: pre-wrap;
 }
 
-/* ── 思考中(shimmer 帧的克制版) ────────────────────────────────────── */
-.a-tl-thinking {
-  display: inline-flex;
-  gap: 9px;
+/* ── 回合脚行(design ② turn-running 锚,ac 1399,2026-09-22 已批):活跃回合最后一行,一槽两面 ──
+   运行面 = 与中断行同族的安静行(12px 图标槽 + 次级灰文字);等你面 = 与自动重试卡(.a-retry)同族的
+   琥珀底小卡。两面共用同一个节点,只翻 data-face —— live region 不插拔。 */
+.a-tl-turnfoot {
+  display: flex;
+  gap: 8px;
   align-items: center;
   align-self: flex-start;
-  padding: 7px 13px;
-  border: 1px solid var(--a-accent-border);
-  border-radius: var(--a-radius-full);
-  background: var(--a-accent-subtle);
-  color: var(--a-accent);
+  color: var(--a-text-secondary);
   font-size: var(--a-text-sm);
+}
+
+.a-tl-turnfoot-mark {
+  display: grid;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  place-items: center;
+}
+
+/* 顶栏状态胶囊同一个脉冲(a-swk-status-pulse 的本地副本 —— 两份样式各自成文件,keyframes 不跨文件引用)。 */
+.a-tl-turnfoot-live {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent);
+  animation: a-tl-turnfoot-pulse 1.4s var(--a-ease-in-out) infinite;
+}
+
+.a-tl-turnfoot-text {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.a-tl-turnfoot-label {
   font-weight: var(--a-weight-medium);
 }
 
-.a-tl-thinking-dots {
-  display: inline-flex;
-  gap: 3px;
-}
-
-.a-tl-thinking-dots i {
-  width: 4px;
-  height: 4px;
+.a-tl-turnfoot-sep {
+  flex: none;
+  width: 3px;
+  height: 3px;
   border-radius: var(--a-radius-full);
-  background: currentColor;
-  animation: a-tl-bob 1s ease-in-out infinite;
+  background: var(--a-text-disabled);
 }
 
-.a-tl-thinking-dots i:nth-child(2) {
-  animation-delay: 0.15s;
+.a-tl-turnfoot-time {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  font-variant-numeric: tabular-nums;
 }
 
-.a-tl-thinking-dots i:nth-child(3) {
-  animation-delay: 0.3s;
+/* 等你面:脉冲停(节点已换成静止暂停符号)、计时收起(节点不渲染)、琥珀底、零动效、无按钮。 */
+.a-tl-turnfoot[data-face="waiting"] {
+  gap: 9px;
+  padding: 8px 13px;
+  border: 1px solid color-mix(in srgb, var(--a-warning) 40%, transparent);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-warning-subtle);
+  color: var(--a-text);
+}
+
+.a-tl-turnfoot-pause {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--a-warning);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.a-tl-turnfoot-hint {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
 }
 
 /* ── 会话内空态(轻着陆) ────────────────────────────────────────────── */
@@ -1031,16 +1075,14 @@ button.a-tl-cmd-chip:focus-visible {
   }
 }
 
-@keyframes a-tl-bob {
+@keyframes a-tl-turnfoot-pulse {
   0%,
   100% {
-    opacity: 0.3;
-    transform: translateY(1px);
+    opacity: 1;
   }
 
   50% {
-    opacity: 1;
-    transform: translateY(-2px);
+    opacity: 0.35;
   }
 }
 
@@ -1053,7 +1095,8 @@ button.a-tl-cmd-chip:focus-visible {
     animation: none;
   }
 
-  .a-tl-thinking-dots i {
+  /* ac 1399:脉冲点静止;计时刻意不在这里 —— 减弱动效下它是唯一的「还活着」信号,照走。 */
+  .a-tl-turnfoot-live {
     animation: none;
   }
 }

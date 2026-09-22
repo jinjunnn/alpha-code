@@ -212,7 +212,19 @@ export type TimelineRow =
     }
   | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "interrupted" }
   | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "emptyTurn" }
-  | { kind: "thinking"; key: string; rev: string; userMessageID: string }
+  | {
+      /**
+       * `#1399` 回合脚行(design ② #turn-running):活跃回合的**最后一行**,从这条用户消息成为活跃回合起
+       * 到 session_status 回到 idle 止,贯穿首个 part 未到 / 正文流式 / 推理中 / 工具执行中 / 自动重试。
+       * 面(运行 / 等你)不在行模型里 —— 「等你」的真相住在 dock 的审批 feed 与 question 通道,经视图 prop 供给。
+       */
+      kind: "turnfoot"
+      key: string
+      rev: string
+      userMessageID: string
+      /** 计时起点 = 用户消息 time.created(不是行挂载时刻:中途重开会话显示真实已过时长)。 */
+      startedAt: number
+    }
   | {
       kind: "footnote"
       key: string
@@ -232,6 +244,17 @@ export type TimelineRow =
       deletions: number
       truncated: boolean
     }
+
+/** `#1399`:活跃回合在等你 —— 等你批准(审批弹窗)或等你回答(输入框上方的提问卡)。缺席 = 运行面。 */
+export type TimelineTurnWait = "approval" | "question"
+
+/** `#1399` 回合脚行计时:m:ss,整秒向下取整,分钟不进位到小时;负值(时钟偏斜)钉 0:00。 */
+export function formatTurnElapsed(elapsedMs: number): string {
+  const total = Math.max(0, Math.floor(elapsedMs / 1000))
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`
+}
 
 export interface TimelineProjectionInput {
   messages: readonly Message[]
@@ -972,9 +995,6 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         truncated: turnDiffs.truncated,
       })
 
-    if (userMessage.id === activeUserID && input.status === "busy" && emitted === 0)
-      rows.push({ kind: "thinking", key: `thinking:${userMessage.id}`, rev: "", userMessageID: userMessage.id })
-
     if (userMessage.id === activeUserID && input.status === "retry" && input.retry) {
       const message = boundedText(input.retry.message, RETRY_MESSAGE_MAX_CHARS).text
       rows.push({
@@ -997,6 +1017,20 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         name: turnError.name,
         message: turnError.message,
         ...(turnError.egressDenied ? { egressDenied: turnError.egressDenied } : {}),
+      })
+
+    // `#1399` 回合脚行:活跃回合(session_status 非 idle)的**最后一行**。此前这里是 thinking 行,只在
+    // `emitted === 0` 时入列 —— 吐出第一个 part 就消失,正文流式 / 推理中 / 工具执行中三个子状态里时间线
+    // 一动不动,那正是 owner 观察到的「一轮在跑时页面什么都不动」。现在它与回合同寿命:结局(完成 / 中止 /
+    // 出错 / 空回合)到来时 status 已回到 idle,本行不再入列,位置由脚注 / 中断行 / 错误卡 / 空回合行接管。
+    // rev 只带计时起点:面翻转不重建行对象(视图靠同一个 DOM 节点翻 data-face,live region 不插拔)。
+    if (userMessage.id === activeUserID && input.status !== "idle")
+      rows.push({
+        kind: "turnfoot",
+        key: `turnfoot:${userMessage.id}`,
+        rev: String(userMessage.time.created),
+        userMessageID: userMessage.id,
+        startedAt: userMessage.time.created,
       })
   })
 

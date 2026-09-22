@@ -1,6 +1,7 @@
 // REQ-125 C7:composer dock 的纯逻辑核(typed 数据 → UI 判定,零 DOM)。
 
 import type { Message, ModelV2Info, QuestionInfo, QuestionRequest, Session, Todo } from "@opencode-ai/sdk/v2/client"
+import type { TimelineTurnWait } from "../session-timeline/timeline-model"
 
 /**
  * 上下文用量百分比:最后一条带 token 的 assistant 消息的 token 总量 / 该消息模型的
@@ -52,6 +53,16 @@ export function todoDone(todo: Todo): boolean {
 export function todoDockVisible(input: { todos: readonly Todo[]; running: boolean }): boolean {
   if (!input.running || input.todos.length === 0) return false
   return input.todos.some((todo) => !todoDone(todo))
+}
+
+/**
+ * `#1399` 回合脚行的等你面:两种触发共用一面,同时挂起时按审批说 —— 审批弹窗是强模态、盖在提问卡之上,
+ * 用户此刻能动手的只有它;提问卡要等弹窗关掉才够得着。都没有 = undefined(运行面)。
+ */
+export function turnWaitOf(input: { approvalPending: boolean; questionPending: boolean }): TimelineTurnWait | undefined {
+  if (input.approvalPending) return "approval"
+  if (input.questionPending) return "question"
+  return undefined
 }
 
 /** 头部挂起提问:只认携带至少一条完整问题的请求。 */

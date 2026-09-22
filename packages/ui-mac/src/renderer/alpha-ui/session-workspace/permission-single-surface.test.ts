@@ -369,6 +369,35 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
   // 真实 SDK client**、方括号取值提交 —— 当时 `POST /api/session/<id>/permission/<id>/reply`
   // 真的发出而闸①②③全绿(录音面只覆盖被注入的 client)。本例把该形态本身钉成回归:
   // 新建 client 必须同样落进录音面,亦即闸③会红。alias 一撤,这里立刻红。
+  // `#1399`:回合脚行的「等你批准」面吃的是 dock 这份审批 feed(它是唯一真相源,只在 dock 里建)。
+  // 这里走生产相位:asked 到达 ⇒ dock 发布 approval;replied 收回 ⇒ 发布 undefined。
+  // 发布面零 DOM(审批卡不进时间线,2026-07-26 裁决)—— 上一条用例的全文档差分对此已经作保。
+  test("#1399 dock 把「等你批准」发布给回合脚行:asked ⇒ approval,replied ⇒ 收回;零审批写流量", async () => {
+    mountHarness()
+    await flush()
+    await flush()
+    expect(runtime.turnWaitLog.length).toBeGreaterThan(0)
+    expect(runtime.turnWaitLog.at(-1)).toBeUndefined()
+
+    runtime.injectPermissionAsked(request)
+    await flush()
+    expect(runtime.turnWaitLog.at(-1)).toBe("approval")
+
+    runtime.injectPermissionReplied({
+      requestID: request.id,
+      sessionID: request.sessionID,
+      requestFingerprint: request.fingerprint,
+      decisionID: "dec_1399_once",
+      decision: "once",
+      committedAt: 1_893_456_000_001,
+      resolvedRequestIDs: [request.id],
+    })
+    await flush()
+    expect(runtime.turnWaitLog.at(-1)).toBeUndefined()
+    expect(runtime.turnWaitLog.filter((wait) => wait === "approval")).toHaveLength(1)
+    expect([...dockPermissionTraffic()].every((path) => SANCTIONED_DOCK_TRAFFIC.has(path))).toBe(true)
+  })
+
   test("等义改写回归:不新增 DOM、另建真实 SDK client、方括号提交 —— 同样落进录音面,闸③照样红", async () => {
     mountHarness()
     await flush()

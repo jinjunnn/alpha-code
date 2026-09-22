@@ -12,7 +12,7 @@
 // session.promptAsync),不另建通道;写入面因此需要 typed SDK 客户端(useServerSDK)。
 import { useServerSDK, useServerSync } from "@opencode-ai/app"
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, on } from "solid-js"
+import { createEffect, createMemo, on, type Accessor } from "solid-js"
 import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import { useAlphaSessionLiveContext } from "../session-workspace/alpha-session-workspace"
@@ -25,6 +25,7 @@ import {
   reviewPathOf,
   type SessionSlashOriginsFor,
   type TimelineRow,
+  type TimelineTurnWait,
 } from "./timeline-model"
 
 export interface AlphaSessionTimelineProps {
@@ -34,6 +35,11 @@ export interface AlphaSessionTimelineProps {
   slashOriginsFor?: SessionSlashOriginsFor
   /** 用户消息编辑重发接线；缺席时按钮零渲染。 */
   onEditUserMessage?: (intent: TimelineEditUserMessageIntent) => void | Promise<void>
+  /**
+   * `#1399`:活跃回合在等你(审批 / 提问)—— dock 的挂起投影经 workspace 的 signal 供给;
+   * 缺席 = 回合脚行只有运行面(fail-closed)。审批卡本身仍不进时间线(2026-07-26 裁决)。
+   */
+  turnWait?: Accessor<TimelineTurnWait | undefined>
 }
 
 export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
@@ -192,6 +198,7 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
       onLoadOlder={loadOlder}
       intents={intents}
       displayNames={displayNames}
+      turnWait={props.turnWait?.()}
     />
   )
 }

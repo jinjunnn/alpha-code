@@ -14,6 +14,7 @@ import {
   revertDockFacts,
   sdkResultFailed,
   todoDockVisible,
+  turnWaitOf,
 } from "./session-dock-core"
 import {
   recordSessionSlashOrigin,
@@ -114,6 +115,17 @@ describe("question:头部挂起请求与回答完备性", () => {
     expect(questionAnswersComplete([info({ custom: true })], [["自由回答"]])).toBe(true)
     expect(questionAnswersComplete([info({ custom: true })], [["  "]])).toBe(false)
     expect(questionAnswersComplete([], [])).toBe(false)
+  })
+})
+
+// `#1399` 回合脚行的等你面:两种触发共用一面,同时挂起时按审批说 —— 审批弹窗是强模态、盖在提问卡之上,
+// 用户此刻能动手的只有它;提问卡要等弹窗关掉才够得着。
+describe("#1399 turnWaitOf:审批优先于提问;都没有 = undefined(运行面)", () => {
+  test("只审批 → approval;只提问 → question;都挂起 → approval;都没有 → undefined", () => {
+    expect(turnWaitOf({ approvalPending: true, questionPending: false })).toBe("approval")
+    expect(turnWaitOf({ approvalPending: false, questionPending: true })).toBe("question")
+    expect(turnWaitOf({ approvalPending: true, questionPending: true })).toBe("approval")
+    expect(turnWaitOf({ approvalPending: false, questionPending: false })).toBeUndefined()
   })
 })
 

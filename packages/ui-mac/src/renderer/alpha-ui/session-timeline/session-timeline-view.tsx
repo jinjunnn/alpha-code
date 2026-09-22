@@ -20,12 +20,14 @@ import { TimelineIntentsContext, type TimelineIntents, useTimelineIntents } from
 import { TimelineMarkdown } from "./timeline-markdown"
 import {
   boundedText,
+  formatTurnElapsed,
   MARKDOWN_MAX_CHARS,
   REASONING_MAX_CHARS,
   reasoningSummary,
   type TimelineComment,
   type TimelineRow,
   type TimelineSegment,
+  type TimelineTurnWait,
 } from "./timeline-model"
 import { anchorDelta, createPrependCoordinator, isAtBottom, shouldLoadOlder } from "./timeline-scroll"
 import "./session-timeline.css"
@@ -68,6 +70,11 @@ export interface SessionTimelineViewProps {
   epoch: string
   emptyTitle: string
   history: SessionTimelineHistory
+  /**
+   * `#1399`:活跃回合在等你(审批 / 提问)—— 回合脚行据此翻到等你面。真相住在 dock(审批 feed 只在那里建),
+   * 经 workspace 的 signal 供给;缺席 = 运行面(fail-closed:不知道就不说「在等你」)。
+   */
+  turnWait?: TimelineTurnWait
   onLoadOlder: () => Promise<void>
   /** settling 生命周期上限(测试注入用;缺省 SETTLE_TIMEOUT_MS)。 */
   settleTimeoutMs?: number
@@ -267,7 +274,9 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
                 </Show>
               </div>
             </Show>
-            <For each={props.rows}>{(row) => <TimelineRowView row={row} displayNames={props.displayNames} />}</For>
+            <For each={props.rows}>
+              {(row) => <TimelineRowView row={row} displayNames={props.displayNames} turnWait={props.turnWait} />}
+            </For>
           </div>
         </div>
       </TimelineIntentsContext.Provider>
@@ -291,7 +300,7 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
   )
 }
 
-function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDisplayNames }) {
+function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDisplayNames; turnWait?: TimelineTurnWait }) {
   // 行对象引用稳定(reuseTimelineRows),kind 不随内容变化;内容字段经 store proxy 反应式读取。
   const row = props.row
   if (row.kind === "turn") return <TurnRow row={row} />
@@ -305,7 +314,7 @@ function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDispl
   if (row.kind === "retry") return <RetryCard row={row} />
   if (row.kind === "turnError") return <TurnErrorCard row={row} />
   if (row.kind === "divider") return <DividerRow row={row} />
-  if (row.kind === "thinking") return <ThinkingRow row={row} />
+  if (row.kind === "turnfoot") return <TurnRunningRow row={row} wait={props.turnWait} />
   if (row.kind === "footnote") return <FootnoteRow row={row} />
   if (row.kind === "diffsum") return <TurnDiffSummaryRow row={row} />
   // fail-closed:未知行类型不渲染任何内容。
@@ -886,16 +895,70 @@ function InterruptedRow() {
   )
 }
 
-function ThinkingRow(props: { row: Extract<TimelineRow, { kind: "thinking" }> }) {
-  void props
+// `#1399` 回合脚行(design ② #turn-running,2026-09-22 已批):活跃回合的最后一行,一槽两面。
+// 运行面 = 与中断行同族的安静行:7px 强调色脉冲点(顶栏状态胶囊同款 1.4s)+「正在生成」+ 从这条用户消息
+// 发出算起的计时 m:ss;首个字未到 / 正文流式 / 推理中 / 工具执行中 / 自动重试**不换字、不换形** ——
+// 卡说「这一步」,脚行说「这一轮」。它顶替了此前只在首个 part 到达前存在的「正在思考」胶囊(owner 批准并入)。
+// 等你面 = 与自动重试卡同族的琥珀底小卡:静止暂停符号 + 主句 + 去向;计时收起;**无按钮** —— 动作仍在
+// 审批弹窗 / 提问卡里(2026-07-26 裁决:审批不进时间线)。等你批准与等你回答共用这一面,只换文案。
+// 无障碍:文字部分是 role="status"(隐含 polite + atomic),整轮只在出现 / 转成等你 / 回到运行三个时刻改字;
+// 两面共用**同一个** DOM 节点(只翻 data-face 与文案),live region 不会被反复插拔。计时在 status 之外且
+// aria-hidden —— 每秒一次的变化不进 live 区;减弱动效时脉冲静止、计时照走(那时它是唯一的「还活着」信号),
+// 规则在 session-timeline.css 的 reduced-motion 段。结束不由本行播报:被移除的节点没有可靠的最后一次播报,
+// 由接管者(中断行 status / 错误卡 alert / 顶栏胶囊回到「空闲」)说。
+const TURN_ELAPSED_TICK_MS = 1000
+
+function TurnRunningRow(props: { row: Extract<TimelineRow, { kind: "turnfoot" }>; wait?: TimelineTurnWait }) {
+  const [now, setNow] = createSignal(Date.now())
+  const tick = setInterval(() => setNow(Date.now()), TURN_ELAPSED_TICK_MS)
+  onCleanup(() => clearInterval(tick))
+  const elapsed = () => formatTurnElapsed(now() - props.row.startedAt)
+  const label = () => {
+    if (props.wait === "approval") return t("alpha.timeline.turnWaitApproval")
+    if (props.wait === "question") return t("alpha.timeline.turnWaitQuestion")
+    return t("alpha.timeline.turnRunning")
+  }
+  const hint = () => {
+    if (props.wait === "approval") return t("alpha.timeline.turnWaitApprovalHint")
+    if (props.wait === "question") return t("alpha.timeline.turnWaitQuestionHint")
+    return undefined
+  }
   return (
-    <div class="a-tl-row a-tl-thinking" data-alpha-timeline-row="thinking" role="status">
-      <span class="a-tl-thinking-label">{t("alpha.timeline.thinking")}</span>
-      <span class="a-tl-thinking-dots" aria-hidden="true">
-        <i />
-        <i />
-        <i />
+    <div
+      class="a-tl-row a-tl-turnfoot"
+      data-alpha-timeline-row="turn-running"
+      data-face={props.wait ? "waiting" : "running"}
+      data-wait={props.wait}
+    >
+      <Show
+        when={props.wait}
+        fallback={
+          <span class="a-tl-turnfoot-mark" aria-hidden="true">
+            <i class="a-tl-turnfoot-live" />
+          </span>
+        }
+      >
+        <svg class="a-tl-turnfoot-pause" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 5v14M15 5v14" />
+        </svg>
+      </Show>
+      <span class="a-tl-turnfoot-text" role="status">
+        <span class="a-tl-turnfoot-label">{label()}</span>
+        <Show when={hint()} keyed>
+          {(text) => (
+            <>
+              <span class="a-tl-turnfoot-sep" aria-hidden="true" />
+              <span class="a-tl-turnfoot-hint">{text}</span>
+            </>
+          )}
+        </Show>
       </span>
+      <Show when={!props.wait}>
+        <span class="a-tl-turnfoot-sep" aria-hidden="true" />
+        <span class="a-tl-turnfoot-time" aria-hidden="true">
+          {elapsed()}
+        </span>
+      </Show>
     </div>
   )
 }
