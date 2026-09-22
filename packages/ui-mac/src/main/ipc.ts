@@ -29,6 +29,7 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { isManagedRunArtifactPath } from "./artifact-external-open"
 import { assertGenericStoreAccess } from "./store-keys"
 import { registerStartupTimelineIpc } from "./startup-timeline"
+import type { FenceWorkspaceTracker } from "./process-fence-workspaces"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -62,6 +63,12 @@ type Deps = {
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
   /** REQ-014:tabs 毒键预清的完成信号;store-get 对 tabs 两键首读等它(runTabsPreclean 保证有硬时限)。 */
   tabsPrecleanDone?: Promise<void>
+  /**
+   * `#1394`:围栏工作区清单真源的 tracker。renderer 经 store-set / store-delete / store-clear 写 opencode.global.dat 的三个 tab 键,
+   * 是那份清单**唯一**合法的更新通路(围栏内的进程到不了 IPC;它能改的只有 store 文件,而那份不再喂给围栏)。
+   * 写完 store 再通知它;不是那三个键的写入它自己忽略。
+   */
+  fenceWorkspaces: Pick<FenceWorkspaceTracker, "noteRendererStoreSet" | "noteRendererStoreDelete" | "noteRendererStoreClear">
   auth: {
     getState: () => AuthState
     start: () => Promise<void>
@@ -151,14 +158,18 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
     assertGenericStoreAccess(name, key)
     getStore(name).set(key, value)
+    // `#1394`:renderer 的 tab 状态是围栏工作区清单的唯一合法输入 —— 写完 store 再告诉真源(下一代 fork 才生效)。
+    deps.fenceWorkspaces.noteRendererStoreSet(name, key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     assertGenericStoreAccess(name, key)
     getStore(name).delete(key)
+    deps.fenceWorkspaces.noteRendererStoreDelete(name, key)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
     assertGenericStoreAccess(name)
     getStore(name).clear()
+    deps.fenceWorkspaces.noteRendererStoreClear(name)
   })
   ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
     const store = getStore(name)

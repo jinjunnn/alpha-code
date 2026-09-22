@@ -2,12 +2,12 @@
 //
 // 计划 = { profile(已试编译通过的全文), addonPath(原生模块绝对路径), 并集/丢弃/排除的账 }。
 // 它经 StartCommand 交给 sidecar,sidecar 在 import 引擎之前原样 apply(process-fence-apply.ts)。
-// 为什么在 main 做而不在 sidecar 做:并集来源是 main 自己的 electron store(opencode.global.dat 的
-// tabs / tabs.info,U2 §2.3:main 今天就在读它,零新增 IPC);试编译失败要在 fork **之前**
-// fail-closed(拒绝这一代,原因可读),而不是让 sidecar 起来再死。
+// 为什么在 main 做而不在 sidecar 做:并集来源是 main 独占的东西 —— `#1394` 起是围栏写不到的真源文件
+// (process-fence-workspaces.ts;此前是 main 自己的 electron store,U2 §2.3 —— 那份在 W3 之下、被围栏的引擎写得了,
+// `#1390` / `#1394` 关掉了这条);试编译失败要在 fork **之前** fail-closed(拒绝这一代,原因可读),而不是让 sidecar 起来再死。
 //
-// electron-free:store 读取、根解析、fs 都由 server.ts 注入(它已经 import 了 getStore 等),
-// 于是本模块可以在 bun 里对着假 store / 假 fs / 假编译器跑判据(process-fence-plan.test.ts),
+// electron-free:清单读取、根解析、fs 都由 server.ts 注入,
+// 于是本模块可以在 bun 里对着假清单 / 假 fs / 假编译器跑判据(process-fence-plan.test.ts),
 // 而真编译器与真 profile 的判据各自在 process-fence-compile.test.ts / process-fence-profile.test.ts。
 //
 // ── 父目录必须由未被围栏的一方预先建好(勘破 §6.3.1 第 3 条)────────────────────────
@@ -27,7 +27,6 @@ import {
   type EngineRoots,
   type TrialCompile,
   type WorkspaceExclusion,
-  type WorkspaceUnionSources,
 } from "./process-fence-profile"
 
 export type ProcessFencePlan = {
@@ -62,7 +61,11 @@ export type PlanProcessFenceDeps = {
   realpath: (p: string) => string
   /** `~/code-puppy`,已 ensure(ensureUserWorkspaceDir 返回 null 时给 alphaUserWorkspaceDir 让并集判它不存在)。 */
   defaultWorkspace: () => string
-  readStore: () => WorkspaceUnionSources
+  /**
+   * `#1394`:工作区清单(绝对路径,顺序即优先级),来自围栏写不到的真源(process-fence-workspaces.ts),不再是 electron store。
+   * 拿不到(缺失 / 解析失败)就抛,原因可读;planner 捕获后退到只有默认工作区并出声 —— 拿不到清单 ≠ 什么都可写。
+   */
+  readWorkspaces: () => readonly string[]
   isDirectory: (p: string) => boolean
   mkdirp: (p: string) => void
   compile: TrialCompile
@@ -89,16 +92,16 @@ export function planProcessFence(input: PlanProcessFenceInput, deps: PlanProcess
     deps.mkdirp(dir)
   }
 
-  let sources: WorkspaceUnionSources
+  let candidates: readonly string[]
   try {
-    sources = deps.readStore()
+    candidates = deps.readWorkspaces()
   } catch (error) {
-    // store 读挂了不许炸 boot;并集退到只有 `~/code-puppy`(收紧方向),但必须出声。
-    deps.log(`process fence: renderer tab store unreadable — workspace union falls back to the default workspace only: ${error instanceof Error ? error.message : String(error)}`)
-    sources = { tabs: undefined, recent: undefined, info: undefined }
+    // 真源缺失 / 坏了不许炸 boot;并集退到只有 `~/code-puppy`(收紧方向,fail-closed),但必须出声。
+    deps.log(`process fence: workspace truth unavailable — workspace union falls back to the default workspace only: ${error instanceof Error ? error.message : String(error)}`)
+    candidates = []
   }
   const union = selectWorkspaceUnion({
-    sources,
+    candidates,
     defaultWorkspace: deps.defaultWorkspace(),
     homeDir: home,
     appStateRoot: deps.appStateRoot(),

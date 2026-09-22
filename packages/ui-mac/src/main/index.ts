@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { existsSync, mkdirSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
@@ -52,6 +52,7 @@ import {
 } from "./logging"
 import { getStore } from "./store"
 import { GLOBAL_RENDERER_STORE, TABS_INFO_KEY, TABS_KEY, TABS_RECENT_KEY, runTabsPreclean } from "./tabs-preclean"
+import { bootFenceWorkspaceTruth, fenceWorkspaceTruthPath } from "./process-fence-workspaces"
 import { checkSessionExistsViaFetch } from "./tabs-preclean-io"
 import { parseMarkdown } from "./markdown"
 import { createDbMenuActions, runDbPreflightBoot } from "./db-safety-boot"
@@ -893,8 +894,26 @@ const main = Effect.gen(function* () {
     awaitServer: () => Effect.runPromise(Deferred.await(serverReady)).catch(() => null),
     checkSession: checkSessionExistsViaFetch,
   })
+  // `#1394`(REQ-159 `#1390` 第二步):围栏工作区清单的真源 —— 首次启动从 store 播种一次,之后只经 store-set IPC 更新
+  // (process-fence-workspaces.ts 文件头)。位置必须在 tier-1 预清**之后**(播种读的是预清后的 store)、IPC 注册与首次 fork
+  // **之前**(计划器读的是这里播好 / 装好的文件;IPC 一来就要有 tracker 接)。store 读挂不炸 boot:按空 store 处理并出声。
+  const fenceWorkspaces = bootFenceWorkspaceTruth({
+    truthPath: fenceWorkspaceTruthPath(alphaEnv.casBaseRoot, alphaEnv.environment),
+    store: (() => {
+      try {
+        const store = getStore(GLOBAL_RENDERER_STORE)
+        return { tabs: store.get(TABS_KEY), recent: store.get(TABS_RECENT_KEY), info: store.get(TABS_INFO_KEY) }
+      } catch (error) {
+        logger.error("process fence: renderer tab store unreadable at boot — workspace truth seeding / quarantine see an empty store", error)
+        return { tabs: undefined, recent: undefined, info: undefined }
+      }
+    })(),
+    fs: { readFileSync, writeFileSync, renameSync, mkdirSync, rmSync },
+    log: (line) => logger.log(line),
+  })
   registerIpcHandlers({
     tabsPrecleanDone: tabsPreclean.done,
+    fenceWorkspaces,
     killSidecar: () => killSidecar(),
     sidecarGenerationState: () => sidecarGeneration.get(),
     // REQ-159 `#1322`:探针必须在被围栏的 sidecar 里跑;没有活着的 sidecar 就如实答 unknown。

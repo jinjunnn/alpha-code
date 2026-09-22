@@ -26,14 +26,8 @@ function harness(overrides: Partial<PlanProcessFenceDeps> = {}, existing = new S
     // 假盘上的路径不在盘上;这里用恒等让并集走词法比较(真 realpath 的判据在 process-fence-profile.test.ts ④)
     realpath: (p) => p,
     defaultWorkspace: () => `${HOME}/code-puppy`,
-    readStore: () => ({
-      tabs: [
-        { type: "draft", draftID: "a", server: "sidecar", directory: `${HOME}/proj-a` },
-        { type: "draft", draftID: "b", server: "sidecar", directory: `${HOME}/proj-b` },
-      ],
-      recent: { key: "draft:b" },
-      info: {},
-    }),
+    // `#1394`:清单来自真源(顺序即优先级:recent 的 proj-b 在前),不再是 store 的三个键
+    readWorkspaces: () => [`${HOME}/proj-b`, `${HOME}/proj-a`],
     isDirectory: (p) => dirs.has(p),
     mkdirp: (p) => void made.push(p),
     compile: () => ({ ok: true }),
@@ -77,15 +71,18 @@ describeDarwin("planProcessFence", () => {
     expect(plan.roots.stateHome).toBe("/Volumes/s")
   })
 
-  test("store 读挂:不炸,并集退到默认工作区,日志点名原因", () => {
-    const h = harness({
-      readStore: () => {
-        throw new Error("store corrupt")
-      },
-    })
-    const plan = planProcessFence(h.input, h.deps)
-    expect(plan.workspaces).toEqual([`${HOME}/code-puppy`])
-    expect(h.logs.some((l) => /tab store unreadable.*store corrupt/.test(l))).toBe(true)
+  test("`#1394` 真源拿不到(缺失 / 解析失败):不炸,并集退到默认工作区(fail-closed,不是「什么都可写」),日志点名原因", () => {
+    for (const reason of ["workspace truth absent: /AS/alpha-code-state/fence-workspaces/prod.json", "workspace truth /AS/alpha-code-state/fence-workspaces/prod.json: not JSON (Unexpected token)"]) {
+      const h = harness({
+        readWorkspaces: () => {
+          throw new Error(reason)
+        },
+      })
+      const plan = planProcessFence(h.input, h.deps)
+      expect(plan.workspaces).toEqual([`${HOME}/code-puppy`])
+      expect(plan.profile.match(/; W1$/gm)?.length).toBe(1)
+      expect(h.logs).toContain(`process fence: workspace truth unavailable — workspace union falls back to the default workspace only: ${reason}`)
+    }
   })
 
   test("试编译只放得下 2 个 ⇒ 丢掉最旧的(尾部),日志写明丢了谁与编译器原文", () => {
@@ -128,14 +125,10 @@ describeDarwin("planProcessFence", () => {
     expect(h.made).not.toContain(`${HOME}/code-puppy`)
   })
 
-  test("`#1390` store 里一条伪造记录指向应用状态根的祖先 ⇒ 不进 workspaces、不进 profile,进 excluded,且 planned 那行日志如实记账", () => {
+  test("`#1390` 真源里一条记录指向应用状态根的祖先 ⇒ 仍不进 workspaces、不进 profile,进 excluded,且 planned 那行日志如实记账(第二道闸不因清单搬家而拆,`#1394`)", () => {
     const forged = `${HOME}/Library/Application Support`
     const h = harness({
-      readStore: () => ({
-        tabs: [{ type: "draft", draftID: "forged", server: "sidecar", directory: forged }],
-        recent: { key: "draft:forged" },
-        info: {},
-      }),
+      readWorkspaces: () => [forged],
       // 盘上「都在」:排除只能来自状态根规则
       isDirectory: () => true,
     })

@@ -196,11 +196,16 @@ export function renderProcessFenceProfile(input: ProcessFenceProfileInput): stri
 //   5. 排除 `/`、HOME、HOME 的任何祖先。放行 HOME = 没有围栏(U2 §4 表「不定价」的那一行)。
 //      用户若真把家目录当项目打开,走披露面(基线 §五 子票 4),不靠放宽。
 //   5b. 排除与**应用状态根**(`<appData>/alpha-code-state`,三个 env 根与 CAS 的父目录)相关的候选:同一路径、
-//      在它之内、或包含它(`#1390`)。理由:候选来自 `opencode.global.dat`,而那份文件住在 W3 之下 —— **被围栏的
-//      引擎树自己写得了**。一条伪造的 draft 记录就能在下次启动把 `~/Library/Application Support` 放进可写集,
-//      围栏自己的状态从此可写。比较在 **realpath 之后**做(APFS 大小写不敏感,`~/LIBRARY/application support` 词法
-//      比不出来;软链同理);realpath 拿不到(ENOENT 等)退回词法比较,**不因此放行**。这只是第一步 —— 主目录下别的
-//      目录(`~/.ssh`、`~/Library/LaunchAgents`)仍能被同一手法点名,第二步(工作区清单搬出围栏可写处)另票。
+//      在它之内、或包含它(`#1390`)。比较在 **realpath 之后**做(APFS 大小写不敏感,`~/LIBRARY/application support` 词法
+//      比不出来;软链同理);realpath 拿不到(ENOENT 等)退回词法比较,**不因此放行**。这是 `#1390` 的第一步:候选那时还来自
+//      `opencode.global.dat`(W3 之下,**被围栏的引擎树自己写得了**),一条伪造的 draft 记录就能在下次启动把
+//      `~/Library/Application Support` 放进可写集。第二步(`#1394`,见 5c)把清单本身搬出了围栏可写处;本条留着做第二道闸 ——
+//      真源就算被写坏,状态根也进不来。
+//   5c. 候选**从哪来**(`#1394`):不再是 store,而是 `<appData>/alpha-code-state/fence-workspaces/<env>.json` —— 与三个 env 根、
+//      `cas/` 同级,不在任何可写根之下,只有 main 写(process-fence-workspaces.ts:首次启动从 store 播种一次,之后只经
+//      renderer → store-set IPC → main 更新;boot 时「store 里有、真源里没有」的目录本会话检疫,renderer 原样写回也进不了)。
+//      本函数只吃一个 `candidates` 列表,不知道也不该知道它从哪个文件来;`workspaceCandidatesFromStore` 留在本文件是给
+//      **写入侧**用的(真源里的顺序 = 它给出的顺序),planner 不再调它。
 //   6. 去重后取前 K = MAX_WORKSPACES(32)。本机真实读数 99 个 tab 收敛成 5 个目录(U2 §2.3),
 //      32 是 6 倍余量;它不是字节上限(那道墙在 65 535 字节且单位没有精确刻画),只是让试编译的
 //      循环有界、日志可读。字节上限由 trimUntilCompiles 用真编译器判(process-fence-compile.ts)。
@@ -218,7 +223,11 @@ export type WorkspaceUnionSources = {
 }
 
 export type WorkspaceUnionInput = {
-  sources: WorkspaceUnionSources
+  /**
+   * `#1394`:工作区候选(绝对路径,顺序即优先级 —— 裁剪从尾丢),由 planner 从围栏写不到的真源读来
+   * (process-fence-workspaces.ts);**不是** store 的三个键。规则 4 / 5 / 5b 仍逐条过。
+   */
+  candidates: readonly string[]
   /** `~/code-puppy`(alphaUserWorkspaceDir());调用方负责 ensureUserWorkspaceDir。 */
   defaultWorkspace: string
   homeDir: string
@@ -259,7 +268,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v)
 }
 
-/** 按 store 形状取出候选目录,保持「最近 → tab 栏顺序 → info 顺序」。 */
+/**
+ * 按 store 形状取出候选目录,保持「最近 → tab 栏顺序 → info 顺序」。
+ * `#1394` 起只有**写入侧**调它(process-fence-workspaces.ts 把 renderer 经 IPC 报上来的 tab 状态变成真源里的清单);
+ * planner 不再直接吃 store —— 那份文件在 W3 之下,被围栏的引擎树写得了。
+ */
 export function workspaceCandidatesFromStore(sources: WorkspaceUnionSources): string[] {
   const out: string[] = []
   const tabs = parseStoreValue(sources.tabs)
@@ -339,7 +352,7 @@ export function selectWorkspaceUnion(input: WorkspaceUnionInput): WorkspaceUnion
   const selected: string[] = []
   const excluded: WorkspaceExclusion[] = []
   const seen = new Set<string>()
-  const candidates = [input.defaultWorkspace, ...workspaceCandidatesFromStore(input.sources)]
+  const candidates = [input.defaultWorkspace, ...input.candidates]
   for (const raw of candidates) {
     if (typeof raw !== "string" || !isAbsolute(raw)) {
       excluded.push({ directory: String(raw), reason: "not an absolute path" })

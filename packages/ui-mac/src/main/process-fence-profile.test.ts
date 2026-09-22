@@ -209,7 +209,7 @@ describe("selectWorkspaceUnion —— 并集裁剪规则(K=32,顺序 = 默认工
   }
 
   test("顺序:默认工作区第一,recent 第二,然后 tab 栏的 draft,再 info 的 session;非本地引擎 / 不存在 / HOME 及其祖先 / 相对路径逐条排除并给理由", () => {
-    const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk, sources, defaultWorkspace: "/Users/alpha/code-puppy", homeDir: "/Users/alpha", isDirectory })
+    const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk, candidates: workspaceCandidatesFromStore(sources), defaultWorkspace: "/Users/alpha/code-puppy", homeDir: "/Users/alpha", isDirectory })
     expect(union.selected).toEqual([
       "/Users/alpha/code-puppy",
       "/Users/alpha/proj-recent",
@@ -234,7 +234,7 @@ describe("selectWorkspaceUnion —— 并集裁剪规则(K=32,顺序 = 默认工
       recent: { key: "draft:d" },
       info: { [sessionKey("x")]: { directory: "/Users/alpha/proj-a/" } },
     }
-    const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk, sources: dup, defaultWorkspace: "/Users/alpha/code-puppy", homeDir: "/Users/alpha", isDirectory })
+    const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk, candidates: workspaceCandidatesFromStore(dup), defaultWorkspace: "/Users/alpha/code-puppy", homeDir: "/Users/alpha", isDirectory })
     expect(union.selected).toEqual(["/Users/alpha/code-puppy", "/Users/alpha/proj-a"])
   })
 
@@ -242,7 +242,7 @@ describe("selectWorkspaceUnion —— 并集裁剪规则(K=32,顺序 = 默认工
     const many = Array.from({ length: MAX_WORKSPACES + 5 }, (_, i) => `/Users/alpha/many-${i}`)
     const isDir = (p: string) => p === "/Users/alpha/code-puppy" || many.includes(p)
     const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk,
-      sources: { tabs: many.map((d, i) => ({ type: "draft", draftID: `d${i}`, server: "sidecar", directory: d })), recent: undefined, info: undefined },
+      candidates: workspaceCandidatesFromStore({ tabs: many.map((d, i) => ({ type: "draft", draftID: `d${i}`, server: "sidecar", directory: d })), recent: undefined, info: undefined }),
       defaultWorkspace: "/Users/alpha/code-puppy",
       homeDir: "/Users/alpha",
       isDirectory: isDir,
@@ -254,7 +254,7 @@ describe("selectWorkspaceUnion —— 并集裁剪规则(K=32,顺序 = 默认工
 
   test("store 形状容错:非 JSON 字符串 / 非数组 tabs / 缺 info ⇒ 只剩默认工作区,不抛", () => {
     const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk,
-      sources: { tabs: "{not json", recent: 42, info: null },
+      candidates: workspaceCandidatesFromStore({ tabs: "{not json", recent: 42, info: null }),
       defaultWorkspace: "/Users/alpha/code-puppy",
       homeDir: "/Users/alpha",
       isDirectory,
@@ -264,14 +264,16 @@ describe("selectWorkspaceUnion —— 并集裁剪规则(K=32,顺序 = 默认工
   })
 
   test("默认工作区本身不是目录 ⇒ selected 为空(planner 据此拒绝 fork)", () => {
-    const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk, sources: { tabs: undefined, recent: undefined, info: undefined }, defaultWorkspace: "/Users/alpha/missing", homeDir: "/Users/alpha", isDirectory })
+    const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk, candidates: [], defaultWorkspace: "/Users/alpha/missing", homeDir: "/Users/alpha", isDirectory })
     expect(union.selected).toEqual([])
   })
 })
 
-// ── `#1390`:围栏的输入(opencode.global.dat 的三个 tab 键)住在围栏可写的 W3 里,所以被围栏的引擎树自己就能往里
+// ── `#1390`:围栏的输入当时是 opencode.global.dat 的三个 tab 键,住在围栏可写的 W3 里,所以被围栏的引擎树自己就能往里
 // 塞一条「最近打开的项目是 <appData>/alpha-code-state」,下一次启动它就进了可写集。这里钉住第一步:凡与应用状态根
 // 相关(同一路径 / 在它之内 / 包含它)的候选一律排除,而且先 realpath 再比 —— APFS 大小写不敏感,词法比较会漏。
+// `#1394` 把清单搬到了围栏写不到的真源之后,这条规则留作第二道闸:候选不管从哪来,状态根都进不来(候选形状经
+// workspaceCandidatesFromStore 造,与写入侧同一顺序)。
 // 期望值手写字面量;④ 用真盘 + 生产的 realpathSync.native,并带一个「不归一 ⇒ 洞」的对照臂先证明手段测得出已知的坏。
 describe("`#1390` selectWorkspaceUnion —— 与应用状态根相关的候选一律排除,先 realpath 再比", () => {
   const APP_SUPPORT = `${HOME}/Library/Application Support`
@@ -283,7 +285,7 @@ describe("`#1390` selectWorkspaceUnion —— 与应用状态根相关的候选�
   })
   const run = (directory: string, over: Partial<WorkspaceUnionInput> = {}) =>
     selectWorkspaceUnion({
-      sources: forged(directory),
+      candidates: workspaceCandidatesFromStore(forged(directory)),
       defaultWorkspace: `${HOME}/code-puppy`,
       homeDir: HOME,
       appStateRoot: STATE_ROOT,
@@ -344,7 +346,7 @@ describe("`#1390` selectWorkspaceUnion —— 与应用状态根相关的候选�
       }
       const identity = (p: string) => p
       const real = (directory: string, realpath: (p: string) => string) =>
-        selectWorkspaceUnion({ sources: forged(directory), defaultWorkspace: puppy, homeDir: home, appStateRoot: state, realpath, isDirectory: onDisk })
+        selectWorkspaceUnion({ candidates: workspaceCandidatesFromStore(forged(directory)), defaultWorkspace: puppy, homeDir: home, appStateRoot: state, realpath, isDirectory: onDisk })
 
       // 软链臂(任何平台都量得到)。对照:不归一 ⇒ 软链落进 selected —— 这就是洞;归一 ⇒ 排除,理由点名状态根并写出它解析到哪
       expect(real(link, identity).selected).toEqual([puppy, link])
@@ -369,14 +371,14 @@ describe("`#1390` selectWorkspaceUnion —— 与应用状态根相关的候选�
 
   test("⑤ 正样本:普通项目目录照常进 selected —— 状态根规则没有把正常工作区一起拒掉", () => {
     const union = selectWorkspaceUnion({
-      sources: {
+      candidates: workspaceCandidatesFromStore({
         tabs: [
           { type: "draft", draftID: "p", server: LOCAL_SIDECAR_SERVER_KEY, directory: `${HOME}/proj-a` },
           { type: "draft", draftID: "q", server: LOCAL_SIDECAR_SERVER_KEY, directory: `${HOME}/app/alpha-code` },
         ],
         recent: { key: "draft:p" },
         info: { "sidecar\n/session/s1": { directory: `${HOME}/Library/Mobile Documents/notes` } },
-      },
+      }),
       defaultWorkspace: `${HOME}/code-puppy`,
       homeDir: HOME,
       appStateRoot: STATE_ROOT,
@@ -449,7 +451,7 @@ describe("控制组:判据能测出已知的坏", () => {
   })
   test("放宽一行(HOME 整个进 subpath)⇒ 并集规则红", () => {
     const union = selectWorkspaceUnion({ appStateRoot: STATE_ROOT, realpath: noDisk,
-      sources: { tabs: [{ type: "draft", draftID: "d", server: "sidecar", directory: "/Users/alpha" }], recent: undefined, info: undefined },
+      candidates: workspaceCandidatesFromStore({ tabs: [{ type: "draft", draftID: "d", server: "sidecar", directory: "/Users/alpha" }], recent: undefined, info: undefined }),
       defaultWorkspace: join("/Users/alpha", "code-puppy"),
       homeDir: "/Users/alpha",
       isDirectory: () => true,
