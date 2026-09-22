@@ -67,3 +67,4 @@ review_after: 2027-01-16
 
 处置归 GitHub Issues,不写在本文件里。
 | 空回合行(跑完却零正文;安全审核作为可能原因,不断言) | `#empty-turn` | [`2026-09-11-req160-empty-turn-row/`](../../2026-09-11-req160-empty-turn-row/frame.html) | 2026-09-11 | ac#1318 · ac#1325 | 2026-09-11 | `session-timeline/timeline-model.ts`(`isEmptyUnknownTurn` 四条判据 + 投影)· `session-timeline-view.tsx`(`EmptyTurnRow`,复用中断行骨架)· `cards/timeline-intents.ts`(`focusPrompt`) | 已实现 |
+| 整轮运行指示(回合脚行:运行面 / 等你面,等你批准与等你回答共用) | `#turn-running` | [`2026-09-22-1399-turn-running-indicator/`](../../2026-09-22-1399-turn-running-indicator/frame.html) | 2026-09-22 | ac#1399 | — | 现状:`session-timeline-view.tsx`(`ThinkingRow`,仅首 part 前)· `timeline-model.ts`(`emitted === 0` 入列);整轮寿命的形态待实现,「正在思考」胶囊并入其运行面 | 待实现 |

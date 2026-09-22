@@ -527,3 +527,20 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
 .prov-warn{margin:9px 0 0;padding:9px 11px;border:1px solid color-mix(in srgb,var(--a-warning) 28%,var(--a-border));border-radius:var(--a-radius-md);background:var(--a-warning-subtle);color:var(--a-text-secondary);font-size:var(--a-text-xs)}
 .prov-matrix{margin-top:10px}
 @media(max-width:640px){.prov-stage{padding:12px}.prov-body,.prov-card summary,.prov-dev{padding-left:13px}.prov-matrix{display:block;overflow-x:auto}}
+
+/* ════════ 整轮运行指示 · 回合脚行(2026-09-22 已批增量,#turn-running) ════════ */
+/* 运行面:与 .interrupted 同族的安静行,12px 图标槽内 7px 脉冲点(顶栏 a-swk-status-pulse 同款 1.4s) */
+.turnfoot{display:flex;align-items:center;gap:8px;align-self:flex-start;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.turnfoot .mark{flex:none;width:12px;height:12px;display:grid;place-items:center}
+.turnfoot .live{width:7px;height:7px;border-radius:50%;background:var(--a-accent);animation:turnfoot-pulse 1.4s ease-in-out infinite}
+@keyframes turnfoot-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.turnfoot .lab{font-weight:var(--a-weight-medium)}
+.turnfoot .sep,.turnfoot-wait .sep{flex:none;width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)}
+.turnfoot .time{font-size:var(--a-text-xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+/* 等你面:与 .retry-card 同族的琥珀底小卡;零动效。等你批准 / 等你回答共用,只换文案 */
+.turnfoot-wait{display:inline-flex;align-items:center;gap:9px;align-self:flex-start;padding:8px 13px;background:var(--a-warning-subtle);border:1px solid color-mix(in srgb,var(--a-warning) 40%,transparent);border-radius:var(--a-radius-lg);font-size:var(--a-text-sm);color:var(--a-text)}
+.turnfoot-wait .pause{flex:none;width:12px;height:12px;fill:none;stroke:var(--a-warning);stroke-width:2.2;stroke-linecap:round}
+.turnfoot-wait b{font-weight:var(--a-weight-medium)}
+.turnfoot-wait>span{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.turnfoot-wait .hint{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+@media (prefers-reduced-motion:reduce){.turnfoot .live{animation:none}}

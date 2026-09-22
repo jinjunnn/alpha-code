@@ -18,7 +18,7 @@
   <div class="sec-kicker">P0 · 时间线全量重做</div>
   <h2 class="t">把整条时间线统一成一套克制、信息密度高的 alpha 卡片语言</h2>
   <p class="lede">本稿覆盖经真机 DOM 核对的 <b>全部 ~52 个构件</b>(取代旧稿只覆盖 1/3)。设计取向:开发者工具应当<strong>安静、可扫读、密而不噪</strong> —— 中性灰底 + 单一克制 indigo 强调,工具按类型着色,运动只用在状态变化的高价值瞬间。每块都标注了真机 <span class="mono">data-component/data-slot</span> 钩子 + 接缝 + 现状(<span class="badge-st done" style="margin:0">已优化</span> / <span class="badge-st part" style="margin:0">部分</span> / <span class="badge-st gap" style="margin:0">裸样式</span>),因此它也是落地 spec。</p>
-  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。<br><b>2026-08-09 已批增量</b>:③ 新增全来源来源徽标、安全通用降级与默认折叠开发者详情；未知 / 第三方工具严格 metadata-only。<br><b>2026-08-13 取代记录</b>:③ 节的内联 <span class="mono">.skill-chip</span> 帧(技能执行)被 2026-08-09 增量取代 —— 技能执行保持工具卡形态;帧保留并就地标注,<span class="mono">ac#585</span> 判被取代关票。</div>
+  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。<br><b>2026-08-09 已批增量</b>:③ 新增全来源来源徽标、安全通用降级与默认折叠开发者详情；未知 / 第三方工具严格 metadata-only。<br><b>2026-08-13 取代记录</b>:③ 节的内联 <span class="mono">.skill-chip</span> 帧(技能执行)被 2026-08-09 增量取代 —— 技能执行保持工具卡形态;帧保留并就地标注,<span class="mono">ac#585</span> 判被取代关票。<br><b>2026-09-22 已批增量</b>:② 新增<a href="#turn-running">整轮运行指示(回合脚行)</a>—— 活跃回合的最后一行,运行面 / 等你面(等你批准、等你回答共用)一槽两面;「正在思考」胶囊并入其运行面,帧保留并就地标注。</div>
 
   <!-- ════════════════ USER INPUT ════════════════ -->
   <div class="sec-kicker" id="user" style="margin-top:40px">① 用户输入侧</div>
@@ -70,7 +70,8 @@
   <h2 class="t">正文 / 表格 / 代码 / 脚注 / 思考 / 中断 — 一条都不回落裸样式</h2>
   <div class="frame"><div class="tl anim">
 
-    <!-- thinking -->
+    <!-- thinking —— 2026-09-22 已批增量:此胶囊并入「回合脚行」的运行面(见本节末 #turn-running);帧保留仅为可追溯 -->
+    <div class="note"><b>2026-09-22:下面这枚「正在思考」胶囊已并入回合脚行</b>。它只在首个 part 到达前存在,是一轮的第一格;<a href="#turn-running">整轮运行指示</a>把这一格连同其后的每一格接管 —— 首个字到达前显示的是脚行的运行面,不再是此胶囊。帧保留仅为可追溯。</div>
     <div class="thinking"><span class="lab">正在规划探查顺序</span><span class="dots"><i></i><i></i><i></i></span></div>
 
     <!-- reasoning collapsed -->
@@ -144,6 +145,29 @@
   <div class="note"><b>新帧 · 回合级错误卡</b>:助手回合末的<b>全宽错误行</b>(限流 / 接口报错 / 上下文超限三类场景),纯文本、无重试与换模型按钮。与 ③ 的「工具级错误卡」是两个组件:回合级 = 行模型的错误行,挂在回合末,只陈述事实与下一步;工具级 = 内嵌在具体工具卡里、带动作按钮。未知错误代码按原样 mono 展示(fail-closed,不猜翻译)。</div>
   <div class="note"><b>回合级错误卡的第四种场景 · 被本机出网策略拦下</b>:桌面端把引擎的出网强制经一道本机策略,不在允许名单里的目的地会被拒。此前这类失败在卡上只留下一串英文工程话(<span class="mono">Forbidden: alpha egress policy: …</span>),用户读不出是<b>自己这台电脑</b>拦的,于是去重试、去查自己的 Key、去怀疑供应商。<b>卡的形态一个像素不变</b> —— 同一个图标、同一个固定标题、同一段正文位、同一枚 mono 错误码、同样无动作按钮;换的只是正文那句话:说明是本机网络策略拦的、点出被拒的目的地、并明说再发一次没有用。目的地在句内以正文呈现(不另起 mono 元素),与本卡「纯文本」的既定形态一致。<b>只在策略真的说「不」时才这么说</b>:同一道策略还会因为「目的地登记了但连不上」而失败,那是真的网络故障,仍走上一帧的通用文案 —— 归因说错比不归因更坏,它会把人引去查放行名单。<b>不提供「临时放行这个地址」的入口</b>:那是把一个安全决定交给一次点击,需要单独裁。</div>
   <div class="note"><b>新帧 · 媒体预览行</b>:工具产出的图片 / 截图以「缩略图 + 文件名 + 尺寸元信息」成行,挂在产出它的助手回合内;点击 → 右栏「产物」面板聚焦该文件 —— 联动契约与产物链接行同一套(见 ⑥ 与 session-workspace 稿),此处只定行形态。</div>
+
+  <!-- 整轮运行指示 · 回合脚行(增量稿 2026-09-22-1399-turn-running-indicator,owner 2026-09-22 批准;帧 verbatim 引自增量稿,类名按活稿 CSS 改写) -->
+  <div class="label" id="turn-running">整轮运行指示 · 回合脚行(2026-09-22 已批增量)</div>
+  <div class="frame"><div class="tl anim">
+
+    <!-- 运行面:活跃回合的最后一行;模型在想 / 在写 / 在跑工具都不换字不换形 -->
+    <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明</div></div>
+    <div class="reason measure"><div class="reason-head"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9.5 2a4.5 4.5 0 0 0-4.3 5.8A4 4 0 0 0 6 15.5a4 4 0 0 0 7 1 4 4 0 0 0 7-1 4 4 0 0 0 .8-7.7A4.5 4.5 0 0 0 14.5 2 4.5 4.5 0 0 0 12 3.3 4.5 4.5 0 0 0 9.5 2z"/></svg><span class="lab" style="color:var(--a-accent)">正在思考…</span><svg class="ic sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+    <div class="turnfoot"><span class="mark" aria-hidden="true"><i class="live"></i></span><span class="lab" role="status">正在生成</span><span class="sep" aria-hidden="true"></span><span class="time" aria-hidden="true">0:41</span></div>
+
+    <!-- 等你面 · 等你批准:审批仍在独立弹窗;工具卡是静态「等待运行」灰 chip -->
+    <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明,然后提交</div></div>
+    <div class="row-ai measure"><div class="ai-md"><p>说明已写到 <code>AGENTS.md</code>,接下来提交这次改动。</p></div></div>
+    <div class="tc"><div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></span><div class="tc-tt"><b><span class="tgt">git commit -m "docs: agents"</span></b></div><span class="tc-st muted">等待运行</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+    <div class="turnfoot-wait"><svg class="pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><span role="status"><b>等待你的决定</b><span class="sep" aria-hidden="true"></span><span class="hint">生成已暂停,到审批窗口里选择</span></span></div>
+
+    <!-- 等你面 · 等你回答:提问卡停靠在输入框上方;同一副面孔,只换文案 -->
+    <div class="row-user"><div class="bubble">把这个仓的架构写成一页说明</div></div>
+    <div class="row-ai measure"><div class="ai-md"><p>有两种写法:按模块分层讲,或者顺着一次请求的路径走一遍。你更想看哪一种?</p></div></div>
+    <div class="turnfoot-wait"><svg class="pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><span role="status"><b>等你回答</b><span class="sep" aria-hidden="true"></span><span class="hint">生成已暂停,到输入框上方的提问卡回答</span></span></div>
+
+  </div></div>
+  <div class="note"><b>回合脚行 · 一槽两面</b>:活跃回合的<b>最后一行</b>,新到的正文 / 思考块 / 工具卡都插在它之前;随内容滚动,不悬浮。<b>运行面</b> = 与中断行同族的安静行:7px 强调色脉冲点(顶栏状态胶囊同一动效)+「正在生成」+ 从这条用户消息发出算起的计时 <span class="mono">m:ss</span>;首个字未到 / 正文流式 / 思考中未吐字 / 工具执行中 / 自动重试,<b>不换字不换形</b> —— 卡说这一步,脚行说这一轮。<b>等你面</b> = 与自动重试卡同族的琥珀底小卡:静止暂停符号 + 主句 + 去向,计时收起,无按钮;等你批准与等你回答<b>共用这一面,只有文案不同</b>。<b>消失</b>:回合到达任一结局的同一帧移除,该位置由结局接管(完成 → 回合脚注,脚行最后一格的计时即脚注里的时长;停止 → 中断行;出错 → 回合级错误卡;跑完零正文 → 空回合行);回合结束时仍在运行态的工具卡必须同帧收口。<b>无障碍</b>:文字部分 <span class="mono">role="status"</span>,整轮只在出现 / 轮到你 / 你动完手三个时刻改字;计时在 status 之外且 <span class="mono">aria-hidden</span>,减弱动效时脉冲静止、计时照走。钩子 <span class="mono">data-alpha-timeline-row="turn-running"</span> · <span class="mono">data-face="running"|"waiting"</span> · <span class="mono">data-wait="approval"|"question"</span>。增量稿与逐条理由:<a href="../../2026-09-22-1399-turn-running-indicator/design.md">2026-09-22-1399-turn-running-indicator/</a>。</div>
 
   <!-- ════════════════ TOOLS ════════════════ -->
   <div class="sec-kicker" id="tools" style="margin-top:40px">③ 工具卡:通用外壳 + 4 态</div>
@@ -496,6 +520,7 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
       <tr><td>行内代码评论(用户消息内)</td><td>① 用户输入侧(2026-07-23 补);右栏审查侧评论见 session-workspace 稿</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>消息导航(上一条 / 下一条跳转)</td><td>—(仅有「滚动到底」按钮,④ 节;上一条 / 下一条导航代码未接线)</td><td><span class="badge-st gap" style="margin:0">待补</span></td></tr>
       <tr><td>空态(会话内轻着陆)</td><td>④ 结构(2026-07-24 补);首页问候面归 composer 稿</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
+      <tr><td>整轮运行指示(回合脚行:运行面 / 等你面)</td><td>② 助手输出侧 · <a href="#turn-running">已批增量</a>(2026-09-22);「正在思考」胶囊并入其运行面</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
     </tbody>
   </table>
 
