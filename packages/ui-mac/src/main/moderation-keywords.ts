@@ -39,6 +39,11 @@ export type ModerationKeywordDeps = {
   /** 两次同步之间的间隔。表变得很少,渲染侧每次发送读的是本机快照,所以这里不必勤。 */
   refreshIntervalMs?: number
   requestTimeoutMs?: number
+  /**
+   * 排一次性定时器,返回取消它的函数。默认 `setTimeout` + `unref()`;测试用它注入假时钟,
+   * 因为 `start()` 的节奏本身就是判据(`#1387` AC3:失败之后不必等满一轮)。
+   */
+  setTimer?: (run: () => void, delayMs: number) => () => void
 }
 
 /** `refresh()` 的结论。`unavailable` = **没问出来**,与「问过了,是空表」(`updated` + 空数组)相反。 */
@@ -55,12 +60,26 @@ export type ModerationKeywordStore = {
 }
 
 const DEFAULT_REFRESH_INTERVAL_MS = 15 * 60_000
+/**
+ * 一次「没问出来」之后的重试间隔(`#1387` AC3)。常规周期是 15 分钟 —— 冷启动那次同步跑在令牌
+ * 到位**之前**并放弃后,照常规周期就是整整一刻钟没有表(实测:用户在启动后第 36 秒发出消息,
+ * 本机零拦截)。恒 ≤ `intervalMs`(它的下限是 60 秒),所以「失败后更快再试」这条不会被配置反转。
+ */
+const RETRY_INTERVAL_MS = 60_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 const noopLog: ModerationKeywordLog = { info: () => {}, warn: () => {} }
+
+function defaultSetTimer(run: () => void, delayMs: number): () => void {
+  const handle = setTimeout(run, delayMs)
+  // 这条定时器不该把进程钉活;Electron 主进程退出时它没有任何要保存的东西。
+  ;(handle as unknown as { unref?: () => void }).unref?.()
+  return () => clearTimeout(handle)
+}
 
 export function createModerationKeywordStore(deps: ModerationKeywordDeps): ModerationKeywordStore {
   const doFetch = deps.fetch ?? fetch
   const log = deps.log ?? noopLog
+  const setTimer = deps.setTimer ?? defaultSetTimer
   const intervalMs = Math.max(60_000, deps.refreshIntervalMs ?? DEFAULT_REFRESH_INTERVAL_MS)
   const timeoutMs = deps.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
 
@@ -68,6 +87,8 @@ export function createModerationKeywordStore(deps: ModerationKeywordDeps): Moder
   let etag: string | undefined
   /** 同一时刻只允许一次在途同步:定时器与启动那次会叠在一起。 */
   let inFlight: Promise<ModerationRefreshOutcome> | undefined
+  /** 上一次「没问出来」的原因;同一个原因只说一次。 */
+  let unavailableReason: string | undefined
 
   function forget(why: string) {
     if (keywords === undefined && etag === undefined) return
@@ -76,12 +97,32 @@ export function createModerationKeywordStore(deps: ModerationKeywordDeps): Moder
     log.info("moderation: keyword list dropped", { why })
   }
 
+  /**
+   * 「没问出来」的唯一出口。**每一条路径都要留下一行**(`#1387` AC2):没令牌与 401 这两条原本
+   * 静默退出,于是「这道拦截整段时间是空的」在日志里与「拦了但没命中」长得一模一样 ——
+   * 出事那次的日志里连一个 `moderation:` 字样都没有,没人、没有监控看得出来。
+   *
+   * 但同一个原因只说一次:失败会按 60 秒重试,而未登录的人**一直**没令牌,不折叠就是每分钟刷屏。
+   * 同步一旦成功就把记忆清掉,下一次失败照样开口。
+   */
+  function noteUnavailable(reason: string, message: string, meta?: unknown): ModerationRefreshOutcome {
+    if (unavailableReason !== reason) {
+      unavailableReason = reason
+      log.warn(message, meta)
+    }
+    return "unavailable"
+  }
+
   async function fetchOnce(): Promise<ModerationRefreshOutcome> {
     const token = deps.token()
     if (!token) {
-      // 未登录:不问,也不继续拿着上一位登录者同步下来的表。
+      // 未登录、或持久令牌已过期(`getArchiveAccessToken` 对过期令牌返回 undefined):不问,
+      // 也不继续拿着上一位登录者同步下来的表。冷启动那 0.4 秒正落在这条路上 —— 所以它不能静默,
+      // 而且醒来的路子是 auth 变更时的那一 kick(`notifyModerationAuthChanged`),不是等下一周期。
       forget("no archive_access token")
-      return "unavailable"
+      return noteUnavailable("no-token", "moderation: keyword list unavailable", {
+        reason: "no archive_access token",
+      })
     }
     const base = deps.webBase().replace(/\/$/, "")
     const url = `${base}${ALPHA_PATHS.chatArchiveKeywords}`
@@ -97,29 +138,33 @@ export function createModerationKeywordStore(deps: ModerationKeywordDeps): Moder
         },
         signal: controller.signal,
       })
-      if (response.status === 304 && keywords) return "unchanged"
+      if (response.status === 304 && keywords) {
+        unavailableReason = undefined
+        return "unchanged"
+      }
       if (response.status === 401) {
         forget("401 unauthorized")
-        return "unavailable"
+        return noteUnavailable("401", "moderation: keyword list unavailable", { reason: "401 unauthorized" })
       }
       if (!response.ok) {
         // 503 `keywords_unavailable` 走这里:服务不可用不等于表是空的,手里那份留着。
-        log.warn("moderation: keyword sync refused", { status: response.status })
-        return "unavailable"
+        return noteUnavailable(`status:${response.status}`, "moderation: keyword sync refused", {
+          status: response.status,
+        })
       }
       const parsed = parseKeywordPayload(await response.json().catch(() => undefined))
       if (!parsed) {
         // 形状不合 = 没问出来。**不**把它当成空表 —— 那会静默关掉本机这一层。
-        log.warn("moderation: keyword payload unreadable")
-        return "unavailable"
+        return noteUnavailable("payload", "moderation: keyword payload unreadable")
       }
       keywords = parsed
       etag = response.headers.get("etag") ?? undefined
+      unavailableReason = undefined
       log.info("moderation: keyword list synced", { count: parsed.length })
       return "updated"
     } catch (error) {
-      log.warn("moderation: keyword sync failed", error instanceof Error ? error.message : error)
-      return "unavailable"
+      const detail = error instanceof Error ? error.message : error
+      return noteUnavailable(`error:${String(detail)}`, "moderation: keyword sync failed", detail)
     } finally {
       clearTimeout(killer)
     }
@@ -147,11 +192,23 @@ export function createModerationKeywordStore(deps: ModerationKeywordDeps): Moder
     },
     refresh,
     start: () => {
-      void refresh()
-      const timer = setInterval(() => void refresh(), intervalMs)
-      // 这条定时器不该把进程钉活;Electron 主进程退出时它没有任何要保存的东西。
-      ;(timer as unknown as { unref?: () => void }).unref?.()
-      return () => clearInterval(timer)
+      // 一次性定时器自续,而不是固定周期的 `setInterval` —— 因为周期本身要随上一次的结论变:
+      // 「没问出来」之后 60 秒再试,问到了才回到常规周期(`#1387` AC3)。
+      let stopped = false
+      let cancel: (() => void) | undefined
+      const arm = (delayMs: number) => {
+        if (stopped) return
+        cancel = setTimer(() => void tick(), delayMs)
+      }
+      const tick = async () => {
+        const outcome = await refresh().catch(() => "unavailable" as const)
+        arm(outcome === "unavailable" ? RETRY_INTERVAL_MS : intervalMs)
+      }
+      void tick()
+      return () => {
+        stopped = true
+        cancel?.()
+      }
     },
   }
 }
@@ -179,6 +236,21 @@ export const MODERATION_BLOCKED_REASON = "没有通过内容安全审核"
 /** 主进程侧的唯一查询点。表不在、没初始化、或匹配本身抛了 ⇒ `false`。 */
 export function moderationBlocks(text: string): boolean {
   return active?.blocks(text) ?? false
+}
+
+/**
+ * 「令牌可能到位了」—— auth 一变就同步一次(`#1387` AC1)。
+ *
+ * 冷启动那一次同步跑在令牌到位**之前**:实测 `app starting` 07:29:51.180、
+ * `alpha-auth: tokens refreshed` 07:29:51.625,词表那唯一一次尝试落在这 0.4 秒里,拿到
+ * `undefined` 就放弃,然后按 15 分钟睡过去 —— 用户在第 36 秒发出「澳门赌场」,本机零拦截。
+ * 接住 auth 变更这个事件,比把周期调短对得多:后者只是把 15 分钟的洞换成小一点的洞。
+ *
+ * 未初始化 ⇒ no-op(与 `moderationBlocks` 同源)。`refresh()` 自带在途合流,auth 每次 publish
+ * 都调一次是安全的,而且它自己不打日志 —— 常态下换回的是 304,一行都不写。
+ */
+export function notifyModerationAuthChanged(): void {
+  void active?.refresh().catch(() => {})
 }
 
 /** 测试用:把单例摘掉,避免跨用例串味。 */
