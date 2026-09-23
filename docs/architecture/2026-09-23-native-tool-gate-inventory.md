@@ -121,12 +121,12 @@ HIDDEN_BY_PERMISSION []
 | 6 | `todowrite` | 是 | **能用** | 无 | 否 | — | 判据实测(零闸命中) |
 | 7 | `skill` | 是 | **能用**(范围被收窄) | 注册闸:`OPENCODE_DISABLE_EXTERNAL_SKILLS=1` 出厂默认(`ecosystem-import.ts:30`) | 否 | 外部 `.claude`/`.agents` 技能不出现 | 读码 + 默认值实测 |
 | 8 | `invalid` | 是 | **能用**(它本身是兜底) | 无 | 否 | — | 判据实测 |
-| 9 | `task` | 是 | **未测** | 继承子 agent 的全部闸 | 否(自身);子工具各自算 | — | 整回合未跑 |
-| 10 | `question` | 是 | **未测** | 注册闸(`client ∈ {app,cli,desktop}`,桌面满足) | 否 | 渲染与应答链本轮未跑 | 注册面实测,呈现面未测 |
+| 9 | `task` | 是 | **能用** | 继承:进程围栏 / 出网围栏(**进程级**,子会话同吃)+ 子会话 ruleset(父的 `deny` 与 `external_directory`)+ 子 agent 自己的 ruleset;嵌套另有 `subagent_depth` 一道 | 否(自身);子工具各自算 | 子 agent 的结论以 `<task_result>` 回到父会话 | **本轮实测 §2.4 A**(整回合 4 轮 LLM,子 agent 真跑了 `glob`) |
+| 10 | `question` | 是 | **能用** | 注册闸(`client ∈ {app,cli,desktop}`,桌面满足);**子 agent 拿不到**(`agent.ts:124` 默认 `question: deny`,只有 `build`/`plan` 放开) | 否 | 卡片渲染出选项;答完模型拿到 `User has answered your questions: …` | **本轮实测 §2.4 B**(引擎 → SSE → reducer → 真 DOM → 回传,全链) |
 | 11 | **`bash`** | 是 | **部分不能用** | **出网围栏**(网络那一面恒拒);进程围栏(写盘) | **是 —— 命令与目的地全由模型即时生成** | `curl: (56) CONNECT tunnel failed, response 403` | **本轮实测 §4.2** |
 | 12 | **`webfetch`** | 是 | **不能用** | **出网围栏** | **是 —— URL 就是模型的入参** | `Transport error (GET <url>)` | `#1412` 现场 10/10 + 本轮复验 |
 | 13 | **`websearch`** | 是(登出/BYOK 态) | **不能用** | 登出/BYOK:**出网围栏**;登录代付:**主权闸**(有意关) | 否 —— 目的地是**常量** | 推导:同 `webfetch` 的 undici 形态 | 目的地判据本轮实测;模型面文案未跑 |
-| 14 | `apply_patch` | 否(默认) | **未测** | 注册闸:模型 id 含 `gpt-` 且不含 `oss`/`gpt-4`(`registry.ts:340-343`) | 路径,是 —— 有真源 | 模型 id 不匹配时工具不存在 | 过滤实测;**本机无任何 `gpt-` 模型可选,能否走到未测** |
+| 14 | `apply_patch` | 选到 `gpt-` 模型时:是 | **能用** | 注册闸:模型 id 含 `gpt-` 且不含 `oss`/`gpt-4`(`registry.ts:340-343`);与 `edit`/`write` **互斥** | 路径,是 —— 有真源 | 不匹配时工具不存在,模型收到 `Model tried to call unavailable tool …` | **本轮实测 §2.4 C**(10 行模型 id 矩阵 + 整回合真打补丁落盘) |
 | 15 | `lsp` | 否 | **不能用**(出厂) | 注册闸:`experimentalLspTool`(需 `OPENCODE_EXPERIMENTAL`) | 否 | 工具不存在 | 本轮实测 §4.1 |
 | 16 | `execute`(code-mode) | 否 | **不能用**(出厂) | 注册闸:`experimentalCodeMode`;**且**开了之后无 MCP 工具时仍被 `registry.ts:351` 滤掉 | 否 | 工具不存在 | 本轮实测 §4.1 |
 | 17 | **`plan_exit`** | 否 | **不能用**(出厂;**谁都不给**) | 注册闸:`registry.ts:273` 是**两个**条件 —— `flags.experimentalPlanMode && flags.client === "cli"` | 否 | 工具不存在;开 umbrella 也进不来 | 本轮实测 §4.1;**条件与判定经 `#1417` 四臂订正,见 §2.3** |
@@ -157,6 +157,233 @@ plan 档 `edit` 实测 `deny`,所以「绕过去直接改东西」也做不到�
 表里任何一行的「挡它的那一道」如果是复合条件,**把条件写全**,否则下一个人会照着
 半个条件设计修法 —— `#1417` 就是这么开出来又关掉的。
 
+### 2.4 三格「未测」的填实(2026-09-23,`#1418`)
+
+初版第 9 / 10 / 14 行是 `未测`。本节把三格各跑成实测并各带反向臂,判定已回填进上表,
+§2.2 的「未测」一列因此归零。**探针同样不进 `main`**(理由同 §8),落点与复现在 §7 ④。
+
+共用的口径:隔离照 §0(`ALPHA_GLOBAL_DIR` / `XDG_*` / `ALPHA_OPENCODE_HOME` / `userDataPath`
+全钉进 `mkdtemp`,没起过打包实例,没写过 owner 的任何配置);模型脑子是
+`test/lib/llm-server.ts` 的 `TestLLMServer`(真 OpenAI 兼容 SSE 服务,发真的 `tool_calls`),
+其余每一跳都是生产件。
+
+#### A. `task` —— **能用**(整回合走通)
+
+仓内既有的 `test/tool/task.test.ts` 把 `promptOps` 换成桩 ⇒ 它测不到「子 agent 真的跑完一轮」。
+本轮改用真 `SessionPrompt`:一条回合 **4 轮 LLM(父 2 / 子 2)**,父发 `task` → 引擎真建子会话
+→ 子 agent 自己发 `glob` → 子 agent 收尾 → 结果回到父的 tool part → 父的第二轮请求体里带着它。
+
+```
+CHILDREN:      [{"id":"ses_f32183df7ffe…","agent":"general","title":"找标记文件 (@general subagent)"}]
+CHILD RULESET: [{"permission":"webfetch","pattern":"*","action":"deny"},
+                {"permission":"external_directory","pattern":"/tmp/allowed/*","action":"allow"},
+                {"permission":"task","pattern":"*","action":"deny"}]
+CHILD TOOL PARTS: glob:completed            ← 子 agent 真跑了一个真子工具,output 含 alpha1418.marker
+TASK PART STATE:  completed
+TASK PART OUTPUT: <task id="ses_f32183df7ffe…" state="completed">
+                  <task_result>SUBAGENT_DONE_1418</task_result></task>
+LLM TURNS: 4     PARENT TURNS: 2     SUB TURNS: 2
+父第 2 轮请求体含 "SUBAGENT_DONE_1418" ⇒ 回合闭合
+```
+
+**子工具继承了哪些闸**(这是本行第 5 列的真正答案):
+
+| 闸 | 作用范围 | 子 agent 是否继承 | 依据 |
+| --- | --- | --- | --- |
+| 进程围栏(seatbelt) | **进程级** —— `sidecar.ts:196` 对 sidecar 本体 `sandbox_init` 一次 | **必然继承**,连它起的子进程一起 | 读码 + macOS sandbox 语义 |
+| 出网围栏(策略代理) | **进程级** —— 代理地址由 `sidecar-env.ts` 注入整个 sidecar 环境 | **必然继承** | 同上 |
+| 会话 ruleset | **按会话算** —— 父的 `deny` 规则 + `external_directory` 规则继承;父的 `allow` 规则**不**继承 | 见上面实测的三条 | `subagent-permissions.ts:14-26` |
+| 子 agent 自己的 ruleset | 与上者合并 | `general` 自带 `todowrite: deny`;`defaults` 自带 `question: deny` | `agent.ts:119-124,182-190` |
+| 注册闸的模型 id 那一格 | **按子 agent 自己的模型算**(`task.ts:180` `next.model ?? 父消息的 model`) | 见下面的跨格臂 | 本轮实测 |
+
+实测的两张工具表(同一回合内父与子拿到的 `tools` 数组):
+
+```
+PARENT TOOLS: ["bash","edit","glob","grep","question","read","skill","task","todowrite","write"]
+SUB TOOLS:    ["bash","edit","glob","grep",           "read","skill",                  "write"]
+              ↑ 子 agent 手里没有 task / todowrite / question
+```
+
+**跨格(同时钉住第 14 行)**:把 `general` 的模型配成 `test/gpt-5.4-mini`、父仍用
+`deepseek-v4-flash`,同一回合里两张表分岔 ——
+
+```
+CROSS parent model: deepseek-v4-flash  tools: [... "edit" ... "write" ...]  无 apply_patch
+CROSS sub    model: gpt-5.4-mini       tools: ["apply_patch","bash","glob","grep","read","skill","webfetch"]
+```
+
+⇒ **`apply_patch` 的模型闸会顺着 `task` 传到子会话**;「父用什么模型」决定不了子 agent 的工具表。
+
+**反向臂**(证明这套测量测得出已知的坏):
+
+| 臂 | 期望 | 实测 |
+| --- | --- | --- |
+| `subagent_type` 写成不存在的名字 | task 红、且不建子会话 | `error: Unknown agent type: no-such-agent-1418 is not a valid agent type`;children = 0 ✅ |
+| 子 agent 自己再发 `task` | 无孙会话 | 子会话手里**根本没有** `task` 这个工具,调用落到 `invalid` 兜底;grandchildren = 0 ✅ |
+| 父的 `*:* allow` | **不**得出现在子 ruleset 里 | 不在 ✅ |
+
+**嵌套是两层挡的,不是一层** —— 这一点靠变异实验才分得开。把
+`subagent-permissions.ts` 与 `task.ts` 里加 `task deny` 的两处一起摘掉后重跑:
+子会话 ruleset 少了那条(测试当场红 ✅),`task` 工具出现在子 agent 表里、调用真的发了出去,
+**然后撞上第二道**:`task.ts:110-116` 的 `subagent_depth` 默认 1 ⇒
+`Subagent depth limit reached (1). Increase "subagent_depth"`,grandchildren 仍是 0。
+⇒ 「无孙会话」这条观察**不能**单独当作「继承的 deny 生效」的证据(两个原因都能产生它);
+能区分的是子会话 ruleset 那一条断言。还原后 4 pass / 0 fail。
+
+一处**与注释不符、以实测为准**的细节:`subagent-permissions.ts` 的注释说会补 `todowrite` 与
+`task` 两条 deny,实测子 ruleset 里**只有 `task`** —— 因为 `general` 自己的 ruleset 已经写了
+`todowrite: "deny"`(`agent.ts:186-188`)⇒ `canTodo` 为真、会话级不再补。结果相同(子 agent
+表里照样没有 `todowrite`),**机制不同**。
+
+#### B. `question` —— **能用**(呈现与应答链全链走通)
+
+初版只测到注册面。本轮把**整条链**跑了一遍,每一跳都是生产件,两半用**同一份实拍字节**接上:
+
+```
+模型发 tool_calls(question)
+  → 真 QuestionTool → 真 Question.Service.ask → 真 EventV2Bridge
+  → 真 SSE /global/event                                   ← 桌面端 v1 分支订阅的那一条
+  → 真 createServerSession(...).apply(payload)             ← packages/app 的生产 reducer
+  → 真 headPendingQuestion 投影                            ← session-composer-dock.tsx:129
+  → 真 SessionQuestionCard 挂在真 happy-dom + 真 Solid dom 构建上
+  → 点选项、点「提交回答」→ 真 client.question.reply
+  → 真 POST /question/:requestID/reply → Deferred 解开
+  → 工具输出回到模型的下一轮请求体
+```
+
+关键实测(引擎半场):
+
+```
+GLOBAL HEALTH: 200 {"healthy":true,"version":"local"}   ⇒ detectServerProtocol = v1
+DESKTOP PROTOCOL BRANCH: v1                              ⇒ 走 sdk.global.event(),事件带 payload ⇒ 原样用,
+                                                            **不过** adaptServerEvent
+/global/event 上的那一帧:
+  {"directory":"…","project":"…","payload":{"id":"evt_…","type":"question.asked",
+   "properties":{"id":"que_…","sessionID":"ses_…","questions":[…],"tool":{"messageID":"msg_…","callID":"call_1"}}}}
+GET /question 列表:同一条请求可见(桌面端 bootstrap.ts:483 的读法)
+REPLY STATUS: 200
+QUESTION TOOL OUTPUT: User has answered your questions: "用哪条路?"="B 方案",
+                      "还要带上什么?"="测试, 文档". You can now continue with the user's answers in mind.
+第 2 轮请求体含 "B 方案" 与 "测试, 文档"  ⇒ 答案真的回到了模型
+```
+
+**wire 上的事件名是 `question.asked`,不是 `question.v2.asked`。**
+`server-sdk.tsx:50` 的 `question.v2.asked` 分支是 v2 协议那条路的;v1 帧带 `payload` ⇒
+`server-sdk.tsx:283` 的 `legacy` 判定为真 ⇒ `payload` 原样送进 reducer,`server-session.ts:1263`
+的 `case "question.asked"` 正好对上。**两条路都通,但今天走的是后者** —— 这一格初版没分开写。
+
+渲染半场(真 DOM,喂的是上面那帧实拍字节):
+
+```
+REDUCER STORED:  [ …同一条 QuestionRequest… ]            ← 生产 reducer 真把它写进了 data.question
+RENDERED QUESTIONS: ["用哪条路?","还要带上什么?"]
+GROUP ROLES:        ["radiogroup","group"]               ← 与 wire 上的 multiple 字段一一对应
+SDK CALLS: [{"kind":"reply","args":{"requestID":"que_…","directory":"/tmp/workspace-1418",
+             "answers":[["B 方案"],["测试","文档"]]}}]
+```
+
+**反向臂:**
+
+| 臂 | 期望 | 实测 |
+| --- | --- | --- |
+| 喂 reducer 之前 `data.question[sessionID]` | 必须是空的 | `undefined` ✅(否则「有」证明不了是这一条喂进去的) |
+| 再喂一条 `question.replied` | 从待答表摘掉 | 长度 0 ✅ |
+| 没答完就点提交 | 按钮禁用、零调用 | `SUBMIT DISABLED (unanswered/half)=true`,calls = 0 ✅ |
+| 格式合法但账本里没有的 `requestID` | 非 200 | `404 QuestionNotFoundError` ✅ |
+| **同一个 `requestID` 答第二次** | 非 200 | 答前 `200`,答后 `404` ✅ ← 同一条命令两个结果,这是最强的那条臂 |
+| 用户驳回(`reject`) | 模型侧拿到 error,不是静默成功 | tool part `error: The user dismissed this question` ✅ |
+| 4xx 信封(`throwOnError:false` 档位) | 卡片显红 | `.a-swk-question-error` 出现,`role=alert`,文案「回答提交失败,请重试」✅ |
+| 身份不匹配 / 通道缺席 | 一次调用都不发 | calls = 0 ✅ |
+| `client` 由 `desktop` 改 `tui` | 工具从表里消失 | 消失 ✅(与 §1.3 同一条自变量臂) |
+
+**子 agent 拿不到 `question`**:`defaults` 里是 `question: "deny"`(`agent.ts:124`),只有
+`build` 与 `plan` 两个 primary agent 放开 ⇒ 上面 A 段的 `SUB TOOLS` 里没有它。这不是缺陷,
+是设计:子 agent 问不了人。
+
+#### C. `apply_patch` —— **能用**(选到 `gpt-` 模型时),但**「用户选得到」要分情况**
+
+注册闸矩阵(真 `ToolRegistry`,出货桌面端 flags,10 行,每行期望写死):
+
+```
+MODEL gpt-5.4-mini       apply_patch=true  edit=false write=false
+MODEL gpt-5.4-nano       apply_patch=true  edit=false write=false
+MODEL gpt-5.4            apply_patch=true  edit=false write=false
+MODEL gpt-5              apply_patch=true  edit=false write=false
+MODEL gpt-4.1            apply_patch=false edit=true  write=true    ← 反向臂(含 gpt-4)
+MODEL gpt-4o             apply_patch=false edit=true  write=true    ← 反向臂
+MODEL gpt-oss-120b       apply_patch=false edit=true  write=true    ← 反向臂(含 oss)
+MODEL deepseek-v4-flash  apply_patch=false edit=true  write=true    ← 反向臂
+MODEL claude-opus-4.8    apply_patch=false edit=true  write=true    ← 反向臂
+MODEL qwen3.7-max        apply_patch=false edit=true  write=true    ← 反向臂
+```
+
+整回合真打补丁(模型 id = `gpt-5.4-mini`,真 HttpApi + 真 SDK + 真回合):
+
+```
+TOOLS CALLED: apply_patch:completed
+PATCH OUTPUT: Success. Updated the following files: A added.txt / M modify.txt
+DISK modify.txt: "line1\nchanged-by-apply-patch\n"   added.txt: "created-by-apply-patch\n"
+                 ↑ 判据是**盘上的字节**,不是工具自报的 output
+ADVERTISED TO MODEL: ["apply_patch","bash","glob","grep","question","read","skill","task","todowrite","webfetch"]
+第 2 轮请求体含 "Success. Updated the following files"  ⇒ 结果回到了模型
+```
+
+**反向臂:**
+
+| 臂 | 期望 | 实测 |
+| --- | --- | --- |
+| 同一回合里模型改叫 `edit`(gpt- 模型下) | 工具不存在、盘上不动 | 落到 `invalid`;文件一字未动 ✅ |
+| `deepseek-v4-flash` 下模型叫 `apply_patch` | 同上 | 落到 `invalid`;文件一字未动 ✅ |
+
+模型看到的原文(补上表第 7 列):
+
+```
+The arguments provided to the tool are invalid: Model tried to call unavailable tool 'edit'.
+Available tools: apply_patch, bash, glob, grep, invalid, question, read, skill, task, todowrite, webfetch.
+```
+
+**「用户选得到 `gpt-` 模型吗」—— 这一句要分三条路说,票面的前提只对其中两条。**
+`#1418` 票面写的是「平台侧 `gpt-5.4-mini` / `gpt-5.4-nano` 都是 serving,用户选得到」。
+本轮实读平台目录与生产装配函数,结论要收窄:
+
+```
+GET https://alpha-gateway.tidelabs.click/v1/models   (无 token,2026-09-23)
+  → 200,edition="cn",6 个模型:deepseek-v4-flash / deepseek-v4-pro / glm-5.2 /
+     glm-5-turbo / qwen3.7-max / qwen3.7-plus      ← **一个 gpt- 都没有**
+
+生产装配(projectPlatformModels / getEffectiveCatalog):
+  快照 = 这份 cn 目录  → picker 平台段 = 这 6 个        → gpt- 命中 []
+  快照 = null(未同步)→ picker 平台段 = 内置 12 个静态  → gpt- 命中 ["gpt-5.4-mini","gpt-5.4-nano"]
+  快照里塞进 gpt-5.4-mini(= intl 版 / 平台放开) → 立刻回到 picker ✅ ← 反向臂
+```
+
+三条路:
+
+| 路 | 今天选得到 `gpt-` 吗 | 依据 |
+| --- | --- | --- |
+| 平台代付(cn 版、已成功同步目录) | **选不到** | 上面的 `/v1/models` 实测 |
+| 平台段的 static 回退(首启尚未成功同步 / 拉取失败且从未成功过) | **选得到** `gpt-5.4-mini` `gpt-5.4-nano` | `alpha-models.json` 的 `platformModels` 实读 + `projectPlatformModels(local, null)` 实跑 |
+| BYOK / 自定义 provider(openai 兼容,模型 id 用户自己写) | **选得到** | 本节整回合那一格就是这条路(`provider: test`,`npm: @ai-sdk/openai-compatible`) |
+
+⇒ **这工具到得了用户,不是空集合**(票面这一句成立),但**「因为平台 serving 所以选得到」那半句今天对 cn 版不成立**。
+**intl 版(带登录 token 的租户目录)本轮没测** —— 没有可用凭据,不猜。
+
+顺带订正 §6 的一句:初版写「本机缓存与出货资源里**零个** `gpt-` 模型 id」——
+**出货资源里有**:`packages/ui-mac/src/main/alpha-models.json` 的 `platformModels` 逐字含
+`gpt-5.4-mini` 与 `gpt-5.4-nano`(实读)。
+
+
+#### D. 手段自证:三次变异实验(证明这些探针测得出已知的坏)
+
+空输出与「跑过了都绿」不是结论。三次故意改坏生产代码、跑同一条命令、再还原
+(每次动手前 `git status --porcelain --untracked-files=no` 为空,还原后复跑确认回绿):
+
+| 改坏哪里 | 期望 | 实测 |
+| --- | --- | --- |
+| `registry.ts:341` 的 `includes("gpt-")` 改成 `includes("zzz-")` | 注册矩阵与整回合一起红 | 6 pass / 0 fail → **3 pass / 3 fail**;还原后 6 pass / 0 fail ✅ |
+| `question/index.ts` 里 `events.publish(Event.Asked, info)` 注释掉 | 提问链在等 SSE 那一步红 | 2 pass / 0 fail → **1 pass / 1 fail**(`timed out waiting for a question event on SSE`);还原后 2 pass / 0 fail ✅ |
+| `subagent-permissions.ts` + `task.ts` 里加 `task deny` 的两处一起摘掉 | 子会话 ruleset 那条断言红 | 4 pass / 0 fail → **3 pass / 1 fail**;还原后 4 pass / 0 fail ✅ |
+
 ### 2.1 非原生但同在这张墙上的(不计入上表计数)
 
 | 类 | 目的地 | 判定 | 依据 |
@@ -170,10 +397,11 @@ plan 档 `edit` 实测 `deny`,所以「绕过去直接改东西」也做不到�
 
 按 §2 的 17 个原生工具计:
 
-- **能用 = 8**(`read` `glob` `grep` `edit` `write` `todowrite` `skill` `invalid`)
+- **能用 = 11**(`read` `glob` `grep` `edit` `write` `todowrite` `skill` `invalid` `task` `question` `apply_patch`)
+  —— 后三个由 `#1418` 填实,见 §2.4;`apply_patch` 与 `edit`/`write` 互斥,同一回合里只会有一边在表上。
 - **不能用 = 5,外加 1 个部分不能用 = 6**(`webfetch` `websearch` `lsp` `execute` `plan_exit`;
   `bash` 是部分 —— 本地命令能跑,凡是要连非注册目的地的命令恒拒)
-- **未测 = 3**(`task` `question` `apply_patch`)
+- **未测 = 0**(2026-09-23 `#1418` 起;在此之前是 `task` `question` `apply_patch` 三格)
 
 **「不能用 / 部分不能用」这 6 个里,属于「资源由模型临时生成」那一类的是 2 个:`webfetch` 与 `bash` 的出网面。**
 其余 4 个各有一个**存在的真源或开关**(常量端点、实验 flag、client 类型),不是同构问题。
@@ -320,9 +548,12 @@ mcp ids: ['alpha-excel', 'alpha-pdf', 'alpha-powerpoint', 'alpha-word']
 - **`websearch` 失败时模型看到的文案**。目的地被拒是实测的;模型面文本是**推导** ——
   传输是 node/undici(与 `webfetch` 同一条),`#1412` §4.1 已实测 undici 丢弃 CONNECT 403 的正文,
   故推断 `websearch` 同样拿不到那 292 字节的解释。**未跑,不要引用为实测。**
-- **`task` 的整回合**、**`question` 的渲染与应答链**。
-- **`apply_patch` 能不能真被选到**:本机缓存与出货资源里**零个** `gpt-` 模型 id,
-  而模型目录是运行时从平台取的。判据已给出(`registry.ts:340-343`),一条命令就能定性。
+- ~~**`task` 的整回合**、**`question` 的渲染与应答链**、**`apply_patch` 能不能真被选到**~~
+  —— 三格已由 `#1418` 填实,见 §2.4。原文那句「本机缓存与出货资源里**零个** `gpt-` 模型 id」
+  **是错的**:`packages/ui-mac/src/main/alpha-models.json` 的 `platformModels` 逐字含
+  `gpt-5.4-mini` 与 `gpt-5.4-nano`(实读)。
+- **`#1418` 之后仍未测的**:平台 **intl 版**目录里有没有 `gpt-`(需要带登录 token 的租户目录,
+  本轮无可用凭据);`question` / `task` / `apply_patch` 在**打包实例**上的表现(同下一条)。
 - **ext 的 4 个工具、owner 的 4 个 Office MCP** 的实际执行。
 - **`bash` 的 403 正文能不能到模型**:`curl -v` 实测能看到 `Proxy-Agent: alpha-egress-policy` 与
   `Content-Length: 292` 两行响应头,但**正文没有被 curl 打印**;工具把 stderr 怎么交给模型本轮未跑。
@@ -347,6 +578,22 @@ bun run /tmp/probe-1414-egress.ts      # 判据,含 3 条自证臂
 bun run /tmp/probe-1414-connect.ts     # 真代理 CONNECT,正反各 5/3 条
 bun run /tmp/probe-1414-bash2.ts       # 真 seatbelt + 真 curl,8 臂(必须用异步 spawn,见 §5①)
 bun run /tmp/probe-1414-write.ts       # 写盘围栏,4 臂(「外」不能选 $TMPDIR,见 §5②)
+
+# ④ #1418 的三格(探针不进 main;顺序有依赖 —— 引擎半场会把实拍的 wire 事件写到
+#    /tmp/alpha-1418-question-wire-event.json,渲染半场读它)
+cd .worktrees/1418-untested/packages/opencode
+bun test test/tool/alpha-1418-registry-matrix.test.ts \
+         test/tool/alpha-1418-apply-patch-e2e.test.ts \
+         test/tool/alpha-1418-question-chain.test.ts \
+         test/tool/alpha-1418-task-round.test.ts          # 实测 12 pass / 0 fail
+cd ../ui-mac
+curl -sS https://alpha-gateway.tidelabs.click/v1/models -o /tmp/alpha-1418-models-cn.json
+ALPHA_1418_MODELS_JSON=/tmp/alpha-1418-models-cn.json \
+  bun test ./test-component/alpha-1418-question-submit.probe.test.ts \
+           ./test-component/alpha-1418-gpt-reachability.probe.test.ts   # 实测 10 pass / 0 fail
+# 注:渲染半场的探针刻意**不叫** `*.cases.ts` —— 那个后缀会被
+# `packages/ui-mac/src/main/gate-file-registry.test.ts` 的孤儿闸认领,而勘破探针没有宿主。
+# 实测:命名为 .cases.ts 时该闸 21 pass / 1 fail;改名后 22 pass / 0 fail。
 ```
 
 **新增工具会不会自己长出来**:会。①`ToolRegistry.all()` 是运行时装配,新叶子加进
