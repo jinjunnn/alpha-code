@@ -125,7 +125,15 @@ const transportPaths = GATED_TRANSPORTS.map((transport) => transport.path as str
  * 执行面 —— 但它同样让集合变化,所以按「新增即分类」显式登记,并由下面那条断言证明它确实不出网
  * (零 HTTP / 零 MCP 调用原语)。#223 R5:ext 的闸在注释里引用了那份 exa remote MCP 配置示例。
  */
-const DOCUMENTED_MENTIONS = ["packages/ext/src/cloud-websearch-kill.ts"]
+const DOCUMENTED_MENTIONS = [
+  "packages/ext/src/cloud-websearch-kill.ts",
+  // `#1415`:出网放行集合的静态半场要登记这两个目的地,否则登出 / BYOK 态下 `websearch` 每次
+  // 都被我们自己的策略代理 403(该工具在那一态是广告给模型的)。注册表**不出网** —— 它只回答
+  // 「这个 host:port 授权了吗」,由 main 进程的 CONNECT 代理来问;下面那条断言逐条证明它不含任何
+  // 出网原语。值与真源不许漂由 network-egress-registry.test.ts 的 `#1415` 那一节从两条传输的
+  // 源码派生后比对(注册表不自持第二份端点清单)。
+  "packages/ui-mac/src/main/network-egress-registry.ts",
+]
 const EGRESS_PRIMITIVES = [/HttpClientRequest\./, /\bfetch\s*\(/, /\.callTool\s*\(/, /new\s+Request\s*\(/]
 
 describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
