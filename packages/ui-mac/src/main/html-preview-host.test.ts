@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { mockElectron } from "../../test-component/electron-mock"
 
 // ---- electron 打桩(捕获式 fake;须在 import 被测模块之前)----
 
@@ -117,7 +118,7 @@ const sessions: FakeSession[] = []
 const ipcHandlers = new Map<string, (...args: unknown[]) => unknown>()
 const logLines: string[] = []
 
-mock.module("electron", () => ({
+mockElectron(() => ({
   app: {
     get isPackaged() {
       return appState.packaged

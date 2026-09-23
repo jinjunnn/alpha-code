@@ -1,7 +1,14 @@
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, utilityProcess } from "electron"
+// `#1423`:**命名空间导入,不是具名导入** —— 这一行曾是仓内唯一的
+// `import { app, utilityProcess } from "electron"`,而它让 server.ts 在 `bun test src` 全量里**链接期**就抛
+// (macOS:`Missing 'default' export in module …/electron/index.js`;ubuntu:`Export named 'utilityProcess'
+// not found`),于是 import 面能走到 ./server 的三个测试文件整份夭折、几十条断言一条没跑。
+// 机制与 alpha-keychain-backend.ts 头注记的同一条:bun 的 `mock.module("electron", …)` 把该模块的**导出名集合**
+// 钉死在测试进程里**第一个**被实例化的工厂上,后来的工厂只改值、静默丢掉新名字,而 bun 的文件顺序不是 CLI 顺序 ——
+// 于是具名导入的成败取决于**哪个无关测试文件的 electron mock 先跑**。命名空间导入不点名任何导出,恒能链接。
+import * as electronNs from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
@@ -98,7 +105,7 @@ type SpawnLocalServerOptions = {
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
   healthCheck?: typeof checkHealth
-  fork?: typeof utilityProcess.fork
+  fork?: typeof electronNs.utilityProcess.fork
   timelineContext?: "boot" | "respawn"
   /**
    * REQ-159 `#1321`:围栏计划器。缺省 = 生产计划器(store 并集 + 真 sandbox-exec 试编译 + 原生模块解析);
@@ -219,7 +226,7 @@ function planProductionFence(input: { userDataPath: string; sidecarEnv: Record<s
     {
       userDataPath: input.userDataPath,
       sidecarEnv: input.sidecarEnv,
-      addon: { packaged: app.isPackaged, resourcesPath: process.resourcesPath, moduleDir, exists: existsSync },
+      addon: { packaged: electronNs.app.isPackaged, resourcesPath: process.resourcesPath, moduleDir, exists: existsSync },
       egressProxyPort: input.egressProxyPort,
     },
     {
@@ -478,7 +485,7 @@ export async function spawnLocalServer(
   // B6(=G1):解析 @alpha-code/ext bundle 路径,经 StartCommand 传 sidecar(不走 env,免动 A6 白名单)。
   // 缺文件 loud warn(anti-B11:否则表现为「alpha_ping 工具静默不在」);ALPHA_EXT_DISABLE=1 静默跳过。
   const ext = resolveExtPluginPath({
-    packaged: app.isPackaged,
+    packaged: electronNs.app.isPackaged,
     resourcesPath: process.resourcesPath,
     moduleDir: dirname(fileURLToPath(import.meta.url)),
     disabled: process.env.ALPHA_EXT_DISABLE === "1",
@@ -522,7 +529,7 @@ export async function spawnLocalServer(
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   rotateServerLogs()
-  const child = (options.fork ?? utilityProcess.fork)(sidecar, [], {
+  const child = (options.fork ?? electronNs.utilityProcess.fork)(sidecar, [], {
     cwd: ensureEngineScratchCwd(options.userDataPath),
     env: sidecarEnv,
     serviceName: SIDECAR_SERVICE_NAME,
@@ -539,14 +546,14 @@ export async function spawnLocalServer(
     options.onStderr?.(`utility process gone reason=${details.reason} exitCode=${details.exitCode}`)
   }
 
-  app.on("child-process-gone", onProcessGone)
+  electronNs.app.on("child-process-gone", onProcessGone)
   // REQ-159 `#1322`:探针请求簿。sidecar 收到 write-probe 命令即同步回一条 write-probe-result;这里按 id 对号。
   // 子进程退出 ⇒ 在途请求全部答 unknown(不是「拒绝」,也不是「可写」)。
   const writeProbes = createWriteProbeRequester((command) => child.postMessage(command))
   child.on("message", (message: unknown) => void writeProbes.receive(message))
   child.once("exit", (code) => {
     exited = true
-    app.off("child-process-gone", onProcessGone)
+    electronNs.app.off("child-process-gone", onProcessGone)
     writeProbes.close(`sidecar exited with code ${code}`)
     options.onExit?.(code)
     exit.resolve(code)

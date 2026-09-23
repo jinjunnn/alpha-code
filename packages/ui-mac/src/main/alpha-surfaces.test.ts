@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RECOVERY_CODES } from "../shared/recovery"
+import { mockElectron } from "../../test-component/electron-mock"
 
-mock.module("electron", () => ({
+mockElectron(() => ({
   app: { getVersion: () => "9.9.9" },
   BrowserWindow: class {},
   dialog: {},
