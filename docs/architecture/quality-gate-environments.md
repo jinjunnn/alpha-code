@@ -724,6 +724,7 @@ darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 | 新增闸门文件没登记 | `src/main/gate-file-registry.test.ts`(既有) |
 | 往 `packages/opencode` 的 alpha 判据文件里写错类型 | `typecheck opencode …` 那一步(`#1134`,§3.11)。此前**无人判红** —— 门的清单里根本没有这个包 |
 | 只把 `alpha-check.sh` 里某条 typecheck 命令删掉,登记与 CI 都不动 | `local-gate-parity.test.ts` 第十六条(`#1134`)。此前**无人判红**:上面三条 CI_STEPS 断言比的全是步骤名,`MIRRORED` 只是一句登记,不是一条断言 |
+| 一整个测试文件在**链接期**就抛(整份夭折,一条用例都没跑)| `scripts/known-fails-compare.py` **按文件点名并拦住**(`#1423`)。此前它只能报「失败无法逐测试归因」—— 拦住了,却说不出是哪个文件,于是那些文件里的红与绿在报表上长得一样。机制、最小复现与诚实边界见 [`2026-09-23-bun-electron-mock-link-abort.md`](2026-09-23-bun-electron-mock-link-abort.md) |
 
 解析自检钉在 `local-gate-parity.test.ts` 里(`ciSteps ≥ 12`、守卫脚本的 `UPSTREAM_PATHS ≥ 8`
 与收编白名单 `≥ 20`、`jobNames ≥ 6`、`required ≥ 4`、`#1134` 的 typecheck 命令 `≥ 4`):一份退化成解析不出东西的解析器会让每条

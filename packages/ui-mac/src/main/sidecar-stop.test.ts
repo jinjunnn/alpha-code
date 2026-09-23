@@ -24,10 +24,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { parseSidecarStopCommand, stopSidecarListener } from "./sidecar-stop"
+import { mockElectron } from "../../test-component/electron-mock"
 
 const appEvents = new EventEmitter()
 
-mock.module("electron", () => ({
+mockElectron(() => ({
   app: {
     isPackaged: false,
     on: appEvents.on.bind(appEvents),

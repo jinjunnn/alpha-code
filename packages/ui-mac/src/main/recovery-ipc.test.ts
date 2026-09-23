@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import { RECOVERY_ACTIONS } from "../shared/recovery"
 import { createRecoveryService } from "./recovery-service"
+import { mockElectron } from "../../test-component/electron-mock"
 
 type FatalReason = "renderer-load-failed" | "preload-failed" | "renderer-process-gone"
 type IpcHandler = (event: { sender: { id: number } }, ...args: unknown[]) => unknown
@@ -41,7 +42,7 @@ class FakeRecoveryWindow {
   }
 }
 
-mock.module("electron", () => ({
+mockElectron(() => ({
   ipcMain: {
     handle: (channel: string, handler: IpcHandler) => handlers.set(channel, handler),
   },

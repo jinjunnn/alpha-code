@@ -71,6 +71,32 @@ const RED_DISPLAY = "outer ring > inner ring > known red probe"
 const LIST_HEADER = "# 合成清单(本测试夹具)\n"
 const LIST_ENTRY = `kfprobe.test.ts\t${RED_DISPLAY}\t理由:#1086 行为闸的合成已知红\n`
 
+/**
+ * `#1423`:**整份文件加载期夭折**的夹具 —— 链接期就抛(不是某条用例红)。
+ * 形状与生产事故逐字同源:`packages/ui-mac/src/main/{server,sidecar-stop,process-fence-wiring}.test.ts`
+ * 在全量里因 electron mock 的导出名集合缺 `default` 而整份夭折,bun 只让 `N fail` / `N errors`
+ * 各加一、不写任何 junit testsuite、也不打 `(fail) ` 行。这里用一个解不出的具名导入复刻同一形状。
+ */
+const FIXTURE_BOOM = `import { expect, test } from "bun:test"
+import { missingOnPurpose } from "./kfboom-source"
+test("never runs because the file never links", () => { expect(missingOnPurpose).toBe(1) })
+`
+/** 同一对夹具的**对照臂**:把那个导入改成真实存在的名字,夭折消失。 */
+const FIXTURE_BOOM_FIXED = FIXTURE_BOOM.replaceAll("missingOnPurpose", "presentOnPurpose")
+const BOOM_SOURCE = `export const presentOnPurpose = 1\n`
+const BOOM_DISPLAY = "<整份文件加载期夭折:一条用例都没执行>"
+
+/** 两个文件的夹具:绿的那个让 junit 真落盘,夭折的那个必须仍然被点名。 */
+function abortFixture(boomSource: string, listBody: string) {
+  const dir = mkdtempSync(join(tmpdir(), "kf-ratchet-"))
+  writeFileSync(join(dir, "kfprobe.test.ts"), FIXTURE_GREEN)
+  writeFileSync(join(dir, "kfboom-source.ts"), BOOM_SOURCE)
+  writeFileSync(join(dir, "kfboom.test.ts"), boomSource)
+  const list = join(dir, "list.tsv")
+  writeFileSync(list, listBody)
+  return { dir, list }
+}
+
 function fixture(testSource: string, listBody: string) {
   const dir = mkdtempSync(join(tmpdir(), "kf-ratchet-"))
   writeFileSync(join(dir, "kfprobe.test.ts"), testSource)
@@ -145,12 +171,59 @@ test("清单行缺 reason 列 ⇒ 全绿的一次运行也要拦(AC5 默认拒,�
   }
 })
 
-test("模块加载崩溃(junit 不落盘)⇒ 清单不吸收,拦住 —— 失败必须可逐测试归因", { timeout: 120_000 }, () => {
+test("模块加载崩溃(junit 一个字节不写)⇒ 拦住,并点出是哪个文件夭折了(#1423 收紧了此处)", { timeout: 120_000 }, () => {
+  // 本用例此前断言的是 `junit 报告缺失` —— 拦住了,但**说不出是哪个文件**。`#1423` 之后同一条
+  // 路径必须逐个点名(清单仍然不吸收),所以这里的断言随之收紧,不是放松。
   const { dir, list } = fixture('throw new Error("kf module load boom")\n', LIST_HEADER + LIST_ENTRY)
   try {
     const r = runFloor(["1", dir, "kfprobe.test.ts"], list)
     expect(r.code).not.toBe(0)
-    expect(r.output).toContain("junit 报告缺失")
+    expect(r.output).toContain(`kfprobe.test.ts :: ${BOOM_DISPLAY}`)
+    expect(r.output).toContain("不被 scripts/known-fails.tsv 吸收")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("整份文件加载期夭折 ⇒ 按文件点名并拦住,而不是报「无法逐测试归因」(#1423 AC3)", { timeout: 120_000 }, () => {
+  // 已知的坏:同一次运行里既有真跑完的文件(junit 落了盘)、又有一个链接期就夭折的文件。
+  // `#1423` 之前这一格只能落到「junit 失败 0 条 ≠ console 1 fail」的作废分支 —— 拦住,但点不出名字。
+  const { dir, list } = abortFixture(FIXTURE_BOOM, LIST_HEADER)
+  try {
+    const r = runFloor(["1", dir], list)
+    expect(r.code).not.toBe(0)
+    expect(r.output).toContain(`kfboom.test.ts :: ${BOOM_DISPLAY}`)
+    expect(r.output).toContain("一条用例都没执行")
+    // 点名了就不许再退回「测量作废」那一档 —— 两者的处置不同,混在一起等于没有判据。
+    expect(r.output).not.toContain("测量作废")
+    // 归因的另一半:junit 里连它的 testsuite 都没有(而绿的那个文件在)。
+    expect(r.output).toContain("junit 里完全没有它")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("同一对夹具把加载错误修好 ⇒ 不再点名任何夭折并放行(点名不是无条件的)", { timeout: 120_000 }, () => {
+  // 对照臂。缺了它,一个「见到 kfboom 就喊夭折」的退化实现也能通过上一条。
+  const { dir, list } = abortFixture(FIXTURE_BOOM_FIXED, LIST_HEADER)
+  try {
+    const r = runFloor(["1", dir], list)
+    expect(r.code).toBe(0)
+    expect(r.output).not.toContain(BOOM_DISPLAY)
+    expect(r.output).toContain("3 条断言真的执行了")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("夭折**登记进清单也吸收不掉** —— 这一类结构上不许登记(#1423 边界:棘轮只许收紧)", { timeout: 120_000 }, () => {
+  // 逃逸路线检查:若夭折可以像普通红一样被 known-fails.tsv 收编,棘轮就对整份文件永久失明 ——
+  // 比 `#1423` 之前的「拦住但说不出名字」更坏。判官在**清单形状**那一层就拒掉这种行。
+  const { dir, list } = abortFixture(FIXTURE_BOOM, `${LIST_HEADER}kfboom.test.ts\t${BOOM_DISPLAY}\t理由:想把夭折收编进基线\n`)
+  try {
+    const r = runFloor(["1", dir], list)
+    expect(r.code).not.toBe(0)
+    expect(r.output).toContain("结构上不许登记")
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

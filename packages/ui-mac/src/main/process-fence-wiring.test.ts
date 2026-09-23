@@ -20,6 +20,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import * as net from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { mockElectron } from "../../test-component/electron-mock"
 
 const appEvents = new EventEmitter()
 
@@ -42,7 +43,7 @@ const electronMock = {
   dialog: {},
   ipcMain: { handle: () => {}, on: () => {} },
 }
-mock.module("electron", () => ({ ...electronMock, default: electronMock }))
+mockElectron(() => electronMock)
 const logLines: string[] = []
 mock.module("./logging", () => ({
   getLogger: () => ({ log: (line: unknown) => void logLines.push(String(line)), warn: () => {}, error: () => {} }),

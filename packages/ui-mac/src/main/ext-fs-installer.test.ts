@@ -7,8 +7,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { mockElectron } from "../../test-component/electron-mock"
 
-mock.module("electron", () => ({
+mockElectron(() => ({
   app: { isPackaged: false },
   BrowserWindow: class {},
   dialog: {},
