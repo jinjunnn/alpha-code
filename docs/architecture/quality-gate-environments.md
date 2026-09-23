@@ -23,6 +23,7 @@
 | `#916` | 本地 `alpha-check` 的 typecheck / 测试 | 「跑门的这棵树装着依赖」 | 全新 worktree 一个 `node_modules` 都没有 ⇒ **11627 条假红** ⇒ 唯一出路是去动**共享**主 checkout ⇒ 并行 lane 互相污染彼此的门测量 |
 | `#1294` | `bun test src` 里的子进程宿主 | 「子进程里那一跳 loopback HTTP 每次都能形成响应」 | 满载时形不成 ⇒ 宿主间歇红,而它不在 `known-fails.tsv` 里 ⇒ 拦下一个**没碰过相关代码**的 PR ⇒ 最省事的动作是 `--no-verify`(见 3.12) |
 | `#1300` | `bun test src` 里的墙钟上界断言(`expect(Date.now() - t0).toBeLessThan(100)` 一类,首轮枚举 34 处) | 「这条路径 100ms 内返回」= 「机器此刻够闲」 | 同机 31 个 `bun test` 并跑时 100ms 收到 156ms ⇒ 拦下一个纯文档 PR ⇒ `--no-verify`(见 3.13) |
+| `#1416` | CI 的 `bun test (ui-mac)` | 「这个测试文件在 runner 上加载得起来」 | Linux 的 `electron` 解不出 `utilityProcess` 具名导出 ⇒ 三个文件**一条用例都没执行**,失败记成 `(fail) (unnamed)` ⇒ 棘轮点不出名 ⇒ 这三个文件里的红在 CI 上**结构性不可见**(见 3.14) |
 
 **咽喉的形状因此是确定的:让门的环境需求变成一处显式声明,新增的门默认拿到它,缺失时显式降级并自陈。**
 枚举对新成员默认放行,咽喉对新成员默认拒绝 —— 优先咽喉。
@@ -567,6 +568,66 @@ tsgo 的项目单位就是 tsconfig,而那个 tsconfig 是上游的、不能改�
   `--timeout` 同性质,本票不枚举;它开始咬人时另立票并进扫描器。
 - `upstream` 判据是守卫谓词不需要 git 的那一半(整包 carve-out + `alpha-` 前缀 + marker),不查 `origin/dev`;
   方向是过报(不会把真上游文件误判成 alpha 自有)。
+
+### 3.14 CI 上这个文件**一条用例都没跑** —— 「0 条」不是「0 红」(`#1416`)
+
+上面每一格讲的都是「门红了,而红的理由与被验的行为无关」。这一格是反方向:**门是绿是红都不重要,
+因为被验的那些用例在这个环境里根本没有执行过**,而报表上看不出这件事。
+
+实测(CI run `35806141587`,`push` → `alpha`,2026-09-23T01:24Z,`ubuntu-latest`,步骤
+`bun test (ui-mac)`):`packages/ui-mac/src/main/server.test.ts` 那个 group 里**零条 `(pass)`、零条
+`(fail)`**,只有一段:
+
+```
+# Unhandled error between tests
+SyntaxError: Export named 'utilityProcess' not found in module
+  '/home/runner/work/alpha-code/alpha-code/node_modules/.bun/electron@42.3.3+759ce506b1ed1a42/…/index.js'
+```
+
+成员是确定的三个,两条互相独立的检索轴给出同一个集合:
+
+| 轴 | 命令 / 观测点 | 结果 |
+| --- | --- | --- |
+| ① CI 日志 | 同一 run 里 `# Unhandled error between tests` 出现 **3** 次 | `sidecar-stop.test.ts` · `server.test.ts` · `process-fence-wiring.test.ts` |
+| ② 源码 | `grep -rln '"\./server"' packages/ui-mac/src/main/*.test.ts` | 恰好同样这三个文件 |
+
+根因一行:`packages/ui-mac/src/main/server.ts:4` 是仓内**唯一**一处
+`import { app, utilityProcess } from "electron"`(静态具名导入)。Linux runner 上装着的
+`electron@42.3.3` 的 `index.js` 解不出这个具名导出,于是模块**链接期**就抛 —— 早于
+`mock.module("electron", …)` 有机会生效。凡是导入面能走到 `./server` 的测试文件,在 Linux 上一律整文件夭折。
+
+**后果不是「少跑了三个文件」,是「棘轮对这三个文件失明」。** 夭折的载体是 `(fail) (unnamed)`
+(同一 run 4 条),`scripts/known-fails-compare.py` 因此只能报「失败无法逐测试归因」而**点不出任何
+用例名** —— 它既不是「拦住了」,也不是「放行了」,是没有判据。所以:**这三个文件承载的保证,今天
+只有开发机(macOS)的本地门执行过。** `#1416` 那条红之所以在 2026-09-23 才现形,靠的是
+`core.hooksPath` 从 `.husky/_` 改回 `.githooks`,不是 CI。
+
+**诚实边界(这几条不要照抄成结论,它们都是本票实测的)**:
+
+- 这条红**不是 macOS-only**。失败发生在自定义节点真源的**位置解析**
+  (`custom-provider-records.ts` → `alpha-environment.ts` 的 `<base>/env/<env>` 逆映射),
+  纯 `node:path` / `node:fs` 语义;该用例里钥匙串接缝本来就是 mock 的。**它在 Linux 上同样会红 ——
+  只是在 Linux 上这个文件没有机会跑到那一行。** 把「只在 Mac 上红」当成原因会导向错的修法
+  (给它加平台条件),真问题是**加载不起来**。
+- 开发机 macOS 的**全量** `bun test src` 里,同一族的另外两个文件
+  (`sidecar-stop.test.ts` / `process-fence-wiring.test.ts`)以
+  `Missing 'default' export in module …/electron/index.js` 崩掉,而它们**单跑都绿**;
+  那一格由门自己的判官判「测量作废」(junit 失败 0 条 ≠ console 3 fail),不在 `#1416` 范围内。
+  两端合起来看:**同一个静态具名导入,在 Linux 上打掉三个文件,在 macOS 全量里打掉另外两个。**
+- 「这段时间本机 push 门跑的是另一套更轻的检查」那一格是协调仓的治理事实,记在
+  alpha-work 的 `governance/local-verification-traps.md`,不在本仓。
+
+**还有一条不要从日期推**:`#1416` 票面写「红了六天」。实测不是。同一棵树、同一条命令
+(`cd packages/ui-mac && bun test src/main/server.test.ts`),逐 commit:
+
+| commit | 日期 | 结果 |
+| --- | --- | --- |
+| `5bbda385c`(该用例引入,`#1343`) | 2026-09-17 | 23 pass / 0 fail |
+| `f10653b14`(= `9d7d811f3~1`) | 2026-09-22 | 23 pass / 0 fail |
+| `9d7d811f3`(`#1392` 合入:自定义节点真源从 `alpha.jsonc` 移到 `<casBaseRoot>/custom-providers/<env>.json`) | 2026-09-22 | 22 pass / **1 fail** |
+
+红的窗口 ≈ **1.3 天**,不是 6 天;「6 天」是从**用例引入日**起算的。
+**红的起点要跑出来,不要从引入日推** —— 与本文件其余各格同一条纪律。
 
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 

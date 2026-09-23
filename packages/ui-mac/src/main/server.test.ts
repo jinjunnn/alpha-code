@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test, vi } from "bun:test"
 import { EventEmitter } from "node:events"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, parse, resolve } from "node:path"
+import { writeCustomProviderTruth } from "./custom-provider-truth-write"
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter()
@@ -429,23 +430,19 @@ describe("spawnLocalServer", () => {
   })
 
   // REQ-226 `#1343` AC4 咽喉点在**这条**生产 fork 路径上:自定义服务密钥 = 钥匙串库 → custom-provider--<id>
-  // 文件,不经 env;sidecar env 里没有值;只有「alpha.jsonc 里的 id ∩ 库键集」才物化(孤儿条目不落盘);
+  // 文件,不经 env;sidecar env 里没有值;只有「真源文件里的 id ∩ 库键集」才物化(孤儿条目不落盘);
   // 库里没了 ⇒ 下一次 fork 清扫文件(与目录 BYOK 同一撤销语义)。
   test("REQ-226: an off-catalog custom provider's key is materialized keychain → file at fork; the forked env never carries it; gone from the store ⇒ swept next fork", async () => {
-    const root = join(realpathSync(userDataPath), "alpha-code-state", "env", "dev")
+    const base = join(realpathSync(userDataPath), "alpha-code-state")
+    const root = join(base, "env", "dev")
     mkdirSync(root, { recursive: true })
-    writeFileSync(
-      join(root, "alpha.jsonc"),
-      JSON.stringify({
-        provider: {
-          "my-endpoint": {
-            npm: "@ai-sdk/openai-compatible",
-            name: "Mine",
-            options: { baseURL: "https://x.invalid/v1", apiKey: "alpha-keychain" },
-            models: { m: { name: "m" } },
-          },
-        },
-      }),
+    // `#1392`:记录的真源是 <casBaseRoot>/custom-providers/<env>.json(围栏写不到的那棵树),alpha.jsonc 里的
+    // provider 块从此**既不注入也不物化**。本用例因此播在真源上 —— 播错地方时这条用例就不再驱动 fork 前物化那一步
+    // (2026-09-22 `#1392` 合入后实测转红,`#1416`)。用生产写端落盘,不在这里手抄它的字节。
+    writeCustomProviderTruth(
+      join(base, "custom-providers", "dev.json"),
+      [{ id: "my-endpoint", name: "Mine", compat: "openai", baseURL: "https://x.invalid/v1", models: ["m"] }],
+      { mkdirSync, writeFileSync, renameSync, rmSync },
     )
     process.env.ALPHA_GLOBAL_DIR = root
     const value = "test-value-not-a-real-key-Zq81"
