@@ -1038,7 +1038,7 @@
     },
     "packages/ui-mac": {
       "name": "ui-mac",
-      "version": "0.1.15",
+      "version": "0.1.16",
       "dependencies": {
         "@alpha-code/contracts-consumer": "workspace:*",
         "@file-viewer/pptx": "3.0.0",
