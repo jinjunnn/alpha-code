@@ -185,6 +185,17 @@ https://1.1.1.1/             → 301   ← 纯 raw-IP,无 DNS 也通
 > 后者**不加**(探针靶子,不是开发流量 —— AC3 语料改用注册表里已有的 `registry.npmjs.org`)。
 > 判据:`network-egress-registry.test.ts`(独立字面量锚)。强制层的接线(profile 网络行 + main 进程内代理 + sidecar env)
 > 在 [`2026-09-10-network-egress-on-process-fence.md`](2026-09-10-network-egress-on-process-fence.md) §落地。
+>
+> **上表的一处已知缺口(2026-09-23,`#1414` 勘破 → `#1415` 补上)。** §2.2 是按「一次典型会话」枚举的,
+> 而本地 keyless `websearch` 工具的两个目的地当时**没有进表** —— 它们不是用户配的,也不是子进程发的,
+> 是引擎自己编译进包的源码常量(`EXA_URL` / `PARALLEL_URL`,同值写在两条传输里:
+> `packages/opencode/src/tool/mcp-websearch.ts` 与 `packages/core/src/tool/websearch.ts`)。
+> 后果:登出 / BYOK 态下该工具**是广告给模型的**,而它每一次出网都被自己的策略代理 403 unregistered
+> (实测两条各一次)。`#1415` 把这两个目的地登记进静态半场,并在 `network-egress-registry.test.ts` 里
+> 加了一节**从那两个文件的源码派生**期望值的闸 —— 注册表不自持第二份端点清单,引擎换端点而名单没跟当场红。
+> 登录代付态不受影响:主权闸在两条传输构造请求之前就拒(零出网),那一态由云侧 `cloud_web_search` 接手。
+> 判读教训:**「按典型会话枚举」会漏掉「只在某一种登录态下才广告出去的工具」** —— 下一次扩表前先按
+> **工具 × 登录态**过一遍,而不是只按「进程 × 类别」。
 
 ## 3. 咽喉点在不在(勘破 3)
 

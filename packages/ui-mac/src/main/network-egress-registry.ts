@@ -88,6 +88,18 @@ export const EGRESS_REGISTRY: readonly EgressDestination[] = Object.freeze([
   https("api.releases.hashicorp.com", "子进程:LSP 自动下载", "packages/opencode/src/lsp/server.ts:1632"),
   https("www.eclipse.org", "子进程:LSP 自动下载(jdtls)", "packages/opencode/src/lsp/server.ts:1207(§2.2 静态枚举漏列,按出处补)"),
   https("release-assets.githubusercontent.com", "子进程:GitHub release 资产下载(装工具 / 下二进制)", "#1334 Q4 choke 臂实拍(shell 工具子进程发起);#1073 owner 裁决二(2026-09-10)"),
+  // `#1415` —— 本地 keyless `websearch` 的两个目的地。登出 / BYOK 态下这个工具**是广告给模型的**
+  // (`OPENCODE_ENABLE_EXA` 默认开,alpha-config-injection.ts:130 的 `keylessWebsearch`),而它的端点是
+  // **编译进包的源码常量** ⇒ 按本表抬头的定义,这正是「应用自己总会去连的地址」= 静态半场。
+  // 实测(`#1414` 原生工具全表勘破 + 本票探针):两条在静态与动态两个半场都不在 ⇒ 真 CONNECT 403 ×2,
+  // 于是那个按钮装着但**每一次都失败**。
+  // 登录代付态**一个字不变**:主权闸(`ALPHA_LOCAL_WEBSEARCH_DENY`)在两条传输 `call()` / `callMcp()`
+  // 构造请求**之前**就拒(零出网,判据 websearch-copies.test.ts),那一态下这两行永远不会被问到;
+  // 云侧 `cloud_web_search` 的目的地是上面的平台四族,与本条无关。
+  // **这两行不是第二份清单**:值的真源是下面 source 点名的两条传输,`network-egress-registry.test.ts`
+  // 的 `#1415` 那一节**从那两个文件的源码派生**期望值再与本表比对 —— 任一侧改了域名,当场红。
+  https("mcp.exa.ai", "引擎:本地 keyless websearch(Exa MCP 端点)", "EXA_URL @ packages/opencode/src/tool/mcp-websearch.ts + packages/core/src/tool/websearch.ts(两条传输同值,派生闸在 network-egress-registry.test.ts)"),
+  https("search.parallel.ai", "引擎:本地 keyless websearch(Parallel MCP 端点)", "PARALLEL_URL @ packages/opencode/src/tool/mcp-websearch.ts + packages/core/src/tool/websearch.ts(两条传输同值,派生闸在 network-egress-registry.test.ts)"),
   // 本机模型(ollama 一类)**刻意不登记** —— owner 2026-09-10 裁决。登记它会写下一句做不到的话:
   //   围栏只放行 `(allow network-outbound (remote ip "localhost:<代理端口>"))`,别的 loopback 端口一律 EPERM
   //   (主 session 实测:围栏下连 127.0.0.1:11434 = EPERM,连放行端口 = ECONNREFUSED,无围栏对照 = CONNECTED);
