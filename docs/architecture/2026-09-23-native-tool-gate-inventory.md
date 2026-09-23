@@ -129,7 +129,33 @@ HIDDEN_BY_PERMISSION []
 | 14 | `apply_patch` | 否(默认) | **未测** | 注册闸:模型 id 含 `gpt-` 且不含 `oss`/`gpt-4`(`registry.ts:340-343`) | 路径,是 —— 有真源 | 模型 id 不匹配时工具不存在 | 过滤实测;**本机无任何 `gpt-` 模型可选,能否走到未测** |
 | 15 | `lsp` | 否 | **不能用**(出厂) | 注册闸:`experimentalLspTool`(需 `OPENCODE_EXPERIMENTAL`) | 否 | 工具不存在 | 本轮实测 §4.1 |
 | 16 | `execute`(code-mode) | 否 | **不能用**(出厂) | 注册闸:`experimentalCodeMode`;**且**开了之后无 MCP 工具时仍被 `registry.ts:351` 滤掉 | 否 | 工具不存在 | 本轮实测 §4.1 |
-| 17 | **`plan_exit`** | 否 | **不能用**(结构性) | 注册闸:`registry.ts:273` 要求 **`flags.client === "cli"`** | 否 | 工具不存在;**开 umbrella 也进不来** | 本轮实测 §4.1 |
+| 17 | **`plan_exit`** | 否 | **不能用**(出厂;**谁都不给**) | 注册闸:`registry.ts:273` 是**两个**条件 —— `flags.experimentalPlanMode && flags.client === "cli"` | 否 | 工具不存在;开 umbrella 也进不来 | 本轮实测 §4.1;**条件与判定经 `#1417` 四臂订正,见 §2.3** |
+
+### 2.3 订正(2026-09-23,`#1417` 四臂实测)
+
+**本文初版把第 17 行的注册闸写成「要求 `flags.client === "cli"`」,少写了一个条件。**
+实际是 `registry.ts:273` 的 `flags.experimentalPlanMode && flags.client === "cli"`,
+而 `experimentalPlanMode = enabledByExperimental("OPENCODE_EXPERIMENTAL_PLAN_MODE")`
+(`runtime-flags.ts:47`)**默认 false**。四臂:
+
+| 臂 | `plan_exit` 在工具表里 |
+| --- | --- |
+| `client=desktop, planMode=false`(桌面出货) | false |
+| `client=desktop, planMode=true`(umbrella 全开) | false |
+| `client=cli, planMode=false`(**命令行出货**) | **false** ← 初版未测的那一格 |
+| `client=cli, planMode=true` | true ← 正样本,证明探针看得见它 |
+
+⇒ **判定应读作「出厂状态谁都不给」,不是「只给命令行」。**
+
+**并且它不是缺口。** 桌面端的计划模式有出口:chip 的 tooltip 逐字是
+`计划模式开启 · 点击关闭(Shift+Tab 切换)`;关掉后请求不再带 `agent`,引擎当场注入
+`build-switch.txt`(*"Your operational mode has changed from plan to build."*)。
+plan 档 `edit` 实测 `deny`,所以「绕过去直接改东西」也做不到。
+`alpha-code#1417` 据此关为 `not planned`。
+
+**留给读这张表的人一条方法论**:本行的错法是**只抄了合取式的一半**。
+表里任何一行的「挡它的那一道」如果是复合条件,**把条件写全**,否则下一个人会照着
+半个条件设计修法 —— `#1417` 就是这么开出来又关掉的。
 
 ### 2.1 非原生但同在这张墙上的(不计入上表计数)
 
@@ -192,7 +218,7 @@ ADVERTISED umbrella-desktop          [... ,"lsp", ...]  且**没有** execute、
 
 三件事被这一格钉住:①`apply_patch` 与 `edit`/`write` 互斥,自变量是模型 id;
 ②`execute` 即使注册了,无 MCP 工具时仍被滤出工具表;
-③**`plan_exit` 在桌面端结构性到不了** —— 开了 umbrella 也进不来,因为条件是 `client === "cli"`。
+③**`plan_exit` 出厂状态谁都不给** —— 见 §2.3 的订正。
 
 ### 4.2 出网围栏:判据 + 真代理 + 真 seatbelt 子进程
 
