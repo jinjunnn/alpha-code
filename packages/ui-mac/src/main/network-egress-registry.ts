@@ -65,6 +65,21 @@ const HOST_SHAPE = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-
  */
 export const isEgressHostShape = (host: string): boolean => HOST_SHAPE.test(host)
 
+/** 本机目的地的名字形(owner 2026-09-10 / 2026-09-21 裁决:绝不进任何放行集合)。 */
+const LOOPBACK_NAMES = new Set(["localhost", "0.0.0.0", "::1", "[::1]", "::", "[::]"])
+const LOOPBACK_V4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/
+
+/**
+ * 「这个 host 指向本机吗」—— 与 `isEgressHostShape` 同理住在本文件:**动态半场**
+ * (network-egress-derived.ts)与**用户批准半场**(network-egress-grants.ts)都要问它,
+ * 而本文件是它们共同的叶子模块(反过来 import 会成环)。抄第二份正则 = 两个半场对
+ * 「什么算本机」各自漂移,而没有任何东西会红。
+ */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.toLowerCase()
+  return LOOPBACK_NAMES.has(h) || h === "localhost." || h.endsWith(".localhost") || LOOPBACK_V4.test(h)
+}
+
 function fromEndpoint(url: string, category: string, source: string): EgressDestination {
   const u = new URL(url)
   const port = u.port ? Number(u.port) : u.protocol === "https:" ? 443 : 80
