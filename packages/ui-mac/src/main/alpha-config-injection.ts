@@ -32,6 +32,8 @@ import {
   CLOUD_MCP_DEF_ENV,
   CLOUD_MCP_SERVER_ENV,
   CLOUD_MCP_SERVER_NAME,
+  CLOUD_WEB_SEARCH_TOOL_ID,
+  LOCAL_WEB_SEARCH_TOOL_ID,
   WITHHELD_CLOUD_MCP,
 } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
@@ -101,6 +103,11 @@ export function injectAlphaConfig(
     // ADR-009 B2 的能力总闸。main 在每次 fork 前用同一个表达式判过一次并把判决写进
     // `ALPHA_CLOUD_WEBSEARCH_DENY`(server.ts);这里重算是因为注入面自己也要用(见下方云 MCP 注册)。
     const killSwitch = Boolean(process.env.ALPHA_WEBSEARCH_DISABLE)
+    // 云 MCP server 这一 fork 会不会以 `enabled:true` 注册。判据与下方真正写 `config.mcp` 的那个
+    // 三分支**同一组输入**(kill-switch ⇒ 中和条目 `enabled:false`;代付 ⇒ 真定义 `enabled:true`;
+    // 其余 ⇒ 无凭证 `enabled:false`)。identity 的云腿在场性读它,不另算一遍(`#1414` S4)。
+    const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
+    const cloudMcpEnabled = Boolean(mcpUrl) && !killSwitch && platformPays
     // 只记录本轮函数自己新放进 mcp 的名字;继承来的 OPENCODE_CONFIG_CONTENT 不是治理授权。
     const injectedMcpNames = new Set<string>()
 
@@ -124,10 +131,29 @@ export function injectAlphaConfig(
       if (wantIdentity) {
         // Capability facts the base prompt can't know — purely informational (ADR-009 / ADR-002).
         // The cloud token lives in the {file:} channel, never in this process's env (A6).
+        //
+        // `#1414` 基线 §三 **S4**(提示声称的能力必须与模型工具表里的在场性一致)。这里以前自己读
+        // `ALPHA_WEBSEARCH_DISABLE` + `OPENCODE_ENABLE_EXA` 再判「能不能搜网」—— 勘破 §6 点名的
+        // **第四处各算各的**:与真闸不同源,于是可以「提示说有、工具表里没有」。改成**消费真闸的判决**:
+        //   · 本地腿消失的那道闸 = `applyWebSearchDenies` 写的 permission deny(`cloud-web-search.ts:173`
+        //     → 引擎 `Permission.disabled`,`opencode/src/session/llm/request.ts:234-244`)。拿一个空壳
+        //     config 让**同一个函数、同一组入参**判一次再读判决,不手抄它的条件 —— 那条条件将来怎么改
+        //     (`#1411` 正在改)这一行都跟着变。`denied.length === 0` 即早返回 ⇒ 空壳零副作用;
+        //     diagnostic 传 no-op,免得同一条主权日志一次 fork 打两遍。
+        //   · deny 之外还要先被引擎**注册**(`opencode/src/tool/registry.ts:63-70,335-338`
+        //     的 `webSearchEnabled`),main 每次 fork 前落定的就是这组 keyless flag。**诚实边界**:
+        //     上游 `enableExa` 还认 `OPENCODE_EXPERIMENTAL` umbrella 与 Zen provider,fork 前判不了
+        //     ⇒ 这里只会**少报**(工具在而提示没说),不会多报。
+        //   · 云腿在场性读上方的 `cloudMcpEnabled`(与写 `config.mcp` 那个三分支同源),外加它有没有被 deny。
+        //   · `cloud.*` 那一行**刻意**仍只看代付:kill-switch 下完整定义经 ARM/DEF 托管给 ext,ext 真装上
+        //     兄弟工具就在,而「ext 这一 fork 装没装」注入面判不了 —— 那一行的措辞本来就带条件。
+        const denyProbe: { permission?: Record<string, unknown> } = {}
+        applyWebSearchDenies(denyProbe, { killSwitch, platformPays }, () => {})
+        const deniedByGate = (toolId: string) => denyProbe.permission?.[toolId] === "deny"
         const cloudDispatch = platformPays
         const caps = buildAlphaCapabilities({
-          websearchDisabled: Boolean(process.env.ALPHA_WEBSEARCH_DISABLE),
-          keylessWebsearch: process.env.OPENCODE_ENABLE_EXA !== "0",
+          localWebSearch: !deniedByGate(LOCAL_WEB_SEARCH_TOOL_ID) && process.env.OPENCODE_ENABLE_EXA !== "0",
+          cloudWebSearch: !deniedByGate(CLOUD_WEB_SEARCH_TOOL_ID) && cloudMcpEnabled,
           cloudDispatch,
         })
         addInstruction("alpha-identity.md", buildAlphaIdentity(caps))
@@ -330,7 +356,6 @@ export function injectAlphaConfig(
     //      `#1106` 的 doomed-connect 判据(镜像引擎 mcp-auth.json)随之就地退役:引擎不再持有
     //      云凭证,「boot 连接注定失败」的判据现在就是 platformPays 自己 —— 缺凭证 ⇒
     //      `enabled:false` ⇒ `MCP.create` 直接 DISABLED_RESULT,boot 零等待,形态不变。
-    const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
     if (mcpUrl) {
       // #223 R4→R5 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext
       // 的 tool.execute.before 钩子里(远端 MCP 无 per-tool 注册期过滤,permission deny 可被后置
