@@ -1,9 +1,10 @@
 ---
 id: ADR-009
 title: web search 默认策略 —— 登出/BYOK keyless 放开;登录态云优先权威 + 逃生开关跨本地/云
-status: amended
+status: superseded
 date: 2026-06-18
 amended: 2026-08-03
+superseded-by: ADR-046
 related: [ADR-002, ADR-005, ADR-006, ADR-018, ADR-029, ADR-035]
 supersedes_premise: "2026-06-18 的『桌面默认对所有 provider 放开 keyless websearch』现被登录态门控收窄为登出/BYOK 兜底"
 ---
