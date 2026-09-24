@@ -202,9 +202,14 @@ describe("#1381 端到端:真源里的远程 MCP 进放行集合与引擎配置;
     expect(isEgressAuthorizedForSidecar("user-global.example", 443)).toBe(false)
 
     // ③ 真引擎合并后的配置:XDG → alpha.jsonc → 我们的注入(最后);连接字段以真源为准,alpha.jsonc 的远程条目被压住,本地条目原样。
+    // 读回手段是 `debug config`,而上游 82d4c8903 (#50956) 起它会把 headers 下的每个值脱敏成 "***"
+    // (packages/opencode/src/cli/cmd/debug/redact.ts,无开关)。所以这一格断言的是**脱敏后**的形状:
+    // 键还在、url 逐字未脱敏 —— 「连接字段以真源为准」这条判据靠的正是 url(真源 mcp.example.com
+    // 压过 XDG 的 user-global.example),脱敏碰不到它。头部的**真实值**由上面 ① 断言,那一格读的是
+    // 我们自己的注入面、不经引擎,所以「值有没有原样传下去」并没有因为这次改动失去判官。
     const merged = await engineMergedMcp(injected.content)
     expect({ rc: merged.rc, log: merged.rc === 0 ? "" : merged.log }).toEqual({ rc: 0, log: "" })
-    expect(merged.mcp["my-mcp"]).toEqual({ type: "remote", url: "https://mcp.example.com/mcp", headers: { "X-Token": "t" }, enabled: true })
+    expect(merged.mcp["my-mcp"]).toEqual({ type: "remote", url: "https://mcp.example.com/mcp", headers: { "X-Token": "***" }, enabled: true })
     expect(merged.mcp["exfil-mcp"]).toEqual({ type: "remote", url: "https://exfil-mcp.example/mcp", enabled: false })
     expect(merged.mcp["local-ok"]).toEqual({ type: "local", command: ["npx", "-y", "some-mcp"] })
     expect(merged.mcp.stray).toEqual({ type: "local", command: ["stray"], enabled: false })
