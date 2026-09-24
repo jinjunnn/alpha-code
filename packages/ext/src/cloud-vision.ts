@@ -35,8 +35,17 @@ import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV, mcpEngineToolId, resolveFileRefs } from "./cloud-websearch-kill"
-import { contextText, renderTemplate, renderWrapper, type VisionFailureKind, visionFailureId, VISION_TOOL_REFUSED_ID, VISION_TRANSCRIPT_ID } from "./context-injection"
-import { compressForVision, sniffImageMime, VisionImageDecodeError, VisionImageTooLargeError, type CompressedImage } from "./vision-image"
+import {
+  contextText,
+  renderTemplate,
+  renderWrapper,
+  type VisionFailureKind,
+  visionFailureId,
+  VISION_TOOL_INPUT_OMITTED_ID,
+  VISION_TOOL_REFUSED_ID,
+  VISION_TRANSCRIPT_ID,
+} from "./context-injection"
+import { compressForVision, sniffImageMime, VISION_IMAGE_MAX_BYTES, VisionImageDecodeError, VisionImageTooLargeError, type CompressedImage } from "./vision-image"
 
 /** 云 worker 自己 advertise 的远端工具名(alpha-platform `cloud-mcp.ts` mount);引擎 id 是 `<server>_cloud_vision`。 */
 export const CLOUD_VISION_REMOTE_TOOL = "cloud_vision"
@@ -165,19 +174,34 @@ export async function describeImage(input: DescribeImageInput): Promise<VisionOu
 
 // ── 进模型上下文的文字(全部经 context-injection.ts 登记)────────────────────────────
 
+/** `#1447` R1 m1:label / body 里的定界符换成形近字符,免得云端正文或文件名里的「〕」提前闭合外框。 */
+export function safeDelimiters(text: string): string {
+  return text.replaceAll("〔", "〘").replaceAll("〕", "〙")
+}
+
+/** `#1447` R1 m2:块里的标签 = `#<编号> <名字>`,模型据编号追问;重建后编号来自持久化的标记,不漂移。 */
+export function visionLabel(entry: { readonly number: number; readonly label: string }, name?: string): string {
+  return `#${entry.number} ${name ?? entry.label}`
+}
+
 /** 转写块:外框是 alpha 的字(登记为 wrapper),正文是云端认出来的内容(别人的字)。 */
 export function visionTranscriptBlock(label: string, text: string): string {
-  return renderWrapper(VISION_TRANSCRIPT_ID, { label, body: text })
+  return renderWrapper(VISION_TRANSCRIPT_ID, { label: safeDelimiters(label), body: safeDelimiters(text) })
 }
 
 /** 失败块:整句都是 alpha 的字(每种原因各一条登记模板,`{name}` = 图片标签)。 */
 export function visionFailureBlock(label: string, kind: VisionFailureKind): string {
-  return renderTemplate(visionFailureId(kind), { name: label })
+  return renderTemplate(visionFailureId(kind), { name: safeDelimiters(label) })
 }
 
-/** `cloud_cloud_vision` 工具结果被审核拒绝时,替换给模型的文本。 */
+/** 历史里 `cloud_cloud_vision` 因审核被拒(引擎把 isError 抛成部件的 error)时,回放给模型的替换文本。 */
 export function visionToolRefusedText(): string {
   return contextText(VISION_TOOL_REFUSED_ID)
+}
+
+/** 历史里 `cloud_cloud_vision` 的 `input.image` 已是 base64 本体、原引用又不可考时,回放给模型的替换文本。 */
+export function visionToolInputOmittedText(): string {
+  return contextText(VISION_TOOL_INPUT_OMITTED_ID)
 }
 
 // ── 会话级登记簿 ──────────────────────────────────────────────────────────────────
@@ -191,8 +215,24 @@ export type VisionImageEntry = {
   readonly hash: string
   /** Read 工具读到时的绝对路径;用户贴的图没有。 */
   readonly path?: string
-  /** 压缩后的形态(懒算、缓存)。解不出 / 缩不进 ⇒ 抛 VisionImageDecodeError / VisionImageTooLargeError。 */
-  compressed(): Promise<CompressedImage>
+  /**
+   * 压缩后的形态(懒算、按上限各缓存一份)。缺省上限 = 直打 HTTP 的 `VISION_IMAGE_MAX_BYTES`;追问走 `/mcp` 时传
+   * `VISION_MCP_IMAGE_MAX_BYTES`(`#1447` R1 B1)。解不出 / 缩不进 ⇒ 抛 VisionImageDecodeError / VisionImageTooLargeError。
+   */
+  compressed(maxBytes?: number): Promise<CompressedImage>
+}
+
+/** `#1447` R1 M1:持久化标记里恢复登记项所需的全部字段(哈希与编号以标记为准,不对存下来的字节重算)。 */
+export type RestoreImageInput = {
+  readonly hash: string
+  readonly number: number
+  readonly label?: string
+  /** 云端认出来的正文;有则恢复 transcripts(重启后同图再贴不再出网)。 */
+  readonly text?: string
+  /** 持久化的图片字节(可能是引擎缩过的);只用于之后的追问压缩。缺席则只恢复正文与哈希映射,不登记条目。 */
+  readonly base64?: string
+  readonly path?: string
+  readonly partID?: string
 }
 
 export type RegisterImageInput = {
@@ -214,6 +254,8 @@ export class VisionSession {
   /** 因超过 VISION_SESSION_MAX_IMAGES 被挤出去的哈希:再遇到不重新编号(编号一旦漂移,模型手里的引用就全错了)。 */
   private readonly evicted = new Set<string>()
   private nextNumber = 1
+  /** 本进程里是否已从会话历史恢复过(`#1447` R1 M1);钩子第一次碰到这个会话时做一次。 */
+  hydrated = false
 
   /** 登记一张图(同内容只登记一次;再次出现只补路径别名)。已被挤出登记簿的内容返回 undefined。 */
   register(input: RegisterImageInput): VisionImageEntry | undefined {
@@ -227,21 +269,47 @@ export class VisionSession {
       if (input.path && !existing.path) (existing as { path?: string }).path = input.path
       return existing
     }
-    const base64 = input.base64
-    let compressedPromise: Promise<CompressedImage> | undefined
+    return this.createEntry({ number: this.nextNumber++, label: input.label, hash, path: input.path, base64: input.base64, bytes })
+  }
+
+  /**
+   * `#1447` R1 M1:从持久化标记恢复(进程重启后)。哈希与编号取**标记里的值** —— 引擎会把 >2000px 的图缩过再存
+   * (`session/prompt.ts` 的 `image.normalize` 在本插件之后跑),对存下来的字节重算哈希会与当初贴图时算的对不上,
+   * 同图再贴就会再计费。正文有则恢复 transcripts;字节只用于之后的追问压缩。
+   */
+  restore(input: RestoreImageInput): VisionImageEntry | undefined {
+    if (input.partID) this.hashByPart.set(input.partID, input.hash)
+    if (typeof input.text === "string" && input.text !== "" && !this.transcripts.has(input.hash)) this.transcripts.set(input.hash, input.text)
+    if (this.evicted.has(input.hash)) return undefined
+    const existing = this.entries.find((e) => e.hash === input.hash)
+    if (existing) {
+      if (input.path && !existing.path) (existing as { path?: string }).path = input.path
+      return existing
+    }
+    if (!input.base64) return undefined
+    if (input.number >= this.nextNumber) this.nextNumber = input.number + 1
+    return this.createEntry({ number: input.number, label: input.label, hash: input.hash, path: input.path, base64: input.base64 })
+  }
+
+  private createEntry(input: { number: number; label?: string; hash: string; path?: string; base64: string; bytes?: Buffer }): VisionImageEntry {
+    const { base64, bytes } = input
+    // 直打 HTTP 与 `/mcp` 追问的上限不同(B1),各缓存一份;失败不缓存,下次重试。
+    const compressedByLimit = new Map<number, Promise<CompressedImage>>()
     const entry: VisionImageEntry = {
-      number: this.nextNumber++,
-      label: input.label ?? (input.path ? path.basename(input.path) : `image-${this.nextNumber - 1}`),
-      hash,
+      number: input.number,
+      label: input.label ?? (input.path ? path.basename(input.path) : `image-${input.number}`),
+      hash: input.hash,
       ...(input.path ? { path: input.path } : {}),
-      compressed: () => {
-        if (!compressedPromise) {
-          compressedPromise = compressForVision(bytes ?? Buffer.from(base64, "base64"))
-          compressedPromise.catch(() => {
-            compressedPromise = undefined
+      compressed: (maxBytes: number = VISION_IMAGE_MAX_BYTES) => {
+        let promise = compressedByLimit.get(maxBytes)
+        if (!promise) {
+          promise = compressForVision(bytes ?? Buffer.from(base64, "base64"), { maxBytes })
+          compressedByLimit.set(maxBytes, promise)
+          promise.catch(() => {
+            compressedByLimit.delete(maxBytes)
           })
         }
-        return compressedPromise
+        return promise
       },
     }
     this.entries.push(entry)
@@ -308,9 +376,10 @@ export type TranscribeDeps = {
 /**
  * 一张已登记的图 → 进模型上下文的一段字(转写块或失败块)。绝不抛。
  * 云端不可用 ⇒ 不压缩、不出网,直接给原因;同一内容只出网一次(会话内哈希去重)。
- * `label` 是这一次出现时的名字(同一张图换名再贴,块里写的是这次的名字),缺省用登记时的。
+ * `name` 是这一次出现时的名字(同一张图换名再贴,块里写的是这次的名字),缺省用登记时的;块里的标签恒为 `#<编号> <名字>`。
  */
-export async function transcribeEntry(session: VisionSession, entry: VisionImageEntry, deps: TranscribeDeps, label: string = entry.label): Promise<string> {
+export async function transcribeEntry(session: VisionSession, entry: VisionImageEntry, deps: TranscribeDeps, name?: string): Promise<string> {
+  const label = visionLabel(entry, name)
   const cached = session.transcripts.get(entry.hash)
   if (cached !== undefined) return visionTranscriptBlock(label, cached)
   if (!deps.access.ok) return visionFailureBlock(label, deps.access.reason === "credential-unreadable" ? "credential" : "not-logged-in")

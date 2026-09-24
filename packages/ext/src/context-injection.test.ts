@@ -44,6 +44,7 @@ import {
   uiMacAgentFragmentIds,
   VISION_SYSTEM_NOTE_OFFLINE_TEXT,
   VISION_SYSTEM_NOTE_TEMPLATE,
+  VISION_TOOL_INPUT_OMITTED_TEXT,
   VISION_TOOL_REFUSED_TEXT,
 } from "./context-injection"
 import { REBRAND_RULES } from "./prompt-rebrand"
@@ -452,19 +453,6 @@ describe("③d tool.execute.after 咽喉:工具结果回模型的路上,alpha �
     expect(explainVisionBlock(lines[1]! + "!").ok).toBe(false)
     expect(explainVisionBlock("the image shows a login page").ok).toBe(false)
   })
-  test("`#1419` cloud_cloud_vision 被审核拒绝 ⇒ 结果文本换成登记项;别的错误码原样", async () => {
-    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
-    const hooks = await loadHooks()
-    const real = hooks["tool.execute.after"] as AfterHook
-    const refused = { title: "t", output: "", metadata: {}, content: [{ type: "text", text: JSON.stringify({ error: { message: "upstream refused", code: "content_refused", retryable: false, model: "qwen" } }) }], isError: true }
-    await real({ tool: "cloud_cloud_vision", sessionID: "s", callID: "c", args: {} }, refused)
-    expect((refused.content[0] as { text: string }).text).toBe(VISION_TOOL_REFUSED_TEXT)
-    expect(explainVisionBlock((refused.content[0] as { text: string }).text)).toEqual({ ok: true, id: "vision.tool.refused", kind: "text" })
-    const other = { title: "t", output: "", metadata: {}, content: [{ type: "text", text: JSON.stringify({ error: { message: "x", code: "provider_timeout" } }) }], isError: true }
-    const before = clone(other)
-    await real({ tool: "cloud_cloud_vision", sessionID: "s", callID: "c", args: {} }, other)
-    expect(other).toEqual(before)
-  })
 })
 
 // ── ③g chat.message 咽喉(`#1419`)────────────────────────────────────────────────
@@ -518,11 +506,15 @@ describe("③g chat.message 咽喉:追加进用户消息的每个 part 都是登
   })
 })
 
-// ── ③h messages.transform 咽喉(`#1419`)────────────────────────────────────────────
-// 这个钩子只许**剔**(看不了图时把已转写的图片 part / 附件从本次请求里拿掉),不许往任何消息里加或改一个字符串叶子。
+// ── ③h messages.transform 咽喉(`#1419`;`#1447` R1 B2 / m4 扩)────────────────────────
+// 这个钩子只许**剔**(看不了图时把已转写的图片 part / 附件从本次请求里拿掉),外加**恰好两句登记项**可以出现在副本里:
+// `cloud_cloud_vision` 被审核拒绝的部件 error 换成「这张图片无法识别」、已被原地改写成 base64 的 input.image 换成
+// 「(图片数据已省略)」(或换回本进程记得的原引用 —— 那是模型自己的字,判官按「hook 之前就存在」放行不了,所以这里
+// 用新实例,原引用不可考)。其它任何新字符串一律点名。
 
 type MessagesHook = (input: Record<string, never>, output: { messages: Array<{ info: unknown; parts: unknown[] }> }) => Promise<void>
-/** 判官:hook 之后出现的每个字符串值都必须在 hook 之前就存在(多重集包含)—— 只删不加。 */
+/** 判官:hook 之后出现的每个字符串值都必须在 hook 之前就存在(多重集包含),或是那两句登记项之一。 */
+const ALLOWED_REPLACEMENTS = new Set([VISION_TOOL_REFUSED_TEXT, VISION_TOOL_INPUT_OMITTED_TEXT])
 function addedStrings(before: unknown, after: unknown): string[] {
   const count = new Map<string, number>()
   for (const l of stringLeaves(before)) count.set(l.value, (count.get(l.value) ?? 0) + 1)
@@ -532,23 +524,23 @@ function addedStrings(before: unknown, after: unknown): string[] {
     if (n === 0) added.push(l.value)
     else count.set(l.value, n - 1)
   }
-  return added
+  return added.filter((s) => !ALLOWED_REPLACEMENTS.has(s))
 }
 const history = (sessionID: string) => [
   {
     info: { id: "msg_u", role: "user", sessionID, model: { providerID: "alpha", modelID: "glm-5" } },
     parts: [
       ...userParts(sessionID, "msg_u"),
-      { id: "prt_b-vision", sessionID, messageID: "msg_u", type: "text", synthetic: true, text: "〔图片 shot.png:这张图片无法识别〕", metadata: { alpha_vision: { hash: "h", number: 1 } } },
+      { id: "prt_b-vision", sessionID, messageID: "msg_u", type: "text", synthetic: true, text: "〔图片 #1 shot.png:这张图片无法识别〕", metadata: { alpha_vision: { hash: "h", number: 1, label: "shot.png" } } },
     ],
   },
   {
     info: { id: "msg_a", role: "assistant", sessionID },
-    parts: [{ id: "prt_t", type: "tool", tool: "read", state: { status: "completed", input: { filePath: "a.png" }, output: "Image read successfully", metadata: { alpha_vision: { hashes: ["h"] } }, attachments: [imagePart("prt_att")] } }],
+    parts: [{ id: "prt_t", type: "tool", tool: "read", state: { status: "completed", input: { filePath: "a.png" }, output: "Image read successfully", metadata: { alpha_vision: { images: [{ hash: "h", number: 1, label: "a.png" }] } }, attachments: [imagePart("prt_att")] } }],
   },
 ]
 
-describe("③h messages.transform 咽喉:只剔不加", () => {
+describe("③h messages.transform 咽喉:只剔不加(外加两句登记的替换)", () => {
   test("看不了图:图片 part 与附件被剔掉、零新增字符串、原消息对象不被改;能看图:逐字原样", async () => {
     const hooks = await loadHooks()
     const real = hooks["experimental.chat.messages.transform"] as MessagesHook
@@ -566,6 +558,32 @@ describe("③h messages.transform 咽喉:只剔不加", () => {
     const seeingBefore = clone(seeing)
     await real({}, { messages: seeing })
     expect(seeing).toEqual(seeingBefore)
+  })
+  test("`#1447` B2 / m4:cloud_cloud_vision 出错部件的 error 与被改写成 base64 的 input.image 各换成一句登记项,其余字符串一个不多;已知的坏:替换句改一个字节即点名", async () => {
+    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+    const hooks = await loadHooks()
+    const real = hooks["experimental.chat.messages.transform"] as MessagesHook
+    const base64 = Buffer.from(PNG_1x1, "base64")
+    const fakeBase64 = Buffer.concat([base64, Buffer.alloc(400, 7)]).toString("base64")
+    const msgs = [
+      history("s-msgs-4")[0]!,
+      {
+        info: { id: "msg_a", role: "assistant", sessionID: "s-msgs-4" },
+        parts: [
+          { id: "prt_v1", type: "tool", tool: "cloud_cloud_vision", callID: "c1", state: { status: "error", input: { image: "1" }, error: JSON.stringify({ error: { code: "content_refused", message: "x" } }), time: { start: 1, end: 2 } } },
+          { id: "prt_v2", type: "tool", tool: "cloud_cloud_vision", callID: "c2", state: { status: "completed", input: { image: fakeBase64, mime: "image/jpeg" }, output: "ok", metadata: {}, time: { start: 1, end: 2 } } },
+        ],
+      },
+    ]
+    const before = clone(msgs)
+    await real({}, { messages: msgs })
+    const states = msgs[1]!.parts.map((p) => (p as { state: { error?: string; input: { image: string } } }).state)
+    expect(states[0]!.error).toBe(VISION_TOOL_REFUSED_TEXT)
+    expect(states[1]!.input.image).toBe(VISION_TOOL_INPUT_OMITTED_TEXT)
+    expect(addedStrings(before, msgs)).toEqual([])
+    // 已知的坏:替换句多一个字节 ⇒ 不再是登记项,判官点名
+    ;(msgs[1]!.parts[0] as { state: { error: string } }).state.error += "!"
+    expect(addedStrings(before, msgs)).toEqual([VISION_TOOL_REFUSED_TEXT + "!"])
   })
   test("已知的坏:包一层真钩子再往消息里塞一个 text part —— 判官点名那段字", async () => {
     const hooks = await loadHooks()

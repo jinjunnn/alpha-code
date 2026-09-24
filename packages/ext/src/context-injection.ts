@@ -86,7 +86,7 @@ export type ContextSink =
   | "tool-description" // 每次请求的工具表(tool/registry.ts:161)
   | "tool-arg-description" // 同上,参数 schema 的 description
   | "instruction" // ui-mac 写进 cfg.instructions 的文件:引擎 session/instruction.ts:135-150 读盘,request.ts:63-70 拼进 system 段
-  | "vision-block" // `#1419` 云端识图结果块:用户消息里紧跟图片 part 的 synthetic text part(chat.message)/ Read 工具输出尾部(tool.execute.after)/ cloud_vision 工具结果被审核拒绝时的替换文本(同钩子)
+  | "vision-block" // `#1419` 云端识图结果块:用户消息里紧跟图片 part 的 synthetic text part(chat.message)/ Read 工具输出尾部(tool.execute.after)/ 回放历史时 cloud_vision 出错部件的替换文本与被省略的 input.image(messages.transform)
 
 export type TextFragment = {
   readonly kind: "text"
@@ -359,6 +359,9 @@ export const VISION_FAILURE_TEXT: Readonly<Record<VisionFailureKind, string>> = 
 })
 export const VISION_TOOL_REFUSED_ID = "vision.tool.refused"
 export const VISION_TOOL_REFUSED_TEXT = "这张图片无法识别"
+/** `#1447` R1 m4:历史里 `cloud_cloud_vision` 调用的 `input.image` 若已被原地改写成 base64 本体,回放给模型时换成这一句(原引用已知时用原引用)。 */
+export const VISION_TOOL_INPUT_OMITTED_ID = "vision.tool.input-omitted"
+export const VISION_TOOL_INPUT_OMITTED_TEXT = "(图片数据已省略)"
 export const VISION_SYSTEM_NOTE_ID = "vision.system-note"
 /** `{name}` = 云端识图工具在引擎里的 id(`cloud_cloud_vision`,由 ALPHA_CLOUD_MCP_SERVER 拼出,不写死)。 */
 export const VISION_SYSTEM_NOTE_TEMPLATE =
@@ -374,6 +377,7 @@ function visionFragments(): (TextFragment | TemplateFragment | WrapperFragment)[
       defineTemplate({ id: visionFailureId(kind), sink: "vision-block", template: VISION_FAILURE_TEXT[kind], maxBytes: CAP_DESCRIPTION }),
     ),
     defineText({ id: VISION_TOOL_REFUSED_ID, sink: "vision-block", text: VISION_TOOL_REFUSED_TEXT, maxBytes: CAP_DESCRIPTION }),
+    defineText({ id: VISION_TOOL_INPUT_OMITTED_ID, sink: "vision-block", text: VISION_TOOL_INPUT_OMITTED_TEXT, maxBytes: CAP_DESCRIPTION }),
     defineTemplate({ id: VISION_SYSTEM_NOTE_ID, sink: "system", template: VISION_SYSTEM_NOTE_TEMPLATE, maxBytes: CAP_DESCRIPTION }),
     defineText({ id: VISION_SYSTEM_NOTE_OFFLINE_ID, sink: "system", text: VISION_SYSTEM_NOTE_OFFLINE_TEXT, maxBytes: CAP_DESCRIPTION }),
   ]

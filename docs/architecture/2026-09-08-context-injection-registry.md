@@ -55,7 +55,7 @@ ui-mac 侧咽喉:[`packages/ui-mac/src/main/config-injection-throat.test.ts`](..
 | `tool` | context | 是 | 每个工具的 description 与每个参数的 describe() 都是登记项;登记项也不许多出实际没有的工具 |
 | `tool.execute.after` | context | 是 | 非云工具的结果原样回去(`validateCloudToolOutput` 只校验,不改写);`#1419` 起两处例外都有咽喉:Read 读到图片且模型看不了图时接在 output 尾部的每一行必须是 `sink=vision-block` 的登记项(`explainVisionBlock`),`cloud_cloud_vision` 被审核拒绝时替换的文本必须逐字等于登记项 |
 | `chat.message` | context | 是(`#1419`) | 用户贴图时 alpha 追加进这条用户消息的每个 part 都必须是 `synthetic:true` 的 text、且 text 由 `sink=vision-block` 登记簿解释;原有 part 逐字不变;能看图的模型一个都不加 |
-| `experimental.chat.messages.transform` | context | 是(`#1419`) | **只剔不加**:hook 之后出现的每个字符串值都必须在 hook 之前就存在(多重集包含)—— 它做的是把已转写的图片 part / Read 附件从本次请求的副本里拿掉,持久化的消息不动 |
+| `experimental.chat.messages.transform` | context | 是(`#1419`) | **只剔不加,外加恰好两句登记项**:hook 之后出现的每个字符串值都必须在 hook 之前就存在(多重集包含),或逐字等于 `vision.tool.refused` / `vision.tool.input-omitted`(`#1447` R1:云 MCP 的审核拒绝在引擎里是抛错 ⇒ 部件 error,只能在回放副本里换;已被原地改写成 base64 的 `input.image` 换回原引用或省略句)—— 其余是把已转写的图片 part / Read 附件从本次请求的副本里拿掉,持久化的消息不动 |
 | `command.execute.before` / `experimental.session.compacting` / `experimental.text.complete` / `tool.definition` | context | 否 | alpha 哪天实现其中任何一个,§1 第二条断言当场红,直到写出对应咽喉 |
 | `chat.params` | no-context | 是 | 温度 / `maxOutputTokens` / provider options —— 参数,不是内容(REQ-153/156 的输出上限住这里,与本票无关) |
 | `tool.execute.before` | no-context | 是 | 改的是模型 → 工具方向的 args;模型看到的调用已经发出 |

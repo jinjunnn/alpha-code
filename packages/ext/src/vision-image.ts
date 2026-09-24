@@ -16,10 +16,26 @@ import wasmAsset from "@silvia-odwyer/photon-node/photon_rs_bg.wasm" with { type
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-/** 云端解码后字节上限(与 alpha-platform `VISION_IMAGE_MAX_BYTES` 同数;那边超过即 413 `image_too_large`)。 */
+/** 云端解码后字节上限(与 alpha-platform `VISION_IMAGE_MAX_BYTES` 同数;那边超过即 413 `image_too_large`)。**直打 HTTP** 那条路的上限。 */
 export const VISION_IMAGE_MAX_BYTES = 262_144
 /** 上限对应的 base64 字符数(4/3 膨胀,向上取整到 4 的倍数;与 alpha-platform `VISION_IMAGE_MAX_BASE64_CHARS` 同式)。 */
 export const VISION_IMAGE_MAX_BASE64_CHARS = Math.ceil(VISION_IMAGE_MAX_BYTES / 3) * 4
+
+// ── 模型追问那条路走 `/mcp`,上限是**整个请求体**,不是图片(`#1447` R1 B1)────────────────────
+// `/mcp` 的控制信封在**解析之前**按整包字节截断(alpha-platform `contracts/v1/limits.ts` `CONTROL_ENVELOPE_MAX_BYTES`,
+// 基线 §1a),而 tools/call 的请求体 = JSON-RPC 外壳 + 全部参数:图片 base64 只是其中一段。按「解码后 262144」压出来的
+// 图 base64 就已经 349528 字符,整包必然 413。这里按整包倒算:整包 − question 最坏体积 − 外壳预留 = 图片 base64 预算。
+/** `/mcp` 整包上限(= `CONTROL_ENVELOPE_MAX_BYTES`)。 */
+export const MCP_ENVELOPE_MAX_BYTES = 262_144
+/** `question` ≤ 2000 字(alpha-platform `VISION_QUESTION_MAX_CHARS`);JSON.stringify 不转义 CJK,最坏每字 4 字节。 */
+export const MCP_QUESTION_RESERVE_BYTES = 8_192
+/** JSON-RPC 外壳:`jsonrpc` / `id` / `method` / `params.name` / `_meta.progressToken`(SDK 带 onprogress 时加)/ `mime` / `model` /
+ *  `fallback_on_refusal` 与全部引号逗号,实测约 200 B;留 2 KiB。 */
+export const MCP_FRAME_RESERVE_BYTES = 2_048
+/** 追问时图片 base64 的字符预算(= 262144 − 8192 − 2048 = 251904)。 */
+export const VISION_MCP_IMAGE_MAX_BASE64_CHARS = MCP_ENVELOPE_MAX_BYTES - MCP_QUESTION_RESERVE_BYTES - MCP_FRAME_RESERVE_BYTES
+/** 追问时图片**解码后**的字节上限(= floor(251904 / 4) × 3 = 188928)。 */
+export const VISION_MCP_IMAGE_MAX_BYTES = Math.floor(VISION_MCP_IMAGE_MAX_BASE64_CHARS / 4) * 3
 /** 基线 §2-A 第 5 条分支 (i):长边 1280。 */
 export const VISION_LONG_EDGE = 1280
 /** 质量从高到低;基线 §1c 实测 q85 / q70 两档都放得进,这里多给几档兜住更密的图。 */
@@ -65,8 +81,9 @@ export class VisionImageTooLargeError extends Error {
   constructor(
     readonly width: number,
     readonly height: number,
+    readonly maxBytes: number = VISION_IMAGE_MAX_BYTES,
   ) {
-    super(`image ${width}x${height} could not be compressed under ${VISION_IMAGE_MAX_BYTES} bytes even at ${MIN_LONG_EDGE}px`)
+    super(`image ${width}x${height} could not be compressed under ${maxBytes} bytes even at ${MIN_LONG_EDGE}px`)
     this.name = "VisionImageTooLargeError"
   }
 }
@@ -89,11 +106,17 @@ function loadPhoton(): Promise<Photon> {
   return photonPromise
 }
 
+export type CompressOptions = {
+  /** 编码后字节上限;缺省 = 直打 HTTP 的 `VISION_IMAGE_MAX_BYTES`,追问走 `/mcp` 时传 `VISION_MCP_IMAGE_MAX_BYTES`。 */
+  readonly maxBytes?: number
+}
+
 /**
- * 把任意受理类型的图片压成云端放得进的 JPEG:长边 ≤ 1280,质量自适应,编码后 ≤ 262144 字节。
+ * 把任意受理类型的图片压成云端放得进的 JPEG:长边 ≤ 1280,质量自适应,编码后 ≤ `maxBytes`(缺省 262144)。
  * 解不出来抛 `VisionImageDecodeError`;缩到 320px 仍放不进抛 `VisionImageTooLargeError`。
  */
-export async function compressForVision(bytes: Uint8Array): Promise<CompressedImage> {
+export async function compressForVision(bytes: Uint8Array, options: CompressOptions = {}): Promise<CompressedImage> {
+  const maxBytes = options.maxBytes ?? VISION_IMAGE_MAX_BYTES
   const photon = await loadPhoton()
   let decoded: InstanceType<Photon["PhotonImage"]>
   try {
@@ -116,7 +139,7 @@ export async function compressForVision(bytes: Uint8Array): Promise<CompressedIm
       try {
         for (const quality of JPEG_QUALITIES) {
           const jpeg = resized.get_bytes_jpeg(quality)
-          if (jpeg.length <= VISION_IMAGE_MAX_BYTES)
+          if (jpeg.length <= maxBytes)
             return {
               base64: Buffer.from(jpeg).toString("base64"),
               mime: "image/jpeg",
@@ -134,7 +157,7 @@ export async function compressForVision(bytes: Uint8Array): Promise<CompressedIm
       if (longEdge <= floor) break
       longEdge = Math.max(floor, Math.floor(longEdge * SHRINK))
     }
-    throw new VisionImageTooLargeError(sourceWidth, sourceHeight)
+    throw new VisionImageTooLargeError(sourceWidth, sourceHeight, maxBytes)
   } finally {
     decoded.free()
   }

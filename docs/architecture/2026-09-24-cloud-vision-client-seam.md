@@ -48,10 +48,10 @@ review_after: 2027-03-24
 
 | 钩子 | 做什么 | 引擎侧依据 |
 | --- | --- | --- |
-| `chat.message` | 登记用户贴的图;模型看不了图 ⇒ 每张图**追加**一个 `synthetic:true` 的 text part(转写块或失败块),图片 part **保留**;同会话按 sha256 去重(同内容只出网一次,在途也去重) | `session/prompt.ts:1042`:hook 拿到的 `parts` 就是随后持久化的那个数组;parts 读回按 id 排序(`message-v2.ts` `orderBy PartTable.id`),追加的 part id = `<图片 part id>-vision`,`PartID` 只要求 `prt` 前缀(`session/schema.ts:19`) |
-| `experimental.chat.messages.transform` | ①从历史消息重建登记簿(进程重启后内存是空的;哈希按 part id 缓存);②模型看不了图时把**已带转写块**的用户消息里的图片 part、**已带标记**的 Read 结果里的图片附件从**本次请求的副本**里剔掉 | `session/prompt.ts:1299`:`msgs` 每步从库里重读(`filterCompactedEffect`),替换数组元素只影响本次 `toModelMessagesEffect`;不剔的话 `provider/transform.ts` `unsupportedParts` 会把图换成 `ERROR: Cannot read … Inform the user.`,与转写块打架 |
-| `tool.execute.after` | Read 读到图片:登记(记绝对路径);看不了图 ⇒ 转写块接在 `output.output` 尾部、`output.metadata.alpha_vision` 打标记、附件保留;`cloud_cloud_vision` 结果 `content_refused` / `content_blocked` ⇒ 文本换成「这张图片无法识别」 | `session/tools.ts:170-200`:hook 拿到的 `output` 对象带 `attachments`,随后原样交给 `completeToolCall` 持久化(`processor.ts:180-194`);MCP 那条路 hook 拿到的是原始 `CallToolResult`,`content[].text` 在 hook 之后才被读(`tools.ts:520-530`) |
-| `tool.execute.before` | 模型调 `cloud_cloud_vision`:`args.image` 由引用**原地**换成压缩后的 base64、补 `mime`,并写死 `model:"qwen"`、`fallback_on_refusal:false`(模型传什么都覆盖) | 基线 §1b:`session/tools.ts:498-508` hook 的 `output.args` 与随后 `execute(args)` 是同一对象,整体替换不生效 |
+| `chat.message` | 登记用户贴的图;模型看不了图 ⇒ 每张图**追加**一个 `synthetic:true` 的 text part(转写块或失败块;标签 `#<编号> <文件名>`,定界符「〔〕」在标签与正文里换成形近的「〘〙」),图片 part **保留**;part 的 `metadata.alpha_vision` 带**原图 sha256、编号、云端正文**(`#1447` R1 M1);同会话按 sha256 去重(同内容只出网一次,在途也去重);本进程第一次碰到该会话时先经 `client.session.messages()` 从历史恢复登记簿 | `session/prompt.ts:1042`:hook 拿到的 `parts` 就是随后持久化的那个数组;parts 读回按 id 排序(`message-v2.ts` `orderBy PartTable.id`),追加的 part id = `<图片 part id>-vision`,`PartID` 只要求 `prt` 前缀(`session/schema.ts:19`)。`image.normalize` 在本 hook **之后**跑,存下来的图可能已被缩过 —— 所以重建时哈希取标记里的,不对存下来的字节重算 |
+| `experimental.chat.messages.transform` | ①从历史消息重建登记簿(标记里的哈希 / 编号 / 正文为准);②**回放修正**(所有模型):`cloud_cloud_vision` 部件 `status:"error"` 且 error 含 `content_refused` / `content_blocked` ⇒ 副本里换成「这张图片无法识别」(`#1447` R1 B2);`input.image` 已是 base64 本体 ⇒ 换回本进程记得的原引用,不可考则「(图片数据已省略)」(m4);③模型看不了图时把**已带转写块**的用户消息里的图片 part、**已带标记**的 Read 结果里的图片附件从**本次请求的副本**里剔掉 | `session/prompt.ts:1299`:`msgs` 每步从库里重读(`filterCompactedEffect`),替换数组元素只影响本次 `toModelMessagesEffect`;不剔的话 `provider/transform.ts` `unsupportedParts` 会把图换成 `ERROR: Cannot read … Inform the user.`,与转写块打架。审核拒绝为什么只能在这里改:云 MCP 对非 2xx 回 `isError:true`,引擎 `mcp/catalog.ts:68-74` 在 execute 里**直接抛**,`tool.execute.after` 永远到不了;处理器 `failToolCall`(`processor.ts:200-214`)把抛出的 message 存成部件 `state.error`,`message-v2.ts` 以 `errorText` 回放给模型 |
+| `tool.execute.after` | Read 读到图片:登记(记绝对路径);看不了图 ⇒ 转写块接在 `output.output` 尾部、`output.metadata.alpha_vision = { images: [{hash, number, label, text?}] }`(与附件同序)、附件保留;`cloud_cloud_vision` **成功**返回 ⇒ 把 `args.image` 换回模型原来传的引用(m4 的另一半) | `session/tools.ts:170-200`:hook 拿到的 `output` 对象带 `attachments`,随后原样交给 `completeToolCall` 持久化(`processor.ts:180-194`);MCP 那条路的 `input.args` 就是 execute 拿到的对象,也是 AI SDK 放进 `tool-result` 事件的那个 |
+| `tool.execute.before` | 模型调 `cloud_cloud_vision`:`args.image` 由引用**原地**换成压缩后的 base64、补 `mime`,并写死 `model:"qwen"`、`fallback_on_refusal:false`(模型传什么都覆盖)。这条路走 `/mcp`,上限是**整包** 262144(`#1447` R1 B1):图片按 `VISION_MCP_IMAGE_MAX_BYTES` = 188928 压(base64 ≤ 251904 = 262144 − question 8192 − 外壳 2048) | 基线 §1b:`session/tools.ts:498-508` hook 的 `output.args` 与随后 `execute(args)` 是同一对象,整体替换不生效;`/mcp` 在解析之前按整个请求体截断(alpha-platform `contracts/v1/limits.ts` `CONTROL_ENVELOPE_MAX_BYTES`),SDK 的 tools/call 帧 = `{jsonrpc,id,method,params:{name,arguments,_meta.progressToken}}` |
 | `experimental.chat.system.transform` | 只对 `capabilities.input.image !== true` 的模型追加一段登记过的说明(云端可用 ⇒ 带工具 id 的那句;不可用 ⇒ 离线那句);**不提 gemini** | `llm/request.ts:72-80`:多出的段被引擎 join 进第二段 |
 
 「模型能不能看图」的真源是引擎的 `capabilities.input.image`(`#1437` 起如实):system.transform 直接读引擎递进来的
@@ -73,6 +73,20 @@ Model;`chat.message` 只给 `{providerID, modelID}`,经 `client.provider.list()`
    复制到 `<resources>/alpha-ext/`。实测(2026-09-24):Bun.build 产物在系统 Node 22.22 与 Electron 42.3.3 的内嵌
    Node 24.15 下同样跑通(3000×2000 → 1280×853 JPEG,FF D8);纯噪声 3000×2000 在长边 1280 下靠低质量档就能进 256 KiB。
 
+### 3a. m4 的地面真相(2026-09-24 探针,AI SDK 层)
+
+用引擎自己那份 `ai@6.0.168` + `ai/test` 的 `MockLanguageModelV3` 跑 `streamText`,工具的 execute 在「等一个 microtask」/「等 10 ms」
+之后原地改写 `input.image`,消费者在收到 `tool-call` 事件那一刻 `structuredClone`(处理器 `session.updatePart` 的做法):
+
+| 改写时机 | `tool-call` 事件的 input === execute 的 input | 收到事件时 clone 到的 `image` 长度 | `tool-result` 事件的 `input.image` 长度 |
+| --- | --- | --- | --- |
+| microtask 后 | 同一对象 | **300000**(改写先到) | 300000 |
+| 10 ms 后 | 同一对象 | 1(原引用) | 300000 |
+
+处理器在收到 `tool-call` 事件时 clone(`processor.ts:346-372` → `session.updatePart` → `structuredClone`),路径比裸 `for await` 更长;
+压缩缓存命中(同一张图第二次追问)时改写只差几个 microtask ⇒ 大 base64 会进持久化的 `state.input`,并随每次请求回放给模型。
+所以两半都做:成功返回时在 after 钩子把 `args.image` 换回原引用;回放时在 `messages.transform` 把副本里的 base64 换掉。
+
 ## 4. 进模型上下文的字全部登记
 
 转写块外框(wrapper)、九种失败句(template)、审核拒绝替换文本(text)、两句系统说明(template / text)全部在
@@ -85,15 +99,18 @@ Model;`chat.message` 只给 `{providerID, modelID}`,经 `client.provider.list()`
 | 判据 | 在哪 |
 | --- | --- |
 | 看不了图 ⇒ 转写且只调一次(哈希去重、同消息两张同图一次、在途去重);体恒为 `{image,mime,model:"qwen",fallback_on_refusal:false}`;bearer 是云 MCP 那份;能看图 ⇒ 零调用 parts 逐字不变 | [`cloud-vision.test.ts`](../../packages/ext/src/cloud-vision.test.ts)(真 AlphaExt 钩子 + 真 HTTP 到桩 gateway + 真 photon) |
-| `tool.execute.before` 原地改写(同一 args 对象)、引用解析、找不到即抛、别的工具不动、base64 本体也压 | 同上 |
-| `content_refused` 两条路的文案;云端不可用十一格(402 / 401 / 429 / 502 / 504 / 413 / 三种未登录 / 凭据文件 / 连不上),未登录三格**不出网** | 同上 |
-| Read 附件转写 + 按路径追问;messages.transform 剔图 + 登记簿重建;system.transform 两句逐字 | 同上 |
+| `tool.execute.before` 原地改写(同一 args 对象)、引用解析、找不到即抛、别的工具不动、base64 本体也压;**追问帧整包 ≤ 262144**(一张按直打上限压完落在 196–256 KiB 的图 + 2000 字 question,按 SDK 帧形序列化)| 同上 |
+| `content_refused`:自动转写那条路的失败块;追问那条路从引擎真 `McpCatalog.convertTool` 的抛错出发(isError ⇒ throw ⇒ 部件 `status:"error"`)⇒ 回放副本换成登记句;云端不可用十一格(402 / 401 / 429 / 502 / 504 / 413 / 三种未登录 / 凭据文件 / 连不上),未登录三格**不出网** | 同上 |
+| Read 附件转写 + 按路径追问;messages.transform 剔图 + 登记簿重建;**重启后同图不再计费**(新实例经 SDK 恢复 / 经 messages.transform 恢复两条路,存下来的图换成缩过的小图仍命中);无标记的历史不恢复正文(反向臂);m4 两半;定界符替换;system.transform 两句逐字 | 同上 |
 | 压缩:长边 ≤ 1280、JPEG、≤ 262144 B / 349528 chars、小图不放大、竖图、垃圾字节响亮失败、魔数表 | [`vision-image.test.ts`](../../packages/ext/src/vision-image.test.ts) |
 | `capabilities.input.image` 字段路径与真引擎一致 | [`cloud-vision-engine-shape.test.ts`](../../packages/ext/src/cloud-vision-engine-shape.test.ts) |
 
 ## 6. 没做的 / 已知边界
 
 - 登记簿每会话最多 32 张(挤出去的不再重新编号,模型引用不漂移);挤出去的图要再追问得让用户重贴或 Read 一次。
+- 登记簿在内存里;转写正文与原图哈希随消息持久化,重启后从历史恢复。`client.session.messages()` 拿不到时(极少)只靠
+  `messages.transform` 从本次请求带的历史恢复 —— 在那之前 `chat.message` 先给新图编的号可能与历史里的撞号(诚实登记,未处理)。
+- 追问一次的图片预算 188928 B(base64 251904)比直打 HTTP 的 262144 小,同一张图两条路各压一份、各缓存一份。
 - 子会话(task 工具起的)有自己的 sessionID,看不到父会话的图。
 - `chat.message` 里的识图是同步等的(线上默认档约 10 s/张,多张并行):用户这条消息要等识图回来才落库 —— 与上游 `!file`
   读文件的行为同形,没有另开异步通道。

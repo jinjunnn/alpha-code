@@ -2,7 +2,16 @@
 // 期望值是独立字面量(262144 / 349528 / 1280 抄自 alpha-platform contracts/v1/vision.ts 与基线 §2-A 第 5 条,不从被测常量派生)。
 
 import { describe, expect, test } from "bun:test"
-import { compressForVision, sniffImageMime, VisionImageDecodeError, VISION_IMAGE_MAX_BASE64_CHARS, VISION_IMAGE_MAX_BYTES, VISION_LONG_EDGE } from "./vision-image"
+import {
+  compressForVision,
+  sniffImageMime,
+  VisionImageDecodeError,
+  VISION_IMAGE_MAX_BASE64_CHARS,
+  VISION_IMAGE_MAX_BYTES,
+  VISION_LONG_EDGE,
+  VISION_MCP_IMAGE_MAX_BASE64_CHARS,
+  VISION_MCP_IMAGE_MAX_BYTES,
+} from "./vision-image"
 
 type Photon = typeof import("@silvia-odwyer/photon-node")
 let photonPromise: Promise<Photon> | undefined
@@ -36,11 +45,26 @@ async function decodeSize(bytes: Uint8Array): Promise<{ width: number; height: n
 }
 
 describe("compressForVision —— 长边 ≤ 1280、JPEG、编码后 ≤ 256 KiB", () => {
-  test("常量与云端契约 / 基线同数(独立字面量)", () => {
+  test("常量与云端契约 / 基线同数(独立字面量);`#1447` B1 追问预算 = /mcp 整包 262144 − question 8192 − 外壳 2048", () => {
     expect(VISION_IMAGE_MAX_BYTES).toBe(262144)
     expect(VISION_IMAGE_MAX_BASE64_CHARS).toBe(349528)
     expect(VISION_LONG_EDGE).toBe(1280)
+    expect(VISION_MCP_IMAGE_MAX_BASE64_CHARS).toBe(251904)
+    expect(VISION_MCP_IMAGE_MAX_BYTES).toBe(188928)
+    // 预算自洽:图片 base64 + 2000 个 4 字节字 + 2 KiB 外壳 ≤ 整包
+    expect(251904 + 2000 * 4 + 2048).toBeLessThanOrEqual(262144)
+    expect(Math.ceil(188928 / 3) * 4).toBeLessThanOrEqual(251904)
   })
+
+  test("`#1447` B1:同一张图按追问预算压 ⇒ 编码后 ≤ 188928 B、base64 ≤ 251904 chars(比直打上限小),仍是合法 JPEG", async () => {
+    const png = await noisePng(2400, 1500)
+    const direct = await compressForVision(png)
+    const mcp = await compressForVision(png, { maxBytes: 188928 })
+    expect(mcp.bytes).toBeLessThanOrEqual(188928)
+    expect(mcp.base64.length).toBeLessThanOrEqual(251904)
+    expect(mcp.bytes).toBeLessThanOrEqual(direct.bytes)
+    expect([Buffer.from(mcp.base64, "base64")[0], Buffer.from(mcp.base64, "base64")[1]]).toEqual([0xff, 0xd8])
+  }, 60_000)
 
   test("3000×2000 噪声 PNG ⇒ JPEG(FF D8)、长边 ≤ 1280、字节 ≤ 262144、base64 ≤ 349528,且 photon 能解回同尺寸", async () => {
     const png = await noisePng(3000, 2000)

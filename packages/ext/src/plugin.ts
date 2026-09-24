@@ -76,6 +76,8 @@ export const AlphaExt: Plugin = async (input) => {
   const vision = createCloudVisionHooks({
     directory: input.directory,
     listProviders: async () => input.client.provider.list(),
+    // `#1447` R1 M1:进程重启后登记簿是空的 —— 第一次碰到某会话时从它的历史消息恢复(转写正文与原图哈希都在持久化标记里)。
+    listMessages: async (sessionID) => input.client.session.messages({ path: { id: sessionID } }),
     log: (m) => console.log(m),
     error: (m) => console.error(m),
   })
