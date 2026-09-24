@@ -361,7 +361,7 @@ type McpHost = { mcp?: Record<string, unknown> }
  * 而 `config` 钩子拿到的是**已解析后的**对象 —— 本函数装进去的定义是钩子阶段新加的,不会再被
  * 替换,所以必须自己解析(语义与上游一致:读文件、trim)。读不到就抛,由调用方 fail-closed。
  */
-function resolveFileRefs(value: unknown, readFile: (path: string) => string): unknown {
+export function resolveFileRefs(value: unknown, readFile: (path: string) => string): unknown {
   if (typeof value === "string") return value.replace(/\{file:([^}]+)\}/g, (_, path: string) => readFile(path).trim())
   if (Array.isArray(value)) return value.map((item) => resolveFileRefs(item, readFile))
   if (value && typeof value === "object")

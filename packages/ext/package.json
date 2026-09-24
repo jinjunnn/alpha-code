@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@alpha-code/contracts-consumer": "workspace:*",
-    "@opencode-ai/plugin": "workspace:*"
+    "@opencode-ai/plugin": "workspace:*",
+    "@silvia-odwyer/photon-node": "0.3.4"
   }
 }

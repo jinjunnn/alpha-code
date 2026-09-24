@@ -4,8 +4,8 @@ kind: architecture
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-09-08
-review_after: 2027-03-08
+last_reviewed: 2026-09-24
+review_after: 2027-03-24
 ---
 
 # Alpha 注入模型上下文的登记簿与咽喉(REQ-157)
@@ -53,8 +53,10 @@ ui-mac 侧咽喉:[`packages/ui-mac/src/main/config-injection-throat.test.ts`](..
 | `config` | context | 是 | cfg 跑完 hook 之后**新出现**的每个字符串叶子都必须由登记簿解释(逐字等于登记文字 / 模板渲染实例 / 声明过的引用前缀);用户 cfg 里已有的字不算 |
 | `experimental.chat.system.transform` | context | 是 | 输出逐段 == 输入 + 登记过的替换;段数变化或多一个字都点名;14 份上游底座 `.txt` 全部过 |
 | `tool` | context | 是 | 每个工具的 description 与每个参数的 describe() 都是登记项;登记项也不许多出实际没有的工具 |
-| `tool.execute.after` | context | 是 | 非云工具的结果原样回去,alpha 不加字(`validateCloudToolOutput` 只校验,不改写) |
-| `chat.message` / `command.execute.before` / `experimental.chat.messages.transform` / `experimental.session.compacting` / `experimental.text.complete` / `tool.definition` | context | 否 | alpha 哪天实现其中任何一个,§1 第二条断言当场红,直到写出对应咽喉 |
+| `tool.execute.after` | context | 是 | 非云工具的结果原样回去(`validateCloudToolOutput` 只校验,不改写);`#1419` 起两处例外都有咽喉:Read 读到图片且模型看不了图时接在 output 尾部的每一行必须是 `sink=vision-block` 的登记项(`explainVisionBlock`),`cloud_cloud_vision` 被审核拒绝时替换的文本必须逐字等于登记项 |
+| `chat.message` | context | 是(`#1419`) | 用户贴图时 alpha 追加进这条用户消息的每个 part 都必须是 `synthetic:true` 的 text、且 text 由 `sink=vision-block` 登记簿解释;原有 part 逐字不变;能看图的模型一个都不加 |
+| `experimental.chat.messages.transform` | context | 是(`#1419`) | **只剔不加**:hook 之后出现的每个字符串值都必须在 hook 之前就存在(多重集包含)—— 它做的是把已转写的图片 part / Read 附件从本次请求的副本里拿掉,持久化的消息不动 |
+| `command.execute.before` / `experimental.session.compacting` / `experimental.text.complete` / `tool.definition` | context | 否 | alpha 哪天实现其中任何一个,§1 第二条断言当场红,直到写出对应咽喉 |
 | `chat.params` | no-context | 是 | 温度 / `maxOutputTokens` / provider options —— 参数,不是内容(REQ-153/156 的输出上限住这里,与本票无关) |
 | `tool.execute.before` | no-context | 是 | 改的是模型 → 工具方向的 args;模型看到的调用已经发出 |
 | 其余 10 个(`dispose` `event` `auth` `provider` `chat.headers` `permission.ask` `shell.env` `experimental.provider.small_model` `experimental.compaction.autocontinue`) | no-context | 部分 | 不载内容 |
@@ -81,10 +83,15 @@ server 定义,main 经 env 交来)。它们让引擎去别处装东西,装进来
 
 ## 3. 登记簿的形状
 
-- 四种条目:`text`(定长文字)、`template`(恰好一个 `{name}` 占位符,上限约束渲染结果)、`rebrand`
-  (from/to,只量 to)、`reference`(JSON Pointer 前缀,无 alpha 文字,不计入字节)。
-- 七种落点(`sink`):`system` / `agent-description` / `command-template` / `command-description` /
-  `tool-description` / `tool-arg-description` / `instruction`(`#1296`:ui-mac 写进 `cfg.instructions` 的文件)。
+- 五种条目:`text`(定长文字)、`template`(恰好一个 `{name}` 占位符,上限约束渲染结果)、`wrapper`
+  (`#1419`:`{label}` + `{body}` 两个占位符,**只量外框** head/mid/tail —— body 是云端识图认出来的正文、label 是
+  用户的文件名,都是别人的字,不进本簿的账;渲染结果刻意不再量一次)、`rebrand`(from/to,只量 to)、
+  `reference`(JSON Pointer 前缀,无 alpha 文字,不计入字节)。
+- 八种落点(`sink`):`system` / `agent-description` / `command-template` / `command-description` /
+  `tool-description` / `tool-arg-description` / `instruction`(`#1296`:ui-mac 写进 `cfg.instructions` 的文件)/
+  `vision-block`(`#1419`:云端识图结果块,落在三处 —— 用户消息里紧跟图片 part 的 synthetic text part、Read 工具
+  输出尾部、`cloud_cloud_vision` 结果被审核拒绝时的替换文本;判官 `explainVisionBlock` 只认这一 sink 的
+  text / template 实例 / wrapper 实例,不串格)。
 - 上限按类给天花板,每条仍显式写自己的数:rebrand ≤ 512 B,description 类 ≤ 1 KiB,prompt / template
   正文 ≤ 8 KiB,identity 说明 ≤ 1 KiB(`CAP_IDENTITY`:按设计要小、每个会话每个模型都带;最大形状
   729 B = 71%,再加一行能力事实仍在顶内)。2026-09-08 最满的是 `tool.alpha_register.description` 776 B(76%)、

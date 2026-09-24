@@ -32,7 +32,20 @@ tool.alpha_register.args.type                       text      tool-arg-descripti
 tool.alpha_register.description                     text      tool-description         776    1024   76%
 tool.alpha_reload.args.reason                       text      tool-arg-description      43    1024    4%
 tool.alpha_reload.description                       text      tool-description         368    1024   36%
+vision.system-note-offline                          text      system                   251    1024   25%
+vision.tool.refused                                 text      vision-block              24    1024    2%
 command.factory-denied.template                     template  command-template         251    1024   25%
+vision.failure.credential                           template  vision-block             108    1024   11%
+vision.failure.image-rejected                       template  vision-block              89    1024    9%
+vision.failure.network                              template  vision-block              76    1024    7%
+vision.failure.no-credit                            template  vision-block              80    1024    8%
+vision.failure.not-logged-in                        template  vision-block              92    1024    9%
+vision.failure.provider                             template  vision-block              79    1024    8%
+vision.failure.rate-limited                         template  vision-block              84    1024    8%
+vision.failure.refused                              template  vision-block              44    1024    4%
+vision.failure.unsupported-format                   template  vision-block             117    1024   11%
+vision.system-note                                  template  system                   460    1024   45%
+vision.transcript                                   wrapper   vision-block             119    1024   12%
 rebrand.docs-guidance-anthropic                     rebrand   system                   302     512   59%
 rebrand.docs-guidance-default                       rebrand   system                   237     512   46%
 rebrand.help-feedback-anthropic                     rebrand   system                     0     512    0%
@@ -45,7 +58,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 45; injected bytes: 23588; declared limits total: 104448
+fragments: 58; injected bytes: 25211; declared limits total: 117760
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
