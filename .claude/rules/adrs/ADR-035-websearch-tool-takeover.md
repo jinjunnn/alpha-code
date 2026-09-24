@@ -64,6 +64,36 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
    > 收窄为「alpha 治理的云 server(按端点身份识别)+ 本 ADR 接管的本地 `websearch` 两份副本」;
    > **用户自配的第三方 web-search MCP 不在保证内**,那个钩子对它是尽力拦截。本 ADR 的接管面
    > **仍然不变**(三个源文件)—— 收窄的是宣称,不是接管清单。
+   >
+   > **注册路径事实更正(2026-09-23,`#1424`)**:上面几段是把注册面当成**两个**入口来推理的
+   > (v1 `packages/opencode/src/tool/registry.ts` 与 v2 `packages/core/src/tool/builtins.ts`),
+   > 「第二份已挂载的同名注册」这个结论就建在它上面。**实读是四条**;而「模型手里有哪些工具」的
+   > **单一权威是 `packages/opencode/src/session/tools.ts`**(`:162` 取 R1+R2,`:480` 取 R3),
+   > 不是任何一个 registry:
+   >
+   > | # | 路径 | 在出货桌面端的地位 |
+   > | --- | --- | --- |
+   > | R1 | `packages/opencode/src/tool/registry.ts`(v1) | 活的主路径,17 个 `Tool.define` 叶子 |
+   > | R2 | `Plugin.Service` → `tool/registry.ts:221,229` 的 `custom.push` | 活;与 R1 汇进同一个 `ToolRegistry.all()` |
+   > | R3 | `MCP.Service` → `session/tools.ts:480` | 活;**不经 `ToolRegistry`**,到 `session/tools.ts` 才合流 |
+   > | R4 | `packages/core/src/tool/builtins.ts`(v2) | **挂载了,但桌面端聊天不驱动它** |
+   >
+   > 三条后果:①**照 `registry.ts` 一条列表会整类漏掉 MCP 工具** —— R3 根本不经过它,而本 ADR 的
+   > §背景 2 R5 段正是被这一类咬到的(`exa_web_search_exa` 两条路都不经接管面);②本 ADR 给 R4 那份
+   > 副本加的闸仍然有意义(纵深),但它**不是**桌面端聊天的被测面:`#1412` 的现场日志里放行发自 v1 的
+   > `packages/opencode/src/permission/index.ts:169`、结果落在 v1 的 `session/processor.ts`;
+   > ③**「两份已挂载的 `websearch` 副本」这句话本身没错**(源文件确实只有两份),错的是把它读成
+   > 「注册入口只有两个」—— R2/R3 不产生 `packages/*/src` 下的源文件,**任何源码普查网结构上都看不见
+   > 它们**,所以普查闸绿 ≠ 入口数对了。勘破(真引擎服务运行时枚举 + 三条各自翻面的对照臂)在
+   > [`docs/architecture/2026-09-23-native-tool-gate-inventory.md`](../../../docs/architecture/2026-09-23-native-tool-gate-inventory.md)
+   > §1.1–§1.3,不在本 ADR 复述。
+   >
+   > **同一轮补上的缺口**:本 ADR 立的普查闸只盯 `websearch`,而 `webfetch` **同样有两份注册**
+   > (`packages/opencode/src/tool/webfetch.ts` 与 `packages/core/src/tool/webfetch.ts`)却**一份检查
+   > 都没有** —— 选路一类的改动只接一份时不会有任何东西变红。已按同一形状**复制**一份(刻意不抽成
+   > 通用框架:`webfetch` 既无主权闸也无固定端点,合并等于用最松的一方定义两者的语义):
+   > `packages/ui-mac/src/main/webfetch-copies.test.ts`。它**不进**本 ADR 的接管面,也**不进** §4 的
+   > 回退清单 —— `webfetch` 没有 L3 接管、没有主权闸,本 ADR 与它的唯一关系是「普查闸这一类」的出处。
 3. **这两个文件当时的行为是两处失守**:`websearch.ts` 用
    `output: result ?? "No search results found…"` 把空/坏响应伪装成成功串;末尾
    `.pipe(Effect.orDie)` 把一切错误塌成匿名 defect(无类别、无状态、表现为工具崩溃)。
@@ -238,6 +268,8 @@ defect。这是本决策自带的 tripwire。
   按工具名分类,合法改名与非 ASCII 名都能绕过([[ADR-009]] 六次收口段有实测清单)。保证范围已收窄:
   本 ADR 接管的两份本地 `websearch` 副本 + alpha 治理的云 server(按端点身份识别)是保证;第三方
   web-search MCP 是尽力拦截。**接管清单仍不变**,不因此新收编任何上游文件。
+  **2026-09-23 注册路径更正(`#1424`)**:这里的「两份」说的是**源文件副本数**,不是注册入口数 ——
+  实读入口是四条,单一权威是 `packages/opencode/src/session/tools.ts`(`:162` / `:480`),见 §背景 2 末尾那一块。
 - ⚠️ **这些回归跑在 alpha 的合并闸之外**:`scripts/alpha-check.sh` 与 `alpha-ci.yml` 只跑
   contracts-consumer / ext / ui-mac 三个包的测试,`packages/core` 与 `packages/opencode` 的测试
   两处都不跑。因此本轮把**机制事实**(集合普查 + 闸的位置 + 上游次序前提 + 握手通道的两半)固化在
