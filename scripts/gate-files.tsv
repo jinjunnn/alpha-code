@@ -78,6 +78,7 @@
 # ── ui-mac ───────────────────────────────────────────────────────────────────
 8	packages/ui-mac	src/main/stream-read-hygiene.test.ts	packages/opencode/test/tool/alpha-websearch-failure.test.ts	#647 类级禁令:全仓禁用 Stream.runForEachWhile(行为闸委派给受托方)
 12	packages/ui-mac	src/main/websearch-copies.test.ts	packages/opencode/test/tool/alpha-websearch-failure.test.ts,packages/core/test/alpha-websearch-sovereignty.test.ts,packages/ui-mac/src/main/sidecar-env.test.ts,packages/ui-mac/src/main/alpha-config-injection.test.ts	本地 web search 主权闸位置锁 + 新副本普查网(运行时证据与 env/注入判据均委派)
+2	packages/ui-mac	src/main/webfetch-copies.test.ts	-	`#1424`:`webfetch` 注册副本的普查网 —— 「`packages/*/src` 里注册为 `webfetch` 的源文件」恰好是 `packages/opencode/src/tool/webfetch.ts` 与 `packages/core/src/tool/webfetch.ts` 两份,多一份或少一份都红(`websearch` 有 websearch-copies.test.ts 钉着,webfetch 此前一份检查都没有 ⇒ `#1414` 的选路只接一份不会有任何东西变红)。第 2 条是谓词自检:三张网各喂一条该命中的合成样本(含带类型参数的 `Tool.define<…>(`)、三条只是提到名字的反例、一根不存在的负针要零命中、并钉住枚举规模与必须走到的包 —— 扫描退化成两三个包时集合断言会**假绿**。刻意不与 websearch 那份合并成通用框架(webfetch 没有主权闸也没有固定端点,合并等于用最松的一方定义两者)。守不住的两支写在文件抬头:算出来的注册名 + 复用实现;以及 plugin / MCP 两条不产生源文件的注册路径 —— 本闸绿 ≠ 只有两个入口,单一权威是 `packages/opencode/src/session/tools.ts`
 5	packages/ui-mac	src/main/extension-seed-snapshot.test.ts	-	REQ-102 packaged seed 快照漂移守卫(禁手编 seed)
 15	packages/ui-mac	src/main/alpha-web-contract-fixtures.test.ts	-	alpha-web 契约 fixture 锁:契约面变形即红
 1	packages/ui-mac	src/main/alpha-contract-health.test.ts	-	契约失败必须以持久 role=alert 横幅暴露(接线锚点)
