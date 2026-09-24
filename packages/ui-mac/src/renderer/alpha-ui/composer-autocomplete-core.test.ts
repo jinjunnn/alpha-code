@@ -279,7 +279,7 @@ describe("buildAssembleRows — 装配弹窗(添加/AGENT/文件/扩展)", () =>
   const base = {
     query: "",
     planOn: false,
-    readonly: false,
+    agentLocked: false,
     activeMode: null as string | null,
     subAgents: [
       { name: "general", description: "General-purpose agent for researching complex questions" },
@@ -322,13 +322,13 @@ describe("buildAssembleRows — 装配弹窗(添加/AGENT/文件/扩展)", () =>
     ])
   })
 
-  test("计划模式行随 planOn 变文案;readonly 时禁用并退出 flat(可见不可选)", () => {
+  test("计划模式行随 planOn 变文案;权限档压 agent 时(readonly / ask,#1413)禁用并退出 flat(可见不可选)", () => {
     const on = buildAssembleRows({ ...base, planOn: true })
     const planRow = on.groups[0].rows.find((r) => r.kind === "action" && r.id === "plan")
     expect(planRow && planRow.kind === "action" ? planRow.label : "").toBe("关闭计划模式")
-    const ro = buildAssembleRows({ ...base, readonly: true })
+    const ro = buildAssembleRows({ ...base, agentLocked: true })
     const roPlan = ro.groups[0].rows.find((r) => r.kind === "action" && r.id === "plan")
-    expect(roPlan && roPlan.kind === "action" ? roPlan.disabled : "").toContain("只读")
+    expect(roPlan && roPlan.kind === "action" ? roPlan.disabled : "").toContain("权限档")
     expect(ro.flat.some((r) => r.kind === "action" && r.id === "plan")).toBe(false) // 不进键盘序
     expect(ro.groups[0].rows.some((r) => r.kind === "action" && r.id === "plan")).toBe(true) // 仍可见
   })

@@ -135,11 +135,15 @@ type EngineConfig = {
   agent?: Record<string, AgentConfig | undefined>
 }
 
-/** ADR-009 B1/B2 的两个主权判据,由 `injectAlphaConfig` 从 sidecar 自己的 env/密钥文件推导。 */
+/** web search 的两个主权判据,由 `injectAlphaConfig` 从 sidecar 自己的 env/密钥文件推导。 */
 export type WebSearchSovereignty = {
-  /** `ALPHA_WEBSEARCH_DISABLE`:与登录态无关的能力总闸(B2)。 */
+  /** `ALPHA_WEBSEARCH_DISABLE`:与登录态无关的能力总闸。**两条腿的在场性只由它决定。** */
   killSwitch: boolean
-  /** 平台代付(`ALPHA_CLOUD_MCP_URL` + `ALPHA_MCP_TOKEN` 密钥文件同在,`#1195` 换轴):云工具权威(B1)。 */
+  /**
+   * 平台代付(`ALPHA_CLOUD_MCP_URL` + `ALPHA_MCP_TOKEN` 密钥文件同在,`#1195` 换轴)= **云腿在不在**。
+   * `#1411`:**不得**参与本地腿判定。字段留着,因为这一轴仍要给云 MCP 定义用,而本文件同名测试的
+   * `{ killSwitch:false, platformPays:true }` 臂正是「代付不产生任何 deny」那条反回归断言。
+   */
   platformPays: boolean
 }
 
@@ -151,14 +155,14 @@ export type WebSearchSovereignty = {
  *   可用性**(#223 R3):远端 MCP 工具最终走 `ctx.ask`,后置 allow / `approved` 都能顶掉它。
  *   云侧不可覆盖的最终闸在 `packages/ext/src/cloud-websearch-kill.ts` 的 `tool.execute.before`
  *   钩子,判决经 `CLOUD_WEBSEARCH_DENY_ENV` 过河。
- * - **本地 `websearch`**:kill-switch **或**平台代付时 deny。#223 对抗审计(2026-07-25)动态
- *   复现:env 层的 4 个 keyless flag force-off **压不住** umbrella —— 上游
+ * - **本地 `websearch`**:**仅** kill-switch 时 deny(此前是「kill-switch **或**平台代付」= ADR-009
+ *   B1 的落点,`#1411` 推翻:账户信号只决定云腿在不在)。为什么还需要这条 permission deny:#223 对抗
+ *   审计(2026-07-25)动态复现 —— env 层的 4 个 keyless flag force-off **压不住** umbrella,上游
  *   `runtime-flags.ts` 的 `enableExa = OPENCODE_EXPERIMENTAL || OPENCODE_ENABLE_EXA ||
  *   OPENCODE_EXPERIMENTAL_EXA`,用户 `export OPENCODE_EXPERIMENTAL=1` 后闸把四个专用 flag
- *   写 `"0"` 也恒真,`webSearchEnabled()` 继续注册本地 `websearch`(登录态本地+云双活;
- *   kill-switch 下云暗而本地仍活)。收口走 ADR-009 裁决 (b) 的路 (i):**对本地工具 ID 也走
- *   permission deny**,零改上游 registry、不碰 umbrella(它是 references / code-mode 等
- *   全部实验能力的总开关,盲目 force-0 违反「一开关一具名能力」)。
+ *   写 `"0"` 也恒真,`webSearchEnabled()` 继续注册本地 `websearch`。收口走 ADR-009 裁决 (b) 的
+ *   路 (i):**对本地工具 ID 也走 permission deny**,零改上游 registry、不碰 umbrella(它是
+ *   references / code-mode 等全部实验能力的总开关,盲目 force-0 违反「一开关一具名能力」)。
  *
  * agent 级 permission 在引擎里排在全局规则**之后**(`agent/agent.ts`:自定义 agent 走
  * `merge(item.permission, fromConfig(value.permission))`,`Permission.evaluate` 取
@@ -177,7 +181,8 @@ export function applyWebSearchDenies(
 ) {
   const denied: string[] = []
   if (state.killSwitch) denied.push(CLOUD_WEB_SEARCH_TOOL_ID)
-  if (state.killSwitch || state.platformPays) denied.push(LOCAL_WEB_SEARCH_TOOL_ID)
+  // `#1411`:**只看 kill-switch**。读 `state.platformPays` 就是把「登录了」重新解释成「本地腿不该在场」。
+  if (state.killSwitch) denied.push(LOCAL_WEB_SEARCH_TOOL_ID)
   if (denied.length === 0) return
 
   if (denied.includes(CLOUD_WEB_SEARCH_TOOL_ID))
@@ -190,7 +195,7 @@ export function applyWebSearchDenies(
     )
   if (denied.includes(LOCAL_WEB_SEARCH_TOOL_ID))
     diagnostic(
-      `[alpha-code#223] denying the local ${LOCAL_WEB_SEARCH_TOOL_ID} tool (${state.killSwitch ? "kill switch" : "platform pays"}) — the four keyless env flags cannot suppress it under OPENCODE_EXPERIMENTAL=1`,
+      `[alpha-code#223] denying the local ${LOCAL_WEB_SEARCH_TOOL_ID} tool (kill switch) — the four keyless env flags cannot suppress it under OPENCODE_EXPERIMENTAL=1`,
     )
 
   config.permission = pinDeny({ ...config.permission }, denied)

@@ -210,6 +210,12 @@
 .a-chip-perm[data-mode="readonly"] .a-ic {
   color: var(--a-accent);
 }
+/* #1413:「全部批准」按活稿(docs/design/current/composer/design.css `.chip.perm[data-mode="full"]`)用警示色 ——
+ * 它是三档里最宽的那档,也是新会话的默认档;「请求审批」保持中性色(活稿同款)。 */
+.a-chip-perm[data-mode="allow"],
+.a-chip-perm[data-mode="allow"] .a-ic {
+  color: var(--a-warning);
+}
 .a-chip[data-disabled] {
   opacity: 0.55;
   cursor: default;

@@ -42,9 +42,18 @@ export function localWebSearchDenied(env: Record<string, string | undefined> = p
   return value !== undefined && value !== "" && value !== "0"
 }
 
-/** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
+/**
+ * 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。
+ *
+ * `#1411`(REQ-1414 CODE-1):这句话此前无条件点名云 web search 工具、让模型改用它。
+ * 那是 ADR-009 B1 时代的实话 —— 本地腿在**登录代付**态被有意关掉,云腿正是替代品。B1 已被推翻
+ * (owner 2026-09-23:账户信号只决定云腿在不在),本地腿从此只有 kill-switch 能关;而 kill-switch
+ * **同时**关掉云腿。于是那句指路在唯一可达它的状态下必然是错的 —— 它把模型引向一个同一时刻也不在
+ * 工具表里的工具。基线 S5:任何「此路不通」的文案只能指向一条**此刻确实在表里**的替代,指不出就
+ * 明说没有。判据:`packages/ui-mac/src/main/cloud-web-search.test.ts` 的文案断言。
+ */
 export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
-  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_cloud_web_search if it is present, otherwise answer without web search and say so."
+  "Web search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one and the platform-hosted one alike. This is not a transient failure and no permission grant can lift it; do not retry, and do not look for another web search tool. Answer without web search and say so."
 
 /**
  * 传输层闸的失败值。刻意用 canonical 的 `ToolFailure` 而不是自定义 Error:

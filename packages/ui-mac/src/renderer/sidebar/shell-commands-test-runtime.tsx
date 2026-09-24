@@ -22,7 +22,7 @@ import { AlphaSettings } from "../alpha-ui/settings"
 import { AlphaSessionSearch } from "../alpha-ui/alpha-session-search"
 import { setSettingsOpen, settingsOpen } from "../alpha-ui/settings-state"
 import { PermChip } from "../alpha-ui/alpha-composer"
-import { READONLY_AGENT, buildPromptRequest, composerPerm, setComposerPerm } from "../alpha-ui/composer-state"
+import { ASK_AGENT, DEFAULT_PERM, READONLY_AGENT, buildPromptRequest, composerPerm, setComposerPerm } from "../alpha-ui/composer-state"
 import { setSidebarCollapsed, setProjectExpanded, markSessionViewed } from "./sidebar-state"
 import { AutomationPanel } from "../automations/automation-panel"
 import { setAutomationOpen } from "../automations/automation-state"
@@ -514,7 +514,7 @@ export function resetHarness() {
   setPickerResult(PICKED_DIRECTORY)
   setHasProjects(true)
   setSettingsOpen(false)
-  setComposerPerm("ask")
+  setComposerPerm(DEFAULT_PERM)
   setRegisteredCommands([])
   setDraftTabs([])
   // #925:自动化面板的开合是模块级信号,跨用例残留。
@@ -620,7 +620,7 @@ export function PermChipHost() {
   return <PermChip />
 }
 
-export { READONLY_AGENT }
+export { ASK_AGENT, READONLY_AGENT }
 
 /**
  * 当前档位下**提交层真正会发出的** agent 参数(undefined = 不带)。权限档位的判据必须落在这里:

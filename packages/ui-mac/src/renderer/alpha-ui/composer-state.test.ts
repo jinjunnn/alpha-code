@@ -10,8 +10,14 @@ import {
   slashSourceOf,
   setComposerModel,
   suspendComposerModel,
+  ASK_AGENT,
+  DEFAULT_PERM,
+  PERM_AGENT,
+  PERM_MODES,
+  permLocksAgent,
   READONLY_AGENT,
   type ComposerModel,
+  type PermMode,
 } from "./composer-state"
 
 const sonnet: ComposerModel = {
@@ -23,34 +29,55 @@ const sonnet: ComposerModel = {
 const flash: ComposerModel = { providerID: "alpha", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", variants: [] }
 
 describe("buildPromptRequest", () => {
-  test("未显式选择 → 只有 parts(引擎默认,最小干预)", () => {
-    const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "ask", agent: null })
+  test("未显式选择(默认档 = 全部批准)→ 只有 parts(引擎默认,最小干预)", () => {
+    expect(DEFAULT_PERM).toBe("allow")
+    const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: DEFAULT_PERM, agent: null })
     expect(r).toEqual({ parts: [{ type: "text", text: "hi" }] })
   })
   test("模型+有效档 → 统一为一个 Model.Ref", () => {
-    const r = buildPromptRequest({ text: "hi", model: sonnet, effort: "高", perm: "ask", agent: null })
+    const r = buildPromptRequest({ text: "hi", model: sonnet, effort: "高", perm: "allow", agent: null })
     expect(r.model).toEqual({ providerID: "alpha", id: "claude-sonnet-4.6", variant: "高" })
     expect(r).not.toHaveProperty("variant")
   })
   test("无档模型 → 绝不携带 variant(C28:不发引擎不认识的档)", () => {
-    const r = buildPromptRequest({ text: "hi", model: flash, effort: "高", perm: "ask", agent: null })
+    const r = buildPromptRequest({ text: "hi", model: flash, effort: "高", perm: "allow", agent: null })
     expect(r.model).toEqual({ providerID: "alpha", id: "deepseek-v4-flash" })
   })
   test("档位不属于该模型 → 不携带", () => {
-    const r = buildPromptRequest({ text: "hi", model: sonnet, effort: "极限", perm: "ask", agent: null })
+    const r = buildPromptRequest({ text: "hi", model: sonnet, effort: "极限", perm: "allow", agent: null })
     expect(r.model).toEqual({ providerID: "alpha", id: "claude-sonnet-4.6" })
   })
   test("只读权限 → agent 强制 alpha-readonly,压过手选 agent", () => {
     const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "readonly", agent: "plan" })
     expect(r.agent).toBe(READONLY_AGENT)
   })
-  test("非只读 + 手选 agent → 透传", () => {
+  test("请求审批 → agent 强制 alpha-ask,压过手选 agent(#1413:此前这档不带 agent,落到 build 全放行)", () => {
     const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "ask", agent: "plan" })
+    expect(r.agent).toBe(ASK_AGENT)
+    expect(ASK_AGENT).toBe("alpha-ask")
+    expect(buildPromptRequest({ text: "hi", model: null, effort: null, perm: "ask", agent: null }).agent).toBe(ASK_AGENT)
+  })
+  test("全部批准 + 手选 agent → 透传", () => {
+    const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "allow", agent: "plan" })
     expect(r.agent).toBe("plan")
+  })
+  test("#1413 AC4:三档各自提交的请求逐字节不同(防「放进去了但什么都不做」的假档)", () => {
+    // 同一条输入,只换权限档;agent 取 null(用户没手选)—— 这是首页 / 新会话最常见的形状。
+    const bodies = Object.fromEntries(
+      PERM_MODES.map((perm) => [perm, JSON.stringify(buildPromptRequest({ text: "hi", model: null, effort: null, perm, agent: null }))]),
+    ) as Record<PermMode, string>
+    expect(PERM_MODES).toEqual(["allow", "ask", "readonly"])
+    expect(bodies.allow).toBe('{"parts":[{"type":"text","text":"hi"}]}')
+    expect(bodies.ask).toBe('{"parts":[{"type":"text","text":"hi"}],"agent":"alpha-ask"}')
+    expect(bodies.readonly).toBe('{"parts":[{"type":"text","text":"hi"}],"agent":"alpha-readonly"}')
+    expect(new Set(Object.values(bodies)).size).toBe(PERM_MODES.length)
+    // 穷举表本身:每一档都有映射;只有 allow 不压 agent。
+    expect(PERM_AGENT).toEqual({ allow: null, ask: "alpha-ask", readonly: "alpha-readonly" })
+    expect(PERM_MODES.filter(permLocksAgent)).toEqual(["ask", "readonly"])
   })
   test("extraParts(@ 提及)追加在 text part 之后", () => {
     const extra = [{ type: "file", url: "x" }]
-    const r = buildPromptRequest({ text: "hi", extraParts: extra, model: null, effort: null, perm: "ask", agent: null })
+    const r = buildPromptRequest({ text: "hi", extraParts: extra, model: null, effort: null, perm: "allow", agent: null })
     expect(r.parts).toHaveLength(2)
     expect(r.parts[1]).toBe(extra[0])
   })

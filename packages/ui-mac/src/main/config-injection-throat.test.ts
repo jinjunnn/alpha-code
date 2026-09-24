@@ -46,6 +46,7 @@ import {
   identityCapsFromId,
   UI_MAC_AGENT_NAMES,
   uiMacAgentFragmentId,
+  uiMacAgentFragmentIds,
 } from "../../../ext/src/context-injection"
 import { ALPHA_AGENT_TEXT } from "./alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
@@ -276,12 +277,10 @@ const REGISTERED_IDENTITY = CONTEXT_INJECTIONS.filter(
 )
 // 默认 env(OPENCODE_ENABLE_EXA 未设 ⇒ keyless websearch 开;未代付)下 identity 的形状。
 const DEFAULT_IDENTITY_ID = `${IDENTITY_FRAGMENT_ID}+websearch`
-const REGISTERED_AGENT_IDS = UI_MAC_AGENT_NAMES.flatMap((n) => [uiMacAgentFragmentId(n, "prompt"), uiMacAgentFragmentId(n, "description")])
-const agentIdsOf = (names: readonly string[]) =>
-  names.flatMap((n) => [
-    uiMacAgentFragmentId(n as (typeof UI_MAC_AGENT_NAMES)[number], "prompt"),
-    uiMacAgentFragmentId(n as (typeof UI_MAC_AGENT_NAMES)[number], "description"),
-  ])
+// `#1413`:登记的 id 集由登记簿自己算(有 prompt 才有 prompt 那格)—— alpha-ask 没有 prompt,这里若仍按
+// 「每个 agent 两格」硬拼,会去等一段永远不会被写出的字。
+const REGISTERED_AGENT_IDS = UI_MAC_AGENT_NAMES.flatMap((n) => uiMacAgentFragmentIds(n))
+const agentIdsOf = (names: readonly string[]) => names.flatMap((n) => uiMacAgentFragmentIds(n as (typeof UI_MAC_AGENT_NAMES)[number]))
 const sorted = (xs: readonly string[]) => [...xs].sort()
 
 describe("ui-mac 整份 config 咽喉:injectAlphaConfig 写进 OPENCODE_CONFIG_CONTENT 的每个字符串叶子都必须是登记文字、声明引用或引擎动词", () => {
@@ -307,18 +306,26 @@ describe("ui-mac 整份 config 咽喉:injectAlphaConfig 写进 OPENCODE_CONFIG_C
     // 动词那条路真的被走过(不是「恰好没有动词叶子」)
     expect(r.verbs).toBeGreaterThanOrEqual(UI_MAC_AGENT_NAMES.length * 2)
     expect(touched(r)).toEqual(["$schema", "agent", "instructions"])
-    // 生产写出的字与内容模块逐字(判官解释成功已蕴含逐字;这里把「哪段字」钉到具体 agent 上)
+    // 生产写出的字与内容模块逐字(判官解释成功已蕴含逐字;这里把「哪段字」钉到具体 agent 上)。
+    // `#1413`:没有 prompt 的 agent(alpha-ask)生产也**不许**写出 prompt 键 —— 写了(哪怕空串)就会顶掉底座。
     for (const name of UI_MAC_AGENT_NAMES) {
-      expect(r.agent[name]!.prompt, name).toBe(ALPHA_AGENT_TEXT[name].prompt)
-      expect(r.agent[name]!.description, name).toBe(ALPHA_AGENT_TEXT[name].description)
+      const text: { prompt?: string; description: string } = ALPHA_AGENT_TEXT[name]
+      if (text.prompt === undefined) expect("prompt" in r.agent[name]!, name).toBe(false)
+      else expect(r.agent[name]!.prompt, name).toBe(text.prompt)
+      expect(r.agent[name]!.description, name).toBe(text.description)
     }
+    expect("prompt" in r.agent["alpha-ask"]!).toBe(false)
   })
 
-  test("全栈 env(ext bundle + 平台密钥 + BYOK 密钥 + 默认模型 + 云 MCP 代付):九个顶层键全部真被写到、零点名;生产走到的引用集合 == 本文件点名的 ui-mac 引用集合(双向)", () => {
+  // `#1411`(REQ-1414 CODE-1):这条用例以前说「九个顶层键」,第九个是 `permission` —— 它当时**只**
+  // 因为「代付 ⇒ 本地 websearch 被钉 deny」而存在。owner 2026-09-23 推翻了那条边,代付态的注入面
+  // 对 web search 一个字都不写,于是顶层 `permission` 整个键不再出现(下面有一条正向断言钉住它)。
+  // 顶层 permission 那条路仍有用例覆盖:本文件「用户的字不判」那条走的是 kill-switch。
+  test("全栈 env(ext bundle + 平台密钥 + BYOK 密钥 + 默认模型 + 云 MCP 代付):八个顶层键全部真被写到、零点名;生产走到的引用集合 == 本文件点名的 ui-mac 引用集合(双向)", () => {
     givenFullStack()
     const r = run(undefined, EXT_BUNDLE)
     expect(r.bad).toEqual([])
-    expect(touched(r)).toEqual(sorted(["$schema", "agent", "enabled_providers", "instructions", "mcp", "model", "permission", "plugin", "provider"]))
+    expect(touched(r)).toEqual(sorted(["$schema", "agent", "enabled_providers", "instructions", "mcp", "model", "plugin", "provider"]))
     // 每条 ui-mac 引用都真在登记簿里,且生产真的走到了每一条;生产走到的也没有超出这张表
     for (const id of UI_MAC_REFERENCE_IDS) expect(CONTEXT_INJECTIONS.find((f) => f.id === id)?.kind, id).toBe("reference")
     expect(r.refs).toEqual(sorted(UI_MAC_REFERENCE_IDS))
@@ -328,9 +335,10 @@ describe("ui-mac 整份 config 咽喉:injectAlphaConfig 写进 OPENCODE_CONFIG_C
     expect(r.after.enabled_providers).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
     expect(Object.keys(r.after.provider as Cfg)).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
     expect(((r.after.mcp as Cfg)[CLOUD_MCP_SERVER_NAME] as Cfg).headers).toEqual({ Authorization: `Bearer {file:${secretFilePath(userData, "ALPHA_MCP_TOKEN")}}` })
-    // 代付 ⇒ 本地 websearch 在顶层与每个 agent 上被钉 deny —— 全走了动词那条路
-    expect((r.after.permission as Cfg)[LOCAL_WEB_SEARCH_TOOL_ID]).toBe("deny")
-    expect(r.verbs).toBeGreaterThanOrEqual(UI_MAC_AGENT_NAMES.length * 2 + 1)
+    // `#1411`:代付**不再**产生任何 web search deny —— 顶层 permission 整个不写(两条腿都留在模型
+    // 工具表里)。以前这里是 `expect(...[LOCAL_WEB_SEARCH_TOOL_ID]).toBe("deny")`。
+    expect(r.after.permission).toBeUndefined()
+    expect(r.verbs).toBeGreaterThanOrEqual(UI_MAC_AGENT_NAMES.length * 2)
     // identity 解释出的形状必须与 env 推出的能力事实一致(代付 + keyless)
     expect(sorted(r.explained)).toEqual(sorted([`${IDENTITY_FRAGMENT_ID}+websearch+cloudDispatch`, BEHAVIOR_FRAGMENT_ID, ...REGISTERED_AGENT_IDS]))
     // 密钥值不在任何字符串叶子里(A6;组合体层面的锁在 alpha-config-injection.test.ts,这里只证明判官看到的那份也没有)
@@ -434,20 +442,22 @@ describe("ui-mac 整份 config 咽喉:injectAlphaConfig 写进 OPENCODE_CONFIG_C
     expect(sorted(r.explained)).toEqual(sorted([DEFAULT_IDENTITY_ID, ...REGISTERED_AGENT_IDS]))
   })
 
-  test("逃生门 ②:ALPHA_AUTOMATION_DISABLE 拿掉两个 automation,ALPHA_READONLY_DISABLE 拿掉 readonly —— 剩下的仍零点名,解释出的正是剩下那些", () => {
+  test("逃生门 ②:ALPHA_AUTOMATION_DISABLE 拿掉两个 automation,ALPHA_READONLY_DISABLE 拿掉 readonly —— 剩下的仍零点名,解释出的正是剩下那些;alpha-ask 没有逃生门,两种 env 下都在(#1413)", () => {
     process.env.ALPHA_AUTOMATION_DISABLE = "1"
     let r = run()
-    expect(Object.keys(r.agent)).toEqual(["alpha-readonly"])
+    expect(sorted(Object.keys(r.agent))).toEqual(["alpha-ask", "alpha-readonly"])
     expect(r.bad).toEqual([])
-    expect(sorted(r.explained)).toEqual(sorted([DEFAULT_IDENTITY_ID, BEHAVIOR_FRAGMENT_ID, ...agentIdsOf(["alpha-readonly"])]))
+    expect(sorted(r.explained)).toEqual(sorted([DEFAULT_IDENTITY_ID, BEHAVIOR_FRAGMENT_ID, ...agentIdsOf(["alpha-readonly", "alpha-ask"])]))
 
     delete process.env.ALPHA_AUTOMATION_DISABLE
     process.env.ALPHA_READONLY_DISABLE = "1"
     freshRound()
     r = run()
-    expect(sorted(Object.keys(r.agent))).toEqual(["alpha-automation", "alpha-automation-standard"])
+    expect(sorted(Object.keys(r.agent))).toEqual(["alpha-ask", "alpha-automation", "alpha-automation-standard"])
     expect(r.bad).toEqual([])
-    expect(sorted(r.explained)).toEqual(sorted([DEFAULT_IDENTITY_ID, BEHAVIOR_FRAGMENT_ID, ...agentIdsOf(["alpha-automation", "alpha-automation-standard"])]))
+    expect(sorted(r.explained)).toEqual(
+      sorted([DEFAULT_IDENTITY_ID, BEHAVIOR_FRAGMENT_ID, ...agentIdsOf(["alpha-automation", "alpha-automation-standard", "alpha-ask"])]),
+    )
   })
 
   test("已知的坏 ⓪(对未知默认拒):往判官从没见过的键写 alpha 的字 —— cfg.command.*.template 塞登记过的 behavior 正文、cfg.command.*.description 塞一句 prose、一个没人声明的顶层键塞一句 —— 三处各点名,其余照常解释", () => {

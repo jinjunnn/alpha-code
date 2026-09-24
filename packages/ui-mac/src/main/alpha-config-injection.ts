@@ -227,6 +227,36 @@ export function injectAlphaConfig(
       }
     }
 
+    //   2d. `#1413`:交互「请求审批」agent(composer 权限档「请求审批」的真载体)。
+    //       此前该档提交时**不带 agent**,落到引擎默认 agent `build`,而 build 的规则集基底是 `"*": "allow"` ——
+    //       真 `Permission.ask` 实测 edit/bash 直接放行不弹框,「逐次询问」这个副标题是假的
+    //       (docs/architecture/2026-09-23-runtime-permission-tiers.md §3)。
+    //       语义 = build + edit/bash 改成 ask,**别的一格都不动**:引擎对 config agent 的合成是
+    //       `merge(defaults, user) + fromConfig(这里的 permission)`(agent/agent.ts config-agent 分支),
+    //       而 build = `merge(defaults, {question: allow, plan_enter: allow}, user)`;所以这里要把 build 对 defaults
+    //       的两条覆盖原样带上,否则「请求审批」会比「全部批准」少掉 question 工具。
+    //       没有 prompt(见 alpha-agents.ts 抬头:给了 prompt 就会顶掉整份底座)。
+    //       不设逃生 env:composer 选了这档就发 `agent: "alpha-ask"`,agent 缺席 = 引擎具名报错(fail-closed),
+    //       不是静默回到全放行。治理保护名单同 alpha-readonly(ALPHA_INJECTED_AGENTS)。
+    //       常驻闸:packages/opencode/test/permission/alpha-composer-tiers.test.ts(真 Agent + 真 Permission.ask)。
+    config.agent = {
+      ...(config.agent ?? {}),
+      "alpha-ask": {
+        description: ALPHA_AGENT_TEXT["alpha-ask"].description,
+        hidden: true,
+        mode: "primary",
+        permission: {
+          question: "allow",
+          plan_enter: "allow",
+          // 与另外三个 alpha agent 同形:显式写 websearch allow(defaults 的 `*` 本来就 allow,求值结果不变),
+          // 让 #223 的主权闸(applyWebSearchDenies 按 agent 钉 deny / keyless 下逐 agent 核 allow)对它一视同仁。
+          websearch: "allow",
+          edit: "ask",
+          bash: "ask",
+        },
+      },
+    }
+
     //   2c. REQ-024(自动化 A2):standard 可写档 agent。无人值守语义同 alpha-automation
     //       (question/task/doom_loop deny,零 ask 硬前提);差异 = edit allow + bash 受限 allow
     //       (破坏类命令模式 deny —— 模式黑名单**非穷尽**,UI 启用时有显式风险确认,不谎称安全)。

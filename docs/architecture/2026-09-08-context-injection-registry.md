@@ -68,7 +68,7 @@ ui-mac 侧咽喉:[`packages/ui-mac/src/main/config-injection-throat.test.ts`](..
 | 写入点 | cfg 键 / hook 输出 | 引擎消费点 | 登记项 |
 | --- | --- | --- | --- |
 | ui-mac [`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 的 `addInstruction`(主进程写引擎配置,`#1296`) | `cfg.instructions[]`(两份落盘文件 `alpha-identity.md` / `alpha-behavior.md` 的绝对路径) | `session/instruction.ts:135-150` 按路径读盘 → `Instruction.system()` 每份加一行 `Instructions from: <path>` → `llm/request.ts:63-70` 与底座 / agent prompt 拼成同一个 system 串 | 1 条 text(behavior)+ 4 条 text(identity 每种能力形状一条) |
-| ui-mac [`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 的三处 `config.agent = { …(config.agent ?? {}), … }`(主进程写引擎配置,`#1299`;字住 [`alpha-agents.ts`](../../packages/ui-mac/src/main/alpha-agents.ts)) | `cfg.agent.alpha-automation\|alpha-readonly\|alpha-automation-standard.{prompt,description}`(同一对象里的 `mode` / `permission` / `hidden` 是动词与布尔,不是字) | prompt:`agent/agent.ts:277-278` → `llm/request.ts:64` **整段顶替**底座(与 ext 的 `agent.general\|explore\|docs.prompt` 同一格);description:task 工具的 subagent 清单(三个都 `hidden:true`,只影响可见列表) | 3 条 text(prompt,sink=system)+ 3 条 text(description,sink=agent-description) |
+| ui-mac [`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 的四处 `config.agent = { …(config.agent ?? {}), … }`(主进程写引擎配置,`#1299`;`#1413` 加第四处;字住 [`alpha-agents.ts`](../../packages/ui-mac/src/main/alpha-agents.ts)) | `cfg.agent.alpha-automation\|alpha-readonly\|alpha-automation-standard.{prompt,description}` + `cfg.agent.alpha-ask.description`(`alpha-ask` **刻意无 prompt**:有就顶掉底座,而它的语义是「默认档 + 多问一句」;同一对象里的 `mode` / `permission` / `hidden` 是动词与布尔,不是字) | prompt:`agent/agent.ts:277-278` → `llm/request.ts:64` **整段顶替**底座(与 ext 的 `agent.general\|explore\|docs.prompt` 同一格);description:task 工具的 subagent 清单(三个都 `hidden:true`,只影响可见列表) | 3 条 text(prompt,sink=system)+ 4 条 text(description,sink=agent-description);登记簿按「有什么登记什么」(`uiMacAgentFragmentIds`),没有 prompt 的 agent 不占 prompt 那格 |
 | [`alpha-prompts.ts`](../../packages/ext/src/alpha-prompts.ts) `applyPromptTakeover` | `cfg.command.init|review.{template,description}`、`cfg.agent.general|explore|docs.prompt`、`cfg.agent.docs.description` | `command/index.ts:98`(template 成为用户回合);`agent/agent.ts:277-278` → `llm/request.ts:64`(agent prompt **整段顶替**底座);task 工具的 subagent 清单读 description | 8 条 text |
 | [`prompt-rebrand.ts`](../../packages/ext/src/prompt-rebrand.ts) `rebrandSystem`,经 `plugin.ts` 的 `experimental.chat.system.transform` | `output.system[]` 子串替换 | `llm/request.ts:62-70`(底座 + environment + instructions 已 join 成一串再触发本钩子) | 12 条 rebrand(量 `to`,`from` 是上游原文不计) |
 | [`factory-deny.ts`](../../packages/ext/src/factory-deny.ts) `applyFactoryDeny` | `cfg.command[<被禁技能>].{description,template}` | 同 command | 1 条 text + 1 条 template(`{name}` 单占位符) |
@@ -175,10 +175,10 @@ ui-mac 加一个能力字段而这里没扩域,ext typecheck 当场红(变异实
 
 ## 9. ui-mac agent 通路怎么进同一份登记簿(`#1299`)
 
-**通路**:[`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 三处
-`config.agent = { …(config.agent ?? {}), "<name>": { description, hidden, mode, prompt, permission } }`
-(`alpha-automation` / `alpha-readonly` / `alpha-automation-standard`;前两者受 `ALPHA_AUTOMATION_DISABLE`,
-中间那个受 `ALPHA_READONLY_DISABLE`)。prompt 在 `llm/request.ts:64` **整段顶替**底座提示词 —— 与 ext 的
+**通路**:[`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 四处
+`config.agent = { …(config.agent ?? {}), "<name>": { description, hidden, mode, prompt?, permission } }`
+(`alpha-automation` / `alpha-readonly` / `alpha-automation-standard` / `alpha-ask`;前两个 automation 受 `ALPHA_AUTOMATION_DISABLE`,
+`alpha-readonly` 受 `ALPHA_READONLY_DISABLE`,`alpha-ask`(`#1413`,composer「请求审批」的载体)无逃生 env、**无 prompt**,只写 description)。prompt 在 `llm/request.ts:64` **整段顶替**底座提示词 —— 与 ext 的
 `agent.general|explore|docs.prompt` 同一格,description 进 subagent 清单。2026-09-08 跑真 `injectAlphaConfig`
 实测 **1,427 B**:prompt 391 / 296 / 441,description 93 / 108 / 98(把字面量抽进内容模块前后各量一次,逐字节相同)。
 

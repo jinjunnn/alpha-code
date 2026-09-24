@@ -40,6 +40,7 @@ import {
   TOOL_TEXT,
   UI_MAC_AGENT_NAMES,
   uiMacAgentFragmentId,
+  uiMacAgentFragmentIds,
 } from "./context-injection"
 import { REBRAND_RULES } from "./prompt-rebrand"
 import { ALPHA_AGENT_TEXT } from "../../ui-mac/src/main/alpha-agents"
@@ -424,23 +425,42 @@ describe("③e instructions 通路:登记形状 + 判官 + 跨包前提", () => 
 // 字符串叶子过判官,并与这里的登记集合双向比对)。这里只钉登记形状与判官 explainAgentText 的已知的坏。
 
 describe("③f agent 通路:登记形状 + 判官 explainAgentText", () => {
-  test("ui-mac 的每个 agent 各登记 prompt(sink=system)+ description(sink=agent-description),正文 = ALPHA_AGENT_TEXT 逐字;名字集合 = 内容模块键集", () => {
+  test("ui-mac 的每个 agent 登记 description(sink=agent-description),有 prompt 的再登记 prompt(sink=system),正文 = ALPHA_AGENT_TEXT 逐字;名字集合 = 内容模块键集;没有 prompt 的不许凭空多出一格", () => {
     expect([...UI_MAC_AGENT_NAMES].sort()).toEqual(Object.keys(ALPHA_AGENT_TEXT).sort())
     expect(UI_MAC_AGENT_NAMES.length).toBeGreaterThanOrEqual(3)
+    let withPrompt = 0
+    let withoutPrompt = 0
     for (const name of UI_MAC_AGENT_NAMES) {
+      const text: { prompt?: string; description: string } = ALPHA_AGENT_TEXT[name]
       const prompt = CONTEXT_INJECTIONS.find((f) => f.id === uiMacAgentFragmentId(name, "prompt"))
       const description = CONTEXT_INJECTIONS.find((f) => f.id === uiMacAgentFragmentId(name, "description"))
-      expect(prompt?.kind, name).toBe("text")
       expect(description?.kind, name).toBe("text")
-      if (prompt?.kind !== "text" || description?.kind !== "text") throw new Error("unreachable")
-      expect(prompt.sink).toBe("system")
+      if (description?.kind !== "text") throw new Error("unreachable")
       expect(description.sink).toBe("agent-description")
-      expect(prompt.text).toBe(ALPHA_AGENT_TEXT[name].prompt)
-      expect(description.text).toBe(ALPHA_AGENT_TEXT[name].description)
-      expect(prompt.bytes).toBe(contextBytes(ALPHA_AGENT_TEXT[name].prompt))
+      expect(description.text).toBe(text.description)
+      if (text.prompt === undefined) {
+        // `#1413` alpha-ask:没有 prompt 就不能有 prompt 那格(登记一个永远不会被写出的 id = 咽喉等一段不存在的字)
+        expect(prompt, name).toBeUndefined()
+        expect(uiMacAgentFragmentIds(name)).toEqual([uiMacAgentFragmentId(name, "description")])
+        withoutPrompt += 1
+        continue
+      }
+      expect(prompt?.kind, name).toBe("text")
+      if (prompt?.kind !== "text") throw new Error("unreachable")
+      expect(prompt.sink).toBe("system")
+      expect(prompt.text).toBe(text.prompt)
+      expect(prompt.bytes).toBe(contextBytes(text.prompt))
+      expect(uiMacAgentFragmentIds(name)).toEqual([uiMacAgentFragmentId(name, "prompt"), uiMacAgentFragmentId(name, "description")])
+      withPrompt += 1
     }
-    // 六段字两两不同(否则「集合相等」可能是同一段字登记了六次)
-    const texts = UI_MAC_AGENT_NAMES.flatMap((n) => [ALPHA_AGENT_TEXT[n].prompt, ALPHA_AGENT_TEXT[n].description])
+    // 两种形状都真的在场(否则上面某一支是死代码,判官对那一支从没被证明过)
+    expect(withPrompt).toBeGreaterThanOrEqual(3)
+    expect(withoutPrompt).toBeGreaterThanOrEqual(1)
+    // 所有字两两不同(否则「集合相等」可能是同一段字登记了多次)
+    const texts = UI_MAC_AGENT_NAMES.flatMap((n) => {
+      const text: { prompt?: string; description: string } = ALPHA_AGENT_TEXT[n]
+      return text.prompt === undefined ? [text.description] : [text.prompt, text.description]
+    })
     expect(new Set(texts).size).toBe(texts.length)
   })
   test("判官 explainAgentText:逐字命中对应 sink;已知的坏 —— 一字节之差 / 串格(description 当 prompt、instruction 文件当 prompt)/ 空串 都不解释", () => {

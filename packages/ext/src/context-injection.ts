@@ -57,7 +57,7 @@
 // alpha 的);REQ-063 用户经导入门放进 `<alpha-root>/instructions/*.md` 的字(用户的);skills 正文与
 // MCP 工具表(别人的字);ui-mac 写进 agent 与顶层 permission 的动词、`hidden` / `disable` / `enabled` 布尔(不是字)。
 
-import { ALPHA_AGENT_TEXT } from "../../ui-mac/src/main/alpha-agents"
+import { ALPHA_AGENT_TEXT, type AlphaAgentText } from "../../ui-mac/src/main/alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
 import { buildAlphaIdentity, type AlphaCapabilities } from "../../ui-mac/src/main/alpha-identity"
 import {
@@ -219,20 +219,28 @@ function identityFragments(): TextFragment[] {
 }
 
 // ── ui-mac agent 通路(`#1299`)─────────────────────────────────────────────────────
-// 三个 alpha agent 的 prompt / description 从 ui-mac 的零依赖内容模块取。id 形状与 ext 自己的 agent 片段
+// alpha agent 的 prompt / description 从 ui-mac 的零依赖内容模块取。id 形状与 ext 自己的 agent 片段
 // 同形(`agent.<name>.prompt|description`);名字集合 = `ALPHA_AGENT_TEXT` 的键集,与生产写出的
 // `cfg.agent` 键集的双向相等由 ui-mac 咽喉(跑真 injectAlphaConfig)钉住,这里不自算。
+// `#1413`:agent 可以**没有 prompt**(`alpha-ask`:给了 prompt 就会在 request.ts:64 顶掉整份底座,
+// 而它的语义是「默认档 + 多问一句」)。没有的就不登记那一格 —— 登记一个不存在的 id 会让咽喉去等一段
+// 永远不会被写出的字。`uiMacAgentFragmentIds` 是这个「有什么登记什么」的唯一算法,库存与咽喉都消费它。
 export const UI_MAC_AGENT_NAMES = Object.freeze(Object.keys(ALPHA_AGENT_TEXT)) as readonly (keyof typeof ALPHA_AGENT_TEXT)[]
 export function uiMacAgentFragmentId(name: keyof typeof ALPHA_AGENT_TEXT, field: "prompt" | "description"): string {
   return `agent.${name}.${field}`
 }
+/** 该 agent 在登记簿里**实际**占的 id(有 prompt 才有 prompt 那格;description 必有)。 */
+export function uiMacAgentFragmentIds(name: keyof typeof ALPHA_AGENT_TEXT): string[] {
+  const text: AlphaAgentText = ALPHA_AGENT_TEXT[name]
+  return [...(text.prompt !== undefined ? [uiMacAgentFragmentId(name, "prompt")] : []), uiMacAgentFragmentId(name, "description")]
+}
 function uiMacAgentFragments(): TextFragment[] {
   const out: TextFragment[] = []
   for (const name of UI_MAC_AGENT_NAMES) {
-    out.push(defineText({ id: uiMacAgentFragmentId(name, "prompt"), sink: "system", text: ALPHA_AGENT_TEXT[name].prompt, maxBytes: CAP_BODY }))
-    out.push(
-      defineText({ id: uiMacAgentFragmentId(name, "description"), sink: "agent-description", text: ALPHA_AGENT_TEXT[name].description, maxBytes: CAP_DESCRIPTION }),
-    )
+    const text: AlphaAgentText = ALPHA_AGENT_TEXT[name]
+    if (text.prompt !== undefined)
+      out.push(defineText({ id: uiMacAgentFragmentId(name, "prompt"), sink: "system", text: text.prompt, maxBytes: CAP_BODY }))
+    out.push(defineText({ id: uiMacAgentFragmentId(name, "description"), sink: "agent-description", text: text.description, maxBytes: CAP_DESCRIPTION }))
   }
   return out
 }
@@ -493,9 +501,9 @@ export function renderInventory(): string {
   lines.push(
     `instruction files (ui-mac main writes them into cfg.instructions; engine session/instruction.ts reads them into the system segment; identity has one row per reachable capability shape): ${instr.join(", ")}`,
   )
-  const agents = UI_MAC_AGENT_NAMES.flatMap((n) => [uiMacAgentFragmentId(n, "prompt"), uiMacAgentFragmentId(n, "description")])
+  const agents = UI_MAC_AGENT_NAMES.flatMap((n) => uiMacAgentFragmentIds(n))
   lines.push(
-    `ui-mac agents (main writes cfg.agent.<name>.{prompt,description}; prompt replaces the base system prompt at llm/request.ts:64, description enters the subagent list): ${agents.join(", ")}`,
+    `ui-mac agents (main writes cfg.agent.<name>.{prompt,description}; prompt replaces the base system prompt at llm/request.ts:64 — an agent without a prompt keeps the base prompt; description enters the subagent list): ${agents.join(", ")}`,
   )
   return lines.join("\n") + "\n"
 }

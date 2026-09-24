@@ -56,6 +56,8 @@ import {
   composerModelProjection,
   composerModelSuspended,
   composerPerm,
+  PERM_MODES,
+  permLocksAgent,
   failComposerModelProjection,
   invalidateComposerModelProjection,
   releaseComposerAgentScope,
@@ -195,6 +197,12 @@ const Chevron = () => (
     <path d="M6 9l6 6 6-6" />
   </svg>
 )
+/* 「全部批准」的盾(活稿 §07 第一项:光盾,无勾无眼)。 */
+const ShieldOpen = () => (
+  <svg class="a-ic a-ic-sm" viewBox={ico}>
+    <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
+  </svg>
+)
 const ShieldAsk = () => (
   <svg class="a-ic a-ic-sm" viewBox={ico}>
     <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
@@ -252,12 +260,21 @@ function AddButton(props: { onOpen: () => void; expanded: boolean }) {
   )
 }
 
-/* ── 权限 chip:ask = 引擎默认(命中权限就弹审批);readonly = 提交时强制只读 agent ──
- * REQ-126 AC7(#658):第三档「全自动」已退休。它发的 `permissions.autoaccept.enable/.disable`
- * 两个 id 上游根本没有(上游只有单个 `permissions.autoaccept`,且注册处随 session 叶退役),而
- * 提交层只对 `readonly` 分支 —— 于是「全自动」与「询问」产出完全相同的请求。留着它就是界面上
- * 一个点了不算数的开关。真正的自动放行要接权限引擎,是新能力,另立需求。 */
-const permLabel = (mode: PermMode) => (mode === "ask" ? t("alpha.composer.permAsk") : t("alpha.composer.permReadonly"))
+/* ── 权限 chip(`#1413`):三档,每档发出的请求逐字节不同 ──
+ * allow「全部批准」= 不压 agent(引擎默认 build,edit/bash 全放行 —— 这就是此前「请求审批」档的真实行为);
+ * ask「请求审批」= 提交时强制 alpha-ask(edit/bash 真的弹审批);readonly「只读」= 强制 alpha-readonly(deny)。
+ * 映射表是 composer-state 的 PERM_AGENT;这里的标签 / 副标题 / 图标同样按 PermMode 穷举 —— 少一档 typecheck 红,
+ * 不会有哪一档静默借用别人的标签或图标。
+ * REQ-126 AC7(#658)退休过的「全自动」档是反例:提交层只对 readonly 分支,它与「询问」产出完全相同的请求,
+ * 界面上一个点了不算数的开关。这次的判据(shell-commands.test.ts)逐档真点、断言提交层的 agent 三个互不相同。 */
+type DictKey = Parameters<typeof t>[0]
+const PERM_TEXT: Record<PermMode, { label: DictKey; hint: DictKey }> = {
+  allow: { label: "alpha.composer.permAllow", hint: "alpha.composer.permAllowHint" },
+  ask: { label: "alpha.composer.permAsk", hint: "alpha.composer.permAskHint" },
+  readonly: { label: "alpha.composer.permReadonly", hint: "alpha.composer.permReadonlyHint" },
+}
+const PERM_ICON: Record<PermMode, () => JSX.Element> = { allow: ShieldOpen, ask: ShieldAsk, readonly: ShieldEye }
+const permLabel = (mode: PermMode) => t(PERM_TEXT[mode].label)
 
 type CommandApi = ReturnType<typeof useCommand>
 
@@ -278,35 +295,27 @@ export function PermChip() {
         aria-expanded={isOpen()}
         onClick={(e) => (stop(e), toggle())}
       >
-        <Switch fallback={<ShieldAsk />}>
-          <Match when={composerPerm() === "readonly"}>
-            <ShieldEye />
-          </Match>
-        </Switch>
+        {PERM_ICON[composerPerm()]()}
         {permLabel(composerPerm())}
         <Chevron />
       </button>
       <Show when={isOpen()}>
         <ChipPopover anchor={btn} align="left" minWidth={230} role="menu" onEscape={close}>
           <div class="a-pop-label" role="presentation">{t("alpha.composer.permissions")}</div>
-          <button
-            class="a-pop-item"
-            classList={{ "is-on": composerPerm() === "ask" }}
-            role="menuitemradio"
-            aria-checked={composerPerm() === "ask"}
-            onClick={() => pick("ask")}
-          >
-            <ShieldAsk /> {t("alpha.composer.permAsk")} <span class="a-pop-desc">{t("alpha.composer.permAskHint")}</span>
-          </button>
-          <button
-            class="a-pop-item"
-            classList={{ "is-on": composerPerm() === "readonly" }}
-            role="menuitemradio"
-            aria-checked={composerPerm() === "readonly"}
-            onClick={() => pick("readonly")}
-          >
-            <ShieldEye /> {t("alpha.composer.permReadonly")} <span class="a-pop-desc">{t("alpha.composer.permReadonlyHint")}</span>
-          </button>
+          <For each={PERM_MODES}>
+            {(mode) => (
+              <button
+                class="a-pop-item"
+                classList={{ "is-on": composerPerm() === mode }}
+                role="menuitemradio"
+                aria-checked={composerPerm() === mode}
+                data-perm={mode}
+                onClick={() => pick(mode)}
+              >
+                {PERM_ICON[mode]()} {t(PERM_TEXT[mode].label)} <span class="a-pop-desc">{t(PERM_TEXT[mode].hint)}</span>
+              </button>
+            )}
+          </For>
         </ChipPopover>
       </Show>
     </div>
@@ -315,17 +324,18 @@ export function PermChip() {
 
 /* ── 计划模式 chip(REQ-073,取代 AgentChip)—— composerAgent 即模式载体:null = 引擎默认
  * (build,不出控件);"plan"/第三方主档 = chip 呈现,点击关闭;开关入口在统一装配弹窗,
- * Shift+Tab 快捷切换;perm=readonly 时模式不生效(buildPromptRequest 强制只读档),chip 如实置灰。 */
+ * Shift+Tab 快捷切换;权限档压 agent 时(readonly / ask,`#1413`:permLocksAgent)模式不生效
+ * (buildPromptRequest 强制该档的 agent),chip 如实置灰并在 title 里点名是哪一档压的。 */
 function PlanChip() {
   const label = () => (composerAgent() === "plan" ? t("alpha.composer.plan") : composerAgent())
   return (
     <Show when={composerAgent()}>
       <button
         class="a-chip a-chip-plan"
-        data-disabled={composerPerm() === "readonly" ? "" : undefined}
+        data-disabled={permLocksAgent(composerPerm()) ? "" : undefined}
         title={
-          composerPerm() === "readonly"
-            ? t("alpha.composer.planReadonly")
+          permLocksAgent(composerPerm())
+            ? t("alpha.composer.planLocked", { tier: permLabel(composerPerm()) })
             : t("alpha.composer.planEnabled")
         }
         onClick={(e) => (stop(e), setComposerAgent(null))}
@@ -1638,10 +1648,10 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 
   const onKey = (e: KeyboardEvent) => {
     if (auto.onKeyDown(e)) return
-    // REQ-073:Shift+Tab 切换计划模式(Codex 同款;readonly 档下不切换 —— 模式本就不生效)
+    // REQ-073:Shift+Tab 切换计划模式(Codex 同款;压 agent 的权限档下不切换 —— 模式本就不生效,`#1413`)
     if (e.key === "Tab" && e.shiftKey && !isImeComposing(e)) {
       e.preventDefault()
-      if (composerPerm() !== "readonly") setComposerAgent(composerAgent() === "plan" ? null : "plan")
+      if (!permLocksAgent(composerPerm())) setComposerAgent(composerAgent() === "plan" ? null : "plan")
       return
     }
     if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {

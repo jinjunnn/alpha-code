@@ -258,18 +258,24 @@ describe("空项目态「打开项目」:改走 alpha 自己的目录选择", ()
   })
 })
 
-describe("composer 权限档位:退休无效的「全自动」档", () => {
-  test("弹层里只剩两档,且都是真的 —— 只读会改变提交参数,「全自动」曾经改不了任何东西", async () => {
+describe("composer 权限档位:三档各自真的改变提交参数(#1413;REQ-126 曾退休一个点了不算数的「全自动」档)", () => {
+  test("弹层里三档,标签两两不同,逐档真点后提交层的 agent 三个互不相同 —— 全部批准不带、请求审批 alpha-ask、只读 alpha-readonly", async () => {
     await mountShell(() => runtime.PermChipHost())
 
     const chip = document.querySelector<HTMLButtonElement>(".a-chip-perm")!
     expect(chip).not.toBeNull()
+    // 新会话默认档 = 全部批准(它就是此前默认档的真实行为,只是标签终于说了实话)。
+    expect(chip.dataset.mode).toBe("allow")
     chip.click()
     await flush()
 
     const tiers = () => Array.from(document.querySelectorAll<HTMLButtonElement>("[role='menuitemradio']"))
-    expect(tiers()).toHaveLength(2)
+    expect(tiers()).toHaveLength(3)
     const labels = tiers().map((tier) => tier.textContent)
+    // AC2:不是两个档共用一个标签 / 副标题。
+    expect(new Set(labels).size).toBe(3)
+    // 每一项都是「主标签 + 副标题」两行同构(副标题槽非空)。
+    for (const tier of tiers()) expect(tier.querySelector(".a-pop-desc")?.textContent?.trim()).toBeTruthy()
 
     // 逐档真点,判据是**提交层真的不同** —— 只断言 chip 选中态是修前即绿的假闸门:退休掉的
     // 「全自动」当年选得中、亮得起来,却与「询问」产出逐字节相同的请求。
@@ -283,9 +289,12 @@ describe("composer 权限档位:退休无效的「全自动」档", () => {
       await flush()
       seen.set(chip.dataset.mode!, runtime.submittedAgent())
     }
-    expect([...seen.keys()].sort()).toEqual(["ask", "readonly"])
+    expect([...seen.keys()].sort()).toEqual(["allow", "ask", "readonly"])
+    expect(seen.get("allow")).toBeUndefined()
+    expect(seen.get("ask")).toBe(runtime.ASK_AGENT)
     expect(seen.get("readonly")).toBe(runtime.READONLY_AGENT)
-    expect(seen.get("ask")).toBeUndefined()
+    // AC4 在真实壳上的那一半:三个提交层结果两两不同(undefined 也算一个值)。
+    expect(new Set(seen.values()).size).toBe(3)
   })
 })
 

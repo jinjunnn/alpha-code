@@ -30,7 +30,7 @@
     <div class="sec-head">
       <div class="sec-kicker">Overview · 设计目标</div>
       <h2>一套输入框，三层模型，登录即解锁代理节点</h2>
-      <p class="lede">首页与对话页共用<strong>同一个 composer</strong>(纯白、柔和阴影、克制图标);模型选择重做成三层 —— <strong>代理节点(alpha-platform,登录解锁)</strong> · <strong>国内直连(填 Key 即用)</strong> · <strong>自定义节点(Base URL + Key + 自定义模型/等级/effort,即 OpenRouter 场景)</strong>。新增 <strong>effort</strong> 与 <strong>权限(完全访问/请求审批)</strong> 两个控件,均挂在 opencode 已有的真实接缝上。</p>
+      <p class="lede">首页与对话页共用<strong>同一个 composer</strong>(纯白、柔和阴影、克制图标);模型选择重做成三层 —— <strong>代理节点(alpha-platform,登录解锁)</strong> · <strong>国内直连(填 Key 即用)</strong> · <strong>自定义节点(Base URL + Key + 自定义模型/等级/effort,即 OpenRouter 场景)</strong>。新增 <strong>effort</strong> 与 <strong>权限(全部批准/请求审批/只读,alpha-code#1413 起三档各自发不同请求)</strong> 两个控件,均挂在 opencode 已有的真实接缝上。</p>
     </div>
     <div class="note"><b>顶部可切换</b>四种账号态「会员 / 仅余额 / 余额不足 / 未登录」,实时观察代理节点的<strong>开放 / 软锁 / 硬锁</strong>差异,以及「浅色 / 深色」。所有颜色取自 <span class="mono">alpha-ui/tokens.css</span> 真值。</div>
   </section>
@@ -68,7 +68,7 @@
                   </div>
                 </div>
                 <div class="pop-wrap">
-                  <button class="chip perm" data-mode="full" data-pop="permHome"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <button class="chip perm" data-mode="full" data-pop="permHome"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
                   <div class="pop up perm-menu" id="permHome" style="min-width:230px"></div>
                 </div>
                 <div class="grow"></div>
@@ -168,7 +168,7 @@
         <div class="input">重构 composer 并接入代理节点模型…</div>
         <div class="toolbar">
           <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-          <button class="chip perm" data-mode="full"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+          <button class="chip perm" data-mode="full"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
           <div class="grow"></div>
           <button class="chip usage" title="上下文 38%"><span class="ring"></span>38%</button>
           <button class="chip model"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
@@ -178,7 +178,7 @@
       </div>
       <div class="legend">
         <div><span class="n">1</span> + 添加 — 打开「文件/终端/目标/计划/扩展」菜单</div>
-        <div><span class="n">2</span> 权限 — 完全访问 / 请求审批(amber 警示色)</div>
+        <div><span class="n">2</span> 权限 — 全部批准(amber 警示色,默认档)/ 请求审批 / 只读</div>
         <div><span class="n">3</span> 模型 — 三层选择器,带供应商图标</div>
         <div><span class="n">4</span> effort — 低/中/高/超高(随模型能力启停)</div>
         <div><span class="n">5</span> 发送 — 有内容时点亮 indigo</div>
@@ -405,16 +405,16 @@
   <section class="sec" id="perm">
     <div class="sec-head">
       <div class="sec-kicker">07 · 权限</div>
-      <h2>完全访问 / 请求审批 — opencode 已有引擎,新增开关</h2>
-      <p class="lede">opencode 后端<strong>已有</strong>权限引擎:<span class="mono">permission:"allow"</span> = 完全访问,规则式 <span class="mono">ask</span> = 请求审批,配 <span class="mono">permission.asked</span> 事件与 once/always/reject 回应 —— 但<strong>没有界面开关</strong>。这里补上工具栏开关 + 审批卡片。</p>
+      <h2>全部批准 / 请求审批 / 只读 — 三档,每档提交的请求逐字节不同</h2>
+      <p class="lede">opencode 后端<strong>已有</strong>权限引擎(<span class="mono">"ask" | "allow" | "deny"</span> 三值,配 <span class="mono">permission.asked</span> 事件与 once/always/reject 回应)。工具栏开关 + 审批卡片在这里;<strong>每一档在提交层都必须发出不同的请求</strong> —— 2026-09-23 实测(<span class="mono">docs/architecture/2026-09-23-runtime-permission-tiers.md</span>)当时的「请求审批」提交时不带 agent、落到引擎默认档 <span class="mono">build</span>(<span class="mono">"*": "allow"</span>),改文件 / 跑命令一次都不问;alpha-code#1413 起三档如下。</p>
     </div>
     <div class="row">
       <div style="width:240px">
         <div class="pop up static" style="width:240px">
           <div class="menu-label">运行权限</div>
-          <div class="menu-item is-on"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<span class="desc">允许全部</span></div>
+          <div class="menu-item is-on"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件/执行命令不再询问</span></div>
           <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">逐次询问</span></div>
-          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">禁止写/执行</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件/执行命令</span></div>
         </div>
       </div>
       <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
@@ -423,7 +423,7 @@
           <div class="pb">agent 想运行命令:<code>rm -rf node_modules &amp;&amp; bun install</code></div>
           <div class="pa"><button class="btn-primary">允许一次</button><button class="btn-ghost">总是允许此类</button><button class="btn-ghost">拒绝</button></div>
         </div>
-        <div class="note"><b>映射</b>:完全访问 → <span class="mono">permission:"allow"</span>;请求审批 → 规则式 <span class="mono">ask</span>;按钮 → SDK <span class="mono">permission.respond({response:"once|always|reject"})</span>。开关写当前会话 / 项目配置。<b>结论</b>:能力真实存在,我们补的是 UI,不是造功能。</div>
+        <div class="note"><b>映射(alpha-code#1413 落地形状)</b>:三档都是<strong>每条消息自带的 agent 字段</strong>,不写会话 / 项目配置 —— 全部批准 → 不带 agent(引擎默认 <span class="mono">build</span>,新会话默认档;它就是此前默认档的真实行为);请求审批 → <span class="mono">agent:"alpha-ask"</span>(主进程注入的 hidden agent = build + <span class="mono">edit</span>/<span class="mono">bash</span> 改 <span class="mono">ask</span>,不多不少,无 prompt);只读 → <span class="mono">agent:"alpha-readonly"</span>(<span class="mono">edit</span>/<span class="mono">bash</span> deny)。请求审批与只读都压过手选的计划 / 第三方主档(chip 置灰并点名是哪一档压的)。按钮 → SDK <span class="mono">permission.respond({response:"once|always|reject"})</span>。<b>诚实的边界</b>:「全部批准」取消的只是逐次审批那一层 —— 工作区外路径、<span class="mono">*.env</span> 读取、doom loop、非内置工具出厂仍会问;进程围栏 / 出网围栏 / 发送前拦截 / 组织下发的 deny 与本档无关。判据:<span class="mono">packages/opencode/test/permission/alpha-composer-tiers.test.ts</span>(引擎层真问 / 真放行 / 真拒)+ <span class="mono">composer-state.test.ts</span>(三份请求体逐字节不同)+ <span class="mono">shell-commands.test.ts</span>(真壳逐档点选)。</div>
       </div>
     </div>
   </section>
@@ -486,9 +486,9 @@
 </template>
 <template id="tpl-perm">
   <div class="menu-label">运行权限</div>
-  <div class="menu-item is-on" data-pm="完全访问"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<span class="desc">允许全部</span></div>
+  <div class="menu-item is-on" data-pm="全部批准"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件/执行命令不再询问</span></div>
   <div class="menu-item" data-pm="请求审批"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">逐次询问</span></div>
-  <div class="menu-item" data-pm="只读"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">禁止写/执行</span></div>
+  <div class="menu-item" data-pm="只读"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件/执行命令</span></div>
 </template>
 
 <script>
@@ -541,7 +541,7 @@ document.addEventListener('click',e=>{
   const it=e.target.closest('.perm-menu .menu-item'); if(!it) return;
   const pop=it.closest('.pop'); pop.querySelectorAll('.menu-item').forEach(m=>m.classList.remove('is-on')); it.classList.add('is-on');
   const chip=pop.closest('.pop-wrap')?.querySelector('.chip.perm');
-  if(chip){const mode=it.dataset.pm; chip.childNodes[1].nodeValue=mode; chip.setAttribute('data-mode', mode==='完全访问'?'full':'ask');}
+  if(chip){const mode=it.dataset.pm; chip.childNodes[1].nodeValue=mode; chip.setAttribute('data-mode', mode==='全部批准'?'full':(mode==='只读'?'readonly':'ask'));}
 });
 /* seg2 (tier/effort in dialog) */
 document.querySelectorAll('.seg2').forEach(s=>s.querySelectorAll('button').forEach(b=>b.onclick=()=>{s.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');}));
