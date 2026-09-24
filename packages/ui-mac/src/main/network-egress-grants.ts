@@ -164,7 +164,14 @@ export function isUserGrantedEgressDestination(host: string, port: number): bool
 
 /**
  * 接上生产的询问通道与落盘通道(main 在起策略代理时调一次)。**不调它 = 没有出口**,
- * 每个未登记目的地照旧 403 —— 这是默认值,也是全部单测与非 darwin 的状态。
+ * 每个未登记目的地照旧 403 —— 这是默认值,也是非 darwin 的状态。
+ *
+ * ⚠️ **这是进程级单例**。生产里一个进程一个应用,装一次即可;但全量 `bun test src` 把所有测试文件
+ * 跑在同一个进程里,而好几个文件会驱动生产的 `ensureEgressPolicyProxy`(server.ts)⇒ 真 approver
+ * 被装上并**漏进后面每一个文件**。凡是断言「默认接线下代理写了哪几条记录」的测试,必须先
+ * `__resetEgressGrantsForTests()`(network-egress-proxy.test.ts 的 beforeEach 就是为此)——
+ * 否则它测的是「上一个文件剩下什么」。实测过一次:本文件与 proxy 文件各自单跑全绿,
+ * 全量里 proxy 那两条精确日志断言各多一条 `egress.grant` 而红。
  */
 export function configureEgressGrantApproval(deps: {
   approver?: EgressGrantApprover

@@ -6,9 +6,10 @@
 // 控制臂:把注册表换成恒答「允许」的替身,**同一个判据函数**必须当场判红并说出为什么 —— 否则它不是闸门。
 // 其余:未登记的名字一次 DNS 都不发;非 CONNECT 405;坏 authority 400;登记了但拨不通 502(与 403 可辨)。
 
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as net from "node:net"
 import { egressPolicyDenialOf } from "../shared/egress-denial"
+import { __resetEgressGrantsForTests } from "./network-egress-grants"
 import { EGRESS_DENIED_BODY_PREFIX, parseConnectAuthority, startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 
 type Target = { port: number; connections: number; closedSockets: number; close: () => Promise<void> }
@@ -103,6 +104,18 @@ const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms))
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
+})
+
+// `#1412`:本文件里凡是**不传** `requestGrant` 的臂,测的都是「生产默认接线」,而默认接线的定义是
+// **没有接上询问通道** ⇒ `requestUserEgressGrant` 恒答 `not-asked`,代理一条 grant 记录都不写。
+// 那个通道是**进程级单例**(configureEgressGrantApproval),而全量 `bun test src` 把所有文件跑在同一个
+// 进程里,其中好几个文件会驱动生产的 `ensureEgressPolicyProxy`(server.ts)—— 它按设计把真 approver
+// 装上,于是漏进后面每一个文件。实测(`bun test src/main`,2026-09-24):本文件单跑 17/17 绿,全量里
+// 那两条断言**精确日志数组**的臂各多出一条 `egress.grant` 记录而红(403 / 零拨号 / 拒绝正文全都没变 ——
+// 变的只有「有没有人被问过」)。所以在每条用例前把那三份进程内状态清回默认:
+// 让「默认接线」这四个字在断言里是真的,而不是「上一个文件剩下什么」。
+beforeEach(() => {
+  __resetEgressGrantsForTests()
 })
 
 async function startProxy(opts: Omit<Parameters<typeof startEgressPolicyProxy>[0], "log"> = {}): Promise<{ proxy: EgressProxyHandle; logs: EgressLogRecord[] }> {
