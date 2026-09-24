@@ -8,19 +8,35 @@
 // purely factual ("X is available"), never instructions on how to write code.
 
 export interface AlphaCapabilities {
-  /** Web search is open to every provider this session (ADR-009). */
+  /**
+   * 这一轮模型的工具表里**至少有一个** web search 工具(本地 keyless `websearch` 或云
+   * `cloud_cloud_web_search`)。两条腿都对**每个** provider 可见,所以提示里那句
+   * "not just the default provider" 对两条腿都成立(`#1414` 勘破 §3.2)。
+   */
   websearch?: boolean
   /** The cloud tool gateway (`cloud.*` MCP) is registered this session (ADR-002 dispatch seam). */
   cloudDispatch?: boolean
 }
 
+/**
+ * 把「工具表的在场性」折成提示里的能力事实。`#1414` 基线 §三 **S4**:提示里声称的能力必须与
+ * 模型工具表里的在场性一致。本函数曾经自己读 `ALPHA_WEBSEARCH_DISABLE` / `OPENCODE_ENABLE_EXA`
+ * 再判一遍(勘破 §6 点名的第四处各算各的,与真闸不同源 ⇒ 可以「提示说有、工具表里没有」),
+ * 现在**不再自己判**:入参就是两条腿各自的在场性,由唯一算得出它们的那一处
+ * (`alpha-config-injection.ts`,它握着判据并消费真闸的 deny 判决)算好送进来。
+ * 本模块必须保持**零 import**(ext 的登记簿直接 import 它,拖进 main 世界违反 ADR-006),
+ * 所以同源的保证只能落在调用点 + 四格闸门 `websearch-prompt-tool-parity.test.ts`。
+ */
 export function buildAlphaCapabilities(input: {
-  websearchDisabled: boolean
-  keylessWebsearch: boolean
+  /** 本地 keyless `websearch` 这一轮在不在模型工具表里。 */
+  localWebSearch: boolean
+  /** 云 `cloud_cloud_web_search` 这一轮在不在模型工具表里。 */
+  cloudWebSearch: boolean
+  /** 云 MCP server(`cloud.*` 工具面)这一轮注册了没有。 */
   cloudDispatch: boolean
 }): AlphaCapabilities {
   return {
-    websearch: !input.websearchDisabled && (input.keylessWebsearch || input.cloudDispatch),
+    websearch: input.localWebSearch || input.cloudWebSearch,
     cloudDispatch: input.cloudDispatch,
   }
 }
