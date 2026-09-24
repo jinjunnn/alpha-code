@@ -237,7 +237,7 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
       npm: "@ai-sdk/openai-compatible",
       name: "My OpenAI",
       options: { baseURL: "https://api.openai.com/v1", apiKey: "" },
-      models: { "gpt-5.4": { name: "gpt-5.4" }, "gpt-5.4-mini": { name: "gpt-5.4-mini" } },
+      models: { "gpt-5.4": { name: "gpt-5.4", modalities: { input: ["text"] } }, "gpt-5.4-mini": { name: "gpt-5.4-mini", modalities: { input: ["text"] } } },
     })
     plantSecret(customProviderSecretName("my-openai"), SECRET)
     const after = buildAlphaModelConfig(userData)!
@@ -295,7 +295,7 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
       npm: "@ai-sdk/openai-compatible",
       name: "Custom Node",
       options: { baseURL: "https://custom.invalid/v1", apiKey: secretFileRef(userData, file) },
-      models: { "real-custom-model": { name: "real-custom-model" } },
+      models: { "real-custom-model": { name: "real-custom-model", modalities: { input: ["text"] } } },
     })
     expect(JSON.stringify(refreshed)).not.toContain(SECRET) // I7: the value is never in OPENCODE_CONFIG_CONTENT
     // 同 id 再加一次 = 整条记录原位替换(地址 / 模型换新),不是追加第二条
@@ -630,7 +630,9 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     // #1266 起同名条目的 variants 也一并派生(见下一条),这里只看 reasoning 与「未标即缺席」。
     expect(deepseek["deepseek-v4-pro"]).toMatchObject({ name: "deepseek-v4-pro", reasoning: true })
     // #1352:BYOK 目录里是上游改名后的 `deepseek-flash`,平台段没有同名条目 ⇒ 无徽标、只有 name。
-    expect(deepseek["deepseek-flash"]).toEqual({ name: "deepseek-flash" })
+    // REQ-228 #1420:models.dev 标 deepseek-flash 能看图,但 2026-09-24 实测相反(OpenRouter deepseek-v4-flash 只收 text、
+    // 带图 404),直连未实测 ⇒ fail-closed 取看不了(出处见 docs/runbooks/model-catalog-updates.md §B)。
+    expect(deepseek["deepseek-flash"]).toEqual({ name: "deepseek-flash", modalities: { input: ["text"] } })
     expect(zhipu["glm-5.2"]).toMatchObject({ name: "glm-5.2", reasoning: true })
     // #1267:BYOK-only 的 glm-4.5-air 没有平台同名条目,徽标来自目录自己的 modelMeta 槽(下一节逐字判)。
     expect(zhipu["glm-4.5-air"]).toMatchObject({ name: "glm-4.5-air", reasoning: true })
@@ -683,7 +685,7 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
       reasoning: true,
       variants: { 开: { thinking: { type: "enabled" } }, 关: { thinking: { type: "disabled" } } },
     })
-    expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air", reasoning: true, variants: slot.variants })
+    expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air", reasoning: true, variants: slot.variants, modalities: { input: ["text"] } })
 
     const platformIds = new Set(catalog.platformModels.map((model) => model.id))
     let slots = 0
@@ -889,9 +891,9 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
     // 空表会让上面的判据空转:实打表至少覆盖本票三个模型 + #1266/#1267 已声明的那些。
     expect(Object.keys(VERIFIED_TIERS).length).toBeGreaterThanOrEqual(11)
     const alpha = cfg.provider.alpha!.models
-    expect(alpha["glm-5-turbo"]).toEqual({ name: "GLM-5 Turbo", reasoning: true, variants: { 关: { thinking: { type: "disabled" } }, 开: { thinking: { type: "enabled" } } } })
-    expect(alpha["qwen3.7-max"]).toEqual({ name: "Qwen3.7 Max", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } } })
-    expect(alpha["qwen3.7-plus"]).toEqual({ name: "Qwen3.7 Plus", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } } })
+    expect(alpha["glm-5-turbo"]).toEqual({ name: "GLM-5 Turbo", reasoning: true, variants: { 关: { thinking: { type: "disabled" } }, 开: { thinking: { type: "enabled" } } }, modalities: { input: ["text"] } })
+    expect(alpha["qwen3.7-max"]).toEqual({ name: "Qwen3.7 Max", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } }, modalities: { input: ["text"] } })
+    expect(alpha["qwen3.7-plus"]).toEqual({ name: "Qwen3.7 Plus", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } }, modalities: { input: ["text"] } })
     // 同一模型经不同腿形状不同:GLM 直连只认 thinking,qwen 经 OR 只走 reasoning_effort —— 两者不得互换。
     expect(Object.keys(alpha["glm-5-turbo"]!.variants!)).toEqual(["关", "开"])
     expect(Object.keys(alpha["qwen3.7-max"]!.variants!)).toEqual(["关", "开"])
@@ -944,5 +946,91 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
     const dropped = clone(base) // 实打表登记了档位,注入却没有 —— 目录被人退回无档
     delete dropped.provider.alpha!.models["qwen3.7-plus"]!.variants
     expect(judgeTierProvenance(dropped)).toEqual([`alpha:qwen3.7-plus: 实打表登记了档位 ${JSON.stringify(VERIFIED_TIERS["alpha:qwen3.7-plus"]!.variants)},注入配置里却没有 variants`])
+  })
+})
+
+// REQ-228 #1420:「能不能看图」落成引擎 config 的 `modalities.input`(→ `capabilities.input.image`,真引擎那一格在
+// image-input-capability.test.ts)。这里判三件只在注入面能判的事:出货目录对每个直连模型都显式给了值;缺值按看不了图;
+// 自定义节点的用户声明从 providers.add 一路落到真源与注入,声明一个不在清单里的 id 当场拒。
+describe("REQ-228 #1420:直连 / 平台 / 自定义三段的图片输入能力", () => {
+  const keyEverything = () => {
+    for (const p of getModelCatalog().byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+  }
+  type Models = Record<string, { modalities?: { input: string[] } }>
+
+  test("出货目录完备:每个直连 provider 都点名 models.dev 出处,imageInput 的键恰好是 models、值全是布尔(漏一个 = 新模型静默看不了图)", () => {
+    for (const p of getModelCatalog().byokProviders) {
+      expect({ provider: p.id, modelsDev: typeof p.modelsDev === "string" && p.modelsDev.length > 0 }).toEqual({ provider: p.id, modelsDev: true })
+      expect({ provider: p.id, keys: Object.keys(p.imageInput ?? {}).sort() }).toEqual({ provider: p.id, keys: [...p.models].sort() })
+      for (const [id, v] of Object.entries(p.imageInput ?? {})) expect({ provider: p.id, id, type: typeof v }).toEqual({ provider: p.id, id, type: "boolean" })
+    }
+  })
+
+  test("注入:直连按目录、平台逐行只有 text(含上游本能看图的 claude-* / gpt-*)、每个模型都显式写 modalities", () => {
+    keyEverything()
+    const cfg = buildAlphaModelConfig(userData)!
+    const image: string[] = []
+    let total = 0
+    for (const [providerID, def] of Object.entries(cfg.provider as Record<string, { models: Models }>)) {
+      for (const [id, model] of Object.entries(def.models)) {
+        total++
+        expect({ providerID, id, explicit: Array.isArray(model.modalities?.input) }).toEqual({ providerID, id, explicit: true })
+        if (model.modalities!.input.includes("image")) image.push(`${providerID}/${id}`)
+        if (providerID === "alpha") expect({ id, input: model.modalities!.input }).toEqual({ id, input: ["text"] })
+      }
+    }
+    expect(total).toBeGreaterThanOrEqual(20)
+    // 手写,抄自 models.dev 2026-09-23(alibaba-cn / moonshotai-cn 同名模型的 modalities.input 含 image)。deepseek-flash 在
+    // models.dev 标能看图,但实测证据相反、直连未实测 ⇒ 按 fail-closed 不在此列(runbook §B)。
+    expect(image.sort()).toEqual(["alibaba-byok/qwen3.8-max", "moonshot-byok/kimi-k2.6", "moonshot-byok/kimi-k3"])
+    expect(Object.keys((cfg.provider.alpha as { models: Models }).models)).toContain("claude-sonnet-5")
+  })
+
+  test("fail-closed:目录里某个直连模型缺值 ⇒ 注入为看不了图(不回落平台同名条目、不回落 models.dev)", () => {
+    keyEverything()
+    const moonshot = getModelCatalog().byokProviders.find((p) => p.id === "moonshot")!
+    const original = moonshot.imageInput
+    try {
+      moonshot.imageInput = { "kimi-k2.6": true }
+      const models = (buildAlphaModelConfig(userData)!.provider["moonshot-byok"] as { models: Models }).models
+      expect(models["kimi-k3"]!.modalities).toEqual({ input: ["text"] })
+      expect(models["kimi-k2.6"]!.modalities).toEqual({ input: ["text", "image"] })
+      delete moonshot.imageInput
+      const none = (buildAlphaModelConfig(userData)!.provider["moonshot-byok"] as { models: Models }).models
+      expect(Object.values(none).map((m) => m.modalities)).toEqual([{ input: ["text"] }, { input: ["text"] }])
+    } finally {
+      moonshot.imageInput = original
+    }
+  })
+
+  test("自定义节点:providers.add 带 imageInput ⇒ 真源逐字记下(去空白去重)、注入只给声明的那个 image;不在 models 里的 id ⇒ 拒,钥匙与真源都不动", async () => {
+    let refreshed: ReturnType<typeof buildAlphaModelConfig>
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        syncSecretFiles(userData, {}, customProviderSecretValues(readCustomProviderRecords().map((record) => record.id)))
+        refreshed = buildAlphaModelConfig(userData)
+        return true
+      },
+    })
+    const base = { id: "vision-node", name: "Vision", compat: "openai" as const, baseURL: "https://vision.invalid/v1", apiKey: SECRET, models: ["vl-a", "text-b"] }
+    expect(await persistProviderAndRefresh({ ...base, imageInput: [" vl-a ", "vl-a"] })).toEqual({ ok: true })
+    expect(fs.readFileSync(truthPath(), "utf8")).toBe(
+      '{"v":1,"providers":[{"id":"vision-node","name":"Vision","compat":"openai","baseURL":"https://vision.invalid/v1","models":["vl-a","text-b"],"imageInput":["vl-a"]}]}\n',
+    )
+    expect((refreshed!.provider["vision-node"] as { models: Models }).models).toEqual({
+      "vl-a": { name: "vl-a", modalities: { input: ["text", "image"] } },
+      "text-b": { name: "text-b", modalities: { input: ["text"] } },
+    } as Models)
+    // 空声明 = 缺席(canonical 只写非空),不是一个 `[]` 键
+    expect(await persistProviderAndRefresh({ ...base, imageInput: [] })).toEqual({ ok: true })
+    expect(readCustomProviderRecords()).toEqual([{ id: "vision-node", name: "Vision", compat: "openai", baseURL: "https://vision.invalid/v1", models: ["vl-a", "text-b"] }])
+
+    const before = fs.readFileSync(truthPath(), "utf8")
+    const refused = await persistProviderAndRefresh({ ...base, id: "other-node", imageInput: ["not-listed"] })
+    expect(refused).toEqual({ ok: false, reason: 'imageInput names a model that is not in the model list: "not-listed"' })
+    expect(getByokKey("other-node")).toBeUndefined()
+    expect(fs.readFileSync(truthPath(), "utf8")).toBe(before)
   })
 })

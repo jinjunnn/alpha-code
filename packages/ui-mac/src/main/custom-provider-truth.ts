@@ -9,7 +9,9 @@
 // custom-provider-truth-fence.test.ts 交给真 sandbox-exec 裁;W1 是运行时成员,由 `#1390` 的规则 5b 兜住)。
 //
 // ── 形状 ─────────────────────────────────────────────────────────────────────
-// `{ "v": 1, "providers": [{ "id", "name", "compat": "openai" | "anthropic", "baseURL", "models": ["…"] }] }`。
+// `{ "v": 1, "providers": [{ "id", "name", "compat": "openai" | "anthropic", "baseURL", "models": ["…"], "imageInput"?: ["…"] }] }`。
+// `imageInput`(REQ-228 `#1420`,可选):用户**显式声明**能看图的模型 id,必须是 `models` 的非空无重复子集;缺席 = 一个都看不了。
+// 自定义节点指向任意地址,同名 ≠ 同一个模型,所以这里不拿 models.dev 猜 —— 只有用户说了才算(alpha-models.ts 注入为 modalities.input)。
 // **密钥不进这里**:仍在 `#1343` 的钥匙串库(alpha-byok-keys.ts,按 provider id 存)。
 // 读:**严格** —— 缺失 = 「没有记录」(ok,空清单;用户没加过节点是正常状态,不出声);解析失败 / 版本不认识 / 字段不合法 /
 // 同 id 重复 / 多余的键 ⇒ 「没问出来」(ok:false),**不是空记录**,并经注入的 log 出一行原因(`#1387`:静默的失败路径事后
@@ -42,6 +44,8 @@ export type CustomProviderRecord = {
   compat: CustomProviderCompat
   baseURL: string
   models: string[]
+  /** REQ-228 `#1420`:用户声明能看图的模型(⊂ models,非空);缺席 ⇒ 全部看不了图。 */
+  imageInput?: string[]
 }
 
 /** `<casBaseRoot>/custom-providers/<env>.json` —— 与 `env/`、`cas/`、`fence-workspaces/` 同级(见文件头)。 */
@@ -61,7 +65,7 @@ export type CustomProviderTruthRead =
 
 /** 联合每多一个成员这里就少一个键 ⇒ 编译期红,读端的判据跟着 ProviderInput 走。 */
 const COMPATS: Record<CustomProviderCompat, true> = { openai: true, anthropic: true }
-const RECORD_KEYS: readonly string[] = ["id", "name", "compat", "baseURL", "models"]
+const RECORD_KEYS: readonly string[] = ["id", "name", "compat", "baseURL", "models", "imageInput"]
 const TOP_KEYS: readonly string[] = ["v", "providers"]
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -100,6 +104,16 @@ export function invalidCustomProviderRecord(entry: unknown, label: string): stri
   if (typeof entry.baseURL !== "string" || !parsesAsUrl(entry.baseURL)) return `${label}.baseURL is not a URL: ${JSON.stringify(entry.baseURL)}`
   if (!Array.isArray(entry.models) || entry.models.length === 0) return `${label}.models is not a non-empty array`
   for (const [i, m] of entry.models.entries()) if (typeof m !== "string" || m.length === 0) return `${label}.models[${i}] is not a non-empty string`
+  if (entry.imageInput !== undefined) {
+    // 空数组与缺席同义却是两种字节 —— 只认缺席这一种(写端 canonical 也只写非空)。
+    if (!Array.isArray(entry.imageInput) || entry.imageInput.length === 0) return `${label}.imageInput is not a non-empty array`
+    const seen = new Set<string>()
+    for (const [i, m] of entry.imageInput.entries()) {
+      if (typeof m !== "string" || !entry.models.includes(m)) return `${label}.imageInput[${i}] is not one of models: ${JSON.stringify(m)}`
+      if (seen.has(m)) return `${label}.imageInput[${i}] duplicates an earlier entry: ${JSON.stringify(m)}`
+      seen.add(m)
+    }
+  }
   return undefined
 }
 
@@ -119,7 +133,14 @@ export function invalidCustomProviderList(entries: unknown, label = "providers")
 
 /** 固定键序 + models 拷贝:读回的对象不带文件里的键序,写端用同一个函数得到确定的字节。 */
 export function canonicalCustomProviderRecord(r: CustomProviderRecord): CustomProviderRecord {
-  return { id: r.id, name: r.name, compat: r.compat, baseURL: r.baseURL, models: [...r.models] }
+  return {
+    id: r.id,
+    name: r.name,
+    compat: r.compat,
+    baseURL: r.baseURL,
+    models: [...r.models],
+    ...(r.imageInput?.length ? { imageInput: [...r.imageInput] } : {}),
+  }
 }
 
 /** 严格读(见文件头)。缺失 ⇒ ok + absent + 空清单;其余任何不对 ⇒ ok:false + 一行日志。 */

@@ -31,6 +31,14 @@ export type ByokProvider = {
    *  用户看到「不思考的快模型」,请求却锁在思考档。这个槽是 alpha 自有目录里给它徽标 + 开/关两档的唯一旋钮。
    *  读它的只有 {@link byokModelMeta};键不在 `models` 里、或与平台同名条目重叠,alpha-models.test.ts 当场红。 */
   modelMeta?: Record<string, ByokModelMeta>
+  /** REQ-228 #1420:这组模型的能力数据取自哪个 models.dev provider(与本条 `baseURL` 同一端点的那个 id,
+   *  如 `api.moonshot.cn` ⇒ `moonshotai-cn`)。只是出处,运行时不读 —— 打包的 sidecar 没有 models.dev 快照
+   *  (托管模式下 OPENCODE_MODELS_PATH 指向 alpha 自己的最小底表,alpha-config-injection.ts governedModelsBase)。 */
+  modelsDev?: string
+  /** REQ-228 #1420:逐模型「能不能看图」,值抄自 `modelsDev` 同名模型 `modalities.input` 是否含 `image`。
+   *  注入时落成引擎 config 的 `modalities.input`(→ `capabilities.input.image`);缺值 ⇒ 看不了图(fail-closed)。
+   *  出货目录必须对 `models` 里每个 id 显式给值,alpha-models.test.ts 判完备。 */
+  imageInput?: Record<string, boolean>
 }
 
 /** {@link ByokProvider.modelMeta} 的值:与 `PlatformModel` 的展示元数据同形(刻意没有 pricing —— 直连节点不经网关,
@@ -175,6 +183,9 @@ export type ProviderInput = {
   baseURL: string
   apiKey: string
   models: string[]
+  /** REQ-228 #1420:用户显式声明「能看图」的模型 id(必须 ⊂ `models`)。自定义节点没有可信的上游能力来源,
+   *  不声明 ⇒ 看不了图(fail-closed)。原样进真源记录(custom-provider-truth.ts `imageInput`)。 */
+  imageInput?: string[]
 }
 export type ProviderTestInput = {
   compat: "openai" | "anthropic"

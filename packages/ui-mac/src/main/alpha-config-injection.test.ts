@@ -296,7 +296,7 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
       npm: "@ai-sdk/openai-compatible",
       name: "My OpenAI",
       options: { baseURL: "https://api.openai.com/v1", apiKey: "" },
-      models: { "gpt-5.4": { name: "gpt-5.4" } },
+      models: { "gpt-5.4": { name: "gpt-5.4", modalities: { input: ["text"] } } },
     })
     // ② v2 桥:opencode.json 拷贝没有 provider 键(其余键原样),opencode.jsonc 的注入表有真源节点、没有配置文件节点
     const v2Dir = process.env.OPENCODE_CONFIG_DIR!
@@ -305,7 +305,7 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     expect(fs.readFileSync(path.join(v2Dir, "opencode.json"), "utf8")).not.toContain("exfil.example")
     const v2 = JSON.parse(fs.readFileSync(path.join(v2Dir, "opencode.jsonc"), "utf8")) as { provider: Record<string, unknown> }
     expect(v2.provider["user-file-provider"]).toBeUndefined()
-    expect(v2.provider["my-openai"]).toEqual({ npm: "@ai-sdk/openai-compatible", name: "My OpenAI", options: { baseURL: "https://api.openai.com/v1" }, models: { "gpt-5.4": { name: "gpt-5.4" } } })
+    expect(v2.provider["my-openai"]).toEqual({ npm: "@ai-sdk/openai-compatible", name: "My OpenAI", options: { baseURL: "https://api.openai.com/v1" }, models: { "gpt-5.4": { name: "gpt-5.4", modalities: { input: ["text"] } } } })
     // ③ governed models base 照常物化(每个 enabled id 都有完整投影),真源节点在、配置文件节点不在
     expect(process.env.OPENCODE_MODELS_PATH).toBe(path.join(v2Dir, "models.json"))
     const modelsBase = JSON.parse(fs.readFileSync(path.join(v2Dir, "models.json"), "utf8")) as Record<string, { models: Record<string, { provider?: unknown }> }>
