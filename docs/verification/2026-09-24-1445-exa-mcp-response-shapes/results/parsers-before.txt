@@ -1,0 +1,13 @@
+NOTICE bytes = 246 (#1433 记录 bytes=246)
+
+① #1445 票面的额度提示
+  packages/opencode : 成功 → "You've hit Exa's free MCP rate limit. To continue using without limits"
+  packages/core     : 成功 → "You've hit Exa's free MCP rate limit. To continue using without limits"
+
+② Exa in-band 错误(isError:true,今日实测)
+  packages/opencode : 失败 → Cause([Fail(AlphaWebSearchFailure: Web search failed: the provider reported an error. Cause: web_search_exa error (401): Invalid API key. Provide a va
+  packages/core     : 成功 → "web_search_exa error (401): Invalid API key. Provide a valid key using"
+
+③ 正常结果(对照臂,今日实测)
+  packages/opencode : 成功 → "Title: Array.prototype.flat() - JavaScript - MDN Web Docs\nURL: https:/"
+  packages/core     : 成功 → "Title: Array.prototype.flat() - JavaScript - MDN Web Docs\nURL: https:/"

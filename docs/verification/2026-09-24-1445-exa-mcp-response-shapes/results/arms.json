@@ -1,0 +1,128 @@
+{
+  "ticket": "alpha-code#1445",
+  "endpoint": "https://mcp.exa.ai/mcp",
+  "at": "2026-09-24T11:46:13.905Z",
+  "node": "v22.22.3",
+  "rows": [
+    {
+      "arm": "list-outputSchema",
+      "status": 200,
+      "tools": [
+        {
+          "name": "web_search_exa",
+          "hasOutputSchema": false
+        },
+        {
+          "name": "web_fetch_exa",
+          "hasOutputSchema": false
+        }
+      ]
+    },
+    {
+      "arm": "nokey-search",
+      "ms": 296,
+      "status": 429,
+      "contentType": "application/json",
+      "rateLimitHeaders": {
+        "retry-after": "44016",
+        "x-ratelimit-limit": "0",
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": "1790294400000"
+      },
+      "jsonrpc": "error",
+      "jsonrpcErrorCode": -32000,
+      "isError": null,
+      "structuredContent": null,
+      "resultMeta": null,
+      "contentBlocks": [],
+      "textHead": "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , then either:\n- Set the header: Authorization: Bearer YOUR_EXA_API_KEY\n- Or use the URL: https://mcp"
+    },
+    {
+      "arm": "inband-invalid-key",
+      "ms": 376,
+      "status": 200,
+      "contentType": "text/event-stream",
+      "rateLimitHeaders": {
+        "retry-after": null,
+        "x-ratelimit-limit": null,
+        "x-ratelimit-remaining": null,
+        "x-ratelimit-reset": null
+      },
+      "jsonrpc": "result",
+      "jsonrpcErrorCode": null,
+      "isError": true,
+      "structuredContent": null,
+      "resultMeta": null,
+      "contentBlocks": [
+        {
+          "keys": [
+            "type",
+            "text"
+          ],
+          "type": "text",
+          "textLength": 209,
+          "meta": null
+        }
+      ],
+      "textHead": "web_search_exa error (401): Invalid API key. Provide a valid key using 'Authorization: Bearer <key>' or 'x-api-key: <key>'. Create a key at https://dashboard.exa.ai/api-keys\nTimestamp: 2026-09-24T11:46:25.718Z"
+    },
+    {
+      "arm": "inband-unknown-tool",
+      "ms": 291,
+      "status": 200,
+      "contentType": "text/event-stream",
+      "rateLimitHeaders": {
+        "retry-after": null,
+        "x-ratelimit-limit": null,
+        "x-ratelimit-remaining": null,
+        "x-ratelimit-reset": null
+      },
+      "jsonrpc": "result",
+      "jsonrpcErrorCode": null,
+      "isError": true,
+      "structuredContent": null,
+      "resultMeta": null,
+      "contentBlocks": [
+        {
+          "keys": [
+            "type",
+            "text"
+          ],
+          "type": "text",
+          "textLength": 50,
+          "meta": null
+        }
+      ],
+      "textHead": "MCP error -32602: Tool no_such_tool_1445 not found"
+    },
+    {
+      "arm": "inband-invalid-args",
+      "ms": 294,
+      "status": 200,
+      "contentType": "text/event-stream",
+      "rateLimitHeaders": {
+        "retry-after": null,
+        "x-ratelimit-limit": null,
+        "x-ratelimit-remaining": null,
+        "x-ratelimit-reset": null
+      },
+      "jsonrpc": "result",
+      "jsonrpcErrorCode": null,
+      "isError": true,
+      "structuredContent": null,
+      "resultMeta": null,
+      "contentBlocks": [
+        {
+          "keys": [
+            "type",
+            "text"
+          ],
+          "type": "text",
+          "textLength": 240,
+          "meta": null
+        }
+      ],
+      "textHead": "MCP error -32602: Input validation error: Invalid arguments for tool web_search_exa: [\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"query\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+    }
+  ]
+}
