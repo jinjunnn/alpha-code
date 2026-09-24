@@ -1,0 +1,362 @@
+{
+  "ticket": "alpha-code#1433",
+  "cell": "kill-switch",
+  "app": "/Users/tide/app/alpha-code/.worktrees/1433-verify/packages/ui-mac/dist/mac-arm64/Code Puppy.app",
+  "at": "2026-09-24T07:52:17.025Z",
+  "sentinelsBefore": {
+    "/Users/tide/Library/Application Support/ai.opencode.desktop": 1790236287366.777,
+    "/Users/tide/Library/Application Support/alpha-code-state/env/prod": 1790130171947.1357,
+    "/Users/tide/.npm": 1790152578993.3354,
+    "/Users/tide/.config/opencode": 1784863576481.5188,
+    "/Users/tide/.local/share/opencode": 1789990192164.1584,
+    "/Users/tide/code-puppy": 1790236288162.7422
+  },
+  "isoRoot": "/Users/tide/.ac1433-kill-switch-kYcEnB",
+  "realTmpdirExportedInZshrc": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/",
+  "cellEnv": {
+    "ALPHA_WEBSEARCH_DISABLE": "1"
+  },
+  "launchFlags": [
+    "--remote-debugging-port=54062",
+    "--use-mock-keychain"
+  ],
+  "appStartingLine": "03:52:17.344         › app starting { version: '0.1.16', packaged: true, onboardingTest: true }",
+  "engineUrl": "http://127.0.0.1:54065",
+  "toolIDs": {
+    "status": 200,
+    "ids": [
+      "invalid",
+      "question",
+      "bash",
+      "read",
+      "glob",
+      "grep",
+      "edit",
+      "write",
+      "task",
+      "webfetch",
+      "todowrite",
+      "websearch",
+      "skill",
+      "apply_patch",
+      "alpha_reload",
+      "alpha_register",
+      "alpha_echo",
+      "alpha_ping"
+    ]
+  },
+  "toolListByProviderModel": {
+    "deepseek/deepseek-flash": {
+      "status": 200,
+      "names": [
+        "invalid",
+        "question",
+        "bash",
+        "read",
+        "glob",
+        "grep",
+        "edit",
+        "write",
+        "task",
+        "webfetch",
+        "todowrite",
+        "skill",
+        "alpha_reload",
+        "alpha_register",
+        "alpha_echo",
+        "alpha_ping"
+      ]
+    },
+    "alpha/deepseek-v4-flash": {
+      "status": 200,
+      "names": [
+        "invalid",
+        "question",
+        "bash",
+        "read",
+        "glob",
+        "grep",
+        "edit",
+        "write",
+        "task",
+        "webfetch",
+        "todowrite",
+        "skill",
+        "alpha_reload",
+        "alpha_register",
+        "alpha_echo",
+        "alpha_ping"
+      ]
+    },
+    "alpha/claude-sonnet-5": {
+      "status": 200,
+      "names": [
+        "invalid",
+        "question",
+        "bash",
+        "read",
+        "glob",
+        "grep",
+        "edit",
+        "write",
+        "task",
+        "webfetch",
+        "todowrite",
+        "skill",
+        "alpha_reload",
+        "alpha_register",
+        "alpha_echo",
+        "alpha_ping"
+      ]
+    },
+    "opencode/claude-sonnet-4-5": {
+      "status": 200,
+      "names": [
+        "invalid",
+        "question",
+        "bash",
+        "read",
+        "glob",
+        "grep",
+        "edit",
+        "write",
+        "task",
+        "webfetch",
+        "todowrite",
+        "websearch",
+        "skill",
+        "alpha_reload",
+        "alpha_register",
+        "alpha_echo",
+        "alpha_ping"
+      ]
+    },
+    "ac1433probe/deepseek-flash": {
+      "status": 200,
+      "names": [
+        "invalid",
+        "question",
+        "bash",
+        "read",
+        "glob",
+        "grep",
+        "edit",
+        "write",
+        "task",
+        "webfetch",
+        "todowrite",
+        "skill",
+        "alpha_reload",
+        "alpha_register",
+        "alpha_echo",
+        "alpha_ping"
+      ]
+    }
+  },
+  "appLogTail": "                   › network egress {\"event\":\"egress.connect\",\"id\":16,\"at\":\"2026-09-24T07:52:25.685Z\",\"method\":\"CONNECT\",\"authority\":\"registry.npmjs.org:443\",\"host\":\"registry.npmjs.org\",\"port\":443,\"verdict\":\"allow\",\"status\":200}\n03:52:26.195                    › network egress {\"event\":\"egress.connect\",\"id\":17,\"at\":\"2026-09-24T07:52:26.195Z\",\"method\":\"CONNECT\",\"authority\":\"registry.npmjs.org:443\",\"host\":\"registry.npmjs.org\",\"port\":443,\"verdict\":\"allow\",\"status\":200}\n03:52:27.719                    › awaiting server ready\n03:52:27.719                    › server ready { url: 'http://127.0.0.1:54065' }\n03:52:30.529 (startup-timeline) › {\"seq\":23,\"name\":\"renderer.composer.mount\",\"t\":13210.401125,\"mode\":\"home\",\"source\":\"renderer\",\"rendererNow\":12268.5,\"occurrence\":1}\n03:52:30.530 (startup-timeline) › {\"seq\":24,\"name\":\"renderer.home.model_list.start\",\"t\":13211.330624999999,\"attempt\":1,\"chain\":1,\"source\":\"renderer\",\"rendererNow\":12268.800000011921,\"occurrence\":1}\n03:52:32.107 (startup-timeline) › {\"seq\":25,\"name\":\"renderer.projects.store_ready\",\"t\":14788.102958,\"projects\":1,\"source\":\"renderer\",\"rendererNow\":13846.200000017881,\"occurrence\":1}\n03:52:32.107 (startup-timeline) › {\"seq\":26,\"name\":\"renderer.launch_draft.start\",\"t\":14788.347040999999,\"trigger\":\"launch\",\"source\":\"renderer\",\"rendererNow\":13846.40000000596,\"occurrence\":1}\n03:52:32.108 (startup-timeline) › {\"seq\":27,\"name\":\"renderer.launch_draft.step\",\"t\":14788.598458,\"step\":\"tabs_ready\",\"outcome\":\"ok\",\"durationMs\":0.19999998807907104,\"source\":\"renderer\",\"rendererNow\":13846.59999999404,\"occurrence\":1}\n03:52:32.108 (startup-timeline) › {\"seq\":28,\"name\":\"renderer.launch_draft.step\",\"t\":14788.724957999999,\"step\":\"resolve_target\",\"outcome\":\"default-workspace\",\"durationMs\":0.20000001788139343,\"source\":\"renderer\",\"rendererNow\":13846.800000011921,\"occurrence\":2}\n03:52:32.110 (startup-timeline) › {\"seq\":29,\"name\":\"renderer.launch_draft.step\",\"t\":14790.868041,\"step\":\"ensure_workspace\",\"outcome\":\"ok\",\"durationMs\":2.199999988079071,\"source\":\"renderer\",\"rendererNow\":13849,\"occurrence\":3}\n03:52:32.119                    › process fence: workspace truth updated from the renderer tab store — 1 workspace(s); added: /Users/tide/.ac1433-kill-switch-kYcEnB/home/code-puppy (takes effect at the next engine generation)\n03:52:32.120 (startup-timeline) › {\"seq\":30,\"name\":\"renderer.new_session.surface.setup\",\"t\":14801.048999999999,\"source\":\"renderer\",\"rendererNow\":13854.09999999404,\"occurrence\":1}\n03:52:32.133 (startup-timeline) › {\"seq\":31,\"name\":\"renderer.launch_draft.step\",\"t\":14814.487540999999,\"step\":\"new_draft\",\"outcome\":\"ok\",\"durationMs\":13,\"source\":\"renderer\",\"rendererNow\":13862,\"occurrence\":4}\n03:52:32.134 (startup-timeline) › {\"seq\":32,\"name\":\"renderer.launch_draft.end\",\"t\":14814.672583,\"trigger\":\"launch\",\"outcome\":\"navigated\",\"durationMs\":15.599999994039536,\"source\":\"renderer\",\"rendererNow\":13862,\"occurrence\":1}\n03:52:32.134 (startup-timeline) › {\"seq\":33,\"name\":\"renderer.home.model_list.end\",\"t\":14814.760457999999,\"attempt\":1,\"chain\":1,\"durationMs\":1593.199999988079,\"outcome\":\"cancelled\",\"source\":\"renderer\",\"rendererNow\":13862,\"occurrence\":1}\n03:52:32.146 (startup-timeline) › {\"seq\":34,\"name\":\"renderer.composer.mount\",\"t\":14827.128958,\"mode\":\"home\",\"source\":\"renderer\",\"rendererNow\":13885.200000017881,\"occurrence\":2}\n03:52:32.147 (startup-timeline) › {\"seq\":35,\"name\":\"renderer.home.model_list.start\",\"t\":14827.659249999999,\"attempt\":1,\"chain\":1,\"source\":\"renderer\",\"rendererNow\":13885.300000011921,\"occurrence\":2}\n03:52:32.155 (startup-timeline) › {\"seq\":36,\"name\":\"renderer.home.catalog_ready\",\"t\":14835.914583,\"barrierMs\":8.699999988079071,\"probes\":1,\"pollWaits\":0,\"probeTimeouts\":0,\"wake\":\"first\",\"source\":\"renderer\",\"rendererNow\":13894,\"occurrence\":1}\n03:52:32.157 (startup-timeline) › {\"seq\":37,\"name\":\"renderer.home.model_list.end\",\"t\":14838.457041,\"attempt\":1,\"chain\":1,\"count\":0,\"durationMs\":11.299999982118607,\"outcome\":\"ok\",\"source\":\"renderer\",\"rendererNow\":13896.59999999404,\"occurrence\":2}\n",
+  "orphansAfter": [],
+  "sentinelsAfter": {
+    "/Users/tide/Library/Application Support/ai.opencode.desktop": 1790236287366.777,
+    "/Users/tide/Library/Application Support/alpha-code-state/env/prod": 1790130171947.1357,
+    "/Users/tide/.npm": 1790152578993.3354,
+    "/Users/tide/.config/opencode": 1784863576481.5188,
+    "/Users/tide/.local/share/opencode": 1789990192164.1584,
+    "/Users/tide/code-puppy": 1790236288162.7422
+  },
+  "sentinelsUnchanged": true,
+  "ownerConfigWorktreeHits": 0,
+  "probes": [
+    {
+      "id": "identity.orphansKilledBeforeRun",
+      "ok": true,
+      "detail": {
+        "orphansBefore": []
+      }
+    },
+    {
+      "id": "identity.isolationActive",
+      "ok": true,
+      "detail": {
+        "bootLine": "03:52:17.344         › app starting { version: '0.1.16', packaged: true, onboardingTest: true }"
+      }
+    },
+    {
+      "id": "identity.appIsPackaged",
+      "ok": true,
+      "detail": {
+        "bootLine": "03:52:17.344         › app starting { version: '0.1.16', packaged: true, onboardingTest: true }"
+      }
+    },
+    {
+      "id": "identity.cdpPortOwnedByOurApp",
+      "ok": true,
+      "detail": {
+        "cdpPids": [
+          34599
+        ],
+        "ourPid": 34599,
+        "appProcesses": [
+          {
+            "pid": 34599,
+            "ppid": 34581,
+            "cmd": "/Users/tide/app/alpha-code/.worktrees/1433-verify/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/MacOS/Code Puppy --remote-debugging-port=54062 --use-mock-keychain"
+          }
+        ]
+      }
+    },
+    {
+      "id": "setup.providerAdded",
+      "ok": false,
+      "detail": {
+        "added": {
+          "ok": false,
+          "reason": "the base URL points at this machine (localhost / 127.0.0.1); local services are not supported",
+          "code": "loopback"
+        },
+        "proxyUrl": "http://127.0.0.1:54063/v1",
+        "model": "deepseek-flash"
+      }
+    }
+  ],
+  "result": {
+    "cell": "kill-switch",
+    "blocked": "providers.add rejected the recording proxy base URL",
+    "providerAddRejection": {
+      "ok": false,
+      "reason": "the base URL points at this machine (localhost / 127.0.0.1); local services are not supported",
+      "code": "loopback"
+    },
+    "toolIDs": {
+      "status": 200,
+      "ids": [
+        "invalid",
+        "question",
+        "bash",
+        "read",
+        "glob",
+        "grep",
+        "edit",
+        "write",
+        "task",
+        "webfetch",
+        "todowrite",
+        "websearch",
+        "skill",
+        "apply_patch",
+        "alpha_reload",
+        "alpha_register",
+        "alpha_echo",
+        "alpha_ping"
+      ]
+    },
+    "toolListByProviderModel": {
+      "deepseek/deepseek-flash": {
+        "status": 200,
+        "names": [
+          "invalid",
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "edit",
+          "write",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      },
+      "alpha/deepseek-v4-flash": {
+        "status": 200,
+        "names": [
+          "invalid",
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "edit",
+          "write",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      },
+      "alpha/claude-sonnet-5": {
+        "status": 200,
+        "names": [
+          "invalid",
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "edit",
+          "write",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      },
+      "opencode/claude-sonnet-4-5": {
+        "status": 200,
+        "names": [
+          "invalid",
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "edit",
+          "write",
+          "task",
+          "webfetch",
+          "todowrite",
+          "websearch",
+          "skill",
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      },
+      "ac1433probe/deepseek-flash": {
+        "status": 200,
+        "names": [
+          "invalid",
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "edit",
+          "write",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      }
+    },
+    "modelCallCount": 0
+  }
+}

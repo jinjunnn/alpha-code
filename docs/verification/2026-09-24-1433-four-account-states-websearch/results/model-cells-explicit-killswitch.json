@@ -1,0 +1,74 @@
+{
+  "ticket": "alpha-code#1433",
+  "at": "2026-09-24T07:07:19.501Z",
+  "bun": "1.3.14",
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "drive": "explicit",
+  "totalModelCalls": 1,
+  "credentialHygiene": "key read from --keys-file into memory only; engine配置里是占位串;不入结果/日志/证据",
+  "notMeasuredHere": [
+    "云腿(cloud_cloud_web_search):无登录铸 token,本轮未接",
+    "打包实例",
+    "seatbelt 围栏",
+    "出网策略代理"
+  ],
+  "results": [
+    {
+      "cell": "kill-switch",
+      "drive": "explicit",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "exitCode": 0,
+      "modelCallCount": 1,
+      "websearchOfferedToModel": false,
+      "offeredTools": [
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "modelEmittedToolCalls": false,
+      "modelEmittedWebsearchCall": false,
+      "modelToolCalls": [],
+      "toolResultsFedBack": [],
+      "engineToolParts": [],
+      "exchanges": [
+        {
+          "n": 2,
+          "at": "2026-09-24T07:07:18.526Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 22752,
+          "responseBytes": 41083,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "I don't have a web search tool available—only a page-fetch (`webfetch`) tool, which you explicitly excluded. So I can't provide search results."
+        }
+      ],
+      "stderrTail": "",
+      "stdoutTail": "\"timestamp\":1790233639463,\"sessionID\":\"ses_f2dc28f86ffeoknL6BzaHHHVzy\",\"part\":{\"id\":\"prt_0d23d7a17001pHXk68na5iq2hJ\",\"messageID\":\"msg_0d23d7571001Qc0z0UaPgmhPIx\",\"sessionID\":\"ses_f2dc28f86ffeoknL6BzaHHHVzy\",\"type\":\"text\",\"text\":\"I don't have a web search tool available—only a page-fetch (`webfetch`) tool, which you explicitly excluded. So I can't provide search results.\",\"time\":{\"start\":1790233639447,\"end\":1790233639451}}}\n{\"type\":\"step_finish\",\"timestamp\":1790233639463,\"sessionID\":\"ses_f2dc28f86ffeoknL6BzaHHHVzy\",\"part\":{\"id\":\"prt_0d23d7a1e001aCrUWQNIbR3nYZ\",\"reason\":\"stop\",\"messageID\":\"msg_0d23d7571001Qc0z0UaPgmhPIx\",\"sessionID\":\"ses_f2dc28f86ffeoknL6BzaHHHVzy\",\"type\":\"step-finish\",\"tokens\":{\"total\":5535,\"input\":3742,\"output\":36,\"reasoning\":93,\"cache\":{\"write\":0,\"read\":1664}},\"cost\":0}}\n"
+    }
+  ]
+}
