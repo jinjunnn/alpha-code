@@ -25,7 +25,14 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onClea
 import type { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { useCommand } from "./providers"
 import { setExtHubOpen, setHubSection } from "../extensions/ext-hub-state"
-import { composerAgent, composerPerm, INTERNAL_AGENTS, setComposerAgent } from "./composer-state"
+import { composerAgent, composerPerm, INTERNAL_AGENTS, permLocksAgent, setComposerAgent, type PermMode } from "./composer-state"
+
+/** 装配弹窗里「计划行被哪一档压住」的点名用标签(与 alpha-composer.tsx 的 PERM_TEXT 同一组键;穷举,少一档 typecheck 红)。 */
+const PERM_LABEL_KEY: Record<PermMode, "alpha.composer.permAllow" | "alpha.composer.permAsk" | "alpha.composer.permReadonly"> = {
+  allow: "alpha.composer.permAllow",
+  ask: "alpha.composer.permAsk",
+  readonly: "alpha.composer.permReadonly",
+}
 import {
   applyMention,
   buildAssembleRows,
@@ -274,7 +281,7 @@ export function createComposerAutocomplete(opts: {
     return buildAssembleRows({
       query: v.query,
       planOn: composerAgent() === "plan",
-      readonly: composerPerm() === "readonly",
+      agentLocked: permLocksAgent(composerPerm()),
       activeMode: composerAgent(),
       subAgents: list.filter((a) => a.mode !== "primary").map((a) => ({ name: a.id, description: a.description })),
       primaries: list.filter((a) => a.mode === "primary" && a.id !== "build" && a.id !== "plan").map((a) => a.id),
@@ -515,7 +522,7 @@ export function createComposerAutocomplete(opts: {
     return composerAgent() === "plan" ? t("alpha.autocomplete.disablePlan") : t("alpha.autocomplete.planMode")
   }
   const actionDescription = (item: Extract<AssembleRow, { kind: "action" }>) => {
-    if (item.disabled) return t("alpha.autocomplete.readonlyPlan")
+    if (item.disabled) return t("alpha.autocomplete.permLockedPlan", { tier: t(PERM_LABEL_KEY[composerPerm()]) })
     if (item.id === "attach") return t("alpha.autocomplete.attachDesc")
     if (item.id === "terminal") return t("alpha.autocomplete.openTerminalDesc")
     if (item.id === "ext-market") return t("alpha.autocomplete.extensionMarketDesc")
