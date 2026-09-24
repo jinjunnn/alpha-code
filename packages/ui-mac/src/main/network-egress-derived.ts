@@ -53,7 +53,8 @@
 // 进程内单例是刻意的:代理与 main 同进程,而放行集合与「这一代 sidecar 拿到的那份配置」一一对应。
 
 import type { ProviderAddressRejection } from "../shared/alpha-model-types"
-import { isEgressAuthorized, isEgressHostShape } from "./network-egress-registry"
+import { isUserGrantedEgressDestination } from "./network-egress-grants"
+import { isEgressAuthorized, isEgressHostShape, isLoopbackHost } from "./network-egress-registry"
 
 export type ConfiguredEgressDestination = {
   /** 小写 DNS 名或 IPv4 字面量;不带 scheme / path / 通配。 */
@@ -69,14 +70,9 @@ export type ConfiguredEgressDestination = {
   baseURL: string
 }
 
-/** 本机目的地(REQ-137 owner 2026-09-10 裁决:另行设计,绝不进任何放行集合)。 */
-const LOOPBACK_NAMES = new Set(["localhost", "0.0.0.0", "::1", "[::1]", "::", "[::]"])
-const LOOPBACK_V4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/
-
-function isLoopbackHost(host: string): boolean {
-  const h = host.toLowerCase()
-  return LOOPBACK_NAMES.has(h) || h === "localhost." || h.endsWith(".localhost") || LOOPBACK_V4.test(h)
-}
+// 本机目的地的判据(REQ-137 owner 2026-09-10 / 2026-09-21 裁决:绝不进任何放行集合)住在
+// network-egress-registry.ts —— `#1412` 起第三个半场(用户批准)也要问同一个问题,而那个模块
+// 是三者共同的叶子;留在这里会让 grants → derived → grants 成环。
 
 export type BaseUrlClassification =
   | { ok: true; destination: ConfiguredEgressDestination }
@@ -185,9 +181,15 @@ export function isConfiguredEgressDestination(host: string, port: number): boole
 }
 
 /**
- * 策略代理的生产判据 = 静态表 ∪ 本代由用户配置派生的动态半场。
- * 两个半场都是精确匹配、都 fail-closed;不在任何一边 ⇒ 403 unregistered(代理侧唯一的「闸门说不」)。
+ * 策略代理的生产判据 = 静态表 ∪ 本代由用户配置派生的动态半场 ∪ **用户当场批准的目的地**(`#1412`)。
+ * 三个半场都是精确匹配、都 fail-closed;不在任何一边 ⇒ 403 unregistered(代理侧唯一的「闸门说不」)。
+ *
+ * 第三个半场为什么必须存在:`webfetch` 的 URL 与 `bash` 里命令自带的目的地由模型在调用那一刻产生,
+ * **没有、也不该有配置来源**(`#1414` §3 实测:全表唯二没有围栏外真源的两条轴)。前两个半场的规则是
+ * 「有围栏外的真源才进得来」,而这两条轴连一个可以表态的地方都没有 ⇒ 整类不可用。第三个半场补的
+ * 正是那个出口:真源 = 用户在 main 进程(围栏之外)点的那一下,记录落 egress-grant-truth.ts。
+ * 语义与另外两场逐字相同,不是「宽一点的那一场」—— 详见 network-egress-grants.ts 抬头。
  */
 export function isEgressAuthorizedForSidecar(host: string, port: number): boolean {
-  return isEgressAuthorized(host, port) || isConfiguredEgressDestination(host, port)
+  return isEgressAuthorized(host, port) || isConfiguredEgressDestination(host, port) || isUserGrantedEgressDestination(host, port)
 }

@@ -6,9 +6,10 @@
 // 控制臂:把注册表换成恒答「允许」的替身,**同一个判据函数**必须当场判红并说出为什么 —— 否则它不是闸门。
 // 其余:未登记的名字一次 DNS 都不发;非 CONNECT 405;坏 authority 400;登记了但拨不通 502(与 403 可辨)。
 
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as net from "node:net"
 import { egressPolicyDenialOf } from "../shared/egress-denial"
+import { __resetEgressGrantsForTests } from "./network-egress-grants"
 import { EGRESS_DENIED_BODY_PREFIX, parseConnectAuthority, startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 
 type Target = { port: number; connections: number; closedSockets: number; close: () => Promise<void> }
@@ -103,6 +104,18 @@ const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms))
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
+})
+
+// `#1412`:本文件里凡是**不传** `requestGrant` 的臂,测的都是「生产默认接线」,而默认接线的定义是
+// **没有接上询问通道** ⇒ `requestUserEgressGrant` 恒答 `not-asked`,代理一条 grant 记录都不写。
+// 那个通道是**进程级单例**(configureEgressGrantApproval),而全量 `bun test src` 把所有文件跑在同一个
+// 进程里,其中好几个文件会驱动生产的 `ensureEgressPolicyProxy`(server.ts)—— 它按设计把真 approver
+// 装上,于是漏进后面每一个文件。实测(`bun test src/main`,2026-09-24):本文件单跑 17/17 绿,全量里
+// 那两条断言**精确日志数组**的臂各多出一条 `egress.grant` 记录而红(403 / 零拨号 / 拒绝正文全都没变 ——
+// 变的只有「有没有人被问过」)。所以在每条用例前把那三份进程内状态清回默认:
+// 让「默认接线」这四个字在断言里是真的,而不是「上一个文件剩下什么」。
+beforeEach(() => {
+  __resetEgressGrantsForTests()
 })
 
 async function startProxy(opts: Omit<Parameters<typeof startEgressPolicyProxy>[0], "log"> = {}): Promise<{ proxy: EgressProxyHandle; logs: EgressLogRecord[] }> {
@@ -350,5 +363,117 @@ describe("生命周期", () => {
       s.once("error", (e: NodeJS.ErrnoException) => resolve(e.code ?? "error"))
     })
     expect(refused).toBe("ECONNREFUSED")
+  })
+})
+
+// ── `#1412`:未登记之后的那一步 —— 把目的地交给用户裁决 ──────────────────────────────
+//
+// 方案基线 docs/design/2026-09-23-model-chosen-egress-baseline.md 的 I2 / I7 / K6。判据都对着**真代理**:
+//   · 没接询问通道(生产默认)⇒ 403,且**不写** egress.grant 记录 —— 「没问过」不许长得像「有人拒过」;
+//   · 拒绝 ⇒ 403 + 记录 refused + 靶站 0 连接 + **零拨号**(未获批的名字一次 DNS 都不发,与原顺序同);
+//   · 批准 ⇒ 200 隧道、字节双向到达、grant 记录在 connect allow 之前;
+//   · 客户端等不及先挂断 ⇒ 这一条不拨号,但答案照样落账,**下一次**同一目的地直接通。
+describe("`#1412` 未登记目的地的出口:问用户", () => {
+  test("没接询问通道(生产默认 requestGrant)⇒ 仍是 403 unregistered,且没有任何 egress.grant 记录", async () => {
+    const target = await withTarget()
+    const { proxy, logs } = await startProxy({ authorize: () => false })
+    const authority = `127.0.0.1:${target.port}`
+    const res = await rawRequest(proxy.port, `CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`)
+    await tick()
+    expect(res.status).toBe(403)
+    expect(logs.filter((r) => r.event === "egress.grant")).toEqual([])
+    expect(target.connections).toBe(0)
+  })
+
+  test("用户拒绝 ⇒ 403 + 记录 refused + 靶站 0 连接 + 零拨号", async () => {
+    const target = await withTarget()
+    const dialed: string[] = []
+    const asked: string[] = []
+    const { proxy, logs } = await startProxy({
+      authorize: () => false,
+      dial: (h, p) => {
+        dialed.push(`${h}:${p}`)
+        return net.connect(p, h)
+      },
+      requestGrant: async (h, p) => {
+        asked.push(`${h}:${p}`)
+        return "refused"
+      },
+    })
+    const authority = `127.0.0.1:${target.port}`
+    const res = await rawRequest(proxy.port, `CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`)
+    await tick()
+    expect(res.status).toBe(403)
+    expect(res.body.startsWith(EGRESS_DENIED_BODY_PREFIX)).toBe(true)
+    expect(asked).toEqual([authority])
+    expect(dialed).toEqual([])
+    expect(target.connections).toBe(0)
+    expect(logs.filter((r) => r.event === "egress.grant")).toEqual([
+      { event: "egress.grant", id: 1, at: expect.any(String), host: "127.0.0.1", port: target.port, decision: "refused" } as never,
+    ])
+    expect(logs.some((r) => r.event === "egress.connect" && r.verdict === "deny" && r.reason === "unregistered")).toBe(true)
+  })
+
+  test("用户批准 ⇒ 200 隧道,字节双向到达,grant 记录排在 connect allow 之前", async () => {
+    const target = await withTarget()
+    const { proxy, logs } = await startProxy({ authorize: () => false, requestGrant: async () => "granted" })
+    const authority = `127.0.0.1:${target.port}`
+    const { status, socket } = await connectThrough(proxy.port, authority)
+    expect(status).toBe(200)
+    const echoed = await new Promise<string>((resolve) => {
+      socket.once("data", (c: Buffer) => resolve(c.toString()))
+      socket.write("hello-1412")
+    })
+    expect(echoed).toBe("echo:hello-1412")
+    socket.destroy()
+    await tick()
+    const events = logs.map((r) => (r.event === "egress.grant" ? `grant:${r.decision}` : r.event === "egress.connect" ? `connect:${r.verdict}` : r.event))
+    expect(events.slice(0, 2)).toEqual(["grant:granted", "connect:allow"])
+    expect(target.connections).toBe(1)
+  })
+
+  test("I7 客户端先挂断:那一问不取消,答复落账后下一条直接通(不必再问)", async () => {
+    const target = await withTarget()
+    const dialed: string[] = []
+    let release: (() => void) | undefined
+    let asks = 0
+    let approved = false
+    const { proxy } = await startProxy({
+      authorize: (h, p) => approved && `${h}:${p}` === `127.0.0.1:${target.port}`,
+      dial: (h, p) => {
+        dialed.push(`${h}:${p}`)
+        return net.connect(p, h)
+      },
+      requestGrant: () =>
+        new Promise((resolve) => {
+          asks += 1
+          release = () => {
+            approved = true // 答复到达 = 放行集合里多了一条(生产里这一步在 grants 模块里做)
+            resolve("granted")
+          }
+        }),
+    })
+    const authority = `127.0.0.1:${target.port}`
+    // 客户端等不到答复就走了(`webfetch` 30 s 超时短于人类反应时间)
+    const impatient = net.connect(proxy.port, "127.0.0.1", () => impatient.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`))
+    impatient.on("error", () => {})
+    await tick()
+    expect(asks).toBe(1)
+    impatient.destroy()
+    await tick()
+    release!()
+    await tick()
+    // 下一次重试:授权集合里已经有它了,连问都不问 —— 这就是 I7 的用户可见结果
+    //(「第一次失败、再问一次就好」)。注意**不**断言这一条死连接零拨号:CONNECT socket
+    // 从 http 服务器摘下来后没人读它,对端 RST 在本进程观察不到(实测见 network-egress-proxy.ts
+    // 那段注释),所以「客户端走了」只能尽力而为。
+    const dialsBefore = dialed.length
+    const { status, socket } = await connectThrough(proxy.port, authority)
+    expect(status).toBe(200)
+    expect(asks).toBe(1)
+    socket.destroy()
+    await tick()
+    expect(dialed.length).toBe(dialsBefore + 1)
+    expect(dialed.at(-1)).toBe(authority)
   })
 })

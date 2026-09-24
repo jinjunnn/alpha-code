@@ -5,7 +5,15 @@
 // 内容、不注入任何证书,老勘破 §4.2),没授权 ⇒ 403 + 结构化记录。
 // 问的那一句是 `isEgressAuthorizedForSidecar`(network-egress-derived.ts)= **静态半场**
 // (network-egress-registry.ts 的冻结常量表)∪ **动态半场**(`#1379`:由用户有效配置里的 BYOK baseURL
-// 派生,每次 fork 前整份替换)。本文件不自己判任何一格,也不持有第二份清单。
+// 派生,每次 fork 前整份替换)∪ **用户批准的半场**(`#1412`,network-egress-grants.ts)。
+// 本文件不自己判任何一格,也不持有第二份清单。
+//
+// ── 判出「没授权」之后还有一步(`#1412`)─────────────────────────────────────────────
+// `webfetch` 的 URL 与 `bash` 里命令自带的目的地由模型在调用那一刻产生,没有任何配置来源可登记
+// (`#1414` §3),于是它们整类撞在这道 403 上。所以拒绝之前多一问:`requestGrant` —— 把这个
+// **目的地**交给用户裁决(main 的原生对话框,围栏之外)。答「允许」才建隧道,答别的、没人答、
+// 没接通道 ⇒ 仍然是下面那条 403 unregistered,字节逐字不变。顺序仍是「解析 → 查表 → (问) → 才拨号」:
+// 未获批的名字一次 DNS 都不发。
 //
 // ── DNS 在这里、而且只在这里发生 ─────────────────────────────────────────────────────
 // 围栏刻意不放行 mDNSResponder(`#1334` Q3:走代理的客户端由代理解析,想直连的死在解析这一步)。所以
@@ -26,6 +34,7 @@ import * as http from "node:http"
 import * as net from "node:net"
 import { egressDenialLine } from "../shared/egress-denial"
 import { isEgressAuthorizedForSidecar } from "./network-egress-derived"
+import { requestUserEgressGrant, type EgressGrantOutcome } from "./network-egress-grants"
 
 // 拒绝正文的格式住在 `shared/egress-denial.ts`,因为 `#1382` 起它**有读者**了(renderer 的
 // 时间线要据此说「是这台电脑上的网络策略拦的」)。写的人和读的人共用同一个拼串函数,
@@ -35,6 +44,18 @@ export { EGRESS_DENIED_BODY_PREFIX } from "../shared/egress-denial"
 export type EgressDenyReason = "unregistered" | "bad-authority" | "method-not-connect" | "dial-failed"
 
 export type EgressLogRecord =
+  | {
+      /**
+       * `#1412`:一条未登记的目的地被交给用户裁决之后的结局。它与 `egress.connect` 分开记,
+       * 因为它回答的是另一个问题 ——「这一代里,用户放行过哪些原本不在名单上的地址」。
+       */
+      event: "egress.grant"
+      id: number
+      at: string
+      host: string
+      port: number
+      decision: "granted" | "refused"
+    }
   | {
       event: "egress.connect"
       id: number
@@ -68,6 +89,12 @@ export type EgressProxyDeps = {
   authorize?: (host: string, port: number) => boolean
   /** 默认 = `net.connect({ host, port })`(DNS 在本进程)。测试用它做零拨号断言。 */
   dial?: (host: string, port: number) => net.Socket
+  /**
+   * `#1412` —— 未登记目的地的**唯一出口**:问用户。默认 = network-egress-grants.ts 的编排,
+   * 而它在**没有接上询问通道时恒答 `not-asked`** ⇒ 不接线的行为与本票之前逐字相同(403 unregistered,零额外记录)。
+   * 本代理自己不判任何一格,也不持第二份清单:它只是在拒绝之前多问一句,然后照答复办。
+   */
+  requestGrant?: (host: string, port: number) => Promise<EgressGrantOutcome>
   /** 拨号超时(默认 10 s):登记了但黑洞的目的地要快速、可读地失败,不能挂到客户端超时。 */
   dialTimeoutMs?: number
 }
@@ -149,6 +176,7 @@ function writeDenial(socket: net.Socket, status: number, body: string): void {
 
 export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<EgressProxyHandle> {
   const authorize = deps.authorize ?? isEgressAuthorizedForSidecar
+  const requestGrant = deps.requestGrant ?? requestUserEgressGrant
   const dial = deps.dial ?? defaultDial
   const dialTimeoutMs = deps.dialTimeoutMs ?? 10_000
   const log = deps.log
@@ -182,52 +210,79 @@ export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<Egr
 
     const parsed = parseConnectAuthority(authority)
     if (!parsed) return deny(400, "bad-authority")
-    if (!authorize(parsed.host, parsed.port)) return deny(403, "unregistered", parsed)
+    if (authorize(parsed.host, parsed.port)) return openTunnel(parsed)
 
-    const upstream = dial(parsed.host, parsed.port)
-    track(upstream)
-    let settled = false
-    const timer = setTimeout(() => {
-      if (!settled) upstream.destroy(Object.assign(new Error("dial timeout"), { code: "ETIMEDOUT" }))
-    }, dialTimeoutMs)
+    // `#1412` —— 未登记 ⇒ 在拒绝之前走唯一的出口:问用户。答复到达之前**一次 DNS 都不发、
+    // 一次拨号都不做**(与原来的顺序逐字相同);没接询问通道时 requestGrant 恒答 `not-asked`(三态里的那一支,
+    // 于是这一整段的行为就是原来那一行 `return deny(403, "unregistered", parsed)`(连记录都不多一条)。
+    // **尽力而为,不是保证**:CONNECT 的 socket 从 http 服务器上摘下来之后没有人在读它,
+    // 于是对端 RST 在本进程里观察不到 —— 实测(bun 1.3.14):客户端 `destroy()` 200 ms 后
+    // 服务端这一侧仍然 `destroyed=false writable=true`,`close` 一次都没发。要观察到它只能
+    // `resume()`,而那会吞掉客户端在 200 之前抢跑的字节(TLS ClientHello),比它治的病更坏。
+    // 所以这个判断只在优雅关闭时命中;没命中的代价是对着一个死 socket 建一次隧道,它下一拍就自己收掉。
+    let clientGone = false
+    clientSocket.once("close", () => (clientGone = true))
+    void requestGrant(parsed.host, parsed.port).then(
+      (outcome) => {
+        // `not-asked`(没接通道 / 准入不过 / 超并发 / 记忆期内)不写记录:那一行会假装有人裁决过。
+        if (outcome !== "not-asked") log({ event: "egress.grant", id, at: new Date().toISOString(), host: parsed.host, port: parsed.port, decision: outcome })
+        if (outcome !== "granted") return deny(403, "unregistered", parsed)
+        // 人答得比客户端的超时慢是常态(`webfetch` 30 s)。批准已经落账,这条连接却已经走了 ——
+        // 不要对着一个死 socket 拨号,让调用方重试即可(方案基线 I7)。
+        if (clientGone || clientSocket.destroyed) return
+        openTunnel(parsed)
+      },
+      // 询问通道自己坏了也只能是拒:降级方向永远朝 fail-closed。
+      () => deny(403, "unregistered", parsed),
+    )
+    return
 
-    upstream.once("connect", () => {
-      settled = true
-      clearTimeout(timer)
-      log({ event: "egress.connect", id, at: new Date().toISOString(), method: "CONNECT", authority, host: parsed.host, port: parsed.port, verdict: "allow", status: 200 })
-      clientSocket.write("HTTP/1.1 200 Connection Established\r\nProxy-Agent: alpha-egress-policy\r\n\r\n")
-      // 字节计数自己数(bun 的 http 连接 socket 上 bytesRead/bytesWritten 实测恒 0)。
-      let bytesUp = head.length
-      let bytesDown = 0
-      clientSocket.on("data", (chunk: Buffer) => (bytesUp += chunk.length))
-      upstream.on("data", (chunk: Buffer) => (bytesDown += chunk.length))
-      if (head.length > 0) upstream.write(head)
-      clientSocket.pipe(upstream)
-      upstream.pipe(clientSocket)
-      let closed = false
-      const onClose = () => {
-        if (closed) return
-        closed = true
-        log({ event: "egress.tunnel-closed", id, at: new Date().toISOString(), host: parsed.host, port: parsed.port, bytesUp, bytesDown })
-        clientSocket.destroy()
-        upstream.destroy()
-      }
-      clientSocket.once("close", onClose)
-      upstream.once("close", onClose)
-    })
-    upstream.once("error", (err: NodeJS.ErrnoException) => {
-      if (settled) return clientSocket.destroy()
-      settled = true
-      clearTimeout(timer)
-      deny(502, "dial-failed", parsed, err.code ?? err.message)
-    })
-    clientSocket.once("close", () => {
-      if (!settled) {
+    function openTunnel(parsed: { host: string; port: number }): void {
+      const upstream = dial(parsed.host, parsed.port)
+      track(upstream)
+      let settled = false
+      const timer = setTimeout(() => {
+        if (!settled) upstream.destroy(Object.assign(new Error("dial timeout"), { code: "ETIMEDOUT" }))
+      }, dialTimeoutMs)
+
+      upstream.once("connect", () => {
         settled = true
         clearTimeout(timer)
-        upstream.destroy()
-      }
-    })
+        log({ event: "egress.connect", id, at: new Date().toISOString(), method: "CONNECT", authority, host: parsed.host, port: parsed.port, verdict: "allow", status: 200 })
+        clientSocket.write("HTTP/1.1 200 Connection Established\r\nProxy-Agent: alpha-egress-policy\r\n\r\n")
+        // 字节计数自己数(bun 的 http 连接 socket 上 bytesRead/bytesWritten 实测恒 0)。
+        let bytesUp = head.length
+        let bytesDown = 0
+        clientSocket.on("data", (chunk: Buffer) => (bytesUp += chunk.length))
+        upstream.on("data", (chunk: Buffer) => (bytesDown += chunk.length))
+        if (head.length > 0) upstream.write(head)
+        clientSocket.pipe(upstream)
+        upstream.pipe(clientSocket)
+        let closed = false
+        const onClose = () => {
+          if (closed) return
+          closed = true
+          log({ event: "egress.tunnel-closed", id, at: new Date().toISOString(), host: parsed.host, port: parsed.port, bytesUp, bytesDown })
+          clientSocket.destroy()
+          upstream.destroy()
+        }
+        clientSocket.once("close", onClose)
+        upstream.once("close", onClose)
+      })
+      upstream.once("error", (err: NodeJS.ErrnoException) => {
+        if (settled) return clientSocket.destroy()
+        settled = true
+        clearTimeout(timer)
+        deny(502, "dial-failed", parsed, err.code ?? err.message)
+      })
+      clientSocket.once("close", () => {
+        if (!settled) {
+          settled = true
+          clearTimeout(timer)
+          upstream.destroy()
+        }
+      })
+    }
   })
 
   server.on("clientError", (_err, socket) => {
