@@ -4,7 +4,7 @@ kind: runbook
 status: active
 owners:
   - Code Puppy maintainers
-last_reviewed: 2026-07-30
+last_reviewed: 2026-09-23
 review_after: 2026-10-30
 ---
 
@@ -83,6 +83,15 @@ review_after: 2026-10-30
        [`model-variant-reachability`](../architecture/2026-09-06-model-variant-reachability.md) §5)。
        上游 `transform.options()` 对 `zhipuai*` 直连**无条件**写 `thinking: enabled`,所以智谱
        直连的每个模型要么标徽标并给「关」档,要么接受它总在思考。
+   - **能不能看图**(REQ-228 #1420):每个 provider 的 `imageInput` 必须给 `models` 里**每个** id
+     一个显式 `true` / `false`,值抄自 models.dev 同名模型的 `modalities.input` 是否含 `image`;查的是
+     `modelsDev` 点名的那个 provider(与本条 `baseURL` 同一端点:`api.moonshot.cn` ⇒ `moonshotai-cn`、
+     `dashscope.aliyuncs.com` ⇒ `alibaba-cn`、`api.minimaxi.com` ⇒ `minimax-cn`)。查法:
+     `curl -s https://models.dev/api.json | jq '."<modelsDev>".models."<id>".modalities.input'`。
+     models.dev 里查不到 ⇒ 写 `false`(看不了图,图片交给云端识图),不要按名字猜。漏写一个 id,
+     alpha-models 套件判红;引擎侧的最终值由 `image-input-capability.test.ts` 起真引擎判。
+     平台代理模型不读这个字段,一律看不了图(网关聊天入口拒收图片)。
+     自定义节点没有上游出处,只认用户在真源记录里显式声明的 `imageInput`(见 `custom-provider-truth.ts`)。
 2. `bun test src`(alpha-models 套件校验 catalog 形状;`alpha-reasoning-badge-parity`
    套件起真引擎对账「徽标 ⇔ 请求体带推理参数」,两个方向都判)。
 3. `ship:mac` 重建安装(catalog 打包进 app;install-local 会用稳定 Developer

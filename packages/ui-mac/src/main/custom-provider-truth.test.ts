@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative } from "node:path"
 import { environmentMutableRoot } from "./alpha-environment"
@@ -230,6 +230,50 @@ describe("严格读:缺失 = 没有记录;坏了 = 没问出来(不是空数组)
       if (!read.ok) expect(read.reason).toMatch(new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: read failed \\(EISDIR`))
       expect(logs.length).toBe(1)
       expect(logs[0]).toContain("read failed (EISDIR")
+    })
+  })
+})
+
+// REQ-228 `#1420`:`imageInput` = 用户显式声明能看图的模型。只有一种合法形状(⊂ models、非空、无重复);缺席 = 一个都不能。
+describe("REQ-228 #1420:imageInput 的严格形状", () => {
+  test("正样本:读回带 imageInput、键序固定(imageInput 在 models 之后);写端往返逐字;缺席的记录读回也没有这个键", () => {
+    withTemp((dir) => {
+      const logs: string[] = []
+      const path = join(dir, "prod.json")
+      const vision: CustomProviderRecord = { ...openai, imageInput: ["gpt-5.4"] }
+      writeFileSync(path, JSON.stringify({ v: 1, providers: [{ imageInput: ["gpt-5.4"], ...openai }, anthropic] }))
+      const read = readCustomProviderTruth(path, { ...fs, log: (l) => void logs.push(l) })
+      expect(read).toEqual({ ok: true, absent: false, providers: [vision, anthropic] })
+      if (read.ok) {
+        expect(Object.keys(read.providers[0]!)).toEqual(["id", "name", "compat", "baseURL", "models", "imageInput"])
+        expect("imageInput" in read.providers[1]!).toBe(false)
+      }
+      writeCustomProviderTruth(path, [vision], fs)
+      expect(readFileSync(path, "utf8")).toBe(
+        '{"v":1,"providers":[{"id":"my-openai","name":"My OpenAI","compat":"openai","baseURL":"https://api.openai.com/v1","models":["gpt-5.4","gpt-5.4-mini"],"imageInput":["gpt-5.4"]}]}\n',
+      )
+      expect(logs).toEqual([])
+    })
+  })
+
+  test("四种坏形状各一臂:ok:false、reason 点名哪一项、日志恰一行;没有一种退化成「能看图」或空清单", () => {
+    withTemp((dir) => {
+      const path = join(dir, "prod.json")
+      const rec = (imageInput: unknown) => JSON.stringify({ v: 1, providers: [{ ...openai, imageInput }] })
+      const bad: Array<[string, string]> = [
+        [rec("gpt-5.4"), "providers[0].imageInput is not a non-empty array"],
+        [rec([]), "providers[0].imageInput is not a non-empty array"],
+        [rec(["gpt-5.4", "claude-fable-5-1"]), 'providers[0].imageInput[1] is not one of models: "claude-fable-5-1"'],
+        [rec(["gpt-5.4", "gpt-5.4"]), 'providers[0].imageInput[1] duplicates an earlier entry: "gpt-5.4"'],
+      ]
+      for (const [text, reason] of bad) {
+        writeFileSync(path, text)
+        const logs: string[] = []
+        const read = readCustomProviderTruth(path, { ...fs, log: (l) => void logs.push(l) })
+        expect(read.ok, text).toBe(false)
+        if (!read.ok) expect(read.reason, text).toBe(`${path}: ${reason}`)
+        expect(logs.length, text).toBe(1)
+      }
     })
   })
 })

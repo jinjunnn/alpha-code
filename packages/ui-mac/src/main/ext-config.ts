@@ -1196,6 +1196,12 @@ export function validateProviderInput(input: ProviderInput): ProviderResult {
   if (!input.apiKey || typeof input.apiKey !== "string") return { ok: false, reason: "missing api key" }
   const ids = (Array.isArray(input.models) ? input.models : []).map((m) => String(m).trim()).filter(Boolean)
   if (ids.length === 0) return { ok: false, reason: "at least one model id is required" }
+  // REQ-228 #1420:用户声明能看图的模型必须是本次 models 的子集 —— 声明一个不在清单里的 id 不猜意图,当场拒(不存钥匙、不写真源)。
+  if (input.imageInput !== undefined) {
+    if (!Array.isArray(input.imageInput)) return { ok: false, reason: "imageInput must be a list of model ids" }
+    for (const m of input.imageInput)
+      if (!ids.includes(String(m).trim())) return { ok: false, reason: `imageInput names a model that is not in the model list: ${JSON.stringify(m)}` }
+  }
   return { ok: true }
 }
 

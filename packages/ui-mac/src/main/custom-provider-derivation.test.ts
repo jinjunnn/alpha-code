@@ -179,7 +179,7 @@ describe("#1392 端到端(基线 I1):真源节点进清单与放行集合;alpha.
         npm: "@ai-sdk/openai-compatible",
         name: "My OpenAI",
         options: { baseURL: "https://api.openai.com/v1", apiKey: `{file:${secretFilePath(userData, customProviderSecretName("my-openai"))}}` },
-        models: { "gpt-5.4": { name: "gpt-5.4" }, "gpt-5.4-mini": { name: "gpt-5.4-mini" } },
+        models: { "gpt-5.4": { name: "gpt-5.4", modalities: { input: ["text"] } }, "gpt-5.4-mini": { name: "gpt-5.4-mini", modalities: { input: ["text"] } } },
       },
     })
 

@@ -72,14 +72,18 @@ function writeTruth(path: string, providers: readonly CustomProviderRecord[]): P
   }
 }
 
-/** The record the truth file keeps for this input: definition only, model ids trimmed, never the key. */
+/** The record the truth file keeps for this input: definition only, model ids trimmed, never the key.
+ *  REQ-228 `#1420`: `imageInput` (the user's own "this model can see images" declaration, already checked ⊂ models by
+ *  validateProviderInput) is trimmed and de-duplicated; empty ⇒ absent (canonical form), i.e. no model sees images. */
 function recordFromInput(input: ProviderInput): CustomProviderRecord {
+  const imageInput = [...new Set((input.imageInput ?? []).map((m) => String(m).trim()).filter(Boolean))]
   return canonicalCustomProviderRecord({
     id: input.id,
     name: input.name,
     compat: input.compat,
     baseURL: input.baseURL,
     models: input.models.map((m) => String(m).trim()).filter(Boolean),
+    ...(imageInput.length ? { imageInput } : {}),
   })
 }
 

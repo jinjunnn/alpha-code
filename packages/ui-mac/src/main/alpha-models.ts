@@ -39,6 +39,21 @@ export function getModelCatalog(): AlphaModelCatalog {
   return CATALOG
 }
 
+/** REQ-228 #1420:引擎 config 的 `modalities.input`,引擎据它算 `capabilities.input.image`
+ *  (packages/opencode/src/provider/provider.ts 的 config 合并;读它的是 transform.ts unsupportedParts —— 看不了图的模型收到的
+ *  图片被换成一句 ERROR)。**每个注入的模型都显式写**,不留给引擎回落:回落的来源是 models.dev 底表里同 provider id 的条目,
+ *  托管模式下那是 alpha 自己写的 `modalities.input: []`,开发 / 非托管时是真 models.dev —— 同一个模型两种答案。
+ *  `text` 恒在(显式写了 input 之后,引擎对未列出的模态一律判 false)。 */
+type InputModalities = { input: Array<"text" | "image"> }
+const inputModalities = (image: boolean): InputModalities => ({ input: image ? ["text", "image"] : ["text"] })
+
+type InjectedModel = {
+  name: string
+  reasoning?: boolean
+  variants?: Record<string, Record<string, unknown>>
+  modalities: InputModalities
+}
+
 export type AlphaModelConfig = {
   enabled_providers: string[]
   model?: string
@@ -81,13 +96,16 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     // filter these out via the models.dev integration collision (see byokEngineId). Display id, key
     // status, gateway allowlist and the key store all keep the plain `p.id`.
     const engineId = byokEngineId(p.id)
-    const models: Record<string, { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }> = {}
+    // REQ-228 #1420:能不能看图取目录自己的 `imageInput`(抄自 models.dev,出处在 `modelsDev`),**不**走 byokModelMeta 的平台同名
+    // 回落 —— 平台同名条目看不了图是因为网关拒收图片,不是模型本身不能看;直连不经网关。缺值 ⇒ 看不了图。
+    const models: Record<string, InjectedModel> = {}
     for (const m of p.models) {
       const meta = byokModelMeta({ platformModels, byokProviders: CATALOG.byokProviders }, engineId, m)
       models[m] = {
         name: m,
         ...(meta.reasoning ? { reasoning: true } : {}),
         ...(meta.variants ? { variants: meta.variants } : {}),
+        modalities: inputModalities(p.imageInput?.[m] === true),
       }
     }
     provider[engineId] = {
@@ -117,15 +135,15 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     // 引擎配置**不写 pricing**:那是展示用的,不进 opencode 的 provider 契约。
     // REQ-153 #1236:`reasoning` 同样转发(见 BYOK 段注释)。单变量实测:只补这一处,同一条
     // `run --model alpha/glm-5.2 --variant max` 的请求体立刻出现 `"reasoning_effort":"max"`。
-    const models: Record<
-      string,
-      { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }
-    > = {}
+    // REQ-228 #1420:平台模型一律看不了图 —— 网关两个聊天入口今天都 400 拒收图片(alpha-platform openai-wire.ts /
+    // worker.ts MULTIMODAL_BLOCK_TYPES),哪怕上游模型本身能看。图片走云端识图(#1419),不走聊天入口。
+    const models: Record<string, InjectedModel> = {}
     for (const m of platformModels) {
       models[m.id] = {
         name: m.name,
         ...(m.reasoning ? { reasoning: true } : {}),
         ...(m.variants ? { variants: m.variants } : {}),
+        modalities: inputModalities(false),
       }
     }
     provider[pp.id] = {
@@ -162,8 +180,10 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   for (const record of readCustomProviderRecords()) {
     if (Object.prototype.hasOwnProperty.call(provider, record.id)) continue
     const secret = customProviderSecretName(record.id)
-    const models: Record<string, { name: string }> = {}
-    for (const m of record.models) models[m] = { name: m }
+    // REQ-228 #1420:只有用户在记录里显式声明的模型能看图(custom-provider-truth.ts `imageInput`);自定义地址上的同名模型
+    // 不一定是 models.dev 里那一个,所以不猜。
+    const models: Record<string, { name: string; modalities: InputModalities }> = {}
+    for (const m of record.models) models[m] = { name: m, modalities: inputModalities(record.imageInput?.includes(m) === true) }
     provider[record.id] = {
       npm: record.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible",
       name: record.name,
