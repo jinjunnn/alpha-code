@@ -1,0 +1,59 @@
+{
+  "ticket": "alpha-code#1433",
+  "at": "2026-09-24T11:43:10.442Z",
+  "web": "https://codepuppy.cn",
+  "mcp": "https://alpha-cloud.tidelabs.click/mcp",
+  "tokenAttempts": [
+    {
+      "path": "/auth/token",
+      "status": 200,
+      "bodyHead": "(ok, redacted)"
+    }
+  ],
+  "tokenMeta": {
+    "sub": "u_0000000c1433",
+    "iss": "https://auth.tidelabs.click",
+    "aud": "https://alpha-cloud.tidelabs.click/mcp",
+    "scope": [
+      "cloud.dispatch",
+      "cloud.read",
+      "artifact.read"
+    ],
+    "ttlSeconds": 900,
+    "len": 550
+  },
+  "scopeGranted": "openid profile platform",
+  "sessionId": "s_PGTGYxACjtG0mQUo",
+  "toolsList": {
+    "status": 200,
+    "contentType": "text/event-stream",
+    "body": "event: message\ndata: {\"result\":{\"tools\":[{\"name\":\"cloud_dispatch\",\"description\":\"Dispatch a versioned cloud job (CloudJobRequestV1 envelope; HTTP and MCP admit the identical schema).\\nautonomy=\\\"pipeline\\\" requires kind + input. Available kinds and the input fields each one accepts:\\n- research.question = the question to research (required)\\n- research.search = search backend: \\\"tavily\\\" or \\\"brave\\\" use the platform web-search vendor; anything else falls back to the model's native web search\\n- code-review.diff = unified diff to review (takes precedence over `code`)\\n- code-review.code = source to review when no diff is given\\n- docs.code = source to document\\n- docs.type = document type, e.g. \\\"readme\\\" (default) or \\\"api\\\"\\n- office-report.topic = what the document should cover (alias: `task`)\\n- office-report.task = alias of `topic`\\n- office-report.format = \\\"docx\\\" | \\\"pptx\\\" | \\\"xlsx\\\"; any other value falls back to \\\"docx\\\"\\n- office-report.data = optional JSON data embedded into the generated document\\n- data-analysis.csv = CSV text to analyse (alias: `data`)\\n- data-analysis.data = alias of `csv`\\n- data-analysis.question = what to find out (alias: `task`); defaults to a general summary\\n- data-analysis.task = alias of `question`\\n- bugfix.files = map of path to file content the fix applies to\\n- bugfix.error = the failure or requirement to fix (alias: `task`)\\n- bugfix.task = alias of `error`\\n- bugfix.testCmd = shell command run in the sandbox after the patch is applied\\n- migration.files = map of path to file content to migrate\\n- migration.goal = the migration or refactor goal (alias: `task`)\\n- migration.task = alias of `goal`\\nAny other kind is refused before dispatch with code \\\"unknown_pipeline_kind\\\"; input fields not listed for the chosen kind are ignored.\\nautonomy=\\\"bounded-agent\\\" requires objective + capabilities, a free-form string array in which {code_exec, file_mutation} route the job to the sandboxed tier.\\nEnvelopes mixing or missing the fields of the chosen autonomy are rejected with code \\\"envelope_invalid\\\".\",\"inputSchema\":{\"type\":\"object\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"properties\":{\"schema_version\":{\"type\":\"number\",\"const\":1},\"idempotency_key\":{\"type\":\"string\",\"pattern\":\"^[A-Za-z0-9._-]{8,128}$\"},\"autonomy\":{\"type\":\"string\",\"enum\":[\"pipeline\",\"bounded-agent\"]},\"kind\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":128},\"input\":{\"type\":\"object\",\"propertyNames\":{\"type\":\"string\",\"maxLength\":256},\"additionalProperties\":{}},\"objective\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":32768},\"capabilities\":{\"maxItems\":128,\"type\":\"array\",\"items\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":128}},\"budget\":{\"type\":\"object\",\"properties\":{\"max_iter\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":50},\"max_tokens\":{\"type\":\"integer\",\"minimum\":1000,\"maximum\":500000},\"max_wall_clock_sec\":{\"type\":\"integer\",\"minimum\":10,\"maximum\":1800}},\"additionalProperties\":false},\"constraints\":{\"type\":\"object\",\"properties\":{\"allowed_tools\":{\"maxItems\":128,\"type\":\"array\",\"items\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":128}},\"denied_paths\":{\"maxItems\":256,\"type\":\"array\",\"items\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":1024}},\"network\":{\"type\":\"string\",\"enum\":[\"restricted\"]}},\"additionalProperties\":false},\"output_schema\":{\"type\":\"object\",\"propertyNames\":{\"type\":\"string\",\"maxLength\":256},\"additionalProperties\":{}},\"artifact_policy\":{\"type\":\"object\",\"properties\":{\"delivery\":{\"type\":\"string\",\"const\":\"descriptor_only\"}},\"required\":[\"delivery\"],\"additionalProperties\":false}},\"required\":[\"schema_version\",\"idempotency_key\",\"autonomy\"],\"additionalProperties\":false},\"annotations\":{\"readOnlyHint\":false,\"destructiveHint\":false,\"openWorldHint\":true}},{\"name\":\"cloud_status\",\"description\":\"Get a cloud job's public status (tier-neutral). Returns {status, progress, counters?, result?}.\",\"inputSchema\":{\"type\":\"object\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"properties\":{\"job_id\":{\"type\":\"string\"}},\"required\":[\"job_i"
+  },
+  "cloudWebSearch": {
+    "status": 200,
+    "contentType": "text/event-stream",
+    "body": "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"error\\\":{\\\"message\\\":\\\"预授权拒绝: 额度不足:本次最大责任 15 fen(会员窗可承接 0),钱包可用余额不够钱包腿 15 fen(含在途预留)\\\",\\\"code\\\":\\\"account_wallet_insufficient\\\"}}\"}],\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":2}\n\n"
+  },
+  "platformPurposes": [
+    "model.invoke",
+    "cloud.dispatch",
+    "cloud.read",
+    "artifact.read",
+    "account.read"
+  ],
+  "gatewayWebSearch": [
+    {
+      "purpose": "model.invoke",
+      "status": 402,
+      "contentType": "application/json",
+      "body": "{\"error\":{\"message\":\"预授权拒绝: 额度不足:本次最大责任 15 fen(会员窗可承接 0),钱包可用余额不够钱包腿 15 fen(含在途预留)\",\"code\":\"account_wallet_insufficient\"}}"
+    },
+    {
+      "purpose": "cloud.dispatch",
+      "status": 402,
+      "contentType": "application/json",
+      "body": "{\"error\":{\"message\":\"预授权拒绝: 额度不足:本次最大责任 15 fen(会员窗可承接 0),钱包可用余额不够钱包腿 15 fen(含在途预留)\",\"code\":\"account_wallet_insufficient\"}}"
+    }
+  ],
+  "verdict": "MEASURED — gateway HTTP 402 + MCP isError with a registered FailureCode"
+}

@@ -1,0 +1,880 @@
+{
+  "ticket": "alpha-code#1433",
+  "at": "2026-09-24T07:06:15.686Z",
+  "bun": "1.3.14",
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "drive": "neutral",
+  "totalModelCalls": 13,
+  "credentialHygiene": "key read from --keys-file into memory only; engine配置里是占位串;不入结果/日志/证据",
+  "notMeasuredHere": [
+    "云腿(cloud_cloud_web_search):无登录铸 token,本轮未接",
+    "打包实例",
+    "seatbelt 围栏",
+    "出网策略代理"
+  ],
+  "results": [
+    {
+      "cell": "logged-out-byok",
+      "drive": "neutral",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "exitCode": 0,
+      "modelCallCount": 3,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelEmittedToolCalls": true,
+      "modelEmittedWebsearchCall": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_9r3QESExBAmrdxHO7hJN5031",
+          "name": "websearch",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime 2026\", \"numResults\": 10}"
+        },
+        {
+          "exchange": 2,
+          "index": 1,
+          "id": "call_01_VEGqpdCtZ6K6JpDATKZJ4139",
+          "name": "websearch",
+          "argsHead": "{\"query\": \"Bun runtime latest release news\", \"numResults\": 10}"
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 28740,
+          "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in"
+        },
+        {
+          "exchange": 3,
+          "bytes": 21146,
+          "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n...\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK "
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "websearch",
+          "callID": "call_01_VEGqpdCtZ6K6JpDATKZJ4139",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun runtime latest release news\",\"numResults\":10}",
+          "outputBytes": 21146,
+          "outputHead": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n...\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK ",
+          "errorHead": ""
+        },
+        {
+          "tool": "websearch",
+          "callID": "call_00_9r3QESExBAmrdxHO7hJN5031",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime 2026\",\"numResults\":10}",
+          "outputBytes": 28740,
+          "outputHead": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in",
+          "errorHead": ""
+        }
+      ],
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-24T07:05:40.128Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 2623,
+          "responseBytes": 8458,
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Recent web pages about Bun JavaScript runtime"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-24T07:05:40.290Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 24599,
+          "responseBytes": 28489,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_9r3QESExBAmrdxHO7hJN5031",
+              "name": "websearch",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime 2026\", \"numResults\": 10}"
+            },
+            {
+              "index": 1,
+              "id": "call_01_VEGqpdCtZ6K6JpDATKZJ4139",
+              "name": "websearch",
+              "argsHead": "{\"query\": \"Bun runtime latest release news\", \"numResults\": 10}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-24T07:05:43.635Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 76416,
+          "responseBytes": 125410,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 28740,
+              "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in"
+            },
+            {
+              "bytes": 21146,
+              "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n...\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK "
+            }
+          ],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Three recent pages on distinct domains:\n\n1. **\"Bun 1.4's Rust rewrite cuts script startup time from 10.5ms to 4.2ms\"** — https://dev.to/alexgeorgiev17/bun-14s-rust-rewrite-cuts-script-startup-time-from-105ms-to-42ms-2je0 (Sep 12, 2026)\n\n2. **\"Bun Rewrites 535K Lines of Zig Into Rust in Four Months, Eliminates Numerous Memory Leaks\"** — https://news.lavx.hu/article/bun-rewrites-535k-lines-of-zig-in"
+        }
+      ],
+      "stderrTail": "",
+      "stdoutTail": " 2026)\\n\\n2. **\\\"Bun Rewrites 535K Lines of Zig Into Rust in Four Months, Eliminates Numerous Memory Leaks\\\"** — https://news.lavx.hu/article/bun-rewrites-535k-lines-of-zig-into-rust-in-four-months-eliminates-numerous-memory-leaks (Sep 20, 2026)\\n\\n3. **\\\"What's New in Bun v1.4.1\\\"** — https://medium.com/@onix_react/whats-new-in-bun-v1-4-1-298fe3eb5ba4 (Sep 4, 2026)\",\"time\":{\"start\":1790233545500,\"end\":1790233545512}}}\n{\"type\":\"step_finish\",\"timestamp\":1790233545520,\"sessionID\":\"ses_f2dc40ff2ffenC0Cd3PFKqAQyb\",\"part\":{\"id\":\"prt_0d23c0b2a001Qnt5Kn4ez96I5T\",\"reason\":\"stop\",\"messageID\":\"msg_0d23c03c2001Mm3QEpKrbvD8O8\",\"sessionID\":\"ses_f2dc40ff2ffenC0Cd3PFKqAQyb\",\"type\":\"step-finish\",\"tokens\":{\"total\":19239,\"input\":12952,\"output\":221,\"reasoning\":178,\"cache\":{\"write\":0,\"read\":5888}},\"cost\":0}}\n"
+    },
+    {
+      "cell": "logged-in-with-credit",
+      "drive": "neutral",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "exitCode": 0,
+      "modelCallCount": 3,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelEmittedToolCalls": true,
+      "modelEmittedWebsearchCall": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_XOkhokPB6ks1S3YdGe9l1783",
+          "name": "websearch",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime 2026\", \"numResults\": 10}"
+        },
+        {
+          "exchange": 2,
+          "index": 1,
+          "id": "call_01_EKjkJZqLm7mKFgds3eaG2717",
+          "name": "websearch",
+          "argsHead": "{\"query\": \"Bun runtime new release features 2026\", \"numResults\": 10}"
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 28740,
+          "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in"
+        },
+        {
+          "exchange": 3,
+          "bytes": 33964,
+          "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n...\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK "
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "websearch",
+          "callID": "call_00_XOkhokPB6ks1S3YdGe9l1783",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime 2026\",\"numResults\":10}",
+          "outputBytes": 28740,
+          "outputHead": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in",
+          "errorHead": ""
+        },
+        {
+          "tool": "websearch",
+          "callID": "call_01_EKjkJZqLm7mKFgds3eaG2717",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun runtime new release features 2026\",\"numResults\":10}",
+          "outputBytes": 33964,
+          "outputHead": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n...\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK ",
+          "errorHead": ""
+        }
+      ],
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-24T07:05:48.217Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 2623,
+          "responseBytes": 23281,
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Recent Bun JavaScript runtime articles"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-24T07:05:48.384Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 24599,
+          "responseBytes": 26022,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_XOkhokPB6ks1S3YdGe9l1783",
+              "name": "websearch",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime 2026\", \"numResults\": 10}"
+            },
+            {
+              "index": 1,
+              "id": "call_01_EKjkJZqLm7mKFgds3eaG2717",
+              "name": "websearch",
+              "argsHead": "{\"query\": \"Bun runtime new release features 2026\", \"numResults\": 10}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-24T07:05:50.942Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 89606,
+          "responseBytes": 208077,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 28740,
+              "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in"
+            },
+            {
+              "bytes": 33964,
+              "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n...\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK "
+            }
+          ],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Three recent pages on Bun, on distinct domains:\n\n1. **Bun 1.4 | Bun Blog** — https://bun.com/blog/bun-v1.4 (Aug 20, 2026)\n2. **Bun 1.4 Ships the Rust Rewrite: What's New — CODERCOPS** — https://blog.codercops.com/blog/bun-1-4-rust-rewrite-browser-automation-2026 (Aug 23, 2026)\n3. **Bun vs Node.js vs Deno: Which Runtime in 2026? — daily.dev** — https://daily.dev/blog/javascript-runtimes-bun-vs-node"
+        }
+      ],
+      "stderrTail": "",
+      "stdoutTail": "** — https://bun.com/blog/bun-v1.4 (Aug 20, 2026)\\n2. **Bun 1.4 Ships the Rust Rewrite: What's New — CODERCOPS** — https://blog.codercops.com/blog/bun-1-4-rust-rewrite-browser-automation-2026 (Aug 23, 2026)\\n3. **Bun vs Node.js vs Deno: Which Runtime in 2026? — daily.dev** — https://daily.dev/blog/javascript-runtimes-bun-vs-node-js-vs-deno-comparison/ (Apr 11, 2026)\",\"time\":{\"start\":1790233554507,\"end\":1790233554515}}}\n{\"type\":\"step_finish\",\"timestamp\":1790233554524,\"sessionID\":\"ses_f2dc3ef9affee5B2YVPT8jw3lh\",\"part\":{\"id\":\"prt_0d23c2e540012i7mCyQWWnfsBO\",\"reason\":\"stop\",\"messageID\":\"msg_0d23c20530012u3cj1nrLrJiP0\",\"sessionID\":\"ses_f2dc3ef9affee5B2YVPT8jw3lh\",\"type\":\"step-finish\",\"tokens\":{\"total\":22552,\"input\":16001,\"output\":165,\"reasoning\":498,\"cache\":{\"write\":0,\"read\":5888}},\"cost\":0}}\n"
+    },
+    {
+      "cell": "logged-in-no-credit",
+      "drive": "neutral",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "exitCode": 0,
+      "modelCallCount": 3,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelEmittedToolCalls": true,
+      "modelEmittedWebsearchCall": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_0LadJSLSeAYv755YTCe64869",
+          "name": "websearch",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime 2026\", \"numResults\": 10, \"type\": \"deep\"}"
+        },
+        {
+          "exchange": 2,
+          "index": 1,
+          "id": "call_01_mfuxqDw30CSL22G93PIW6436",
+          "name": "websearch",
+          "argsHead": "{\"query\": \"Bun runtime blog post recent\", \"numResults\": 10, \"type\": \"deep\"}"
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 28740,
+          "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in"
+        },
+        {
+          "exchange": 3,
+          "bytes": 21712,
+          "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n\nDylan Conway\n\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs"
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "websearch",
+          "callID": "call_00_0LadJSLSeAYv755YTCe64869",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime 2026\",\"numResults\":10,\"type\":\"deep\"}",
+          "outputBytes": 28740,
+          "outputHead": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in",
+          "errorHead": ""
+        },
+        {
+          "tool": "websearch",
+          "callID": "call_01_mfuxqDw30CSL22G93PIW6436",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun runtime blog post recent\",\"numResults\":10,\"type\":\"deep\"}",
+          "outputBytes": 21712,
+          "outputHead": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n\nDylan Conway\n\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs",
+          "errorHead": ""
+        }
+      ],
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-24T07:05:57.154Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 2623,
+          "responseBytes": 10014,
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Finding recent web pages about Bun runtime"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-24T07:05:57.321Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 24599,
+          "responseBytes": 34074,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_0LadJSLSeAYv755YTCe64869",
+              "name": "websearch",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime 2026\", \"numResults\": 10, \"type\": \"deep\"}"
+            },
+            {
+              "index": 1,
+              "id": "call_01_mfuxqDw30CSL22G93PIW6436",
+              "name": "websearch",
+              "argsHead": "{\"query\": \"Bun runtime blog post recent\", \"numResults\": 10, \"type\": \"deep\"}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-24T07:06:00.451Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 76988,
+          "responseBytes": 136161,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 28740,
+              "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n...\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n...\nRuntime, package manager, test runner and bundler in a single binary. Use bun in"
+            },
+            {
+              "bytes": 21712,
+              "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n...\n# Bun v1.4.2\n\nDylan Conway\n\nSeptember 5, 2026\n...\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs"
+            }
+          ],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Here are three recent pages about the Bun runtime, each on a different domain:\n\n1. **Bun v1.4.2** — https://bun.com/blog/bun-v1.4.2 (September 5, 2026)\n2. **Bun 1.4.1 vs Node.js 26: Should You Actually Move Your Server?** — https://dev.to/jamilxt/bun-141-vs-nodejs-26-should-you-actually-move-your-server-2ce8 (September 4, 2026)\n3. **Bun 1.4 at Scrydon: A Quiet Upgrade With Loud Early Numbers** — h"
+        }
+      ],
+      "stderrTail": "",
+      "stdoutTail": "n.com/blog/bun-v1.4.2 (September 5, 2026)\\n2. **Bun 1.4.1 vs Node.js 26: Should You Actually Move Your Server?** — https://dev.to/jamilxt/bun-141-vs-nodejs-26-should-you-actually-move-your-server-2ce8 (September 4, 2026)\\n3. **Bun 1.4 at Scrydon: A Quiet Upgrade With Loud Early Numbers** — https://scrydon.com/insights/2026/08/21/bun-1-4-at-scrydon/ (August 21, 2026)\",\"time\":{\"start\":1790233562638,\"end\":1790233562647}}}\n{\"type\":\"step_finish\",\"timestamp\":1790233562654,\"sessionID\":\"ses_f2dc3cc86ffej4Sd6WCwM3vZtY\",\"part\":{\"id\":\"prt_0d23c4e180016TRwyetAm9gnHN\",\"reason\":\"stop\",\"messageID\":\"msg_0d23c4574001ywSdGHx8RPsy3z\",\"sessionID\":\"ses_f2dc3cc86ffej4Sd6WCwM3vZtY\",\"type\":\"step-finish\",\"tokens\":{\"total\":19504,\"input\":13055,\"output\":177,\"reasoning\":256,\"cache\":{\"write\":0,\"read\":6016}},\"cost\":0}}\n"
+    },
+    {
+      "cell": "kill-switch",
+      "drive": "neutral",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "exitCode": 0,
+      "modelCallCount": 4,
+      "websearchOfferedToModel": false,
+      "offeredTools": [
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "modelEmittedToolCalls": true,
+      "modelEmittedWebsearchCall": false,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_RTfFKspNNSVetfiFrs9K9894",
+          "name": "webfetch",
+          "argsHead": "{\"url\": \"https://duckduckgo.com/html/?q=Bun+JavaScript+runtime+news\", \"format\": \"markdown\"}"
+        },
+        {
+          "exchange": 2,
+          "index": 1,
+          "id": "call_01_SMcFkgeCCEEXdEXSukdW2862",
+          "name": "webfetch",
+          "argsHead": "{\"url\": \"https://www.bing.com/search?q=Bun+JavaScript+runtime+news\", \"format\": \"markdown\"}"
+        },
+        {
+          "exchange": 3,
+          "index": 0,
+          "id": "call_00_cu5XRj1UhCdBFTbUuVyB6597",
+          "name": "webfetch",
+          "argsHead": "{\"format\": \"markdown\", \"url\": \"https://www.infoq.com/news/2026/09/bun-AI-rewrite-zig-rust-4-months/\"}"
+        },
+        {
+          "exchange": 3,
+          "index": 1,
+          "id": "call_01_7zwxD1N15w6gUssduEO17248",
+          "name": "webfetch",
+          "argsHead": "{\"format\": \"markdown\", \"url\": \"https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\"}"
+        },
+        {
+          "exchange": 3,
+          "index": 2,
+          "id": "call_02_De5JG5Z6cvDyBfjQM3N61804",
+          "name": "webfetch",
+          "argsHead": "{\"format\": \"markdown\", \"url\": \"https://tech-insider.org/bun-vs-nodejs-2026/\"}"
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 12323,
+          "head": "     Bun JavaScript runtime news at DuckDuckGo         \n\n[](/html/ \"DuckDuckGo\")\n\n \n\nAll Regions Argentina Australia Austria Belgium (fr) Belgium (nl) Brazil Bulgaria Canada (en) Canada (fr) Catalonia Chile China Colombia Croatia Czech Republic Denmark Estonia Finland France Germany Greece Hong Kong"
+        },
+        {
+          "exchange": 3,
+          "bytes": 12295,
+          "head": "Bun JavaScript runtime news - Search\n\n[\n\nSkip to content\n\n\n\n](#)[\n\nAccessibility Feedback\n\n\n\n](#)\n\n[\n\n](/?FORM=Z9FD1)\n\n[\n\n](javascript:void\\(0\\))[\n\n![Profile Picture](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=)](javascript:void\\"
+        },
+        {
+          "exchange": 4,
+          "bytes": 12323,
+          "head": "     Bun JavaScript runtime news at DuckDuckGo         \n\n[](/html/ \"DuckDuckGo\")\n\n \n\nAll Regions Argentina Australia Austria Belgium (fr) Belgium (nl) Brazil Bulgaria Canada (en) Canada (fr) Catalonia Chile China Colombia Croatia Czech Republic Denmark Estonia Finland France Germany Greece Hong Kong"
+        },
+        {
+          "exchange": 4,
+          "bytes": 12295,
+          "head": "Bun JavaScript runtime news - Search\n\n[\n\nSkip to content\n\n\n\n](#)[\n\nAccessibility Feedback\n\n\n\n](#)\n\n[\n\n](/?FORM=Z9FD1)\n\n[\n\n](javascript:void\\(0\\))[\n\n![Profile Picture](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=)](javascript:void\\"
+        },
+        {
+          "exchange": 4,
+          "bytes": 29352,
+          "head": "      Bun Rewrites 535K Lines of Zig into Rust in Four Months, Eliminates Numerous Memory Leaks - InfoQ                   \n\n  \n\n                          \n\n[BT](/int/bt/ \"bt\")\n\n## InfoQ Software Architects' Newsletter\n\nA monthly overview of things you need to know as an architect or aspiring archite"
+        },
+        {
+          "exchange": 4,
+          "bytes": 14944,
+          "head": "     Bun's 2026 JavaScript runtime shifts Next.js economics - TechNewsDaily - Technology News & Reviews                             \n\nThursday, 24 September 2026\n\nFollow us[](#)[](#)[](#)[](#)\n\n[![TechNewsDaily - Technology News & Reviews](https://technewsdaily.com/wp-content/themes/technewsdaily/as"
+        },
+        {
+          "exchange": 4,
+          "bytes": 51252,
+          "head": "              Bun vs Node.js: 3x Faster, But Is It Ready? \\[2026\\]                                                     \n\n         [Skip to content](#main)\n\n-   [AI & ML](https://tech-insider.org/category/ai-machine-learning/)\n-   [Cybersecurity](https://tech-insider.org/category/cybersecurity/)\n-   "
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "webfetch",
+          "callID": "call_01_SMcFkgeCCEEXdEXSukdW2862",
+          "status": "completed",
+          "inputHead": "{\"url\":\"https://www.bing.com/search?q=Bun+JavaScript+runtime+news\",\"format\":\"markdown\"}",
+          "outputBytes": 12295,
+          "outputHead": "Bun JavaScript runtime news - Search\n\n[\n\nSkip to content\n\n\n\n](#)[\n\nAccessibility Feedback\n\n\n\n](#)\n\n[\n\n](/?FORM=Z9FD1)\n\n[\n\n](javascript:void\\(0\\))[\n\n![Profile Picture](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=)](javascript:void\\",
+          "errorHead": ""
+        },
+        {
+          "tool": "webfetch",
+          "callID": "call_00_RTfFKspNNSVetfiFrs9K9894",
+          "status": "completed",
+          "inputHead": "{\"url\":\"https://duckduckgo.com/html/?q=Bun+JavaScript+runtime+news\",\"format\":\"markdown\"}",
+          "outputBytes": 12323,
+          "outputHead": "     Bun JavaScript runtime news at DuckDuckGo         \n\n[](/html/ \"DuckDuckGo\")\n\n \n\nAll Regions Argentina Australia Austria Belgium (fr) Belgium (nl) Brazil Bulgaria Canada (en) Canada (fr) Catalonia Chile China Colombia Croatia Czech Republic Denmark Estonia Finland France Germany Greece Hong Kong",
+          "errorHead": ""
+        },
+        {
+          "tool": "webfetch",
+          "callID": "call_02_De5JG5Z6cvDyBfjQM3N61804",
+          "status": "completed",
+          "inputHead": "{\"format\":\"markdown\",\"url\":\"https://tech-insider.org/bun-vs-nodejs-2026/\"}",
+          "outputBytes": 51252,
+          "outputHead": "              Bun vs Node.js: 3x Faster, But Is It Ready? \\[2026\\]                                                     \n\n         [Skip to content](#main)\n\n-   [AI & ML](https://tech-insider.org/category/ai-machine-learning/)\n-   [Cybersecurity](https://tech-insider.org/category/cybersecurity/)\n-   ",
+          "errorHead": ""
+        },
+        {
+          "tool": "webfetch",
+          "callID": "call_00_cu5XRj1UhCdBFTbUuVyB6597",
+          "status": "completed",
+          "inputHead": "{\"format\":\"markdown\",\"url\":\"https://www.infoq.com/news/2026/09/bun-AI-rewrite-zig-rust-4-months/\"}",
+          "outputBytes": 29352,
+          "outputHead": "      Bun Rewrites 535K Lines of Zig into Rust in Four Months, Eliminates Numerous Memory Leaks - InfoQ                   \n\n  \n\n                          \n\n[BT](/int/bt/ \"bt\")\n\n## InfoQ Software Architects' Newsletter\n\nA monthly overview of things you need to know as an architect or aspiring archite",
+          "errorHead": ""
+        },
+        {
+          "tool": "webfetch",
+          "callID": "call_01_7zwxD1N15w6gUssduEO17248",
+          "status": "completed",
+          "inputHead": "{\"format\":\"markdown\",\"url\":\"https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\"}",
+          "outputBytes": 14944,
+          "outputHead": "     Bun's 2026 JavaScript runtime shifts Next.js economics - TechNewsDaily - Technology News & Reviews                             \n\nThursday, 24 September 2026\n\nFollow us[](#)[](#)[](#)[](#)\n\n[![TechNewsDaily - Technology News & Reviews](https://technewsdaily.com/wp-content/themes/technewsdaily/as",
+          "errorHead": ""
+        }
+      ],
+      "exchanges": [
+        {
+          "n": 2,
+          "at": "2026-09-24T07:06:05.583Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 22674,
+          "responseBytes": 44922,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_RTfFKspNNSVetfiFrs9K9894",
+              "name": "webfetch",
+              "argsHead": "{\"url\": \"https://duckduckgo.com/html/?q=Bun+JavaScript+runtime+news\", \"format\": \"markdown\"}"
+            },
+            {
+              "index": 1,
+              "id": "call_01_SMcFkgeCCEEXdEXSukdW2862",
+              "name": "webfetch",
+              "argsHead": "{\"url\": \"https://www.bing.com/search?q=Bun+JavaScript+runtime+news\", \"format\": \"markdown\"}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 1,
+          "at": "2026-09-24T07:06:05.420Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 2623,
+          "responseBytes": 180965,
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Recent Bun runtime pages on three domains"
+        },
+        {
+          "n": 3,
+          "at": "2026-09-24T07:06:08.383Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 49914,
+          "responseBytes": 129115,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 12323,
+              "head": "     Bun JavaScript runtime news at DuckDuckGo         \n\n[](/html/ \"DuckDuckGo\")\n\n \n\nAll Regions Argentina Australia Austria Belgium (fr) Belgium (nl) Brazil Bulgaria Canada (en) Canada (fr) Catalonia Chile China Colombia Croatia Czech Republic Denmark Estonia Finland France Germany Greece Hong Kong"
+            },
+            {
+              "bytes": 12295,
+              "head": "Bun JavaScript runtime news - Search\n\n[\n\nSkip to content\n\n\n\n](#)[\n\nAccessibility Feedback\n\n\n\n](#)\n\n[\n\n](/?FORM=Z9FD1)\n\n[\n\n](javascript:void\\(0\\))[\n\n![Profile Picture](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=)](javascript:void\\"
+            }
+          ],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_cu5XRj1UhCdBFTbUuVyB6597",
+              "name": "webfetch",
+              "argsHead": "{\"format\": \"markdown\", \"url\": \"https://www.infoq.com/news/2026/09/bun-AI-rewrite-zig-rust-4-months/\"}"
+            },
+            {
+              "index": 1,
+              "id": "call_01_7zwxD1N15w6gUssduEO17248",
+              "name": "webfetch",
+              "argsHead": "{\"format\": \"markdown\", \"url\": \"https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\"}"
+            },
+            {
+              "index": 2,
+              "id": "call_02_De5JG5Z6cvDyBfjQM3N61804",
+              "name": "webfetch",
+              "argsHead": "{\"format\": \"markdown\", \"url\": \"https://tech-insider.org/bun-vs-nodejs-2026/\"}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 4,
+          "at": "2026-09-24T07:06:13.373Z",
+          "upstreamUrl": "https://api.deepseek.com/v1/chat/completions",
+          "requestBytes": 149692,
+          "responseBytes": 78976,
+          "requestToolNames": [
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "tool",
+            "assistant",
+            "tool",
+            "tool",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 12323,
+              "head": "     Bun JavaScript runtime news at DuckDuckGo         \n\n[](/html/ \"DuckDuckGo\")\n\n \n\nAll Regions Argentina Australia Austria Belgium (fr) Belgium (nl) Brazil Bulgaria Canada (en) Canada (fr) Catalonia Chile China Colombia Croatia Czech Republic Denmark Estonia Finland France Germany Greece Hong Kong"
+            },
+            {
+              "bytes": 12295,
+              "head": "Bun JavaScript runtime news - Search\n\n[\n\nSkip to content\n\n\n\n](#)[\n\nAccessibility Feedback\n\n\n\n](#)\n\n[\n\n](/?FORM=Z9FD1)\n\n[\n\n](javascript:void\\(0\\))[\n\n![Profile Picture](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=)](javascript:void\\"
+            },
+            {
+              "bytes": 29352,
+              "head": "      Bun Rewrites 535K Lines of Zig into Rust in Four Months, Eliminates Numerous Memory Leaks - InfoQ                   \n\n  \n\n                          \n\n[BT](/int/bt/ \"bt\")\n\n## InfoQ Software Architects' Newsletter\n\nA monthly overview of things you need to know as an architect or aspiring archite"
+            },
+            {
+              "bytes": 14944,
+              "head": "     Bun's 2026 JavaScript runtime shifts Next.js economics - TechNewsDaily - Technology News & Reviews                             \n\nThursday, 24 September 2026\n\nFollow us[](#)[](#)[](#)[](#)\n\n[![TechNewsDaily - Technology News & Reviews](https://technewsdaily.com/wp-content/themes/technewsdaily/as"
+            },
+            {
+              "bytes": 51252,
+              "head": "              Bun vs Node.js: 3x Faster, But Is It Ready? \\[2026\\]                                                     \n\n         [Skip to content](#main)\n\n-   [AI & ML](https://tech-insider.org/category/ai-machine-learning/)\n-   [Cybersecurity](https://tech-insider.org/category/cybersecurity/)\n-   "
+            }
+          ],
+          "status": 200,
+          "responseHeadersSample": {
+            "cf-ray": "",
+            "content-type": "text/event-stream; charset=utf-8",
+            "server": "openresty"
+          },
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Here are three recent pages on three different domains:\n\n1. **Bun Rewrites 535K Lines of Zig into Rust in Four Months, Eliminates Numerous Memory Leaks** — InfoQ (Sep 20, 2026)\n   https://www.infoq.com/news/2026/09/bun-AI-rewrite-zig-rust-4-months/\n\n2. **Bun's 2026 JavaScript runtime shifts Next.js economics** — TechNewsDaily (Sep 7, 2026)\n   https://technewsdaily.com/product-reviews/buns-2026-jav"
+        }
+      ],
+      "stderrTail": "",
+      "stdoutTail": "-zig-rust-4-months/\\n\\n2. **Bun's 2026 JavaScript runtime shifts Next.js economics** — TechNewsDaily (Sep 7, 2026)\\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\\n\\n3. **Bun vs Node.js 2026: The Definitive JavaScript Runtime Comparison** — Tech Insider (Apr 4, 2026)\\n   https://tech-insider.org/bun-vs-nodejs-2026/\",\"time\":{\"start\":1790233575468,\"end\":1790233575477}}}\n{\"type\":\"step_finish\",\"timestamp\":1790233575486,\"sessionID\":\"ses_f2dc3acb0ffe03N519ym4mUkgb\",\"part\":{\"id\":\"prt_0d23c8036001TFGHRVXXDzRNnc\",\"reason\":\"stop\",\"messageID\":\"msg_0d23c77e8001YKCfRetmQ72I3G\",\"sessionID\":\"ses_f2dc3acb0ffe03N519ym4mUkgb\",\"type\":\"step-finish\",\"tokens\":{\"total\":42141,\"input\":23843,\"output\":181,\"reasoning\":69,\"cache\":{\"write\":0,\"read\":18048}},\"cost\":0}}\n"
+    }
+  ]
+}

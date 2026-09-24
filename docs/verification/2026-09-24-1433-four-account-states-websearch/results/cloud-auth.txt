@@ -1,0 +1,3 @@
+no-auth       	http=401	{"error":"invalid_token","error_description":"Missing or invalid access token for the alpha-cloud MCP resource"}
+bogus-bearer  	http=401	{"error":"invalid_token","error_description":"Missing or invalid access token for the alpha-cloud MCP resource"}
+empty-bearer  	http=401	{"error":"invalid_token","error_description":"Missing or invalid access token for the alpha-cloud MCP resource"}

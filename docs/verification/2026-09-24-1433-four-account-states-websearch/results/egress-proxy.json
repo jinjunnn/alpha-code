@@ -1,0 +1,204 @@
+{
+  "ticket": "alpha-code#1433",
+  "at": "2026-09-24T07:07:03.745Z",
+  "bun": "1.3.14",
+  "proxy": "127.0.0.1:51781",
+  "injectedEnv": {
+    "HTTP_PROXY": "http://127.0.0.1:51781",
+    "HTTPS_PROXY": "http://127.0.0.1:51781",
+    "ALL_PROXY": "http://127.0.0.1:51781",
+    "http_proxy": "http://127.0.0.1:51781",
+    "https_proxy": "http://127.0.0.1:51781",
+    "all_proxy": "http://127.0.0.1:51781",
+    "NO_PROXY": "127.0.0.1,localhost,::1",
+    "no_proxy": "127.0.0.1,localhost,::1"
+  },
+  "rows": [
+    {
+      "url": "https://mcp.exa.ai/mcp",
+      "expect": "allow",
+      "why": "network-egress-registry.ts:116(本地 keyless websearch / Exa)",
+      "httpCode": "200",
+      "stderr": "",
+      "exitCode": 0
+    },
+    {
+      "url": "https://search.parallel.ai/mcp",
+      "expect": "allow",
+      "why": "network-egress-registry.ts:117(本地 keyless websearch / Parallel)",
+      "httpCode": "200",
+      "stderr": "",
+      "exitCode": 0
+    },
+    {
+      "url": "https://example.com/",
+      "expect": "deny",
+      "why": "反向臂:刻意未登记(registry.ts:29)",
+      "httpCode": "000",
+      "stderr": "curl: (56) CONNECT tunnel failed, response 403",
+      "exitCode": 56
+    },
+    {
+      "url": "https://alpha-cloud.tidelabs.click/mcp",
+      "expect": "allow",
+      "why": "云 MCP(登记的 app 端点)",
+      "httpCode": "401",
+      "stderr": "",
+      "exitCode": 0
+    },
+    {
+      "url": "https://duckduckgo.com/html/?q=bun",
+      "expect": "deny",
+      "why": "kill-switch 绕行路:模型实际请求过的搜索引擎结果页",
+      "httpCode": "000",
+      "stderr": "curl: (56) CONNECT tunnel failed, response 403",
+      "exitCode": 56
+    },
+    {
+      "url": "https://www.bing.com/search?q=bun",
+      "expect": "deny",
+      "why": "同上",
+      "httpCode": "000",
+      "stderr": "curl: (56) CONNECT tunnel failed, response 403",
+      "exitCode": 56
+    }
+  ],
+  "proxyVerdicts": [
+    {
+      "authority": "mcp.exa.ai:443",
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "authority": "search.parallel.ai:443",
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "authority": "example.com:443",
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "authority": "alpha-cloud.tidelabs.click:443",
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "authority": "duckduckgo.com:443",
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "authority": "www.bing.com:443",
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    }
+  ],
+  "proxyLog": [
+    {
+      "event": "egress.connect",
+      "id": 1,
+      "at": "2026-09-24T07:07:01.739Z",
+      "method": "CONNECT",
+      "authority": "mcp.exa.ai:443",
+      "host": "mcp.exa.ai",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.tunnel-closed",
+      "id": 1,
+      "at": "2026-09-24T07:07:02.124Z",
+      "host": "mcp.exa.ai",
+      "port": 443,
+      "bytesUp": 682,
+      "bytesDown": 5731
+    },
+    {
+      "event": "egress.connect",
+      "id": 2,
+      "at": "2026-09-24T07:07:02.144Z",
+      "method": "CONNECT",
+      "authority": "search.parallel.ai:443",
+      "host": "search.parallel.ai",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.tunnel-closed",
+      "id": 2,
+      "at": "2026-09-24T07:07:03.056Z",
+      "host": "search.parallel.ai",
+      "port": 443,
+      "bytesUp": 696,
+      "bytesDown": 17128
+    },
+    {
+      "event": "egress.connect",
+      "id": 3,
+      "at": "2026-09-24T07:07:03.063Z",
+      "method": "CONNECT",
+      "authority": "example.com:443",
+      "host": "example.com",
+      "port": 443,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "event": "egress.connect",
+      "id": 4,
+      "at": "2026-09-24T07:07:03.088Z",
+      "method": "CONNECT",
+      "authority": "alpha-cloud.tidelabs.click:443",
+      "host": "alpha-cloud.tidelabs.click",
+      "port": 443,
+      "verdict": "allow",
+      "status": 200
+    },
+    {
+      "event": "egress.tunnel-closed",
+      "id": 4,
+      "at": "2026-09-24T07:07:03.730Z",
+      "host": "alpha-cloud.tidelabs.click",
+      "port": 443,
+      "bytesUp": 710,
+      "bytesDown": 3708
+    },
+    {
+      "event": "egress.connect",
+      "id": 5,
+      "at": "2026-09-24T07:07:03.737Z",
+      "method": "CONNECT",
+      "authority": "duckduckgo.com:443",
+      "host": "duckduckgo.com",
+      "port": 443,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    },
+    {
+      "event": "egress.connect",
+      "id": 6,
+      "at": "2026-09-24T07:07:03.744Z",
+      "method": "CONNECT",
+      "authority": "www.bing.com:443",
+      "host": "www.bing.com",
+      "port": 443,
+      "verdict": "deny",
+      "reason": "unregistered",
+      "status": 403
+    }
+  ],
+  "notMeasuredHere": [
+    "seatbelt process fence(是否强制只能走代理)",
+    "打包版 sidecar 的 setGlobalProxyFromEnv 是否真生效",
+    "模型 tool_calls"
+  ]
+}
