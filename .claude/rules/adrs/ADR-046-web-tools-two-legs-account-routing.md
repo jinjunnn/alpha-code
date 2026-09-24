@@ -134,16 +134,60 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 - 因此:本决策让「搜网」在四种账户态下都有一条活路,**不改善「读网页」**。不要据本 ADR 声称
   模型能读网页。
 
+### D6 用户自带的第三方 web-search MCP:归用户自己管,只有 kill-switch 关得掉
+
+**这不是一条新裁决,是 D1 的第二处落点**。`#1411` 落地 D1 时把它一并改掉了,而当时只登记了本地腿
+—— `#1443` 补登记。**本决策不改任何代码行为**,它把已经在跑的行为写成决策。
+
+- **事实**:用户自己在配置里声明一个 remote MCP(`{"mcp":{"exa":{"type":"remote","url":"https://mcp.exa.ai/mcp"}}}`)
+  产生的 `exa_web_search_exa` 一类工具,唯一的闸是 `@alpha-code/ext` 的 `tool.execute.before`
+  (`packages/ext/src/cloud-websearch-kill.ts` 的 `webSearchToolDenial()`);注入面那层 permission
+  deny 只点名 `websearch` 与 `cloud_cloud_web_search` 两个 id,**够不着第三方**。该判决读的是
+  `ALPHA_LOCAL_WEBSEARCH_DENY` **或** `ALPHA_CLOUD_WEBSEARCH_DENY` —— 与本地腿**同一个**信号。
+  D1 让代付态不再置位它,于是代付态第三方 web search 随之放行。
+- **判定:这个新行为是对的。** 依据不是偏好,是 `cloud-websearch-kill.ts` 文件头 R5 那段自己写下的
+  理由是一个**条件句**:「本地 keyless websearch 已因平台代付被关,若用户加一个 exa remote MCP
+  就能拿回同一能力,那条主权判决就被架空」。D1 把前提撤掉了 —— 代付态本地 keyless `websearch`
+  在场且可用,第三方 MCP 给不了用户一个他没有的能力,拦它护不住任何东西,只剩「对用户自己装的
+  东西行使主权」。该段同时自陈「这是产品取舍,不是纯技术结论,归 owner 复核」;owner 2026-09-24
+  复核:**用户自己装的工具归他自己管**,与 D1 同源。
+- **kill-switch 的覆盖面没有缩小**(owner 2026-09-24 点名问的那一格):`applyWebSearchSovereignty`
+  在 kill-switch 下**两个信号都置位**(`packages/ui-mac/src/main/server.ts` 的 `:362` 与 `:370`),
+  而上面那条判据对两个都判 —— 所以「一键关掉所有搜网」照旧关得掉第三方插件。变的只有「登录代付」
+  那一格。
+
+| 账户态 | 第三方 web-search MCP | 为什么 |
+|---|---|---|
+| 登出 / BYOK | **可用** | 两个信号都不置位(`#1411` 之前也是这样,没变) |
+| 登录 + 有额度 | **可用**(`#1411` 起的新行为,本条登记它) | 代付不再置位任何信号;本地腿同时活着,拦它护不住能力 |
+| 登录 + 无额度 | 同上 | 桌面侧与「有额度」不可分辨(D2:没有只读额度查询) |
+| kill-switch | **关** | 两个信号都置位;判据任一命中即拒 |
+
+- **判据**(缺一这张表就只是散文):
+  - 四种账户态的**合成**判据在 `packages/ui-mac/src/main/server.test.ts` 的「`#1443` 用户自带的
+    第三方 web-search MCP」—— env 来自真 `forkSidecar()`,归属来自真 `injectAlphaConfig()` +
+    真 `computeMcpOwnership()`,判决就是 ext 钩子首行调的那个函数,ui-mac 这边不手写等价条件。
+    手段自证:把 D1 撤掉的那条边加回 `applyWebSearchSovereignty`(登录即置位本地拒绝判决),
+    「登录代付:第三方 web search 可用」当场转红。
+  - 单包判据在 `packages/ext/src/cloud-websearch-kill.test.ts`。`#1443` 在那里把 `PLATFORM_PAYS`
+    夹具改名为 `LOCAL_DENY_ONLY`:**它建模的信号形状(本地置位、云没置位)从 `#1411` 起 main 不再
+    产生**,今天它只代表信号漂移。用它的每一条断言**逐字未动**(下方「kill-switch 不得被削弱」),
+    另加一条用代付今天真实形状(两个信号都缺席)的新用例。
+- **不在本条范围内**(沿用 [[ADR-009]] 裁决 (b) 2026-07-26 R6 的收窄,不扩大也不收回宣称):第三方
+  工具的识别只能看工具名,**做不到穷尽** —— 经 `McpCatalog.sanitize` 抹平的非 ASCII 名任何分类器
+  都看不见。所以 kill-switch 对第三方是**尽力拦截**,不是保证。本条只说明「哪一态该拦、哪一态不该拦」,
+  没有改变拦得住多少。
+
 ## 后果
 
 改完之后的四种账户态:
 
-| 账户态 | 模型工具表里有 | 搜网怎么走 | 读网页怎么走 |
-|---|---|---|---|
-| 登出 / BYOK | `websearch` | 本地(`#1415` 已落地) | 不可用,归 `#1412` |
-| 登录 + 有额度 | `websearch` + `cloud_cloud_web_search` | 模型选;云腿 preauth 放行 | 同上 |
-| 登录 + 无额度 | 同上 | 云腿 402(响亮、带 `code`),本地腿**在场且可用** | 同上 |
-| kill-switch | 两个都没有 | 都没有,文案要说 kill-switch 的实话 | 同上 |
+| 账户态 | 模型工具表里有 | 搜网怎么走 | 你自己装的第三方搜网 MCP | 读网页怎么走 |
+|---|---|---|---|---|
+| 登出 / BYOK | `websearch` | 本地(`#1415` 已落地) | 可用(D6) | 不可用,归 `#1412` |
+| 登录 + 有额度 | `websearch` + `cloud_cloud_web_search` | 模型选;云腿 preauth 放行 | 可用(D6,`#1411` 起) | 同上 |
+| 登录 + 无额度 | 同上 | 云腿 402(响亮、带 `code`),本地腿**在场且可用** | 同上 | 同上 |
+| kill-switch | 两个都没有 | 都没有,文案要说 kill-switch 的实话 | 关(尽力拦截,见 D6) | 同上 |
 
 实现不得越过的不变量:
 
@@ -151,7 +195,8 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
   不得放宽 gateway 那三层,也不得修改从注册表全量派生的那条判据的断言。
 - **出网面不得长出「模型能指定」的成员**:进静态放行半场的每一行都要指得回一个源码常量坐标。
 - **kill-switch 不得被削弱**:`cloud-web-search.test.ts` 的 `killSwitch: true` 臂与
-  `packages/ext/src/cloud-websearch-kill.test.ts` 必须全绿且**断言不改**。
+  `packages/ext/src/cloud-websearch-kill.test.ts` 必须全绿且**断言不改**。(`#1443` 在后者改了一个
+  夹具的**名字**与它代表的账户态,`expect(...)` 一行未动 —— 见 D6。)
 - **不得长出第二份权威**:「本地 web search 此刻在不在模型工具表里」与系统提示里那一行,
   必须在四种账户态下逐一相符(承接 `#1431`,CODE-2)。
 - **文案不得把模型引向走不通的路**:`LOCAL_WEBSEARCH_DENIED_MESSAGE`
@@ -191,3 +236,4 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 
 `#1411`(CODE-1 选路)、`#1431`(CODE-2 系统提示一致性)、`#1432`(CODE-3 本 ADR)、
 `#1433`(VERIFY-1 四种账户态的 runtime 证据);父需求 `#1414`。
+`#1443` 补登记 D1 的第二处落点(D6,第三方 web-search MCP),零行为改动。

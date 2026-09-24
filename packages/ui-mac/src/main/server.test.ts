@@ -83,6 +83,10 @@ const {
   LOCAL_WEB_SEARCH_TOOL_ID,
   WITHHELD_CLOUD_MCP,
 } = await import("./cloud-web-search")
+// `#1443`:第三方 web-search MCP 的**唯一**闸就住在 ext 里(注入面的 permission deny 只点名
+// `websearch` 与 `cloud_cloud_web_search` 两个 id,够不着第三方)。下面那一组直接拿真判决函数判,
+// 不在 ui-mac 这边手写一份等价条件 —— 手写的那份正是本文件反复吃过亏的「夹具顶替供数方」。
+const { computeMcpOwnership, webSearchToolDenial } = await import("../../../ext/src/cloud-websearch-kill")
 
 let userDataPath = ""
 const keylessWebSearchFlags = [
@@ -473,6 +477,68 @@ describe("`#1411` 模型工具表:两条腿按账户态的真实在场性", () =
     delete process.env.ALPHA_WEBSEARCH_DISABLE
 
     expect(modelWebSearchTools(await forkSidecar())).toEqual([LOCAL_WEB_SEARCH_TOOL_ID, CLOUD_WEB_SEARCH_TOOL_ID])
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // `#1443`:同一条链上**用户自带的第三方 web-search MCP**(自己在配置里声明一个 exa 之类的
+  // remote server)的在场性。
+  //
+  // 为什么必须跨包合成来判:第三方工具不在注入面那层 permission deny 里(`applyWebSearchDenies`
+  // 只点名 `websearch` 与 `cloud_cloud_web_search` 两个 id),它唯一的闸是 `@alpha-code/ext` 的
+  // `tool.execute.before`,判决靠 fork env 过河。两半各自都有测试 —— main 在哪一态置位哪个信号
+  // (本文件上面那两组)、ext 见到某组信号怎么判(`packages/ext/src/cloud-websearch-kill.test.ts`)——
+  // 但「某个账户态下第三方到底能不能用」是这两半的**合成**,此前没有任何一条判据看着它。代价实测:
+  // `#1411` 把代付那一格从「关」翻成「开」,两个包的测试各自照常全绿,行为变更零登记(本票)。
+  //
+  // 供数方仍然全是生产的:env 来自真 `forkSidecar()`;归属来自真 `injectAlphaConfig()` 写出的配置
+  // + 真 `computeMcpOwnership()`;判决就是 ext 在钩子首行调的那个函数,不在这边手写等价条件。
+  // ───────────────────────────────────────────────────────────────────────────
+  describe("`#1443` 用户自带的第三方 web-search MCP", () => {
+    /** 用户自己声明 `{"mcp":{"exa":{"type":"remote","url":"https://mcp.exa.ai/mcp"}}}` 会长出来的工具 id。 */
+    const THIRD_PARTY_TOOL = "exa_web_search_exa"
+    const THIRD_PARTY_SERVER = { exa: { type: "remote", url: "https://mcp.exa.ai/mcp" } }
+
+    /** 这一刻第三方 web search 调得动吗:生产判决函数的原话,`undefined` = 放行。 */
+    function thirdPartyDenial(forkEnv: Record<string, string | undefined>) {
+      const { config } = injectUnderSidecarEnv(forkEnv)
+      // 用户那份声明由引擎深合并进来(注入面只写 alpha 自己的那条),归属快照因此两边都要有。
+      const merged = { ...config, mcp: { ...(config.mcp ?? {}), ...THIRD_PARTY_SERVER } }
+      return webSearchToolDenial(THIRD_PARTY_TOOL, forkEnv, computeMcpOwnership(merged, forkEnv))
+    }
+
+    test("登录代付:第三方 web search 可用(本地腿也活着,拦它护不住任何能力)", async () => {
+      preferAppEnv(userDataPath)
+      applyAuthEnvLikeLogin()
+
+      expect(thirdPartyDenial(await forkSidecar())).toBeUndefined()
+    })
+
+    test("登出 / BYOK:第三方 web search 可用", async () => {
+      preferAppEnv(userDataPath)
+
+      expect(thirdPartyDenial(await forkSidecar())).toBeUndefined()
+    })
+
+    // 反例臂,也是 owner 2026-09-24 点名问的那一格:「一键关掉所有搜网」**仍然**关得掉第三方插件。
+    // 它同时证明上面两条不是「怎么测都绿」。
+    test("kill-switch:第三方 web search 照样被关", async () => {
+      process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+      preferAppEnv(userDataPath)
+      applyAuthEnvLikeLogin()
+
+      expect(thirdPartyDenial(await forkSidecar())).toContain("kill switch")
+    })
+
+    test("kill-switch 关掉之后,下一次 fork 第三方回来", async () => {
+      process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+      preferAppEnv(userDataPath)
+      applyAuthEnvLikeLogin()
+      expect(thirdPartyDenial(await forkSidecar())).toContain("kill switch")
+
+      delete process.env.ALPHA_WEBSEARCH_DISABLE
+
+      expect(thirdPartyDenial(await forkSidecar())).toBeUndefined()
+    })
   })
 })
 

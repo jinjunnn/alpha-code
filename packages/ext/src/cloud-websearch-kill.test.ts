@@ -35,9 +35,27 @@ const ON = {
   [CLOUD_MCP_SERVER_ENV]: "cloud",
   [CLOUD_MCP_DEF_ENV]: CLOUD_DEF,
 }
-/** 平台代付、无 kill-switch:只有本地侧置位,云工具是权威通道。 */
-const PLATFORM_PAYS = {
+/**
+ * **只有本地侧置位、云侧没置位**,云工具是权威通道。
+ *
+ * `#1411` 之前这正是「平台代付、无 kill-switch」的真实形状,本文件因此曾把它叫 `PLATFORM_PAYS`。
+ * 之后 main 不再产生它 —— 代付态**两个信号都不置位**(`ui-mac/src/main/server.ts` 的
+ * `applyWebSearchSovereignty`;真 fork 的判据是 `ui-mac/src/main/server.test.ts` 的「代付不再把
+ * 本地拒绝判决送进 sidecar —— 两条腿的通道都保持干净」)。所以它现在只剩一个身份:**信号漂移**
+ * (判决写了一半 / 继承来的 env),而闸对它必须仍然 fail-closed。`#1443` 只改了它叫什么、以及它
+ * 代表哪一态;每一条用它的断言逐字未动(ADR-046「kill-switch 不得被削弱」)。
+ */
+const LOCAL_DENY_ONLY = {
   [LOCAL_WEBSEARCH_DENY_ENV]: "1",
+  [CLOUD_MCP_SERVER_ENV]: "cloud",
+  [CLOUD_MCP_DEF_ENV]: CLOUD_DEF,
+}
+/**
+ * 平台代付、无 kill-switch 的**今天**的真实形状(`#1411` / [[ADR-046]] D1 / D6):两个 deny 信号
+ * 都缺席,云 server 的身份通道照常在场 —— 注入面在代付态置位 SERVER + DEF 并删掉 ARM
+ * (`ui-mac/src/main/alpha-config-injection.ts:388-418`)。
+ */
+const PLATFORM_PAYS = {
   [CLOUD_MCP_SERVER_ENV]: "cloud",
   [CLOUD_MCP_DEF_ENV]: CLOUD_DEF,
 }
@@ -169,17 +187,19 @@ describe("cloud web search kill switch", () => {
 describe("第三方 MCP 上的 web search 同受主权判决(R5 Blocker)", () => {
   const thirdParty = ["exa_web_search_exa", "brave_web_search", "tavily_websearch"]
 
-  test("平台代付(无 kill-switch):第三方全关,alpha 治理的云工具**不**关", () => {
+  // `#1443` 改的只有名字与它代表的态:这一组信号(本地置位、云没置位)从 `#1411` 起不再是「平台
+  // 代付」,而是**信号漂移**。断言逐字未动 —— 漂移时闸必须仍然把第三方关掉、且不误杀治理云工具。
+  test("信号漂移(只有本地信号置位):第三方全关,alpha 治理的云工具**不**关", () => {
     for (const tool of thirdParty) {
-      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).toThrow(
+      expect(() => assertWebSearchToolAllowed(tool, LOCAL_DENY_ONLY, owned(LOCAL_DENY_ONLY))).toThrow(
         WebSearchSovereigntyError,
       )
-      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).toThrow(/do not retry/)
+      expect(() => assertWebSearchToolAllowed(tool, LOCAL_DENY_ONLY, owned(LOCAL_DENY_ONLY))).toThrow(/do not retry/)
     }
     // AC4:平台代付时云工具是权威通道,闸不许误杀它,也不许误杀兄弟工具。
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, owned(PLATFORM_PAYS))).not.toThrow()
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", LOCAL_DENY_ONLY, owned(LOCAL_DENY_ONLY))).not.toThrow()
     for (const tool of siblingCloudTools)
-      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).not.toThrow()
+      expect(() => assertWebSearchToolAllowed(tool, LOCAL_DENY_ONLY, owned(LOCAL_DENY_ONLY))).not.toThrow()
   })
 
   test("kill-switch:第三方与云工具一起关", () => {
@@ -192,8 +212,19 @@ describe("第三方 MCP 上的 web search 同受主权判决(R5 Blocker)", () =>
     for (const tool of thirdParty) expect(() => assertWebSearchToolAllowed(tool, OFF, owned(OFF))).not.toThrow()
   })
 
+  // `#1443`([[ADR-046]] D6):平台代付**今天**的真实信号形状 —— 两个 deny 都缺席、云身份通道在场。
+  // `#1411` 起本地 keyless `websearch` 在这一态活着,拦第三方护不住任何能力,于是它也放行。
+  // 四种账户态的合成判据在 `ui-mac/src/main/server.test.ts` 的「`#1443` 用户自带的第三方
+  // web-search MCP」—— 那一组的 env 来自真 fork,这一组只钉「见到这组信号该怎么判」。
+  test("平台代付(两个信号都不置位):第三方 web search 与云工具一起可用", () => {
+    for (const tool of [...thirdParty, "cloud_web_search"])
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).not.toThrow()
+    for (const tool of siblingCloudTools)
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).not.toThrow()
+  })
+
   test("治理例外只认注入面点名的那个 server,不写死 \"cloud\" 字面量", () => {
-    const renamed = { ...PLATFORM_PAYS, [CLOUD_MCP_SERVER_ENV]: "alphacloud" }
+    const renamed = { ...LOCAL_DENY_ONLY, [CLOUD_MCP_SERVER_ENV]: "alphacloud" }
     const config = { mcp: { alphacloud: { type: "remote", url: CLOUD_URL }, cloud: { type: "remote", url: CLOUD_URL } } }
     const ownership = computeMcpOwnership(config, renamed)
     expect(ownership).toEqual({ governed: ["alphacloud"], foreign: ["cloud"] })
@@ -218,60 +249,60 @@ describe("第三方 MCP 上的 web search 同受主权判决(R5 Blocker)", () =>
 // ─────────────────────────────────────────────────────────────────────────────
 describe("治理豁免绑定端点身份,名字伪造不了(R6 Blocker)", () => {
   test("端点身份核验:URL 对上才算治理 server", () => {
-    expect(owned(PLATFORM_PAYS)).toEqual({ governed: ["cloud"], foreign: ["exa"] })
+    expect(owned(LOCAL_DENY_ONLY)).toEqual({ governed: ["cloud"], foreign: ["exa"] })
     // 同名但换了 URL(managed / MDM 之类的后置来源覆盖回去)⇒ 不再是治理 server,fail-closed。
     const hijacked = computeMcpOwnership(
       { mcp: { cloud: { type: "remote", url: "https://attacker.example/mcp" } } },
-      PLATFORM_PAYS,
+      LOCAL_DENY_ONLY,
     )
     expect(hijacked).toEqual({ governed: [], foreign: ["cloud"] })
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, hijacked)).toThrow(
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", LOCAL_DENY_ONLY, hijacked)).toThrow(
       WebSearchSovereigntyError,
     )
     // DEF 缺席 / 坏 JSON / 不是 remote ⇒ 没有可核验的身份,一个 server 都不治理。
     for (const def of [undefined, "{not json", '"a string"', JSON.stringify({ type: "local", command: ["x"] })])
-      expect(owned({ ...PLATFORM_PAYS, [CLOUD_MCP_DEF_ENV]: def }).governed).toEqual([])
+      expect(owned({ ...LOCAL_DENY_ONLY, [CLOUD_MCP_DEF_ENV]: def }).governed).toEqual([])
   })
 
   test("R6 回归:`cloud_attacker` 拿不到豁免(R5 下它被当成治理云工具放行)", () => {
     const servers = { cloud_attacker: { type: "remote", url: "https://attacker.example/mcp" } }
-    const ownership = owned(PLATFORM_PAYS, servers)
+    const ownership = owned(LOCAL_DENY_ONLY, servers)
     expect(ownership.foreign).toContain("cloud_attacker")
-    expect(() => assertWebSearchToolAllowed("cloud_attacker_web_search", PLATFORM_PAYS, ownership)).toThrow(
+    expect(() => assertWebSearchToolAllowed("cloud_attacker_web_search", LOCAL_DENY_ONLY, ownership)).toThrow(
       WebSearchSovereigntyError,
     )
     // 真的治理云工具照常放行(闸没有因此变成一刀切)。
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, ownership)).not.toThrow()
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", LOCAL_DENY_ONLY, ownership)).not.toThrow()
   })
 
   test("R6 回归:`<server>_<tool>` 边界歧义倒向 fail-closed(cloud_web + search)", () => {
     // 一个叫 `cloud_web` 的 server 上的 `search` 与治理 server 上的 `web_search` 拼出同一个 id。
-    const ownership = owned(PLATFORM_PAYS, { cloud_web: { type: "remote", url: "https://attacker.example/mcp" } })
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, ownership)).toThrow(
+    const ownership = owned(LOCAL_DENY_ONLY, { cloud_web: { type: "remote", url: "https://attacker.example/mcp" } })
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", LOCAL_DENY_ONLY, ownership)).toThrow(
       WebSearchSovereigntyError,
     )
   })
 
   test("R6 回归:运行时 `POST /mcp` 新装的 server(配置里没有)一律拿不到豁免", () => {
-    const ownership = owned(PLATFORM_PAYS)
+    const ownership = owned(LOCAL_DENY_ONLY)
     // 归属不在快照里 ⇒ 没有候选 ⇒ 豁免不给。
     for (const tool of ["runtime_web_search", "cloudx_web_search", "cloud-2_web_search"])
-      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, ownership)).toThrow(WebSearchSovereigntyError)
+      expect(() => assertWebSearchToolAllowed(tool, LOCAL_DENY_ONLY, ownership)).toThrow(WebSearchSovereigntyError)
   })
 
   // 诚实登记(R6 D-1 收窄后落在「用户自己新装的第三方 MCP」那一类):`POST /mcp` 用**同一个名字**
   // 替换掉已连的客户端后,上游没有任何接口把「当前活着的 server 定义」暴露给插件 —— 配置快照
   // 仍是 alpha 那份,ext 从名字上分辨不出来。收编它要动 handlers/mcp.ts / mcp/index.ts,不在本票范围。
   test("残留(登记,非闭合):同名 `POST /mcp` add 替换客户端后,豁免仍按配置快照给", () => {
-    const ownership = owned(PLATFORM_PAYS)
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, ownership)).not.toThrow()
+    const ownership = owned(LOCAL_DENY_ONLY)
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", LOCAL_DENY_ONLY, ownership)).not.toThrow()
     // 但 kill-switch 下它照样被关 —— 豁免的唯一效果是「代付态放行」,不是「越过 kill-switch」。
     expect(() => assertWebSearchToolAllowed("cloud_web_search", ON, owned(ON))).toThrow(WebSearchSovereigntyError)
   })
 
   test("config 钩子没跑过 ⇒ 没有任何治理 server(模块默认值 fail-closed)", () => {
     // 不传 ownership:本实例的 config 钩子还没算出归属时,豁免一律不给(默认实参 = UNVERIFIED)。
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, { governed: [], foreign: [] })).toThrow(
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", LOCAL_DENY_ONLY, { governed: [], foreign: [] })).toThrow(
       WebSearchSovereigntyError,
     )
   })
