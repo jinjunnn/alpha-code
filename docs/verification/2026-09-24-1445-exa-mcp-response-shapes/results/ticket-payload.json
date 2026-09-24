@@ -1,0 +1,40 @@
+{
+  "ticket": "alpha-code#1445",
+  "what": "#1445 票面那一种响应的负载文本,以及由生产代码反推出来的 envelope 约束。",
+  "provenance": {
+    "source": "alpha-code#1433 (VERIFY-1) 的 probe-local-transport.ts,2026-09-24T06:39:30Z 那一轮,logged-out-byok 格 exa 臂",
+    "note": "那条 lane 的取证文件当时**尚未提交**,只在它自己的 worktree 里。所以这里不做跨 worktree 链接,直接把负载复制过来。",
+    "recorded": {
+      "outcome": "result",
+      "ms": 521,
+      "bytes": 246,
+      "headChars": 240
+    }
+  },
+  "reconstruction": {
+    "how": "记录里的 head 被截到 240 字,而同一条记录的 bytes=246 ⇒ 缺的 6 字是 'PI_KEY',补回成 'YOUR_EXA_API_KEY'。",
+    "check": "补全后 len(text) == 246,与记录的 bytes 逐字相等。"
+  },
+  "text": "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY",
+  "textLength": 246,
+  "archivedHead240": "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_A",
+  "envelopeConstraints": {
+    "http": "2xx —— 否则 mcp-websearch.ts 的 call() 会走 statusKind() 失败",
+    "jsonrpc": "result —— 否则 McpResult 解码失败 ⇒ invalid_response",
+    "isError": "非 true —— 否则 mcp-websearch.ts:204 必然失败,而 #1433 的探针拿到的是 Success",
+    "textIsNotStructuredError": "text 不是 {error:…} JSON —— 否则 mcp-websearch.ts:212 必然失败",
+    "contentMeta": "未知 —— 记录里没有 envelope,这一格无从反推"
+  },
+  "minimalEnvelope": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+        }
+      ]
+    }
+  }
+}
