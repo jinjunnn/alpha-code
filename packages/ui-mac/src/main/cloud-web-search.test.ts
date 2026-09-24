@@ -60,26 +60,35 @@ describe("web search sovereignty denies", () => {
     expect(diagnostics.join("\n")).toContain("remote MCP config has no per-tool deny")
   })
 
-  // #223 Blocker:env 层的四个 keyless flag force-off 压不住 `OPENCODE_EXPERIMENTAL` umbrella,
-  // 代付态下本地 `websearch` 与 `cloud_web_search` 双活。收口靠这条 deny。
-  test("platform pays denies the local websearch tool and leaves the cloud tool authoritative", () => {
+  // `#1411`(REQ-1414 CODE-1,owner 2026-09-23 裁决)—— 这条臂以前是
+  // 「platform pays denies the local websearch tool」:代付即把本地 `websearch` 钉进 deny 表。
+  // 那是 ADR-009 B1「一登录就只走云端」的落点,已被推翻:**账户信号只决定云腿在不在,不决定本地腿
+  // 在不在**。本地腿 keyless、不花钱,是云腿 402 / 网络故障时唯一的退路。
+  //
+  // 这条臂现在是那条边被重新接上时**当场翻红**的反回归断言 —— 它也是 `WebSearchSovereignty` 保留
+  // `platformPays` 字段的理由:字段删了就写不出这条断言。
+  test("platform pays denies nothing — 代付不动本地腿,两条腿都留在模型工具表里", () => {
     const config = {
       permission: { bash: "allow" },
       agent: alphaAgents(),
     }
+    const diagnostics: string[] = []
 
-    applyWebSearchDenies(config, { killSwitch: false, platformPays: true }, () => {})
+    applyWebSearchDenies(config, { killSwitch: false, platformPays: true }, (message) => diagnostics.push(message))
 
-    expect(config.permission).toEqual({ [LOCAL_WEB_SEARCH_TOOL_ID]: "deny", bash: "allow" })
-    expect(config.permission[CLOUD_WEB_SEARCH_TOOL_ID]).toBeUndefined()
+    // 一个字都不写:既不是「写了 allow」也不是「写了 deny」—— 注入面在代付态对 web search 无话可说。
+    expect(config.permission).toEqual({ bash: "allow" })
+    expect(config.agent).toEqual(alphaAgents())
+    expect(diagnostics).toEqual([])
   })
 
   // agent 级规则在引擎里排在全局规则**之后**(agent/agent.ts 的 merge 序 + evaluate 的 findLast),
   // 所以不压平这三个 agent 的话,全局 deny 对它们无效 —— 闸只对 build/plan 之类原生 agent 成立。
   test("no injected agent may re-allow a denied web search tool", () => {
+    // `#1411`:`{ killSwitch: false, platformPays: true }` 从这张表里移出去了 —— 那一态现在**没有**
+    // 被 deny 的 web search 工具,「不许 re-allow」对它无意义。代付态的断言在上面那条专门的臂里。
     for (const state of [
       { killSwitch: true, platformPays: false },
-      { killSwitch: false, platformPays: true },
       { killSwitch: true, platformPays: true },
     ]) {
       const config = { permission: {}, agent: alphaAgents() }
@@ -112,7 +121,9 @@ describe("web search sovereignty denies", () => {
       },
     }
 
-    applyWebSearchDenies(config, { killSwitch: false, platformPays: true }, () => {})
+    // `#1411`:驱动态从代付换成 kill-switch —— 被测行为(deny 必须钉到末位)一个字没变,只是现在
+    // 唯一能产生 deny 的状态是 kill-switch。
+    applyWebSearchDenies(config, { killSwitch: true, platformPays: false }, () => {})
 
     const lastRuleWins = (permission: Record<string, unknown>) => {
       // 引擎语义的最小复刻:精确键与 `"*"` 都能匹配 `websearch`,取最后一条。
@@ -240,7 +251,11 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
     }
   })
 
-  test("代付但无 kill-switch:云工具是权威通道,引擎不许把它藏起来", () => {
+  // `#1411`:以前这条断言的期望值是 `[LOCAL_WEB_SEARCH_TOOL_ID]`(代付 ⇒ 本地腿被引擎藏起来)。
+  // owner 2026-09-23 推翻之后,代付态**两条腿都不许被藏**:云腿是权威通道,本地腿是退路。
+  // 判据仍然是引擎自己的 `Permission.fromConfig` + `Permission.disabled`,不是「config 里那个键等于
+  // 某字符串」;期望值仍然从远端名经 `McpCatalog.toolName` 推导,不写第二份字面量。
+  test("代付但无 kill-switch:两条腿都在模型工具表里,引擎一个都不许藏", () => {
     const config: { permission: Record<string, unknown>; agent: ReturnType<typeof alphaAgents> } = {
       permission: {},
       agent: alphaAgents(),
@@ -248,17 +263,42 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
     applyWebSearchDenies(config, { killSwitch: false, platformPays: true }, () => {})
 
     const hidden = Permission.disabled(registeredTools(), Permission.fromConfig(config.permission as never))
-    expect([...hidden]).toEqual([LOCAL_WEB_SEARCH_TOOL_ID])
+    expect([...hidden]).toEqual([])
+    // agent 级规则排在全局之后(`evaluate`/`disabled` 取 findLast)—— 那一层也不许把两条腿藏掉。
+    // 只判这两个 id:`alpha-automation` 自己写着 `bash: "deny"`,那是它该藏的,与本票无关。
+    const webSearchIds = [cloudWebSearchEngineId(), LOCAL_WEB_SEARCH_TOOL_ID]
+    for (const [name, agent] of Object.entries(config.agent)) {
+      const ruleset = Permission.merge(
+        Permission.fromConfig(config.permission as never),
+        Permission.fromConfig(agent.permission as never),
+      )
+      const hiddenHere = Permission.disabled(registeredTools(), ruleset)
+      expect([name, webSearchIds.filter((id) => hiddenHere.has(id))]).toEqual([name, []])
+    }
   })
 
   // 模型看得见的那句话里点名的工具必须真的存在,否则拒绝文案本身就是错误指路。
-  // 两个包都不依赖 ui-mac,只能靠这条锁 —— 但锁的**期望值是推导出来的**,不是第二份字面量。
-  test("两份拒绝文案指向的是引擎真实 id", () => {
-    for (const path of ["../../../opencode/src/tool/mcp-websearch.ts", "../../../core/src/tool/websearch.ts"]) {
-      const body = readFileSync(join(import.meta.dir, path), "utf8")
-      expect([path, body.includes(`Use ${CLOUD_WEB_SEARCH_TOOL_ID} if it is present`)]).toEqual([path, true])
-      // 远端名单独出现 = 有人把 id 写回了远端名。
-      expect([path, body.includes(`Use ${CLOUD_WEB_SEARCH_REMOTE_TOOL} if it is present`)]).toEqual([path, false])
-    }
+  //
+  // `#1411`:这条断言以前要求那句话**必须**点名 `cloud_cloud_web_search`(「本地腿被代付关掉 ⇒ 去用
+  // 云腿」)。代付不再关本地腿之后,`ALPHA_LOCAL_WEBSEARCH_DENY` 只由 kill-switch 置位 —— 而上面两条
+  // kill-switch 断言已经证明那一态**云工具同样不在模型工具表里**。于是那句指路在唯一可达它的状态下
+  // 必然是错的。基线 S5:指不出在场的替代就明说没有。
+  test("两份拒绝文案在唯一可达它的状态(kill-switch)下不指向任何替代工具", async () => {
+    // 读的是**值**而不是文件正文 —— 正文匹配会被注释里的同形字样骗过去。
+    const [legacy, v2] = await Promise.all([
+      import("../../../opencode/src/tool/mcp-websearch"),
+      import("../../../core/src/tool/websearch"),
+    ])
+    // 两个包之间没有可共用的 alpha 依赖边,两份副本只能靠这条锁保持逐字一致。
+    expect(v2.LOCAL_WEBSEARCH_DENIED_MESSAGE).toBe(legacy.LOCAL_WEBSEARCH_DENIED_MESSAGE)
+    const message = legacy.LOCAL_WEBSEARCH_DENIED_MESSAGE
+    // 期望值从生产常量推导(引擎 id 与远端名都不许出现),不写第二份字面量。
+    expect(message).not.toContain(CLOUD_WEB_SEARCH_TOOL_ID)
+    expect(message).not.toContain(CLOUD_WEB_SEARCH_REMOTE_TOOL)
+    // 仍必须让模型停手并自己说明 —— 否则它会把「能力被关掉」当成瞬时故障反复调用。
+    expect(message).toContain("do not retry")
+    expect(message).toContain("Answer without web search and say so")
+    // 并且说清是谁关的:kill-switch 是唯一能到这里的原因。
+    expect(message.toLowerCase()).toContain("kill switch")
   })
 })

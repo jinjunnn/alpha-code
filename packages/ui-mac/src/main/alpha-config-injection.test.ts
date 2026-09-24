@@ -461,19 +461,23 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     return config
   }
 
-  test("平台代付:本地 websearch 被 deny,云工具与兄弟云工具照常在册", () => {
+  // `#1411`(REQ-1414 CODE-1,owner 2026-09-23 裁决):这条用例以前叫「平台代付:本地 websearch 被
+  // deny」。代付不再关本地腿 —— 账户信号只决定云腿在不在。**真实生产 composition** 下的新事实是:
+  // 代付态的注入面对 web search 一个字都不写(顶层与三个 agent 都没有 web search 的 permission 键)。
+  test("平台代付:两条腿都留着 —— 注入面不写任何 web search permission,云 server 照常在册", () => {
     givenPlatformPaysUnderUmbrella()
 
     injectAlphaConfig(userData, undefined, "stable")
 
     const config = injectedPermissions()
-    expect(config.permission?.websearch).toBe("deny")
+    expect(config.permission?.websearch).toBeUndefined()
     // 云工具是代付态的权威 web search —— 不许被顺手关掉。
     expect(config.permission?.[CLOUD_WEB_SEARCH_TOOL_ID]).toBeUndefined()
     expect(config.mcp?.cloud).toBeDefined()
-    // agent 级规则排在全局之后:三个 alpha agent 若还写着 allow,全局 deny 对它们无效。
+    // agent 级规则排在全局之后。三个 alpha agent 自己写的就是 `websearch: "allow"`,代付态没有任何
+    // deny 被钉到它们后面 —— 这正是「本地腿在场」在 permission 层的样子。
     for (const [name, agent] of Object.entries(config.agent ?? {}))
-      expect([name, agent.permission?.websearch]).toEqual([name, "deny"])
+      expect([name, agent.permission?.websearch]).toEqual([name, "allow"])
   })
 
   // #223 R4→R5:kill-switch 下云 server 的**完整定义根本不进配置**,只经 ARM/DEF 两个 env 托管给

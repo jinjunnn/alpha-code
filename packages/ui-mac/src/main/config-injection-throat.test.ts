@@ -317,11 +317,15 @@ describe("ui-mac 整份 config 咽喉:injectAlphaConfig 写进 OPENCODE_CONFIG_C
     expect("prompt" in r.agent["alpha-ask"]!).toBe(false)
   })
 
-  test("全栈 env(ext bundle + 平台密钥 + BYOK 密钥 + 默认模型 + 云 MCP 代付):九个顶层键全部真被写到、零点名;生产走到的引用集合 == 本文件点名的 ui-mac 引用集合(双向)", () => {
+  // `#1411`(REQ-1414 CODE-1):这条用例以前说「九个顶层键」,第九个是 `permission` —— 它当时**只**
+  // 因为「代付 ⇒ 本地 websearch 被钉 deny」而存在。owner 2026-09-23 推翻了那条边,代付态的注入面
+  // 对 web search 一个字都不写,于是顶层 `permission` 整个键不再出现(下面有一条正向断言钉住它)。
+  // 顶层 permission 那条路仍有用例覆盖:本文件「用户的字不判」那条走的是 kill-switch。
+  test("全栈 env(ext bundle + 平台密钥 + BYOK 密钥 + 默认模型 + 云 MCP 代付):八个顶层键全部真被写到、零点名;生产走到的引用集合 == 本文件点名的 ui-mac 引用集合(双向)", () => {
     givenFullStack()
     const r = run(undefined, EXT_BUNDLE)
     expect(r.bad).toEqual([])
-    expect(touched(r)).toEqual(sorted(["$schema", "agent", "enabled_providers", "instructions", "mcp", "model", "permission", "plugin", "provider"]))
+    expect(touched(r)).toEqual(sorted(["$schema", "agent", "enabled_providers", "instructions", "mcp", "model", "plugin", "provider"]))
     // 每条 ui-mac 引用都真在登记簿里,且生产真的走到了每一条;生产走到的也没有超出这张表
     for (const id of UI_MAC_REFERENCE_IDS) expect(CONTEXT_INJECTIONS.find((f) => f.id === id)?.kind, id).toBe("reference")
     expect(r.refs).toEqual(sorted(UI_MAC_REFERENCE_IDS))
@@ -331,9 +335,10 @@ describe("ui-mac 整份 config 咽喉:injectAlphaConfig 写进 OPENCODE_CONFIG_C
     expect(r.after.enabled_providers).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
     expect(Object.keys(r.after.provider as Cfg)).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
     expect(((r.after.mcp as Cfg)[CLOUD_MCP_SERVER_NAME] as Cfg).headers).toEqual({ Authorization: `Bearer {file:${secretFilePath(userData, "ALPHA_MCP_TOKEN")}}` })
-    // 代付 ⇒ 本地 websearch 在顶层与每个 agent 上被钉 deny —— 全走了动词那条路
-    expect((r.after.permission as Cfg)[LOCAL_WEB_SEARCH_TOOL_ID]).toBe("deny")
-    expect(r.verbs).toBeGreaterThanOrEqual(UI_MAC_AGENT_NAMES.length * 2 + 1)
+    // `#1411`:代付**不再**产生任何 web search deny —— 顶层 permission 整个不写(两条腿都留在模型
+    // 工具表里)。以前这里是 `expect(...[LOCAL_WEB_SEARCH_TOOL_ID]).toBe("deny")`。
+    expect(r.after.permission).toBeUndefined()
+    expect(r.verbs).toBeGreaterThanOrEqual(UI_MAC_AGENT_NAMES.length * 2)
     // identity 解释出的形状必须与 env 推出的能力事实一致(代付 + keyless)
     expect(sorted(r.explained)).toEqual(sorted([`${IDENTITY_FRAGMENT_ID}+websearch+cloudDispatch`, BEHAVIOR_FRAGMENT_ID, ...REGISTERED_AGENT_IDS]))
     // 密钥值不在任何字符串叶子里(A6;组合体层面的锁在 alpha-config-injection.test.ts,这里只证明判官看到的那份也没有)
