@@ -25,6 +25,7 @@ import {
   UNVERIFIED_MCP_OWNERSHIP,
   type McpOwnership,
 } from "./cloud-websearch-kill"
+import { createCloudVisionHooks } from "./cloud-vision-hooks"
 
 /**
  * Code Puppy backend isolation extension.
@@ -70,7 +71,21 @@ export const AlphaExt: Plugin = async (input) => {
   // 这个闭包里,由本实例的 config 钩子写、显式传给本实例的执行钩子,模块侧不留任何可变状态。
   let mcpOwnership: McpOwnership = UNVERIFIED_MCP_OWNERSHIP
 
+  // `#1419`(REQ-228):看不了图的模型 —— 贴图与 Read 读到的图自动送云端识图,模型可按编号 / 路径追问。
+  // 状态按实例(同 mcpOwnership 的理由);能力真源走引擎 `/provider` 与钩子递进来的 Model 对象。
+  const vision = createCloudVisionHooks({
+    directory: input.directory,
+    listProviders: async () => input.client.provider.list(),
+    // `#1447` R1 M1:进程重启后登记簿是空的 —— 第一次碰到某会话时从它的历史消息恢复(转写正文与原图哈希都在持久化标记里)。
+    listMessages: async (sessionID) => input.client.session.messages({ path: { id: sessionID } }),
+    log: (m) => console.log(m),
+    error: (m) => console.error(m),
+  })
+
   const ownHooks: Awaited<ReturnType<Plugin>> = {
+    "chat.message": async (hookInput, output) => {
+      await vision.chatMessage(hookInput, output)
+    },
     "tool.execute.before": async (hookInput, output) => {
       // #223 R3→R5:web search 主权判决在 **MCP 工具**一侧的最终闸,必须是本钩子的第一句 ——
       // 引擎在 `ctx.ask` 之前触发本钩子(普通 MCP 与 code-mode 两条路都是),抛出即终止调用,
@@ -81,9 +96,17 @@ export const AlphaExt: Plugin = async (input) => {
       // 边界见 cloud-websearch-kill.ts。
       assertWebSearchToolAllowed(hookInput.tool, process.env, mcpOwnership)
       validateCloudToolInput(hookInput.tool, output.args)
+      // `#1419`:模型追问 —— `cloud_cloud_vision` 的 args.image 由引用原地换成压缩后的 base64。
+      await vision.toolBefore(hookInput, output)
     },
     "tool.execute.after": async (hookInput, output) => {
       validateCloudToolOutput(hookInput.tool, output)
+      // `#1419`:Read 读到的图片走自动转写;cloud_vision 被审核拒绝 ⇒「这张图片无法识别」。
+      await vision.toolAfter(hookInput, output)
+    },
+    // `#1419`:每次请求前重建图片登记簿;看不了图的模型收到的消息里,已转写的图片不再重复出现。
+    "experimental.chat.messages.transform": async (hookInput, output) => {
+      await vision.messagesTransform(hookInput, output)
     },
     // 输出上限两条腿,都跑在 transform 之后(request.ts:118),都只改这一次请求:
     //   · 平台代理节点(REQ-153 #1238):**不发** `max_tokens`,由网关按 route 上限填(platform-output-cap.ts);
@@ -209,23 +232,26 @@ export const AlphaExt: Plugin = async (input) => {
     // REQ-062 T1(路线A):系统提示词品牌转写 —— 精选子串对(见 prompt-rebrand.ts 纪律说明)。
     // experimental hook(NON_GOALS#4 标注,ADR-015 修订成文):签名漂移/失效最坏退化 = 品牌未转写
     // (外观级,不伤功能);逃生 ALPHA_PROMPT_REBRAND_DISABLE=1。warning 每进程每签名一次(防刷屏)。
-    "experimental.chat.system.transform": async (_input, output) => {
-      if (process.env.ALPHA_PROMPT_REBRAND_DISABLE === "1") return
-      try {
-        const r = rebrandSystem(output.system)
-        if (r.changed) {
-          output.system.length = 0
-          output.system.push(...r.system)
+    "experimental.chat.system.transform": async (hookInput, output) => {
+      if (process.env.ALPHA_PROMPT_REBRAND_DISABLE !== "1") {
+        try {
+          const r = rebrandSystem(output.system)
+          if (r.changed) {
+            output.system.length = 0
+            output.system.push(...r.system)
+          }
+          for (const w of r.warnings) {
+            if (rebrandWarned.has(w)) continue
+            rebrandWarned.add(w)
+            console.warn(`[@alpha-code/ext] prompt-rebrand: ${w}`)
+          }
+        } catch (error) {
+          // 转写失败 = 保底上游原样(外观级退化),绝不让 hook 异常伤及请求主链
+          console.error(`[@alpha-code/ext] prompt-rebrand failed: ${error instanceof Error ? error.message : String(error)}`)
         }
-        for (const w of r.warnings) {
-          if (rebrandWarned.has(w)) continue
-          rebrandWarned.add(w)
-          console.warn(`[@alpha-code/ext] prompt-rebrand: ${w}`)
-        }
-      } catch (error) {
-        // 转写失败 = 保底上游原样(外观级退化),绝不让 hook 异常伤及请求主链
-        console.error(`[@alpha-code/ext] prompt-rebrand failed: ${error instanceof Error ? error.message : String(error)}`)
       }
+      // `#1419`:看不了图的模型多一段登记过的说明(不受 rebrand 逃生门影响;不提 gemini)。
+      await vision.systemTransform(hookInput, output)
     },
     // tool map: key === final tool id verbatim (no namespace prefix).
     tool: {

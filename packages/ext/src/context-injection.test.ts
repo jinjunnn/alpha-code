@@ -14,7 +14,7 @@
 // 已知不覆盖:项目自己的 plugins / alpha.jsonc(用户的字);skills 正文与 MCP 工具表(别人的字)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import {
@@ -31,6 +31,7 @@ import {
   explainConfigReference,
   explainConfigString,
   explainInstructionBody,
+  explainVisionBlock,
   HOOK_CONTEXT_CLASS,
   IDENTITY_FRAGMENT_ID,
   identityCapsFromId,
@@ -41,12 +42,16 @@ import {
   UI_MAC_AGENT_NAMES,
   uiMacAgentFragmentId,
   uiMacAgentFragmentIds,
+  VISION_SYSTEM_NOTE_OFFLINE_TEXT,
+  VISION_SYSTEM_NOTE_TEMPLATE,
+  VISION_TOOL_INPUT_OMITTED_TEXT,
+  VISION_TOOL_REFUSED_TEXT,
 } from "./context-injection"
 import { REBRAND_RULES } from "./prompt-rebrand"
 import { ALPHA_AGENT_TEXT } from "../../ui-mac/src/main/alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
 import { buildAlphaIdentity } from "../../ui-mac/src/main/alpha-identity"
-import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV } from "./cloud-websearch-kill"
+import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV } from "./cloud-websearch-kill"
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..")
 const HOOKS_SOURCE = join(REPO_ROOT, "packages", "plugin", "src", "index.ts")
@@ -91,8 +96,11 @@ const SANITIZE = [
   "ALPHA_PROMPT_REBRAND_DISABLE",
   "ALPHA_EXT_VERBOSE",
   "ALPHA_GLOBAL_DIR",
+  // `#1419`:云端识图的三个输入 —— 没有它们时 system.transform 走「云端不可用」那一句,chat.message 走失败块。
+  "ALPHA_BASE_URL",
   CLOUD_MCP_ARM_ENV,
   CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
 ] as const
 
 type Hooks = Record<string, unknown>
@@ -119,17 +127,33 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+/** 引擎 `/provider` 的形状(Provider.ListResult 经 hey-api 信封):一个看不了图的模型、一个能看图的。 */
+const PROVIDER_LIST = {
+  data: {
+    all: [{ id: "alpha", models: { "glm-5": { capabilities: { input: { image: false } } }, "kimi-k3": { capabilities: { input: { image: true } } } } }],
+    default: {},
+    connected: [],
+  },
+}
+
 async function loadHooks(): Promise<Hooks> {
   const { AlphaExt } = await import("./plugin")
   return (await AlphaExt({
     directory: join(root, "project"),
     worktree: join(root, "project"),
-    client: { instance: { dispose: async () => {} } },
+    client: { instance: { dispose: async () => {} }, provider: { list: async () => PROVIDER_LIST } },
   } as unknown as Parameters<typeof AlphaExt>[0])) as unknown as Hooks
 }
 
 /** 本文件为之设了咽喉的钩子。② 要求它与「真 AlphaExt 实现且分类为 context」的集合逐字相等。 */
-const THROATED = ["config", "experimental.chat.system.transform", "tool", "tool.execute.after"].sort()
+const THROATED = [
+  "chat.message",
+  "config",
+  "experimental.chat.messages.transform",
+  "experimental.chat.system.transform",
+  "tool",
+  "tool.execute.after",
+].sort()
 
 describe("② alpha 实现的每个载上下文钩子都有咽喉", () => {
   test("实现集 ∩ context 分类 == 本文件设咽喉的集合;实现的每个钩子都在分类表里", async () => {
@@ -241,18 +265,29 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
 // ── ③b system.transform 咽喉 ────────────────────────────────────────────────────
 
 type SystemHook = (input: { sessionID?: string; model: unknown }, output: { system: string[] }) => Promise<void>
-/** 判官:输出必须逐段等于「输入 + 登记过的替换」;段数变了、或某段多了字,都点名。 */
+/** 引擎递进来的 Provider.Model,这里只给判据要读的那一格:能看图 / 看不了图。 */
+const SEES_IMAGES = { id: "kimi-k3", providerID: "alpha", capabilities: { input: { image: true } } }
+const BLIND = { id: "glm-5", providerID: "alpha", capabilities: { input: { image: false } } }
+/** `#1419`:看不了图的模型末尾允许**恰好一段**登记过的 vision 系统说明(sink=system 的 text,或模板的渲染实例)。 */
+function isRegisteredVisionNote(segment: string): boolean {
+  if (segment === VISION_SYSTEM_NOTE_OFFLINE_TEXT) return true
+  const [head, tail] = VISION_SYSTEM_NOTE_TEMPLATE.split("{name}")
+  return segment.length > head!.length + tail!.length && segment.startsWith(head!) && segment.endsWith(tail!)
+}
+/** 判官:输出必须逐段等于「输入 + 登记过的替换」,后面至多跟一段登记过的 vision 说明;段数多了、某段多了字、尾段不是登记项,都点名。 */
 function unexplainedSystem(input: readonly string[], output: readonly string[]): string[] {
   const bad: string[] = []
-  if (input.length !== output.length) bad.push(`segment count ${input.length} → ${output.length}`)
+  const extra = output.length - input.length
+  if (extra < 0 || extra > 1) bad.push(`segment count ${input.length} → ${output.length}`)
   for (let i = 0; i < Math.min(input.length, output.length); i++)
     if (output[i] !== applyRegisteredRebrands(input[i])) bad.push(`segment ${i} differs from registered substitutions`)
+  if (extra === 1 && !isRegisteredVisionNote(output[output.length - 1]!)) bad.push("trailing segment is not a registered vision note")
   return bad
 }
-async function runSystem(system: string[]): Promise<string[]> {
+async function runSystem(system: string[], model: unknown = SEES_IMAGES): Promise<string[]> {
   const hooks = await loadHooks()
   const out = { system: [...system] }
-  await (hooks["experimental.chat.system.transform"] as SystemHook)({ model: {} }, out)
+  await (hooks["experimental.chat.system.transform"] as SystemHook)({ model }, out)
   return out.system
 }
 
@@ -283,13 +318,42 @@ describe("③b system.transform 咽喉:输出 == 输入 + 登记过的替换,一
     const real = hooks["experimental.chat.system.transform"] as SystemHook
     const input = [readFileSync(join(PROMPT_DIR, "anthropic.txt"), "utf8")]
     const pushed = { system: [...input] }
-    await real({ model: {} }, pushed)
+    await real({ model: SEES_IMAGES }, pushed)
     pushed.system.push("rogue extra segment")
-    expect(unexplainedSystem(input, pushed.system)).toEqual(["segment count 1 → 2"])
+    expect(unexplainedSystem(input, pushed.system)).toEqual(["trailing segment is not a registered vision note"])
+    pushed.system.push("second rogue segment")
+    expect(unexplainedSystem(input, pushed.system)).toEqual(["segment count 1 → 3"])
     const appended = { system: [...input] }
-    await real({ model: {} }, appended)
+    await real({ model: SEES_IMAGES }, appended)
     appended.system[0] += " rogue tail"
     expect(unexplainedSystem(input, appended.system)).toEqual(["segment 0 differs from registered substitutions"])
+  })
+  test("`#1419` 看不了图的模型:恰好多一段,且是登记过的说明;云端不可用 ⇒ 离线那一句,可用 ⇒ 带工具 id 的那一句;两句都不提 gemini", async () => {
+    const input = [readFileSync(join(PROMPT_DIR, "anthropic.txt"), "utf8")]
+    const offline = await runSystem(input, BLIND)
+    expect(unexplainedSystem(input, offline)).toEqual([])
+    expect(offline.length).toBe(2)
+    expect(offline[1]).toBe(VISION_SYSTEM_NOTE_OFFLINE_TEXT)
+    // 云端可用:ALPHA_BASE_URL + 云 MCP 定义(带 {file:} 凭据,文件在场)+ server 名
+    const token = join(root, "mcp-token")
+    writeFileSync(token, "tok-throat\n")
+    process.env.ALPHA_BASE_URL = "https://gateway.invalid/v1"
+    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://cloud.invalid/mcp", enabled: true, headers: { Authorization: `Bearer {file:${token}}` }, oauth: false })
+    const online = await runSystem(input, BLIND)
+    expect(unexplainedSystem(input, online)).toEqual([])
+    expect(online.length).toBe(2)
+    expect(online[1]).toContain("cloud_cloud_vision")
+    for (const note of [offline[1]!, online[1]!]) expect(/gemini/i.test(note), note).toBe(false)
+    // 能力未知(引擎没给 capabilities)按看不了图处理 —— fail-closed,多一次识图不漏识
+    const unknown = await runSystem(input, {})
+    expect(unexplainedSystem(input, unknown)).toEqual([])
+    expect(unknown.length).toBe(2)
+    // 已知的坏:说明句被改一个字 / 说明之后又多一段 —— 判官都点名
+    const tampered = [...online]
+    tampered[1] += "!"
+    expect(unexplainedSystem(input, tampered)).toEqual(["trailing segment is not a registered vision note"])
+    expect(unexplainedSystem(input, [...online, "rogue"])).toEqual(["segment count 1 → 3"])
   })
 })
 
@@ -349,9 +413,16 @@ describe("③c 工具表咽喉:每个 description 都是登记项,登记项也�
 
 // ── ③d tool.execute.after 咽喉 ───────────────────────────────────────────────────
 
-type AfterHook = (input: { tool: string; sessionID: string; callID: string; args: unknown }, output: { title: string; output: string; metadata: unknown }) => Promise<void>
+type AfterHook = (
+  input: { tool: string; sessionID: string; callID: string; args: unknown },
+  output: { title: string; output: string; metadata: unknown; attachments?: unknown[]; content?: unknown[] },
+) => Promise<void>
 
-describe("③d tool.execute.after 咽喉:工具结果回模型的路上,alpha 一个字不加", () => {
+/** 一张真的 1×1 PNG(base64);这里的判据不需要它能被识别,只需要它是引擎会当图片附件的形状。 */
+const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+const imagePart = (id: string, filename?: string) => ({ id, type: "file", mime: "image/png", url: `data:image/png;base64,${PNG_1x1}`, ...(filename ? { filename } : {}) })
+
+describe("③d tool.execute.after 咽喉:工具结果回模型的路上,alpha 加的每个字都由登记簿解释", () => {
   test("非云工具的结果原样;已知的坏:包一层再改 output —— 判官点名", async () => {
     const hooks = await loadHooks()
     const real = hooks["tool.execute.after"] as AfterHook
@@ -366,6 +437,162 @@ describe("③d tool.execute.after 咽喉:工具结果回模型的路上,alpha �
     const o2 = { title: "t", output: "tool said this", metadata: {} }
     await rogue({ tool: "bash", sessionID: "s", callID: "c", args: {} }, o2)
     expect(o2.output).not.toBe("tool said this")
+  })
+  test("`#1419` Read 读到图片、模型看不了图、云端不可用:output 尾部多出的每一行都是登记项(失败块);附件原样留着;metadata 打了标记", async () => {
+    const hooks = await loadHooks()
+    const real = hooks["tool.execute.after"] as AfterHook
+    const output = { title: "a.png", output: "Image read successfully", metadata: { preview: "x" }, attachments: [imagePart("prt_img1")] }
+    await real({ tool: "read", sessionID: "s-read", callID: "c", args: { filePath: "shots/a.png" } }, output)
+    const lines = output.output.split("\n")
+    expect(lines[0]).toBe("Image read successfully")
+    expect(lines.length).toBe(2)
+    expect(explainVisionBlock(lines[1]!)).toEqual({ ok: true, id: "vision.failure.not-logged-in", kind: "template" })
+    expect(output.attachments.length).toBe(1)
+    expect((output.metadata as Record<string, unknown>).alpha_vision).toBeDefined()
+    // 已知的坏:块尾多一个字节 / 整行换成散文 —— 判官都不解释
+    expect(explainVisionBlock(lines[1]! + "!").ok).toBe(false)
+    expect(explainVisionBlock("the image shows a login page").ok).toBe(false)
+  })
+})
+
+// ── ③g chat.message 咽喉(`#1419`)────────────────────────────────────────────────
+// 用户贴图时 alpha 往这条用户消息里追加的每个 part,都必须是 synthetic text、且 text 由 vision-block 登记簿解释;
+// 原有 part 逐字不变。这里的模型看不了图(PROVIDER_LIST 里 glm-5 的 capabilities.input.image=false)且云端不可用,
+// 所以追加的是失败块 —— 咽喉判的是「加的字是不是登记项」,不是识图本身(识图行为的判据在 cloud-vision 模块自己的行为测试里,
+// 那不是闸门文件:删掉它损失的是本模块的覆盖率,不是某条对模块之外的保证)。
+
+type ChatHook = (input: { sessionID: string; model?: { providerID: string; modelID: string } }, output: { message: unknown; parts: unknown[] }) => Promise<void>
+const userParts = (sessionID: string, messageID: string) => [
+  { id: "prt_a", sessionID, messageID, type: "text", text: "看看这张图" },
+  { id: "prt_b", sessionID, messageID, type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${PNG_1x1}` },
+]
+/** 判官:原有 part 逐字不变;新 part 必须是 synthetic text 且 text 由登记簿解释。 */
+function unexplainedNewParts(before: unknown[], after: unknown[]): string[] {
+  const bad: string[] = []
+  for (let i = 0; i < before.length; i++) if (JSON.stringify(after[i]) !== JSON.stringify(before[i])) bad.push(`part ${i} changed`)
+  for (const part of after.slice(before.length)) {
+    const p = part as { type?: unknown; synthetic?: unknown; text?: unknown }
+    if (p.type !== "text" || p.synthetic !== true) bad.push(`new part is not synthetic text: ${JSON.stringify(part)}`)
+    else if (!explainVisionBlock(String(p.text)).ok) bad.push(`new part text is not a registered vision block: ${String(p.text).slice(0, 40)}`)
+  }
+  return bad
+}
+
+describe("③g chat.message 咽喉:追加进用户消息的每个 part 都是登记过的识图块", () => {
+  test("看不了图 + 云端不可用:恰好追加一个 synthetic text,text 是登记项,原有 part 不动;能看图:一个都不加", async () => {
+    const hooks = await loadHooks()
+    const real = hooks["chat.message"] as ChatHook
+    const parts = userParts("s-chat", "msg_1")
+    const before = clone(parts)
+    await real({ sessionID: "s-chat", model: { providerID: "alpha", modelID: "glm-5" } }, { message: { id: "msg_1", model: { providerID: "alpha", modelID: "glm-5" } }, parts })
+    expect(parts.length).toBe(3)
+    expect(unexplainedNewParts(before, parts)).toEqual([])
+    const seeing = userParts("s-chat-2", "msg_2")
+    await real({ sessionID: "s-chat-2", model: { providerID: "alpha", modelID: "kimi-k3" } }, { message: { id: "msg_2", model: { providerID: "alpha", modelID: "kimi-k3" } }, parts: seeing })
+    expect(seeing.length).toBe(2)
+  })
+  test("已知的坏:包一层真钩子再推一个非 synthetic 的 text / 一个散文 synthetic —— 判官各点名", async () => {
+    const hooks = await loadHooks()
+    const real = hooks["chat.message"] as ChatHook
+    const parts = userParts("s-chat-3", "msg_3")
+    const before = clone(parts)
+    await real({ sessionID: "s-chat-3", model: { providerID: "alpha", modelID: "glm-5" } }, { message: { id: "msg_3", model: { providerID: "alpha", modelID: "glm-5" } }, parts })
+    parts.push({ id: "prt_r1", sessionID: "s-chat-3", messageID: "msg_3", type: "text", text: "rogue visible text" } as never)
+    parts.push({ id: "prt_r2", sessionID: "s-chat-3", messageID: "msg_3", type: "text", text: "rogue synthetic prose", synthetic: true } as never)
+    const bad = unexplainedNewParts(before, parts)
+    expect(bad.length).toBe(2)
+    expect(bad[0]).toContain("not synthetic text")
+    expect(bad[1]).toContain("not a registered vision block")
+  })
+})
+
+// ── ③h messages.transform 咽喉(`#1419`;`#1447` R1 B2 / m4 扩)────────────────────────
+// 这个钩子只许**剔**(看不了图时把已转写的图片 part / 附件从本次请求里拿掉),外加**恰好两句登记项**可以出现在副本里:
+// `cloud_cloud_vision` 被审核拒绝的部件 error 换成「这张图片无法识别」、已被原地改写成 base64 的 input.image 换成
+// 「(图片数据已省略)」(或换回本进程记得的原引用 —— 那是模型自己的字,判官按「hook 之前就存在」放行不了,所以这里
+// 用新实例,原引用不可考)。其它任何新字符串一律点名。
+
+type MessagesHook = (input: Record<string, never>, output: { messages: Array<{ info: unknown; parts: unknown[] }> }) => Promise<void>
+/** 判官:hook 之后出现的每个字符串值都必须在 hook 之前就存在(多重集包含),或是那两句登记项之一。 */
+const ALLOWED_REPLACEMENTS = new Set([VISION_TOOL_REFUSED_TEXT, VISION_TOOL_INPUT_OMITTED_TEXT])
+function addedStrings(before: unknown, after: unknown): string[] {
+  const count = new Map<string, number>()
+  for (const l of stringLeaves(before)) count.set(l.value, (count.get(l.value) ?? 0) + 1)
+  const added: string[] = []
+  for (const l of stringLeaves(after)) {
+    const n = count.get(l.value) ?? 0
+    if (n === 0) added.push(l.value)
+    else count.set(l.value, n - 1)
+  }
+  return added.filter((s) => !ALLOWED_REPLACEMENTS.has(s))
+}
+const history = (sessionID: string) => [
+  {
+    info: { id: "msg_u", role: "user", sessionID, model: { providerID: "alpha", modelID: "glm-5" } },
+    parts: [
+      ...userParts(sessionID, "msg_u"),
+      { id: "prt_b-vision", sessionID, messageID: "msg_u", type: "text", synthetic: true, text: "〔图片 #1 shot.png:这张图片无法识别〕", metadata: { alpha_vision: { hash: "h", number: 1, label: "shot.png" } } },
+    ],
+  },
+  {
+    info: { id: "msg_a", role: "assistant", sessionID },
+    parts: [{ id: "prt_t", type: "tool", tool: "read", state: { status: "completed", input: { filePath: "a.png" }, output: "Image read successfully", metadata: { alpha_vision: { images: [{ hash: "h", number: 1, label: "a.png" }] } }, attachments: [imagePart("prt_att")] } }],
+  },
+]
+
+describe("③h messages.transform 咽喉:只剔不加(外加两句登记的替换)", () => {
+  test("看不了图:图片 part 与附件被剔掉、零新增字符串、原消息对象不被改;能看图:逐字原样", async () => {
+    const hooks = await loadHooks()
+    const real = hooks["experimental.chat.messages.transform"] as MessagesHook
+    const msgs = history("s-msgs")
+    const original = msgs.map((m) => m.parts)
+    const before = clone(msgs)
+    await real({}, { messages: msgs })
+    expect(addedStrings(before, msgs)).toEqual([])
+    expect(msgs[0]!.parts.map((p) => (p as { type: string }).type)).toEqual(["text", "text"])
+    expect(((msgs[1]!.parts[0] as { state: { attachments: unknown[] } }).state.attachments).length).toBe(0)
+    expect(original[0]!.length).toBe(3)
+    expect(((original[1]![0] as { state: { attachments: unknown[] } }).state.attachments).length).toBe(1)
+    const seeing = history("s-msgs-2")
+    ;(seeing[0]!.info as { model: { modelID: string } }).model.modelID = "kimi-k3"
+    const seeingBefore = clone(seeing)
+    await real({}, { messages: seeing })
+    expect(seeing).toEqual(seeingBefore)
+  })
+  test("`#1447` B2 / m4:cloud_cloud_vision 出错部件的 error 与被改写成 base64 的 input.image 各换成一句登记项,其余字符串一个不多;已知的坏:替换句改一个字节即点名", async () => {
+    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+    const hooks = await loadHooks()
+    const real = hooks["experimental.chat.messages.transform"] as MessagesHook
+    const base64 = Buffer.from(PNG_1x1, "base64")
+    const fakeBase64 = Buffer.concat([base64, Buffer.alloc(400, 7)]).toString("base64")
+    const msgs = [
+      history("s-msgs-4")[0]!,
+      {
+        info: { id: "msg_a", role: "assistant", sessionID: "s-msgs-4" },
+        parts: [
+          { id: "prt_v1", type: "tool", tool: "cloud_cloud_vision", callID: "c1", state: { status: "error", input: { image: "1" }, error: JSON.stringify({ error: { code: "content_refused", message: "x" } }), time: { start: 1, end: 2 } } },
+          { id: "prt_v2", type: "tool", tool: "cloud_cloud_vision", callID: "c2", state: { status: "completed", input: { image: fakeBase64, mime: "image/jpeg" }, output: "ok", metadata: {}, time: { start: 1, end: 2 } } },
+        ],
+      },
+    ]
+    const before = clone(msgs)
+    await real({}, { messages: msgs })
+    const states = msgs[1]!.parts.map((p) => (p as { state: { error?: string; input: { image: string } } }).state)
+    expect(states[0]!.error).toBe(VISION_TOOL_REFUSED_TEXT)
+    expect(states[1]!.input.image).toBe(VISION_TOOL_INPUT_OMITTED_TEXT)
+    expect(addedStrings(before, msgs)).toEqual([])
+    // 已知的坏:替换句多一个字节 ⇒ 不再是登记项,判官点名
+    ;(msgs[1]!.parts[0] as { state: { error: string } }).state.error += "!"
+    expect(addedStrings(before, msgs)).toEqual([VISION_TOOL_REFUSED_TEXT + "!"])
+  })
+  test("已知的坏:包一层真钩子再往消息里塞一个 text part —— 判官点名那段字", async () => {
+    const hooks = await loadHooks()
+    const real = hooks["experimental.chat.messages.transform"] as MessagesHook
+    const msgs = history("s-msgs-3")
+    const before = clone(msgs)
+    await real({}, { messages: msgs })
+    msgs[0]!.parts.push({ id: "prt_x", type: "text", text: "rogue injected line" })
+    expect(addedStrings(before, msgs)).toContain("rogue injected line")
   })
 })
 

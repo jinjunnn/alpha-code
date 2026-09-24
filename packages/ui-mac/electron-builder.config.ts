@@ -122,9 +122,12 @@ const getBase = (appId: string): Configuration => ({
       // B6(=G1):@alpha-code/ext 自包含 ESM bundle(prebuild 已构建)。落点
       // <resources>/alpha-ext/plugin.js,main 经 alpha-ext-plugin.ts 解析后由 sidecar 注入
       // OPENCODE_CONFIG_CONTENT 的 `plugin` 数组(零改上游,ADR-002/006)。
+      // `#1419`(REQ-228):bundle 旁边多一份 photon 的 wasm(`*.wasm`,Bun.build 按 `with { type: "file" }`
+      // 复制到 dist/ 并带哈希名)—— plugin.js 用 `import.meta.url` 相对解析它,所以两者必须落在同一目录。
+      // 漏了它不会红在打包,会红在第一次识图(装 photon 时 ENOENT ⇒ 图片一律按「本机无法解码」处理)。
       from: "../ext/dist/",
       to: "alpha-ext/",
-      filter: ["plugin.js"],
+      filter: ["plugin.js", "*.wasm"],
     },
     {
       // S17 T3(C17):构建期生成的 DB 迁移支持面清单(scripts/gen-db-expected.ts,prebuild 保证新鲜)。
