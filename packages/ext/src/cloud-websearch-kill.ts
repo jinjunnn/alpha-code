@@ -40,6 +40,16 @@
 // 已因「平台代付」被关,若用户加一个 exa remote MCP 就能拿回同一能力,那条主权判决就被架空。
 // 但这是产品取舍,不是纯技术结论,已在 ADR-009 登记并标「归 owner 复核」。
 //
+// **#1443(ADR-046 D6,那条「归 owner 复核」到此复核完毕)**:上一段的「唯一自洽」是个**条件句**,
+// 而 `#1411`(ADR-046 D1)把它的前提撤掉了 —— 代付态不再关本地 keyless websearch。于是「用户加一个
+// exa remote MCP 就能拿回同一能力」不再是架空:那个能力他本来就有,拦第三方护不住任何东西。
+//
+// 判据形态一个字没改(两个信号任一置位就关);变的是 **main 在哪些态置位它们**:
+//   · 代付 / 登出 ⇒ 两个都不置位 ⇒ 第三方 web search **放行**(新行为,`#1411` 的副作用,本票登记);
+//   · kill-switch ⇒ 两个都置位 ⇒ 第三方照旧被关 —— 「一键关掉所有搜网」的覆盖面**没有**缩小。
+// 四种账户态的合成判据(真 fork 的 env × 本文件的判决函数)在
+// `packages/ui-mac/src/main/server.test.ts` 的「`#1443` 用户自带的第三方 web-search MCP」。
+//
 // ─────────────────────────────────────────────────────────────────────────────
 // #223 R6 Blocker:分类是**尽力而为**,例外必须是**不可伪造**的。
 //
@@ -257,8 +267,9 @@ function isGovernedCloudTool(tool: string, ownership: McpOwnership): boolean {
  * 判决单个工具 id。返回模型可见的拒绝理由;`undefined` = 放行。
  *
  * - alpha 治理的云 server 上的 web search:只有 kill-switch 关它(代付态它是权威通道)。
- * - 其它任何 MCP server 上的 web search:主权态(本地 deny **或** kill-switch)一律关。
- *   kill-switch 会把两个信号都置位,这里对两个都判,是为了信号漂移时倒向 fail-closed。
+ * - 其它任何 MCP server 上的 web search:两个信号**任一**置位就关。`#1411` / ADR-046 D1 起只有
+ *   kill-switch 置位它们(它两个都置),所以这一条今天只在 kill-switch 下成立 —— 代付态第三方
+ *   web search 放行(ADR-046 D6)。对两个都判,是为了信号漂移时倒向 fail-closed。
  */
 export function webSearchToolDenial(
   tool: string,
