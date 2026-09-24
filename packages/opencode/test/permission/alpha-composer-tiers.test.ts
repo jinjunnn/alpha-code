@@ -5,8 +5,9 @@
 // `bash` / `edit` 直接放行不弹框,「逐次询问」这个副标题是假的。修法是主进程多注入一个 hidden agent
 // `alpha-ask`(= build + edit/bash 改 ask),composer 选「请求审批」时强制带上它。
 //
-// 这道闸罩的是**引擎真的会问**,不是 renderer 发了什么字段(那一半在 ui-mac:composer-state.test.ts 的 AC4
-// 三份请求体、shell-commands.test.ts 的真壳逐档点选)。判据全部走生产:
+// 这道闸罩的是**引擎真的会问**,不是 renderer 发了什么字段。那一半的闸是 ui-mac 的 shell-commands.test.ts
+// (已登记:真壳逐档点选,提交层的 agent 三个互不相同);composer-state 的纯核单测另有 AC4 三份请求体的断言,
+// 但那是覆盖,不是闸 —— 删掉它,shell-commands 那条照样红。判据全部走生产:
 //   · 真 `injectAlphaConfig`(ui-mac 主进程写给引擎的那份 config,零 mock,临时盘)→ 真 `Agent.Service`
 //     拿到 `alpha-ask` / `build` / `alpha-readonly` 的规则集;
 //   · 真 `Permission.Service.ask`(与 `session/tools.ts` 给工具的 `ctx.ask` 同一个服务、同一个方法),
