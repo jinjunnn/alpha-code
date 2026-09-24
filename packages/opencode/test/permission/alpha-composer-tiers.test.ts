@@ -165,11 +165,16 @@ const tryAsk = (agentName: string, permission: string, pattern: string, sid: str
         ruleset: agent.permission,
       })
       .pipe(Effect.exit)
-    if (Exit.isSuccess(exit)) return { kind: "passed-through" } satisfies Verdict as Verdict
-    const error = Cause.squash(exit.cause)
-    if (error instanceof Permission.UnansweredError) return { kind: "unanswered" } satisfies Verdict as Verdict
-    if (error instanceof PermissionV1.DeniedError) return { kind: "denied" } satisfies Verdict as Verdict
-    return { kind: "other", detail: Cause.pretty(exit.cause).split("\n")[0] ?? "" } satisfies Verdict as Verdict
+    const verdict: Verdict = Exit.isSuccess(exit)
+      ? { kind: "passed-through" }
+      : Cause.squash(exit.cause) instanceof Permission.UnansweredError
+        ? { kind: "unanswered" }
+        : Cause.squash(exit.cause) instanceof PermissionV1.DeniedError
+          ? { kind: "denied" }
+          : { kind: "other", detail: Cause.pretty(exit.cause).split("\n")[0] ?? "" }
+    // 一行一格的实测记录(PR / CI 日志里直接读得到,不用反推断言):ASK <agent> <permission> "<pattern>" -> <verdict>
+    console.log(`ASK ${agentName} ${permission} ${JSON.stringify(pattern)} -> ${verdict.kind}${verdict.kind === "other" ? `: ${verdict.detail}` : ""}`)
+    return verdict
   })
 
 it.instance(
