@@ -213,7 +213,7 @@ export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<Egr
     if (authorize(parsed.host, parsed.port)) return openTunnel(parsed)
 
     // `#1412` —— 未登记 ⇒ 在拒绝之前走唯一的出口:问用户。答复到达之前**一次 DNS 都不发、
-    // 一次拨号都不做**(与原来的顺序逐字相同);没接询问通道时 requestGrant 恒答 false,
+    // 一次拨号都不做**(与原来的顺序逐字相同);没接询问通道时 requestGrant 恒答 `not-asked`(三态里的那一支,
     // 于是这一整段的行为就是原来那一行 `return deny(403, "unregistered", parsed)`(连记录都不多一条)。
     // **尽力而为,不是保证**:CONNECT 的 socket 从 http 服务器上摘下来之后没有人在读它,
     // 于是对端 RST 在本进程里观察不到 —— 实测(bun 1.3.14):客户端 `destroy()` 200 ms 后

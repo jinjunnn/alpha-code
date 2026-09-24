@@ -142,7 +142,11 @@ function ensureEgressPolicyProxy(): Promise<EgressProxyHandle> {
       else getLogger()?.log(line)
     }
     // `#1412`:第三个半场在这里接上 —— 装载盘上已批准的目的地,并把「问用户」与「记住」两条通道
-    // 交给编排模块。**接线只在这一处**:没有它,requestUserEgressGrant 恒答 false,未登记目的地照旧 403。
+    // 交给编排模块。**接线只在这一处**:没有它,requestUserEgressGrant 恒答 `not-asked`(不是 false ——
+    // 结局是三态,`not-asked` 表示「根本没问人」,代理据此不写 grant 记录),未登记目的地照旧 403。
+    // ⚠️ **装载只发生在这里,没有任何重读**:用户删掉真源里的一条记录,**本次运行照样放行** ——
+    // 要撤销得删记录**并重启应用**。文案两处都必须这么说(egress-grant-records.ts 的那行日志、
+    // 方案基线 §7.4);少说「并重启」就是产品在说假话。真正的热重读是另一票。
     const grantLog = (line: string) => getLogger()?.log(line)
     const loaded = setUserEgressGrants(readEgressGrantRecords(grantLog))
     getLogger()?.log(

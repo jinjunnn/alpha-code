@@ -53,7 +53,7 @@ export function persistEgressGrantRecord(grant: { host: string; port: number }, 
   const key = `${grant.host.toLowerCase()}:${grant.port}`
   const next: EgressGrantRecord[] = [...read.grants.filter((g) => `${g.host.toLowerCase()}:${g.port}` !== key), { host: grant.host.toLowerCase(), port: grant.port, at }]
   writeEgressGrantTruth(location.path, next, { mkdirSync, writeFileSync, renameSync, rmSync })
-  log(`egress grants: remembered ${grant.host}:${grant.port} in ${location.path} — the engine tree may reach it until you remove that record`)
+  log(`egress grants: remembered ${grant.host}:${grant.port} in ${location.path} — the engine tree may reach it until you remove that record AND restart the app (the grant set is loaded once per run; deleting the record alone does not revoke it for this run)`)
 }
 
 function defaultLog(line: string): void {
