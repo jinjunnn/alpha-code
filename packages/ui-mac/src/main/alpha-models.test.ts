@@ -630,8 +630,9 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     // #1266 起同名条目的 variants 也一并派生(见下一条),这里只看 reasoning 与「未标即缺席」。
     expect(deepseek["deepseek-v4-pro"]).toMatchObject({ name: "deepseek-v4-pro", reasoning: true })
     // #1352:BYOK 目录里是上游改名后的 `deepseek-flash`,平台段没有同名条目 ⇒ 无徽标、只有 name。
-    // REQ-228 #1420:models.dev deepseek/deepseek-flash 的 modalities.input 含 image ⇒ 直连能看图。
-    expect(deepseek["deepseek-flash"]).toEqual({ name: "deepseek-flash", modalities: { input: ["text", "image"] } })
+    // REQ-228 #1420:models.dev 标 deepseek-flash 能看图,但 2026-09-24 实测相反(OpenRouter deepseek-v4-flash 只收 text、
+    // 带图 404),直连未实测 ⇒ fail-closed 取看不了(出处见 docs/runbooks/model-catalog-updates.md §B)。
+    expect(deepseek["deepseek-flash"]).toEqual({ name: "deepseek-flash", modalities: { input: ["text"] } })
     expect(zhipu["glm-5.2"]).toMatchObject({ name: "glm-5.2", reasoning: true })
     // #1267:BYOK-only 的 glm-4.5-air 没有平台同名条目,徽标来自目录自己的 modelMeta 槽(下一节逐字判)。
     expect(zhipu["glm-4.5-air"]).toMatchObject({ name: "glm-4.5-air", reasoning: true })
@@ -981,8 +982,9 @@ describe("REQ-228 #1420:直连 / 平台 / 自定义三段的图片输入能力",
       }
     }
     expect(total).toBeGreaterThanOrEqual(20)
-    // 手写,抄自 models.dev 2026-09-23(deepseek / alibaba-cn / moonshotai-cn 同名模型的 modalities.input 含 image)。
-    expect(image.sort()).toEqual(["alibaba-byok/qwen3.8-max", "deepseek-byok/deepseek-flash", "moonshot-byok/kimi-k2.6", "moonshot-byok/kimi-k3"])
+    // 手写,抄自 models.dev 2026-09-23(alibaba-cn / moonshotai-cn 同名模型的 modalities.input 含 image)。deepseek-flash 在
+    // models.dev 标能看图,但实测证据相反、直连未实测 ⇒ 按 fail-closed 不在此列(runbook §B)。
+    expect(image.sort()).toEqual(["alibaba-byok/qwen3.8-max", "moonshot-byok/kimi-k2.6", "moonshot-byok/kimi-k3"])
     expect(Object.keys((cfg.provider.alpha as { models: Models }).models)).toContain("claude-sonnet-5")
   })
 

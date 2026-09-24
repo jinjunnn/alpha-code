@@ -92,6 +92,15 @@ review_after: 2026-10-30
      alpha-models 套件判红;引擎侧的最终值由 `image-input-capability.test.ts` 起真引擎判。
      平台代理模型不读这个字段,一律看不了图(网关聊天入口拒收图片)。
      自定义节点没有上游出处,只认用户在真源记录里显式声明的 `imageInput`(见 `custom-provider-truth.ts`)。
+     **已知不一致(按实测证据覆盖 models.dev)**:`deepseek-flash` 与 models.dev 不一致,按实测证据取
+     `false`,直连实测后再定。models.dev(2026-09-23 快照)把 `deepseek/deepseek-flash` 与
+     `deepseek/deepseek-v4-flash` 都标成能看图;而 2026-09-24 实测:OpenRouter 目录
+     `deepseek/deepseek-v4-flash` 的 `input_modalities` 只有 `["text"]`,带图请求(含
+     `provider.only=["deepseek"]` 官方端点)⇒ 404 `No endpoints found that support image input`
+     (15 个端点全部不支持图片);能看图的是另一个型号 `deepseek-v4-flash-vision-exp`。本机没有 DeepSeek
+     直连 key,`deepseek-flash` 这个直连 id 未实测 ⇒ fail-closed。错标 `false` 的代价是多一次云端识图,
+     错标 `true` 的代价是用户贴图直接收到上游报错。拿到直连 key 后:对 `https://api.deepseek.com/v1`
+     发一条带图的 `deepseek-flash` 请求,收了再改 `true` 并删掉本段。
 2. `bun test src`(alpha-models 套件校验 catalog 形状;`alpha-reasoning-badge-parity`
    套件起真引擎对账「徽标 ⇔ 请求体带推理参数」,两个方向都判)。
 3. `ship:mac` 重建安装(catalog 打包进 app;install-local 会用稳定 Developer

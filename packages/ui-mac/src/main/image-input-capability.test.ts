@@ -6,8 +6,8 @@
 // 所以只判 buildAlphaModelConfig 的产物不够 —— 这里把生产注入交给真引擎(`bun run packages/opencode/src/index.ts models --verbose`,
 // 打印的就是 Provider.list() 里每个模型的完整 v1 形状),逐个模型问它最终认的值。
 //
-// 期望值手写字面量,抄自 models.dev 2026-09-23 快照(不是从被测目录派生):直连能看图的只有 deepseek-flash / qwen3.8-max /
-// kimi-k3 / kimi-k2.6;平台模型一个都不能(网关聊天入口拒收图片 —— 哪怕 claude-* 上游本身能看);自定义节点只有用户声明的那个。
+// 期望值手写字面量,抄自 models.dev 2026-09-23 快照(不是从被测目录派生):直连能看图的只有 qwen3.8-max / kimi-k3 / kimi-k2.6
+// (deepseek-flash 在 models.dev 标能看图,但 2026-09-24 实测相反、直连未实测 ⇒ fail-closed 取看不了,见 runbook §B);平台模型一个都不能(网关聊天入口拒收图片 —— 哪怕 claude-* 上游本身能看);自定义节点只有用户声明的那个。
 //
 // 手段自证先于判据:同一台引擎、同一份注入,只把每个模型的 `modalities` 删掉 ⇒ ①直连 kimi 等回到 false(证明「能看」确实来自
 // 注入,不是引擎自己知道);②id 恰好叫 `openai` 的自定义节点从 models.dev 继承到 image:true —— 这正是「每个模型都显式写」
@@ -37,7 +37,6 @@ let userData = ""
 /** 手写期望:引擎应判「能看图」的全部 (provider, model)。出处见文件头。 */
 const EXPECTED_IMAGE = [
   "alibaba-byok/qwen3.8-max",
-  "deepseek-byok/deepseek-flash",
   "moonshot-byok/kimi-k2.6",
   "moonshot-byok/kimi-k3",
   "my-vision/vl-a",
@@ -146,7 +145,7 @@ function imageVerdicts(cfg: Config, listed: Listed): Record<string, boolean | "<
 }
 
 describe("REQ-228 #1420:真引擎的 capabilities.input.image —— 直连按 models.dev、平台一律不能、自定义只认用户声明", () => {
-  test("生产注入 ⇒ 引擎恰好判这五个能看图,其余(含全部平台模型、没声明的同名 openai 节点)都不能", async () => {
+  test("生产注入 ⇒ 引擎恰好判这四个能看图,其余(含全部平台模型、没声明的同名 openai 节点)都不能", async () => {
     const cfg = buildAlphaModelConfig(userData)!
     const run = await engineModels(cfg)
     expect(run.rc, run.log).toBe(0)
