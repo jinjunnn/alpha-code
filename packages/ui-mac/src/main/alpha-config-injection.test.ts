@@ -155,9 +155,9 @@ function assertInjectedFacts(content: string | undefined, userDataPath: string):
   expect(config.enabled_providers).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
   // provider:白名单里的每个 id 必须真有节点定义,否则白名单是空头支票。
   expect(Object.keys(config.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
-  // 三个 alpha agent(automation 只读 / composer 只读 / automation 可写)。
+  // 四个 alpha agent(automation 只读 / composer 只读 / automation 可写 / composer 请求审批 #1413)。
   expect(Object.keys(config.agent ?? {})).toEqual(
-    expect.arrayContaining(["alpha-automation", "alpha-readonly", "alpha-automation-standard"]),
+    expect.arrayContaining(["alpha-automation", "alpha-readonly", "alpha-automation-standard", "alpha-ask"]),
   )
   // A6:密钥以 {file:} ref 进 content,明文永不进(此处是**组合体**层面的锁,
   // alpha-models.test.ts 锁的是单件 buildAlphaModelConfig)。

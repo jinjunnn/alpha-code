@@ -539,3 +539,23 @@ it.instance("真 Permission.ask:build(=「请求审批」档)对 bash/edit 是�
   配置(探针把配置根钉进了临时目录)。owner 机器上若有,实际行为会与本表不同。
 - Settings → 工具里 owner 现有的记录 —— 未读。
 - `doom_loop` 在真实回合里多久触发一次 —— 未测。
+
+## 11. 后记:`#1413` 落地之后(2026-09-24,本文以上各节仍是 `f56748c4f` 时的地面真相,不改写)
+
+上面 §2–§4 描述的「两档、其中『请求审批』不带 agent 落到 build」的形状,在 `alpha-code#1413` 合入后
+**不再是现状**。落地形状(坐标以合入时的代码为准):
+
+| 档(用户看到的) | `PermMode` | 提交时 `agent` 字段 | 引擎侧规则集 | 相对此前 |
+|---|---|---|---|---|
+| 全部批准 · 改文件/执行命令不再询问 | `allow`(**新会话默认**) | 不带(引擎默认 `build`) | §3 表 `build` 那一行,一格未动 | = 此前「请求审批」的**真实**行为,只换了个诚实的标签 |
+| 请求审批 · 逐次询问 | `ask` | `"alpha-ask"` | `build` + `edit: ask` + `bash: ask`(主进程 `alpha-config-injection.ts` 注入的 hidden agent,**无 prompt**) | 此前一次都不问;现在 edit / bash 各进一次待批队列 |
+| 只读 · 不能改文件/执行命令 | `readonly` | `"alpha-readonly"` | §3 表 `alpha-readonly` 那一行,一格未动 | 逐字不变 |
+
+- 三档不再走 §4 那个二元分支:`composer-state.ts` 的 `PERM_AGENT: Record<PermMode, string | null>` 是穷举表,
+  少一档 typecheck 红;`ask` 与 `readonly` 都压过手选档位(计划 chip 置灰并点名是哪一档压的),`allow` 透传。
+- `alpha-ask` 与 `build` 对每一把内置权限键的求值**只在 edit / bash 上不同**,工具表逐字相同;
+  `external_directory` / `doom_loop` / `read *.env` 两者都仍是 ask(没有顺手放宽)。
+- 引擎层常驻闸:`packages/opencode/test/permission/alpha-composer-tiers.test.ts`(真 `injectAlphaConfig` + 真 Agent +
+  真 `Permission.ask`;§7 的两份探针由它接替,探针本身仍不进 main)。renderer 层:`composer-state.test.ts`
+  (三份请求体逐字节不同)、`shell-commands.test.ts`(真壳逐档点选,提交层 agent 三个互不相同)。
+- §8 第 1 条(Settings 的「自动批准权限」总闸)与 §10 的「打包版真机端到端」**本轮仍未处置 / 未跑**。

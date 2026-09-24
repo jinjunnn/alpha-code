@@ -151,7 +151,7 @@ export type AssembleRow =
 export type AssembleGroup = { label: string; rows: AssembleRow[]; hint?: string }
 
 /** 装配弹窗分节:添加(动作)/ AGENT(引用)/ 文件(引用)/ 扩展(动作)。
- *  - 计划模式行随 planOn 变文案;perm=readonly 时禁用并给出如实原因(不静默失效,C28);
+ *  - 计划模式行随 planOn 变文案;权限档压 agent 时(readonly / ask,`#1413`)禁用并给出如实原因(不静默失效,C28);
  *  - 第三方主档(非 build/plan 的 primary)动态成模式项,无则不出现(拍板⑤);
  *  - 终端行只在终端命令可用的表面出现(home 未注册 → 整行不摆,不留死行),文案如实 = 打开
  *    终端面板(引擎无「终端输出 → 上下文」原语,不许诺;REQ-078 T1);
@@ -160,7 +160,8 @@ export type AssembleGroup = { label: string; rows: AssembleRow[]; hint?: string 
 export function buildAssembleRows(input: {
   query: string
   planOn: boolean
-  readonly: boolean
+  /** 当前权限档是否压过手选 agent(composer-state `permLocksAgent`:readonly / ask 为真)。 */
+  agentLocked: boolean
   activeMode: string | null
   subAgents: Array<{ name: string; description?: string }>
   primaries: string[]
@@ -180,7 +181,7 @@ export function buildAssembleRows(input: {
     id: "plan",
     label: input.planOn ? "关闭计划模式" : "计划模式",
     desc: input.planOn ? "回到默认(build)" : "先出方案再动手(plan 档)",
-    disabled: input.readonly ? "只读权限档固定使用只读 agent" : undefined,
+    disabled: input.agentLocked ? "当前权限档固定使用它自己的 agent" : undefined,
   }
   const actionRows = input.terminal ? [attach, term, plan] : [attach, plan]
   for (const r of actionRows) if (hit(r.kind === "action" ? r.label : "", (r as { desc?: string }).desc)) add.push(r)

@@ -1,5 +1,6 @@
 Alpha context injections (packages/ext + packages/ui-mac) — unit: UTF-8 bytes; limit enforced at registration, over-limit throws (never truncates)
 id                                                  kind      sink                   bytes   limit  used
+agent.alpha-ask.description                         text      agent-description        130    1024   13%
 agent.alpha-automation-standard.description         text      agent-description         98    1024   10%
 agent.alpha-automation-standard.prompt              text      system                   441    8192    5%
 agent.alpha-automation.description                  text      agent-description         93    1024    9%
@@ -44,7 +45,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 44; injected bytes: 23458; declared limits total: 103424
+fragments: 45; injected bytes: 23588; declared limits total: 104448
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
@@ -56,4 +57,4 @@ references (paths / verbs / definitions supplied by others — carry no Alpha te
   ref.provider           /provider          模型菜单:npm / 展示名 / baseURL / {file:} 密钥引用 / 档位 options(alpha-models.ts,数据在 alpha-models.json);展示名只进 picker,不进模型上下文
 context-bearing plugin hooks (from packages/plugin Hooks): config, tool, chat.message, command.execute.before, tool.execute.after, experimental.chat.messages.transform, experimental.chat.system.transform, experimental.session.compacting, experimental.text.complete, tool.definition
 instruction files (ui-mac main writes them into cfg.instructions; engine session/instruction.ts reads them into the system segment; identity has one row per reachable capability shape): instruction.alpha-behavior, instruction.alpha-identity, instruction.alpha-identity+cloudDispatch, instruction.alpha-identity+websearch, instruction.alpha-identity+websearch+cloudDispatch
-ui-mac agents (main writes cfg.agent.<name>.{prompt,description}; prompt replaces the base system prompt at llm/request.ts:64, description enters the subagent list): agent.alpha-automation.prompt, agent.alpha-automation.description, agent.alpha-readonly.prompt, agent.alpha-readonly.description, agent.alpha-automation-standard.prompt, agent.alpha-automation-standard.description
+ui-mac agents (main writes cfg.agent.<name>.{prompt,description}; prompt replaces the base system prompt at llm/request.ts:64 — an agent without a prompt keeps the base prompt; description enters the subagent list): agent.alpha-automation.prompt, agent.alpha-automation.description, agent.alpha-readonly.prompt, agent.alpha-readonly.description, agent.alpha-automation-standard.prompt, agent.alpha-automation-standard.description, agent.alpha-ask.description

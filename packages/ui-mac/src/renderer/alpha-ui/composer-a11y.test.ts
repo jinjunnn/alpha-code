@@ -90,9 +90,9 @@ describe("composer accessibility behavior", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true")
     expect(document.activeElement).toBe(firstItem)
     expect(document.querySelector(".a-pop-fixed[role='menu']")).not.toBeNull()
-    // 两档:询问 / 只读。第三档「全自动」随 REQ-126 AC7(#658)退休 —— 它从来没有真的自动
-    // 放行过(提交层只对 readonly 分支),档位本身的判据在 shell-commands.test.ts。
-    expect(document.querySelectorAll(".a-pop-item[role='menuitemradio']")).toHaveLength(2)
+    // 三档:全部批准 / 请求审批 / 只读(`#1413`)。REQ-126 AC7(#658)退休过一个只在界面上存在的
+    // 「全自动」档;这次的三档各自发出不同的请求,那条判据在 shell-commands.test.ts,这里只看可达性。
+    expect(document.querySelectorAll(".a-pop-item[role='menuitemradio']")).toHaveLength(3)
     expect(document.querySelector(".a-pop-item.is-on[aria-checked='true']")).not.toBeNull()
 
     const escape = keydown(firstItem, "Escape")

@@ -981,7 +981,7 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
     const wrong = mountSessionAt(projects, ACTIVE_SERVER_KEY, "session-1")
     for (let i = 0; i < 20 && !textarea(wrong.host); i++) await flush()
     expect(planChipOf(wrong.host)).toBeNull()
-    expect(permChipOf(wrong.host)!.getAttribute("data-mode")).toBe("ask")
+    expect(permChipOf(wrong.host)!.getAttribute("data-mode")).toBe("allow")
     wrong.dispose()
 
     // ② 正方向:同一个 sessionID,换成 store 真正连着的那个 server —— 两档都在。
@@ -1039,8 +1039,8 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
      ①会话页渲染出来的 chip —— 用户看得见的那两档;
      ②会话页**真发出去**的 `session.promptAsync` 载荷 —— 显示只读而线上不带 `alpha-readonly`,
        用户看到的就是「只读亮着,模型照样改文件」。丢了登记时这里连 `agent` 键都不会出现
-       (`buildPromptRequest` 在 perm=ask + agent=null 时不写这个字段),所以键在不在本身就是判据。
-     最后再把只读放回「请求审批」,让**开局档位**(plan)也走一次线 —— 只读会压过手选档位,
+       (`buildPromptRequest` 在 perm=allow(默认档,`#1413`)+ agent=null 时不写这个字段),所以键在不在本身就是判据。
+     最后再把只读放回「全部批准」(默认档),让**开局档位**(plan)也走一次线 —— 只读会压过手选档位,
      不解除它,plan 永远只在 chip 上、不在载荷里。
 
      ⚠️ 步骤 ② 的位置是实测定下来的,不能挪:卸载必须发生在**模型链还在飞**的时候,而且后面
@@ -1090,14 +1090,14 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
 
     // ⑤ 解除只读之后,开局的 plan 档仍在,并且这一次它自己上了线。
     permChipOf(session.host)!.click()
-    const askItems = () =>
+    const allowItems = () =>
       [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
-        item.textContent?.includes(zh["alpha.composer.permAsk"]),
+        item.textContent?.includes(zh["alpha.composer.permAllow"]),
       )
-    for (let i = 0; i < 20 && askItems().length === 0; i++) await flush()
-    askItems()[0]!.click()
-    for (let i = 0; i < 20 && permChipOf(session.host)!.getAttribute("data-mode") !== "ask"; i++) await flush()
-    expect(permChipOf(session.host)!.getAttribute("data-mode")).toBe("ask")
+    for (let i = 0; i < 20 && allowItems().length === 0; i++) await flush()
+    allowItems()[0]!.click()
+    for (let i = 0; i < 20 && permChipOf(session.host)!.getAttribute("data-mode") !== "allow"; i++) await flush()
+    expect(permChipOf(session.host)!.getAttribute("data-mode")).toBe("allow")
     expect(planChipOf(session.host)).not.toBeNull()
 
     type(textarea(session.host)!, "第三条")

@@ -168,6 +168,7 @@ workflow 触发在 `pull_request`,fork PR 拿不到 secrets)。这份记录**抓
 | --- | --- | --- |
 | `packages/opencode/test/tool/alpha-websearch-failure.test.ts` | 只有 `assert-gate-files.sh` | 登记在册;`#777` 之前该步在 CI 上连续两天 skipped、本地根本没有 |
 | `packages/opencode/test/permission/alpha-ask-deadline.test.ts` | 同上 | 同上 |
+| `packages/opencode/test/permission/alpha-composer-tiers.test.ts`(`#1413`) | 只有 `assert-gate-files.sh` | 登记在册(本地 [6/14] + CI 同步);整包地板不覆盖 opencode,所以它与上两行同类 |
 | `packages/opencode/test/tool/alpha-mcp-websearch-gate.test.ts` | **无** | `#649` 未决(本地 23.45s,且打印 `Bun.serve` 10 秒超时告警) |
 | `packages/opencode/test/mcp/alpha-cloud-mcp-multisource.test.ts` | **无** | `#649` 未决 |
 | `packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts` | **无** | `#649` 未决 |

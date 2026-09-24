@@ -20,19 +20,50 @@ export type ComposerModel = ModelRef & {
 
 export type ComposerAgent = { name: string; description?: string }
 
-/** REQ-126 AC7(#658):曾经还有第三档 `full`(「全自动」)。它是**空承诺** —— 提交层
- *  (buildPromptRequest)只对 `readonly` 分支,`full` 与 `ask` 产出**逐字节相同**的请求;chip 唯一
- *  的"生效"路径是发上游 `permissions.autoaccept.enable/.disable`,而上游只有单个
- *  `permissions.autoaccept`,这两个 id 从来不存在,且其注册处随 session 叶一起退役。真做「全自动」
- *  = 接权限引擎自动放行,是新能力,不在本票射程内 → 退休该档,不留一个点了不算数的开关。 */
-export type PermMode = "ask" | "readonly"
+/** 运行权限三档(`#1413`)。每一档提交时发出的请求**逐字节不同**(见 `PERM_AGENT`),这是它存在的唯一理由:
+ *
+ *  - `allow`「全部批准」:不压 agent,请求走引擎默认档 `build`(规则集基底 `"*": "allow"`)—— 这就是
+ *    2026-09-23 之前「请求审批」档**实际**的行为,只是当时它顶着「逐次询问」的副标题。
+ *  - `ask`「请求审批」:强制 `alpha-ask`(= build + edit/bash 改 ask,主进程注入)。此前这档不带 agent、
+ *    落到 build,真 `Permission.ask` 实测 edit/bash 直接放行不弹框 —— 副标题是假的
+ *    (docs/architecture/2026-09-23-runtime-permission-tiers.md §3)。
+ *  - `readonly`「只读」:强制 `alpha-readonly`(REQ-028,edit/bash 静态 deny)。行为逐字不变。
+ *
+ *  历史:REQ-126 AC7(#658)退休过一个第三档 `full`(「全自动」)—— 它是**空承诺**:提交层只对 `readonly`
+ *  分支,`full` 与 `ask` 产出逐字节相同的请求;chip 唯一的"生效"路径是发上游根本不存在的两个命令 id。
+ *  本轮的三档不走 if/else:`PERM_AGENT` 是 `Record<PermMode, …>` 的穷举表,少写一档 typecheck 就红,
+ *  多加一档而不给它映射也红 —— 第三个值**不可能**静默落进某个 else 分支变成另一档的复制品。 */
+export type PermMode = "allow" | "ask" | "readonly"
 
 /** 只读档的真载体(REQ-028:静态权限档 edit/bash deny 的引擎 agent)。 */
 export const READONLY_AGENT = "alpha-readonly"
+/** 请求审批档的真载体(`#1413`:build + edit/bash ask 的引擎 agent,主进程 alpha-config-injection.ts 注入)。 */
+export const ASK_AGENT = "alpha-ask"
+
+/** 每一档提交时**强制**的 agent;`null` = 不压,透传用户手选的档位(计划 / 第三方主档)或引擎默认。
+ *  穷举表而不是分支:见 `PermMode` 抬头。 */
+export const PERM_AGENT: Record<PermMode, string | null> = {
+  allow: null,
+  ask: ASK_AGENT,
+  readonly: READONLY_AGENT,
+}
+
+/** 该档是否压过手选档位(计划 chip 置灰、Shift+Tab 不切、装配弹窗计划行禁用都读这一问)。 */
+export function permLocksAgent(mode: PermMode): boolean {
+  return PERM_AGENT[mode] !== null
+}
+
+/** 新会话 / 首页的默认档。取 `allow` 是因为它**就是**此前默认档的真实行为(引擎默认 build 全放行):
+ *  从没碰过这颗 chip 的用户,改前改后发出的请求逐字节相同;变的只是标签终于说了实话。
+ *  活稿 docs/design/current/composer/design.html §07 的默认选中项也是这一档。 */
+export const DEFAULT_PERM: PermMode = "allow"
+
+/** 菜单里的排列顺序(活稿 §07:最宽到最窄)。 */
+export const PERM_MODES: readonly PermMode[] = ["allow", "ask", "readonly"]
 
 /** alpha 内部 agent —— 永不出现在任何用户可见选择列表(用户报障 2026-07-07:「为什么会出现这个」)。
- *  它们仍可被程序化 prompt(调度器/只读档),隐藏只影响列表。 */
-export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-standard", READONLY_AGENT])
+ *  它们仍可被程序化 prompt(调度器/只读档/请求审批档),隐藏只影响列表。 */
+export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-standard", READONLY_AGENT, ASK_AGENT])
 
 /* #652:会话档位推送账本(recordPushedAgent / pushedAgentFor / DEFAULT_AGENT)随 v2 durable
  * 发送一起退役。它只为「v2 引擎无 per-prompt agent、档位是会话级属性」而存在:composer 发送前
@@ -50,7 +81,7 @@ const [modelProjection, setModelProjection] = createSignal<ComposerModelProjecti
   status: "ready",
   sessionID: null,
 })
-const [perm, setPerm] = createSignal<PermMode>("ask")
+const [perm, setPerm] = createSignal<PermMode>(DEFAULT_PERM)
 const [agent, setAgent] = createSignal<string | null>(null) // null = 引擎默认(build)
 const [agents, setAgents] = createSignal<ComposerAgent[]>([])
 
@@ -160,8 +191,9 @@ export function resetComposerAgentScopesForTests() {
  * 机制与档位那份**逐条同形**:同一把钥匙(canonical 身份键 / null=首页,见 #891)、同一处
  * adopt/release(alpha-composer 的那一个 createEffect)、同一套租约守卫。两处差别,都在这一段说清:
  *
- * ① 默认值不同 —— 档位的默认是 `null`(引擎自己的 build),只读档的默认是 `"ask"`(引擎默认的
- *    逐次审批),所以「默认不登记」这条判的是 `=== "ask"`。
+ * ① 默认值不同 —— 档位的默认是 `null`(引擎自己的 build),权限档的默认是 `DEFAULT_PERM`
+ *    (`"allow"`,`#1413` 之前写的是 `"ask"`,而那时的 `"ask"` 发出的正是今天 `"allow"` 的请求),
+ *    所以「默认不登记」这条判的是 `=== DEFAULT_PERM`。
  * ② **只读档这一份没有容量上界**(#896 起档位那份也没有,两份至此逐条同形)。
  *    原先照抄了草稿暂存的 LRU,并在这里写着「丢登记只会多问一次,不会静默放松限制」——
  *    **那句话是错的**:依次在 33 个会话里开只读,第 1 个就被淘汰,回到它时 chip 变回「请求审批」、
@@ -174,20 +206,20 @@ let permScopeOwner: string | null = null
 let permScopeLease = 0
 
 function rememberScopedPerm(scopeKey: string, value: PermMode) {
-  if (value === "ask") {
-    permByScope.delete(scopeKey) // 默认档 = 不登记(显式退出只读时要把旧登记删掉)
+  if (value === DEFAULT_PERM) {
+    permByScope.delete(scopeKey) // 默认档 = 不登记(显式退回默认时要把旧登记删掉)
     return
   }
   permByScope.set(scopeKey, value)
 }
 
-/** 挂载:接管该身份的只读档(无登记 = 默认 ask)。`null` = 首页或身份未定,一律回默认。 */
+/** 挂载:接管该身份的权限档(无登记 = `DEFAULT_PERM`)。`null` = 首页或身份未定,一律回默认。 */
 export function adoptComposerPermScope(scopeKey: string | null): number {
   // 先落账现任持有者的值,理由同档位那份(adopt 可能早于 release)。
   if (permScopeOwner !== null) rememberScopedPerm(permScopeOwner, perm())
   permScopeOwner = scopeKey
   permScopeLease += 1
-  setPerm(scopeKey === null ? "ask" : (permByScope.get(scopeKey) ?? "ask"))
+  setPerm(scopeKey === null ? DEFAULT_PERM : (permByScope.get(scopeKey) ?? DEFAULT_PERM))
   return permScopeLease
 }
 
@@ -297,7 +329,8 @@ export type PromptRequest = {
 }
 
 /** 提交参数构造:
- *  - readonly 权限 → agent 强制 alpha-readonly(压过手选 agent;退出只读即恢复);
+ *  - 权限档按 `PERM_AGENT` 穷举表决定 agent:readonly → alpha-readonly、ask → alpha-ask(都压过手选 agent;
+ *    退回「全部批准」即恢复)、allow → 不压,透传手选 agent(`#1413`);
  *  - variant 只在当前模型确实定义了该档时携带(C28:绝不发引擎不认识的档);
  *  - 未显式选择的维度不传(引擎默认)。 */
 export function buildPromptRequest(input: {
@@ -317,7 +350,8 @@ export function buildPromptRequest(input: {
       providerID: input.model.providerID,
       ...(input.effort && input.model.variants.includes(input.effort) ? { variant: input.effort } : {}),
     }
-  if (input.perm === "readonly") req.agent = READONLY_AGENT
+  const forced = PERM_AGENT[input.perm]
+  if (forced) req.agent = forced
   else if (input.agent) req.agent = input.agent
   return req
 }

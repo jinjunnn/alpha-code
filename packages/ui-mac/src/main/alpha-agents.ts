@@ -12,6 +12,12 @@
 // 改这里的字 = 改库存:ext 单测的快照比对与 alpha-check [12/12] 会红,`--write` 重生快照让评审读 diff。
 // 咽喉(跑真 injectAlphaConfig、逐字比对)在 packages/ui-mac/src/main/config-injection-throat.test.ts(`#1305` 起罩整份 config)。
 // 每个 agent 的 permission / mode / hidden 不是字,仍住在 alpha-config-injection.ts。
+//
+// `#1413`:第四个 agent `alpha-ask` **刻意没有 prompt**。它是 composer「请求审批」档的载体,语义 = 引擎默认档
+// `build` + `edit`/`bash` 改成 ask;一旦给它 prompt,`request.ts:64` 就会拿这段字**整段顶替**底座提示词 ——
+// 那会让「请求审批」比「全部批准」少掉整份底座,而用户只是想多问一句。没有 prompt 的 agent 在引擎里
+// (`agent/agent.ts` 的 config-agent 分支 `item.prompt = value.prompt ?? item.prompt`)与 build 走同一条底座路径。
+// 登记簿(ext context-injection.ts)与咽喉对「没有 prompt」的 agent 只登记/只判 description。
 
 export const ALPHA_AGENT_TEXT = {
   //   5. 自动化 readonly agent(REQ-021 A1.5 / ADR-022)。
@@ -40,6 +46,12 @@ export const ALPHA_AGENT_TEXT = {
       "没有人会回答追问——绝不提问,基于可得信息直接完成任务。" +
       "最终答复即任务报告:用 Markdown,先一行结论,再列所做变更与依据;如实标注做不到的部分。",
   },
+  //   2d. `#1413`:交互「请求审批」agent(composer 权限档「请求审批」的真载体)。无 prompt,见抬头。
+  "alpha-ask": {
+    description: "请求审批:与默认档相同,但修改文件、执行命令前先逐次征求用户批准(composer 权限档「请求审批」)",
+  },
 } as const
 
 export type AlphaAgentName = keyof typeof ALPHA_AGENT_TEXT
+/** 有 prompt 的 agent 才会顶替底座提示词;`alpha-ask` 没有(见抬头)。 */
+export type AlphaAgentText = { readonly description: string; readonly prompt?: string }
