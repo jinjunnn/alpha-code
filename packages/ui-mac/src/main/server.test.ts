@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test, vi } from "bun:test"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { EventEmitter } from "node:events"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
@@ -66,6 +67,22 @@ const { preferAppEnv, spawnLocalServer } = await import("./server")
 // 本文件的假子进程不跑 sidecar.ts,注入一个替身计划 —— 围栏本身的判据在 process-fence-*.test.ts。
 const fakePlanFence = () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/nonexistent/alpha_fence.node" })
 const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
+// `#1411`(REQ-1414 CODE-1):下面「模型工具表」那一组用的四个**生产**供数方。全部动态 import ——
+// 它们要么经 ui-mac 的 main 面(必须排在 electron mock 之后),要么是引擎/注入面的真模块。
+const { injectAlphaConfig } = await import("./alpha-config-injection")
+const { webSearchEnabled } = await import("../../../opencode/src/tool/registry")
+const { RuntimeFlags } = await import("../../../opencode/src/effect/runtime-flags")
+const { Permission } = await import("../../../opencode/src/permission/index")
+const { AppNodeBuilder } = await import("../../../core/src/effect/app-node-builder")
+const { ProviderV2 } = await import("../../../core/src/provider")
+const {
+  CLOUD_MCP_ARM_ENV,
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_NAME,
+  CLOUD_WEB_SEARCH_TOOL_ID,
+  LOCAL_WEB_SEARCH_TOOL_ID,
+  WITHHELD_CLOUD_MCP,
+} = await import("./cloud-web-search")
 
 let userDataPath = ""
 const keylessWebSearchFlags = [
@@ -160,27 +177,33 @@ function keylessFlagsOf(env: Record<string, string | undefined>) {
 }
 
 describe("web search sovereignty at sidecar fork (#621)", () => {
-  test("cold start with a logged-in user forces keyless off at fork, not at preferAppEnv", async () => {
+  // `#1411`(REQ-1414 CODE-1,owner 2026-09-23 裁决)—— 这两条以前断言的是相反的事:
+  // 「登录 ⇒ fork 时把四个 keyless flag 覆盖写 "0"」「登录 ⇒ 压掉用户 shell export」。
+  // 那是 ADR-009 B1 的落点,已被推翻:**账户信号只决定云腿在不在,不决定本地腿在不在**。
+  test("登录用户冷启动:本地 keyless 腿在 fork 时不被关掉,两条腿一起进 sidecar", async () => {
     // 真实顺序:preferAppEnv 先跑,此刻 initAuthEnv 还没写 ALPHA_CLOUD_MCP_URL/token。
     preferAppEnv(userDataPath)
-    expect(process.env.OPENCODE_ENABLE_EXA).toBe("1") // boot 期只能判「登出」——这正是 #621 的现场
+    expect(process.env.OPENCODE_ENABLE_EXA).toBe("1")
 
     applyAuthEnvLikeLogin()
 
     const env = await forkSidecar()
-    expect(keylessFlagsOf(env)).toEqual(allFlagsOff)
-    expect(webSearchToolSnapshot(env)).toEqual(["cloud_web_search"])
+    // `#1411` 之前这里是 `toEqual(allFlagsOff)`。
+    expect(env.OPENCODE_ENABLE_EXA).toBe("1")
+    expect(env.ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch", "cloud_web_search"])
   })
 
-  test("cold start overrides a shell-exported keyless flag at fork time", async () => {
+  test("登录用户冷启动:用户 shell export 的 keyless flag 照旧原样进 sidecar", async () => {
     process.env.OPENCODE_ENABLE_PARALLEL = "1"
 
     preferAppEnv(userDataPath)
     applyAuthEnvLikeLogin()
 
     const env = await forkSidecar()
-    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("0")
-    expect(webSearchToolSnapshot(env)).toEqual(["cloud_web_search"])
+    // `#1411` 之前这里是 `toBe("0")`。
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("1")
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch", "cloud_web_search"])
   })
 
   test.each(keylessWebSearchFlags)("disable overrides a shell-exported %s flag in every auth state", async (flag) => {
@@ -218,19 +241,31 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
     expect(env.OPENCODE_EXPERIMENTAL_PARALLEL).toBeUndefined()
   })
 
-  test("logout respawn gives the keyless baseline back instead of leaving it forced off", async () => {
+  // `#1411`:驱动态从「登录 → 登出」换成「kill-switch 开 → 关」—— 被测机制(force-off 会销毁用户
+  // 真值,所以必须先留底再还原)一个字没变,只是现在唯一会 force-off 的是 kill-switch。
+  // 登录/登出那一半改为断言它**根本不动**这四个 flag。
+  test("kill-switch 关掉之后 respawn 还回 keyless 基线,而不是把它永久哑在 \"0\"", async () => {
     process.env.OPENCODE_ENABLE_PARALLEL = "1" // 用户 shell 的真 export
 
     preferAppEnv(userDataPath)
     applyAuthEnvLikeLogin()
+    expect(keylessFlagsOf(await forkSidecar()).OPENCODE_ENABLE_PARALLEL).toBe("1")
+
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     expect(keylessFlagsOf(await forkSidecar())).toEqual(allFlagsOff)
 
-    applyAuthEnvLikeLogout()
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
 
     const env = await forkSidecar()
     expect(env.OPENCODE_ENABLE_PARALLEL).toBe("1")
     expect(env.OPENCODE_ENABLE_EXA).toBe("1")
-    expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch", "cloud_web_search"])
+
+    applyAuthEnvLikeLogout()
+
+    const loggedOut = await forkSidecar()
+    expect(loggedOut.OPENCODE_ENABLE_PARALLEL).toBe("1")
+    expect(webSearchToolSnapshot(loggedOut)).toEqual(["websearch"])
   })
 
   test("re-forking without an auth change is idempotent", async () => {
@@ -250,11 +285,16 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
     expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
   })
 
-  test("platform pays also ships the sovereignty verdict to the sidecar", async () => {
+  // `#1411`:以前这条叫「platform pays also ships the sovereignty verdict to the sidecar」,断言
+  // 代付也置位本地拒绝判决。代付不再关本地腿 ⇒ 这条判决在代付态必须缺席,否则工具自身那道最终闸
+  // 会把本地腿在**执行时**拒掉(permission 层看不出来,模型只会拿到一句「别重试」)。
+  test("代付不再把本地拒绝判决送进 sidecar —— 两条腿的通道都保持干净", async () => {
     preferAppEnv(userDataPath)
     applyAuthEnvLikeLogin()
 
-    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+    const env = await forkSidecar()
+    expect(env.ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
+    expect(env.ALPHA_CLOUD_WEBSEARCH_DENY).toBeUndefined()
   })
 
   test("`#1195` 判据换轴:登录但无 mcp_access(旧轴文件在、新轴文件缺)不算代付,keyless 保持可用", async () => {
@@ -269,10 +309,17 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
     expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
   })
 
-  test("logout respawn clears the sovereignty verdict instead of leaving the tool dead", async () => {
+  // `#1411`:同上,驱动态换成 kill-switch —— 「判决必须两个方向都写」这条纪律没变,变的是唯一能
+  // 置位它的状态。登出那一格追加一条:它在任何方向上都不该让判决重新出现。
+  test("kill-switch 关掉之后 respawn 清掉本地拒绝判决,而不是把工具留在死状态", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     preferAppEnv(userDataPath)
     applyAuthEnvLikeLogin()
     expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
+
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
 
     applyAuthEnvLikeLogout()
 
@@ -290,7 +337,8 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
     delete process.env.ALPHA_WEBSEARCH_DISABLE
     applyAuthEnvLikeLogin()
     const paying = await forkSidecar()
-    expect(paying.ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+    // `#1411`:以前这里是 `toBe("1")` —— 代付即关本地腿。现在代付两条判决都不置位。
+    expect(paying.ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
     expect(paying.ALPHA_CLOUD_WEBSEARCH_DENY).toBeUndefined()
   })
 
@@ -303,6 +351,128 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
     delete process.env.ALPHA_WEBSEARCH_DISABLE
 
     expect((await forkSidecar()).ALPHA_CLOUD_WEBSEARCH_DENY).toBeUndefined()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `#1411`(REQ-1414 CODE-1)—— 退出条件 ①:**登录代付态下模型工具表同时含 `websearch` 与
+// `cloud_cloud_web_search`**。
+//
+// 方案基线(`docs/design/2026-09-23-1414-web-tools-account-routing-baseline.md` §九 第 1 条)把这件事
+// 明确标为「从代码结构推出来的**推论**,不是跑出来的」。这一组把它跑成事实。
+//
+// 「模型工具表」一条规则都不手写,四个供数方全是生产自己的:
+//   ① main 的 `applyWebSearchSovereignty()` + `createSidecarEnv()` 白名单 —— 经真 `spawnLocalServer`
+//      fork 出来的那份 env(`forkSidecar()`,与上面那组同一条路径);
+//   ② 引擎的 `RuntimeFlags`(用真 `ConfigProvider` 解析①给出的那份 env,不是手写 `env[k] === "1"`);
+//   ③ 引擎的 `webSearchEnabled()` —— 本地腿的**注册**闸,`tool/registry.ts` 的 `tools()` 用的就是它;
+//   ④ 注入面的真 `injectAlphaConfig()` → 引擎的真 `Permission.fromConfig` + `Permission.disabled`
+//      —— 两条腿的**可见性**闸,`session/llm/request.ts` 的 `resolveTools()` 用的就是它。
+//
+// 手段的自证(先证明它测得出已知的坏,再用它判未知的好):kill-switch 臂走同一条链,两条腿必须
+// 一个都不在表里 —— 它同时覆盖②(flag 被 force-off)与④(permission deny)。
+//
+// 诚实边界,不粉饰:
+//   · 「登录+有额度」与「登录+无额度」在桌面侧**不可区分**(account 契约里没有只读额度查询,
+//     基线 §1.1(b)),两者在这里是同一格;「无额度」的可观察差别是云腿调用时的 402,不在本票范围。
+//   · 云腿的「注册与否」判据只保证**代付且无 kill-switch**这一格准确:kill-switch 下真定义经
+//     ARM/DEF 交给 ext 的 `installCloudMcp()`,它读不到 `{file:}` 凭证时会响亮不装 —— 那半格这里
+//     一律按「已注册」处理,再由 permission deny 兜住,两条路径结论相同(都不在表里)。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("`#1411` 模型工具表:两条腿按账户态的真实在场性", () => {
+  /** 非平台 provider —— 用它是为了让「本地腿在不在」真的由那四个 keyless flag 决定:
+   *  `webSearchEnabled()` 对 `opencode`/`opencode-go` 无条件放行,拿它当被测 provider 会让①②③恒真。 */
+  const BYOK_PROVIDER = ProviderV2.ID.make("deepseek-byok")
+
+  /** 引擎自己怎么解释这份 env(真 `RuntimeFlags`,真 `ConfigProvider`)。 */
+  const engineFlags = (env: Record<string, string | undefined>) =>
+    Effect.runSync(
+      RuntimeFlags.Service.useSync((flags) => ({ exa: flags.enableExa, parallel: flags.enableParallel })).pipe(
+        Effect.provide(
+          AppNodeBuilder.build(RuntimeFlags.node).pipe(
+            Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+          ),
+        ),
+      ),
+    )
+
+  /** 在「sidecar 真正拿到的那份 env」下跑真注入面,拿它写出的引擎配置与它自己置位的 env。 */
+  function injectUnderSidecarEnv(forkEnv: Record<string, string | undefined>) {
+    const saved = { ...process.env }
+    for (const key of Object.keys(process.env)) delete process.env[key]
+    for (const [key, value] of Object.entries(forkEnv)) if (value !== undefined) process.env[key] = value
+    try {
+      // 注入面的三个环境根钉进本用例的临时盘,免得读到宿主机的真实配置。
+      process.env.ALPHA_GLOBAL_DIR = join(userDataPath, "alpha-code-state", "env", "dev")
+      process.env.XDG_CONFIG_HOME = join(userDataPath, "xdg-config")
+      process.env.XDG_DATA_HOME = join(userDataPath, "xdg-data")
+      mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
+      // 先证明注入真的跑成了 —— 它有一层函数级 catch,拿一份空配置当结论正是本文件要防的那类假绿。
+      expect(injectAlphaConfig(userDataPath, undefined, "stable")).toEqual({ ok: true })
+      const content = process.env.OPENCODE_CONFIG_CONTENT
+      expect(typeof content).toBe("string")
+      return { config: JSON.parse(content!) as EngineConfigShape, env: { ...process.env } }
+    } finally {
+      for (const key of Object.keys(process.env)) delete process.env[key]
+      Object.assign(process.env, saved)
+    }
+  }
+
+  type McpEntry = { url?: string; enabled?: boolean }
+  type EngineConfigShape = { permission?: Record<string, unknown>; mcp?: Record<string, McpEntry | undefined> }
+
+  /** 云腿到底注册没注册:注入面写进配置的那条定义,或 ARM+DEF 一起交给 ext 装的那条(缺一 ext 不装)。 */
+  function cloudLegRegistered({ config, env }: { config: EngineConfigShape; env: Record<string, string | undefined> }) {
+    const connectable = (entry: McpEntry | undefined) =>
+      Boolean(entry) && entry!.enabled !== false && entry!.url !== WITHHELD_CLOUD_MCP.url
+    if (connectable(config.mcp?.[CLOUD_MCP_SERVER_NAME])) return true
+    const handed = env[CLOUD_MCP_ARM_ENV] && env[CLOUD_MCP_DEF_ENV] ? (JSON.parse(env[CLOUD_MCP_DEF_ENV]!) as McpEntry) : undefined
+    return connectable(handed)
+  }
+
+  /** 模型这一刻真正拿得到的那两个 web search 工具。 */
+  function modelWebSearchTools(forkEnv: Record<string, string | undefined>) {
+    const flags = engineFlags(forkEnv)
+    const injected = injectUnderSidecarEnv(forkEnv)
+    const registered = [
+      ...(webSearchEnabled(BYOK_PROVIDER, flags) ? [LOCAL_WEB_SEARCH_TOOL_ID] : []),
+      ...(cloudLegRegistered(injected) ? [CLOUD_WEB_SEARCH_TOOL_ID] : []),
+    ]
+    const hidden = Permission.disabled(registered, Permission.fromConfig((injected.config.permission ?? {}) as never))
+    return registered.filter((id) => !hidden.has(id))
+  }
+
+  test("登录代付:`websearch` 与 `cloud_cloud_web_search` **同时**在模型工具表里", async () => {
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+
+    expect(modelWebSearchTools(await forkSidecar())).toEqual([LOCAL_WEB_SEARCH_TOOL_ID, CLOUD_WEB_SEARCH_TOOL_ID])
+  })
+
+  test("登出 / BYOK:只有本地腿在表里(云腿没有凭证,注入面给的是 enabled:false)", async () => {
+    preferAppEnv(userDataPath)
+
+    expect(modelWebSearchTools(await forkSidecar())).toEqual([LOCAL_WEB_SEARCH_TOOL_ID])
+  })
+
+  // 反例臂 —— 证明上面那两条不是「怎么测都绿」:同一条链在 kill-switch 下两条腿一个都不在表里。
+  test("kill-switch:同一条链下两条腿一个都不在表里(手段测得出已知的坏)", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+
+    expect(modelWebSearchTools(await forkSidecar())).toEqual([])
+  })
+
+  test("kill-switch 关掉之后,下一次 fork 两条腿一起回来", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    expect(modelWebSearchTools(await forkSidecar())).toEqual([])
+
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
+
+    expect(modelWebSearchTools(await forkSidecar())).toEqual([LOCAL_WEB_SEARCH_TOOL_ID, CLOUD_WEB_SEARCH_TOOL_ID])
   })
 })
 
@@ -322,7 +492,10 @@ describe("keyless baseline vs the real login-shell import (#223 Major 3)", () =>
     return script
   }
 
-  test("a shell-exported keyless flag survives the login → logout round trip", async () => {
+  // `#1411`:驱动 force-off 的状态从「登录」换成 kill-switch(登录不再关本地腿),被测的
+  // 「基线必须在真实 shell 导入**之后**截取」这条 Major 3 判据一个字没变 —— 只是换了驱动它的开关。
+  // 顺带钉住新事实:登录/登出这一整圈根本不该动那四个 flag。
+  test("a shell-exported keyless flag survives the kill-switch on → off round trip", async () => {
     // 用户 rc 里 `export OPENCODE_ENABLE_PARALLEL=1`,当前进程 env 里没有它 —— 只有真实导入能带进来。
     process.env.SHELL = fakeLoginShell("login-shell.sh", {
       PATH: "/usr/bin:/bin",
@@ -336,11 +509,17 @@ describe("keyless baseline vs the real login-shell import (#223 Major 3)", () =>
     expect(process.env.OPENCODE_ENABLE_PARALLEL).toBe("1")
     expect(webSearchToolSnapshot(await forkSidecar())).toEqual(["websearch"])
 
+    // ②(`#1411`)登录/登出整圈不动这四个 flag —— 本地腿与账户状态解耦。
     applyAuthEnvLikeLogin()
+    expect((await forkSidecar()).OPENCODE_ENABLE_PARALLEL).toBe("1")
+    applyAuthEnvLikeLogout()
+    expect((await forkSidecar()).OPENCODE_ENABLE_PARALLEL).toBe("1")
+
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     expect(keylessFlagsOf(await forkSidecar())).toEqual(allFlagsOff)
 
-    applyAuthEnvLikeLogout()
-    // ② 登出 respawn 还原的必须是用户真值,而不是「探测之前的空基线」。
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
+    // ③ kill-switch 关掉后 respawn 还原的必须是用户真值,而不是「探测之前的空基线」。
     const env = await forkSidecar()
     expect(env.OPENCODE_ENABLE_PARALLEL).toBe("1")
     expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
@@ -358,10 +537,14 @@ describe("keyless baseline vs the real login-shell import (#223 Major 3)", () =>
     preferAppEnv(userDataPath)
     expect(process.env.OPENCODE_ENABLE_PARALLEL).toBe("1")
 
+    // `#1411`:同上 —— 登录不再 force-off,能 force-off 的只有 kill-switch。
     applyAuthEnvLikeLogin()
+    expect((await forkSidecar()).OPENCODE_ENABLE_PARALLEL).toBe("1")
+
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     expect(keylessFlagsOf(await forkSidecar())).toEqual(allFlagsOff)
 
-    applyAuthEnvLikeLogout()
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
     expect((await forkSidecar()).OPENCODE_ENABLE_PARALLEL).toBe("1")
   })
 })
