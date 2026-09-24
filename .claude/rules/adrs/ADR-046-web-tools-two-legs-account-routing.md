@@ -3,6 +3,7 @@ id: ADR-046
 title: web 工具两条腿都活着 —— 账户信号只决定云腿在不在,不决定本地腿在不在;额度只由 account 的逐次 preauth 在调用那一刻回答
 status: accepted
 date: 2026-09-23
+amended: 2026-09-24
 supersedes: ADR-009
 related: [ADR-002, ADR-015, ADR-029, ADR-035]
 ---
@@ -83,10 +84,25 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 - 402 已经是响亮的:body 带稳定 `code`,经云 MCP 薄壳原样以 `isError: true` 到达模型。
   **不得为它新造翻译层。**
 
-### D3 kill-switch:语义是关掉两侧的 web search,并如实登记它今天的连带面
+### D3 kill-switch:语义是关掉**我们自己提供的**两条搜网腿,并如实登记它今天的连带面
 
-- `ALPHA_WEBSEARCH_DISABLE=1` 之后,**本地与云两侧都不得有活的 web search 执行路径**。
+- `ALPHA_WEBSEARCH_DISABLE=1` 之后,**我们自己提供的两条搜网腿(本地 `websearch` + 云
+  `cloud_cloud_web_search`)都不得有活的执行路径**;用户自带的第三方 web-search MCP 按工具名
+  **尽力拦截、不是保证**(D6)。**「模型改用别的工具自己去打搜索引擎」不在这道开关的辖区内。**
   本 ADR 只撤掉 `platformPays` 对本地腿的那一半,kill-switch 半场逐字保留。
+- **就地修订 · 2026-09-24(`#1448`,owner 裁决;零行为改动)**:上一条原文写的是
+  「本地与云**两侧都不得有活的 web search 执行路径**」,**那句话写宽了**,上面是收窄后的实话。
+  owner 原话:「我的需求一直是本地云端的搜网功能都需要可用。还有就是如果有闸门也只关注我们
+  自己提供的搜网功能。」三条理由:①这个开关出自 [[ADR-009]] 决策 A 第 4 条,原文就叫
+  **「逃生开关」**(`ADR-009-websearch-default.md:54`)—— 运维应急闸,不是产品能力,
+  默认关闭,从未被当成功能交付;②**「什么算搜索引擎」判别不了** —— 按工具名的天花板 D6 末段
+  已登记,按目的地只会更糟(域名清单永远补不完,正是「手写别人文法的替身」那类错);
+  ③用户自带的第三方搜网工具归用户自己管(D6)。**判决口径本身就只看工具身份**:
+  `webSearchToolDenial`(`packages/ext/src/cloud-websearch-kill.ts:274-288`)第一句是
+  `if (!isWebSearchToolId(tool)) return undefined`,入参里没有任何目的地轴。
+  `#1433` 的实测形状(kill-switch 态中性驱动句下模型改用 `webfetch` 打 duckduckgo / bing、
+  各拿回约 12 KB 结果页;换成显式驱动句则 0 次 `tool_calls`)与证据坐标记在方案基线
+  §三〈S3 的作用面〉。**本次修订只改措辞:零生产代码改动,判据一条未动。**
 - **如实登记(已知不修)**:整个 cloud MCP server 被关掉时,消失的是该 server 上的**每一个**
   工具,不只 web search —— 引擎的 `ConfigMCPV1.Remote` 只有整 server 的 `enabled`
   (`packages/opencode/src/mcp/index.ts:409` 对 `enabled:false` 直接返回 `DISABLED_RESULT`)。
@@ -187,7 +203,7 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 | 登出 / BYOK | `websearch` | 本地(`#1415` 已落地) | 可用(D6) | 不可用,归 `#1412` |
 | 登录 + 有额度 | `websearch` + `cloud_cloud_web_search` | 模型选;云腿 preauth 放行 | 可用(D6,`#1411` 起) | 同上 |
 | 登录 + 无额度 | 同上 | 云腿 402(响亮、带 `code`),本地腿**在场且可用** | 同上 | 同上 |
-| kill-switch | 两个都没有 | 都没有,文案要说 kill-switch 的实话 | 关(尽力拦截,见 D6) | 同上 |
+| kill-switch | 两个都没有 | **我们的两条腿都没有**,文案要说 kill-switch 的实话;开关管不到「模型改用别的工具自己去打搜索引擎」(D3) | 关(尽力拦截,见 D6) | 同上 |
 
 实现不得越过的不变量:
 
@@ -237,3 +253,4 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 `#1411`(CODE-1 选路)、`#1431`(CODE-2 系统提示一致性)、`#1432`(CODE-3 本 ADR)、
 `#1433`(VERIFY-1 四种账户态的 runtime 证据);父需求 `#1414`。
 `#1443` 补登记 D1 的第二处落点(D6,第三方 web-search MCP),零行为改动。
+`#1448` 按 owner 2026-09-24 裁决收窄 D3 的作用面(逃生开关只管我们自己提供的两条搜网腿),零行为改动。

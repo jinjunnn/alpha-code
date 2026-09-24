@@ -4,7 +4,7 @@ kind: design
 status: proposed
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-09-23
+last_reviewed: 2026-09-24
 review_after: 2026-12-23
 ---
 
@@ -135,7 +135,7 @@ L3(承重层)`billableHandlerFactory` 的产物第一句核对 `BILLABLE_ROUTES[
 | 登出 / BYOK | `websearch` | 本地(`#1415` 之后可用) | **不可用**,归 `#1412` |
 | 登录 + 有额度 | `websearch` + `cloud_cloud_web_search` | 模型选;云腿 preauth 放行 | **不可用**,归 `#1412` 或 §八的裁决 |
 | 登录 + 无额度 | 同上 | 云腿 402(响亮、带 code),本地腿**在场且可用** | 同上 |
-| kill-switch | 两个都没有 | 都没有,文案说实话 | 同上 |
+| kill-switch | 两个都没有 | **我们的两条腿都没有**,文案说 kill-switch 的实话;这道开关管不到「模型改用别的工具自己去打搜索引擎」(§三〈S3 的作用面〉) | 同上 |
 
 ### 被否决的替代
 
@@ -181,7 +181,7 @@ L3(承重层)`billableHandlerFactory` 的产物第一句核对 `BILLABLE_ROUTES[
 | --- | --- | --- | --- |
 | S1 | 计费绕过 —— 有人不付钱用掉平台的云能力 | **任何走 `BILLABLE_ROUTES` 的入口,在任何副作用之前必须经过 `accountPreauth`**;本票不得放宽 L1/L2/L3 任何一层 | 已有:`gateway/test/billable-routes.test.ts:182-243`(全量派生)。子票不得修改它的断言 |
 | S2 | 出网面扩大 —— 放行集合长出一个「模型能指定」的成员 | **进静态半场的每一行必须指得回一个源码常量坐标**;`#1415` 必须消费 `mcp-websearch.ts:147-150` 那两个常量**本体**,不得抄字面量 | `network-egress-registry.ts` 每行的 `source` 字段;`#1415` 的 AC |
-| S3 | kill-switch 被削弱 | **`ALPHA_WEBSEARCH_DISABLE=1` 之后,本地与云两侧都不得有活的 web search 执行路径**。本票只删 `platformPays` 那一半,kill-switch 半场逐字保留 | `cloud-web-search.test.ts` 的 `killSwitch: true` 臂 + `ext/src/cloud-websearch-kill.test.ts` 必须全绿且**断言不改** |
+| S3 | kill-switch 被削弱 | **`ALPHA_WEBSEARCH_DISABLE=1` 之后,我们自己提供的两条搜网腿(本地 `websearch` + 云 `cloud_cloud_web_search`)都不得有活的执行路径**;第三方 web-search MCP 按工具名**尽力拦截、不是保证**(ADR-046 D6)。**辖区到此为止 —— 它不负责「模型改用别的工具自己去打搜索引擎」,见下方〈S3 的作用面〉**。本票只删 `platformPays` 那一半,kill-switch 半场逐字保留 | `cloud-web-search.test.ts` 的 `killSwitch: true` 臂 + `ext/src/cloud-websearch-kill.test.ts` 必须全绿且**断言不改** |
 | S4 | 第二份权威悄悄长出来 —— 系统提示说「有」而真闸说「没有」 | **「本地 web search 此刻在不在模型工具表里」与「系统提示里那一行」必须在四种账户态下逐一相符** | 新增一条四格测试,驱动 `buildAlphaCapabilities`(`alpha-identity.ts:17-26`)与真闸的同一组输入 |
 | S5 | 文案把模型引向走不通的路 | **任何「此路不通」的工具文案,只能指向一条在同一时刻确实在模型工具表里的替代;指不出就说「没有,直接回答并说明」** | `LOCAL_WEBSEARCH_DENIED_MESSAGE` 的内容断言 |
 | S6 | (条件性,仅当 §八裁决新增云 web fetch)SSRF / 我方基础设施变成对外可达的抓取代理 | 若新增,`webFetch` **必须**挂在封印付费路由上(否则它是一个免费的对外抓取代理);`isBlockedHost` 的每一类都要有一个**已知该被拦**的正样本;`lib/web.ts:4-5` 自陈防不了 DNS rebinding,这条要如实登记为残留 | `gateway/test/web.test.ts` + 新路由进 `BILLABLE_ROUTES` 后由 S1 那条派生测试自动接管 |
@@ -190,6 +190,65 @@ L3(承重层)`billableHandlerFactory` 的产物第一句核对 `BILLABLE_ROUTES[
 「一开关一具名能力」直接冲突,但它是**既有缺陷**,不是本方案引入的;本票**不修**,只保证不扩大,
 并由 §六的新 ADR 如实登记。理由:修它要改 `ConfigMCPV1.Remote` 的能力面或云侧注册期过滤
 (= 否决 B 的同一笔账),那是独立范围。
+
+### S3 的作用面:这道逃生开关只管我们自己提供的搜网腿(owner 裁决 2026-09-24,`#1448` 收窄)
+
+S3 上一版写的是「**本地与云两侧都不得有活的 web search 执行路径**」。**那句话比这个开关的用途宽。**
+`#1433` 的实测打到的正是这句写宽了的话,不是闸门坏了。owner 的裁决是:**如果有闸门,也只关注
+我们自己提供的搜网功能** —— 原话「我的需求一直是本地云端的搜网功能都需要可用。还有就是如果有
+闸门也只关注我们自己提供的搜网功能」。本节按此收窄,**零行为改动**:没有改任何一行生产代码,
+也没有动任何一条判据。
+
+**它的来历决定了它的辖区。** `ALPHA_WEBSEARCH_DISABLE` 出自 ADR-009 决策 A 第 4 条,原文就叫
+**「逃生开关」**(`.claude/rules/adrs/ADR-009-websearch-default.md:54`)—— 运维用的应急闸,
+默认关闭,从未被当成产品能力交付过;把它读成「关掉一切搜网能力」,等于给一个应急闸派了一份
+它从来没有承担过的职责。三条理由,都不是偏好:
+
+1. **它是应急闸,不是产品能力**(见上)。
+2. **「什么算搜索引擎」判别不了。** 本仓已经为这件事付过一次钱:按**工具名**识别第三方 web search
+   就做不到穷尽 —— `isWebSearchToolId`(`packages/ext/src/cloud-websearch-kill.ts:208-218`)的
+   注释逐条记着 `#223` R6 实跑出的漏法,且经 `McpCatalog.sanitize` 抹平的非 ASCII 名**任何**按名字的
+   分类器都看不见。改成按**目的地**识别只会更糟:那是一份永远补不完的域名清单,正是 `CLAUDE.md`
+   《勘破先于闸门设计》点名的「手写一个别人文法的替身」那一类错。
+3. **用户自带的第三方搜网工具归用户自己管**(ADR-046 D6,`#1443` 已合)—— 同一条裁决线。
+
+**判决口径本身就写着这件事:它看的是工具身份,从来不是目的地。** `webSearchToolDenial`
+(`packages/ext/src/cloud-websearch-kill.ts:274-288`)第一句是
+`if (!isWebSearchToolId(tool)) return undefined`,入参只有工具名、env、server 归属三样,
+**没有 URL、没有 host、没有任何目的地轴**;注入面那层 permission deny 同样只点名 `websearch` 与
+`cloud_cloud_web_search` 两个 id。一道以工具身份为判据的闸,结构上管不到「模型换一个工具去打
+搜索引擎」。
+
+#### `#1433` 实测:它拦住了自己的两条腿,没拦住模型自己想出来的路
+
+两臂都要入库,**因为结论正是「行为由驱动句决定」**,只留一臂就是在骗自己:
+
+| 驱动句 | kill-switch 态下模型拿到的工具表 | 模型发了什么 | 结果 |
+| --- | --- | --- | --- |
+| 中性(用户实际会说的那句) | 7 个工具,**`websearch` 不在其中**(开关生效),`webfetch` 在 | **5 次 `webfetch`**,头两次是 `duckduckgo.com/html/?q=…` 与 `www.bing.com/search?q=…` | 两次都 `completed`,各拿回 **12,323 B** 与 **12,295 B** 结果页;随后照结果页里的链接抓了三篇文章(29,352 / 14,944 / 51,252 B)并正常作答 |
+| 显式(「如果你没有 web search 工具就明说」) | 同上 | **0 个 `tool_calls`**,全程 1 次模型调用 | 明确回答 *"I don't have a web search tool available…"* |
+
+**生产出网策略代理对那两个目的地是拒的**:独立一臂把同一批目的地过真代理,`duckduckgo.com:443`
+与 `www.bing.com:443` 都是 `deny` / `reason=unregistered` / **403**;同一臂的对照是
+`mcp.exa.ai:443` 与 `search.parallel.ai:443` allow/200、刻意未登记的 `example.com:443` 403 ——
+**先证明这个手段测得出已知的坏,再用它判未知的好**。但**模型那一臂并不跑在这个代理后面**
+(证据自陈「出网策略代理」不在该轮测量面内),两臂不是同一次运行,不要把它们读成一次端到端。
+
+**而 `#1412`(PR `#1426`,2026-09-23 已合)给未登记目的地接上了「问用户」**:
+`packages/ui-mac/src/main/network-egress-proxy.ts:214-236` —— 未登记 ⇒ `requestGrant`,
+只有 `granted` 才 `openTunnel`,其余一律 403。⇒ 打包版里的真实形状是:开关关掉 `websearch`
+⇒ `webfetch` 仍在工具表里 ⇒ 模型用它打搜索引擎 ⇒ 弹出批准框 ⇒ 用户点「允许」就通。
+
+**结论:逃生开关拦得住我们自己的两条腿,拦不住模型自己想出来的路;而后者按本节收窄后的作用面
+本就不在它的辖区内。** `webfetch` 的批准面归 `#1412`(已合,owner 已接受其残留),本票不碰。
+
+**本节明确不做三件事**:不收窄 `webfetch` 的批准面;不实现任何「搜索引擎域名识别」;不改任何
+运行时行为。
+
+**证据坐标**:`#1433` 的取证结果 `model-cells-neutral.json`、`model-cells-explicit-killswitch.json`、
+`egress-proxy.json`,目录 `docs/verification/2026-09-24-1433-four-account-states-websearch/results/`。
+写作本节时这三份还在 `#1433` 自己的 lane 里、尚未入库,所以这里只写纯文本文件名而**不建相对链接**
+—— 建了就是一条断链,docs 闸会真红。
 
 ## 四、AC 重写与咽喉点指名
 
