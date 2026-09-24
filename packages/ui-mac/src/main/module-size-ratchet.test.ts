@@ -15,9 +15,14 @@
 //     而这一层的总量一点没少 —— 那正是本票要治的形态,所以它必须有自己的反向用例。
 //   · **登记簿坏了必须红**,不能静默绿:一个读不出登记簿于是什么都不报的实现,在退出码上与
 //     真绿一模一样。
+//   · **「登记做了一半」必须红并点名是第几行**(`#1435`):`#1381` 抬了 tree 行、理由里逐字写了
+//     `ext-install-planner.ts` 的增量,却没改那个文件自己那一行 —— 主干自身超基线三个月,每条
+//     分支都背一条不属于自己的 ⚠。这条判据也必须带控制组:抬 tree 行**本身**不许红,否则每次
+//     合法抬基线都会被拦,而那是恒红门的另一种写法。
 //
 // 删掉本文件会失去什么:棘轮退回零判据 —— 基线读错、目录合计把测试文件也数进去、阈值那一半
-// 对「本次没改过的老大文件」乱报、登记簿被清空后静默通过,都不会有任何东西变红。
+// 对「本次没改过的老大文件」乱报、登记簿被清空后静默通过、抬 tree 行时漏改树下那条 file 行
+// (`#1381` 形态),都不会有任何东西变红。
 
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -72,7 +77,9 @@ const UNTOUCHED_BIG = "packages/ui-mac/src/renderer/legacy-big.ts"
 /** 本分支新增的大文件:阈值那一半必须点它的名。 */
 const NEW_BIG = "packages/ui-mac/src/renderer/brand-new-big.ts"
 
-function manifest(rows: Array<[string, string, string, string]>): string {
+type ManifestRows = Array<[string, string, string, string]>
+
+function manifest(rows: ManifestRows): string {
   return `# 夹具登记簿\n${rows.map((r) => r.join("\t")).join("\n")}\n`
 }
 
@@ -85,8 +92,13 @@ const DEFAULT_ROWS: Array<[string, string, string, string]> = [
 /**
  * 夹具形状:origin 上一个 `alpha` 分支作为比较基准,work 里从它切出 `feature`。
  * 阈值那一半要的正是「本分支相对 origin/alpha 改了哪些文件」,所以基准必须真的存在。
+ *
+ * `baseRows` = **基准上那一份登记簿**(`#1435` 的交叉判据拿它和 work 里的比,才知道这一次有没有
+ * 抬高某个 tree 行)。默认与 work 那份逐字相同 —— 于是每条老用例里这句话都真的被问了一遍
+ * (答案是「没抬」),而不是因为基准上没有登记簿而让整条判据静默跳过。传 `null` = 基准上没有
+ * 登记簿,用来验「取不到基准时脚本明说没比对」。
  */
-function fixture(rows: Array<[string, string, string, string]> = DEFAULT_ROWS) {
+function fixture(rows: ManifestRows = DEFAULT_ROWS, baseRows: ManifestRows | null = rows) {
   const origin = mkdtempSync(join(tmpdir(), "alpha-modsize-origin-"))
   git(origin, ["init", "-q", "-b", "alpha"])
   write(origin, {
@@ -95,6 +107,7 @@ function fixture(rows: Array<[string, string, string, string]> = DEFAULT_ROWS) {
     [TREE_TEST_FILE]: lines(1200, "t"),
     [UNTOUCHED_BIG]: lines(900, "legacy"),
   })
+  if (baseRows) write(origin, { [MANIFEST_REL]: manifest(baseRows) })
   git(origin, ["add", "-A"])
   git(origin, ["commit", "-q", "-m", "seed"])
 
@@ -229,6 +242,67 @@ describe("#1289 登记簿坏了必须红,不许静默绿", () => {
     const r = run(fixture([["5", "directory", MAIN_TREE, "夹具"], ...DEFAULT_ROWS.slice(1)]).work)
     expect(r.exitCode, `未知 kind 被静默放行:\n${r.output}`).toBe(1)
     expect(r.output).toContain("kind 只能是 file 或 tree")
+  })
+})
+
+describe("#1435 交叉判据:抬 tree 行的那一次,树下的 file 行必须跟着改", () => {
+  // 夹具登记簿的物理行号:第 1 行是注释,第 2 / 3 / 4 行依次是 A / B / tree —— 「点名是哪一行」
+  // 断的就是这个数,它必须能直接 `sed -n '<n>p'` 对上,否则下一个人还得自己去数 TSV。
+  const ROW_A = 2
+  const ROW_TREE = 4
+  const GROWN_A = PINNED_A_LINES + 3
+  const RAISED_TREE = TREE_LINES + 3
+
+  /** 登记做了一半:tree 行抬到了实测值,而 A 那一行一个字没动 —— `#1381` 的形状。 */
+  const HALF_DONE: ManifestRows = [
+    [String(PINNED_A_LINES), "file", PINNED_A, "夹具:这一行**没**跟着改 —— 本条用例要抓的就是它"],
+    [String(PINNED_B_LINES), "file", PINNED_B, "夹具:被点名的单文件之二"],
+    [String(RAISED_TREE), "tree", MAIN_TREE, "夹具:目录合计 —— 这一次被抬高了"],
+  ]
+
+  test("AC1 反向用例:tree 行抬了、树下那条 file 行的基线一个字没动 ⇒ exit 1 并点名是第几行", () => {
+    const { work } = fixture(HALF_DONE, DEFAULT_ROWS)
+    write(work, { [PINNED_A]: lines(GROWN_A, "a") })
+    const r = run(work)
+    expect(r.exitCode, `登记只做了一半却没红:\n${r.output}`).toBe(1)
+    expect(r.output).toContain("登记只做了一半")
+    // 只断退出码不够:漏的是**哪一行**才是这条判据的全部价值(`#1381` 漏了三个月正是因为没人点名)。
+    expect(r.output).toContain(
+      `第 ${ROW_A} 行(${PINNED_A}):实测 ${GROWN_A} 行 > 这一行的基线 ${PINNED_A_LINES}(+3)`,
+    )
+    expect(r.output).toContain(`第 ${ROW_TREE} 行(${MAIN_TREE}:${TREE_LINES} → ${RAISED_TREE})`)
+  })
+
+  test("AC2 控制组:同一次把那一行也改成实测值 ⇒ 绿(否则这条判据就是「抬 tree 即红」)", () => {
+    const followed: ManifestRows = [
+      [String(GROWN_A), "file", PINNED_A, "夹具:这一行跟着改到了实测值 —— 登记做完整了"],
+      ...HALF_DONE.slice(1),
+    ]
+    const { work } = fixture(followed, DEFAULT_ROWS)
+    write(work, { [PINNED_A]: lines(GROWN_A, "a") })
+    const r = run(work)
+    expect(r.exitCode, `登记做完整了却还在红:\n${r.output}`).toBe(0)
+    expect(r.output).not.toContain("登记只做了一半")
+  })
+
+  test("控制组:tree 行抬了,而树下每条 file 行都还在自己的基线内 ⇒ 绿(那些行长在别的文件上)", () => {
+    const grownByNewLeaf: ManifestRows = [
+      ...DEFAULT_ROWS.slice(0, 2),
+      [String(TREE_LINES + 4), "tree", MAIN_TREE, "夹具:目录合计 —— 抬高的是一个新叶子文件贡献的"],
+    ]
+    const { work } = fixture(grownByNewLeaf, DEFAULT_ROWS)
+    write(work, { "packages/ui-mac/src/main/brand-new-leaf.ts": lines(4, "n") })
+    const r = run(work)
+    expect(r.exitCode, `合法抬基线被拦住了 —— 那是恒红门的另一种写法:\n${r.output}`).toBe(0)
+    expect(r.output).not.toContain("登记只做了一半")
+  })
+
+  test("基准上取不到登记簿 ⇒ 明说「本次没比对」,不静默当绿", () => {
+    // 否则这条判据可以被「基准取不到」悄悄关掉,而退出码与真绿一模一样 —— 与 ⑪ 同一条纪律。
+    const { work } = fixture(DEFAULT_ROWS, null)
+    const r = run(work)
+    expect(r.exitCode, `基准缺登记簿不该让别的判据变红:\n${r.output}`).toBe(0)
+    expect(r.output, "取不到基准却什么都不说 —— 那是静默跳过").toContain("没比对")
   })
 })
 
