@@ -1,0 +1,20 @@
+
+D  #1445 票面的额度提示(#1433 实抓,246 字)
+  特征: {"jsonrpc":"result","isError":"(absent)","structuredContent":"(absent)","resultMeta":"(absent)","contentMeta":"(absent)","textLen":246,"urlsInText":2,"titleLines":0,"urlLines":0,"jsonText":false}
+  packages/opencode : 成功 → "You've hit Exa's free MCP rate limit. To continue using with"
+  packages/core     : 成功 → "You've hit Exa's free MCP rate limit. To continue using with"
+
+Z  Exa 零命中渲染(vendor 源码逐字)
+  特征: {"jsonrpc":"result","isError":"(absent)","structuredContent":"(absent)","resultMeta":"(absent)","contentMeta":"(absent)","textLen":54,"urlsInText":0,"titleLines":0,"urlLines":0,"jsonText":false}
+  packages/opencode : 成功 → "No search results found. Please try a different query."
+  packages/core     : 成功 → "No search results found. Please try a different query."
+
+A  今天 nokey 真搜索(Exa,原始 SSE body)
+  特征: {"jsonrpc":"result","isError":"(absent)","structuredContent":"(absent)","resultMeta":"(absent)","contentMeta":"{\"searchTime\":910.2}","textLen":5310,"urlsInText":3,"titleLines":3,"urlLines":3,"jsonText":false}
+  packages/opencode : 成功 → "Title: Array.prototype.flat() - JavaScript - MDN Web Docs\nUR"
+  packages/core     : 成功 → "Title: Array.prototype.flat() - JavaScript - MDN Web Docs\nUR"
+
+P  今天 keyless 真搜索(Parallel,原始 JSON body)
+  特征: {"jsonrpc":"result","isError":false,"structuredContent":"present","resultMeta":"{\"parallel/usage\":[{\"name\":\"sku_search\",\"count\":1,\"cost_usd\"","contentMeta":"(absent)","textLen":19341,"urlsInText":13,"titleLines":0,"urlLines":0,"jsonText":true}
+  packages/opencode : 成功 → "{\n  \"search_id\": \"search_7726adb5942b8057e99f7a31b20548d0\",\n"
+  packages/core     : 成功 → "{\n  \"search_id\": \"search_7726adb5942b8057e99f7a31b20548d0\",\n"

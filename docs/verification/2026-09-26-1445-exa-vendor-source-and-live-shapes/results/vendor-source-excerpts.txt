@@ -1,0 +1,52 @@
+
+##############################################################################
+# exa-mcp-server 3.1.9: 2 个构建文件 —— package/.smithery/shttp/index.cjs, package/.smithery/stdio/index.cjs
+##############################################################################
+
+[package/.smithery/shttp/index.cjs] ① 提示变量 = 'rse';返回支带 isError:true = True
+   文本: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+   返回支: RL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY`;function Ka(a,e,n){return Le.isAxiosError(a)&&a.response?.status===429&&!e?{content:[{type:"text",text:rse}],isError:!0}:null}function TC(a,e){a.tool("web_sea
+   ② 成功渲染:`Title: ${` 模板 0 处;`/context` 端点 1 处;`text: *.data.context` 整段直出 1 处;`_meta:{searchTime` 0 处
+   ③ 零命中文案出现 2 处;首处上下文(是否带 isError): False — )return u.log("Warning: Empty or invalid response from Exa API"),de("web_search_complete"),{content:[{type:"text",text:"No search results found. Please try a different query."}]};u.log(`Context received with ${v.data.con
+
+[package/.smithery/stdio/index.cjs] ① 提示变量 = 'PV';返回支带 isError:true = True
+   文本: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+   返回支: RL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY`;function At(t,e,r){return Ie.isAxiosError(t)&&t.response?.status===429&&!e?{content:[{type:"text",text:PV}],isError:!0}:null}function nP(t,e){t.tool("web_sear
+   ② 成功渲染:`Title: ${` 模板 0 处;`/context` 端点 1 处;`text: *.data.context` 整段直出 1 处;`_meta:{searchTime` 0 处
+   ③ 零命中文案出现 2 处;首处上下文(是否带 isError): False — )return d.log("Warning: Empty or invalid response from Exa API"),ae("web_search_complete"),{content:[{type:"text",text:"No search results found. Please try a different query."}]};d.log(`Context received with ${b.data.con
+
+##############################################################################
+# exa-mcp-server 3.2.1: 2 个构建文件 —— package/smithery/shttp/index.cjs, package/smithery/stdio/index.cjs
+##############################################################################
+
+[package/smithery/shttp/index.cjs] ① 提示变量 = 'qpe';返回支带 isError:true = True
+   文本: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+   返回支: xa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY`;function Dpe(a,e,i){return a instanceof za&&a.statusCode===429&&!e?{content:[{type:"text",text:qpe}],isError:!0}:null}async function oi(a,e=2){let i;f
+   ② 成功渲染:`Title: ${` 模板 5 处;`/context` 端点 1 处;`text: *.data.context` 整段直出 0 处;`_meta:{searchTime` 8 处
+   ③ 零命中文案出现 2 处;首处上下文(是否带 isError): False — )return c.log("Warning: Empty or invalid response from Exa API"),de("web_search_complete"),{content:[{type:"text",text:"No search results found. Please try a different query."}]};c.log(`Received ${b.results.length} resul
+
+[package/smithery/stdio/index.cjs] ① 提示变量 = 'sK';返回支带 isError:true = True
+   文本: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+   返回支: Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY`;function oK(t,e,r){return t instanceof gt&&t.statusCode===429&&!e?{content:[{type:"text",text:sK}],isError:!0}:null}async function Mt(t,e=2){let r;fo
+   ② 成功渲染:`Title: ${` 模板 5 处;`/context` 端点 1 处;`text: *.data.context` 整段直出 0 处;`_meta:{searchTime` 8 处
+   ③ 零命中文案出现 2 处;首处上下文(是否带 isError): False — )return c.log("Warning: Empty or invalid response from Exa API"),pe("web_search_complete"),{content:[{type:"text",text:"No search results found. Please try a different query."}]};c.log(`Received ${_.results.length} resul
+
+##############################################################################
+# exa-mcp-server 3.4.0: 1 个构建文件 —— package/dist/stdio.cjs
+##############################################################################
+
+[package/dist/stdio.cjs] ① 提示变量 = 'FREE_MCP_RATE_LIMIT_MESSAGE';返回支带 isError:true = True
+   文本: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at ${EXA_API_KEYS_URL} , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+   返回支:  error2.statusCode === 429; const isUsingFreeMcp = !userProvidedApiKey; if (isRateLimited && isUsingFreeMcp) { return { content: [{ type: "text", text: FREE_MCP_RATE_LIMIT_MESSAGE }], isError: true 
+   ② 成功渲染:`Title: ${` 模板 5 处;`/context` 端点 0 处;`text: *.data.context` 整段直出 0 处;`_meta:{searchTime` 8 处
+   ③ 零命中文案出现 2 处;首处上下文(是否带 isError): False — plete"); return { content: [ { type: "text", text: "No search results found. Please try a different query." } ] }; 
+
+##############################################################################
+# exa-mcp-server 3.4.1: 1 个构建文件 —— package/dist/stdio.cjs
+##############################################################################
+
+[package/dist/stdio.cjs] ① 提示变量 = 'FREE_MCP_RATE_LIMIT_MESSAGE';返回支带 isError:true = True
+   文本: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at ${EXA_API_KEYS_URL} , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+   返回支:  error2.statusCode === 429; const isUsingFreeMcp = !userProvidedApiKey; if (isRateLimited && isUsingFreeMcp) { return { content: [{ type: "text", text: FREE_MCP_RATE_LIMIT_MESSAGE }], isError: true 
+   ② 成功渲染:`Title: ${` 模板 5 处;`/context` 端点 0 处;`text: *.data.context` 整段直出 0 处;`_meta:{searchTime` 8 处
+   ③ 零命中文案出现 2 处;首处上下文(是否带 isError): False — plete"); return { content: [ { type: "text", text: "No search results found. Please try a different query." } ] }; 
