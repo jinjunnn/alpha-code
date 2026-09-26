@@ -28,9 +28,19 @@ import { join, resolve } from "node:path"
 import { buildFenceAddon } from "../../scripts/build-fence-addon"
 import { trialCompileProfile } from "./process-fence-compile"
 import { planProcessFence } from "./process-fence-plan"
-// `#1337`:真引擎在围栏下的出网只剩策略代理那一扇门 —— 这里起**生产的**代理(默认接线 = 注册表)并按生产
-// sidecarEgressProxyEnv 给引擎 env,与出货形态同一条路;判据仍只看文件轴(网络轴在 network-egress-fence.test.ts)。
-import { startEgressPolicyProxy, type EgressProxyHandle } from "./network-egress-proxy"
+// `#1337`:真引擎在围栏下的出网只剩策略代理那一扇门 —— 这里起**生产的**代理并按生产 sidecarEgressProxyEnv 给引擎 env,
+// 与出货形态同一条路;判据仍只看文件轴(网络轴在 network-egress-fence.test.ts)。
+// `#1454`:代理的授权在这里**注入为全拒**(authorize=false、requestGrant=not-asked),不接注册表。这不丢覆盖面:
+// registry.npmjs.org 作为已登记目的地登记在 network-egress-registry.ts(`https("registry.npmjs.org", …)` 那行),判据在
+// network-egress-registry.test.ts(`isEgressAuthorized("registry.npmjs.org", 443)`);「默认 authorize 就是注册表」的判据在
+// network-egress-proxy.test.ts(以 github.com:443 为样本)。本文件失去的只是「引擎那次 npm 安装真的穿过代理打到真 registry」
+// 这个**从来不是断言**的副作用 —— 而它正是让这道闸又慢又依赖本机网络的东西;全拒不是放宽。引擎一起来就会为 config 里
+// 声明的 plugin 跑一次 `@opencode-ai/plugin` 的 npm 安装(opencode config.ts 里 forkDetach 的 Npm.install,Plugin.waitForDependencies
+// 让**第一个请求**等它);注册表接线把它放行到真 registry.npmjs.org(单跑实测:health 之后 30 条 CONNECT),于是 GET /project/current
+// 在本机网络上一挂就挂满 api() 的 AbortSignal.timeout(60_000) —— 全量门里 8 个红样本全落 60–62 s,红的是这条,不是 bun 的 --timeout。
+// 全拒让那次安装当场 403 收场(make-fetch-happen 对 EINVALIDRESPONSE 不重试),同一文件 25–68 s → ~8 s,且不再依赖本机能不能出网。
+// api() 超时时把「哪条调用、等了多久、代理记录、引擎日志尾」一起抛出 —— 一句裸 TimeoutError 会让下一个人再去查一遍不存在的缺陷。
+import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 import { sidecarEgressProxyEnv } from "./sidecar-env"
 
 const describeDarwin = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") ? describe : describe.skip
@@ -41,7 +51,7 @@ const extBundle = join(repoRoot, "packages", "ext", "dist", "plugin.js")
 const PASSWORD = "ac1321"
 
 type Arm = "bare" | "fenced"
-type Engine = { proc: ChildProcess; port: number; log: string[] }
+type Engine = { proc: ChildProcess; port: number; log: string[]; bootedAt: number }
 
 describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费方越界 0 落盘;shell 工具照常执行", () => {
   let iso = ""
@@ -54,11 +64,16 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
   let profileFile = ""
   let planLog: string[] = []
   let egressProxy: EgressProxyHandle | undefined
+  const proxyLog: EgressLogRecord[] = []
   const engines: Engine[] = []
   const landed = (dir: string) => readdirSync(dir).sort()
 
   beforeAll(async () => {
-    egressProxy = await startEgressPolicyProxy({ log: () => {} })
+    egressProxy = await startEgressPolicyProxy({
+      log: (r) => void proxyLog.push(r),
+      authorize: () => false,
+      requestGrant: async () => "not-asked",
+    })
     // ① ext bundle:本树的 ext(不是别的 worktree 的),现编。
     const ext = spawnSync(process.execPath, ["run", "build"], { cwd: join(repoRoot, "packages", "ext"), encoding: "utf8", timeout: 120_000 })
     if (ext.status !== 0 || !existsSync(extBundle)) throw new Error(`ext build failed (本次测量作废): ${ext.stderr}`)
@@ -156,7 +171,7 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
     const proc = spawn(process.execPath, args, { cwd: join(userData, "engine-scratch-cwd"), env, stdio: ["ignore", "pipe", "pipe"] })
     proc.stdout?.on("data", (c: Buffer) => log.push(c.toString("utf8")))
     proc.stderr?.on("data", (c: Buffer) => log.push(c.toString("utf8")))
-    const engine = { proc, port, log }
+    const engine = { proc, port, log, bootedAt: 0 }
     engines.push(engine)
     const deadline = Date.now() + 90_000
     while (Date.now() < deadline) {
@@ -164,7 +179,10 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
       const ok = await fetch(`http://127.0.0.1:${port}/global/health`, { headers: auth(), signal: AbortSignal.timeout(2000) })
         .then((r) => r.ok)
         .catch(() => false)
-      if (ok) return engine
+      if (ok) {
+        engine.bootedAt = Date.now()
+        return engine
+      }
       await new Promise((r) => setTimeout(r, 250))
     }
     throw new Error(`engine(${arm}) never became healthy:\n${log.join("").slice(-2000)}`)
@@ -174,7 +192,17 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
   const api = async (engine: Engine, method: string, path: string, body?: unknown) => {
     const url = new URL(`http://127.0.0.1:${engine.port}${path}`)
     url.searchParams.set("directory", ws)
-    const res = await fetch(url, { method, headers: { ...auth(), "x-opencode-directory": ws }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(60_000) })
+    const started = Date.now()
+    let res: Response
+    try {
+      res = await fetch(url, { method, headers: { ...auth(), "x-opencode-directory": ws }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(60_000) })
+    } catch (err) {
+      const e = err as Error
+      throw new Error(
+        `${method} ${path} failed after ${Date.now() - started}ms (${e.name}: ${e.message}); engine healthy ${started - engine.bootedAt}ms before this call\n` +
+          `--- proxy log (${proxyLog.length}) ---\n${proxyLog.map((r) => JSON.stringify(r)).join("\n")}\n--- engine log tail ---\n${engine.log.join("").slice(-3000)}`,
+      )
+    }
     const text = await res.text()
     let json: unknown
     try {
