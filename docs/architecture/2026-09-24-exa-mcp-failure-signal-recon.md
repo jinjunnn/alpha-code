@@ -100,6 +100,11 @@ D 与 C 的文案**不是同一串**。共同前缀到 `… at https://dashboard
 第一行就是 `#1445`:两条腿都把那句提示当搜索结果交给模型。
 第二行是**另一件事**,见文末第 1 条。
 
+> 2026-09-26 补:第二行 `packages/core` 那一格已由 `alpha-code#1449` 收口 —— `packages/core/src/tool/websearch.ts`
+> 现在读 `isError`、非 2xx 走状态映射而不是 `filterStatusOk`,判据在
+> `packages/core/test/alpha-websearch-failure.test.ts`(负载就是本目录的 `results/arms.json`)。
+> 第一行(D 那一种)不变:仍无结构化信号,仍归 `#1445`。
+
 ## 已经是对的那两半
 
 - `packages/opencode/src/tool/mcp-websearch.ts` 对 **B** 与 **C** 都响亮:
@@ -125,5 +130,6 @@ D 与 C 的文案**不是同一串**。共同前缀到 `… at https://dashboard
    **实测**:把今天抓到的 B 臂真实负载(`isError: true` 的 401)喂进去,
    `packages/opencode` 判失败,`packages/core` 判**成功**,并把那句 401 原文当搜索结果交给模型。
    这是同一个「伪成功」类的另一个实例,触发条件与 `#1445` 不同,归属由主 session 定。
+   → 已拆成 `alpha-code#1449` 并收口(见上文 2026-09-26 补记)。
 2. Exa 当前的 `web_search_exa` `inputSchema` 必填 `objective`,而两份生产副本都不发它。
    今天服务端仍宽松接受;哪天不接受了,两条腿会同时坏。
