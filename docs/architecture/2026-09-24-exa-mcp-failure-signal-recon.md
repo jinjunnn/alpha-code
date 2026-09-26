@@ -202,5 +202,7 @@ D 与 C 的文案**不是同一串**。共同前缀到 `… at https://dashboard
 
 ### 两条传输的判据该一致
 
-`packages/core` 那份(`#1449`)收的是 `isError` 与非 2xx;本文结论下 `packages/opencode` 这份不新增任何判据。
-两边一致 = **都只消费契约信号**(HTTP 状态 / JSON-RPC `error` / `isError` / 结构化 `{error}`),谁也不多一条文本判据。
+`packages/core` 那份(`#1449`,已合入 `8f0fc0900`)收了 `isError` / 非 2xx / 结构化 `{error:…}` 三处缺口;本文结论下
+`packages/opencode` 这份不新增任何判据。两边一致 = **都只消费契约信号**(HTTP 状态 / JSON-RPC `error` / `isError` /
+结构化 `{error}`),谁也不多一条文本判据。`#1449` 合入后把上面四种负载重新喂进 `packages/core` 的 `parseResponse`:
+**仍然全判成功**(`results/parsers-now.txt` 逐字节未变)—— 契约信号对这四种负载一条都不在场,这正是本文的结论。
