@@ -145,9 +145,112 @@ export function selectProvider(
   return Number.parseInt(checksum(sessionID) ?? "0", 36) % 2 === 0 ? "exa" : "parallel"
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// `#1449`:这份副本以前**认不出失败**。`McpResult` 不含 `isError`,带 `isError:true` 的响应正常解码、
+// `content[0].text`(Exa 的 401 原文)被当成搜索结果交给模型;出网走 `HttpClient.filterStatusOk`,
+// 非 2xx 全塌成一个不可辨的错误。legacy 那份(`packages/opencode/src/tool/mcp-websearch.ts`)
+// 在 `#489`/`#223` 已经收口,其注释自己写着「两侧都要收口」—— 只收了一侧。下面的失败模型与判定
+// 逐字照那份的形状做(名字在两个包各写一份:core 与 opencode 之间没有可共用的 alpha 依赖边)。
+//
+// 边界(`#1449` 票面):真的零结果**仍走** `NO_RESULTS`(`parseResponse` 回 `undefined`,叶子换成那句),
+// 「没有结果」与「搜索失败」在模型面必须可区分。`#1445` 那种 2xx + `result` + 非 `isError` 的纯文本
+// 提示没有可消费的结构化信号(勘破见 `docs/architecture/2026-09-24-exa-mcp-failure-signal-recon.md`),
+// 不在这里判 —— 按关键字猜是「手写别人文法的替身」。
+// ─────────────────────────────────────────────────────────────────────────────
+const FailureKind = Schema.Literals([
+  "unauthorized",
+  "forbidden",
+  "bad_request",
+  "payment_required",
+  "upstream",
+  "unexpected_status",
+  "provider_error",
+  "invalid_response",
+])
+
+const FAILURE_LABEL: Record<Schema.Schema.Type<typeof FailureKind>, string> = {
+  unauthorized: "unauthorized",
+  forbidden: "forbidden",
+  bad_request: "bad request",
+  payment_required: "payment required (out of budget)",
+  upstream: "upstream failure",
+  unexpected_status: "unexpected HTTP status",
+  provider_error: "the provider reported an error",
+  invalid_response: "invalid response",
+}
+
+/**
+ * 可辨的 web search 失败。`message` 就是模型看到的那句:永远点名类别、有 HTTP 状态/错误码时带上、
+ * 并把上游 body 作为 cause 附上 —— 绝不是一句编造的「没有结果」。
+ * 叶子把它映射成 canonical 的 `ToolFailure`(`ToolRegistry.settle` 只把那个结算成模型可见 error)。
+ */
+export class WebSearchFailure extends Schema.TaggedErrorClass<WebSearchFailure>()("AlphaWebSearchFailure", {
+  kind: FailureKind,
+  detail: Schema.String,
+  status: Schema.optional(Schema.Number),
+  code: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+}) {
+  override get message() {
+    const marks: string[] = []
+    if (this.status !== undefined) marks.push(`HTTP ${this.status}`)
+    if (this.code) marks.push(this.code)
+    const suffix = marks.length === 0 ? "" : ` (${marks.join(" ")})`
+    return `Web search failed: ${FAILURE_LABEL[this.kind]}${suffix}. Cause: ${this.detail}`
+  }
+}
+
+const MAX_DETAIL = 1_000
+
+function detailOf(body: string) {
+  const detail = body.trim().replaceAll(/\s+/g, " ")
+  if (!detail) return "the upstream returned an empty body"
+  return detail.slice(0, MAX_DETAIL)
+}
+
+/** `{ error: … }` 里的结构化错误。平台 gateway 与 Exa/Parallel 都用这个形状。 */
+type StructuredError = { message: string; code?: string }
+
+function structuredErrorOf(value: unknown): StructuredError | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const error = (value as { error?: unknown }).error
+  if (error === undefined || error === null) return undefined
+  if (typeof error === "string") return error.trim() ? { message: error } : undefined
+  if (typeof error !== "object") return { message: String(error) }
+  const record = error as { message?: unknown; code?: unknown }
+  const code = typeof record.code === "string" && record.code ? record.code : undefined
+  const message = typeof record.message === "string" && record.message ? record.message : JSON.stringify(error)
+  return { message, ...(code ? { code } : {}) }
+}
+
+function parseJson(body: string): unknown {
+  try {
+    return JSON.parse(body)
+  } catch {
+    return undefined
+  }
+}
+
+function errorCodeOf(body: string) {
+  return structuredErrorOf(parseJson(body))?.code
+}
+
+function statusKind(status: number): Schema.Schema.Type<typeof FailureKind> {
+  if (status === 401) return "unauthorized"
+  if (status === 403) return "forbidden"
+  if (status === 400) return "bad_request"
+  if (status === 402) return "payment_required"
+  if (status === 502) return "upstream"
+  return "unexpected_status"
+}
+
 const McpResult = Schema.Struct({
   result: Schema.Struct({
     content: Schema.Array(Schema.Struct({ type: Schema.String, text: Schema.String })),
+    // MCP 层的 provider 自报失败。HTTP 可能仍是 200(Exa 的 401 / 未知工具 / 参数不合法都这样回,
+    // 2026-09-24 实读 4/4 臂)—— 不进 schema 就等于永远看不见它。
+    isError: Schema.optional(Schema.Boolean),
+    structuredContent: Schema.optional(Schema.Unknown),
   }),
 })
 const decodeMcpResult = Schema.decodeUnknownEffect(Schema.fromJsonString(McpResult))
@@ -156,7 +259,37 @@ const parsePayload = (payload: string) =>
   Effect.gen(function* () {
     const trimmed = payload.trim()
     if (!trimmed.startsWith("{")) return undefined
-    return (yield* decodeMcpResult(trimmed)).result.content.find((item) => item.text)?.text
+    const data = yield* decodeMcpResult(trimmed).pipe(
+      Effect.mapError(
+        (error) =>
+          new WebSearchFailure({
+            kind: "invalid_response",
+            // 带上原始负载:只回 schema 报错等于把上游的真话丢了,调不动时无从判因。
+            detail: `${detailOf(trimmed)} — ${String(error)}`,
+            cause: error,
+          }),
+      ),
+    )
+    const { content, isError, structuredContent } = data.result
+    const text = content.find((item) => item.text.trim())?.text
+    // provider 自报的失败:不许当成结果串返回,也不许塌成 NO_RESULTS。
+    if (isError)
+      return yield* new WebSearchFailure({
+        kind: "provider_error",
+        detail: text?.trim() ?? "the provider flagged the result as an error without details",
+      })
+    // 200 + 未置 isError,但负载(文本或 structuredContent)本身是结构化 error:同样是 provider
+    // 失败,不许把整个 error JSON 当搜索结果回给模型。
+    const structuredError =
+      structuredErrorOf(structuredContent) ?? structuredErrorOf(text ? parseJson(text) : undefined)
+    if (structuredError)
+      return yield* new WebSearchFailure({
+        kind: "provider_error",
+        detail: structuredError.message,
+        ...(structuredError.code ? { code: structuredError.code } : {}),
+      })
+    // 没有失败信号、也没有文本 ⇒ `undefined`,叶子把它换成 NO_RESULTS。这是 AC3 的「真的零结果」臂。
+    return text
   })
 
 export const parseResponse = Effect.fn("WebSearchTool.parseResponse")(function* (body: string) {
@@ -226,13 +359,25 @@ export const callMcp = <F extends Schema.Struct.Fields>(
       }),
     )
     return yield* Effect.gen(function* () {
-      const response = yield* HttpClient.filterStatusOk(http).execute(request)
-      const body = yield* collectBoundedResponseBody(
+      // `#1449`:`filterStatusOk` 走掉了 —— 它把每个非 2xx 压成同一个 StatusError,状态与 body 都拿不
+      // 回来(Exa 免费额度用尽是 429 + JSON-RPC `error -32000`,2026-09-24 实读 43/43)。非 2xx 的 body
+      // 照样有界读取,再按状态映射成具名失败,与 mcp-websearch.ts 的 `call()` 同一条纪律。
+      const response = yield* http.execute(request)
+      const body = (yield* collectBoundedResponseBody(
         response,
         MAX_RESPONSE_BYTES,
         () => new Error(`${tool} response exceeded ${MAX_RESPONSE_BYTES} bytes`),
-      )
-      return yield* parseResponse(body.toString("utf8"))
+      )).toString("utf8")
+      if (response.status < 200 || response.status >= 300) {
+        const code = errorCodeOf(body)
+        return yield* new WebSearchFailure({
+          kind: statusKind(response.status),
+          status: response.status,
+          detail: detailOf(body),
+          ...(code ? { code } : {}),
+        })
+      }
+      return yield* parseResponse(body)
     }).pipe(
       Effect.timeoutOrElse({
         duration: Duration.seconds(25),
@@ -314,10 +459,13 @@ const layer = Layer.effectDiscard(
             }).pipe(
               Effect.mapError((error) =>
                 // 传输层的主权拒绝必须原话到模型面 —— 塌成 "Unable to search…" 会让模型当成
-                // 瞬时故障反复重试(这条通用消息本身保留给真正的搜索失败)。
+                // 瞬时故障反复重试。`#1449`:可辨的 WebSearchFailure 同样原话到模型面(类别 + HTTP
+                // 状态/错误码 + 上游 body);这条通用消息只剩给超限/超时那类没有上游话可带的失败。
                 error instanceof ToolFailure
                   ? error
-                  : new ToolFailure({ message: `Unable to search the web for ${input.query}` }),
+                  : error instanceof WebSearchFailure
+                    ? new ToolFailure({ message: error.message, error, metadata: { provider, kind: error.kind } })
+                    : new ToolFailure({ message: `Unable to search the web for ${input.query}` }),
               ),
             )
           },
