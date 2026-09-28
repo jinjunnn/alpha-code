@@ -1245,9 +1245,4 @@ export const dict = {
   "help.tabs.persistence": "Dine faner er stadig åbne, når du åbner appen igen.",
   "help.tabs.worktrees":
     "Det nye design understøtter endnu ikke Git Worktrees, men understøttelsen kommer snart. Hvis du foretrækker at fortsætte med det tidligere layout, kan du skifte mellem layoutene under Indstillinger. Bemærk, at det nye layout bliver permanent om nogle få uger.",
-  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
-  "session.draft.pending": "Loading this draft…",
-  "session.draft.missing.title": "This draft is no longer available",
-  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
-  "session.draft.missing.action": "Back to home",
 }

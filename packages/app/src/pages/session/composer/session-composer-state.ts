@@ -1,10 +1,14 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
+import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
 import { useParams } from "@solidjs/router"
+import { showToast } from "@/utils/toast"
 import { useServerSync } from "@/context/server-sync"
+import { useLanguage } from "@/context/language"
+import { usePermission } from "@/context/permission"
+import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { sessionQuestionRequest } from "./session-request-tree"
+import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
 export const todoState = (input: {
   count: number
@@ -23,17 +27,26 @@ const idle = { type: "idle" as const }
 
 export function createSessionComposerController(options?: { closeMs?: number | (() => number) }) {
   const params = useParams()
+  const sdk = useSDK()
   const sync = useSync()
   const serverSync = useServerSync()
+  const language = useLanguage()
+  const permission = usePermission()
 
   const questionRequest = createMemo((): QuestionRequest | undefined => {
     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
   })
 
+  const permissionRequest = createMemo((): PermissionRequest | undefined => {
+    return sessionPermissionRequest(sync().data.session, sync().data.permission, params.id, (item) => {
+      return !permission.autoResponds(item, sdk().directory)
+    })
+  })
+
   const blocked = createMemo(() => {
     const id = params.id
     if (!id) return false
-    return !!questionRequest()
+    return !!permissionRequest() || !!questionRequest()
   })
 
   const todos = createMemo((): Todo[] => {
@@ -50,10 +63,34 @@ export function createSessionComposerController(options?: { closeMs?: number | (
 
   const [store, setStore] = createStore({
     sessionID: params.id,
+    responding: undefined as string | undefined,
     dock: todos().length > 0 && !done() && live(),
     closing: false,
     opening: false,
   })
+
+  const permissionResponding = createMemo(() => {
+    const perm = permissionRequest()
+    if (!perm) return false
+    return store.responding === perm.id
+  })
+
+  const decide = (response: "once" | "always" | "reject") => {
+    const perm = permissionRequest()
+    if (!perm) return
+    if (store.responding === perm.id) return
+
+    setStore("responding", perm.id)
+    sdk()
+      .api.permission.reply({ sessionID: perm.sessionID, requestID: perm.id, reply: response })
+      .catch((err: unknown) => {
+        const description = err instanceof Error ? err.message : String(err)
+        showToast({ title: language.t("common.requestFailed"), description })
+      })
+      .finally(() => {
+        setStore("responding", (id) => (id === perm.id ? undefined : id))
+      })
+  }
 
   let timer: number | undefined
   let raf: number | undefined
@@ -151,6 +188,9 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   return {
     blocked,
     questionRequest,
+    permissionRequest,
+    permissionResponding,
+    decide,
     todos,
     dock: () =>
       store.sessionID === params.id

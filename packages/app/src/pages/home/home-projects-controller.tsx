@@ -73,7 +73,7 @@ export function createHomeProjectsController(home: HomeController) {
       openNewSession: home.project.openProjectNewSession,
       edit: (conn: ServerConnection.Any, project: LocalProject) => {
         void import("@/components/dialog-edit-project-v2").then(({ DialogEditProjectV2 }) => {
-          void dialog.show(() => <DialogEditProjectV2 server={conn} project={project} />, undefined, { host: true })
+          void dialog.show(() => <DialogEditProjectV2 server={conn} project={project} />)
         })
       },
       unseenCount: (conn: ServerConnection.Any, project: LocalProject) => {

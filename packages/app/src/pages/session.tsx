@@ -16,7 +16,6 @@ import {
   createSignal,
   on,
   onMount,
-  type Component,
   type ParentProps,
   untrack,
 } from "solid-js"
@@ -157,7 +156,7 @@ export function SessionPage() {
 // remount around the server-scoped providers. Nothing here may key on the
 // session ID: session tabs on the same server share this route instance, and
 // workspace-scoped state (terminal, directory providers) lives below.
-export function TargetSessionRouteContent(props: { content?: Component }) {
+export function TargetSessionRouteContent() {
   const params = useParams<{ serverKey: string; id: string }>()
   const serverSync = useServerSync()
   const directory = createMemo(() => serverSync().session.lineage.peek(params.id)?.session.directory)
@@ -167,7 +166,7 @@ export function TargetSessionRouteContent(props: { content?: Component }) {
     <TargetServerScopedProviders directory={directory} sessionID={() => params.id}>
       <TargetSessionSettingsCommand />
       <SessionRouteErrorBoundary sessionID={params.id} serverKey={requireServerKey(params.serverKey)} padded>
-        <ResolvedTargetSessionRoute content={props.content} />
+        <ResolvedTargetSessionRoute />
       </SessionRouteErrorBoundary>
     </TargetServerScopedProviders>
   )
@@ -244,7 +243,7 @@ function SessionErrorFallback(props: { error: unknown; sessionID?: string; serve
   return <ErrorPage error={props.error} />
 }
 
-function ResolvedTargetSessionRoute(props: { content?: Component }) {
+function ResolvedTargetSessionRoute() {
   const params = useParams<{ serverKey: string; id: string }>()
   const tabs = useTabs()
   const sync = useServerSync()
@@ -273,7 +272,7 @@ function ResolvedTargetSessionRoute(props: { content?: Component }) {
     <Show when={directory()}>
       <SDKProvider directory={targetDirectory}>
         <DirectoryDataProvider directory={targetDirectory} server={serverKey}>
-          <TargetSessionPage content={props.content} />
+          <TargetSessionPage />
         </DirectoryDataProvider>
       </SDKProvider>
     </Show>
@@ -283,18 +282,12 @@ function ResolvedTargetSessionRoute(props: { content?: Component }) {
 // Owns the workspace-identity remount. Must not include the session ID in the
 // key: SessionPage handles session changes reactively, and remounting here
 // destroys workspace-scoped state (terminal PTYs, file/prompt providers).
-function TargetSessionPage(props: { content?: Component }) {
+function TargetSessionPage() {
   const sdk = useSDK()
   const serverSDK = useServerSDK()
   return (
     <Show when={`${serverSDK().scope}\0${sdk().directory}`} keyed>
-      <Show when={props.content} keyed fallback={<SessionPage />}>
-        {(Content) => (
-          <SessionProviders>
-            <Content />
-          </SessionProviders>
-        )}
-      </Show>
+      <SessionPage />
     </Show>
   )
 }
@@ -321,7 +314,7 @@ function MarkSessionNotificationsViewed(props: { sessionID?: () => string | unde
   return null
 }
 
-export function SessionProviders(props: ParentProps) {
+function SessionProviders(props: ParentProps) {
   return (
     <TerminalProvider>
       <FileProvider>

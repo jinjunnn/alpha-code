@@ -3,10 +3,6 @@ import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { autoRespondsPermission, isDirectoryAutoAccepting, sessionAutoAccept } from "./permission-auto-respond"
 
-// #668:总闸 `permissions.autoApprove`。本文件断的是**开启后**的既有语义(一字未改);
-// 总闸关闭时的矩阵在 packages/ui-mac/src/renderer/alpha-ui/permission-auto-approve-switch.test.ts。
-const ON = { autoApprove: true }
-
 const session = (input: { id: string; parentID?: string }) =>
   ({
     id: input.id,
@@ -26,13 +22,13 @@ describe("autoRespondsPermission", () => {
       [`${base64Encode(directory)}/root`]: true,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(true)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
   })
 
   test("uses a parent session's legacy auto-accept key", () => {
     const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
 
-    expect(autoRespondsPermission({ root: true }, sessions, permission("child"), "/tmp/project", ON)).toBe(true)
+    expect(autoRespondsPermission({ root: true }, sessions, permission("child"), "/tmp/project")).toBe(true)
   })
 
   test("defaults to requiring approval when no lineage override exists", () => {
@@ -41,7 +37,7 @@ describe("autoRespondsPermission", () => {
       other: true,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), "/tmp/project", ON)).toBe(false)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), "/tmp/project")).toBe(false)
   })
 
   test("inherits a parent session's false override", () => {
@@ -51,7 +47,7 @@ describe("autoRespondsPermission", () => {
       [`${base64Encode(directory)}/root`]: false,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(false)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(false)
   })
 
   test("prefers a child override over parent override", () => {
@@ -62,7 +58,7 @@ describe("autoRespondsPermission", () => {
       [`${base64Encode(directory)}/child`]: true,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(true)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
   })
 
   test("falls back to directory-level auto-accept", () => {
@@ -72,8 +68,8 @@ describe("autoRespondsPermission", () => {
       [`${base64Encode(directory)}/*`]: true,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory, ON)).toBe(true)
-    expect(sessionAutoAccept(autoAccept, sessions, permission("root"), directory, ON)).toBeUndefined()
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory)).toBe(true)
+    expect(sessionAutoAccept(autoAccept, sessions, permission("root"), directory)).toBeUndefined()
   })
 
   test("session-level override takes precedence over directory-level", () => {
@@ -84,7 +80,7 @@ describe("autoRespondsPermission", () => {
       [`${base64Encode(directory)}/root`]: false,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory, ON)).toBe(false)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory)).toBe(false)
   })
 
   test("parent false override takes precedence over directory-level auto-accept", () => {
@@ -95,7 +91,7 @@ describe("autoRespondsPermission", () => {
       [`${base64Encode(directory)}/root`]: false,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(false)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(false)
   })
 
   test("parent true override takes precedence over disabled directory fallback", () => {
@@ -106,7 +102,7 @@ describe("autoRespondsPermission", () => {
       [`${base64Encode(directory)}/root`]: true,
     }
 
-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(true)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
   })
 })
 
