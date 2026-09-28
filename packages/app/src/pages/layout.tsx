@@ -67,12 +67,7 @@ import {
   latestRootSession,
   sortedRootSessions,
 } from "./layout/helpers"
-import {
-  collectNewSessionDeepLinks,
-  collectOpenProjectDeepLinks,
-  deepLinkEvent,
-  drainPendingDeepLinks,
-} from "./layout/deep-links"
+import { createDeepLinkConsumer, deepLinkEvent } from "./layout/deep-links"
 import { createInlineEditorController } from "./layout/inline-editor"
 import {
   LocalWorkspace,
@@ -1106,11 +1101,12 @@ export default function LegacyLayout(props: ParentProps) {
     const run = ++dialogRun
     void import("@/components/dialog-select-server").then((x) => {
       if (dialogDead || dialogRun !== run) return
-      dialog.show(() => <x.DialogSelectServer />)
+      dialog.show(() => <x.DialogSelectServer />, undefined, { host: true })
     })
   }
 
   function openSettings() {
+    if (platform.openSettings) return platform.openSettings()
     const run = ++dialogRun
     const module = settings.general.newLayoutDesigns()
       ? import("@/components/settings-v2")
@@ -1260,36 +1256,28 @@ export default function LegacyLayout(props: ParentProps) {
     if (navigate) return navigateToProject(directory)
   }
 
-  const handleDeepLinks = (urls: string[]) => {
-    if (!server.isLocal()) return
-
-    for (const directory of collectOpenProjectDeepLinks(urls)) {
-      void openProject(directory)
-    }
-
-    for (const link of collectNewSessionDeepLinks(urls)) {
-      void openProject(link.directory, false)
-      const slug = base64Encode(link.directory)
-      if (link.prompt) {
-        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(slug)), {
-          prompt: link.prompt,
-        })
-      }
-      const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
-      navigateWithSidebarReset(href)
-    }
-  }
+  // The shell decodes deep links against its route manifest and forwards the result, including
+  // the destination href. The consumer itself — drain, dispatch, navigation target — lives in
+  // ./layout/deep-links so the route-authority ratchet can hold it to the full "no hand-assembled
+  // route" rule set and a test can execute it end to end. Here we only hand over primitives this
+  // layout already owns; `navigate` is layout's own navigation function, passed through unwrapped.
+  const consumeDeepLinks = createDeepLinkConsumer({
+    enabled: () => server.isLocal(),
+    buffer: () => window,
+    openProject: (directory, navigate) => void openProject(directory, navigate),
+    navigate: navigateWithSidebarReset,
+    handoff: (directory, prompt) =>
+      setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(directory))), {
+        prompt,
+      }),
+  })
 
   onMount(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ urls: string[] }>).detail
-      const urls = detail?.urls ?? []
-      if (urls.length === 0) return
-      handleDeepLinks(urls)
-    }
-
-    handleDeepLinks(drainPendingDeepLinks(window))
-    makeEventListener(window, deepLinkEvent, handler as EventListener)
+    // The shell's event is a wake-up signal with no payload: the buffer is the queue, so every
+    // path — mount, live event, remount — consumes by draining, and each delivery is acted on once.
+    // Subscribe before the first drain so a link landing in between is not stranded in the buffer.
+    makeEventListener(window, deepLinkEvent, consumeDeepLinks)
+    consumeDeepLinks()
   })
 
   async function renameProject(project: LocalProject, next: string) {
@@ -1361,7 +1349,7 @@ export default function LegacyLayout(props: ParentProps) {
     const run = ++dialogRun
     void import("@/components/dialog-edit-project").then((x) => {
       if (dialogDead || dialogRun !== run) return
-      dialog.show(() => <x.DialogEditProject server={conn} project={project} />)
+      dialog.show(() => <x.DialogEditProject server={conn} project={project} />, undefined, { host: true })
     })
   }
 
@@ -1889,9 +1877,9 @@ export default function LegacyLayout(props: ParentProps) {
     workspaceExpanded: (directory, local) => store.workspaceExpanded[directory] ?? local,
     setWorkspaceExpanded: (directory, value) => setStore("workspaceExpanded", directory, value),
     showResetWorkspaceDialog: (root, directory) =>
-      dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />),
+      dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />, undefined, { host: true }),
     showDeleteWorkspaceDialog: (root, directory) =>
-      dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />),
+      dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />, undefined, { host: true }),
     setScrollContainerRef: (el, mobile) => {
       if (!mobile) scrollContainerRef = el
     },

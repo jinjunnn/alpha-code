@@ -9,6 +9,7 @@ describe("session routes", () => {
         [{ type: "session", server: ServerConnection.Key.make("server-b"), sessionId: "session-1" }],
         "session-1",
         ServerConnection.Key.make("server-a"),
+        [ServerConnection.Key.make("server-a"), ServerConnection.Key.make("server-b")],
       ),
     ).toBe(ServerConnection.Key.make("server-b"))
   })
@@ -22,8 +23,56 @@ describe("session routes", () => {
         ],
         "session-1",
         ServerConnection.Key.make("server-b"),
+        [ServerConnection.Key.make("server-a"), ServerConnection.Key.make("server-b")],
       ),
     ).toBe(ServerConnection.Key.make("server-b"))
+  })
+
+  // #933:多机下,咽喉对推不出唯一身份的 legacy 形状默认拒绝 —— 旧版在这两种形状下回落
+  // active,正是「落到没有该会话的机器、污染同 id 无关会话」的来源。两个用例的 active 各不
+  // 相同,写死任何单值的实现无法同时满足。
+  test("rejects a legacy session ID no persisted tab knows (multi-server, no active guess)", () => {
+    expect(
+      legacySessionServer(
+        [{ type: "session", server: ServerConnection.Key.make("wsl:fedora"), sessionId: "session-other" }],
+        "session-unknown",
+        ServerConnection.Key.make("wsl:fedora"),
+        [ServerConnection.Key.make("wsl:fedora"), ServerConnection.Key.make("wsl:ubuntu")],
+      ),
+    ).toBeUndefined()
+  })
+
+  test("rejects an ambiguous legacy session ID when the active server holds no copy", () => {
+    expect(
+      legacySessionServer(
+        [
+          { type: "session", server: ServerConnection.Key.make("server-a"), sessionId: "session-1" },
+          { type: "session", server: ServerConnection.Key.make("server-b"), sessionId: "session-1" },
+        ],
+        "session-1",
+        ServerConnection.Key.make("server-c"),
+        [
+          ServerConnection.Key.make("server-a"),
+          ServerConnection.Key.make("server-b"),
+          ServerConnection.Key.make("server-c"),
+        ],
+      ),
+    ).toBeUndefined()
+  })
+
+  // #933 R1 Minor 1:单机(列表恰好一台)下反推必然正确 —— 零 tab 线索也放行那台。
+  // 默认安装只有 sidecar 一台 server:升级前引擎发的 macOS 通知(legacy href)指的会话
+  // 从未开过标签页 ⇒ tabs 里没有它;一律拒绝会把这批用户全数误伤到首页。
+  // server key 字面量与上面各用例互不相同,写死单值的实现无法同时满足。
+  test("allows the only server on zero tab matches (single-server install)", () => {
+    expect(
+      legacySessionServer(
+        [{ type: "session", server: ServerConnection.Key.make("solo-machine"), sessionId: "session-other" }],
+        "session-unknown",
+        ServerConnection.Key.make("solo-machine"),
+        [ServerConnection.Key.make("solo-machine")],
+      ),
+    ).toBe(ServerConnection.Key.make("solo-machine"))
   })
 
   test("builds and decodes a server-keyed session route", () => {

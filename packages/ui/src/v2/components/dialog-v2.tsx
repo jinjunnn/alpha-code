@@ -1,6 +1,8 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
 import { useI18n } from "../../context/i18n"
+import { Dynamic } from "solid-js/web"
+import { useDialogHost } from "../../context/dialog"
 import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
@@ -82,6 +84,31 @@ export function DialogHeader(props: DialogHeaderProps) {
 }
 
 export function Dialog(props: DialogProps) {
+  const host = useDialogHost()
+  if (host) {
+    return (
+      <Kobalte
+        modal
+        open={host.open()}
+        onOpenChange={(open) => {
+          if (open) return
+          host.close()
+        }}
+      >
+        <Dynamic
+          component={host.component}
+          open={host.open()}
+          onClose={host.close}
+          size={props.size}
+          class={[props.containerClass, props.class].filter(Boolean).join(" ")}
+          classList={props.classList}
+          fit={props.fit}
+        >
+          {props.children}
+        </Dynamic>
+      </Kobalte>
+    )
+  }
   const [local] = splitProps(props, ["size", "variant", "class", "containerClass", "classList", "fit", "children"])
 
   return (

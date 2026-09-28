@@ -162,7 +162,7 @@ export function StatusPopoverServerBody() {
           const run = ++dialogRun
           void import("./dialog-select-server").then((x) => {
             if (dialogDead || dialogRun !== run) return
-            dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
+            dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh, { host: true })
           })
         },
       }}
@@ -386,7 +386,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                     const run = ++dialogRun
                     void import("./dialog-select-server").then((x) => {
                       if (dialogDead || dialogRun !== run) return
-                      dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
+                      dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh, { host: true })
                     })
                   }}
                 >
