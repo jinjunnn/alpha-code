@@ -244,6 +244,92 @@ function statusKind(status: number): Schema.Schema.Type<typeof FailureKind> {
   return "unexpected_status"
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// `#1445` AC2:托管端行为漂移的绊线 —— **只记录、不判决**。与 legacy 那份
+// (`packages/opencode/src/tool/mcp-websearch.ts`)同名同形,各写一份(两包之间没有可共用的 alpha 依赖边)。
+//
+// 2026-09-24 那一次,`mcp.exa.ai` 把限流提示以 2xx + `result` + 非 `isError` 的散文发了回来,与真结果、
+// 真零命中在契约字段上逐格相同(勘破:`docs/architecture/2026-09-24-exa-mcp-failure-signal-recon.md`)。
+// 那次没记下信封的元数据。下面这条记录补的就是那一格:每次响应记下**结构字段**(状态码 / JSON-RPC 是
+// result 还是 error / `isError` / `structuredContent` 在不在 / `content[0]._meta` 与 `result._meta` 的键名 /
+// 限流响应头 / 文本长度),**不含正文**。它不进任何判决 —— `callMcp()` 里没有一个分支读它;开关(`=0`)只关日志。
+// 缺席即 "absent":读 `_meta` 这类无契约字段时,缺席不是拒绝的理由,连判决都不是(AC3)。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 关掉信封记录的开关;缺省开着 —— 绊线不预先拉上就绊不到人(D 形态是间歇的,1/13)。 */
+export const WEBSEARCH_ENVELOPE_DIAG_ENV = "ALPHA_WEBSEARCH_ENVELOPE_DIAG"
+
+export function envelopeDiagEnabled(env: Record<string, string | undefined> = process.env) {
+  return env[WEBSEARCH_ENVELOPE_DIAG_ENV] !== "0"
+}
+
+const RATE_LIMIT_HEADERS = ["retry-after", "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset"] as const
+
+export type EnvelopeShape = {
+  readonly tool: string
+  readonly status: number
+  readonly jsonrpc: "result" | "error" | "unparsed"
+  readonly isError: boolean | "absent"
+  readonly structuredContent: "present" | "absent"
+  readonly contentBlocks: number | "absent"
+  readonly contentMetaKeys: readonly string[] | "absent"
+  readonly resultMetaKeys: readonly string[] | "absent"
+  readonly textLength: number | "absent"
+  readonly rateLimit: Readonly<Record<(typeof RATE_LIMIT_HEADERS)[number], string | "absent">>
+}
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
+}
+
+function keysOf(value: unknown): readonly string[] | "absent" {
+  const record = recordOf(value)
+  return record ? Object.keys(record).sort() : "absent"
+}
+
+/** 与 `parseResponse` 同样的取帧顺序(直接 JSON,否则第一条 `data:` 行),但不经 schema —— 解不出也要记。 */
+function firstJsonFrame(body: string): Record<string, unknown> | undefined {
+  const trimmed = body.trim()
+  if (trimmed.startsWith("{")) {
+    const direct = recordOf(parseJson(trimmed))
+    if (direct) return direct
+  }
+  for (const line of body.split("\n")) {
+    if (!line.startsWith("data: ")) continue
+    const frame = recordOf(parseJson(line.substring(6).trim()))
+    if (frame) return frame
+  }
+  return undefined
+}
+
+/** 一次响应的结构字段。纯函数、不抛、不含正文;`callMcp()` 只把它写进日志,不据它做任何事。 */
+export function envelopeShape(
+  tool: string,
+  status: number,
+  headers: Readonly<Record<string, string | undefined>>,
+  body: string,
+): EnvelopeShape {
+  const frame = firstJsonFrame(body)
+  const result = recordOf(frame?.result)
+  const content = Array.isArray(result?.content) ? (result.content as unknown[]) : undefined
+  const first = recordOf(content?.[0])
+  const rateLimit = Object.fromEntries(
+    RATE_LIMIT_HEADERS.map((name) => [name, headers[name] ?? "absent"]),
+  ) as EnvelopeShape["rateLimit"]
+  return {
+    tool,
+    status,
+    jsonrpc: frame === undefined ? "unparsed" : "error" in frame ? "error" : "result" in frame ? "result" : "unparsed",
+    isError: typeof result?.isError === "boolean" ? result.isError : "absent",
+    structuredContent: result !== undefined && "structuredContent" in result ? "present" : "absent",
+    contentBlocks: content ? content.length : "absent",
+    contentMetaKeys: keysOf(first?._meta),
+    resultMetaKeys: keysOf(result?._meta),
+    textLength: typeof first?.text === "string" ? first.text.length : "absent",
+    rateLimit,
+  }
+}
+
 const McpResult = Schema.Struct({
   result: Schema.Struct({
     content: Schema.Array(Schema.Struct({ type: Schema.String, text: Schema.String })),
@@ -368,6 +454,9 @@ export const callMcp = <F extends Schema.Struct.Fields>(
         MAX_RESPONSE_BYTES,
         () => new Error(`${tool} response exceeded ${MAX_RESPONSE_BYTES} bytes`),
       )).toString("utf8")
+      // `#1445` AC2:只记录、不判决 —— 下面没有任何分支读这条记录;关掉它,放行/拒绝逐字节不变。
+      if (envelopeDiagEnabled())
+        yield* Effect.logInfo("websearch envelope", envelopeShape(tool, response.status, response.headers, body))
       if (response.status < 200 || response.status >= 300) {
         const code = errorCodeOf(body)
         return yield* new WebSearchFailure({

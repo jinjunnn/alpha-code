@@ -206,3 +206,68 @@ D 与 C 的文案**不是同一串**。共同前缀到 `… at https://dashboard
 `packages/opencode` 这份不新增任何判据。两边一致 = **都只消费契约信号**(HTTP 状态 / JSON-RPC `error` / `isError` /
 结构化 `{error}`),谁也不多一条文本判据。`#1449` 合入后把上面四种负载重新喂进 `packages/core` 的 `parseResponse`:
 **仍然全判成功**(`results/parsers-now.txt` 逐字节未变)—— 契约信号对这四种负载一条都不在场,这正是本文的结论。
+
+## 2026-09-27 落地:重写后的三条 AC 各钉一道闸,判决一行没改
+
+原 AC1 作废之后(票面 2026-09-26 评论),三条新 AC 由两份同名同形的闸门文件钉住:
+`packages/opencode/test/tool/alpha-websearch-nokey-outcomes.test.ts`(legacy 传输 + 叶子)与
+`packages/core/test/alpha-websearch-nokey-outcomes.test.ts`(V2 core 传输 + 真 `ToolRegistry` settle)。
+负载一律读本文引用的实抓件(`ticket-payload.json` / `arms.json` / `live-shapes.json` / `vendor-source-excerpts.txt`),
+夹具自检钉住,不手拼。
+
+### AC1 —— 先量后判:三种无 key 结局今天在模型面已可区分,**不改生产判决**
+
+把 C(429,`arms.json` nokey-search)/ D(246 字提示,`ticket-payload.json`)/ Z(vendor 零命中散文)/ Z2(`content:[]`)
+各喂进两份生产传输(含状态码分支),模型面拿到的话:
+
+| 结局 | `packages/opencode`(叶子 `output` / `ToolFailure.message`) | `packages/core`(`text ?? NO_RESULTS` / `ToolFailure.message`) |
+| --- | --- | --- |
+| C 429 | 失败 `Web search failed: unexpected HTTP status (HTTP 429). Cause: {"jsonrpc":…,"error":{"code":-32000,…` | 同左 |
+| D 提示 | 成功,**246 字 vendor 原文逐字**(`You've hit Exa's free MCP rate limit…`) | 同左 |
+| Z 散文 | 成功,`No search results found. Please try a different query.` | 同左 |
+| Z2 空 content | 失败 `Web search failed: no usable result. …`(`#489`) | 成功,`NO_RESULTS`(`#1449` AC3;与 Z **同句**) |
+
+四格两两不同(core 侧 Z ≡ Z2,都是「没搜到」);D 到模型面的是 vendor 自己那句「rate limit」,
+不是我们编的「没搜到」—— 「没搜」与「没搜到」不是同一句话。所以 AC1 今天成立,闸只钉住它。
+
+### AC2 —— 信封结构记录:只记录、不判决
+
+两份传输各加一个纯函数 `envelopeShape(tool, status, headers, body)`,在每次响应到手后写一条
+`Effect.logInfo("websearch envelope", …)`(缺省开着;`ALPHA_WEBSEARCH_ENVELOPE_DIAG=0` 关),字段:
+`status` / `jsonrpc`(result | error | unparsed)/ `isError` / `structuredContent`(present | absent)/ `contentBlocks` /
+`contentMetaKeys`(`content[0]._meta` 的键名)/ `resultMetaKeys` / `textLength` / 四个限流头。**不含正文**。
+`call()` / `callMcp()` 里没有一个分支读它。D 的记录样本:
+
+```
+{ tool: "web_search_exa", status: 200, jsonrpc: "result", isError: "absent", structuredContent: "absent",
+  contentBlocks: 1, contentMetaKeys: "absent", resultMetaKeys: "absent", textLength: 246,
+  rateLimit: { "retry-after": "absent", "x-ratelimit-limit": "absent", "x-ratelimit-remaining": "absent", "x-ratelimit-reset": "absent" } }
+```
+
+对照臂:同一六种负载(C/D/Z/Z2/A/P),开关关闭 ⇒ 零记录,且模型面输出**逐字节相同**(`Buffer.compare == 0`,
+失败臂比 `kind` + `message`);开关缺省开 ⇒ 每种恰一条记录,输出仍逐字节相同。上面那张探针输出在开关关闭时与
+改动前的输出 `diff` 为空。
+
+### AC3 —— 不匹配文案、不押无契约字段
+
+- 同一信封只换文本(D / Z / 一段故意带 `rate limit` + `API key` + URL 的散文)⇒ 三条全部原样放行;
+- 把 2026-09-26 那份真结果的 `content[0]._meta` 摘掉 ⇒ 模型面输出逐字节不变(记录里 `contentMetaKeys` 从
+  `["searchTime"]` 变 `"absent"`)—— **缺席即放行**;
+- 源码普查(负全称):两份传输文件里唯一的正则字面量是 `detailOf` 的 `/\s+/g`,零 `includes/indexOf/match/search/test`,
+  `startsWith` 只认 `"{"` 与 `"data: "`;普查自检往源码里塞一行 `text.includes("rate limit") || /API key/i.test(text)` 必须抓到。
+
+### 已知的坏 → 红(2026-09-27 变异实测,每次改完 `git checkout --` 还原)
+
+| 变异 | opencode 闸 | core 闸 |
+| --- | --- | --- |
+| M1 `parsePayload` 改成「无 `_meta` 即零命中」(本文点名的假闸门) | 8 红 / 23 | 7 红 / 22(Z 臂不红:vendor 零命中散文与 `NO_RESULTS` 同句,分辨力在 D 臂) |
+| M2 删掉那行记录(绊线被拆) | 6 红 | 6 红 |
+| M3 记录里带上正文 | 3 红 | 3 红 |
+| M4 让记录参与判决(无 `_meta` 即拒) | 10 红(含 C 臂与对照臂) | 10 红 |
+
+### 主动没做的
+
+- **条目形状闸**(按 `Title:`/`URL:` 行判成功):票面明写是 owner 的偏好裁决,未裁,不做。
+- `ALPHA_WEBSEARCH_ENVELOPE_DIAG` **没有**登进 `sidecar-env.ts` 白名单:它是关诊断的开关,不是运行判决;打包实例要关
+  可走 `ALPHA_ENV_ALLOWLIST_EXTRA`。两包各写一份的名字也没加跨包逐字一致闸(`cloud-web-search.test.ts` 那种)——
+  两份记录漂开的后果只是日志字段不同,不是判决不同。
