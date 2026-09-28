@@ -270,6 +270,15 @@ function isGovernedCloudTool(tool: string, ownership: McpOwnership): boolean {
  * - 其它任何 MCP server 上的 web search:两个信号**任一**置位就关。`#1411` / ADR-046 D1 起只有
  *   kill-switch 置位它们(它两个都置),所以这一条今天只在 kill-switch 下成立 —— 代付态第三方
  *   web search 放行(ADR-046 D6)。对两个都判,是为了信号漂移时倒向 fail-closed。
+ *
+ * **第二条的拒绝理由只许点名 kill-switch**(照 `#1411` 对 `LOCAL_WEBSEARCH_DENIED_MESSAGE` 的同形修正)。
+ * 这句话此前写「the platform pays for search, or the web search kill switch is set」—— 那是 ADR-009 B1
+ * 时代的实话:代付态 main 会置位 `ALPHA_LOCAL_WEBSEARCH_DENY`,第三方 web search 因此被关而云腿是权威
+ * 替代。B1 被推翻之后 main 只在 kill-switch 下置位两个信号(`ui-mac/src/main/server.ts` 的
+ * `applyWebSearchSovereignty`,真 fork 判据在 `server.test.ts`),于是「代付」那半句在唯一可达它的状态下
+ * 必然是假的;而 kill-switch **同时**关掉治理云工具(上一条分支),「除平台自己的以外」那半句也一样。
+ * 这句话直接进模型上下文,基线 S5:指不出在场的替代就明说没有。判据:`cloud-websearch-kill.test.ts`
+ * 的「拒绝理由在唯一可达它的状态(kill-switch)下只点名 kill-switch」。
  */
 export function webSearchToolDenial(
   tool: string,
@@ -281,8 +290,8 @@ export function webSearchToolDenial(
     return cloudWebSearchDenied(env) ? "the alpha web search kill switch (ADR-009 B2) is set" : undefined
   if (localWebSearchDenied(env) || cloudWebSearchDenied(env))
     return (
-      "alpha web search sovereignty (ADR-009 B1/B2) denies every MCP web search tool except the platform's own " +
-      "— the platform pays for search, or the web search kill switch is set"
+      "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool " +
+      "— the local keyless one, the platform-hosted one, and this one alike"
     )
   return undefined
 }
