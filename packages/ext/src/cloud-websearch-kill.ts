@@ -279,6 +279,17 @@ function isGovernedCloudTool(tool: string, ownership: McpOwnership): boolean {
  * 必然是假的;而 kill-switch **同时**关掉治理云工具(上一条分支),「除平台自己的以外」那半句也一样。
  * 这句话直接进模型上下文,基线 S5:指不出在场的替代就明说没有。判据:`cloud-websearch-kill.test.ts`
  * 的「拒绝理由在唯一可达它的状态(kill-switch)下只点名 kill-switch」。
+ *
+ * **`#1461` 起不再宣称穷尽**(`docs/verification/2026-09-27-1461-third-party-websearch-mcp-four-states/`)。
+ * 这句话此前写「it turns off every web search tool — …, and this one alike」。实测同一个第三方插件、同一格
+ * kill-switch env:工具名 `web_search` 被拒,改名 `search` 照常搜到结果(DuckDuckGo HTTP 200 / 10 条;
+ * `results/name-boundary.json` · `matrix-round{1,2}.json`)—— 判据的入口是工具名(`isWebSearchToolId`),
+ * 认不出名字的第三方搜网工具结构上关不掉,ADR-046 D6 已按此订正。「every」于是在它唯一可达的状态下是假话。
+ * 现在的措辞把**事实**收窄到它真管得住的范围(alpha 自己的两条腿 + 任何按名字被认出的 MCP 工具),
+ * 把「别去找替代」从一句**穷尽的承诺**改成一条**基于开关意图的指令**(照 `LOCAL_WEBSEARCH_DENIED_MESSAGE`
+ * 的「do not look for another web search tool」):不再暗示找也没用,只说这个开关的意思是本会话有意关掉搜网。
+ * 刻意**不**在文案里写「认不出的照常可用」—— 那是在给模型指一条绕过用户开关的路。
+ * 判据:同文件测试「`#1461`:拒绝理由不再宣称关掉了每一个 web search 工具」,读抛出的值。
  */
 export function webSearchToolDenial(
   tool: string,
@@ -290,8 +301,10 @@ export function webSearchToolDenial(
     return cloudWebSearchDenied(env) ? "the alpha web search kill switch (ADR-009 B2) is set" : undefined
   if (localWebSearchDenied(env) || cloudWebSearchDenied(env))
     return (
-      "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool " +
-      "— the local keyless one, the platform-hosted one, and this one alike"
+      "the alpha web search kill switch (ADR-009 B2) is set; it turns off alpha's own web search tools " +
+      "— the local keyless one and the platform-hosted one — and any MCP tool it recognizes as web search " +
+      "by name, this one included. Do not look for another web search tool: the switch means web search " +
+      "is off on purpose for this session"
     )
   return undefined
 }

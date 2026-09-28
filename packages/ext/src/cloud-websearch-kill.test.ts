@@ -243,6 +243,33 @@ describe("第三方 MCP 上的 web search 同受主权判决(R5 Blocker)", () =>
     }
   })
 
+  // `#1461` 实测(docs/verification/2026-09-27-1461-third-party-websearch-mcp-four-states/):同一个第三方
+  // 插件、同一格 kill-switch env,工具名 `web_search` 被拒、`search` 照常搜到 DuckDuckGo 结果 —— 判据入口是
+  // 工具名,认不出的结构上关不掉。于是「it turns off every web search tool — …, and this one alike」在它唯一
+  // 可达的状态下是假话。这里钉住:事实收窄到「alpha 自己的腿 + 按名字认出的」;「别找替代」保留为指令,
+  // 不再是穷尽的承诺。已知的坏:把文案改回带 `every web search tool` 的那句 ⇒ 第一条断言红。
+  test("`#1461`:拒绝理由不再宣称关掉了每一个 web search 工具,只承认按名字认出的;仍叫模型别去找替代", () => {
+    const thrown = (tool: string): unknown => {
+      try {
+        assertWebSearchToolAllowed(tool, ON, owned(ON))
+      } catch (error) {
+        return error
+      }
+      return undefined
+    }
+    for (const tool of thirdParty) {
+      const error = thrown(tool)
+      expect(error).toBeInstanceOf(WebSearchSovereigntyError)
+      const lower = (error as Error).message.toLowerCase()
+      // 全称声称出局:开关关不掉名字认不出的第三方搜网工具(`duck_search` 反向臂)。
+      expect(lower).not.toContain("every web search tool")
+      // 范围要说出来:被关的是按名字认出的那些。
+      expect(lower).toMatch(/recogni[sz]e[sd]? .*by name/)
+      // 「别去找替代」保留,但作为指令而不是「找也没用」的承诺(与 LOCAL_WEBSEARCH_DENIED_MESSAGE 同一句)。
+      expect(lower).toContain("do not look for another web search tool")
+    }
+  })
+
   test("登出 / BYOK(两个信号都不置位):第三方 web search 照常可用", () => {
     for (const tool of thirdParty) expect(() => assertWebSearchToolAllowed(tool, OFF, owned(OFF))).not.toThrow()
   })
