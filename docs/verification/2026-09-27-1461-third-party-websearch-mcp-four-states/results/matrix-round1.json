@@ -1,0 +1,2758 @@
+{
+  "ticket": "alpha-code#1461",
+  "at": "2026-09-28T03:49:54.810Z",
+  "bun": "1.3.14",
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "totalModelCalls": 36,
+  "credentialHygiene": "model key read from --keys-file into memory only; engine config carries a placeholder; ALPHA_MCP_TOKEN file is a placeholder string; nothing real lands in results/logs",
+  "egressPolicy": {
+    "allow": [
+      "mcp.exa.ai",
+      "html.duckduckgo.com",
+      "duckduckgo.com",
+      "models.opencode.ai"
+    ],
+    "everythingElse": "deny (incl. registry.npmjs.org — ac#1454 root cause — and alpha-cloud.tidelabs.click: cloud leg not under test)"
+  },
+  "results": [
+    {
+      "cell": "logged-out-byok",
+      "arm": "exa-remote",
+      "thirdParty": {
+        "server": "exa",
+        "toolName": "web_search_exa",
+        "engineToolId": "exa_web_search_exa",
+        "kind": "remote",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "server.ts applyWebSearchSovereignty 非 kill-switch 分支:删两个 deny 信号、OPENCODE_ENABLE_EXA ??= 1;injection :417-420 删 ARM/DEF/SERVER,无 cloud 条目",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": null,
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": false
+      },
+      "configMcpServers": {
+        "exa": {
+          "type": "remote",
+          "enabled": "(unset=on)",
+          "url": "https://mcp.exa.ai/mcp"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 10681,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "exa_web_fetch_exa",
+        "exa_web_search_exa",
+        "glob",
+        "grep",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "read",
+        "read_mcp_resource",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_j0YiD3bkJxyBPxBW91BD2091",
+          "name": "exa_web_search_exa",
+          "argsHead": "{\"query\": \"recent articles and release notes about the Bun JavaScript runtime\", \"objective\": \"Find recent pages about the Bun JavaScript runtime (releases, features, performance). Return titles and URLs.\", \"numResults\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_j0YiD3bkJxyBPxBW91BD2091",
+          "status": "completed",
+          "inputHead": "{\"query\":\"recent articles and release notes about the Bun JavaScript runtime\",\"objective\":\"Find recent pages about the Bun JavaScript runtime (releases, features, performance). Return titles and URLs.",
+          "outputBytes": 18258,
+          "outputHead": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n\n# Bun v1.4.2\n...\nSeptember 5, 2026\n\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK JPEG decoding in `Bun.Image`, a rare JIT crash, and a GC crash on musl.\n...\n## Fixed: `bun build` variable",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 18258,
+          "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n\n# Bun v1.4.2\n...\nSeptember 5, 2026\n\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK JPEG decoding in `Bun.Image`, a rare JIT crash, and a GC crash on musl.\n...\n## Fixed: `bun build` variable"
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "mcp.exa.ai:443": {
+          "allow": 2,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [],
+      "engineToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_j0YiD3bkJxyBPxBW91BD2091",
+          "status": "completed",
+          "inputHead": "{\"query\":\"recent articles and release notes about the Bun JavaScript runtime\",\"objective\":\"Find recent pages about the Bun JavaScript runtime (releases, features, performance). Return titles and URLs.",
+          "outputBytes": 18258,
+          "outputHead": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n\n# Bun v1.4.2\n...\nSeptember 5, 2026\n\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK JPEG decoding in `Bun.Image`, a rare JIT crash, and a GC crash on musl.\n...\n## Fixed: `bun build` variable",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "1. **Bun v1.4.2 | Bun Blog** — https://bun.com/blog/bun-v1.4.2\n2. **Bun v1.4.1 | Bun Blog** — https://bun.com/blog/bun-v1.4.1\n3. **Bun 1.4 | Bun Blog** — https://bun.com/blog/bun-v1.4",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:48:34.063Z",
+          "requestBytes": 3065,
+          "responseBytes": 47088,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Searching web for recent Bun runtime pages"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:48:36.200Z",
+          "requestBytes": 31441,
+          "responseBytes": 66335,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_j0YiD3bkJxyBPxBW91BD2091",
+              "name": "exa_web_search_exa",
+              "argsHead": "{\"query\": \"recent articles and release notes about the Bun JavaScript runtime\", \"objective\": \"Find recent pages about the Bun JavaScript runtime (releases, features, performance). Return titles and URLs.\", \"numResults\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:48:39.368Z",
+          "requestBytes": 51235,
+          "responseBytes": 33399,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 18258,
+              "head": "Title: Bun v1.4.2 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.2\nPublished: 2026-09-05T05:39:32.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.2 | Bun Blog\n\n# Bun v1.4.2\n...\nSeptember 5, 2026\n\nThis release fixes two regressions impacting Elysia and `AsyncLocalStorage`, a hang in `@discordjs/ws`, CMYK JPEG decoding in `Bun.Image`, a rare JIT crash, and a GC crash on musl.\n...\n## Fixed: `bun build` variable"
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "1. **Bun v1.4.2 | Bun Blog** — https://bun.com/blog/bun-v1.4.2\n2. **Bun v1.4.1 | Bun Blog** — https://bun.com/blog/bun-v1.4.1\n3. **Bun 1.4 | Bun Blog** — https://bun.com/blog/bun-v1.4"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "T03:48:30.497Z level=INFO run=fc51305e message=fromDirectory directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/ws\ntimestamp=2026-09-28T03:48:30.506Z level=INFO run=fc51305e message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/ws\ntimestamp=2026-09-28T03:48:30.509Z level=INFO run=fc51305e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:48:30.510Z level=INFO run=fc51305e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:48:30.510Z level=INFO run=fc51305e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:48:30.807Z level=WARN run=fc51305e message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:48:30.839Z level=INFO run=fc51305e message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:48:30.839Z level=INFO run=fc51305e message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:48:30.839Z level=INFO run=fc51305e message=init\ntimestamp=2026-09-28T03:48:30.897Z level=INFO run=fc51305e message=created id=ses_f19df19ceffeXtAVNAumeYIAh7 slug=shiny-nebula version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:48:30.897Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567310897 time.updated=1790567310897\ntimestamp=2026-09-28T03:48:30.905Z level=INFO run=fc51305e message=\"event connected\"\ntimestamp=2026-09-28T03:48:34.029Z level=INFO run=fc51305e message=loop session.id=ses_f19df19ceffeXtAVNAumeYIAh7 step=0\ntimestamp=2026-09-28T03:48:34.036Z level=INFO run=fc51305e message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:48:34.050Z level=INFO run=fc51305e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19df19ceffeXtAVNAumeYIAh7 small=true agent=title mode=primary\ntimestamp=2026-09-28T03:48:34.056Z level=INFO run=fc51305e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:36.078Z level=INFO run=fc51305e message=init count=1\ntimestamp=2026-09-28T03:48:36.105Z level=INFO run=fc51305e message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:48:36.109Z level=INFO run=fc51305e message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:48:36.110Z level=INFO run=fc51305e message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:48:36.125Z level=INFO run=fc51305e message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-exa-remote-zeMCKW/ws workspaceID=undefined\ntimestamp=2026-09-28T03:48:36.189Z level=INFO run=fc51305e message=process session.id=ses_f19df19ceffeXtAVNAumeYIAh7 messageID=msg_0e620f26e001DKSbTMNsEcHRNH\ntimestamp=2026-09-28T03:48:36.190Z level=INFO run=fc51305e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19df19ceffeXtAVNAumeYIAh7 small=false agent=build mode=primary\ntimestamp=2026-09-28T03:48:36.199Z level=INFO run=fc51305e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:37.611Z level=INFO run=fc51305e message=evaluated permission=mcp:exa:web_search_exa pattern=* action.permission=mcp:exa:web_search_exa action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:48:37.611Z level=INFO run=fc51305e message=asking id=per_0e621006b0015zNUIqFDj9gYKU permission=mcp:exa:web_search_exa patterns=\"[\\\"*\\\"]\" risk.level=high risk.kind=exfiltration\ntimestamp=2026-09-28T03:48:39.352Z level=INFO run=fc51305e message=loop session.id=ses_f19df19ceffeXtAVNAumeYIAh7 step=1\ntimestamp=2026-09-28T03:48:39.364Z level=INFO run=fc51305e message=process session.id=ses_f19df19ceffeXtAVNAumeYIAh7 messageID=msg_0e6210739001qwb0TkzwjoQPzT\ntimestamp=2026-09-28T03:48:39.364Z level=INFO run=fc51305e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19df19ceffeXtAVNAumeYIAh7 small=false agent=build mode=primary\ntimestamp=2026-09-28T03:48:39.365Z level=INFO run=fc51305e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "\":\"ses_f19df19ceffeXtAVNAumeYIAh7\",\"type\":\"text\",\"text\":\"1. **Bun v1.4.2 | Bun Blog** — https://bun.com/blog/bun-v1.4.2\\n2. **Bun v1.4.1 | Bun Blog** — https://bun.com/blog/bun-v1.4.1\\n3. **Bun 1.4 | Bun Blog** — https://bun.com/blog/bun-v1.4\",\"time\":{\"start\":1790567320232,\"end\":1790567320237}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567320242,\"sessionID\":\"ses_f19df19ceffeXtAVNAumeYIAh7\",\"part\":{\"id\":\"prt_0e6210aad001O2flGmLaYK3S4p\",\"reason\":\"stop\",\"messageID\":\"msg_0e6210739001qwb0TkzwjoQPzT\",\"sessionID\":\"ses_f19df19ceffeXtAVNAumeYIAh7\",\"type\":\"step-finish\",\"tokens\":{\"total\":12726,\"input\":4941,\"output\":89,\"reasoning\":16,\"cache\":{\"write\":0,\"read\":7680}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-out-byok",
+      "arm": "own-web_search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "web_search",
+        "engineToolId": "duck_web_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "server.ts applyWebSearchSovereignty 非 kill-switch 分支:删两个 deny 信号、OPENCODE_ENABLE_EXA ??= 1;injection :417-420 删 ARM/DEF/SERVER,无 cloud 条目",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": null,
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": false
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 6662,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_web_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_ZVefF3m89pkY8YAF2H9j9400",
+          "name": "duck_web_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_ZVefF3m89pkY8YAF2H9j9400",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 510,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\n4. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n5.",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 510,
+          "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\n4. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n5."
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "html.duckduckgo.com:443": {
+          "allow": 1,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:48:43.760Z",
+          "tool": "web_search",
+          "event": "started",
+          "pid": 36854
+        },
+        {
+          "at": "2026-09-28T03:48:45.981Z",
+          "tool": "web_search",
+          "query": "Bun JavaScript runtime recent news",
+          "upstream": "html.duckduckgo.com",
+          "status": 200,
+          "bytes": 34067,
+          "results": 5,
+          "ms": 1352
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_ZVefF3m89pkY8YAF2H9j9400",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 510,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\n4. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n5.",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "Three results:\n\n1. Bun — A fast all-in-one JavaScript runtime — https://bun.sh/\n2. Blog | Bun — https://bun.com/blog\n3. Bun's Rust Rewrite: Where It Stands (Updated July 2026) — https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:48:43.721Z",
+          "requestBytes": 3059,
+          "responseBytes": 25113,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Web search for Bun JavaScript runtime"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:48:43.886Z",
+          "requestBytes": 28246,
+          "responseBytes": 12916,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_ZVefF3m89pkY8YAF2H9j9400",
+              "name": "duck_web_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:48:45.999Z",
+          "requestBytes": 29150,
+          "responseBytes": 23761,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 510,
+              "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\n4. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n5."
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Three results:\n\n1. Bun — A fast all-in-one JavaScript runtime — https://bun.sh/\n2. Blog | Bun — https://bun.com/blog\n3. Bun's Rust Rewrite: Where It Stands (Updated July 2026) — https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "message=fromDirectory directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/ws\ntimestamp=2026-09-28T03:48:41.253Z level=INFO run=e160407f message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/ws\ntimestamp=2026-09-28T03:48:41.256Z level=INFO run=e160407f message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:48:41.258Z level=INFO run=e160407f message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:48:41.258Z level=INFO run=e160407f message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:48:41.579Z level=WARN run=e160407f message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:48:41.612Z level=INFO run=e160407f message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:48:41.613Z level=INFO run=e160407f message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:48:41.613Z level=INFO run=e160407f message=init\ntimestamp=2026-09-28T03:48:41.671Z level=INFO run=e160407f message=created id=ses_f19deefb8ffeAM6aC14yZsm4W8 slug=stellar-canyon version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:48:41.671Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567321671 time.updated=1790567321671\ntimestamp=2026-09-28T03:48:41.689Z level=INFO run=e160407f message=\"event connected\"\ntimestamp=2026-09-28T03:48:43.683Z level=INFO run=e160407f message=loop session.id=ses_f19deefb8ffeAM6aC14yZsm4W8 step=0\ntimestamp=2026-09-28T03:48:43.691Z level=INFO run=e160407f message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:48:43.707Z level=INFO run=e160407f message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19deefb8ffeAM6aC14yZsm4W8 small=true agent=title mode=primary\ntimestamp=2026-09-28T03:48:43.714Z level=INFO run=e160407f message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:43.772Z level=INFO run=e160407f message=init count=1\ntimestamp=2026-09-28T03:48:43.803Z level=INFO run=e160407f message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:48:43.807Z level=INFO run=e160407f message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:48:43.808Z level=INFO run=e160407f message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:48:43.821Z level=INFO run=e160407f message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-web_search-Vy2NLQ/ws workspaceID=undefined\ntimestamp=2026-09-28T03:48:43.875Z level=INFO run=e160407f message=process session.id=ses_f19deefb8ffeAM6aC14yZsm4W8 messageID=msg_0e6211825001V7fX01BQXjR0e9\ntimestamp=2026-09-28T03:48:43.875Z level=INFO run=e160407f message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19deefb8ffeAM6aC14yZsm4W8 small=false agent=build mode=primary\ntimestamp=2026-09-28T03:48:43.877Z level=INFO run=e160407f message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:44.622Z level=INFO run=e160407f message=evaluated permission=mcp:duck:web_search pattern=* action.permission=mcp:duck:web_search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:48:44.623Z level=INFO run=e160407f message=asking id=per_0e6211bce001WVoDCq874afcdE permission=mcp:duck:web_search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\ntimestamp=2026-09-28T03:48:45.989Z level=INFO run=e160407f message=loop session.id=ses_f19deefb8ffeAM6aC14yZsm4W8 step=1\ntimestamp=2026-09-28T03:48:45.995Z level=INFO run=e160407f message=process session.id=ses_f19deefb8ffeAM6aC14yZsm4W8 messageID=msg_0e62121260015YmVm66K0xXojH\ntimestamp=2026-09-28T03:48:45.995Z level=INFO run=e160407f message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19deefb8ffeAM6aC14yZsm4W8 small=false agent=build mode=primary\ntimestamp=2026-09-28T03:48:45.997Z level=INFO run=e160407f message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "ree results:\\n\\n1. Bun — A fast all-in-one JavaScript runtime — https://bun.sh/\\n2. Blog | Bun — https://bun.com/blog\\n3. Bun's Rust Rewrite: Where It Stands (Updated July 2026) — https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\",\"time\":{\"start\":1790567326779,\"end\":1790567326785}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567326790,\"sessionID\":\"ses_f19deefb8ffeAM6aC14yZsm4W8\",\"part\":{\"id\":\"prt_0e6212442001HMZZa38ngn6aoK\",\"reason\":\"stop\",\"messageID\":\"msg_0e62121260015YmVm66K0xXojH\",\"sessionID\":\"ses_f19deefb8ffeAM6aC14yZsm4W8\",\"type\":\"step-finish\",\"tokens\":{\"total\":7103,\"input\":245,\"output\":74,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":6784}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-out-byok",
+      "arm": "own-search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "search",
+        "engineToolId": "duck_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": false
+      },
+      "stateNote": "server.ts applyWebSearchSovereignty 非 kill-switch 分支:删两个 deny 信号、OPENCODE_ENABLE_EXA ??= 1;injection :417-420 删 ARM/DEF/SERVER,无 cloud 条目",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": null,
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": false
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 6254,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_jLPfsmPXjo4k9uPf8Ozj2907",
+          "name": "duck_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent\", \"limit\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_jLPfsmPXjo4k9uPf8Ozj2907",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent\",\"limit\":5}",
+          "outputBytes": 517,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.com/\n2. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n3. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s R",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 517,
+          "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.com/\n2. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n3. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s R"
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "html.duckduckgo.com:443": {
+          "allow": 1,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:48:49.325Z",
+          "tool": "search",
+          "event": "started",
+          "pid": 36883
+        },
+        {
+          "at": "2026-09-28T03:48:51.926Z",
+          "tool": "search",
+          "query": "Bun JavaScript runtime recent",
+          "upstream": "html.duckduckgo.com",
+          "status": 200,
+          "bytes": 34013,
+          "results": 5,
+          "ms": 1562
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_jLPfsmPXjo4k9uPf8Ozj2907",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent\",\"limit\":5}",
+          "outputBytes": 517,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.com/\n2. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n3. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s R",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "1. Bun — A fast all-in-one JavaScript runtime — https://bun.com/\n2. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ... — https://github.com/oven-sh/bun\n3. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ... — https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:48:49.288Z",
+          "requestBytes": 3051,
+          "responseBytes": 37037,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Searching recent Bun JavaScript runtime pages"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:48:49.450Z",
+          "requestBytes": 28230,
+          "responseBytes": 29587,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_jLPfsmPXjo4k9uPf8Ozj2907",
+              "name": "duck_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent\", \"limit\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:48:51.943Z",
+          "requestBytes": 29400,
+          "responseBytes": 44196,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 517,
+              "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.com/\n2. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n3. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s R"
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "1. Bun — A fast all-in-one JavaScript runtime — https://bun.com/\n2. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ... — https://github.com/oven-sh/bun\n3. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ... — https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "stamp=2026-09-28T03:48:47.896Z level=INFO run=0e92d82f message=fromDirectory directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/ws\ntimestamp=2026-09-28T03:48:47.905Z level=INFO run=0e92d82f message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/ws\ntimestamp=2026-09-28T03:48:47.908Z level=INFO run=0e92d82f message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:48:47.909Z level=INFO run=0e92d82f message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:48:47.909Z level=INFO run=0e92d82f message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:48:48.226Z level=WARN run=0e92d82f message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:48:48.262Z level=INFO run=0e92d82f message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:48:48.262Z level=INFO run=0e92d82f message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:48:48.262Z level=INFO run=0e92d82f message=init\ntimestamp=2026-09-28T03:48:48.323Z level=INFO run=0e92d82f message=created id=ses_f19ded5bcfferzvSwWjQy2G0gk slug=eager-eagle version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:48:48.323Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567328323 time.updated=1790567328323\ntimestamp=2026-09-28T03:48:48.331Z level=INFO run=0e92d82f message=\"event connected\"\ntimestamp=2026-09-28T03:48:49.250Z level=INFO run=0e92d82f message=loop session.id=ses_f19ded5bcfferzvSwWjQy2G0gk step=0\ntimestamp=2026-09-28T03:48:49.258Z level=INFO run=0e92d82f message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:48:49.275Z level=INFO run=0e92d82f message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19ded5bcfferzvSwWjQy2G0gk small=true agent=title mode=primary\ntimestamp=2026-09-28T03:48:49.281Z level=INFO run=0e92d82f message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:49.337Z level=INFO run=0e92d82f message=init count=1\ntimestamp=2026-09-28T03:48:49.367Z level=INFO run=0e92d82f message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:48:49.370Z level=INFO run=0e92d82f message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:48:49.371Z level=INFO run=0e92d82f message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:48:49.385Z level=INFO run=0e92d82f message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-out-byok-own-search-ERYAMx/ws workspaceID=undefined\ntimestamp=2026-09-28T03:48:49.439Z level=INFO run=0e92d82f message=process session.id=ses_f19ded5bcfferzvSwWjQy2G0gk messageID=msg_0e6212de4001jf058ifj5PfJGf\ntimestamp=2026-09-28T03:48:49.439Z level=INFO run=0e92d82f message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19ded5bcfferzvSwWjQy2G0gk small=false agent=build mode=primary\ntimestamp=2026-09-28T03:48:49.441Z level=INFO run=0e92d82f message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:50.358Z level=INFO run=0e92d82f message=evaluated permission=mcp:duck:search pattern=* action.permission=mcp:duck:search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:48:50.358Z level=INFO run=0e92d82f message=asking id=per_0e6213236001K6yFRiSP3skfts permission=mcp:duck:search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\ntimestamp=2026-09-28T03:48:51.934Z level=INFO run=0e92d82f message=loop session.id=ses_f19ded5bcfferzvSwWjQy2G0gk step=1\ntimestamp=2026-09-28T03:48:51.939Z level=INFO run=0e92d82f message=process session.id=ses_f19ded5bcfferzvSwWjQy2G0gk messageID=msg_0e621385f001LyhDNCYXtJVviv\ntimestamp=2026-09-28T03:48:51.940Z level=INFO run=0e92d82f message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19ded5bcfferzvSwWjQy2G0gk small=false agent=build mode=primary\ntimestamp=2026-09-28T03:48:51.941Z level=INFO run=0e92d82f message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "n-sh/bun: Incredibly fast JavaScript runtime, bundler, test ... — https://github.com/oven-sh/bun\\n3. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ... — https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\",\"time\":{\"start\":1790567333039,\"end\":1790567333045}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567333050,\"sessionID\":\"ses_f19ded5bcfferzvSwWjQy2G0gk\",\"part\":{\"id\":\"prt_0e6213cb6001TKIfJs7YasAH2W\",\"reason\":\"stop\",\"messageID\":\"msg_0e621385f001LyhDNCYXtJVviv\",\"sessionID\":\"ses_f19ded5bcfferzvSwWjQy2G0gk\",\"type\":\"step-finish\",\"tokens\":{\"total\":7217,\"input\":294,\"output\":94,\"reasoning\":45,\"cache\":{\"write\":0,\"read\":6784}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-in-with-credit",
+      "arm": "exa-remote",
+      "thirdParty": {
+        "server": "exa",
+        "toolName": "web_search_exa",
+        "engineToolId": "exa_web_search_exa",
+        "kind": "remote",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "同上 + injection :386-391 SERVER/DEF 置位、:403-404 config.mcp.cloud = 真定义(enabled:true, {file:} 凭证);凭证文件本轮是占位串,云腿不在本票被测面(#1433 §6 已测)",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "exa": {
+          "type": "remote",
+          "enabled": "(unset=on)",
+          "url": "https://mcp.exa.ai/mcp"
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": true,
+          "url": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 7819,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "exa_web_fetch_exa",
+        "exa_web_search_exa",
+        "glob",
+        "grep",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "read",
+        "read_mcp_resource",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_gPBbCMaWVo73jf3b1Jjq6325",
+          "name": "exa_web_search_exa",
+          "argsHead": "{\"query\": \"recent blog posts and news about the Bun JavaScript runtime\", \"objective\": \"Find recent pages about the Bun JavaScript runtime; return the top three results with their titles and URLs.\", \"numResults\": 3}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_gPBbCMaWVo73jf3b1Jjq6325",
+          "status": "completed",
+          "inputHead": "{\"query\":\"recent blog posts and news about the Bun JavaScript runtime\",\"objective\":\"Find recent pages about the Bun JavaScript runtime; return the top three results with their titles and URLs.\",\"numRe",
+          "outputBytes": 12884,
+          "outputHead": "Title: Bun v1.4.1 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.1\nPublished: 2026-09-04T06:47:12.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.1 | Bun Blog\n\n# Bun v1.4.1\n\nJarred Sumner\n\nSeptember 4, 2026\n\nBun v1.4.1 fixes 202 issues, addressing 236 👍.\n...\n### Reduced idle memory usage#\n\nWe've made JavaScriptCore delete JIT-generated code after an extended idle period, reducing memory usage for long-runni",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 12884,
+          "head": "Title: Bun v1.4.1 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.1\nPublished: 2026-09-04T06:47:12.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.1 | Bun Blog\n\n# Bun v1.4.1\n\nJarred Sumner\n\nSeptember 4, 2026\n\nBun v1.4.1 fixes 202 issues, addressing 236 👍.\n...\n### Reduced idle memory usage#\n\nWe've made JavaScriptCore delete JIT-generated code after an extended idle period, reducing memory usage for long-runni"
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "mcp.exa.ai:443": {
+          "allow": 2,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [],
+      "engineToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_gPBbCMaWVo73jf3b1Jjq6325",
+          "status": "completed",
+          "inputHead": "{\"query\":\"recent blog posts and news about the Bun JavaScript runtime\",\"objective\":\"Find recent pages about the Bun JavaScript runtime; return the top three results with their titles and URLs.\",\"numRe",
+          "outputBytes": 12884,
+          "outputHead": "Title: Bun v1.4.1 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.1\nPublished: 2026-09-04T06:47:12.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.1 | Bun Blog\n\n# Bun v1.4.1\n\nJarred Sumner\n\nSeptember 4, 2026\n\nBun v1.4.1 fixes 202 issues, addressing 236 👍.\n...\n### Reduced idle memory usage#\n\nWe've made JavaScriptCore delete JIT-generated code after an extended idle period, reducing memory usage for long-runni",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "1. **Bun v1.4.1 | Bun Blog** — https://bun.com/blog/bun-v1.4.1\n2. **Bun 1.4 Ships the Rust Rewrite: What Got Faster | byteiota** — https://byteiota.com/bun-1-4-ships-the-rust-rewrite-what-got-faster/\n3. **Bun 1.4: Delete Puppeteer, Delete node-cron, Move On | byteiota** — https://byteiota.com/bun-14-rust-rewrite-webview-cron/",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:48:55.648Z",
+          "requestBytes": 3065,
+          "responseBytes": 83004,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Search recent Bun JavaScript runtime pages"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:48:57.751Z",
+          "requestBytes": 31447,
+          "responseBytes": 24803,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_gPBbCMaWVo73jf3b1Jjq6325",
+              "name": "exa_web_search_exa",
+              "argsHead": "{\"query\": \"recent blog posts and news about the Bun JavaScript runtime\", \"objective\": \"Find recent pages about the Bun JavaScript runtime; return the top three results with their titles and URLs.\", \"numResults\": 3}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:00.064Z",
+          "requestBytes": 45158,
+          "responseBytes": 40275,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 12884,
+              "head": "Title: Bun v1.4.1 | Bun Blog\nURL: https://bun.com/blog/bun-v1.4.1\nPublished: 2026-09-04T06:47:12.000Z\nAuthor: N/A\nHighlights:\nBun v1.4.1 | Bun Blog\n\n# Bun v1.4.1\n\nJarred Sumner\n\nSeptember 4, 2026\n\nBun v1.4.1 fixes 202 issues, addressing 236 👍.\n...\n### Reduced idle memory usage#\n\nWe've made JavaScriptCore delete JIT-generated code after an extended idle period, reducing memory usage for long-runni"
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "1. **Bun v1.4.1 | Bun Blog** — https://bun.com/blog/bun-v1.4.1\n2. **Bun 1.4 Ships the Rust Rewrite: What Got Faster | byteiota** — https://byteiota.com/bun-1-4-ships-the-rust-rewrite-what-got-faster/\n3. **Bun 1.4: Delete Puppeteer, Delete node-cron, Move On | byteiota** — https://byteiota.com/bun-14-rust-rewrite-webview-cron/"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "logged-in-with-credit-exa-remote-DeKFy4/ws\ntimestamp=2026-09-28T03:48:54.199Z level=INFO run=360cc564 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/ws\ntimestamp=2026-09-28T03:48:54.202Z level=INFO run=360cc564 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:48:54.203Z level=INFO run=360cc564 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:48:54.203Z level=INFO run=360cc564 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:48:54.502Z level=WARN run=360cc564 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:48:54.541Z level=INFO run=360cc564 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:48:54.542Z level=INFO run=360cc564 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:48:54.542Z level=INFO run=360cc564 message=init\ntimestamp=2026-09-28T03:48:54.603Z level=INFO run=360cc564 message=created id=ses_f19debd34ffew5NcLCl7Sb7csi slug=proud-star version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:48:54.603Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567334603 time.updated=1790567334603\ntimestamp=2026-09-28T03:48:54.619Z level=INFO run=360cc564 message=\"event connected\"\ntimestamp=2026-09-28T03:48:55.608Z level=INFO run=360cc564 message=loop session.id=ses_f19debd34ffew5NcLCl7Sb7csi step=0\ntimestamp=2026-09-28T03:48:55.616Z level=INFO run=360cc564 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:48:55.634Z level=INFO run=360cc564 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19debd34ffew5NcLCl7Sb7csi small=true agent=title mode=primary\ntimestamp=2026-09-28T03:48:55.641Z level=INFO run=360cc564 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:55.648Z level=WARN run=360cc564 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:48:57.635Z level=INFO run=360cc564 message=init count=1\ntimestamp=2026-09-28T03:48:57.660Z level=INFO run=360cc564 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:48:57.663Z level=INFO run=360cc564 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:48:57.664Z level=INFO run=360cc564 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:48:57.679Z level=INFO run=360cc564 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-exa-remote-DeKFy4/ws workspaceID=undefined\ntimestamp=2026-09-28T03:48:57.740Z level=INFO run=360cc564 message=process session.id=ses_f19debd34ffew5NcLCl7Sb7csi messageID=msg_0e62146ba00153TvDSzRchNZyv\ntimestamp=2026-09-28T03:48:57.741Z level=INFO run=360cc564 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19debd34ffew5NcLCl7Sb7csi small=false agent=build mode=primary\ntimestamp=2026-09-28T03:48:57.749Z level=INFO run=360cc564 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:48:58.611Z level=INFO run=360cc564 message=evaluated permission=mcp:exa:web_search_exa pattern=* action.permission=mcp:exa:web_search_exa action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:48:58.612Z level=INFO run=360cc564 message=asking id=per_0e6215273001mn16Li2hwuC5Xx permission=mcp:exa:web_search_exa patterns=\"[\\\"*\\\"]\" risk.level=high risk.kind=exfiltration\ntimestamp=2026-09-28T03:49:00.049Z level=INFO run=360cc564 message=loop session.id=ses_f19debd34ffew5NcLCl7Sb7csi step=1\ntimestamp=2026-09-28T03:49:00.060Z level=INFO run=360cc564 message=process session.id=ses_f19debd34ffew5NcLCl7Sb7csi messageID=msg_0e6215812001m2XsnQlLtcMB3V\ntimestamp=2026-09-28T03:49:00.061Z level=INFO run=360cc564 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19debd34ffew5NcLCl7Sb7csi small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:00.062Z level=INFO run=360cc564 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "Rust Rewrite: What Got Faster | byteiota** — https://byteiota.com/bun-1-4-ships-the-rust-rewrite-what-got-faster/\\n3. **Bun 1.4: Delete Puppeteer, Delete node-cron, Move On | byteiota** — https://byteiota.com/bun-14-rust-rewrite-webview-cron/\",\"time\":{\"start\":1790567340987,\"end\":1790567341002}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567341010,\"sessionID\":\"ses_f19debd34ffew5NcLCl7Sb7csi\",\"part\":{\"id\":\"prt_0e6215bcb0018Mme70DAhUyJ18\",\"reason\":\"stop\",\"messageID\":\"msg_0e6215812001m2XsnQlLtcMB3V\",\"sessionID\":\"ses_f19debd34ffew5NcLCl7Sb7csi\",\"type\":\"step-finish\",\"tokens\":{\"total\":10980,\"input\":3301,\"output\":127,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":7552}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-in-with-credit",
+      "arm": "own-web_search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "web_search",
+        "engineToolId": "duck_web_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "同上 + injection :386-391 SERVER/DEF 置位、:403-404 config.mcp.cloud = 真定义(enabled:true, {file:} 凭证);凭证文件本轮是占位串,云腿不在本票被测面(#1433 §6 已测)",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": true,
+          "url": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 7829,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_web_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_oZC0Z7tgvOWZiVLwpw001501",
+          "name": "duck_web_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_oZC0Z7tgvOWZiVLwpw001501",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 460,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript ",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 460,
+          "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript "
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "html.duckduckgo.com:443": {
+          "allow": 1,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:49:05.398Z",
+          "tool": "web_search",
+          "event": "started",
+          "pid": 37015
+        },
+        {
+          "at": "2026-09-28T03:49:07.625Z",
+          "tool": "web_search",
+          "query": "Bun JavaScript runtime recent news",
+          "upstream": "html.duckduckgo.com",
+          "status": 200,
+          "bytes": 34053,
+          "results": 5,
+          "ms": 1013
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_oZC0Z7tgvOWZiVLwpw001501",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 460,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript ",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "Three results:\n\n1. Bun — A fast all-in-one JavaScript runtime — https://bun.sh/\n2. Blog | Bun — https://bun.com/blog\n3. Bun's 2026 JavaScript runtime shifts Next.js economics — https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/",
+      "exchanges": [
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:05.514Z",
+          "requestBytes": 28252,
+          "responseBytes": 12916,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_oZC0Z7tgvOWZiVLwpw001501",
+              "name": "duck_web_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:05.362Z",
+          "requestBytes": 3059,
+          "responseBytes": 64747,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Bun runtime recent web pages search"
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:07.643Z",
+          "requestBytes": 29106,
+          "responseBytes": 23790,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 460,
+              "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript "
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Three results:\n\n1. Bun — A fast all-in-one JavaScript runtime — https://bun.sh/\n2. Blog | Bun — https://bun.com/blog\n3. Bun's 2026 JavaScript runtime shifts Next.js economics — https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "ivwhO9/ws\ntimestamp=2026-09-28T03:49:01.979Z level=INFO run=f9356254 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/ws\ntimestamp=2026-09-28T03:49:01.983Z level=INFO run=f9356254 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:01.983Z level=INFO run=f9356254 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:01.983Z level=INFO run=f9356254 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:02.284Z level=WARN run=f9356254 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:02.316Z level=INFO run=f9356254 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:02.317Z level=INFO run=f9356254 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:02.317Z level=INFO run=f9356254 message=init\ntimestamp=2026-09-28T03:49:02.373Z level=INFO run=f9356254 message=created id=ses_f19de9edbffewwCJE2Ih0S3DMq slug=swift-moon version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:02.373Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567342373 time.updated=1790567342373\ntimestamp=2026-09-28T03:49:02.387Z level=INFO run=f9356254 message=\"event connected\"\ntimestamp=2026-09-28T03:49:05.326Z level=INFO run=f9356254 message=loop session.id=ses_f19de9edbffewwCJE2Ih0S3DMq step=0\ntimestamp=2026-09-28T03:49:05.333Z level=INFO run=f9356254 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:05.350Z level=INFO run=f9356254 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de9edbffewwCJE2Ih0S3DMq small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:05.356Z level=INFO run=f9356254 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:05.368Z level=WARN run=f9356254 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:05.410Z level=INFO run=f9356254 message=init count=1\ntimestamp=2026-09-28T03:49:05.442Z level=INFO run=f9356254 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:05.445Z level=INFO run=f9356254 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:05.445Z level=INFO run=f9356254 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:05.453Z level=INFO run=f9356254 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-web_search-ivwhO9/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:05.503Z level=INFO run=f9356254 message=process session.id=ses_f19de9edbffewwCJE2Ih0S3DMq messageID=msg_0e6216caf001oDhjyRPAxzM75x\ntimestamp=2026-09-28T03:49:05.504Z level=INFO run=f9356254 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de9edbffewwCJE2Ih0S3DMq small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:05.512Z level=INFO run=f9356254 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:06.604Z level=INFO run=f9356254 message=evaluated permission=mcp:duck:web_search pattern=* action.permission=mcp:duck:web_search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:06.605Z level=INFO run=f9356254 message=asking id=per_0e62171ac0019Q5VFmiBwGnNfr permission=mcp:duck:web_search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\ntimestamp=2026-09-28T03:49:07.633Z level=INFO run=f9356254 message=loop session.id=ses_f19de9edbffewwCJE2Ih0S3DMq step=1\ntimestamp=2026-09-28T03:49:07.639Z level=INFO run=f9356254 message=process session.id=ses_f19de9edbffewwCJE2Ih0S3DMq messageID=msg_0e62175b2001awUKiToQNkhthM\ntimestamp=2026-09-28T03:49:07.639Z level=INFO run=f9356254 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de9edbffewwCJE2Ih0S3DMq small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:07.640Z level=INFO run=f9356254 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "st all-in-one JavaScript runtime — https://bun.sh/\\n2. Blog | Bun — https://bun.com/blog\\n3. Bun's 2026 JavaScript runtime shifts Next.js economics — https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\",\"time\":{\"start\":1790567348716,\"end\":1790567348721}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567348727,\"sessionID\":\"ses_f19de9edbffewwCJE2Ih0S3DMq\",\"part\":{\"id\":\"prt_0e62179f2001Q8pStDN8TPLB1N\",\"reason\":\"stop\",\"messageID\":\"msg_0e62175b2001awUKiToQNkhthM\",\"sessionID\":\"ses_f19de9edbffewwCJE2Ih0S3DMq\",\"type\":\"step-finish\",\"tokens\":{\"total\":7088,\"input\":230,\"output\":74,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":6784}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-in-with-credit",
+      "arm": "own-search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "search",
+        "engineToolId": "duck_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": false
+      },
+      "stateNote": "同上 + injection :386-391 SERVER/DEF 置位、:403-404 config.mcp.cloud = 真定义(enabled:true, {file:} 凭证);凭证文件本轮是占位串,云腿不在本票被测面(#1433 §6 已测)",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": true,
+          "url": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 7890,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_GYKjrAPEwSJAcfeUFqS72484",
+          "name": "duck_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent\"}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_GYKjrAPEwSJAcfeUFqS72484",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent\"}",
+          "outputBytes": 516,
+          "outputHead": "1. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n2. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n3. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s Ru",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 516,
+          "head": "1. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n2. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n3. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s Ru"
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "html.duckduckgo.com:443": {
+          "allow": 1,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:49:14.015Z",
+          "tool": "search",
+          "event": "started",
+          "pid": 37149
+        },
+        {
+          "at": "2026-09-28T03:49:16.025Z",
+          "tool": "search",
+          "query": "Bun JavaScript runtime recent",
+          "upstream": "html.duckduckgo.com",
+          "status": 200,
+          "bytes": 33644,
+          "results": 5,
+          "ms": 997
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_GYKjrAPEwSJAcfeUFqS72484",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent\"}",
+          "outputBytes": 516,
+          "outputHead": "1. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n2. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n3. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s Ru",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "Three results:\n\n1. **Bun Runtime | Bun Docs** — https://bun.com/docs/runtime\n2. **Bun — A fast all-in-one JavaScript runtime** — https://bun.sh/\n3. **GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test runner** — https://github.com/oven-sh/bun",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:13.976Z",
+          "requestBytes": 3051,
+          "responseBytes": 37408,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Web search for Bun JavaScript runtime"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:14.133Z",
+          "requestBytes": 28236,
+          "responseBytes": 10295,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_GYKjrAPEwSJAcfeUFqS72484",
+              "name": "duck_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent\"}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:16.042Z",
+          "requestBytes": 29128,
+          "responseBytes": 25021,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 516,
+              "head": "1. Bun Runtime | Bun Docs\n   https://bun.com/docs/runtime\n2. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n3. GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test ...\n   https://github.com/oven-sh/bun\n4. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n5. Bun&#x27;s Ru"
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Three results:\n\n1. **Bun Runtime | Bun Docs** — https://bun.com/docs/runtime\n2. **Bun — A fast all-in-one JavaScript runtime** — https://bun.sh/\n3. **GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test runner** — https://github.com/oven-sh/bun"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "timestamp=2026-09-28T03:49:09.893Z level=INFO run=60d8a12e message=\"creating instance\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/ws\ntimestamp=2026-09-28T03:49:09.893Z level=INFO run=60d8a12e message=fromDirectory directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/ws\ntimestamp=2026-09-28T03:49:09.902Z level=INFO run=60d8a12e message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/ws\ntimestamp=2026-09-28T03:49:09.905Z level=INFO run=60d8a12e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:09.906Z level=INFO run=60d8a12e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:09.906Z level=INFO run=60d8a12e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:10.230Z level=WARN run=60d8a12e message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:10.264Z level=INFO run=60d8a12e message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:10.265Z level=INFO run=60d8a12e message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:10.265Z level=INFO run=60d8a12e message=init\ntimestamp=2026-09-28T03:49:10.327Z level=INFO run=60d8a12e message=created id=ses_f19de7fc8ffe23PtRtlEtNMZVR slug=jolly-river version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:10.327Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567350327 time.updated=1790567350327\ntimestamp=2026-09-28T03:49:10.336Z level=INFO run=60d8a12e message=\"event connected\"\ntimestamp=2026-09-28T03:49:13.941Z level=INFO run=60d8a12e message=loop session.id=ses_f19de7fc8ffe23PtRtlEtNMZVR step=0\ntimestamp=2026-09-28T03:49:13.948Z level=INFO run=60d8a12e message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:13.964Z level=INFO run=60d8a12e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de7fc8ffe23PtRtlEtNMZVR small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:13.970Z level=INFO run=60d8a12e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:13.983Z level=WARN run=60d8a12e message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:14.027Z level=INFO run=60d8a12e message=init count=1\ntimestamp=2026-09-28T03:49:14.055Z level=INFO run=60d8a12e message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:14.058Z level=INFO run=60d8a12e message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:14.059Z level=INFO run=60d8a12e message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:14.071Z level=INFO run=60d8a12e message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-with-credit-own-search-UObBql/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:14.123Z level=INFO run=60d8a12e message=process session.id=ses_f19de7fc8ffe23PtRtlEtNMZVR messageID=msg_0e6218e570012EdzrRd4QbK1lb\ntimestamp=2026-09-28T03:49:14.123Z level=INFO run=60d8a12e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de7fc8ffe23PtRtlEtNMZVR small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:14.125Z level=INFO run=60d8a12e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:15.021Z level=INFO run=60d8a12e message=evaluated permission=mcp:duck:search pattern=* action.permission=mcp:duck:search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:15.022Z level=INFO run=60d8a12e message=asking id=per_0e621928d0018XcbeD2q2WXKiT permission=mcp:duck:search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\n",
+      "stderrTail": "",
+      "stdoutTail": "*Bun Runtime | Bun Docs** — https://bun.com/docs/runtime\\n2. **Bun — A fast all-in-one JavaScript runtime** — https://bun.sh/\\n3. **GitHub - oven-sh/bun: Incredibly fast JavaScript runtime, bundler, test runner** — https://github.com/oven-sh/bun\",\"time\":{\"start\":1790567356615,\"end\":1790567356622}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567356627,\"sessionID\":\"ses_f19de7fc8ffe23PtRtlEtNMZVR\",\"part\":{\"id\":\"prt_0e62198cf001r2ifT1KUJURh13\",\"reason\":\"stop\",\"messageID\":\"msg_0e6219681001UE4c4xjhOO8Gn8\",\"sessionID\":\"ses_f19de7fc8ffe23PtRtlEtNMZVR\",\"type\":\"step-finish\",\"tokens\":{\"total\":7086,\"input\":224,\"output\":78,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":6784}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-in-no-credit",
+      "arm": "exa-remote",
+      "thirdParty": {
+        "server": "exa",
+        "toolName": "web_search_exa",
+        "engineToolId": "exa_web_search_exa",
+        "kind": "remote",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "桌面侧与「有额度」不可分辨(ADR-046 D2:没有只读额度查询;webSearchToolDenial 不读任何额度轴)—— env 与上一格逐字相同,分开跑只为票面矩阵",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "exa": {
+          "type": "remote",
+          "enabled": "(unset=on)",
+          "url": "https://mcp.exa.ai/mcp"
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": true,
+          "url": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 7049,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "exa_web_fetch_exa",
+        "exa_web_search_exa",
+        "glob",
+        "grep",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "read",
+        "read_mcp_resource",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_8UACSJYmV0B8fn81xMjT5979",
+          "name": "exa_web_search_exa",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime\", \"objective\": \"Find recent pages about the Bun JavaScript runtime\", \"numResults\": 3}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_8UACSJYmV0B8fn81xMjT5979",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime\",\"objective\":\"Find recent pages about the Bun JavaScript runtime\",\"numResults\":3}",
+          "outputBytes": 3815,
+          "outputHead": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n\nRuntime, package manager, test runner and bundler in a single binary. Use bun install or bun test in an existing Node.js project, or run the whole thing on Bun.\n...\n## Four tools, design",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 3815,
+          "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n\nRuntime, package manager, test runner and bundler in a single binary. Use bun install or bun test in an existing Node.js project, or run the whole thing on Bun.\n...\n## Four tools, design"
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "mcp.exa.ai:443": {
+          "allow": 2,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [],
+      "engineToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_8UACSJYmV0B8fn81xMjT5979",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime\",\"objective\":\"Find recent pages about the Bun JavaScript runtime\",\"numResults\":3}",
+          "outputBytes": 3815,
+          "outputHead": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n\nRuntime, package manager, test runner and bundler in a single binary. Use bun install or bun test in an existing Node.js project, or run the whole thing on Bun.\n...\n## Four tools, design",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "1. **Bun — A fast all-in-one JavaScript runtime** — https://bun.com/\n2. **Bun Runtime | Bun Docs** — https://bun.com/docs/runtime\n3. **Bun (software)** — https://en.wikipedia.org/wiki/Bun_(software)\n\nThe `exa_web_search_exa` tool was available and returned results successfully.",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:18.912Z",
+          "requestBytes": 3065,
+          "responseBytes": 63847,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Recent Bun JavaScript runtime pages search"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:20.673Z",
+          "requestBytes": 31445,
+          "responseBytes": 38302,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_8UACSJYmV0B8fn81xMjT5979",
+              "name": "exa_web_search_exa",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime\", \"objective\": \"Find recent pages about the Bun JavaScript runtime\", \"numResults\": 3}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:22.955Z",
+          "requestBytes": 36083,
+          "responseBytes": 25657,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 3815,
+              "head": "Title: Bun — A fast all-in-one JavaScript runtime\nURL: https://bun.com/\nPublished: N/A\nAuthor: N/A\nHighlights:\nBun — A fast all-in-one JavaScript runtime\n\n# Bun is a fast JavaScript runtime & toolkit. All in one.\n\nRuntime, package manager, test runner and bundler in a single binary. Use bun install or bun test in an existing Node.js project, or run the whole thing on Bun.\n...\n## Four tools, design"
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "1. **Bun — A fast all-in-one JavaScript runtime** — https://bun.com/\n2. **Bun Runtime | Bun Docs** — https://bun.com/docs/runtime\n3. **Bun (software)** — https://en.wikipedia.org/wiki/Bun_(software)\n\nThe `exa_web_search_exa` tool was available and returned results successfully."
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "chpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/ws\ntimestamp=2026-09-28T03:49:17.730Z level=INFO run=ee08ae27 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/ws\ntimestamp=2026-09-28T03:49:17.733Z level=INFO run=ee08ae27 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:17.734Z level=INFO run=ee08ae27 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:17.734Z level=INFO run=ee08ae27 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:18.038Z level=WARN run=ee08ae27 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:18.077Z level=INFO run=ee08ae27 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:18.078Z level=INFO run=ee08ae27 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:18.078Z level=INFO run=ee08ae27 message=init\ntimestamp=2026-09-28T03:49:18.137Z level=INFO run=ee08ae27 message=created id=ses_f19de6146ffeYmCQ0zttNee5lQ slug=hidden-otter version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:18.137Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567358137 time.updated=1790567358137\ntimestamp=2026-09-28T03:49:18.146Z level=INFO run=ee08ae27 message=\"event connected\"\ntimestamp=2026-09-28T03:49:18.877Z level=INFO run=ee08ae27 message=loop session.id=ses_f19de6146ffeYmCQ0zttNee5lQ step=0\ntimestamp=2026-09-28T03:49:18.884Z level=INFO run=ee08ae27 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:18.899Z level=INFO run=ee08ae27 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de6146ffeYmCQ0zttNee5lQ small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:18.906Z level=INFO run=ee08ae27 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:18.920Z level=WARN run=ee08ae27 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:20.551Z level=INFO run=ee08ae27 message=init count=1\ntimestamp=2026-09-28T03:49:20.578Z level=INFO run=ee08ae27 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:20.581Z level=INFO run=ee08ae27 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:20.582Z level=INFO run=ee08ae27 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:20.598Z level=INFO run=ee08ae27 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-exa-remote-z3P4gW/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:20.662Z level=INFO run=ee08ae27 message=process session.id=ses_f19de6146ffeYmCQ0zttNee5lQ messageID=msg_0e621a19e001YePVnq5d8pYJ71\ntimestamp=2026-09-28T03:49:20.663Z level=INFO run=ee08ae27 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de6146ffeYmCQ0zttNee5lQ small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:20.671Z level=INFO run=ee08ae27 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:21.664Z level=INFO run=ee08ae27 message=evaluated permission=mcp:exa:web_search_exa pattern=* action.permission=mcp:exa:web_search_exa action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:21.665Z level=INFO run=ee08ae27 message=asking id=per_0e621ac800013VXVz73M3Sjwz2 permission=mcp:exa:web_search_exa patterns=\"[\\\"*\\\"]\" risk.level=high risk.kind=exfiltration\ntimestamp=2026-09-28T03:49:22.944Z level=INFO run=ee08ae27 message=loop session.id=ses_f19de6146ffeYmCQ0zttNee5lQ step=1\ntimestamp=2026-09-28T03:49:22.950Z level=INFO run=ee08ae27 message=process session.id=ses_f19de6146ffeYmCQ0zttNee5lQ messageID=msg_0e621b1800018nVOFz7ZZBVKKj\ntimestamp=2026-09-28T03:49:22.950Z level=INFO run=ee08ae27 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de6146ffeYmCQ0zttNee5lQ small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:22.951Z level=INFO run=ee08ae27 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "t runtime** — https://bun.com/\\n2. **Bun Runtime | Bun Docs** — https://bun.com/docs/runtime\\n3. **Bun (software)** — https://en.wikipedia.org/wiki/Bun_(software)\\n\\nThe `exa_web_search_exa` tool was available and returned results successfully.\",\"time\":{\"start\":1790567363793,\"end\":1790567363802}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567363808,\"sessionID\":\"ses_f19de6146ffeYmCQ0zttNee5lQ\",\"part\":{\"id\":\"prt_0e621b4dc001459W9YZhHZj5ME\",\"reason\":\"stop\",\"messageID\":\"msg_0e621b1800018nVOFz7ZZBVKKj\",\"sessionID\":\"ses_f19de6146ffeYmCQ0zttNee5lQ\",\"type\":\"step-finish\",\"tokens\":{\"total\":8763,\"input\":1003,\"output\":80,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":7680}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-in-no-credit",
+      "arm": "own-web_search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "web_search",
+        "engineToolId": "duck_web_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "桌面侧与「有额度」不可分辨(ADR-046 D2:没有只读额度查询;webSearchToolDenial 不读任何额度轴)—— env 与上一格逐字相同,分开跑只为票面矩阵",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": true,
+          "url": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 6169,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_web_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_AHGS6hBQAVpbmdImRclm9002",
+          "name": "duck_web_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent 2026\", \"limit\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_AHGS6hBQAVpbmdImRclm9002",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent 2026\",\"limit\":5}",
+          "outputBytes": 649,
+          "outputHead": "1. Bun vs Node.js: JavaScript Runtime Battle in 2026 - DEV Community\n   https://dev.to/_d7eb1c1703182e3ce1782/bun-vs-nodejs-javascript-runtime-battle-in-2026-81n\n2. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.co",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 649,
+          "head": "1. Bun vs Node.js: JavaScript Runtime Battle in 2026 - DEV Community\n   https://dev.to/_d7eb1c1703182e3ce1782/bun-vs-nodejs-javascript-runtime-battle-in-2026-81n\n2. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.co"
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "html.duckduckgo.com:443": {
+          "allow": 1,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:49:26.652Z",
+          "tool": "web_search",
+          "event": "started",
+          "pid": 37266
+        },
+        {
+          "at": "2026-09-28T03:49:29.197Z",
+          "tool": "web_search",
+          "query": "Bun JavaScript runtime recent 2026",
+          "upstream": "html.duckduckgo.com",
+          "status": 200,
+          "bytes": 34850,
+          "results": 5,
+          "ms": 1095
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_AHGS6hBQAVpbmdImRclm9002",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent 2026\",\"limit\":5}",
+          "outputBytes": 649,
+          "outputHead": "1. Bun vs Node.js: JavaScript Runtime Battle in 2026 - DEV Community\n   https://dev.to/_d7eb1c1703182e3ce1782/bun-vs-nodejs-javascript-runtime-battle-in-2026-81n\n2. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.co",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "1. **Bun vs Node.js: JavaScript Runtime Battle in 2026** — https://dev.to/_d7eb1c1703182e3ce1782/bun-vs-nodejs-javascript-runtime-battle-in-2026-81n\n2. **Bun's Rust Rewrite: Where It Stands (Updated July 2026)** — https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\n3. **Bun — A fast all-in-one JavaScript runtime** — https://bun.com/",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:26.614Z",
+          "requestBytes": 3059,
+          "responseBytes": 32014,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Searching web for recent Bun runtime pages"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:26.772Z",
+          "requestBytes": 28250,
+          "responseBytes": 66104,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_AHGS6hBQAVpbmdImRclm9002",
+              "name": "duck_web_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent 2026\", \"limit\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:29.216Z",
+          "requestBytes": 30057,
+          "responseBytes": 38125,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 649,
+              "head": "1. Bun vs Node.js: JavaScript Runtime Battle in 2026 - DEV Community\n   https://dev.to/_d7eb1c1703182e3ce1782/bun-vs-nodejs-javascript-runtime-battle-in-2026-81n\n2. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\n3. Bun&#x27;s Rust Rewrite: Where It Stands (Updated July 2026)\n   https://www.cosmicjs.co"
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "1. **Bun vs Node.js: JavaScript Runtime Battle in 2026** — https://dev.to/_d7eb1c1703182e3ce1782/bun-vs-nodejs-javascript-runtime-battle-in-2026-81n\n2. **Bun's Rust Rewrite: Where It Stands (Updated July 2026)** — https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\n3. **Bun — A fast all-in-one JavaScript runtime** — https://bun.com/"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "-own-web_search-DEkb3q/ws\ntimestamp=2026-09-28T03:49:24.798Z level=INFO run=b6865d10 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/ws\ntimestamp=2026-09-28T03:49:24.801Z level=INFO run=b6865d10 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:24.802Z level=INFO run=b6865d10 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:24.802Z level=INFO run=b6865d10 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:25.105Z level=WARN run=b6865d10 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:25.146Z level=INFO run=b6865d10 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:25.146Z level=INFO run=b6865d10 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:25.147Z level=INFO run=b6865d10 message=init\ntimestamp=2026-09-28T03:49:25.206Z level=INFO run=b6865d10 message=created id=ses_f19de45a9ffeQ1jwaZfOKVse41 slug=jolly-wizard version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:25.206Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567365206 time.updated=1790567365206\ntimestamp=2026-09-28T03:49:25.222Z level=INFO run=b6865d10 message=\"event connected\"\ntimestamp=2026-09-28T03:49:26.576Z level=INFO run=b6865d10 message=loop session.id=ses_f19de45a9ffeQ1jwaZfOKVse41 step=0\ntimestamp=2026-09-28T03:49:26.584Z level=INFO run=b6865d10 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:26.601Z level=INFO run=b6865d10 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de45a9ffeQ1jwaZfOKVse41 small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:26.607Z level=INFO run=b6865d10 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:26.622Z level=WARN run=b6865d10 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:26.664Z level=INFO run=b6865d10 message=init count=1\ntimestamp=2026-09-28T03:49:26.694Z level=INFO run=b6865d10 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:26.697Z level=INFO run=b6865d10 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:26.697Z level=INFO run=b6865d10 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:26.711Z level=INFO run=b6865d10 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-web_search-DEkb3q/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:26.762Z level=INFO run=b6865d10 message=process session.id=ses_f19de45a9ffeQ1jwaZfOKVse41 messageID=msg_0e621bfb2001GVn1FR4IFlBBn9\ntimestamp=2026-09-28T03:49:26.763Z level=INFO run=b6865d10 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de45a9ffeQ1jwaZfOKVse41 small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:26.765Z level=INFO run=b6865d10 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:28.095Z level=INFO run=b6865d10 message=evaluated permission=mcp:duck:web_search pattern=* action.permission=mcp:duck:web_search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:28.095Z level=INFO run=b6865d10 message=asking id=per_0e621c59f001srDtxsxOscQdVr permission=mcp:duck:web_search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\ntimestamp=2026-09-28T03:49:29.206Z level=INFO run=b6865d10 message=loop session.id=ses_f19de45a9ffeQ1jwaZfOKVse41 step=1\ntimestamp=2026-09-28T03:49:29.212Z level=INFO run=b6865d10 message=process session.id=ses_f19de45a9ffeQ1jwaZfOKVse41 messageID=msg_0e621c9f7001ZnQIbxeeMv7hp0\ntimestamp=2026-09-28T03:49:29.212Z level=INFO run=b6865d10 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de45a9ffeQ1jwaZfOKVse41 small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:29.213Z level=INFO run=b6865d10 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "dejs-javascript-runtime-battle-in-2026-81n\\n2. **Bun's Rust Rewrite: Where It Stands (Updated July 2026)** — https://www.cosmicjs.com/blog/bun-rust-rewrite-javascript-runtime\\n3. **Bun — A fast all-in-one JavaScript runtime** — https://bun.com/\",\"time\":{\"start\":1790567369848,\"end\":1790567369855}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567369861,\"sessionID\":\"ses_f19de45a9ffeQ1jwaZfOKVse41\",\"part\":{\"id\":\"prt_0e621cc81001i3ON03nSM4uazg\",\"reason\":\"stop\",\"messageID\":\"msg_0e621c9f7001ZnQIbxeeMv7hp0\",\"sessionID\":\"ses_f19de45a9ffeQ1jwaZfOKVse41\",\"type\":\"step-finish\",\"tokens\":{\"total\":7376,\"input\":344,\"output\":120,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":6912}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "logged-in-no-credit",
+      "arm": "own-search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "search",
+        "engineToolId": "duck_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": false
+      },
+      "stateNote": "桌面侧与「有额度」不可分辨(ADR-046 D2:没有只读额度查询;webSearchToolDenial 不读任何额度轴)—— env 与上一格逐字相同,分开跑只为票面矩阵",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": null,
+        "ALPHA_CLOUD_WEBSEARCH_DENY": null,
+        "OPENCODE_ENABLE_EXA": "1",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": null,
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": true,
+          "url": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 6238,
+      "extLoaded": true,
+      "extInstalledCloud": false,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": true,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_VOn23yhZdbohFQoROSEN3012",
+          "name": "duck_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent news 2026\", \"limit\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_VOn23yhZdbohFQoROSEN3012",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news 2026\",\"limit\":5}",
+          "outputBytes": 624,
+          "outputHead": "1. Bun vs Node.js: 3x Faster, But Is It Ready? [2026]\n   https://tech-insider.org/bun-vs-nodejs-2026/\n2. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n3. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtim",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 624,
+          "head": "1. Bun vs Node.js: 3x Faster, But Is It Ready? [2026]\n   https://tech-insider.org/bun-vs-nodejs-2026/\n2. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n3. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtim"
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "html.duckduckgo.com:443": {
+          "allow": 1,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:49:33.401Z",
+          "tool": "search",
+          "event": "started",
+          "pid": 37434
+        },
+        {
+          "at": "2026-09-28T03:49:35.415Z",
+          "tool": "search",
+          "query": "Bun JavaScript runtime recent news 2026",
+          "upstream": "html.duckduckgo.com",
+          "status": 200,
+          "bytes": 35133,
+          "results": 5,
+          "ms": 1023
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_VOn23yhZdbohFQoROSEN3012",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news 2026\",\"limit\":5}",
+          "outputBytes": 624,
+          "outputHead": "1. Bun vs Node.js: 3x Faster, But Is It Ready? [2026]\n   https://tech-insider.org/bun-vs-nodejs-2026/\n2. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n3. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtim",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "Three results:\n\n1. **Bun vs Node.js: 3x Faster, But Is It Ready? [2026]** — https://tech-insider.org/bun-vs-nodejs-2026/\n2. **Bun's 2026 JavaScript runtime shifts Next.js economics** — https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n3. **Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...** — https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:33.364Z",
+          "requestBytes": 3051,
+          "responseBytes": 48694,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "搜索 Bun 运行时最新网页结果"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:33.520Z",
+          "requestBytes": 28234,
+          "responseBytes": 13587,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_VOn23yhZdbohFQoROSEN3012",
+              "name": "duck_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent news 2026\", \"limit\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:35.438Z",
+          "requestBytes": 29252,
+          "responseBytes": 42240,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 624,
+              "head": "1. Bun vs Node.js: 3x Faster, But Is It Ready? [2026]\n   https://tech-insider.org/bun-vs-nodejs-2026/\n2. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n3. Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...\n   https://anhtu.dev/bun-runtime-fastest-javascript-runtim"
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Three results:\n\n1. **Bun vs Node.js: 3x Faster, But Is It Ready? [2026]** — https://tech-insider.org/bun-vs-nodejs-2026/\n2. **Bun's 2026 JavaScript runtime shifts Next.js economics** — https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n3. **Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...** — https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "c8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/ws\ntimestamp=2026-09-28T03:49:30.994Z level=INFO run=9b7f6593 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/ws\ntimestamp=2026-09-28T03:49:30.997Z level=INFO run=9b7f6593 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:30.998Z level=INFO run=9b7f6593 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:30.998Z level=INFO run=9b7f6593 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:31.302Z level=WARN run=9b7f6593 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:31.342Z level=INFO run=9b7f6593 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:31.343Z level=INFO run=9b7f6593 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:31.343Z level=INFO run=9b7f6593 message=init\ntimestamp=2026-09-28T03:49:31.403Z level=INFO run=9b7f6593 message=created id=ses_f19de2d75ffedb8cEKx5wFVVBT slug=playful-rocket version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:31.403Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567371403 time.updated=1790567371403\ntimestamp=2026-09-28T03:49:31.418Z level=INFO run=9b7f6593 message=\"event connected\"\ntimestamp=2026-09-28T03:49:33.327Z level=INFO run=9b7f6593 message=loop session.id=ses_f19de2d75ffedb8cEKx5wFVVBT step=0\ntimestamp=2026-09-28T03:49:33.334Z level=INFO run=9b7f6593 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:33.350Z level=INFO run=9b7f6593 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de2d75ffedb8cEKx5wFVVBT small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:33.356Z level=INFO run=9b7f6593 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:33.370Z level=WARN run=9b7f6593 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:33.412Z level=INFO run=9b7f6593 message=init count=1\ntimestamp=2026-09-28T03:49:33.440Z level=INFO run=9b7f6593 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:33.444Z level=INFO run=9b7f6593 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:33.444Z level=INFO run=9b7f6593 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:33.457Z level=INFO run=9b7f6593 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-logged-in-no-credit-own-search-LlBC5D/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:33.510Z level=INFO run=9b7f6593 message=process session.id=ses_f19de2d75ffedb8cEKx5wFVVBT messageID=msg_0e621da10001MLat0qFBHgA0Mn\ntimestamp=2026-09-28T03:49:33.511Z level=INFO run=9b7f6593 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de2d75ffedb8cEKx5wFVVBT small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:33.513Z level=INFO run=9b7f6593 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:34.385Z level=INFO run=9b7f6593 message=evaluated permission=mcp:duck:search pattern=* action.permission=mcp:duck:search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:34.386Z level=INFO run=9b7f6593 message=asking id=per_0e621de31001IzXyWoUppviNa6 permission=mcp:duck:search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\ntimestamp=2026-09-28T03:49:35.427Z level=INFO run=9b7f6593 message=loop session.id=ses_f19de2d75ffedb8cEKx5wFVVBT step=1\ntimestamp=2026-09-28T03:49:35.434Z level=INFO run=9b7f6593 message=process session.id=ses_f19de2d75ffedb8cEKx5wFVVBT messageID=msg_0e621e244001gFyM8Dlqe2JP7r\ntimestamp=2026-09-28T03:49:35.434Z level=INFO run=9b7f6593 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de2d75ffedb8cEKx5wFVVBT small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:35.436Z level=INFO run=9b7f6593 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "ps://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\\n3. **Bun Runtime — The Fastest JavaScript Runtime in 2026 with Sub-5ms Cold ...** — https://anhtu.dev/bun-runtime-fastest-javascript-runtime-2026-2231\",\"time\":{\"start\":1790567376091,\"end\":1790567376102}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567376109,\"sessionID\":\"ses_f19de2d75ffedb8cEKx5wFVVBT\",\"part\":{\"id\":\"prt_0e621e4e8001KI2Q9keRmHRcnY\",\"reason\":\"stop\",\"messageID\":\"msg_0e621e244001gFyM8Dlqe2JP7r\",\"sessionID\":\"ses_f19de2d75ffedb8cEKx5wFVVBT\",\"type\":\"step-finish\",\"tokens\":{\"total\":7194,\"input\":405,\"output\":133,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":6656}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "kill-switch",
+      "arm": "exa-remote",
+      "thirdParty": {
+        "server": "exa",
+        "toolName": "web_search_exa",
+        "engineToolId": "exa_web_search_exa",
+        "kind": "remote",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "server.ts :358 ALPHA_CLOUD_WEBSEARCH_DENY=1、:362 四个 keyless flag=0、:367 ALPHA_LOCAL_WEBSEARCH_DENY=1;injection :401-402 config.mcp.cloud = WITHHELD、:409 ARM=cloud(ext 装载后换成真定义)",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": "1",
+        "ALPHA_CLOUD_WEBSEARCH_DENY": "1",
+        "OPENCODE_ENABLE_EXA": "0",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": "cloud",
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "exa": {
+          "type": "remote",
+          "enabled": "(unset=on)",
+          "url": "https://mcp.exa.ai/mcp"
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": false,
+          "url": "http://127.0.0.1:1/alpha-cloud-withheld"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit",
+        "cloud_cloud_web_search",
+        "websearch"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 8269,
+      "extLoaded": true,
+      "extInstalledCloud": true,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": false,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "exa_web_fetch_exa",
+        "exa_web_search_exa",
+        "glob",
+        "grep",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "read",
+        "read_mcp_resource",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_ChfrQAqmiD8Rwh5mm9NB7036",
+          "name": "exa_web_search_exa",
+          "argsHead": "{\"query\": \"recent articles and news about the Bun JavaScript runtime\", \"objective\": \"Find recent pages/blog posts about the Bun JavaScript runtime, ranking newest and most relevant first; return title and URL for each.\", \"numResults\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_ChfrQAqmiD8Rwh5mm9NB7036",
+          "status": "error",
+          "inputHead": "{\"query\":\"recent articles and news about the Bun JavaScript runtime\",\"objective\":\"Find recent pages/blog posts about the Bun JavaScript runtime, ranking newest and most relevant first; return title an",
+          "outputBytes": 0,
+          "outputHead": "",
+          "errorHead": "exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 318,
+          "head": "exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+        }
+      ],
+      "sovereigntyDenialSeen": true,
+      "sovereigntyHits": [
+        "exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web ",
+        "exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web "
+      ],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "mcp.exa.ai:443": {
+          "allow": 2,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [],
+      "engineToolParts": [
+        {
+          "tool": "exa_web_search_exa",
+          "callID": "call_00_ChfrQAqmiD8Rwh5mm9NB7036",
+          "status": "error",
+          "inputHead": "{\"query\":\"recent articles and news about the Bun JavaScript runtime\",\"objective\":\"Find recent pages/blog posts about the Bun JavaScript runtime, ranking newest and most relevant first; return title an",
+          "outputBytes": 0,
+          "outputHead": "",
+          "errorHead": "exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+        }
+      ],
+      "assistantFinalTextHead": "`exa_web_search_exa` is not available. The error text I received was:\n\n> exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so.\n\nPer your instructions, I'm stopping without listing results.",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:40.601Z",
+          "requestBytes": 3065,
+          "responseBytes": 28254,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Bun JavaScript runtime web search"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:42.355Z",
+          "requestBytes": 29512,
+          "responseBytes": 26449,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_ChfrQAqmiD8Rwh5mm9NB7036",
+              "name": "exa_web_search_exa",
+              "argsHead": "{\"query\": \"recent articles and news about the Bun JavaScript runtime\", \"objective\": \"Find recent pages/blog posts about the Bun JavaScript runtime, ranking newest and most relevant first; return title and URL for each.\", \"numResults\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:43.116Z",
+          "requestBytes": 30406,
+          "responseBytes": 93595,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "exa_web_fetch_exa",
+            "exa_web_search_exa",
+            "glob",
+            "grep",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "read",
+            "read_mcp_resource",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 318,
+              "head": "exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "`exa_web_search_exa` is not available. The error text I received was:\n\n> exa_web_search_exa is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so.\n\nPer your instructions, I'm stopping without listing results."
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/ws\ntimestamp=2026-09-28T03:49:37.266Z level=INFO run=79d6bb1e message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/ws\ntimestamp=2026-09-28T03:49:37.274Z level=INFO run=79d6bb1e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:37.275Z level=INFO run=79d6bb1e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:37.275Z level=INFO run=79d6bb1e message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:37.583Z level=WARN run=79d6bb1e message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:37.617Z level=INFO run=79d6bb1e message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:37.618Z level=INFO run=79d6bb1e message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:37.618Z level=INFO run=79d6bb1e message=init\ntimestamp=2026-09-28T03:49:37.677Z level=INFO run=79d6bb1e message=created id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs slug=cosmic-comet version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:37.677Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567377677 time.updated=1790567377677\ntimestamp=2026-09-28T03:49:37.692Z level=INFO run=79d6bb1e message=\"event connected\"\ntimestamp=2026-09-28T03:49:40.562Z level=INFO run=79d6bb1e message=loop session.id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs step=0\ntimestamp=2026-09-28T03:49:40.570Z level=INFO run=79d6bb1e message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:40.588Z level=INFO run=79d6bb1e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:40.595Z level=INFO run=79d6bb1e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:40.601Z level=WARN run=79d6bb1e message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:42.243Z level=INFO run=79d6bb1e message=init count=1\ntimestamp=2026-09-28T03:49:42.266Z level=INFO run=79d6bb1e message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:42.269Z level=INFO run=79d6bb1e message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:42.270Z level=INFO run=79d6bb1e message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:42.288Z level=INFO run=79d6bb1e message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-exa-remote-bjw1o1/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:42.345Z level=INFO run=79d6bb1e message=process session.id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs messageID=msg_0e621f654001hUaOph081KEixQ\ntimestamp=2026-09-28T03:49:42.346Z level=INFO run=79d6bb1e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:42.348Z level=INFO run=79d6bb1e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:43.099Z level=INFO run=79d6bb1e message=evaluated permission=mcp:exa:web_search_exa pattern=* action.permission=mcp:exa:web_search_exa action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:43.100Z level=INFO run=79d6bb1e message=asking id=per_0e622003b001I6k6xKl4WuwXL6 permission=mcp:exa:web_search_exa patterns=\"[\\\"*\\\"]\" risk.level=high risk.kind=exfiltration\ntimestamp=2026-09-28T03:49:43.108Z level=INFO run=79d6bb1e message=loop session.id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs step=1\ntimestamp=2026-09-28T03:49:43.113Z level=INFO run=79d6bb1e message=process session.id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs messageID=msg_0e6220044001FxNoIWA323477b\ntimestamp=2026-09-28T03:49:43.113Z level=INFO run=79d6bb1e message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19de14f3ffeb84n3Q6Fl0Dpbs small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:43.114Z level=INFO run=79d6bb1e message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so.\\n\\nPer your instructions, I'm stopping without listing results.\",\"time\":{\"start\":1790567384508,\"end\":1790567384515}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567384521,\"sessionID\":\"ses_f19de14f3ffeb84n3Q6Fl0Dpbs\",\"part\":{\"id\":\"prt_0e62205c4001PD036eILEY3an5\",\"reason\":\"stop\",\"messageID\":\"msg_0e6220044001FxNoIWA323477b\",\"sessionID\":\"ses_f19de14f3ffeb84n3Q6Fl0Dpbs\",\"type\":\"step-finish\",\"tokens\":{\"total\":7574,\"input\":238,\"output\":112,\"reasoning\":184,\"cache\":{\"write\":0,\"read\":7040}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "kill-switch",
+      "arm": "own-web_search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "web_search",
+        "engineToolId": "duck_web_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": true
+      },
+      "stateNote": "server.ts :358 ALPHA_CLOUD_WEBSEARCH_DENY=1、:362 四个 keyless flag=0、:367 ALPHA_LOCAL_WEBSEARCH_DENY=1;injection :401-402 config.mcp.cloud = WITHHELD、:409 ARM=cloud(ext 装载后换成真定义)",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": "1",
+        "ALPHA_CLOUD_WEBSEARCH_DENY": "1",
+        "OPENCODE_ENABLE_EXA": "0",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": "cloud",
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": false,
+          "url": "http://127.0.0.1:1/alpha-cloud-withheld"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit",
+        "cloud_cloud_web_search",
+        "websearch"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 4701,
+      "extLoaded": true,
+      "extInstalledCloud": true,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": false,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_web_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_ZJFloB4tJYqVFJ1lHhMi4201",
+          "name": "duck_web_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_ZJFloB4tJYqVFJ1lHhMi4201",
+          "status": "error",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 0,
+          "outputHead": "",
+          "errorHead": "duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 315,
+          "head": "duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+        }
+      ],
+      "sovereigntyDenialSeen": true,
+      "sovereigntyHits": [
+        "duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web sea",
+        "duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web sea"
+      ],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:49:46.952Z",
+          "tool": "web_search",
+          "event": "started",
+          "pid": 37699
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_web_search",
+          "callID": "call_00_ZJFloB4tJYqVFJ1lHhMi4201",
+          "status": "error",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 0,
+          "outputHead": "",
+          "errorHead": "duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+        }
+      ],
+      "assistantFinalTextHead": "`duck_web_search` is unavailable. The error text I received was:\n\n> duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so.\n\nPer your instructions, I'm stopping without calling any other tool.",
+      "exchanges": [
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:47.088Z",
+          "requestBytes": 26317,
+          "responseBytes": 29932,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_ZJFloB4tJYqVFJ1lHhMi4201",
+              "name": "duck_web_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:46.914Z",
+          "requestBytes": 3059,
+          "responseBytes": 62525,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Bun JavaScript runtime search results"
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:48.077Z",
+          "requestBytes": 27292,
+          "responseBytes": 50233,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_web_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 315,
+              "head": "duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so."
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "`duck_web_search` is unavailable. The error text I received was:\n\n> duck_web_search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so.\n\nPer your instructions, I'm stopping without calling any other tool."
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/ws\ntimestamp=2026-09-28T03:49:45.560Z level=INFO run=0c41c2e3 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/ws\ntimestamp=2026-09-28T03:49:45.563Z level=INFO run=0c41c2e3 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:45.564Z level=INFO run=0c41c2e3 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:45.567Z level=INFO run=0c41c2e3 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:45.884Z level=WARN run=0c41c2e3 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:45.919Z level=INFO run=0c41c2e3 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:45.920Z level=INFO run=0c41c2e3 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:45.920Z level=INFO run=0c41c2e3 message=init\ntimestamp=2026-09-28T03:49:45.983Z level=INFO run=0c41c2e3 message=created id=ses_f19ddf480ffegYqsMpzL9sX7Vg slug=sunny-harbor version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:45.983Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567385983 time.updated=1790567385983\ntimestamp=2026-09-28T03:49:45.998Z level=INFO run=0c41c2e3 message=\"event connected\"\ntimestamp=2026-09-28T03:49:46.876Z level=INFO run=0c41c2e3 message=loop session.id=ses_f19ddf480ffegYqsMpzL9sX7Vg step=0\ntimestamp=2026-09-28T03:49:46.883Z level=INFO run=0c41c2e3 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:46.901Z level=INFO run=0c41c2e3 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19ddf480ffegYqsMpzL9sX7Vg small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:46.907Z level=INFO run=0c41c2e3 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:46.921Z level=WARN run=0c41c2e3 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:46.965Z level=INFO run=0c41c2e3 message=init count=1\ntimestamp=2026-09-28T03:49:47.001Z level=INFO run=0c41c2e3 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:47.005Z level=INFO run=0c41c2e3 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:47.006Z level=INFO run=0c41c2e3 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:47.020Z level=INFO run=0c41c2e3 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-web_search-zS9LRe/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:47.078Z level=INFO run=0c41c2e3 message=process session.id=ses_f19ddf480ffegYqsMpzL9sX7Vg messageID=msg_0e6220efd001j2PAFja1v6iz8r\ntimestamp=2026-09-28T03:49:47.079Z level=INFO run=0c41c2e3 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19ddf480ffegYqsMpzL9sX7Vg small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:47.080Z level=INFO run=0c41c2e3 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:48.054Z level=INFO run=0c41c2e3 message=evaluated permission=mcp:duck:web_search pattern=* action.permission=mcp:duck:web_search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:48.055Z level=INFO run=0c41c2e3 message=asking id=per_0e6221396001VJtJDT03f6Eup0 permission=mcp:duck:web_search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\ntimestamp=2026-09-28T03:49:48.066Z level=INFO run=0c41c2e3 message=loop session.id=ses_f19ddf480ffegYqsMpzL9sX7Vg step=1\ntimestamp=2026-09-28T03:49:48.073Z level=INFO run=0c41c2e3 message=process session.id=ses_f19ddf480ffegYqsMpzL9sX7Vg messageID=msg_0e62213a3001xQVSqLKnMBMRyH\ntimestamp=2026-09-28T03:49:48.073Z level=INFO run=0c41c2e3 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19ddf480ffegYqsMpzL9sX7Vg small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:48.074Z level=INFO run=0c41c2e3 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "s one, the platform-hosted one, and this one alike. This is not a transient failure and no permission grant can lift it; do not retry. Answer without web search and say so.\\n\\nPer your instructions, I'm stopping without calling any other tool.\",\"time\":{\"start\":1790567389091,\"end\":1790567389097}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567389103,\"sessionID\":\"ses_f19ddf480ffegYqsMpzL9sX7Vg\",\"part\":{\"id\":\"prt_0e62217aa001Z83J3WWSun2iWV\",\"reason\":\"stop\",\"messageID\":\"msg_0e62213a3001xQVSqLKnMBMRyH\",\"sessionID\":\"ses_f19ddf480ffegYqsMpzL9sX7Vg\",\"type\":\"step-finish\",\"tokens\":{\"total\":6705,\"input\":147,\"output\":108,\"reasoning\":50,\"cache\":{\"write\":0,\"read\":6400}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    },
+    {
+      "cell": "kill-switch",
+      "arm": "own-search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "search",
+        "engineToolId": "duck_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": false
+      },
+      "stateNote": "server.ts :358 ALPHA_CLOUD_WEBSEARCH_DENY=1、:362 四个 keyless flag=0、:367 ALPHA_LOCAL_WEBSEARCH_DENY=1;injection :401-402 config.mcp.cloud = WITHHELD、:409 ARM=cloud(ext 装载后换成真定义)",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": "1",
+        "ALPHA_CLOUD_WEBSEARCH_DENY": "1",
+        "OPENCODE_ENABLE_EXA": "0",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": "cloud",
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": false,
+          "url": "http://127.0.0.1:1/alpha-cloud-withheld"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit",
+        "cloud_cloud_web_search",
+        "websearch"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 5541,
+      "extLoaded": true,
+      "extInstalledCloud": true,
+      "modelCallCount": 3,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": false,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_rTeAaQSoVrIOzIkQTAfY8398",
+          "name": "duck_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 10}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_rTeAaQSoVrIOzIkQTAfY8398",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":10}",
+          "outputBytes": 1181,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript ",
+          "errorHead": ""
+        }
+      ],
+      "toolResultsFedBack": [
+        {
+          "exchange": 3,
+          "bytes": 1181,
+          "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript "
+        }
+      ],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        },
+        "html.duckduckgo.com:443": {
+          "allow": 1,
+          "deny": 0
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:49:52.053Z",
+          "tool": "search",
+          "event": "started",
+          "pid": 37726
+        },
+        {
+          "at": "2026-09-28T03:49:53.847Z",
+          "tool": "search",
+          "query": "Bun JavaScript runtime recent news",
+          "upstream": "html.duckduckgo.com",
+          "status": 200,
+          "bytes": 34053,
+          "results": 10,
+          "ms": 1018
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_rTeAaQSoVrIOzIkQTAfY8398",
+          "status": "completed",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":10}",
+          "outputBytes": 1181,
+          "outputHead": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript ",
+          "errorHead": ""
+        }
+      ],
+      "assistantFinalTextHead": "Three results:\n\n1. **Bun — A fast all-in-one JavaScript runtime** — https://bun.sh/\n2. **Bun is joining Anthropic | Bun Blog** — https://bun.com/blog/bun-joins-anthropic\n3. **Bun Rewrites 535K Lines of Zig into Rust in Four Months** — https://www.infoq.com/news/2026/09/bun-AI-rewrite-zig-rust-4-months/",
+      "exchanges": [
+        {
+          "n": 2,
+          "at": "2026-09-28T03:49:52.186Z",
+          "requestBytes": 26301,
+          "responseBytes": 12604,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_rTeAaQSoVrIOzIkQTAfY8398",
+              "name": "duck_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 10}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        },
+        {
+          "n": 1,
+          "at": "2026-09-28T03:49:52.013Z",
+          "requestBytes": 3051,
+          "responseBytes": 73623,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Bun runtime web search results"
+        },
+        {
+          "n": 3,
+          "at": "2026-09-28T03:49:53.877Z",
+          "requestBytes": 27886,
+          "responseBytes": 36608,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "toolResultMessages": [
+            {
+              "bytes": 1181,
+              "head": "1. Bun — A fast all-in-one JavaScript runtime\n   https://bun.sh/\n2. Blog | Bun\n   https://bun.com/blog\n3. Bun&#x27;s 2026 JavaScript runtime shifts Next.js economics\n   https://technewsdaily.com/product-reviews/buns-2026-javascript-runtime-shifts-nextjs-economics/\n4. Bun is joining Anthropic | Bun Blog\n   https://bun.com/blog/bun-joins-anthropic\n5. GitHub - oven-sh/bun: Incredibly fast JavaScript "
+            }
+          ],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Three results:\n\n1. **Bun — A fast all-in-one JavaScript runtime** — https://bun.sh/\n2. **Bun is joining Anthropic | Bun Blog** — https://bun.com/blog/bun-joins-anthropic\n3. **Bun Rewrites 535K Lines of Zig into Rust in Four Months** — https://www.infoq.com/news/2026/09/bun-AI-rewrite-zig-rust-4-months/"
+        }
+      ],
+      "engineLogHead": [],
+      "engineServerLogTail": "ry=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/ws\ntimestamp=2026-09-28T03:49:50.310Z level=INFO run=847cbae2 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/ws\ntimestamp=2026-09-28T03:49:50.313Z level=INFO run=847cbae2 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:49:50.315Z level=INFO run=847cbae2 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:49:50.315Z level=INFO run=847cbae2 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:49:50.639Z level=WARN run=847cbae2 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:49:50.673Z level=INFO run=847cbae2 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:49:50.673Z level=INFO run=847cbae2 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:49:50.673Z level=INFO run=847cbae2 message=init\ntimestamp=2026-09-28T03:49:50.736Z level=INFO run=847cbae2 message=created id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT slug=witty-tiger version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:49:50.736Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567390736 time.updated=1790567390736\ntimestamp=2026-09-28T03:49:50.752Z level=INFO run=847cbae2 message=\"event connected\"\ntimestamp=2026-09-28T03:49:51.972Z level=INFO run=847cbae2 message=loop session.id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT step=0\ntimestamp=2026-09-28T03:49:51.981Z level=INFO run=847cbae2 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:49:51.999Z level=INFO run=847cbae2 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT small=true agent=title mode=primary\ntimestamp=2026-09-28T03:49:52.005Z level=INFO run=847cbae2 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:52.022Z level=WARN run=847cbae2 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:49:52.065Z level=INFO run=847cbae2 message=init count=1\ntimestamp=2026-09-28T03:49:52.101Z level=INFO run=847cbae2 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:49:52.104Z level=INFO run=847cbae2 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:49:52.105Z level=INFO run=847cbae2 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:49:52.120Z level=INFO run=847cbae2 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-9P3c9z/ws workspaceID=undefined\ntimestamp=2026-09-28T03:49:52.175Z level=INFO run=847cbae2 message=process session.id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT messageID=msg_0e62222e6001XOyN26F4Ic0EK2\ntimestamp=2026-09-28T03:49:52.176Z level=INFO run=847cbae2 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:52.184Z level=INFO run=847cbae2 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:49:52.822Z level=INFO run=847cbae2 message=evaluated permission=mcp:duck:search pattern=* action.permission=mcp:duck:search action.pattern=* action.action=ask\ntimestamp=2026-09-28T03:49:52.823Z level=INFO run=847cbae2 message=asking id=per_0e6222636001K0FK7MUyayDVxR permission=mcp:duck:search patterns=\"[\\\"*\\\"]\" risk.level=medium risk.kind=third-party-tool\ntimestamp=2026-09-28T03:49:53.864Z level=INFO run=847cbae2 message=loop session.id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT step=1\ntimestamp=2026-09-28T03:49:53.872Z level=INFO run=847cbae2 message=process session.id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT messageID=msg_0e6222a48001MnKrcvcGSFIvDG\ntimestamp=2026-09-28T03:49:53.872Z level=INFO run=847cbae2 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19dde1f0ffe7s6Dsr3uJx1mLT small=false agent=build mode=primary\ntimestamp=2026-09-28T03:49:53.874Z level=INFO run=847cbae2 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "",
+      "stdoutTail": "e** — https://bun.sh/\\n2. **Bun is joining Anthropic | Bun Blog** — https://bun.com/blog/bun-joins-anthropic\\n3. **Bun Rewrites 535K Lines of Zig into Rust in Four Months** — https://www.infoq.com/news/2026/09/bun-AI-rewrite-zig-rust-4-months/\",\"time\":{\"start\":1790567394647,\"end\":1790567394655}}}\n{\"type\":\"step_finish\",\"timestamp\":1790567394662,\"sessionID\":\"ses_f19dde1f0ffe7s6Dsr3uJx1mLT\",\"part\":{\"id\":\"prt_0e6222d61001hBNCNyexQIrDV8\",\"reason\":\"stop\",\"messageID\":\"msg_0e6222a48001MnKrcvcGSFIvDG\",\"sessionID\":\"ses_f19dde1f0ffe7s6Dsr3uJx1mLT\",\"type\":\"step-finish\",\"tokens\":{\"total\":6878,\"input\":491,\"output\":102,\"reasoning\":13,\"cache\":{\"write\":0,\"read\":6272}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    }
+  ]
+}

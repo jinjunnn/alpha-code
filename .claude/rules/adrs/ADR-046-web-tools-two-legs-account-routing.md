@@ -3,7 +3,7 @@ id: ADR-046
 title: web 工具两条腿都活着 —— 账户信号只决定云腿在不在,不决定本地腿在不在;额度只由 account 的逐次 preauth 在调用那一刻回答
 status: accepted
 date: 2026-09-23
-amended: 2026-09-24
+amended: 2026-09-27
 supersedes: ADR-009
 related: [ADR-002, ADR-015, ADR-029, ADR-035]
 ---
@@ -174,11 +174,25 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 
 | 账户态 | 第三方 web-search MCP | 为什么 |
 |---|---|---|
-| 登出 / BYOK | **可用** | 两个信号都不置位(`#1411` 之前也是这样,没变) |
-| 登录 + 有额度 | **可用**(`#1411` 起的新行为,本条登记它) | 代付不再置位任何信号;本地腿同时活着,拦它护不住能力 |
-| 登录 + 无额度 | 同上 | 桌面侧与「有额度」不可分辨(D2:没有只读额度查询) |
-| kill-switch | **关** | 两个信号都置位;判据任一命中即拒 |
+| 登出 / BYOK | **可用**(`#1461` 2026-09-27 实测:在表里、调得动、拿回结果) | 两个信号都不置位(`#1411` 之前也是这样,没变) |
+| 登录 + 有额度 | **可用**(`#1411` 起的新行为,本条登记它;`#1461` 实测同上) | 代付不再置位任何信号;本地腿同时活着,拦它护不住能力 |
+| 登录 + 无额度 | 同上(`#1461` 实测同上) | 桌面侧与「有额度」不可分辨(D2:没有只读额度查询);第三方判决不读任何额度轴 |
+| kill-switch | **工具仍在模型工具表里;调用在执行前被 ext 拒 —— 仅当工具名被 `isWebSearchToolId` 认出**。认不出的第三方搜网工具**照常搜到结果**(`#1461` 反向臂实测) | 两个信号都置位;判据任一命中即拒 —— 判据的入口是工具名,不是目的地 |
 
+- **就地修订 · 2026-09-27(`#1461`,实测背书 + 措辞订正;零行为改动)**:上表此前是从代码读出的推断,
+  现在四格都在**装了真第三方 web-search MCP 的真引擎**(bun dev 树 + 真 `@alpha-code/ext`,ext 装载回执与归属
+  快照逐格入库)上跑过:Exa 远端(`{"mcp":{"exa":{"type":"remote","url":"https://mcp.exa.ai/mcp"}}}`,即本条
+  字面例子,工具 id `exa_web_search_exa`)与一个真打 DuckDuckGo 的自建 stdio 插件(同一插件只换工具名:
+  `web_search` → `duck_web_search`,`search` → `duck_search`),四格 × 三臂 × 两轮 24 格结论逐格相同。
+  **订正两处措辞**:①kill-switch 那格原写「关」—— 实测是**工具仍在表里、调用时被拒**:注入面的 permission
+  deny 只点名 `websearch` 与 `cloud_cloud_web_search`,第三方工具从不被滤出工具表,模型会先看见它、调它、
+  再拿到 `WebSearchSovereigntyError` 的文案;②「做不到穷尽」原只举非 ASCII 名,实测**最常见的名字就漏**:
+  工具名 `search`(server 键 `duck`)在 kill-switch 下照常拿回 DuckDuckGo 结果页(出网代理记到
+  `html.duckduckgo.com:443 allow`,插件自己的 trace 记到 HTTP 200 / 34 KB / 10 条),同一生产函数离线判
+  `google_search` / `bing_search` / `search_the_internet` 同样不命中。判得住的只有名字里含 `websearch` /
+  `searchweb`、或 `search` 与具名引擎词相邻的那些 —— 而 server 键是用户起的:同一个 `search` 工具挂在
+  `ddg` 下命中、挂在 `duck` 下不命中。证据:
+  [`docs/verification/2026-09-27-1461-third-party-websearch-mcp-four-states/README.md`](../../../docs/verification/2026-09-27-1461-third-party-websearch-mcp-four-states/README.md)。
 - **判据**(缺一这张表就只是散文):
   - 四种账户态的**合成**判据在 `packages/ui-mac/src/main/server.test.ts` 的「`#1443` 用户自带的
     第三方 web-search MCP」—— env 来自真 `forkSidecar()`,归属来自真 `injectAlphaConfig()` +
@@ -192,7 +206,9 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 - **不在本条范围内**(沿用 [[ADR-009]] 裁决 (b) 2026-07-26 R6 的收窄,不扩大也不收回宣称):第三方
   工具的识别只能看工具名,**做不到穷尽** —— 经 `McpCatalog.sanitize` 抹平的非 ASCII 名任何分类器
   都看不见。所以 kill-switch 对第三方是**尽力拦截**,不是保证。本条只说明「哪一态该拦、哪一态不该拦」,
-  没有改变拦得住多少。
+  没有改变拦得住多少。`#1461` 把这条边界钉得更具体:漏掉的不只是非 ASCII 名,**纯 ASCII 的 `search` /
+  `google_search` / `bing_search` 也认不出**(见上方 2026-09-27 修订)。要把它变成保证得引入目的地轴或
+  插件白名单,那是另一个设计决定,不在本 ADR。
 
 ## 后果
 
@@ -203,7 +219,7 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 | 登出 / BYOK | `websearch` | 本地(`#1415` 已落地) | 可用(D6) | 不可用,归 `#1412` |
 | 登录 + 有额度 | `websearch` + `cloud_cloud_web_search` | 模型选;云腿 preauth 放行 | 可用(D6,`#1411` 起) | 同上 |
 | 登录 + 无额度 | 同上 | 云腿 402(响亮、带 `code`),本地腿**在场且可用** | 同上 | 同上 |
-| kill-switch | 两个都没有 | **我们的两条腿都没有**,文案要说 kill-switch 的实话;开关管不到「模型改用别的工具自己去打搜索引擎」(D3) | 关(尽力拦截,见 D6) | 同上 |
+| kill-switch | 两个都没有 | **我们的两条腿都没有**,文案要说 kill-switch 的实话;开关管不到「模型改用别的工具自己去打搜索引擎」(D3) | 名字被认出的:仍在表里、调用被拒;认不出的(如工具名 `search`):照常可用(D6,`#1461` 实测) | 同上 |
 
 实现不得越过的不变量:
 
@@ -254,3 +270,4 @@ account 服务的钱包与会员表里,它的答案只在一次 reservation 里�
 `#1433`(VERIFY-1 四种账户态的 runtime 证据);父需求 `#1414`。
 `#1443` 补登记 D1 的第二处落点(D6,第三方 web-search MCP),零行为改动。
 `#1448` 按 owner 2026-09-24 裁决收窄 D3 的作用面(逃生开关只管我们自己提供的两条搜网腿),零行为改动。
+`#1461`(VERIFY)在装了真第三方 web-search MCP 的引擎上实测 D6 四格(含反向臂),就地修订 D6 措辞,零行为改动。
