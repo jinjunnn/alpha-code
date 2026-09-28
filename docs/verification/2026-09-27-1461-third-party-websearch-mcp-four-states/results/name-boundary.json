@@ -1,0 +1,151 @@
+{
+  "ticket": "alpha-code#1461",
+  "at": "2026-09-28T03:42:49.194Z",
+  "classifier": "packages/ext/src/cloud-websearch-kill.ts isWebSearchToolId / webSearchToolDenial (production, imported)",
+  "rows": [
+    {
+      "server": "exa",
+      "tool": "web_search_exa",
+      "engineToolId": "exa_web_search_exa",
+      "isWebSearchToolId": true,
+      "denialUnderKillSwitch": "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike",
+      "denialWhenOpen": null,
+      "note": "Exa 远端 MCP 今天真 advertise 的名字(本轮 tools/list 实读),ADR-046 D6 的字面例子"
+    },
+    {
+      "server": "exa",
+      "tool": "web_fetch_exa",
+      "engineToolId": "exa_web_fetch_exa",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "Exa 的另一个工具(抓取,不是搜索)—— 应当不命中"
+    },
+    {
+      "server": "duck",
+      "tool": "web_search",
+      "engineToolId": "duck_web_search",
+      "isWebSearchToolId": true,
+      "denialUnderKillSwitch": "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike",
+      "denialWhenOpen": null,
+      "note": "本轮正向臂:自建 stdio 插件,工具名 web_search"
+    },
+    {
+      "server": "duck",
+      "tool": "search",
+      "engineToolId": "duck_search",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "本轮反向臂:同一自建插件,工具名 search(最常见的搜索工具名)"
+    },
+    {
+      "server": "ddg",
+      "tool": "search",
+      "engineToolId": "ddg_search",
+      "isWebSearchToolId": true,
+      "denialUnderKillSwitch": "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike",
+      "denialWhenOpen": null,
+      "note": "同一个工具,用户把 server 键起成 ddg —— 词表里有 ddg"
+    },
+    {
+      "server": "duckduckgo",
+      "tool": "search",
+      "engineToolId": "duckduckgo_search",
+      "isWebSearchToolId": true,
+      "denialUnderKillSwitch": "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike",
+      "denialWhenOpen": null,
+      "note": "同一个工具,server 键 duckduckgo —— 词表里有 duckduckgo"
+    },
+    {
+      "server": "google",
+      "tool": "search",
+      "engineToolId": "google_search",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "server 键 google —— google 刻意不在词表(AC4 防误杀 gdrive_search)"
+    },
+    {
+      "server": "g",
+      "tool": "google_search",
+      "engineToolId": "g_google_search",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "工具名 google_search"
+    },
+    {
+      "server": "b",
+      "tool": "bing_search",
+      "engineToolId": "b_bing_search",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "工具名 bing_search"
+    },
+    {
+      "server": "s",
+      "tool": "search_the_internet",
+      "engineToolId": "s_search_the_internet",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "search 与 internet 不相邻"
+    },
+    {
+      "server": "s",
+      "tool": "internet_search",
+      "engineToolId": "s_internet_search",
+      "isWebSearchToolId": true,
+      "denialUnderKillSwitch": "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike",
+      "denialWhenOpen": null,
+      "note": "search 与 internet 相邻"
+    },
+    {
+      "server": "t",
+      "tool": "tavily_search",
+      "engineToolId": "t_tavily_search",
+      "isWebSearchToolId": true,
+      "denialUnderKillSwitch": "the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one, the platform-hosted one, and this one alike",
+      "denialWhenOpen": null,
+      "note": "search 与 tavily 相邻"
+    },
+    {
+      "server": "p",
+      "tool": "perplexity_ask",
+      "engineToolId": "p_perplexity_ask",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "无 search 词"
+    },
+    {
+      "server": "s",
+      "tool": "query",
+      "engineToolId": "s_query",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "无 search 词"
+    },
+    {
+      "server": "s",
+      "tool": "lookup",
+      "engineToolId": "s_lookup",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "无 search 词"
+    },
+    {
+      "server": "s",
+      "tool": "研究",
+      "engineToolId": "s___",
+      "isWebSearchToolId": false,
+      "denialUnderKillSwitch": null,
+      "denialWhenOpen": null,
+      "note": "非 ASCII 名,sanitize 后只剩下划线(D6 已登记的漏洞)"
+    }
+  ]
+}

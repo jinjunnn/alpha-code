@@ -1,0 +1,209 @@
+{
+  "ticket": "alpha-code#1461",
+  "at": "2026-09-28T03:53:33.577Z",
+  "bun": "1.3.14",
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "totalModelCalls": 2,
+  "credentialHygiene": "model key read from --keys-file into memory only; engine config carries a placeholder; ALPHA_MCP_TOKEN file is a placeholder string; nothing real lands in results/logs",
+  "egressPolicy": {
+    "allow": [
+      "mcp.exa.ai",
+      "html.duckduckgo.com",
+      "duckduckgo.com",
+      "models.opencode.ai"
+    ],
+    "everythingElse": "deny (incl. registry.npmjs.org — ac#1454 root cause — and alpha-cloud.tidelabs.click: cloud leg not under test)"
+  },
+  "results": [
+    {
+      "cell": "kill-switch",
+      "arm": "own-search",
+      "thirdParty": {
+        "server": "duck",
+        "toolName": "search",
+        "engineToolId": "duck_search",
+        "kind": "local",
+        "expectedClassifiedAsWebSearch": false
+      },
+      "stateNote": "server.ts :358 ALPHA_CLOUD_WEBSEARCH_DENY=1、:362 四个 keyless flag=0、:367 ALPHA_LOCAL_WEBSEARCH_DENY=1;injection :401-402 config.mcp.cloud = WITHHELD、:409 ARM=cloud(ext 装载后换成真定义)",
+      "engineEnvSignals": {
+        "ALPHA_LOCAL_WEBSEARCH_DENY": "1",
+        "ALPHA_CLOUD_WEBSEARCH_DENY": "1",
+        "OPENCODE_ENABLE_EXA": "0",
+        "ALPHA_CLOUD_MCP_SERVER": "cloud",
+        "ALPHA_CLOUD_MCP_ARM": "cloud",
+        "ALPHA_CLOUD_MCP_DEF_present": true
+      },
+      "configMcpServers": {
+        "duck": {
+          "type": "local",
+          "enabled": "(unset=on)",
+          "url": null
+        },
+        "cloud": {
+          "type": "remote",
+          "enabled": false,
+          "url": "http://127.0.0.1:1/alpha-cloud-withheld"
+        }
+      },
+      "permissionDenies": [
+        "bash",
+        "edit",
+        "cloud_cloud_web_search",
+        "websearch"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "wallMs": 3680,
+      "autoApprove": false,
+      "permissionRequestedLines": [
+        "\u001b[93m\u001b[1m! \u001b[0mpermission requested: mcp:duck:search (*); auto-rejecting"
+      ],
+      "extLoaded": true,
+      "extInstalledCloud": true,
+      "modelCallCount": 2,
+      "thirdPartyOfferedToModel": true,
+      "websearchOfferedToModel": false,
+      "offeredTools": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "duck_search",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "modelCalledThirdParty": true,
+      "modelToolCalls": [
+        {
+          "exchange": 2,
+          "index": 0,
+          "id": "call_00_jyrjOFe9uJe99Qaaif8B1169",
+          "name": "duck_search",
+          "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+        }
+      ],
+      "thirdPartyToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_jyrjOFe9uJe99Qaaif8B1169",
+          "status": "error",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 0,
+          "outputHead": "",
+          "errorHead": "The user rejected permission to use this specific tool call."
+        }
+      ],
+      "toolResultsFedBack": [],
+      "sovereigntyDenialSeen": false,
+      "sovereigntyHits": [],
+      "permissionEvents": [],
+      "eventTypeHistogram": {
+        "step_start": 1,
+        "tool_use": 1,
+        "step_finish": 1
+      },
+      "mcpOwnershipLine": "ownership (/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws): {\"governed\":[\"cloud\"],\"foreign\":[\"duck\"]}",
+      "egressSummary": {
+        "models.opencode.ai:443": {
+          "allow": 1,
+          "deny": 0
+        },
+        "registry.npmjs.org:443": {
+          "allow": 0,
+          "deny": 1
+        },
+        "alpha-cloud.tidelabs.click:443": {
+          "allow": 0,
+          "deny": 2
+        }
+      },
+      "mcpTrace": [
+        {
+          "at": "2026-09-28T03:53:32.431Z",
+          "tool": "search",
+          "event": "started",
+          "pid": 40042
+        }
+      ],
+      "engineToolParts": [
+        {
+          "tool": "duck_search",
+          "callID": "call_00_jyrjOFe9uJe99Qaaif8B1169",
+          "status": "error",
+          "inputHead": "{\"query\":\"Bun JavaScript runtime recent news\",\"limit\":5}",
+          "outputBytes": 0,
+          "outputHead": "",
+          "errorHead": "The user rejected permission to use this specific tool call."
+        }
+      ],
+      "assistantFinalTextHead": "",
+      "exchanges": [
+        {
+          "n": 1,
+          "at": "2026-09-28T03:53:32.395Z",
+          "requestBytes": 3051,
+          "responseBytes": 21972,
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [],
+          "responseAssistantTextHead": "Bun JavaScript runtime web search"
+        },
+        {
+          "n": 2,
+          "at": "2026-09-28T03:53:32.548Z",
+          "requestBytes": 26301,
+          "responseBytes": 17947,
+          "requestToolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "duck_search",
+            "glob",
+            "grep",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch"
+          ],
+          "requestMessageRoles": [
+            "system",
+            "system",
+            "user"
+          ],
+          "toolResultMessages": [],
+          "status": 200,
+          "responseToolCalls": [
+            {
+              "index": 0,
+              "id": "call_00_jyrjOFe9uJe99Qaaif8B1169",
+              "name": "duck_search",
+              "argsHead": "{\"query\": \"Bun JavaScript runtime recent news\", \"limit\": 5}"
+            }
+          ],
+          "responseAssistantTextHead": ""
+        }
+      ],
+      "engineLogHead": [
+        "\u001b[93m\u001b[1m! \u001b[0mpermission requested: mcp:duck:search (*); auto-rejecting"
+      ],
+      "engineServerLogTail": "timestamp=2026-09-28T03:53:30.791Z level=INFO run=604637e6 message=\"creating instance\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws\ntimestamp=2026-09-28T03:53:30.792Z level=INFO run=604637e6 message=fromDirectory directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws\ntimestamp=2026-09-28T03:53:30.801Z level=INFO run=604637e6 message=bootstrapping directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws\ntimestamp=2026-09-28T03:53:30.804Z level=INFO run=604637e6 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/home/.config/opencode/config.json\ntimestamp=2026-09-28T03:53:30.805Z level=INFO run=604637e6 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/home/.config/opencode/opencode.json\ntimestamp=2026-09-28T03:53:30.805Z level=INFO run=604637e6 message=loading path=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/home/.config/opencode/opencode.jsonc\ntimestamp=2026-09-28T03:53:31.107Z level=WARN run=604637e6 message=\"background dependency install failed\" dir=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/home/.config/opencode error=\"Cause([Fail(NpmInstallFailedError (cause: HttpErrorGeneral: 403 Forbidden - GET https://registry.npmjs.org/@opencode-ai%2fplugin))])\"\ntimestamp=2026-09-28T03:53:31.143Z level=INFO run=604637e6 message=\"all LSPs are disabled\"\ntimestamp=2026-09-28T03:53:31.143Z level=INFO run=604637e6 message=\"all formatters are disabled\"\ntimestamp=2026-09-28T03:53:31.143Z level=INFO run=604637e6 message=init\ntimestamp=2026-09-28T03:53:31.204Z level=INFO run=604637e6 message=created id=ses_f19da84bbffeV2hpjRoAnnS7el slug=jolly-nebula version=local projectID=global directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws path=private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws workspaceID=undefined parentID=undefined title=\"New session - 2026-09-28T03:53:31.204Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1790567611204 time.updated=1790567611204\ntimestamp=2026-09-28T03:53:31.212Z level=INFO run=604637e6 message=\"event connected\"\ntimestamp=2026-09-28T03:53:32.359Z level=INFO run=604637e6 message=loop session.id=ses_f19da84bbffeV2hpjRoAnnS7el step=0\ntimestamp=2026-09-28T03:53:32.366Z level=INFO run=604637e6 message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-09-28T03:53:32.381Z level=INFO run=604637e6 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19da84bbffeV2hpjRoAnnS7el small=true agent=title mode=primary\ntimestamp=2026-09-28T03:53:32.387Z level=INFO run=604637e6 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\ntimestamp=2026-09-28T03:53:32.401Z level=WARN run=604637e6 message=\"server unavailable\" key=cloud type=remote status=failed\ntimestamp=2026-09-28T03:53:32.442Z level=INFO run=604637e6 message=init count=1\ntimestamp=2026-09-28T03:53:32.470Z level=INFO run=604637e6 message=\"watcher backend\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws platform=darwin backend=fs-events\ntimestamp=2026-09-28T03:53:32.473Z level=INFO run=604637e6 message=\"project copy refresh started\" projectID=global\ntimestamp=2026-09-28T03:53:32.474Z level=INFO run=604637e6 message=\"project copy refresh done\" projectID=global updated=[] removed=[]\ntimestamp=2026-09-28T03:53:32.486Z level=INFO run=604637e6 message=\"booting location services\" directory=/private/tmp/claude-501/-Users-tide-app-alpha-work/d1a582fa-472a-4a99-9133-d44bcc8a6d34/scratchpad/1461/ac1461-kill-switch-own-search-EOkLeO/ws workspaceID=undefined\ntimestamp=2026-09-28T03:53:32.539Z level=INFO run=604637e6 message=process session.id=ses_f19da84bbffeV2hpjRoAnnS7el messageID=msg_0e6257fc8001AFj4kBNeoARTwj\ntimestamp=2026-09-28T03:53:32.545Z level=INFO run=604637e6 message=stream providerID=ac1461probe modelID=deepseek-flash session.id=ses_f19da84bbffeV2hpjRoAnnS7el small=false agent=build mode=primary\ntimestamp=2026-09-28T03:53:32.547Z level=INFO run=604637e6 message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=ac1461probe llm.model=deepseek-flash\n",
+      "stderrTail": "\u001b[93m\u001b[1m! \u001b[0mpermission requested: mcp:duck:search (*); auto-rejecting\n",
+      "stdoutTail": "Script runtime recent news\",\"limit\":5},\"error\":\"The user rejected permission to use this specific tool call.\",\"time\":{\"start\":1790567613406,\"end\":1790567613410}},\"id\":\"prt_0e62583d1001HNBRz7R2MyW0Fr\",\"sessionID\":\"ses_f19da84bbffeV2hpjRoAnnS7el\",\"messageID\":\"msg_0e6257fc8001AFj4kBNeoARTwj\"}}\n{\"type\":\"step_finish\",\"timestamp\":1790567613424,\"sessionID\":\"ses_f19da84bbffeV2hpjRoAnnS7el\",\"part\":{\"id\":\"prt_0e62583e40010SMKFqxqVDfC8g\",\"reason\":\"tool-calls\",\"messageID\":\"msg_0e6257fc8001AFj4kBNeoARTwj\",\"sessionID\":\"ses_f19da84bbffeV2hpjRoAnnS7el\",\"type\":\"step-finish\",\"tokens\":{\"total\":6412,\"input\":4656,\"output\":60,\"reasoning\":32,\"cache\":{\"write\":0,\"read\":1664}},\"cost\":0}}\n[@alpha-code/ext] event: catalog.updated\n[@alpha-code/ext] event: integration.updated\n[@alpha-code/ext] event: reference.updated\n"
+    }
+  ]
+}
