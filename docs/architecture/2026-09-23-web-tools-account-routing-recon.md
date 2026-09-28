@@ -249,6 +249,35 @@ export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false
 
 —— 这句话本身就是票面描述的那个缺陷的**成文形态**:它假定本地被关时云腿一定可用。
 
+### 3.2 订正(2026-09-27,`#1411` 落地之后;上面的映射是勘破当天的地面真相,不改写)
+
+**上面 `[main 进程,每次 fork 前]` 那段里有两行今天已经不成立**。`#1411`(PR `#1442`,`9d544762c`)
+落地时没有回写本文,于是这一段一直记着 `#1411` **之前**的映射。今天(`origin/alpha` @ `839ce4f08`)实读:
+
+| 本文原话 | 今天 | 坐标 |
+| --- | --- | --- |
+| `server.ts:327 platformPays = Boolean(ALPHA_CLOUD_MCP_URL) && hasSecretFile(userData,"ALPHA_MCP_TOKEN")` | **main 的主权闸不再算 `platformPays`**:`applyWebSearchSovereignty()` 不再接 `userDataPath`,函数体里只剩 `killSwitch` 一个判据 | `packages/ui-mac/src/main/server.ts:356-357` |
+| `killSwitch\|\|platformPays ⇒ 4 个 keyless flag 覆盖写 "0" + ALPHA_LOCAL_WEBSEARCH_DENY=1` | **只有 `killSwitch`** ⇒ 4 个 keyless flag 覆盖写 `"0"` + `ALPHA_LOCAL_WEBSEARCH_DENY=1`;否则**删除**它。`ALPHA_CLOUD_WEBSEARCH_DENY` 同样只由 `killSwitch` 置位、否则删除 | `server.ts:362-373` |
+
+⇒ **两个 DENY 信号今天都只有 kill-switch 一个来源,代付态一个都不置位**(真 fork 判据:
+`packages/ui-mac/src/main/server.test.ts` 的「登录代付:两条腿同时在模型工具表里」)。
+`platformPays` 判据本身还在,但只剩注入面那一份(`alpha-config-injection.ts:102`,不再是「第二次算同一个判据」),
+它只决定**云腿装不装、装成什么形状**(本节第二段与 §6 第 2 行仍然成立);§4.2 判据 A 的 `server.ts:327`
+坐标、§6 第 1 行「登录(判据 A)+ kill-switch」里的「登录」那一半,随之作废。
+
+连带的两处,读上面时一起换算:
+
+- 本节末尾引的那句模型原话(「Use `cloud_cloud_web_search` if it is present」)已被 `#1411` 改成只点名
+  kill-switch、不指向任何替代(`packages/core/src/tool/websearch.ts` 与 `packages/opencode/src/tool/mcp-websearch.ts`
+  的 `LOCAL_WEBSEARCH_DENIED_MESSAGE`)—— 本节说它是「缺陷的成文形态」,那个缺陷已修。
+- ext 那道 `tool.execute.before` 闸(`ext/src/cloud-websearch-kill.ts` 的 `webSearchToolDenial`)对**非治理** server
+  的拒绝理由,到本订正落笔前仍串名「the platform pays for search, or …」并称「除平台自己的以外」—— 与上面两行
+  同一个来源、同一天过期,而它直接进模型上下文。本次按 `#1411` 的形状改成只点名 kill-switch
+  (判据:`ext/src/cloud-websearch-kill.test.ts` 的「拒绝理由在唯一可达它的状态(kill-switch)下只点名 kill-switch」)。
+
+**为什么不直接改上面那段**:勘破文档记的是量到那一刻的地面真相,原测量不改,后来的人才看得出这里曾经错过、
+错在哪一天之前。拿本节做闸门设计时**先读本订正**,别把 `killSwitch||platformPays` 当成今天的映射。
+
 ### 3.3 副本集合:实跑列出
 
 `packages/ui-mac/src/main/websearch-copies.test.ts` 是 ADR-035 的普查闸。在主 checkout 实跑:

@@ -208,6 +208,41 @@ describe("第三方 MCP 上的 web search 同受主权判决(R5 Blocker)", () =>
     for (const tool of siblingCloudTools) expect(() => assertWebSearchToolAllowed(tool, ON, owned(ON))).not.toThrow()
   })
 
+  // 模型看得见的那句话(照 `#1411` 对 `LOCAL_WEBSEARCH_DENIED_MESSAGE` 的同形修正)。
+  //
+  // 非治理 server 那条分支的理由此前写「the platform pays for search, or the web search kill switch is
+  // set」。`#1411` 起 main 只在 kill-switch 下置位两个 deny 信号、代付态一个都不置(真 fork 判据在
+  // `ui-mac/src/main/server.test.ts`),于是到得了这个分支的产品态只剩 kill-switch —— 而上一条已经证明
+  // 那一态治理云工具同样被关。「代付」与「除平台自己的以外」两个半句在唯一可达它的状态下都是假的。
+  // 基线 S5:指不出在场的替代就明说没有。
+  test("拒绝理由在唯一可达它的状态(kill-switch)下只点名 kill-switch,不串名代付、不指向任何替代", () => {
+    // 读的是**抛出来的值**,不是文件正文 —— 正文匹配会被注释里的同形字样骗过去。
+    const thrown = (tool: string): unknown => {
+      try {
+        assertWebSearchToolAllowed(tool, ON, owned(ON))
+      } catch (error) {
+        return error
+      }
+      return undefined
+    }
+    for (const tool of thirdParty) {
+      const error = thrown(tool)
+      expect(error).toBeInstanceOf(WebSearchSovereigntyError)
+      const message = (error as Error).message
+      // 说清是谁关的:kill-switch 是唯一能到这里的原因。
+      expect(message.toLowerCase()).toContain("kill switch")
+      // 不再串名一个到不了的原因,也不再暗示平台自己的工具还在。
+      expect(message.toLowerCase()).not.toContain("platform pays")
+      expect(message.toLowerCase()).not.toContain("pays for")
+      expect(message).not.toContain("B1")
+      expect(message.toLowerCase()).not.toContain("except")
+      expect(message).not.toContain("cloud_web_search")
+      // 仍必须让模型停手并自己说明 —— 否则它会把「能力被关掉」当成瞬时故障反复调用。
+      expect(message).toContain("do not retry")
+      expect(message).toContain("Answer without web search and say so")
+    }
+  })
+
   test("登出 / BYOK(两个信号都不置位):第三方 web search 照常可用", () => {
     for (const tool of thirdParty) expect(() => assertWebSearchToolAllowed(tool, OFF, owned(OFF))).not.toThrow()
   })
