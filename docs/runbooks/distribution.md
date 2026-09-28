@@ -123,7 +123,23 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 - **appId 变更**(如从旧 `ai.opencode.desktop.*` 迁到 `com.tide.alphacode.*`)= app 存储一次性重置(会话/最近项目/登录),**磁盘项目文件不受影响**,重开即可。
 
 ## 4. 下一个真实版本怎么发(TL;DR)
-改 `package.json` 版本 → `source signing.env && OPENCODE_CHANNEL=prod bun run build && bun run package:mac` → stapler/spctl 验证 → `bun scripts/release-manifest.ts produce --channel prod --dist dist --key ~/.alpha-code-signing/release-manifest-ed25519.pem`(拒绝即停,禁止绕过)→ `gh release create v<ver> …`(含 manifest+sig+SBOM)→ curl feed 得 200。签名→公证→feed 链 v0.1.0 已端到端验证;manifest 链自 #175 起为发布必经步骤。
+
+> ⚠️ **升版本不只改 `packages/ui-mac/package.json`。** 2026-09-28 发 v0.1.17 实测:
+> 还有两处 consumer-pin 夹具的 `consumer_version` 必须同步到同一个版本号 ——
+> `alpha-platform` 的 cutover gate 读这一格判本仓是否已切:
+>
+> - `packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-640/ledger-page.json`
+> - `packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json`
+>
+> 不同步 ⇒ `packages/alpha-contracts-consumer/src/contracts.test.ts`
+> (`expect(pin.consumer_version).toBe(shipped.version)`)与
+> `packages/ui-mac/src/main/shipped-version-propagation.test.ts` 当场红,push 被拦。
+> `bun install` 会顺带把 `bun.lock` 里同一个 workspace 版本字段改掉,**那是该带的**,不是意外。
+>
+> ⚠️ **本节全部命令都在 `packages/ui-mac/` 下跑**,不是仓根 —— 仓根没有 `build` /
+> `package:mac` / `scripts/release-manifest.ts`。照本节抄到仓根会得到
+> `error: Script not found "build"` 与 `Module not found`。
+改 `package.json` 版本 **+ 两处 consumer-pin 的 `consumer_version`**(见下方⚠️)→ `source signing.env && OPENCODE_CHANNEL=prod bun run build && bun run package:mac` → stapler/spctl 验证 → `bun scripts/release-manifest.ts produce --channel prod --dist dist --key ~/.alpha-code-signing/release-manifest-ed25519.pem`(拒绝即停,禁止绕过)→ `gh release create v<ver> …`(含 manifest+sig+SBOM)→ curl feed 得 200。签名→公证→feed 链 v0.1.0 已端到端验证;manifest 链自 #175 起为发布必经步骤。
 
 **Windows(beta/prod)**:`alpha-windows-build.yml` 打包后自带 Authenticode 硬门 ——
 未签名、签名不可验证、或 publisher 不在白名单(REQ-076 T3 采购落地前白名单为空 = 全拒)
