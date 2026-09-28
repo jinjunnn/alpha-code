@@ -1,0 +1,22 @@
+== 四格(生产四种真实负载)==
+D  票面限流提示(#1433 实抓,246 字)
+   textLen=246 exa_pairs/json_results=(0, None)  →  放行,不声称
+Z  Exa 真零命中(vendor 源码逐字)
+   textLen=54 exa_pairs/json_results=(0, None)  →  放行,不声称
+A  今日 Exa 真结果(live-shapes 原始 SSE)
+   textLen=5310 exa_pairs/json_results=(3, None)  →  声称 {"kind": "exa-entries", "entries": 3}
+P  今日 Parallel 真结果(live-shapes 原始 JSON)
+   textLen=19341 exa_pairs/json_results=(0, 10)  →  声称 {"kind": "json-results", "entries": 10}
+
+== 变异臂(证明识别器真的在看行结构,而不是恒真/恒假)==
+✓ A 去掉全部 Title: 行: 放行,不声称
+✓ A 去掉全部 URL: 行: 放行,不声称
+✓ A 的 Title: 不在行首: 放行,不声称
+✓ P 的 results 置空 []: 放行,不声称
+✓ P 的 results 不是数组: 放行,不声称
+✓ D 前面包一对 Title:/URL: 行: 声称 {"kind": "exa-entries", "entries": 1}
+
+变异臂全部符合预期: True
+
+A 的行首标签集合: ['Author', 'Highlights', 'Published', 'Title', 'URL'] ; 分隔符 \n\n---\n\n 出现 2 次
+D 的行首标签集合: ['Fix']

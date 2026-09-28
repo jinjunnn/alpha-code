@@ -1,0 +1,18 @@
+
+D  票面限流提示(#1433 实抓,246 字)
+  packages/opencode parseResponse: 成功 246 字  → shape={"exaEntries":0,"jsonResults":"absent"}  → 放行,不声称
+  packages/core     parseResponse: 成功 246 字  → shape={"exaEntries":0,"jsonResults":"absent"}  → 放行,不声称
+
+Z  Exa 真零命中(vendor 源码逐字)
+  packages/opencode parseResponse: 成功 54 字  → shape={"exaEntries":0,"jsonResults":"absent"}  → 放行,不声称
+  packages/core     parseResponse: 成功 54 字  → shape={"exaEntries":0,"jsonResults":"absent"}  → 放行,不声称
+
+A  今日 Exa 真结果(live-shapes 原始 SSE)
+  packages/opencode parseResponse: 成功 5310 字  → shape={"exaEntries":3,"jsonResults":"absent"}  → 声称 {"kind":"exa-entries","entries":3}
+  packages/core     parseResponse: 成功 5310 字  → shape={"exaEntries":3,"jsonResults":"absent"}  → 声称 {"kind":"exa-entries","entries":3}
+
+P  今日 Parallel 真结果(live-shapes 原始 JSON)
+  packages/opencode parseResponse: 成功 19341 字  → shape={"exaEntries":0,"jsonResults":10}  → 声称 {"kind":"json-results","entries":10}
+  packages/core     parseResponse: 成功 19341 字  → shape={"exaEntries":0,"jsonResults":10}  → 声称 {"kind":"json-results","entries":10}
+
+两份生产解析器取出的文本对四格给出相同的 claim: true

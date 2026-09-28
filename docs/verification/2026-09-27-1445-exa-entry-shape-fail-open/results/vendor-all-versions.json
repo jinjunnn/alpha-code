@@ -1,0 +1,1871 @@
+[
+ {
+  "version": "0.1.0",
+  "date": "2024-12-17",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 2,
+   "zero_hit": 0,
+   "tools": [
+    "search"
+   ]
+  },
+  "changed": "(first)",
+  "files": [
+   "package/build/index.js",
+   "package/build/types.js"
+  ]
+ },
+ {
+  "version": "0.1.1",
+  "date": "2024-12-17",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 2,
+   "zero_hit": 0,
+   "tools": [
+    "search"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/types.js"
+  ]
+ },
+ {
+  "version": "0.2.0",
+  "date": "2025-03-19",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 1,
+   "zero_hit": 1,
+   "tools": [
+    "search"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/build/index.js",
+   "package/build/types.js"
+  ]
+ },
+ {
+  "version": "0.2.1",
+  "date": "2025-03-21",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 1,
+   "zero_hit": 1,
+   "tools": [
+    "search"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/types.js"
+  ]
+ },
+ {
+  "version": "0.3.0",
+  "date": "2025-04-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 2,
+   "zero_hit": 1,
+   "tools": [
+    "research_paper_search",
+    "web_search"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/config.js",
+   "package/build/tools/index.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.1",
+  "date": "2025-04-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 2,
+   "zero_hit": 1,
+   "tools": [
+    "research_paper_search",
+    "web_search"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/config.js",
+   "package/build/tools/index.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.2",
+  "date": "2025-04-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 2,
+   "zero_hit": 1,
+   "tools": [
+    "research_paper_search",
+    "web_search"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/config.js",
+   "package/build/tools/index.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.3",
+  "date": "2025-04-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 2,
+   "zero_hit": 1,
+   "tools": [
+    "research_paper_search",
+    "web_search"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/config.js",
+   "package/build/tools/index.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.4",
+  "date": "2025-04-04",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 3,
+   "zero_hit": 1,
+   "tools": [
+    "research_paper_search",
+    "web_search"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/config.js",
+   "package/build/tools/index.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/twitterSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.5",
+  "date": "2025-04-07",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 4,
+   "zero_hit": 1,
+   "tools": [
+    "research_paper_search",
+    "web_search"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/companyResearch.js",
+   "package/build/tools/config.js",
+   "package/build/tools/index.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/twitterSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.6",
+  "date": "2025-04-08",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 1,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "crawling",
+    "research_paper_search",
+    "web_search"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/companyResearch.js",
+   "package/build/tools/competitorFinder.js",
+   "package/build/tools/config.js",
+   "package/build/tools/crawling.js",
+   "package/build/tools/index.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/twitterSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.7",
+  "date": "2025-04-25",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 1,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 7,
+   "zero_hit": 1,
+   "tools": [
+    "crawling",
+    "research_paper_search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/companyResearch.js",
+   "package/build/tools/competitorFinder.js",
+   "package/build/tools/config.js",
+   "package/build/tools/crawling.js",
+   "package/build/tools/index.js",
+   "package/build/tools/linkedInSearch.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/twitterSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.9",
+  "date": "2025-05-08",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 1,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 10,
+   "zero_hit": 2,
+   "tools": [
+    "crawling",
+    "research_paper_search",
+    "web_search_exa",
+    "wikipedia_search_exa"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/companyResearch.js",
+   "package/build/tools/competitorFinder.js",
+   "package/build/tools/config.js",
+   "package/build/tools/crawling.js",
+   "package/build/tools/githubSearch.js",
+   "package/build/tools/index.js",
+   "package/build/tools/linkedInSearch.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/twitterSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/tools/webSearchExa.js",
+   "package/build/tools/wikipediaSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "0.3.10",
+  "date": "2025-05-16",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 1,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 10,
+   "zero_hit": 2,
+   "tools": [
+    "crawling",
+    "research_paper_search",
+    "web_search_exa",
+    "wikipedia_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/build/index.js",
+   "package/build/tools/companyResearch.js",
+   "package/build/tools/competitorFinder.js",
+   "package/build/tools/config.js",
+   "package/build/tools/crawling.js",
+   "package/build/tools/githubSearch.js",
+   "package/build/tools/index.js",
+   "package/build/tools/linkedInSearch.js",
+   "package/build/tools/researchPaperSearch.js",
+   "package/build/tools/twitterSearch.js",
+   "package/build/tools/webSearch.js",
+   "package/build/tools/webSearchExa.js",
+   "package/build/tools/wikipediaSearch.js",
+   "package/build/types.js",
+   "package/build/utils/logger.js"
+  ]
+ },
+ {
+  "version": "2.0.1",
+  "date": "2025-07-26",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 10,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "competitor_finder_exa",
+    "crawling_exa",
+    "fetch",
+    "github_search_exa",
+    "linkedin_search_exa",
+    "research_paper_search_exa",
+    "search",
+    "web_search_exa",
+    "wikipedia_search_exa"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.2",
+  "date": "2025-07-29",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.3",
+  "date": "2025-07-29",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.4",
+  "date": "2025-09-17",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 0,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.5",
+  "date": "2025-09-23",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 1,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.6",
+  "date": "2025-09-24",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 1,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.7",
+  "date": "2025-09-24",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 1,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.8",
+  "date": "2025-09-24",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 1,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.0.9",
+  "date": "2025-09-25",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 1,
+   "search_ep": 1,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 6,
+   "zero_hit": 1,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs"
+  ]
+ },
+ {
+  "version": "2.1.0",
+  "date": "2025-09-25",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 2,
+   "search_ep": 2,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 12,
+   "zero_hit": 2,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js"
+  ]
+ },
+ {
+  "version": "2.1.1",
+  "date": "2025-10-01",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.0",
+  "date": "2025-10-01",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.1",
+  "date": "2025-10-01",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.2",
+  "date": "2025-10-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.3",
+  "date": "2025-10-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.4",
+  "date": "2025-10-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.5",
+  "date": "2025-10-02",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.6",
+  "date": "2025-10-14",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.7",
+  "date": "2025-10-23",
+  "render": "json-stringify",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.8",
+  "date": "2025-11-06",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 2,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa",
+    "web_search_help"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.0.9",
+  "date": "2025-11-07",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 2,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa",
+    "web_search_help"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.0",
+  "date": "2025-11-20",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 2,
+   "meta_searchTime": 0,
+   "json_stringify_text": 26,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa",
+    "web_search_help"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.1",
+  "date": "2025-11-21",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 4,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 6,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa",
+    "web_search_help"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.2",
+  "date": "2025-12-04",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 4,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 6,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa",
+    "web_search_help"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.3",
+  "date": "2025-12-05",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 4,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 6,
+   "tools": [
+    "company_research_exa",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_exa",
+    "web_search_help"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.4",
+  "date": "2026-01-21",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 0,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 4,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 6,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.5",
+  "date": "2026-01-21",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 2,
+   "published_tpl": 2,
+   "author_tpl": 2,
+   "highlights_lbl": 2,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 4,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 6,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "search",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.6",
+  "date": "2026-01-27",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 2,
+   "published_tpl": 2,
+   "author_tpl": 2,
+   "highlights_lbl": 2,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 4,
+   "meta_searchTime": 0,
+   "json_stringify_text": 24,
+   "zero_hit": 6,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.7",
+  "date": "2026-01-27",
+  "render": "raw-context",
+  "feats": {
+   "notice": 0,
+   "notice_isError": false,
+   "title_tpl": 0,
+   "url_tpl": 2,
+   "published_tpl": 2,
+   "author_tpl": 2,
+   "highlights_lbl": 2,
+   "sep": 0,
+   "context_ep": 4,
+   "search_ep": 4,
+   "raw_context_out": 4,
+   "meta_searchTime": 0,
+   "json_stringify_text": 26,
+   "zero_hit": 6,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/.smithery/index.cjs",
+   "package/.smithery/index.js",
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.8",
+  "date": "2026-02-09",
+  "render": "raw-context",
+  "feats": {
+   "notice": 2,
+   "notice_isError": true,
+   "title_tpl": 0,
+   "url_tpl": 2,
+   "published_tpl": 2,
+   "author_tpl": 2,
+   "highlights_lbl": 2,
+   "sep": 0,
+   "context_ep": 2,
+   "search_ep": 2,
+   "raw_context_out": 2,
+   "meta_searchTime": 0,
+   "json_stringify_text": 14,
+   "zero_hit": 2,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.1.9",
+  "date": "2026-03-06",
+  "render": "raw-context",
+  "feats": {
+   "notice": 2,
+   "notice_isError": true,
+   "title_tpl": 0,
+   "url_tpl": 0,
+   "published_tpl": 0,
+   "author_tpl": 0,
+   "highlights_lbl": 2,
+   "sep": 0,
+   "context_ep": 2,
+   "search_ep": 2,
+   "raw_context_out": 2,
+   "meta_searchTime": 0,
+   "json_stringify_text": 14,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.2.0",
+  "date": "2026-03-27",
+  "render": "title-lines",
+  "feats": {
+   "notice": 2,
+   "notice_isError": true,
+   "title_tpl": 10,
+   "url_tpl": 14,
+   "published_tpl": 10,
+   "author_tpl": 10,
+   "highlights_lbl": 12,
+   "sep": 0,
+   "context_ep": 2,
+   "search_ep": 10,
+   "raw_context_out": 0,
+   "meta_searchTime": 16,
+   "json_stringify_text": 6,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/.smithery/shttp/index.cjs",
+   "package/.smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.2.1",
+  "date": "2026-04-23",
+  "render": "title-lines",
+  "feats": {
+   "notice": 2,
+   "notice_isError": true,
+   "title_tpl": 10,
+   "url_tpl": 14,
+   "published_tpl": 10,
+   "author_tpl": 10,
+   "highlights_lbl": 12,
+   "sep": 0,
+   "context_ep": 2,
+   "search_ep": 10,
+   "raw_context_out": 0,
+   "meta_searchTime": 16,
+   "json_stringify_text": 6,
+   "zero_hit": 4,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_fetch_exa",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/smithery/shttp/index.cjs",
+   "package/smithery/stdio/index.cjs"
+  ]
+ },
+ {
+  "version": "3.4.0",
+  "date": "2026-08-01",
+  "render": "title-lines",
+  "feats": {
+   "notice": 1,
+   "notice_isError": true,
+   "title_tpl": 5,
+   "url_tpl": 7,
+   "published_tpl": 5,
+   "author_tpl": 5,
+   "highlights_lbl": 6,
+   "sep": 7,
+   "context_ep": 0,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 8,
+   "json_stringify_text": 5,
+   "zero_hit": 2,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_fetch_exa",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "<-- CHANGED",
+  "files": [
+   "package/dist/stdio.cjs"
+  ]
+ },
+ {
+  "version": "3.4.1",
+  "date": "2026-08-18",
+  "render": "title-lines",
+  "feats": {
+   "notice": 1,
+   "notice_isError": true,
+   "title_tpl": 5,
+   "url_tpl": 7,
+   "published_tpl": 5,
+   "author_tpl": 5,
+   "highlights_lbl": 6,
+   "sep": 7,
+   "context_ep": 0,
+   "search_ep": 4,
+   "raw_context_out": 0,
+   "meta_searchTime": 8,
+   "json_stringify_text": 5,
+   "zero_hit": 2,
+   "tools": [
+    "company_research_exa",
+    "crawl_complete",
+    "crawl_request_prepared",
+    "crawl_response_received",
+    "crawling_exa",
+    "deep_search_exa",
+    "fetch",
+    "get_code_context_exa",
+    "linkedin_search_exa",
+    "people_search_exa",
+    "search",
+    "web_fetch_exa",
+    "web_search_advanced_complete",
+    "web_search_advanced_exa",
+    "web_search_advanced_request_prepared",
+    "web_search_complete",
+    "web_search_exa",
+    "web_search_help",
+    "web_search_request_prepared"
+   ]
+  },
+  "changed": "",
+  "files": [
+   "package/dist/stdio.cjs"
+  ]
+ }
+]
