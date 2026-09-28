@@ -77,9 +77,19 @@ export function localWebSearchDenied(env: Record<string, string | undefined> = p
  * **同时**关掉云腿。于是那句指路在唯一可达它的状态下必然是错的 —— 它把模型引向一个同一时刻也不在
  * 工具表里的工具。基线 S5:任何「此路不通」的文案只能指向一条**此刻确实在表里**的替代,指不出就
  * 明说没有。判据:`packages/ui-mac/src/main/cloud-web-search.test.ts` 的文案断言。
+ *
+ * **`#1461` 起不再宣称穷尽**(`docs/verification/2026-09-27-1461-third-party-websearch-mcp-four-states/`)。
+ * 这句话此前写「it turns off every web search tool — the local keyless one and the platform-hosted one alike」。
+ * 实测同一个第三方插件、同一格 kill-switch env:工具名 `web_search` 被拒,改名 `search` 照常搜到结果
+ * (DuckDuckGo HTTP 200 / 10 条)—— 第三方那道判决的入口是工具名(ext 的 `isWebSearchToolId`),认不出名字的
+ * 搜网工具结构上关不掉,ADR-046 D6 已按此订正。「every」于是在它唯一可达的状态下是假话。现在的措辞把
+ * **事实**收窄到开关真管得住的范围(alpha 自己的两条腿 + 任何按名字被认出的 MCP 工具),把「别去找替代」
+ * 从一句穷尽的承诺改成一条**基于开关意图的指令**(与 ext `webSearchToolDenial()` 同口径,`b82403112`)。
+ * 刻意**不**写「认不出的照常可用」—— 那是在给模型指一条绕过用户开关的路(ADR-046 D6 反向)。
+ * `do not retry` / `Answer without web search and say so` 逐字未动。判据:同一测试文件的 `#1461` 用例。
  */
 export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
-  "Web search is unavailable: the alpha web search kill switch (ADR-009 B2) is set, and it turns off every web search tool — the local keyless one and the platform-hosted one alike. This is not a transient failure and no permission grant can lift it; do not retry, and do not look for another web search tool. Answer without web search and say so."
+  "Web search is unavailable: the alpha web search kill switch (ADR-009 B2) is set; it turns off alpha's own web search tools — the local keyless one and the platform-hosted one — and any MCP tool it recognizes as web search by name. This is not a transient failure and no permission grant can lift it; do not retry. Do not look for another web search tool: the switch means web search is off on purpose for this session. Answer without web search and say so."
 
 /**
  * The single discernible web search failure. `message` is what the model sees, so it always names

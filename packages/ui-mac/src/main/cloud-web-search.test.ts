@@ -301,4 +301,28 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
     // 并且说清是谁关的:kill-switch 是唯一能到这里的原因。
     expect(message.toLowerCase()).toContain("kill switch")
   })
+
+  // `#1461` 实测(docs/verification/2026-09-27-1461-third-party-websearch-mcp-four-states/):同一个第三方
+  // 插件、同一格 kill-switch env,工具名 `web_search` 被拒、`search` 照常搜到 DuckDuckGo 结果 —— 第三方那道判决
+  // 的入口是工具名,认不出的结构上关不掉。于是这句本地腿文案里的「it turns off every web search tool — …alike」
+  // 在它唯一可达的状态下是假话。这里钉住:事实收窄到「alpha 自己的两条腿 + 按名字认出的」;「别找替代」保留为
+  // 指令,不再是穷尽的承诺。与 ext `cloud-websearch-kill.test.ts` 的同名用例同口径(`b82403112`)。
+  // 已知的坏:把任一副本改回带 `every web search tool` 的那句 ⇒ 第一条断言红(两份不同则上一条的逐字锁先红)。
+  test("`#1461`:本地腿拒绝文案不再宣称关掉了每一个 web search 工具,只承认按名字认出的;仍叫模型别去找替代", async () => {
+    const [legacy, v2] = await Promise.all([
+      import("../../../opencode/src/tool/mcp-websearch"),
+      import("../../../core/src/tool/websearch"),
+    ])
+    for (const message of [legacy.LOCAL_WEBSEARCH_DENIED_MESSAGE, v2.LOCAL_WEBSEARCH_DENIED_MESSAGE]) {
+      const lower = message.toLowerCase()
+      // 全称声称出局:开关关不掉名字认不出的第三方搜网工具(`duck_search` 反向臂)。
+      expect(lower).not.toContain("every web search tool")
+      // 范围要说出来:被关的是按名字认出的那些。
+      expect(lower).toMatch(/recogni[sz]e[sd]? .*by name/)
+      // 「别去找替代」保留,但作为指令而不是「找也没用」的承诺。
+      expect(lower).toContain("do not look for another web search tool")
+      // 刻意不给模型指绕过用户开关的路:文案里不许出现「认不出的 / 别的照常可用」一类的话。
+      expect(lower).not.toMatch(/still (work|available|usable)|remain(s)? available|not affected/)
+    }
+  })
 })
