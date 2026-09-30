@@ -43,6 +43,7 @@ if (!parsed.ok) {
 const verdict = evaluateWindowsSigning(parsed.doc, channel, {
   appleTeamId: APPLE_TEAM_ID,
   windowsPublisherAllowlist: WINDOWS_PUBLISHER_ALLOWLIST,
+  allowUnsignedWindowsManualDownload: false,
 })
 
 if (!verdict.ok) {

@@ -4,8 +4,8 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-19
-review_after: 2026-11-19
+last_reviewed: 2026-09-29
+review_after: 2026-12-29
 ---
 
 # Desktop release manifest v1(#175,父需求 alpha-work#11)
@@ -57,7 +57,7 @@ artifacts[], updater.feeds[], sbom`。
 
 `artifacts[]` 每项:`filename, platform(darwin|win32), arch(arm64|x64),
 kind(installer|updater-archive|blockmap), size, sha512(base64,electron-updater 口径),
-sha256(hex), signing`。`signing` 按平台:
+sha256(hex), signing, manualDownloadOnly?`。`signing` 按平台:
 
 - darwin:`{type:"apple", signed, identity, teamId, notarized, stapled}` ——
   从 dist 里同轮打包的 `.app` 执行 `codesign -dvv` / `spctl -a -t install` /
@@ -69,6 +69,12 @@ sha256(hex), signing`。`signing` 按平台:
 `beta-mac.yml`/`beta.yml`)的 `{filename, size, sha256, version}`。
 `sbom`:`{filename, size, sha256, format: "CycloneDX-1.6", componentCount}`。
 
+`manualDownloadOnly:true` is a narrow REQ-106 exception: it is valid only for a
+`prod` win32 x64 installer whose Authenticode facts are exactly `NotSigned` with no
+publisher or thumbprint. It remains covered by the manifest signature and file
+digests, but has no Windows updater feed. Consumers must disclose that it is
+unsigned before linking it and must not claim automatic updates.
+
 ## 5. fail-hard 规则(全部在负向测试里逐条钉死)
 
 | 规则 | 内容 |
@@ -76,11 +82,11 @@ sha256(hex), signing`。`signing` 按平台:
 | R1 | channel/repo/tag 合法;version 为 semver 且**非** `0.0.0`(含 `0.0.0-*` 前缀)/`local`;`releaseTag = v<version>` |
 | R2 | artifacts 非空、filename 唯一、size/sha512/sha256 形状合法、至少一个 installer |
 | R3 | blockmap 的宿主必须在 inventory 里 |
-| R4 | 每个出现的平台必须有对应 feed;feed 覆盖该平台全部非 blockmap artifact;feed 条目的 filename/sha512/size 与**最终字节**逐字相等;feed.version = manifest.version;条目必须是裸文件名;无平台对应的多余 feed 拒 |
+| R4 | 每个出现的平台必须有对应 feed;feed 覆盖该平台全部非 blockmap artifact;feed 条目的 filename/sha512/size 与**最终字节**逐字相等;feed.version = manifest.version;条目必须是裸文件名;无平台对应的多余 feed 拒。唯一例外是 REQ-106 的 `manualDownloadOnly` Windows installer：它必须**没有** Windows feed |
 | R5 | SBOM 必须在场且 `componentCount >= 1` |
 | R6 | darwin 产物必须带 mac 签名事实;beta/prod 上必须 signed + teamId=`RQX6X6A635` + notarized + stapled |
 | R7 | win32 产物必须逐文件有 facts,且 facts 的 sha256 与最终字节相等(旧 facts 配新包必炸) |
-| W1–W5 | facts 的 channel 必须与门的 channel 一致;beta/prod 上必须 signed 且 status=Valid(W2)、publisher 在场(W3)、publisher 白名单已注册且命中(W4/W5)。**白名单今天为空 = 任何 signer 都拒**(Authenticode 证书采购归 REQ-076 T3;落地时同一 PR 更新白名单、本契约与负向测试) |
+| W1–W5 | facts 的 channel 必须与门的 channel 一致;beta/prod 上必须 signed 且 status=Valid(W2)、publisher 在场(W3)、publisher 白名单已注册且命中(W4/W5)。**白名单今天为空 = 任何 signer 都拒**，除 §4 的 REQ-106 `prod` manual-only 例外(Authenticode 证书采购归 REQ-076 T3;落地时同一 PR 更新白名单、本契约与负向测试) |
 
 dev 渠道:签名不强制,但事实必须**完整如实记录**(dev 包不发布;发布链只认 beta/prod)。
 
@@ -102,6 +108,8 @@ win:`dist/win-unpacked/resources/app.asar`)枚举 `node_modules/**/package.json`
 
 ## 8. 显式不做(hard cutover)
 
-无旧 feed、旧 manifest schema、placeholder version/filename、unsigned Windows 兼容路径;
-当前无用户,未知/不合规输入一律 fail closed。web 消费半场归 alpha-web#25;seed 完整性归
-alpha-work#5;runtime/public reachability 证据归共享 RC verification issue。
+无旧 feed、旧 manifest schema、placeholder version/filename 或 unsigned compatibility
+fallback。REQ-106 的明确 manual-only Windows installer 不是兼容回退：它必须使用当前
+signed manifest、准确的 unsigned facts、无 updater feed 和下载前风险提示。未知/不合规输入
+一律 fail closed。web 消费半场归 alpha-web#251;seed 完整性归 alpha-work#5;runtime/public
+reachability 证据归共享 RC verification issue。
