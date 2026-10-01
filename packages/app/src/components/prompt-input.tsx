@@ -1489,7 +1489,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         <PromptImageAttachments
           attachments={imageAttachments()}
           onOpen={(attachment) =>
-            dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />)
+            dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />, undefined, {
+              host: true,
+            })
           }
           onRemove={removeAttachment}
           removeLabel={language.t("prompt.attachment.remove")}

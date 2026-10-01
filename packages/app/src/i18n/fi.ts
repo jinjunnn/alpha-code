@@ -1165,4 +1165,9 @@ export const dict = {
   "help.tabs.persistence": "Kun avaat sovelluksen uudelleen, välilehtesi ovat yhä avoinna.",
   "help.tabs.worktrees":
     "Uusi ulkoasu ei vielä tue Git-työpuita, mutta tuki on tulossa pian. Jos haluat jatkaa aiemman ulkoasun käyttöä, voit vaihtaa ulkoasua asetuksissa. Huomaa kuitenkin, että uudesta ulkoasusta tulee pysyvä muutaman viikon kuluttua.",
+  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
+  "session.draft.pending": "Loading this draft…",
+  "session.draft.missing.title": "This draft is no longer available",
+  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
+  "session.draft.missing.action": "Back to home",
 }
