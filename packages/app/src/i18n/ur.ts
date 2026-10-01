@@ -1161,9 +1161,4 @@ export const dict = {
   "workspace.reset.archived.one": "1 سیشن آرکائیو کیا جائے گا۔",
   "workspace.reset.archived.many": "{{count}} سیشنز آرکائیو کیے جائیں گے۔",
   "workspace.reset.note": "یہ ڈیفالٹ برانچ سے ملنے کے لیے ورک اسپیس کو دوبارہ ترتیب دے گا۔",
-  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
-  "session.draft.pending": "Loading this draft…",
-  "session.draft.missing.title": "This draft is no longer available",
-  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
-  "session.draft.missing.action": "Back to home",
 }

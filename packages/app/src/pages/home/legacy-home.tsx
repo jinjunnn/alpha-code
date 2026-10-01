@@ -72,7 +72,7 @@ export function LegacyHome() {
         size="large"
         variant="ghost"
         class="mt-4 mx-auto text-14-regular text-text-weak"
-        onClick={() => dialog.show(() => <DialogSelectServer />, undefined, { host: true })}
+        onClick={() => dialog.show(() => <DialogSelectServer />)}
       >
         <div
           classList={{

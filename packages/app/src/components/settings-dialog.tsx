@@ -2,12 +2,10 @@ import { useParams } from "@solidjs/router"
 import { onCleanup } from "solid-js"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 
 export function useSettingsDialog(defaultValue?: string) {
   const dialog = useDialog()
-  const platform = usePlatform()
   const params = useParams<{ id?: string }>()
   let run = 0
   let dead = false
@@ -17,7 +15,6 @@ export function useSettingsDialog(defaultValue?: string) {
   })
 
   return () => {
-    if (platform.openSettings) return platform.openSettings()
     const current = ++run
     const sessionID = params.id
     void import("@/components/settings-v2").then((module) => {

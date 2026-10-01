@@ -1220,9 +1220,4 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "建立持續性專案圖示失敗",
   "error.childStore.storeCreateFailed": "建立儲存區失敗",
   "terminal.connectionLost.abnormalClose": "WebSocket 異常關閉：{{code}}",
-  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
-  "session.draft.pending": "正在載入這份草稿…",
-  "session.draft.missing.title": "這份草稿已經不在了",
-  "session.draft.missing.description": "它可能已被刪除,或這個連結指向一份從未存在過的草稿。你的其他對話沒有受影響。",
-  "session.draft.missing.action": "返回首頁",
 } satisfies Partial<Record<Keys, string>>

@@ -1,21 +1,14 @@
-import { createEffect, Show, Suspense, type ParentProps } from "solid-js"
+import { createEffect, Suspense, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DebugBar } from "@/components/debug-bar"
 import { TabsInfoPopup } from "@/components/help-button"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
-import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
 
-export default function NewLayout(props: ParentProps<{ sessionOwnsTitlebar?: boolean }>) {
+export default function NewLayout(props: ParentProps) {
   const platform = usePlatform()
-  const layout = useLayout()
   const [state, setState] = createStore({ debugTools: true })
-
-  // REQ-125 (#574): an injected session surface that owns its top bar replaces the Titlebar
-  // on session routes — exactly one header there. Every other route (home, drafts) and the
-  // no-marker default keep the upstream Titlebar untouched.
-  const titlebarHidden = () => props.sessionOwnsTitlebar === true && layout.route().type === "session"
 
   createEffect(() => setV2Toast(true))
 
@@ -37,16 +30,14 @@ export default function NewLayout(props: ParentProps<{ sessionOwnsTitlebar?: boo
         "padding-bottom": "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      <Show when={!titlebarHidden()}>
-        <Titlebar
-          update={update}
-          debugTools={
-            import.meta.env.DEV
-              ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
-              : undefined
-          }
-        />
-      </Show>
+      <Titlebar
+        update={update}
+        debugTools={
+          import.meta.env.DEV
+            ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
+            : undefined
+        }
+      />
       <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
         <Suspense>{props.children}</Suspense>
       </main>
