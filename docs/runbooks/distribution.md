@@ -71,7 +71,10 @@ ls dist/alpha-code-mac-arm64.dmg dist/alpha-code-mac-arm64.zip dist/latest-mac.y
 #    从最终 dist 字节计算全部事实(size/digest/签名/公证/SBOM/updater metadata),任何缺失或
 #    不一致会打印全部错误并 exit 1 —— 此时**禁止发布**,先修再重打。含 Windows 产物时,把
 #    alpha-windows-build 的两个 artifact(exe/blockmap 与 *-release-facts)解到一个目录,
-#    加 --windows-dir <目录>(beta/prod 的未签名 Windows 包在 CI 就已经红了,到不了这一步)。
+#    加 --windows-dir <目录>。默认 beta/prod 未签名 Windows 包在 CI 就已经红了,到不了这一步；
+#    REQ-106 唯一例外是经 owner 明确批准的 prod 手动下载包,必须额外传
+#    --allow-unsigned-windows。该 flag 会把 installer 标为 manualDownloadOnly、保留其
+#    NotSigned facts 和 digest binding、并排除 Windows updater feed；不得用于 beta 或正常更新发布。
 #    签名私钥:~/.alpha-code-signing/release-manifest-ed25519.pem(没有则先
 #    `bun scripts/release-manifest.ts keygen --out <该路径>` 并把打印的 trust entry 落进
 #    docs/contracts/desktop-release-manifest.trust.json)。
@@ -80,6 +83,14 @@ OPENCODE_CHANNEL=prod bun scripts/release-manifest.ts produce \
   --key ~/.alpha-code-signing/release-manifest-ed25519.pem
 # 期望:"[release-manifest] OK: …/alpha-release-manifest.json (+.sig)";产物三件:
 # dist/alpha-release-manifest.json + .sig + dist/alpha-code-<版本>-sbom.cdx.json
+
+# REQ-106 Windows x64 未签名手动下载(仅在已有明确批准、已下载 Windows runner 的最终
+# installer + signing facts、且官网已经部署 unsigned warning 时):
+OPENCODE_CHANNEL=prod bun scripts/release-manifest.ts produce \
+  --channel prod --dist dist --windows-dir /absolute/path/to/windows-release-inputs \
+  --allow-unsigned-windows \
+  --key ~/.alpha-code-signing/release-manifest-ed25519.pem
+# 上传时包含 alpha-code-win-x64.exe,但不上传 latest.yml,也不得让它进入自动更新测试。
 
 # ④ 发 GitHub Release(dmg + zip + 两个 .blockmap + latest-mac.yml + manifest 三件一起传,
 #    tag = v<版本>)。manifest 是 alpha-web 消费的唯一发布真相,漏传 = 该版本对 web 不存在。
@@ -144,7 +155,14 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 **Windows(beta/prod)**:`alpha-windows-build.yml` 打包后自带 Authenticode 硬门 ——
 未签名、签名不可验证、或 publisher 不在白名单(REQ-076 T3 采购落地前白名单为空 = 全拒)
 ⇒ job 红、不出 artifact。dev 渠道照旧出未签名内测包,但事实(status/publisher/sha256)
-必须如实落进 `windows-signing-facts.json` 随 artifact 上传。见
+必须如实落进 `windows-signing-facts.json` 随 artifact 上传。
+
+**唯一例外（REQ-106）**：当且仅当需要公开未签名的 Windows x64 手动下载时，用
+`prod` 渠道并明确勾选 workflow_dispatch 的
+`allow_unsigned_windows_manual_download`。该步骤会拒绝任何不是
+`NotSigned`/无 publisher/无 thumbprint 的事实；发版机仍须使用
+`--allow-unsigned-windows` 生成已签名清单。它不生成 Windows updater feed、不能自动更新，
+官网必须在按钮旁披露「未签名、可能显示未知发布者、无自动更新」。见
 [../contracts/desktop-release-manifest.md](../contracts/desktop-release-manifest.md) §5–6。
 
 ## 5. 硬化面(C27/C24,2026-07-04,S11 T6/T7)

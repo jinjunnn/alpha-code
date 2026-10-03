@@ -16,6 +16,11 @@
 # 按出厂策略裁决 —— beta/prod 未签名、status 非 Valid、或 publisher 不在白名单(REQ-076 T3
 # 落地前白名单为空 = 全拒)⇒ job 红,artifact 不出。facts JSON 随 artifact 上传,
 # 是发版机 release-manifest producer(docs/contracts/desktop-release-manifest.md)的必需输入。
+#
+# REQ-106 的唯一例外是显式的 prod workflow_dispatch 输入。它仍必须采集且断言精确
+# NotSigned/无 publisher/无 thumbprint 事实；producer 还必须以
+# --allow-unsigned-windows 把该 exe 标成 manualDownloadOnly。此开关绝不创建 updater feed，
+# 更不把未签名包伪装成可自动更新的正式包。
 name: alpha-windows-build
 
 on:
@@ -26,6 +31,10 @@ on:
         type: choice
         options: [dev, beta, prod]
         default: dev
+      allow_unsigned_windows_manual_download:
+        description: "REQ-106: 仅限 prod，生成已披露风险的未签名 Windows 手动下载包"
+        type: boolean
+        default: false
 
 concurrency:
   group: alpha-windows-build-${{ github.ref }}
@@ -100,9 +109,38 @@ jobs:
           }
           $facts | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 "packages/ui-mac/dist/windows-signing-facts.json"
           Get-Content "packages/ui-mac/dist/windows-signing-facts.json"
-      # #175 ②:硬门。beta/prod 上未签名 / 不可验证 / publisher 不在白名单 ⇒ 红,不出 artifact。
-      # dev 放行但事实必须完整如实(dev 包不发布,发布链只认 beta/prod)。
+      # REQ-106:唯一受控例外的形状断言。它不接受「任何没签名」——只接受 producer
+      # 所能安全披露的 NotSigned + 无发布者/指纹，且 channel 必须是 prod。
+      - name: assert explicit unsigned manual exception
+        if: ${{ inputs.allow_unsigned_windows_manual_download }}
+        shell: pwsh
+        env:
+          OPENCODE_CHANNEL: ${{ inputs.channel }}
+        run: |
+          if ($env:OPENCODE_CHANNEL -ne "prod") {
+            Write-Error "allow_unsigned_windows_manual_download is valid only for prod"
+            exit 1
+          }
+          $facts = Get-Content "packages/ui-mac/dist/windows-signing-facts.json" -Raw | ConvertFrom-Json
+          if ($facts.artifacts.Count -ne 1) {
+            Write-Error "manual exception requires exactly one installer signing fact"
+            exit 1
+          }
+          $artifact = $facts.artifacts[0]
+          if ($artifact.filename -ne "alpha-code-win-x64.exe" -or
+              $artifact.signed -ne $false -or
+              $artifact.status -ne "NotSigned" -or
+              $null -ne $artifact.publisher -or
+              $null -ne $artifact.thumbprint) {
+            Write-Error "manual exception requires exact NotSigned/no-publisher/no-thumbprint facts"
+            exit 1
+          }
+          Write-Host "REQ-106 manual-only exception facts verified"
+      # #175 ②:常规硬门。beta/prod 上未签名 / 不可验证 / publisher 不在白名单 ⇒ 红,不出 artifact。
+      # dev 放行但事实必须完整如实(dev 包不发布,发布链只认 beta/prod)。REQ-106 的受控
+      # 手动下载例外在上一步精确断言，绝不放宽该门的默认路径。
       - name: windows signing gate (fail unsigned beta/prod)
+        if: ${{ !inputs.allow_unsigned_windows_manual_download }}
         shell: pwsh
         env:
           OPENCODE_CHANNEL: ${{ inputs.channel }}
@@ -119,6 +157,7 @@ jobs:
       # #175:release-manifest producer 的输入面 —— facts JSON(恒在)+ electron-builder 的
       # updater feed(latest.yml/beta.yml,--publish never 下是否落盘随 electron-builder 行为;
       # 缺了不在这里裁决,producer 侧 R4 会因「win32 有产物而无 feed」硬拒,门不在传输层)。
+      # REQ-106 的 manualDownloadOnly 例外不消费 Windows feed；仍携带 app.asar 以生成 SBOM。
       - name: upload release facts (manifest producer inputs)
         uses: actions/upload-artifact@v4
         with:
@@ -126,5 +165,6 @@ jobs:
           path: |
             packages/ui-mac/dist/windows-signing-facts.json
             packages/ui-mac/dist/*.yml
+            packages/ui-mac/dist/win-unpacked/resources/app.asar
           if-no-files-found: error
           retention-days: 14

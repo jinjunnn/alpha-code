@@ -101,7 +101,11 @@ function validInput(channel: ReleaseChannel = "prod"): BuildManifestInput {
     macSigning: macSigned(),
     windowsFacts: winFacts(channel),
     sbom: { filename: "alpha-code-0.1.4-sbom.cdx.json", size: 999, sha256: sha256hex("sbom"), format: "CycloneDX-1.6", componentCount: 42 },
-    policy: { appleTeamId: "RQX6X6A635", windowsPublisherAllowlist: ["CN=Alpha Publisher, O=Alpha, C=SG"] },
+    policy: {
+      appleTeamId: "RQX6X6A635",
+      windowsPublisherAllowlist: ["CN=Alpha Publisher, O=Alpha, C=SG"],
+      allowUnsignedWindowsManualDownload: false,
+    },
   }
 }
 
@@ -151,6 +155,23 @@ describe("buildReleaseManifest 正向", () => {
     if (!r.ok) throw new Error("unreachable")
     const exe = r.manifest.artifacts.find((a) => a.filename === "alpha-code-win-x64.exe")!
     expect(exe.signing).toEqual({ type: "authenticode", signed: false, status: "NotSigned", publisher: null, thumbprint: null })
+  })
+
+  test("prod:明确批准的未签名 Windows 手动下载不写 updater feed,其事实仍在已签名 manifest 中", () => {
+    const input = validInput("prod")
+    input.artifacts = input.artifacts.map((artifact) =>
+      artifact.filename === "alpha-code-win-x64.exe" ? { ...artifact, manualDownloadOnly: true as const } : artifact,
+    )
+    input.feeds = input.feeds.filter((feed) => feed.filename !== "latest.yml")
+    input.windowsFacts = winFacts("prod", { signed: false, status: "NotSigned", publisher: null, thumbprint: null })
+    input.policy.allowUnsignedWindowsManualDownload = true
+    const r = buildReleaseManifest(input)
+    expect(r.ok).toBe(true)
+    if (!r.ok) throw new Error("unreachable")
+    const exe = r.manifest.artifacts.find((artifact) => artifact.filename === "alpha-code-win-x64.exe")!
+    expect(exe.manualDownloadOnly).toBe(true)
+    expect(exe.signing).toEqual({ type: "authenticode", signed: false, status: "NotSigned", publisher: null, thumbprint: null })
+    expect(r.manifest.updater.feeds.map((feed) => feed.filename)).toEqual(["latest-mac.yml"])
   })
 
   test("beta channel:feed 名走 beta 前缀(beta-mac.yml / beta.yml)", () => {
@@ -242,6 +263,18 @@ describe("R2/R3 artifact inventory", () => {
       sha256: sha256hex("g"),
     })
     expectErrors(i, "R3 orphan blockmap: ghost.exe.blockmap")
+  })
+  test("未签名手动下载例外仅允许 Windows x64", () => {
+    const i = validInput("prod")
+    i.artifacts = i.artifacts.map((artifact) =>
+      artifact.filename === "alpha-code-win-x64.exe"
+        ? { ...artifact, arch: "arm64", manualDownloadOnly: true as const }
+        : artifact,
+    )
+    i.feeds = i.feeds.filter((feed) => feed.filename !== "latest.yml")
+    i.windowsFacts = winFacts("prod", { signed: false, status: "NotSigned", publisher: null, thumbprint: null })
+    i.policy = { ...i.policy, allowUnsignedWindowsManualDownload: true }
+    expectErrors(i, "R2 manualDownloadOnly is only valid for win32 x64 installers")
   })
 })
 
@@ -370,7 +403,7 @@ describe("R7/W windows signing", () => {
   })
   test("prod:白名单为空时任何 signer 都拒(未知 signer fail-closed)", () => {
     const i = validInput("prod")
-    i.policy = { appleTeamId: "RQX6X6A635", windowsPublisherAllowlist: [] }
+    i.policy = { appleTeamId: "RQX6X6A635", windowsPublisherAllowlist: [], allowUnsignedWindowsManualDownload: false }
     expectErrors(i, "W4 no trusted Windows publisher registered")
   })
   test("prod:publisher 与白名单不符拒", () => {
@@ -419,13 +452,14 @@ describe("validateWindowsFactsDoc", () => {
 describe("evaluateWindowsSigning", () => {
   test("dev:未签名放行(dev 不发布,只记录)", () => {
     const facts = winFacts("dev", { signed: false, status: "NotSigned", publisher: null, thumbprint: null })
-    expect(evaluateWindowsSigning(facts, "dev", { appleTeamId: "RQX6X6A635", windowsPublisherAllowlist: [] }).ok).toBe(true)
+    expect(evaluateWindowsSigning(facts, "dev", { appleTeamId: "RQX6X6A635", windowsPublisherAllowlist: [], allowUnsignedWindowsManualDownload: false }).ok).toBe(true)
   })
   test("prod + 注册白名单 + 匹配 publisher 放行", () => {
     const facts = winFacts("prod")
     const r = evaluateWindowsSigning(facts, "prod", {
       appleTeamId: "RQX6X6A635",
       windowsPublisherAllowlist: ["CN=Alpha Publisher, O=Alpha, C=SG"],
+      allowUnsignedWindowsManualDownload: false,
     })
     expect(r.ok).toBe(true)
   })
@@ -441,7 +475,7 @@ describe("出厂策略", () => {
     // 证书采购(REQ-076 T3)落地时,这条测试必须连同白名单与契约文档一起有意识地更新。
     expect(WINDOWS_PUBLISHER_ALLOWLIST.length).toBe(0)
     const facts = winFacts("prod") // 签名有效、publisher 在场 —— 仍必须被拒
-    const r = evaluateWindowsSigning(facts, "prod", { appleTeamId: "RQX6X6A635", windowsPublisherAllowlist: WINDOWS_PUBLISHER_ALLOWLIST })
+    const r = evaluateWindowsSigning(facts, "prod", { appleTeamId: "RQX6X6A635", windowsPublisherAllowlist: WINDOWS_PUBLISHER_ALLOWLIST, allowUnsignedWindowsManualDownload: false })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.errors.join("\n")).toContain("W4 no trusted Windows publisher registered")
   })

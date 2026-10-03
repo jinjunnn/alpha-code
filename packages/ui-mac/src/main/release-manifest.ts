@@ -89,20 +89,19 @@ const isPosInt = (v: unknown): v is number => typeof v === "number" && Number.is
 export type ArtifactPlatform = "darwin" | "win32"
 export type ArtifactArch = "arm64" | "x64"
 export type ArtifactKind = "installer" | "updater-archive" | "blockmap"
-
 /** 从最终发布文件字节算出的 inventory 条目(CLI 计算,builder 只做一致性裁决)。 */
 export type ArtifactFact = {
   filename: string
   platform: ArtifactPlatform
   arch: ArtifactArch
   kind: ArtifactKind
+  manualDownloadOnly?: true
   size: number
   /** base64(electron-updater 口径,与 feed 直接比较)。 */
   sha512: string
   /** hex(通用消费口径)。 */
   sha256: string
 }
-
 /** 解析后的一份 updater feed(latest-mac.yml / latest.yml / beta*.yml)。 */
 export type UpdaterFeedFact = {
   filename: string
@@ -110,7 +109,6 @@ export type UpdaterFeedFact = {
   sha256: string
   doc: { version: string; files: { url: string; sha512: string; size: number }[] }
 }
-
 export type MacSigningFacts = {
   signed: boolean
   /** codesign Authority 行的完整身份(如 "Developer ID Application: … (RQX6X6A635)");未签名为 null。 */
@@ -119,7 +117,6 @@ export type MacSigningFacts = {
   notarized: boolean
   stapled: boolean
 }
-
 export type WindowsArtifactSigningFact = {
   filename: string
   /** 采集时刻该文件字节的 sha256 hex —— 把 facts 绑到具体字节,拿旧 facts 配新包必炸。 */
@@ -131,7 +128,6 @@ export type WindowsArtifactSigningFact = {
   publisher: string | null
   thumbprint: string | null
 }
-
 export type WindowsSigningFactsDoc = {
   schema: typeof WINDOWS_SIGNING_FACTS_SCHEMA
   channel: ReleaseChannel
@@ -147,10 +143,7 @@ export type SbomFact = {
   componentCount: number
 }
 
-export type ReleasePolicy = {
-  appleTeamId: string
-  windowsPublisherAllowlist: readonly string[]
-}
+export type ReleasePolicy = { appleTeamId: string; windowsPublisherAllowlist: readonly string[]; allowUnsignedWindowsManualDownload: boolean }
 
 export type BuildManifestInput = {
   channel: ReleaseChannel
@@ -235,12 +228,13 @@ export function validateWindowsFactsDoc(v: unknown): { ok: true; doc: WindowsSig
  * (白名单为空 = 没有已注册可信 publisher = 全拒,包括「签了但 signer 未知」)。
  * dev:只要求事实**完整如实记录**,不要求签名 —— dev 包不发布。
  */
-export function evaluateWindowsSigning(doc: WindowsSigningFactsDoc, channel: ReleaseChannel, policy: ReleasePolicy): Verdict {
+export function evaluateWindowsSigning(doc: WindowsSigningFactsDoc, channel: ReleaseChannel, policy: ReleasePolicy, manualUnsignedFilenames: ReadonlySet<string> = new Set()): Verdict {
   const errors: string[] = []
   if (doc.channel !== channel)
     errors.push(`W1 channel binding: facts collected for '${doc.channel}', gate evaluated for '${channel}'`)
   if (channel === "beta" || channel === "prod") {
     for (const a of doc.artifacts) {
+      if (manualUnsignedFilenames.has(a.filename)) { if (!(!a.signed && a.status === "NotSigned" && a.publisher === null && a.thumbprint === null)) errors.push(`W2 manual-only Windows artifact must be explicitly unsigned: ${a.filename} (status=${a.status})`); continue }
       if (!a.signed || a.status !== "Valid") {
         errors.push(`W2 unsigned windows artifact on ${channel}: ${a.filename} (status=${a.status})`)
         continue
@@ -339,6 +333,7 @@ export function buildReleaseManifest(input: BuildManifestInput): { ok: true; man
     if (!isPosInt(a.size)) err(`R2 size not positive int: ${a.filename}`)
     if (!SHA512_B64_RE.test(a.sha512)) err(`R2 sha512 not base64-512: ${a.filename}`)
     if (!HEX64.test(a.sha256)) err(`R2 sha256 not hex64: ${a.filename}`)
+    if (a.manualDownloadOnly && (a.platform !== "win32" || a.arch !== "x64" || a.kind !== "installer")) err(`R2 manualDownloadOnly is only valid for win32 x64 installers: ${a.filename}`)
   }
   if (!input.artifacts.some((a) => a.kind === "installer")) err("R2 no installer artifact")
 
@@ -360,9 +355,13 @@ export function buildReleaseManifest(input: BuildManifestInput): { ok: true; man
     if (!HEX64.test(f.sha256)) err(`R4 feed sha256: ${f.filename}`)
     if (f.doc.version !== input.version) err(`R4 feed version mismatch: ${f.filename} has '${f.doc.version}', manifest '${input.version}'`)
   }
+  const manualWindows = input.artifacts.filter((a) => a.platform === "win32" && a.kind !== "blockmap" && a.manualDownloadOnly)
+  const normalWindows = input.artifacts.filter((a) => a.platform === "win32" && a.kind !== "blockmap" && !a.manualDownloadOnly)
+  if (manualWindows.length > 0 && normalWindows.length > 0) err("R4 Windows updater inventory cannot mix manual-only and updater artifacts")
   for (const p of platforms) {
     const want = feedNameFor(p)
     const feed = feedByName.get(want)
+    if (p === "win32" && manualWindows.length > 0 && normalWindows.length === 0) { if (feed) err(`R4 manual-only Windows artifact must not include updater feed: ${want}`); continue }
     if (!feed) {
       err(`R4 missing updater feed for ${p}: ${want}`)
       continue
@@ -426,10 +425,11 @@ export function buildReleaseManifest(input: BuildManifestInput): { ok: true; man
           err(`R7 no signing facts for windows artifact: ${a.filename}`)
           continue
         }
-        if (f.sha256 !== a.sha256)
-          err(`R7 signing facts bytes mismatch (facts are for different bytes): ${a.filename}`)
+        if (f.sha256 !== a.sha256) err(`R7 signing facts bytes mismatch (facts are for different bytes): ${a.filename}`)
+        if (a.manualDownloadOnly && input.channel !== "prod") err(`R7 manual-only Windows artifact is only allowed on prod: ${a.filename}`)
+        if (a.manualDownloadOnly && !input.policy.allowUnsignedWindowsManualDownload) err(`R7 unsigned Windows manual-download exception not approved: ${a.filename}`)
       }
-      const gate = evaluateWindowsSigning(input.windowsFacts, input.channel, input.policy)
+      const gate = evaluateWindowsSigning(input.windowsFacts, input.channel, input.policy, new Set(winArtifacts.filter((a) => a.manualDownloadOnly).map((a) => a.filename)))
       if (!gate.ok) errors.push(...gate.errors)
     }
   }
