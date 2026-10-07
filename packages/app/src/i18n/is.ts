@@ -1154,4 +1154,9 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} setur verða settar í geymslu.",
   "workspace.reset.note": "Þetta mun endurstilla vinnusvæðið til að passa við sjálfgefna útibúið.",
   "dialog.usageExceeded.dontShowAgain": "Ekki sýna aftur",
+  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
+  "session.draft.pending": "Loading this draft…",
+  "session.draft.missing.title": "This draft is no longer available",
+  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
+  "session.draft.missing.action": "Back to home",
 }

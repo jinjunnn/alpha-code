@@ -14,6 +14,8 @@ export type LocalPTY = {
   id: string
   title: string
   titleNumber: number
+  /** Shell command the server started this PTY with (`Pty.Info.command`); display-only. */
+  command?: string
   rows?: number
   cols?: number
   buffer?: string
@@ -48,6 +50,7 @@ function pty(value: unknown): LocalPTY | undefined {
 
   const title = text(value.title) ?? ""
   const number = num(value.titleNumber)
+  const command = text(value.command)
   const rows = num(value.rows)
   const cols = num(value.cols)
   const buffer = text(value.buffer)
@@ -58,6 +61,7 @@ function pty(value: unknown): LocalPTY | undefined {
     id,
     title,
     titleNumber: number && number > 0 ? number : (numberFromTitle(title) ?? 0),
+    ...(command !== undefined ? { command } : {}),
     ...(rows !== undefined ? { rows } : {}),
     ...(cols !== undefined ? { cols } : {}),
     ...(buffer !== undefined ? { buffer } : {}),
@@ -143,7 +147,7 @@ export function clearWorkspaceTerminals(
   }
 }
 
-function createWorkspaceTerminalSession(
+export function createWorkspaceTerminalSession(
   sdk: DirectorySDK,
   dir: string,
   scope: ServerScopeValue,
@@ -299,6 +303,9 @@ function createWorkspaceTerminalSession(
         id: data.id,
         title: data.title ?? pty.title,
         titleNumber: pty.titleNumber,
+        // setStore merges shallowly: without an explicit write the replaced tab would keep
+        // the *previous* PTY's shell name. Mirror whatever the server reports for the new one.
+        command: data.command,
         buffer: undefined,
         cursor: undefined,
         scrollY: undefined,
@@ -338,10 +345,12 @@ function createWorkspaceTerminalSession(
             if (focusRequest !== undefined) cancelFocus(focusRequest)
             return
           }
+          const command = data?.command
           const newTerminal = {
             id,
             title: data?.title ?? defaultTitle(nextNumber),
             titleNumber: nextNumber,
+            ...(command !== undefined ? { command } : {}),
           }
           batch(() => {
             setStore("all", store.all.length, newTerminal)

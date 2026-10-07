@@ -43,12 +43,6 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault()
-      handleClose()
-      return
-    }
-
     if (!paged()) return
     if (e.key === "ArrowLeft" && !isFirst()) {
       e.preventDefault()
@@ -62,6 +56,7 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
 
   return (
     <Dialog
+      title={feature()?.title ?? "Release notes"}
       size="large"
       fit
       class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
