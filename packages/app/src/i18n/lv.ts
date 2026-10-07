@@ -1159,9 +1159,4 @@ export const dict = {
   "workspace.reset.archived.many": "Tiks arhivētas {{count}} sesijas.",
   "workspace.reset.note": "Darbvieta tiks atiestatīta uz noklusējuma zara stāvokli.",
   "dialog.usageExceeded.dontShowAgain": "Vairs nerādīt",
-  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
-  "session.draft.pending": "Loading this draft…",
-  "session.draft.missing.title": "This draft is no longer available",
-  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
-  "session.draft.missing.action": "Back to home",
 }

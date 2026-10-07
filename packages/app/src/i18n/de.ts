@@ -1182,9 +1182,4 @@ export const dict = {
   "help.tabs.persistence": "Wenn Sie die App erneut öffnen, sind Ihre Tabs weiterhin geöffnet.",
   "help.tabs.worktrees":
     "Das neue Design unterstützt Git-Worktrees noch nicht. Diese Funktion folgt in Kürze. Wenn Sie das bisherige Layout vorerst weiterverwenden möchten, können Sie in den Einstellungen zwischen den Layouts wechseln. Beachten Sie jedoch, dass das neue Layout in einigen Wochen dauerhaft verwendet wird.",
-  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
-  "session.draft.pending": "Loading this draft…",
-  "session.draft.missing.title": "This draft is no longer available",
-  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
-  "session.draft.missing.action": "Back to home",
 } satisfies Partial<Record<Keys, string>>

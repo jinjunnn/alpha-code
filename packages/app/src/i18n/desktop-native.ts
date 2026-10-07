@@ -202,7 +202,7 @@ export function detectDesktopNativeLocale(languages: readonly string[]): Desktop
     if (["no", "nb", "nn"].includes(source.language)) return "no"
     const match = DESKTOP_NATIVE_LOCALES.find((candidate) => {
       const target = locale(DESKTOP_NATIVE_LOCALE_TAGS[candidate])
-      return target?.language === source.language && script(target) === script(source)
+      return target?.language === source.language && target.script === source.script
     })
     if (match) return match
   }
@@ -219,15 +219,6 @@ function locale(value: string) {
   } catch {
     return undefined
   }
-}
-
-// alpha (frontend pin e11dbd020 bump): newer CLDR data (the ICU inside bun 1.3.14, which both the local
-// gate and alpha-ci run) maximizes `pa-PK` to the Nastaliq variant `pa-Aran-PK`, while the bundle tag
-// above is `pa-Arab-PK`. Aran is a stylistic variant of Arab (Unicode ISO 15924), so compare them as one
-// script — otherwise Punjabi (Pakistan) falls through to "en" and upstream's own
-// desktop-native.test.ts ("uses Unicode likely subtags") is red on this bun.
-function script(value: Intl.Locale) {
-  return value.script === "Aran" ? "Arab" : value.script
 }
 
 export const DESKTOP_NATIVE_ENGLISH = {

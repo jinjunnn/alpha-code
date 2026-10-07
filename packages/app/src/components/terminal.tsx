@@ -28,14 +28,6 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
   onConnectError?: (error: unknown) => void
-  /**
-   * Optional palette override (alpha seam, REQ-125 #576). When present, its fields are merged
-   * over the theme-derived `terminalColors()` and drive both the Ghostty theme (canvas
-   * background/foreground/cursor/selection) and the container background — letting a host pin
-   * the emulator to a fixed palette (e.g. the always-dark session-workspace terminal stage)
-   * regardless of the app light/dark theme. Absent (undefined) = current behavior verbatim.
-   */
-  theme?: Partial<TerminalColors>
 }
 
 let shared: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
@@ -51,7 +43,7 @@ const loadGhostty = () => {
   return shared
 }
 
-export type TerminalColors = {
+type TerminalColors = {
   background: string
   foreground: string
   cursor: string
@@ -201,7 +193,6 @@ export const Terminal = (props: TerminalProps) => {
     "onAutoFocus",
     "onConnect",
     "onConnectError",
-    "theme",
   ])
   const id = local.pty.id
   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
@@ -295,12 +286,7 @@ export const Terminal = (props: TerminalProps) => {
     }
   }
 
-  // Host palette override (alpha seam, REQ-125 #576): merge over the theme-derived colors so a
-  // caller can pin the emulator to a fixed palette. No override → identical to before.
-  const terminalColors = createMemo<TerminalColors>(() => {
-    const base = getTerminalColors()
-    return local.theme ? { ...base, ...local.theme } : base
-  })
+  const terminalColors = createMemo(getTerminalColors)
 
   const scheduleFit = () => {
     if (disposed) return
