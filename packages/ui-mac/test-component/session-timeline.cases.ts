@@ -8,6 +8,13 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import presetSolid from "babel-preset-solid"
 
+/** REQ-230 AC2:悬停提示改为统一 Tooltip 后,说明文字经 aria-describedby 挂在触发元素上(不再是原生 title)。 */
+function describedText(el: Element | null | undefined): string {
+  const ids = el?.getAttribute("aria-describedby")?.split(/\s+/).filter(Boolean) ?? []
+  return ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" ")
+}
+
+
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
 mock.module("solid-js", () => solid)
@@ -2940,7 +2947,9 @@ describe("#591 富脚注:provider 图标 + 效率段", () => {
     // 命中 3000/(3000+1000) = 75% → 高档,title 给出具体口径。
     const efficiency = [...footnote.querySelectorAll(".a-tl-fn-item")].find((el) => el.textContent === "高")!
     expect(efficiency).not.toBeUndefined()
-    expect(efficiency.getAttribute("title")).toBe("缓存命中 75%")
+    // REQ-230 AC2:口径经统一提示给出(键盘可达:span 被补成可聚焦),不再是原生 title。
+    expect(describedText(efficiency)).toBe("缓存命中 75%")
+    expect((efficiency as HTMLElement).tabIndex).toBe(0)
     expect(footnote.textContent).toContain("5.2 秒")
     expect(footnote.textContent).toContain("3.2k tokens")
 

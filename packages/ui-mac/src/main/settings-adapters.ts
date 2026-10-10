@@ -316,9 +316,8 @@ function decodeGeneral(value: unknown, allowMissing: boolean): AlphaSettings["ge
     ...(typeof source.newInterfaceNoticeDismissed === "boolean"
       ? { newInterfaceNoticeDismissed: source.newInterfaceNoticeDismissed }
       : {}),
-    ...(typeof source.shouldDisplayTabsToast === "boolean"
-      ? { shouldDisplayTabsToast: source.shouldDisplayTabsToast }
-      : {}),
+    // REQ-230 AC3:上游「Introducing tabs」推广卡恒关 —— 上游只在它不是布尔时才自己算(app settings.tsx),
+    shouldDisplayTabsToast: false,
   }
 }
 

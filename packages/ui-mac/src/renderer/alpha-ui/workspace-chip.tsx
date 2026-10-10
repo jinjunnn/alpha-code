@@ -12,6 +12,7 @@ import { projectLabel } from "../sidebar/route"
 import type { AlphaProject } from "../sidebar/use-projects"
 import { pushToast } from "./Toast"
 import { t } from "../i18n"
+import { Tooltip } from "./Tooltip"
 
 /** 数据层已剔除垃圾 worktree,这里只再挡一次 "/"(与首页此前的过滤同义)。 */
 export function visibleWorkspaces(projects: readonly AlphaProject[]): AlphaProject[] {
@@ -57,26 +58,27 @@ export function AlphaWorkspaceChip(props: {
   return (
     <div class="a-home-ws">
       <div class="a-pop-wrap">
-        <button
-          class="a-ws-chip"
-          onClick={(e) => {
-            stop(e)
-            props.onOpenChange(!props.open)
-          }}
+        {/* REQ-230 AC2:只读说明从原生 title 换成统一提示(span 嵌在按钮里拿不到焦点,挂在按钮上)。 */}
+        <Tooltip
+          label={props.readonly ? `${t("alpha.workspace.readonlyTitle")} · ${t("alpha.workspace.readonlyBody")}` : ""}
         >
-          <FolderIcon /> {workspaceLabel(props.projects, props.value)}
-          <Show when={props.readonly}>
-            <span
-              class="a-ws-chip-readonly"
-              data-alpha-workspace-chip-readonly
-              title={`${t("alpha.workspace.readonlyTitle")}\n${t("alpha.workspace.readonlyBody")}`}
-            >
-              <LockIcon />
-              {t("alpha.workspace.readonly")}
-            </span>
-          </Show>
-          <Chevron />
-        </button>
+          <button
+            class="a-ws-chip"
+            onClick={(e) => {
+              stop(e)
+              props.onOpenChange(!props.open)
+            }}
+          >
+            <FolderIcon /> {workspaceLabel(props.projects, props.value)}
+            <Show when={props.readonly}>
+              <span class="a-ws-chip-readonly" data-alpha-workspace-chip-readonly>
+                <LockIcon />
+                {t("alpha.workspace.readonly")}
+              </span>
+            </Show>
+            <Chevron />
+          </button>
+        </Tooltip>
         <Show when={props.open}>
           <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "240px" }}>
             <div class="a-pop-label">{t("alpha.home.workspace")}</div>

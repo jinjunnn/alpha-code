@@ -112,10 +112,21 @@ export function AddProvider(props: {
     const p = props.catalog?.byokProviders.find((x) => x.id === id)
     if (p) openPreset(p)
   })
+  // REQ-230 AC1:二级页在同一个菜单容器里;键盘焦点进来、Esc 先退一级(表单 → 供应商列表 →
+  // 回到模型列表),不是整个关掉。回到列表时把焦点落在第一个供应商上,不让它掉回 body。
+  let root: HTMLDivElement | undefined
+  const focusFirst = () =>
+    queueMicrotask(() =>
+      root
+        ?.querySelector<HTMLElement>(".a-mpa-preset:not(:disabled), .a-mpa-input, .a-mpa-back")
+        ?.focus(),
+    )
+  onMount(focusFirst)
   function back() {
     if (inForm()) {
       setSel(null)
       setError("")
+      focusFirst()
     } else props.onClose()
   }
   function addModel() {
@@ -206,7 +217,18 @@ export function AddProvider(props: {
   }
 
   return (
-    <div class="a-mpa" onClick={(e) => e.stopPropagation()}>
+    <div
+      ref={root}
+      class="a-mpa"
+      data-menu-scope=""
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || e.defaultPrevented) return
+        e.preventDefault()
+        e.stopPropagation()
+        back()
+      }}
+    >
       <div class="a-mpa-head">
         <button class="a-mpa-back" onClick={back} aria-label={t("alpha.common.back")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

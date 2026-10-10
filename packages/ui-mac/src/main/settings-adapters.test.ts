@@ -186,6 +186,24 @@ describe("Settings typed adapter", () => {
     ).toEqual({ ok: true })
   })
 
+  test("REQ-230 AC3: the upstream 'Introducing tabs' promo is always reported off", () => {
+    // 已存 true、缺席、显式 false —— 读出来一律 false;上游只在它不是布尔时才自己算,所以永远不会翻回 true。
+    for (const stored of [true, undefined, false]) {
+      writeAuthority(file, JSON.stringify({ general: stored === undefined ? {} : { shouldDisplayTabsToast: stored } }))
+      const read = createSettingsAdapter(file).read()
+      expect(read.ok).toBe(true)
+      if (!read.ok) return
+      expect(read.value.general.shouldDisplayTabsToast).toBe(false)
+    }
+    // 类型校验照旧:非布尔仍拒。
+    expect(
+      createSettingsAdapter(file).validate({
+        ...settings(),
+        general: { ...settings().general, shouldDisplayTabsToast: "yes" },
+      }),
+    ).toEqual({ ok: false, code: "invalid-input" })
+  })
+
   test("save is durable before success and a child process reopens the authoritative value", () => {
     writeAuthority(file, undefined, { unrelated: { preserved: true } })
     const first = createSettingsAdapter(file)

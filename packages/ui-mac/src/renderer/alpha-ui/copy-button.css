@@ -1,0 +1,46 @@
+@import "./tokens.css";
+
+/* alpha-ui CopyButton(REQ-230 AC2)—— 24px、--a-radius-sm;复制成功后绿勾 1.5 秒。 */
+.a-copy-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+.a-copy-btn:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-copy-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+/* 双写类名抬高优先级:宿主行的 `.x-actions button:hover` 不能把绿勾盖回灰色。 */
+.a-copy-btn.a-copy-btn[data-copied="true"] {
+  color: var(--a-success);
+}
+.a-copy-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.a-copy-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -1,3 +1,5 @@
+@import "./tokens.css";
+
 /* B11 Banner —— 持久/阻断状态条(语义色自 tokens.css)。 */
 
 .a-banner {
@@ -14,7 +16,8 @@
 .a-contract-failure,
 .a-catalog-failure {
   position: fixed;
-  z-index: 10000;
+  /* REQ-230 AC3:全局横幅放在对话框下面一层(此前 10000 压在对话框 --a-z-modal 之上)。 */
+  z-index: calc(var(--a-z-modal) - 1);
   top: 12px;
   left: 50%;
   width: min(720px, calc(100vw - 32px));

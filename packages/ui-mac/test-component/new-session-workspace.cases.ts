@@ -22,6 +22,13 @@ import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../src/shared/alpha-config"
 // `#1374`:共享 `window.api` 桩(只 import 类型,运行期零依赖)。
 import { installPreloadStub } from "./preload-stub"
 
+/** REQ-230 AC2:悬停提示改为统一 Tooltip 后,说明文字经 aria-describedby 挂在触发元素上(不再是原生 title)。 */
+function describedText(el: Element | null | undefined): string {
+  const ids = el?.getAttribute("aria-describedby")?.split(/\s+/).filter(Boolean) ?? []
+  return ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" ")
+}
+
+
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
 mock.module("solid-js", () => solid)
@@ -1442,8 +1449,9 @@ describe("REQ-159 #1322 workspace read-only tag on the chip (AC2)", () => {
     const badge = tag(host)
     expect(badge).not.toBeNull()
     expect(badge!.textContent?.trim()).toBe("只读")
-    expect(badge!.getAttribute("title")).toContain("这个项目现在写不进去")
-    expect(badge!.getAttribute("title")).toContain("重新启动 Code Puppy 后,它就会被算进去")
+    // REQ-230 AC2:说明经统一提示挂在 chip 按钮上(尾标 span 嵌在按钮里拿不到焦点)。
+    expect(describedText(chipButton(host))).toContain("这个项目现在写不进去")
+    expect(describedText(chipButton(host))).toContain("重新启动 Code Puppy 后,它就会被算进去")
     // 位置:目录名与折叠箭头之间(同一个 chip 按钮里,尾标在箭头之前)。
     const chip = chipButton(host)
     expect(chip.contains(badge!)).toBe(true)

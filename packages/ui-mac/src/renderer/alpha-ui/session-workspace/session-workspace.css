@@ -760,34 +760,23 @@
   box-shadow: var(--a-ring-focus);
 }
 
+/* REQ-230 AC2:顶栏「只读」说明与菜单同一个容器外观 —— 去掉小箭头与写死的宽度,中档阴影。 */
 .a-swk-readonly-pop {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   left: 0;
-  z-index: 30;
-  width: 320px;
+  z-index: var(--a-z-dropdown);
+  width: max-content;
+  max-width: min(360px, calc(100vw - 32px));
   padding: 12px 14px;
-  border: 1px solid var(--a-border);
+  border: 1px solid var(--a-border-faint);
   border-radius: var(--a-radius-lg);
   background: var(--a-surface-raised);
-  box-shadow: var(--a-shadow-lg);
+  box-shadow: var(--a-shadow-md);
   color: var(--a-text-secondary);
   font-size: var(--a-text-xs);
   line-height: var(--a-leading-normal);
   app-region: no-drag;
-}
-
-.a-swk-readonly-pop::before {
-  content: "";
-  position: absolute;
-  left: 28px;
-  top: -6px;
-  width: 10px;
-  height: 10px;
-  border-left: 1px solid var(--a-border);
-  border-top: 1px solid var(--a-border);
-  background: var(--a-surface-raised);
-  transform: rotate(45deg);
 }
 
 .a-swk-readonly-pop b {

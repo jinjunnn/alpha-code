@@ -21,6 +21,13 @@ import { dict as enDict } from "../src/renderer/i18n/en"
 // `#1374`:共享 `window.api` 桩。它只 import 类型,运行期零依赖 —— 与上面两份 dict 同理,
 // 静态 import 不会把 solid-js 拖到 `mock.module` 之前。
 import { installPreloadStub } from "./preload-stub"
+
+/** REQ-230 AC2:悬停提示改为统一 Tooltip 后,说明文字经 aria-describedby 挂在触发元素上(不再是原生 title)。 */
+function describedText(el: Element | null | undefined): string {
+  const ids = el?.getAttribute("aria-describedby")?.split(/\s+/).filter(Boolean) ?? []
+  return ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" ")
+}
+
 // ⚠️ `../src/renderer/i18n`(index)**不能**静态 import:它在模块求值期就 import 了 "solid-js",
 // 而 ESM 静态 import 早于下面的 `mock.module("solid-js", …)` —— 于是整个文件拿到 Solid 的
 // **server** 构建,45 条用例一起挂在 `getNextContextId cannot be used under non-hydrating context`。
@@ -411,7 +418,9 @@ describe("AlphaComposer production model seam", () => {
       expect(mounted.host.textContent).toContain(zh["alpha.composer.modelReading"])
     })
 
-    const effort = mounted.host.querySelector<HTMLButtonElement>('button[title*="当前会话模型加载中"]')
+    // REQ-230 AC2:「为什么不能点」写在 chip 旁可见文字里,不再藏进原生 title。
+    expect(mounted.host.querySelector('[data-alpha-chip-reason="effort"]')?.textContent).toContain("当前会话模型加载中")
+    const effort = mounted.host.querySelector<HTMLButtonElement>('[data-kind="effort"] > button')
     expect(effort?.disabled).toBe(true)
     effort?.click()
     click(mounted.host.querySelector('[data-kind="model"] > button'))
@@ -511,7 +520,7 @@ describe("AlphaComposer production model seam", () => {
     )
 
     const effort = mounted.host.querySelector<HTMLButtonElement>('[data-kind="effort"] > button')!
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => {
       expect(effort.disabled).toBe(false)
       expect(send.disabled).toBe(false)
@@ -611,7 +620,7 @@ describe("AlphaComposer production model seam", () => {
     expect(offChip.getAttribute("data-muted"), "无档位的模型,档位入口看起来仍然可选").toBe("")
     expect(offChip.querySelector(".a-comp-eff")?.textContent?.trim()).toBe("—")
     // ② 悬停/无障碍那一层给出原因(zh 由 scripts/test-preload.ts 钉死)。
-    expect(offChip.title, "档位入口没说清为什么用不了").toBe("当前模型不支持推理档")
+    expect(describedText(offChip), "档位入口没说清为什么用不了").toBe("当前模型不支持推理档")
     // ③ 点开之后**点名那个模型**,而不是一片空白 —— 票面那种「你以为设上了」的沉默正是这里。
     click(offChip)
     await waitFor(() => {
@@ -722,7 +731,7 @@ describe("AlphaComposer production model seam", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(send.disabled).toBe(true))
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.model.syncing"]))
@@ -777,7 +786,7 @@ describe("AlphaComposer production model seam", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(send.disabled).toBe(true))
     send.click()
     expect(submissions).toBe(0)
@@ -832,7 +841,7 @@ describe("AlphaComposer production model seam", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(send.disabled).toBe(false))
     send.click()
     await waitFor(() => expect(submissions).toBe(1))
@@ -865,7 +874,7 @@ describe("AlphaComposer production model seam", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(send.disabled).toBe(false))
     send.click()
     window.dispatchEvent(
@@ -906,7 +915,7 @@ describe("AlphaComposer production model seam", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(send.disabled).toBe(false))
 
     window.dispatchEvent(
@@ -973,7 +982,7 @@ describe("AlphaComposer production model seam", () => {
     )
 
     await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelChainFailed"]))
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     expect(send.disabled).toBe(true)
     send.click()
     expect(submissions).toBe(0)
@@ -1027,7 +1036,7 @@ describe("AlphaComposer production model seam", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(send.disabled).toBe(false))
     send.click()
     await waitFor(() => expect(created.length).toBe(1))
@@ -2978,7 +2987,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
     expect(send.disabled).toBe(true)
     click(mounted.host.querySelector('[data-kind="model"] > button'))
@@ -3020,7 +3029,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
@@ -3075,7 +3084,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     expect(composerModel()?.providerID).toBe(deepseekEngineId)
     expect(composerModel()?.id).toBe(deepseekModels[0])
     // ② 谓词 2:引擎里没有这个节点 ⇒ 发送门必须关闭(否则会提交一个引擎不存在的 Model Ref)。
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     expect(send.disabled).toBe(true)
     // ③ 如实告知:按钮已禁用,toast 点不出来,必须有常驻说明 + 重试入口。
     expect(mounted.host.textContent).toContain(zh["alpha.composer.modelNotLoadedDetail"])
@@ -3105,7 +3114,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     // 前置事实:模型链已 ready(BYOK 行可点),而账户链仍在恢复(发送门仍关)。
     await waitFor(() => expect(byokRows(openPicker())[0]?.disabled).toBe(false))
@@ -3144,7 +3153,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
       }),
     )
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     await waitFor(() => expect(byokRows(openPicker())[0]?.disabled).toBe(false))
     click(byokRows(openPicker())[0])
@@ -3184,7 +3193,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     click(byokRows(openPicker())[0])
     await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
 
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
     expect(send.disabled).toBe(true)
     // Enter 直调 submit,是唯一能绕过 disabled 按钮的真实入口 —— 它必须过同一条判据。
     const textarea = mounted.host.querySelector<HTMLTextAreaElement>("textarea")!

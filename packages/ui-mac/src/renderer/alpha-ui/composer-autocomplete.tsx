@@ -52,6 +52,7 @@ import {
   type TriggerView,
 } from "./composer-autocomplete-core"
 import { t } from "../i18n"
+import { claimOverlay, releaseOverlay } from "./overlay-menu"
 
 type Client = ReturnType<typeof createOpencodeClient>
 type CommandApi = ReturnType<typeof useCommand>
@@ -439,12 +440,7 @@ export function createComposerAutocomplete(opts: {
     }
     if (e.key === "Escape") {
       e.preventDefault()
-      if (buttonOpen()) {
-        setButtonOpen(false)
-        return true
-      }
-      const v = view()
-      if (v) setDismissed(triggerSignature(v, opts.text()))
+      dismiss()
       return true
     }
     return false
@@ -456,15 +452,32 @@ export function createComposerAutocomplete(opts: {
     bump()
   }
 
-  // button 模式点击弹窗外关闭(popover-hit 同精神:composer 树内的点击不算外部)
-  const onDocDown = (e: MouseEvent) => {
-    if (!buttonOpen()) return
-    const t = e.target as Element | null
-    if (t && t.closest(".a-comp")) return
-    setButtonOpen(false)
+  /** 关掉菜单(两种开法都关):button 模式收起;token 视图记为「本 token 已关」,继续打字再开。 */
+  const dismiss = () => {
+    if (buttonOpen()) setButtonOpen(false)
+    const v = view()
+    if (v) setDismissed(triggerSignature(v, opts.text()))
   }
-  document.addEventListener("mousedown", onDocDown)
-  onCleanup(() => document.removeEventListener("mousedown", onDocDown))
+
+  // REQ-230 AC1:与芯片浮层同一套「点别处关」—— 用 click(不是 mousedown),判定用 composedPath
+  // 快照(同 popover-hit 的理由)。composer 树内的点击不算外部:焦点本就留在输入框里。
+  const onDocClick = (e: MouseEvent) => {
+    if (!open()) return
+    for (const node of e.composedPath()) {
+      if (node instanceof Element && node.classList.contains("a-comp")) return
+    }
+    dismiss()
+  }
+  document.addEventListener("click", onDocClick)
+  onCleanup(() => document.removeEventListener("click", onDocClick))
+
+  // 同时只开一个:列表一开就把芯片浮层关掉;芯片一开就把列表关掉(overlay-menu 登记)。
+  const overlayId = Symbol("composer-autocomplete")
+  createEffect(() => {
+    if (open()) claimOverlay(overlayId, dismiss)
+    else releaseOverlay(overlayId)
+  })
+  onCleanup(() => releaseOverlay(overlayId))
 
   /** REQ-073:+ 按钮打开/收起统一装配弹窗(与 @ 同一组件;焦点回输入框保键盘导航)。 */
   const toggleAssemble = () => {
@@ -553,7 +566,7 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={SECTION_ICON[it.section]} />
           <span class="a-auto-trig">/{it.trigger}</span>
-          <span class="a-auto-desc" title={slashDescription(it)}>
+          <span class="a-auto-desc">
             {slashDescription(it)}
           </span>
           <span class="a-auto-tag" data-personal={it.tag === "个人" ? "" : undefined}>
@@ -566,7 +579,7 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={ACTION_ICON[it.id]} />
           <span class="a-auto-nm">{actionLabel(it)}</span>
-          <span class="a-auto-desc" title={actionDescription(it)}>
+          <span class="a-auto-desc">
             {actionDescription(it)}
           </span>
           <Show when={it.kbd}>
@@ -579,7 +592,7 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={ACTION_ICON.mode} />
           <span class="a-auto-nm">{t("alpha.autocomplete.mode", { name: it.id })}</span>
-          <span class="a-auto-desc" title={t("alpha.autocomplete.modeDesc")}>
+          <span class="a-auto-desc">
             {t("alpha.autocomplete.modeDesc")}
           </span>
           <Show when={it.on}>
@@ -594,7 +607,7 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={AT_ICON.agent} />
           <span class="a-auto-trig">@{it.name}</span>
-          <span class="a-auto-desc" title={agentDescription(it)}>
+          <span class="a-auto-desc">
             {agentDescription(it)}
           </span>
           <span class="a-auto-tag" data-personal={it.tag === "个人" ? "" : undefined}>

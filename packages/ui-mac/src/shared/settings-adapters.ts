@@ -61,6 +61,8 @@ export const ALPHA_SETTINGS_DEFAULTS: AlphaSettings = {
     showSessionProgressBar: true,
     showCustomAgents: false,
     mobileTitlebarPosition: "top",
+    // REQ-230 AC3:上游「Introducing tabs」推广卡恒关(主进程 decode 也恒给 false,见 main/settings-adapters.ts)。
+    shouldDisplayTabsToast: false,
   },
   appearance: {
     fontSize: 14,

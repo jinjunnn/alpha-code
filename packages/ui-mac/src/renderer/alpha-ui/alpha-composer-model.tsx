@@ -64,6 +64,7 @@ export function ModelPickPop(props: {
   const [readyListEpoch, setReadyListEpoch] = createSignal<string | null>(null)
   const [query, setQuery] = createSignal("")
   const [addOpen, setAddOpen] = createSignal(false)
+  let addRow: HTMLButtonElement | undefined
   const [configureId, setConfigureId] = createSignal<string | null>(null)
   const [switching, setSwitching] = createSignal<string | null>(null)
   const [switchError, setSwitchError] = createSignal(false)
@@ -672,6 +673,7 @@ export function ModelPickPop(props: {
       </div>
 
       <button
+        ref={addRow}
         type="button"
         class="a-pop-item a-mpp-addrow"
         disabled={!catalog() || selectionBlocked()}
@@ -690,6 +692,8 @@ export function ModelPickPop(props: {
           onClose={() => {
             setAddOpen(false)
             setConfigureId(null)
+            // 二级页退回模型列表:焦点还给「添加供应商」行(它就是打开二级页的那一项)。
+            queueMicrotask(() => addRow?.isConnected && addRow.focus())
           }}
           onSaved={retryAll}
         />

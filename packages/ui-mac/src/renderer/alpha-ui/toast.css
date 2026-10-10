@@ -1,6 +1,7 @@
 @import "./tokens.css";
 
 /* alpha-ui Toast — feedback (install done, login, errors). Tokens only.
+   REQ-230 AC3:普通 4 秒、悬停暂停;出错常驻 + role="alert"(见 Toast.tsx)。
    4 秒自走是默认,不是全部:`duration <= 0` 的那些常驻到用户按 ×(`#771`,见 Toast.tsx)。 */
 .a-toast-viewport {
   position: fixed;

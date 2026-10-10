@@ -33,6 +33,7 @@ import {
 } from "./tool-card-model"
 import { diffViewOf } from "./tool-diff"
 import { useTimelineIntents } from "./timeline-intents"
+import { CopyButton } from "../../CopyButton"
 import "./cards.css"
 
 // ── 图标(design.html 帧内路径的本地内联版) ─────────────────────────────────
@@ -458,13 +459,6 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
 // 会话命令入口就不接,不为它们新建链路、也不放只会假装可用的按钮。
 function ToolErrorHead(props: { message: string }) {
   const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
-  const copy = () => {
-    try {
-      void navigator.clipboard.writeText(props.message).catch(() => {})
-    } catch {
-      // 剪贴板拒绝(权限/环境)→ 静默;不阻断时间线。
-    }
-  }
   return (
     <div class="a-tc-err-head">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -473,19 +467,12 @@ function ToolErrorHead(props: { message: string }) {
       </svg>
       <b>{t("alpha.timeline.toolErrorGeneric")}</b>
       <Show when={canCopy}>
-        <button
-          type="button"
+        <CopyButton
           class="a-tc-err-copy"
           data-alpha-tool-error-copy
-          title={t("alpha.timeline.copyError")}
-          aria-label={t("alpha.timeline.copyError")}
-          onClick={copy}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="9" y="9" width="11" height="11" rx="2" />
-            <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-          </svg>
-        </button>
+          label={t("alpha.timeline.copyError")}
+          text={() => props.message}
+        />
       </Show>
     </div>
   )
