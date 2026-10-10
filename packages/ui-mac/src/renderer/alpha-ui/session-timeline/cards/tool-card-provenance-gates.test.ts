@@ -530,7 +530,8 @@ describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键�
   // [远端原名, input, 期望中文标题(独立字面量,不 import 字典键), 期望关键目标]
   // 远端名清单 = docs/verification/2026-07-22-e7-deploy-probe.md §3c 匿名 tools/list 实测。
   const matrix: Array<[string, Record<string, unknown>, string, string | undefined]> = [
-    ["cloud_web_search", { query: "alpha-code e7 部署证据" }, "网页搜索", "alpha-code e7 部署证据"],
+    // `#1475`:本机搜索与云端搜索同一个写法(design §6「搜索」)。
+    ["cloud_web_search", { query: "alpha-code e7 部署证据" }, "搜索", "alpha-code e7 部署证据"],
     ["cloud_dispatch", { kind: "research", autonomy: "pipeline" }, "下发云端任务", "research"],
     ["cloud_status", { job_id: "run_5f0a" }, "查询云端任务", "run_5f0a"],
     ["cloud_await", { job_id: "run_77bd" }, "等待云端任务", "run_77bd"],

@@ -133,7 +133,7 @@ describe("#1473 真实 18 步研究回合(生产装配)", () => {
     expect(fetches.kind === "tool" && fetches.parts.map((part) => part.tool)).toEqual(["webfetch", "webfetch"])
   })
 
-  test("摘要:网页搜索 16 次(思考不计)· 2 步没成功 · 整轮用时 3 分 27 秒", () => {
+  test("摘要:搜索 16 次(思考不计)· 2 步没成功 · 整轮用时 3 分 27 秒", () => {
     const process = processRows(rows)[0]!
     const summary = processSummaryOf(process.steps)
     expect(summary.actions).toEqual([

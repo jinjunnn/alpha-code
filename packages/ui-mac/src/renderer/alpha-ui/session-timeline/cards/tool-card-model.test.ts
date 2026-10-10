@@ -15,6 +15,7 @@ import {
   mediaThumbable,
   OPEN_TARGET_MAX_CHARS,
   openTargetOf,
+  questionStepInfoOf,
   taskCardInfoOf,
   TOOL_BODY_MAX_LINES,
   TOOL_ERROR_MAX_CHARS,
@@ -28,6 +29,8 @@ import {
   toolCardDispatchOf,
   toolCardHeadOf,
   toolCardStatusOf,
+  toolGroupVerbOf,
+  toolStepLineOf,
   type ToolCardKind,
 } from "./tool-card-model"
 import { DIFF_MAX_ROWS, DIFF_PATCH_MAX_CHARS, diffViewOf } from "./tool-diff"
@@ -98,6 +101,8 @@ describe("REQ-125 C6/#879 identity 分派与四态", () => {
       apply_patch: "apply_patch",
       skill: "skill",
       task: "task",
+      // `#1475` AC6:答完的内置提问有了宿主展示规则(问题 + 你的选择)。
+      question: "question",
     }
     Object.entries(table).forEach(([tool, kind]) => {
       const dispatch = toolCardDispatchOf(part(tool))
@@ -107,8 +112,8 @@ describe("REQ-125 C6/#879 identity 分派与四态", () => {
         metadataOnly: false,
       })
     })
-    // 无宿主规则的 builtin(question/todowrite/lsp)→ metadata-only,分类仍是 builtin。
-    for (const name of ["question", "todowrite", "lsp"]) {
+    // 无宿主规则的 builtin(todowrite/lsp)→ metadata-only,分类仍是 builtin。
+    for (const name of ["todowrite", "lsp"]) {
       const dispatch = toolCardDispatchOf(part(name))
       expect({ name, kind: dispatch.kind, metadataOnly: dispatch.metadataOnly, category: dispatch.category }).toEqual({
         name,
@@ -1147,5 +1152,126 @@ describe("#586 websearch 富链接模型(G17:结构化标题 allowlist + 字母�
     if (clean.type !== "links") throw new Error("expected links body")
     expect(clean.links).toHaveLength(2)
     expect(clean.truncated).toBe(false)
+  })
+})
+
+// ── `#1475`(REQ-229 AC3 / AC5 / AC6)步骤行投影 ────────────────────────────────
+describe("#1475 步骤行投影:来源标记只给非我方;行尾规则;答完的提问", () => {
+  const snap = (source: string, origin: string, name: string, authority: Record<string, unknown> = { kind: "not-asserted" }) =>
+    ({ identity: { source, origin, name }, technicalId: name, authority }) as unknown as ToolDisplaySnapshotV1
+
+  test("来源标记:mcp = 服务名、plugin = 插件名、无快照 = 来源不明;我方(builtin / host / 云端)恒缺席", () => {
+    expect(toolStepLineOf(part("x_read", undefined, snap("mcp", "fs-srv", "read"))).source).toEqual({
+      kind: "mcp",
+      label: "fs-srv",
+    })
+    expect(toolStepLineOf(part("bash", undefined, snap("plugin", "evil-pack", "bash"))).source).toEqual({
+      kind: "plugin",
+      label: "evil-pack",
+    })
+    expect(toolStepLineOf(part("read", undefined, null)).source).toEqual({ kind: "unknown" })
+    // 冒名的第三方:没有我方动作名,对象只是被动净化的名称 —— 参数一个都不读。
+    const spoof = toolStepLineOf(part("read", { input: { filePath: "/w/SECRET.md" } }, snap("mcp", "fs-srv", "read")))
+    expect([spoof.verbKey, spoof.object, spoof.objectMono]).toEqual([undefined, "read", undefined])
+    for (const own of [
+      part("read", { input: { filePath: "/w/a.md" } }),
+      part("lsp"),
+      part("h", undefined, snap("host", "", "h")),
+      part("cloud_cloud_status", undefined, snap("mcp", "cloud", "cloud_status", {
+        kind: "alpha-cloud",
+        bindingId: "mcp:cloud",
+        evidenceDigest: `sha256:${"d".repeat(64)}`,
+      })),
+    ])
+      expect(toolStepLineOf(own).source).toBeUndefined()
+    // 还没有展示规则的我方工具:「本机工具 · 名称」通用行。
+    expect([toolStepLineOf(part("lsp")).verbKey, toolStepLineOf(part("lsp")).object]).toEqual([
+      "alpha.timeline.sourceBuiltin",
+      "lsp",
+    ])
+  })
+
+  test("行尾:计数只在为零时(没找到);退出码只在非 0 时;审批超时对所有来源同一句;打开网页失败 = 没打开", () => {
+    expect(toolStepLineOf(part("glob", { metadata: { count: 0 } })).end?.key).toBe("alpha.timeline.stepNotFound")
+    expect(toolStepLineOf(part("glob", { metadata: { count: 4 } })).end).toBeUndefined()
+    expect(toolStepLineOf(part("grep", { metadata: { matches: 0 } })).end?.key).toBe("alpha.timeline.stepNotFound")
+    expect(toolStepLineOf(part("bash", { metadata: { exit: 0 } })).end).toBeUndefined()
+    expect(toolStepLineOf(part("bash", { metadata: { exit: 2 } })).end).toEqual({
+      key: "alpha.timeline.stepExit",
+      params: { code: 2 },
+    })
+    expect(toolStepLineOf(part("webfetch", { status: "error" })).end).toEqual({
+      key: "alpha.timeline.stepNotOpened",
+      failure: true,
+    })
+    const timeout = { status: "error" as const, error: "审批请求等待 60 秒无人应答,已按 fail-closed 结束" }
+    for (const timedOut of [
+      part("bash", timeout),
+      part("webfetch", timeout),
+      part("x", timeout, snap("mcp", "notion", "search_pages")),
+      part("x", timeout, null),
+    ])
+      expect(toolStepLineOf(timedOut).end).toEqual({ key: "alpha.timeline.stepAskTimeout", failure: true })
+  })
+
+  test("对象与动作名:bash 有说明用说明;网页去协议头;apply_patch 说文件数;合并行读取 / 编辑 / 写入按文件数", () => {
+    const bash = toolStepLineOf(part("bash", { input: { command: "bun test src", description: "跑单元测试" } }))
+    expect([bash.verbKey, bash.object, bash.objectMono]).toEqual(["alpha.timeline.step.bash", "跑单元测试", false])
+    expect(toolStepLineOf(part("bash", { input: { command: "ls -la" } })).object).toBe("ls -la")
+    expect(toolStepLineOf(part("webfetch", { input: { url: "https://example.org/a" } })).object).toBe(
+      "example.org/a",
+    )
+    const patch = toolStepLineOf(
+      part("apply_patch", {
+        metadata: {
+          files: [
+            { relativePath: "a.ts", type: "update", additions: 3, deletions: 1 },
+            { relativePath: "b.ts", type: "delete", additions: 0, deletions: 9 },
+          ],
+        },
+      }),
+    )
+    expect([patch.verbKey, patch.verbParams, patch.stat]).toEqual([
+      "alpha.timeline.step.patchFiles",
+      { count: 2 },
+      { additions: 3, deletions: 10 },
+    ])
+    expect(toolGroupVerbOf(part("read"), 5)).toEqual({ key: "alpha.timeline.step.readFiles", params: { count: 5 } })
+    expect(toolGroupVerbOf(part("edit"), 3)?.key).toBe("alpha.timeline.step.editFiles")
+    expect(toolGroupVerbOf(part("websearch"), 4)).toBeUndefined()
+    expect(toolGroupVerbOf(part("x", undefined, snap("mcp", "fs-srv", "read")), 2)).toBeUndefined()
+  })
+
+  test("答完的提问:问题 / 选项 / 你的选择(含自己输入的),每个字符串过 redactor;冒名 question 零投影", () => {
+    const input = {
+      questions: [
+        {
+          question: "导出成哪种格式?",
+          options: [{ label: "Word" }, { label: "PDF" }, { label: "Markdown" }],
+        },
+        { question: "放在哪里?", options: [{ label: "桌面" }] },
+      ],
+    }
+    const answered = part("question", { input, metadata: { answers: [["Word", "PDF"], ["~/报告"]] } })
+    const line = toolStepLineOf(answered)
+    expect([line.verbKey, line.object, line.end]).toEqual([
+      "alpha.timeline.tool.question",
+      "导出成哪种格式?",
+      { key: "alpha.timeline.stepYouChose", list: ["Word", "PDF"] },
+    ])
+    const info = questionStepInfoOf(answered)!
+    expect(info.items[0]!.options).toEqual([
+      { label: "Word", selected: true },
+      { label: "PDF", selected: true },
+      { label: "Markdown", selected: false },
+    ])
+    expect(info.items[1]!.custom).toEqual(["~/报告"])
+    // 没回答(空数组)→ 行尾不写「你选了」。
+    expect(toolStepLineOf(part("question", { input, metadata: { answers: [[], []] } })).end).toBeUndefined()
+    // 冒名(插件起名 question):降级,问题与回答一个字都不进投影。
+    const spoof = part("question", { input, metadata: { answers: [["Word"]] } }, snap("plugin", "qa-pack", "question"))
+    expect(questionStepInfoOf(spoof)).toBeUndefined()
+    expect(toolStepLineOf(spoof).object).toBe("question")
+    expect(toolStepLineOf(spoof).end).toBeUndefined()
   })
 })

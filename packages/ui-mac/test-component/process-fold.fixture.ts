@@ -5,7 +5,7 @@
 // + 持久化 alpha-cloud authority),打开网页 2 次都失败(本机 webfetch,Transport error),
 // 最后一条消息写回答。工具之间没有过渡话。
 //
-// 期望(design ① ②):回答之前恰好一行工作过程;摘要「网页搜索 16 次 · 2 步没成功 · 3 分 27 秒」;
+// 期望(design ① ②):回答之前恰好一行工作过程;摘要「搜索 16 次 · 2 步没成功 · 3 分 27 秒」;
 // 展开后 12 行 = 思考 6 + 搜索 4/2/4/4/2 + 打开网页 2(合成一行)。
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 
