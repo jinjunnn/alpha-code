@@ -5,6 +5,7 @@ import * as fs from "node:fs/promises"
 import { brandI18nPlugin } from "./scripts/brand-i18n"
 import { patchUpstreamPlugin } from "./scripts/patch-upstream"
 import { UPSTREAM_LOGO_ALIAS } from "./scripts/upstream-logo-alias"
+import { nodePtyPackage, resolveTargetArch } from "./scripts/target-arch"
 
 const OPENCODE_SERVER_DIST = "../opencode/dist/node"
 
@@ -15,7 +16,10 @@ const channel = (() => {
   return "dev"
 })()
 
-const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
+// #1496:按**目标**架构选 node-pty 包(`ALPHA_TARGET_ARCH=arm64|x64`,缺省宿主架构)。包名会被编进
+// out/main —— 用宿主 `process.arch` 会让 arm64 机器打出的 Intel 包带着 arm64 终端。打包前由
+// electron-builder.config.ts 的 beforePack 再核对一遍产物(scripts/target-arch.ts)。
+const nodePtyPkg = nodePtyPackage(process.platform, resolveTargetArch())
 
 const sentry =
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT

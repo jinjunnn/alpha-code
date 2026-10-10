@@ -3,7 +3,9 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import type { Configuration } from "electron-builder"
+import { Arch, type Configuration, type MacOsTargetName } from "electron-builder"
+
+import { assertMacTargetArch, resolveTargetArch } from "./scripts/target-arch"
 
 // REQ-089 AC3: the OS protocol list has exactly one source. The installer metadata that makes a
 // cold-start deep link reach the app at all is derived from the same manifest the runtime
@@ -57,6 +59,14 @@ const APP_IDS = {
   beta: "com.tide.alphacode.beta",
   prod: "com.tide.alphacode",
 } as const
+
+// #1496:mac 只出**一个**目标架构(`ALPHA_TARGET_ARCH=arm64|x64`,缺省宿主架构)。arm64 与 x64 各跑一轮
+// build + package(终端原生包名是 build 时编进产物的,一份产物不能同时服务两种架构),最后合并
+// latest-mac.yml(scripts/merge-latest-mac-yml.ts)。见 docs/runbooks/distribution.md §2。
+// 非 mac 平台不读它(win 由 CLI `--x64` 决定),所以这里只在 darwin 上解析,避免影响别的平台打包。
+const macTargetArch = process.platform === "darwin" ? resolveTargetArch() : undefined
+const macTargets = (names: MacOsTargetName[]) =>
+  macTargetArch ? names.map((target) => ({ target, arch: [macTargetArch] })) : names
 
 const getBase = (appId: string): Configuration => ({
   artifactName: "alpha-code-${os}-${arch}.${ext}",
@@ -176,7 +186,14 @@ const getBase = (appId: string): Configuration => ({
     // (APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER, or APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID).
     notarize: shouldSign,
     // Signed builds emit dmg+zip (distributable + updater); plain local builds emit the .app directly.
-    target: shouldSign ? ["dmg", "zip"] : ["dir"],
+    target: macTargets(shouldSign ? ["dmg", "zip"] : ["dir"]),
+  },
+  // #1496:装包前核对 —— 正在打的架构 == 目标架构、out/main 里的 node-pty 包名 == 该架构、
+  // 该架构的原生包(node-pty / @parcel/watcher)在 node_modules 里且每个 Mach-O 都含这一片。
+  // 任一不过即抛,宁可不出包,也不出一个终端打不开的包。
+  beforePack: async (context) => {
+    if (context.electronPlatformName !== "darwin") return
+    assertMacTargetArch({ packingArch: Arch[context.arch], packageDir })
   },
   dmg: {
     sign: shouldSign,
