@@ -99,10 +99,12 @@ function readHead(file: string): Uint8Array {
  * 且至少有一个 `.node`。返回问题清单(空 = 通过)。
  */
 export function checkNativePackage(pkgName: string, arch: TargetArch, resolveFrom: string): string[] {
-  let pkgJson: string
-  try {
-    pkgJson = createRequire(path.join(resolveFrom, "package.json")).resolve(`${pkgName}/package.json`)
-  } catch {
+  // 按 Node 的查找目录逐个看 `<dir>/<pkg>/package.json` 是否在盘上,不经 `resolve("<pkg>/package.json")`:
+  // `@lydell/node-pty-darwin-*` 声明了不导出 package.json 的 `exports`,resolve 会抛
+  // ERR_PACKAGE_PATH_NOT_EXPORTED,把「装了」误判成「没装」(#1496 本机首次打 x64 实测)。
+  const searchDirs = createRequire(path.join(resolveFrom, "package.json")).resolve.paths(pkgName) ?? []
+  const pkgJson = searchDirs.map((d) => path.join(d, pkgName, "package.json")).find((f) => fs.existsSync(f))
+  if (!pkgJson) {
     return [`${pkgName} 不在 node_modules 里(在仓根跑 \`bun install --os=darwin --cpu='*'\` 把两种架构的原生包都装上)`]
   }
   const problems: string[] = []
