@@ -22,6 +22,7 @@ import {
   REASONING_SUMMARY_MAX_CHARS,
   reasoningSummary,
   reuseTimelineRows,
+  RETRY_MESSAGE_MAX_CHARS,
   reviewPathOf,
   segmentUserText,
   type TimelineRow,
@@ -309,32 +310,39 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(settled.kind === "markdown" && settled.streaming).toBe(false)
   })
 
-  // `#1399` 回合脚行:活跃回合的最后一行,贯穿整轮。此前这里断言的是 thinking 行「有输出即不再出现」——
-  // 那正是 owner 观察到的缺陷(吐出第一个 part 之后页面就不动了),所以反过来钉死:五个子状态里它都在。
-  test("#1399 回合脚行:首个 part 未到 / 正文流式 / 推理中 / 工具执行中 / 自动重试,行都在且是回合最后一行", () => {
+  // `#1399` 回合脚行的核心判断(一轮在跑时,时间线里要有一个从头到尾都在的元素)由 `#1474` 的工作过程继承:
+  // 脚行并入工作过程的实时标题,工作过程在回合开始即出现、与回合同寿命。五个子状态里它都在,且
+  // 自动重试不再另挂一张卡(重试写进同一个标题)。
+  test("#1474 工作过程与回合同寿命:首个 part 未到 / 正文流式 / 推理中 / 工具执行中 / 自动重试,行都在", () => {
     const user = userMsg("msg_u1", 1000)
     const userParts = { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }
     const streaming = assistantMsg("msg_a1", "msg_u1", { time: { created: 1010 } })
 
     const first = project([user], userParts, "busy")
-    expect(first.map((row) => row.kind)).toEqual(["user", "turnfoot"])
-    expect(first[1]).toEqual({
-      kind: "turnfoot",
-      key: "turnfoot:msg_u1",
-      rev: "1000",
+    expect(first.map((row) => row.kind)).toEqual(["user", "process"])
+    expect(first[1]).toMatchObject({
+      kind: "process",
+      key: "process:msg_u1",
       userMessageID: "msg_u1",
+      steps: [],
+      active: true,
       startedAt: 1000,
+      answering: false,
     })
+    expect("retry" in first[1]!).toBe(false)
 
+    // 纯文字回答:工作过程在回答之前,回答一开始输出就标 answering(视图据此收成一行)。
     const text = project([user, streaming], { ...userParts, msg_a1: [textPart("prt_t1", "msg_a1", "输出")] }, "busy")
-    expect(text.map((row) => row.kind)).toEqual(["user", "markdown", "turnfoot"])
+    expect(text.map((row) => row.kind)).toEqual(["user", "process", "markdown"])
+    expect(text[1]).toMatchObject({ kind: "process", active: true, answering: true })
 
     const reasoning = project(
       [user, streaming],
       { ...userParts, msg_a1: [reasoningPart("prt_r1", "msg_a1", "先想想", { time: { start: 0 } })] },
       "busy",
     )
-    expect(reasoning.map((row) => row.kind)).toEqual(["user", "process", "turnfoot"])
+    expect(reasoning.map((row) => row.kind)).toEqual(["user", "process"])
+    expect(reasoning[1]).toMatchObject({ answering: false })
 
     const tool = project(
       [user, streaming],
@@ -348,16 +356,80 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       },
       "busy",
     )
-    expect(tool.map((row) => row.kind)).toEqual(["user", "process", "turnfoot"])
+    expect(tool.map((row) => row.kind)).toEqual(["user", "process"])
 
     const retry = project([user, streaming], { ...userParts, msg_a1: [textPart("prt_t1", "msg_a1", "输出")] }, "retry", {
       attempt: 2,
       message: "限流",
     })
-    expect(retry.map((row) => row.kind)).toEqual(["user", "markdown", "retry", "turnfoot"])
+    expect(retry.map((row) => row.kind)).toEqual(["user", "process", "markdown"])
+    expect(retry[1]).toMatchObject({ kind: "process", active: true, retry: { attempt: 2, message: "限流" } })
+    // 对照臂:旧的回合脚行与重试行类型在任何活跃子状态里都不再出现。
+    for (const rows of [first, text, reasoning, tool, retry])
+      expect(rows.some((row) => ["turnfoot", "retry", "thinking"].includes(row.kind as string))).toBe(false)
   })
 
-  test("#1399 回合脚行只属于活跃回合:上一回合已完成时它只在最后一轮出现", () => {
+  test("#1474 回合进行中:工具之前的文字是过渡话,不被提为回答(否则工具还在跑时工作过程就被误判为回答已开始)", () => {
+    const user = userMsg("msg_u1", 1000)
+    const parts = {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [
+        textPart("prt_s1", "msg_a1", "我先搜一下"),
+        toolPart("prt_o1", "msg_a1", "bash", {
+          state: { status: "running", input: {}, title: "bash", time: { start: 0 } },
+        }),
+      ],
+    }
+    const live = project([user, assistantMsg("msg_a1", "msg_u1", { time: { created: 1010 } })], parts, "busy")
+    expect(live.map((row) => row.kind)).toEqual(["user", "process"])
+    const process = live[1]!
+    if (process.kind !== "process") throw new Error("expected process")
+    expect(process.answering).toBe(false)
+    expect(process.steps.map((step) => step.kind)).toEqual(["say", "tool"])
+
+    // 回答开始输出(最后一次工具之后有文字)⇒ answering;之后又调工具 ⇒ 那段文字改判为过渡话、answering 回落。
+    const done = toolPart("prt_o1", "msg_a1", "bash")
+    const answered = project(
+      [user, assistantMsg("msg_a1", "msg_u1", { time: { created: 1010 } })],
+      { ...parts, msg_a1: [done, textPart("prt_a1", "msg_a1", "结论")] },
+      "busy",
+    )
+    expect(answered.map((row) => row.kind)).toEqual(["user", "process", "markdown"])
+    expect(answered[1]).toMatchObject({ answering: true })
+    const again = project(
+      [user, assistantMsg("msg_a1", "msg_u1", { time: { created: 1010 } })],
+      {
+        ...parts,
+        msg_a1: [
+          done,
+          textPart("prt_a1", "msg_a1", "结论"),
+          toolPart("prt_o2", "msg_a1", "bash", {
+            state: { status: "running", input: {}, title: "bash", time: { start: 0 } },
+          }),
+        ],
+      },
+      "busy",
+    )
+    expect(again.map((row) => row.kind)).toEqual(["user", "process"])
+    expect(again[1]).toMatchObject({ answering: false })
+    const moved = again[1]!
+    if (moved.kind !== "process") throw new Error("expected process")
+    expect(moved.steps.map((step) => (step.kind === "say" ? `say:${step.part.id}` : step.kind))).toEqual([
+      "tool",
+      "say:prt_a1",
+      "tool",
+    ])
+
+    // 结束态照旧:最后一次工具之后没有文字,最后一段过渡话被提为回答。
+    const settled = project(
+      [user, assistantMsg("msg_a1", "msg_u1")],
+      { ...parts, msg_a1: [textPart("prt_s1", "msg_a1", "我先搜一下"), toolPart("prt_o1", "msg_a1", "bash")] },
+      "idle",
+    )
+    expect(settled.map((row) => row.kind)).toEqual(["user", "process", "markdown", "footnote"])
+  })
+
+  test("#1474 工作过程只在活跃回合里无条件出现:上一回合已完成且没有步骤时不出", () => {
     const rows = project(
       [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1"), userMsg("msg_u2", 2000)],
       {
@@ -367,10 +439,10 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       },
       "busy",
     )
-    expect(rows.map((row) => row.kind)).toEqual(["user", "markdown", "footnote", "turn", "user", "turnfoot"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "markdown", "footnote", "turn", "user", "process"])
   })
 
-  test("#1399 结局同帧让位:完成 → 脚注;中止 → 中断行;出错 → 错误卡;零正文 → 空回合行 —— 四种都没有脚行", () => {
+  test("#1399/#1474 结局同帧让位:完成 → 脚注;中止 → 中断行;出错 → 错误卡;零正文 → 空回合行 —— 都不再有实时工作过程", () => {
     const user = userMsg("msg_u1", 1000)
     const userParts = { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }
 
@@ -729,20 +801,27 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     }
   })
 
-  test("重试:status=retry 且活跃回合 → retry 行(attempt + 有界 message)", () => {
+  test("重试:status=retry 且活跃回合 → 工作过程带 retry(attempt + 有界 message),不另挂重试行", () => {
     const rows = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "retry", {
       attempt: 2,
       message: "gateway 429",
     })
-    // `#1399` 起回合脚行是活跃回合的最后一行,重试卡在它之前(卡说为什么在等、第几次;脚行说这一轮还在跑)。
-    expect(rows.map((row) => row.kind)).toEqual(["user", "retry", "turnfoot"])
-    const retry = rows[1]!
-    if (retry.kind !== "retry") throw new Error("expected retry row")
-    expect(retry.attempt).toBe(2)
-    expect(retry.message).toBe("gateway 429")
+    // `#1474` 起重试写进工作过程的实时标题(「正在重试 · 第 N 次 · 原因」),不再与运行行并存。
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process"])
+    const process = rows[1]!
+    if (process.kind !== "process") throw new Error("expected process row")
+    expect(process.retry).toEqual({ attempt: 2, message: "gateway 429" })
+
+    const long = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "retry", {
+      attempt: 3,
+      message: "x".repeat(RETRY_MESSAGE_MAX_CHARS + 50),
+    })
+    const bounded = long[1]!
+    if (bounded.kind !== "process") throw new Error("expected process row")
+    expect(bounded.retry?.message).toHaveLength(RETRY_MESSAGE_MAX_CHARS)
 
     const idle = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "idle")
-    expect(idle.some((row) => row.kind === "retry")).toBe(false)
+    expect(idle.some((row) => row.kind === "process")).toBe(false)
   })
 
   test("压缩与中断投影为对应分隔行", () => {
@@ -802,7 +881,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       "busy",
     )
 
-    expect(rows.map((row) => row.kind)).toEqual(["divider", "turnfoot"])
+    expect(rows.map((row) => row.kind)).toEqual(["divider", "process"])
     const divider = rows[0]!
     if (divider.kind !== "divider" || divider.label !== "compaction") throw new Error("expected compaction divider")
     expect(divider.summaryParts).toEqual([])
@@ -950,15 +1029,19 @@ describe("REQ-125 C5 行复用:流式 delta 不重建行", () => {
     expect(second).toBe(first)
   })
 
+  const markdownOf = (rows: readonly TimelineRow[]) => rows.find((row) => row.kind === "markdown")!
+
   test("文本增量(同 part 对象)保留行引用;流式收尾才重建该行", () => {
     const first = reuseTimelineRows(undefined, project(messages, parts, "busy"))
     streamingText.text = "第一段第二段"
     const second = reuseTimelineRows(first, project(messages, parts, "busy"))
-    expect(second[1]).toBe(first[1]!)
+    expect(markdownOf(second)).toBe(markdownOf(first))
+    // `#1474`:活跃回合的工作过程行同样不因文本增量重建(实时标题的 live region 不插拔)。
+    expect(second.find((row) => row.kind === "process")).toBe(first.find((row) => row.kind === "process")!)
 
     const done = reuseTimelineRows(second, project(messages, parts, "idle"))
-    expect(done[1]).not.toBe(second[1]!)
-    const row = done[1]!
+    expect(markdownOf(done)).not.toBe(markdownOf(second))
+    const row = markdownOf(done)
     expect(row.kind === "markdown" && row.streaming).toBe(false)
   })
 
@@ -969,7 +1052,7 @@ describe("REQ-125 C5 行复用:流式 delta 不重建行", () => {
       msg_a1: [textPart("prt_t1", "msg_a1", "第一段第二段")],
     }
     const second = reuseTimelineRows(first, project(messages, replaced, "busy"))
-    expect(second[1]).not.toBe(first[1]!)
+    expect(markdownOf(second)).not.toBe(markdownOf(first))
   })
 })
 

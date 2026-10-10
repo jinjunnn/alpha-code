@@ -68,15 +68,6 @@
   background: var(--a-tool-task);
 }
 
-.a-retry-spin {
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid currentColor;
-  border-top-color: transparent;
-  border-radius: var(--a-radius-full);
-  animation: a-tc-spin 0.7s linear infinite;
-}
-
 .a-tc-stat {
   display: inline-flex;
   flex: none;
@@ -674,37 +665,6 @@
   font-size: var(--a-text-2xs);
 }
 
-/* ── 重试卡 ──────────────────────────────────────────────────────────────── */
-.a-retry {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  align-self: flex-start;
-  padding: 9px 13px;
-  border: 1px solid var(--a-warning);
-  border-radius: var(--a-radius-lg);
-  background: var(--a-warning-subtle);
-  color: var(--a-text);
-  font-size: var(--a-text-sm);
-}
-
-.a-retry-spin {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border-width: 1.6px;
-  border-color: var(--a-warning);
-  border-top-color: transparent;
-}
-
-.a-retry-message {
-  overflow: hidden;
-  color: var(--a-text-tertiary);
-  font-size: var(--a-text-xs);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 /* ── 助手侧媒体预览行 ────────────────────────────────────────────────────── */
 .a-media {
   display: flex;
@@ -1012,12 +972,6 @@ button.a-diffsum-row:focus-visible {
 }
 
 /* ── 关键帧与 reduced-motion 关断 ────────────────────────────────────────── */
-@keyframes a-tc-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes a-tc-caret {
   50% {
     opacity: 0;
@@ -1025,7 +979,6 @@ button.a-diffsum-row:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .a-retry-spin,
   .a-tc-cursor {
     animation: none;
   }

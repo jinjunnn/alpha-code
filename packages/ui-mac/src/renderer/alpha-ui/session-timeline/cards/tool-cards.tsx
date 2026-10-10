@@ -808,19 +808,6 @@ export function TurnErrorCard(props: { row: Extract<TimelineRow, { kind: "turnEr
   )
 }
 
-// ── 重试卡 ──────────────────────────────────────────────────────────────────
-export function RetryCard(props: { row: Extract<TimelineRow, { kind: "retry" }> }) {
-  return (
-    <div class="a-tl-row a-retry" data-alpha-timeline-row="retry" role="status">
-      <span class="a-retry-spin" aria-hidden="true" />
-      <span>{t("alpha.timeline.retrying", { attempt: props.row.attempt })}</span>
-      <Show when={props.row.message}>
-        <span class="a-retry-message">{props.row.message}</span>
-      </Show>
-    </div>
-  )
-}
-
 // ── 助手侧媒体预览行(数据源 = 工具附件通道 / 顶层 file part 的快照) ────────
 export function TimelineMediaRow(props: { media: TimelineMediaSource }) {
   const intents = useTimelineIntents()
