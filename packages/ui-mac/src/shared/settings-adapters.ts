@@ -61,6 +61,8 @@ export const ALPHA_SETTINGS_DEFAULTS: AlphaSettings = {
     showSessionProgressBar: true,
     showCustomAgents: false,
     mobileTitlebarPosition: "top",
+    // #1476:上游「Introducing tabs」推广卡不显示(主进程设置适配器同样把它钉为 false)。
+    shouldDisplayTabsToast: false,
   },
   appearance: {
     fontSize: 14,

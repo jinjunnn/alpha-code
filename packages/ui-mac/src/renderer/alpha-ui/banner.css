@@ -14,7 +14,9 @@
 .a-contract-failure,
 .a-catalog-failure {
   position: fixed;
-  z-index: 10000;
+  /* REQ-230:全局横幅放在对话框层**之下**(此前 10000 压在 --a-z-modal 900 之上,遮住对话框)。
+     仍高于设置页这类 --a-z-overlay 浮层,不被普通页面面板盖住。 */
+  z-index: calc(var(--a-z-modal) - 1);
   top: 12px;
   left: 50%;
   width: min(720px, calc(100vw - 32px));

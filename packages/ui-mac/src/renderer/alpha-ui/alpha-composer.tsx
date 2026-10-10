@@ -14,6 +14,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  createUniqueId,
   For,
   Match,
   onCleanup,
@@ -41,6 +42,8 @@ import {
   type PendingAttachmentRead,
 } from "./composer-attachments-core"
 import { pathHitsPopover } from "./popover-hit"
+import { claimOverlay, releaseOverlay } from "./overlay-stack"
+import { Tooltip } from "./Tooltip"
 import { pushToast } from "./Toast"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import type { AuthState } from "../../preload/types"
@@ -94,21 +97,32 @@ import { reconcileAuthSnapshot, subscribeAuthState } from "../auth-recovery"
 import "./alpha-composer.css"
 
 /* ── 单开注册表(全部 chips 共享;开新的自动关旧的)──────────────────────────── */
+// #1476:芯片菜单与「+ / @ /」列表同属一套菜单,「同时只开一个」经 overlay-stack 跨两方生效。
 const [openChipId, setOpenChipId] = createSignal<number | null>(null)
+const CHIP_OVERLAY = {}
 let chipSeq = 0
 let homeModelListMarkCount = 0
 let homeModelRetryMarkCount = 0
 let homeAccountMarkCount = 0
 /** #881:目录真就绪标的预算,与上面三个同构(每次主进程运行封顶 25 条)。 */
 let homeCatalogReadyMarkCount = 0
-export const closeChips = () => setOpenChipId(null)
+export const closeChips = () => {
+  setOpenChipId(null)
+  releaseOverlay(CHIP_OVERLAY)
+}
 
 function useChip() {
   const id = ++chipSeq
   const isOpen = () => openChipId() === id
-  const toggle = () => setOpenChipId(isOpen() ? null : id)
   const close = () => {
-    if (openChipId() === id) setOpenChipId(null)
+    if (openChipId() !== id) return
+    setOpenChipId(null)
+    releaseOverlay(CHIP_OVERLAY)
+  }
+  const toggle = () => {
+    if (isOpen()) return close()
+    claimOverlay(CHIP_OVERLAY, () => setOpenChipId(null))
+    setOpenChipId(id)
   }
   const onDoc = (e: MouseEvent) => {
     // REQ-061:composedPath 在 dispatch 时快照 —— 点击处理器同步重渲染把被点按钮 detach 后,
@@ -124,7 +138,42 @@ function useChip() {
 
 const stop = (e: Event) => e.stopPropagation()
 
-/* 逃出 overflow 裁剪的弹层(Portal 到 body、fixed 定位、朝上开)。 */
+/** 菜单里可用方向键走到的项(#1476)。二级页(添加供应商)打开时只在二级页内走。 */
+const MENU_ITEM_SELECTOR =
+  "button.a-pop-item:not(:disabled), [role^='menuitem']:not([aria-disabled='true']), button.a-mpa-preset:not(:disabled)"
+
+/** ↑↓ / Home / End 在 `scope` 内的菜单项间环形移动焦点;返回是否处理了该键。 */
+export function moveMenuFocus(scope: HTMLElement, event: KeyboardEvent): boolean {
+  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return false
+  const target = event.target as Element | null
+  // 文本输入里的方向键属于光标(搜索框除外:从搜索框 ↓ 进入列表)。
+  if (target?.closest("textarea, select, [contenteditable='true'], input:not([type='search'])")) return false
+  const inSub = scope.classList.contains("a-mpa")
+  const items = [...scope.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)].filter(
+    (el) => inSub || !el.closest(".a-mpa"),
+  )
+  if (items.length === 0) return false
+  const index = items.indexOf(document.activeElement as HTMLElement)
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : index < 0
+          ? event.key === "ArrowDown"
+            ? 0
+            : items.length - 1
+          : (index + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length
+  event.preventDefault()
+  items[next]!.focus()
+  return true
+}
+
+/* 逃出 overflow 裁剪的弹层(Portal 到 body、fixed 定位、朝上开)。
+ * #1476 一套键盘 / 关闭规则:↑↓ 移动、回车选(原生 button)、Esc 关并把焦点还给触发按钮 ——
+ * **无论焦点在哪**(焦点在弹层外时由 window 捕获阶段的监听兜住);点别处关(useChip);
+ * 同时只开一个(overlay-stack);窗口尺寸变化时跟着重新定位。 */
 export function ChipPopover(props: {
   anchor: HTMLElement | undefined
   align?: "left" | "right"
@@ -135,19 +184,39 @@ export function ChipPopover(props: {
 }) {
   const a = props.anchor
   if (!a) return null
-  const r = a.getBoundingClientRect()
-  const vw = window.innerWidth
+  const [layout, setLayout] = createSignal(0)
   const minW = props.minWidth ?? 200
   let popover: HTMLDivElement | undefined
-  const style: JSX.CSSProperties = {
-    position: "fixed",
-    bottom: `${Math.round(window.innerHeight - r.top + 8)}px`,
-    "z-index": "60",
-    "min-width": `${minW}px`,
-    "max-width": `${Math.round(vw - 16)}px`,
+  const style = (): JSX.CSSProperties => {
+    layout()
+    const r = a.getBoundingClientRect()
+    const vw = window.innerWidth
+    const next: JSX.CSSProperties = {
+      position: "fixed",
+      bottom: `${Math.round(window.innerHeight - r.top + 8)}px`,
+      "z-index": "var(--a-z-dropdown)",
+      "min-width": `${minW}px`,
+      "max-width": `${Math.round(vw - 16)}px`,
+    }
+    if (props.align === "right") next.right = `${Math.round(Math.max(8, vw - r.right))}px`
+    else next.left = `${Math.round(Math.min(Math.max(8, r.left), vw - minW - 8))}px`
+    return next
   }
-  if (props.align === "right") style.right = `${Math.round(Math.max(8, vw - r.right))}px`
-  else style.left = `${Math.round(Math.min(Math.max(8, r.left), vw - minW - 8))}px`
+  const escape = () => {
+    props.onEscape?.()
+    if (a.isConnected) a.focus()
+  }
+  const onResize = () => setLayout((n) => n + 1)
+  // 焦点不在弹层里(例如还在输入框)时的 Esc:捕获阶段先于其它 Esc 处理器,只关菜单、不连带别的动作。
+  const onWindowKey = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return
+    if (popover?.contains(event.target as Node)) return
+    event.preventDefault()
+    event.stopPropagation()
+    escape()
+  }
+  window.addEventListener("resize", onResize)
+  window.addEventListener("keydown", onWindowKey, true)
   onMount(() => {
     queueMicrotask(() =>
       (
@@ -158,6 +227,8 @@ export function ChipPopover(props: {
     )
   })
   onCleanup(() => {
+    window.removeEventListener("resize", onResize)
+    window.removeEventListener("keydown", onWindowKey, true)
     const el = document.activeElement
     if (!popover || popover.contains(el) || el === document.body || el === null)
       queueMicrotask(() => a.isConnected && a.focus())
@@ -169,14 +240,18 @@ export function ChipPopover(props: {
         class="a-ui a-pop a-pop-fixed"
         role={props.role}
         tabindex="-1"
-        style={style}
+        style={style()}
         onClick={stop}
         onKeyDown={(event) => {
-          if (event.key !== "Escape") return
-          event.preventDefault()
-          event.stopPropagation()
-          props.onEscape?.()
-          a.focus()
+          if (event.key === "Escape") {
+            event.preventDefault()
+            event.stopPropagation()
+            escape()
+            return
+          }
+          const active = document.activeElement
+          const sub = active instanceof Element ? active.closest<HTMLElement>(".a-mpa") : null
+          moveMenuFocus(sub ?? popover!, event)
         }}
       >
         {props.children}
@@ -247,16 +322,17 @@ const TermGlyph = () => (
  * (文档/PDF/表格/连接器全是同一个 setExtHubOpen 动作)随之收敛为弹窗单行「扩展市场…」。 */
 function AddButton(props: { onOpen: () => void; expanded: boolean }) {
   return (
-    <button
-      class="a-chip a-chip-icon"
-      title={t("alpha.composer.assemble")}
-      aria-label={t("alpha.composer.assemble")}
-      aria-haspopup="listbox"
-      aria-expanded={props.expanded}
-      onClick={(e) => (stop(e), props.onOpen())}
-    >
-      <Plus />
-    </button>
+    <Tooltip label={t("alpha.composer.assemble")}>
+      <button
+        class="a-chip a-chip-icon"
+        aria-label={t("alpha.composer.assemble")}
+        aria-haspopup="listbox"
+        aria-expanded={props.expanded}
+        onClick={(e) => (stop(e), props.onOpen())}
+      >
+        <Plus />
+      </button>
+    </Tooltip>
   )
 }
 
@@ -328,23 +404,29 @@ export function PermChip() {
  * (buildPromptRequest 强制该档的 agent),chip 如实置灰并在 title 里点名是哪一档压的。 */
 function PlanChip() {
   const label = () => (composerAgent() === "plan" ? t("alpha.composer.plan") : composerAgent())
+  const reasonId = `a-plan-reason-${createUniqueId()}`
+  const locked = () => permLocksAgent(composerPerm())
+  // #1476:「为什么不生效」不藏进悬停提示 —— 被权限档压住时,原因作为可见文字写在芯片旁。
   return (
     <Show when={composerAgent()}>
-      <button
-        class="a-chip a-chip-plan"
-        data-disabled={permLocksAgent(composerPerm()) ? "" : undefined}
-        title={
-          permLocksAgent(composerPerm())
-            ? t("alpha.composer.planLocked", { tier: permLabel(composerPerm()) })
-            : t("alpha.composer.planEnabled")
-        }
-        onClick={(e) => (stop(e), setComposerAgent(null))}
-      >
-        <span class="a-chip-x" aria-hidden="true">
-          ⊗
+      <Tooltip label={t("alpha.composer.planEnabled")}>
+        <button
+          class="a-chip a-chip-plan"
+          data-disabled={locked() ? "" : undefined}
+          aria-describedby={locked() ? reasonId : undefined}
+          onClick={(e) => (stop(e), setComposerAgent(null))}
+        >
+          <span class="a-chip-x" aria-hidden="true">
+            ⊗
+          </span>
+          {label()}
+        </button>
+      </Tooltip>
+      <Show when={locked()}>
+        <span id={reasonId} class="a-chip-reason" data-alpha-chip-reason="plan">
+          {t("alpha.composer.planLocked", { tier: permLabel(composerPerm()) })}
         </span>
-        {label()}
-      </button>
+      </Show>
     </Show>
   )
 }
@@ -369,30 +451,29 @@ function ModelChip(props: {
   }
   return (
     <div class="a-pop-wrap" data-kind="model">
-      <button
-        ref={btn}
-        class="a-chip a-chip-model"
-        title={t("alpha.model.choose")}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen()}
-        onClick={(e) => {
-          stop(e)
-          if (!props.hasWorkspace()) {
-            // 零工作区不留死点(REQ-054①):引导先选工作区,与发送按钮同一分支。
-            props.onNeedWorkspace?.()
-            return
-          }
-          toggle()
-        }}
-      >
-        <span class="a-pico" style={{ background: "var(--a-accent)" }}>
-          α
-        </span>
-        <span class="a-chip-label" title={label()}>
-          {label()}
-        </span>
-        <Chevron />
-      </button>
+      <Tooltip label={`${t("alpha.model.choose")} · ${label()}`}>
+        <button
+          ref={btn}
+          class="a-chip a-chip-model"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen()}
+          onClick={(e) => {
+            stop(e)
+            if (!props.hasWorkspace()) {
+              // 零工作区不留死点(REQ-054①):引导先选工作区,与发送按钮同一分支。
+              props.onNeedWorkspace?.()
+              return
+            }
+            toggle()
+          }}
+        >
+          <span class="a-pico" style={{ background: "var(--a-accent)" }}>
+            α
+          </span>
+          <span class="a-chip-label">{label()}</span>
+          <Chevron />
+        </button>
+      </Tooltip>
       <Show when={isOpen()}>
         <ChipPopover anchor={btn} align="right" minWidth={360} onEscape={close}>
           <ModelPickPop
@@ -433,32 +514,38 @@ function EffortChip(props: {
       .then(close)
       .catch(() => {})
   }
-  const title = () => {
+  /** #1476:芯片「为什么不能用」的原因 —— 写成芯片旁的可见文字,不藏进悬停提示;能用时为 undefined。 */
+  const reason = () => {
     if (composerModelProjection().status === "loading") return t("alpha.composer.effortModelLoading")
     if (composerModelProjection().status === "error") return t("alpha.composer.effortModelFailed")
     if (!props.modelChainReady()) return t("alpha.composer.effortChainPending")
-    return !composerModel()
-      ? t("alpha.composer.effortNeedsModel")
-      : supported()
-        ? t("alpha.composer.effortTitle")
-        : t("alpha.composer.effortUnsupported")
+    if (!composerModel()) return t("alpha.composer.effortNeedsModel")
+    return supported() ? undefined : t("alpha.composer.effortUnsupported")
   }
+  const reasonId = `a-effort-reason-${createUniqueId()}`
   return (
     <div class="a-pop-wrap" data-kind="effort">
-      <button
-        ref={btn}
-        class="a-chip"
-        data-muted={supported() ? undefined : ""}
-        title={title()}
-        disabled={blocked()}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen()}
-        onClick={(e) => (stop(e), toggle())}
-      >
-        <Bolt />
-        <span class="a-comp-eff">{supported() ? current() : "—"}</span>
-        <Chevron />
-      </button>
+      <Show when={reason()}>
+        <span id={reasonId} class="a-chip-reason" data-alpha-chip-reason="effort">
+          {reason()}
+        </span>
+      </Show>
+      <Tooltip label={t("alpha.composer.effortTitle")}>
+        <button
+          ref={btn}
+          class="a-chip"
+          data-muted={supported() ? undefined : ""}
+          disabled={blocked()}
+          aria-describedby={reason() ? reasonId : undefined}
+          aria-haspopup="dialog"
+          aria-expanded={isOpen()}
+          onClick={(e) => (stop(e), toggle())}
+        >
+          <Bolt />
+          <span class="a-comp-eff">{supported() ? current() : "—"}</span>
+          <Chevron />
+        </button>
+      </Tooltip>
       <Show when={isOpen()}>
         <ChipPopover
           anchor={btn}
@@ -1706,17 +1793,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
                 <Show when={a.kind === "image"} fallback={<FileGlyph />}>
                   <img src={a.url} alt="" />
                 </Show>
-                <span class="a-comp-att-name" title={`${a.name} · ${(a.size / 1024 / 1024).toFixed(1)}MB`}>
-                  {a.name}
-                </span>
-                <button
-                  class="a-comp-att-x"
-                  title={t("alpha.composer.removeAttachment")}
-                  aria-label={t("alpha.composer.removeAttachment")}
-                  onClick={() => removeAttachment(a.id)}
-                >
-                  ×
-                </button>
+                <Tooltip label={`${a.name} · ${(a.size / 1024 / 1024).toFixed(1)}MB`}>
+                  <span class="a-comp-att-name" tabindex="0">
+                    {a.name}
+                  </span>
+                </Tooltip>
+                <Tooltip label={t("alpha.composer.removeAttachment")}>
+                  <button
+                    class="a-comp-att-x"
+                    aria-label={t("alpha.composer.removeAttachment")}
+                    onClick={() => removeAttachment(a.id)}
+                  >
+                    ×
+                  </button>
+                </Tooltip>
               </span>
             )}
           </For>
@@ -1795,14 +1885,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         {/* 上下文用量 ring(session:sessionDock 从 typed 通道计算注入;事实不足 = null 不渲染;
             home 无会话无用量,不渲染 —— 收养上游 DOM 节点的 takeover 机制已随 REQ-125 C7 终结) */}
         <Show when={contextUsage() !== null}>
-          <span
-            class="a-comp-usage"
-            title={t("alpha.composer.contextUsage", { percent: contextUsage()! })}
-            aria-label={t("alpha.composer.contextUsage", { percent: contextUsage()! })}
-          >
-            <span class="a-comp-usage-ring" style={{ "--a-comp-usage-fill": `${contextUsage()}%` }} aria-hidden="true" />
-            <span class="a-comp-usage-num">{contextUsage()}%</span>
-          </span>
+          <Tooltip label={t("alpha.composer.contextUsage", { percent: contextUsage()! })}>
+            <span
+              class="a-comp-usage"
+              tabindex="0"
+              role="img"
+              aria-label={t("alpha.composer.contextUsage", { percent: contextUsage()! })}
+            >
+              <span class="a-comp-usage-ring" style={{ "--a-comp-usage-fill": `${contextUsage()}%` }} aria-hidden="true" />
+              <span class="a-comp-usage-num">{contextUsage()}%</span>
+            </span>
+          </Tooltip>
         </Show>
         <ModelChip
           contract={modelContract}
@@ -1823,27 +1916,29 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         <Show
           when={running()}
           fallback={
-            <button
-              class="a-comp-send"
-              data-ready={canSend() ? "" : undefined}
-              disabled={!canSend()}
-              onClick={() => void submit()}
-              title={t("alpha.composer.send")}
-              aria-label={t("alpha.composer.send")}
-            >
-              <ArrowUp />
-            </button>
+            <Tooltip label={t("alpha.composer.send")}>
+              <button
+                class="a-comp-send"
+                data-ready={canSend() ? "" : undefined}
+                disabled={!canSend()}
+                onClick={() => void submit()}
+                aria-label={t("alpha.composer.send")}
+              >
+                <ArrowUp />
+              </button>
+            </Tooltip>
           }
         >
-          <button
-            class="a-comp-send a-comp-stop"
-            data-ready
-            onClick={() => void abort()}
-            title={t("alpha.composer.stopGenerating")}
-            aria-label={t("alpha.composer.stopGenerating")}
-          >
-            <StopSquare />
-          </button>
+          <Tooltip label={t("alpha.composer.stopGenerating")}>
+            <button
+              class="a-comp-send a-comp-stop"
+              data-ready
+              onClick={() => void abort()}
+              aria-label={t("alpha.composer.stopGenerating")}
+            >
+              <StopSquare />
+            </button>
+          </Tooltip>
         </Show>
       </div>
     </div>

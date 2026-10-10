@@ -1,0 +1,37 @@
+@import "./tokens.css";
+
+/* alpha-ui CopyButton(`REQ-230`)—— 时间线一带所有复制按钮同一个尺寸与圆角;复制后绿勾 1.5 秒。 */
+.a-copy-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+.a-copy-btn:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-copy-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+.a-copy-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.a-copy-btn[data-copied="true"],
+.a-copy-btn[data-copied="true"]:hover {
+  color: var(--a-success);
+}

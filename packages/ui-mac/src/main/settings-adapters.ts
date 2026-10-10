@@ -316,9 +316,9 @@ function decodeGeneral(value: unknown, allowMissing: boolean): AlphaSettings["ge
     ...(typeof source.newInterfaceNoticeDismissed === "boolean"
       ? { newInterfaceNoticeDismissed: source.newInterfaceNoticeDismissed }
       : {}),
-    ...(typeof source.shouldDisplayTabsToast === "boolean"
-      ? { shouldDisplayTabsToast: source.shouldDisplayTabsToast }
-      : {}),
+    // #1476:上游「Introducing tabs」推广卡与本产品无关 —— 读写两侧一律钉为 false。上游设置层见到
+    // 一个布尔值就不再自行判定是否展示(packages/app settings.tsx),推广卡因此永不出现;不改上游文件。
+    shouldDisplayTabsToast: false,
   }
 }
 
