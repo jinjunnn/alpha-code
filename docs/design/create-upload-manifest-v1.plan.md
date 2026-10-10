@@ -18,7 +18,7 @@
 | `alpha-cloud-*`、`cloud-ipc.ts`、`cloud-dispatch-box.tsx` | 本 epic 之前已增加 | Cloud Jobs、旧 B16 项目级出境提示、MCP/自动化云能力；均不是 #225 所需一次性 manifest consent。 |
 | UploadManifestV1 / `upload_consent` | #225 待新增 | 仓内搜索无实现、无 schema pin、无 golden fixtures。 |
 
-Alpha 生产包由 [`packages/ui-mac/package.json:14`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/package.json:14) 的 `build/package:mac/package:win` 构建，electron-builder 打包 `out/**/*`，见 [`electron-builder.config.ts:53`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/electron-builder.config.ts:53)。因此 #225 的 main/preload 代码会自然进入 asar，不需要为普通 TS 模块另改打包清单。
+Alpha 生产包由 [`packages/ui-mac/package.json:14`](../../packages/ui-mac/package.json#L14) 的 `build/package:mac/package:win` 构建，electron-builder 打包 `out/**/*`，见 [`electron-builder.config.ts:53`](../../packages/ui-mac/electron-builder.config.ts#L53)。因此 #225 的 main/preload 代码会自然进入 asar，不需要为普通 TS 模块另改打包清单。
 
 ### 2. 现有上传与云交互入口
 
@@ -26,12 +26,12 @@ Alpha 生产包由 [`packages/ui-mac/package.json:14`](/Users/tide/app/alpha-cod
 
 真实调用链：
 
-1. renderer 在 [`cloud-dispatch-box.tsx:51`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/renderer/extensions/cloud-dispatch-box.tsx:51) 让用户选择项目目录。
+1. renderer 在 [`cloud-dispatch-box.tsx:51`](../../packages/ui-mac/src/renderer/extensions/cloud-dispatch-box.tsx#L51) 让用户选择项目目录。
 2. renderer 调 `window.api.cloud.gitDiff(directory)`；main 执行 `git diff`，再把完整 diff 字符串返回 renderer。
 3. renderer 构造 `input: { diff }`，经 `window.api.cloud.dispatch(envelope, directory)` 派发。
-4. preload 只是透传，见 [`preload/index.ts:227`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/preload/index.ts:227)。
-5. main 的 [`cloud-ipc.ts:90`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/cloud-ipc.ts:90) 接收 renderer 提供的完整 envelope 和可选 directory。
-6. [`alpha-cloud-jobs.ts:30`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-cloud-jobs.ts:30) 使用 main-held platform access token，将 `JSON.stringify(envelope)` POST 到 Cloud Jobs。
+4. preload 只是透传，见 [`preload/index.ts:227`](../../packages/ui-mac/src/preload/index.ts#L227)。
+5. main 的 [`cloud-ipc.ts:90`](../../packages/ui-mac/src/main/cloud-ipc.ts#L90) 接收 renderer 提供的完整 envelope 和可选 directory。
+6. [`alpha-cloud-jobs.ts:30`](../../packages/ui-mac/src/main/alpha-cloud-jobs.ts#L30) 使用 main-held platform access token，将 `JSON.stringify(envelope)` POST 到 Cloud Jobs。
 
 当前缺口：
 
@@ -44,13 +44,13 @@ Alpha 生产包由 [`packages/ui-mac/package.json:14`](/Users/tide/app/alpha-cod
 
 #### B. 旧 B16 cloud consent（Alpha epic 既有，必须退出授权角色）
 
-[`alpha-cloud-consent.ts:1`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-cloud-consent.ts:1) 只定义：
+[`alpha-cloud-consent.ts:1`](../../packages/ui-mac/src/main/alpha-cloud-consent.ts#L1) 只定义：
 
 ```ts
 { version: 1, acceptedAt: string }
 ```
 
-main 在 [`cloud-ipc.ts:52`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/cloud-ipc.ts:52)：
+main 在 [`cloud-ipc.ts:52`](../../packages/ui-mac/src/main/cloud-ipc.ts#L52)：
 
 - 读取 `<project>/.alpha/prefs.json`；
 - 若当前版本已同意，永久放行该项目后续派发；
@@ -62,7 +62,7 @@ main 在 [`cloud-ipc.ts:52`](/Users/tide/app/alpha-code/.worktrees/225/packages/
 
 #### C. Agent → Cloud MCP（Alpha epic 既有旁路）
 
-[`sidecar.ts:361`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/sidecar.ts:361) 在 platform 模式下注册远程 `mcp.cloud`，其 bearer 由 main 写入 `0600` 文件，再以 `{file:...}` 引用交给 sidecar。
+[`sidecar.ts:361`](../../packages/ui-mac/src/main/sidecar.ts#L361) 在 platform 模式下注册远程 `mcp.cloud`，其 bearer 由 main 写入 `0600` 文件，再以 `{file:...}` 引用交给 sidecar。
 
 这条路径：
 
@@ -75,13 +75,13 @@ main 在 [`cloud-ipc.ts:52`](/Users/tide/app/alpha-code/.worktrees/225/packages/
 
 #### D. Scheduled Cloud Jobs（Alpha epic 既有旁路）
 
-[`alpha-cloud-schedules.ts:66`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-cloud-schedules.ts:66) 构造固定 research envelope，保存时由 main 直接注册云 schedule。
+[`alpha-cloud-schedules.ts:66`](../../packages/ui-mac/src/main/alpha-cloud-schedules.ts#L66) 构造固定 research envelope，保存时由 main 直接注册云 schedule。
 
 当前它只发送任务文本，不选择本地文件。#225 不为它增加 upload manifest/token，也不允许 renderer 将即时 upload proof 复用到 scheduled job。
 
 #### E. Composer 附件与文件引用（上游及 fork 既有，需明确排除）
 
-上游 renderer 会把图片/PDF读成 data URL，见 [`packages/app/src/components/prompt-input/attachments.ts:11`](/Users/tide/app/alpha-code/.worktrees/225/packages/app/src/components/prompt-input/attachments.ts:11)。Alpha Composer 也在 renderer 中处理图片/PDF，见 [`composer-attachments-core.ts:1`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/renderer/alpha-ui/composer-attachments-core.ts:1)。
+上游 renderer 会把图片/PDF读成 data URL，见 [`packages/app/src/components/prompt-input/attachments.ts:11`](../../packages/app/src/components/prompt-input/attachments.ts#L11)。Alpha Composer 也在 renderer 中处理图片/PDF，见 [`composer-attachments-core.ts:1`](../../packages/ui-mac/src/renderer/alpha-ui/composer-attachments-core.ts#L1)。
 
 这些内容进入 Session/模型调用链，不进入 Cloud Jobs upload endpoint。根据本票给出的 #32/#33 地图，#225 的 UploadManifestV1 范围应限定为：
 
@@ -95,7 +95,7 @@ Cloud artifact 下载已由 main 持 bearer、流式落 `.part`、校验 size/sh
 
 ### 3. main ↔ renderer IPC 与信任模型
 
-主窗口在 [`windows.ts:164`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/windows.ts:164) 明确设置：
+主窗口在 [`windows.ts:164`](../../packages/ui-mac/src/main/windows.ts#L164) 明确设置：
 
 - `contextIsolation: true`
 - `nodeIntegration: false`
@@ -103,7 +103,7 @@ Cloud artifact 下载已由 main 持 bearer、流式落 `.part`、校验 size/sh
 - `webviewTag: false`
 - off-origin navigation/popup 拒绝或外置
 
-preload 仅通过 `contextBridge.exposeInMainWorld("api", api)` 暴露窄 API，见 [`preload/index.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/preload/index.ts)。
+preload 仅通过 `contextBridge.exposeInMainWorld("api", api)` 暴露窄 API，见 [`preload/index.ts`](../../packages/ui-mac/src/preload/index.ts)。
 
 这些设置限制 renderer 能力，但**不使 IPC 参数可信**。当前 preload 仍允许 renderer 提供：
 
@@ -124,17 +124,17 @@ preload 仅通过 `contextBridge.exposeInMainWorld("api", api)` 暴露窄 API，
 
 ### 5. 现有 path/size/digest 能力
 
-- [`attachment-picker.ts:4`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/attachment-picker.ts:4) 有 20 MiB 总预算、sender 绑定和一次读取，但会把字节交 renderer，也没有相对路径、SHA-256 或 consent 绑定。
-- [`cloud-envelope-guard.ts:13`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/cloud-envelope-guard.ts:13) 只计算 JSON envelope 的 UTF-8 大小，上限仍是旧 1 MiB；它不计算实际上传文件字节。
-- 该 guard 会接受 renderer 提供的非空 `denied_paths` 并完全尊重，见 [`cloud-envelope-guard.ts:57`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/cloud-envelope-guard.ts:57)，不能承担 consent scope 权威。
-- [`alpha-workdir.ts:45`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-workdir.ts:45) 有 realpath、symlink 和 `.alpha` 输出圈禁，但服务的是本地 managed run 输出路径；不能直接等同于项目上传枚举器。
+- [`attachment-picker.ts:4`](../../packages/ui-mac/src/main/attachment-picker.ts#L4) 有 20 MiB 总预算、sender 绑定和一次读取，但会把字节交 renderer，也没有相对路径、SHA-256 或 consent 绑定。
+- [`cloud-envelope-guard.ts:13`](../../packages/ui-mac/src/main/cloud-envelope-guard.ts#L13) 只计算 JSON envelope 的 UTF-8 大小，上限仍是旧 1 MiB；它不计算实际上传文件字节。
+- 该 guard 会接受 renderer 提供的非空 `denied_paths` 并完全尊重，见 [`cloud-envelope-guard.ts:57`](../../packages/ui-mac/src/main/cloud-envelope-guard.ts#L57)，不能承担 consent scope 权威。
+- [`alpha-workdir.ts:45`](../../packages/ui-mac/src/main/alpha-workdir.ts#L45) 有 realpath、symlink 和 `.alpha` 输出圈禁，但服务的是本地 managed run 输出路径；不能直接等同于项目上传枚举器。
 - 当前 Cloud Jobs 上行没有逐文件 SHA-256、实际传输字节数或发送前 immutable snapshot。
 
 ### 6. 打包与用户可见证据链
 
-- L0 权威门是 [`scripts/alpha-check.sh`](/Users/tide/app/alpha-code/.worktrees/225/scripts/alpha-check.sh)，执行 `ui-mac` typecheck 和全部 `src` 单测。
+- L0 权威门是 [`scripts/alpha-check.sh`](../../scripts/alpha-check.sh)，执行 `ui-mac` typecheck 和全部 `src` 单测。
 - `ui-mac` 构建入口是 `electron-vite build`，打包入口为 `package:mac/package:win`。
-- 已有 RC packaged 证据格式见 [`docs/verification/2026-07-17-packaged-macos-rc-smoke.md`](/Users/tide/app/alpha-code/.worktrees/225/docs/verification/2026-07-17-packaged-macos-rc-smoke.md)。
+- 已有 RC packaged 证据格式见 [`docs/verification/2026-07-17-packaged-macos-rc-smoke.md`](../../docs/verification/2026-07-17-packaged-macos-rc-smoke.md)。
 - #225 的 packaged 证据应追加到下一个 RC 的统一 smoke，不修改或覆盖历史验证文档，也不为单票重复建一轮 L3。
 
 ---
@@ -389,15 +389,15 @@ agent 即使调用远程 MCP，也只有 platform access token；服务端 uploa
 | `packages/ui-mac/src/main/alpha-upload-manifest.test.ts`（新） | golden vectors、Windows/Unicode/duplicate/symlink/missing/limits/digest 测试。 |
 | `packages/ui-mac/src/main/alpha-upload.test.ts`（新） | consent、取消、并发、重放、错误卫生、实际生产调用链测试。 |
 | `packages/ui-mac/src/main/testvectors/upload-manifest-v1/*`（新） | 从 #32 immutable commit 原样 pin 的 schema/fixtures/SOURCE；禁止手编预期值。 |
-| [`alpha-auth.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-auth.ts) | main-only 严格 tenant `sub` 提取；不加入 renderer `AuthState`。 |
-| [`alpha-cloud-jobs.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-cloud-jobs.ts) | 加入 main-only issuance/upload transport；不得导出 token；使用 #32 control/payload limits。 |
-| [`cloud-envelope-guard.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/cloud-envelope-guard.ts) | 对通用 dispatch 的 upload content/manifest/token fail-closed；不再以旧 1 MiB 规则替代 v1 256 KiB control limit。 |
-| [`cloud-ipc.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/cloud-ipc.ts) | 注册唯一 upload handler；删除旧 per-project consent 放行和 optional-directory upload 行为；生产入口只调用 `alpha-upload`。 |
-| [`alpha-cloud-consent.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-cloud-consent.ts) | 移除 `CLOUD_CONSENT_VERSION/hasCloudConsent/withCloudConsent` 授权语义；旧字段不迁移、不采信。 |
-| [`alpha-workdir.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/main/alpha-workdir.ts) | generic prefs parser 与旧 cloud consent 解耦，继续服务 extension prefs。 |
-| [`preload/types.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/preload/types.ts) | 新增窄 upload intent/result；不得声明 manifest/token/tenant/bytes。 |
-| [`preload/index.ts`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/preload/index.ts) | 仅透传 upload intent；无 proof 返回面。 |
-| [`cloud-dispatch-box.tsx`](/Users/tide/app/alpha-code/.worktrees/225/packages/ui-mac/src/renderer/extensions/cloud-dispatch-box.tsx) | 改走 main upload flow；展示稳定取消/失败结果，不再持有 diff/file bytes。 |
+| [`alpha-auth.ts`](../../packages/ui-mac/src/main/alpha-auth.ts) | main-only 严格 tenant `sub` 提取；不加入 renderer `AuthState`。 |
+| [`alpha-cloud-jobs.ts`](../../packages/ui-mac/src/main/alpha-cloud-jobs.ts) | 加入 main-only issuance/upload transport；不得导出 token；使用 #32 control/payload limits。 |
+| [`cloud-envelope-guard.ts`](../../packages/ui-mac/src/main/cloud-envelope-guard.ts) | 对通用 dispatch 的 upload content/manifest/token fail-closed；不再以旧 1 MiB 规则替代 v1 256 KiB control limit。 |
+| [`cloud-ipc.ts`](../../packages/ui-mac/src/main/cloud-ipc.ts) | 注册唯一 upload handler；删除旧 per-project consent 放行和 optional-directory upload 行为；生产入口只调用 `alpha-upload`。 |
+| [`alpha-cloud-consent.ts`](../../packages/ui-mac/src/main/alpha-cloud-consent.ts) | 移除 `CLOUD_CONSENT_VERSION/hasCloudConsent/withCloudConsent` 授权语义；旧字段不迁移、不采信。 |
+| [`alpha-workdir.ts`](../../packages/ui-mac/src/main/alpha-workdir.ts) | generic prefs parser 与旧 cloud consent 解耦，继续服务 extension prefs。 |
+| [`preload/types.ts`](../../packages/ui-mac/src/preload/types.ts) | 新增窄 upload intent/result；不得声明 manifest/token/tenant/bytes。 |
+| [`preload/index.ts`](../../packages/ui-mac/src/preload/index.ts) | 仅透传 upload intent；无 proof 返回面。 |
+| [`cloud-dispatch-box.tsx`](../../packages/ui-mac/src/renderer/extensions/cloud-dispatch-box.tsx) | 改走 main upload flow；展示稳定取消/失败结果，不再持有 diff/file bytes。 |
 | `docs/contracts/platform-integration.md` | 同变更更新 canonical contract pin、唯一上传入口、main authority、旁路禁止和错误语义。 |
 | `docs/contracts/platform-endpoint-discovery.md` | 仅当 #32 发布新的独立 issuance base 时更新；若复用 cloud base 则不改。 |
 
@@ -437,7 +437,7 @@ L1 必须包含一条从生产 IPC 注册入口到 `alpha-upload` 的断言，�
 L2/L3：
 
 - 本变更有用户可见原生 preview；截图由 packaged RC 取证即可，不重复建立一套开发态视觉证据。
-- 下一个 RC 按 [`distribution.md:45`](/Users/tide/app/alpha-code/.worktrees/225/docs/runbooks/distribution.md:45) 产包。
+- 下一个 RC 按 [`distribution.md:45`](../../docs/runbooks/distribution.md#L45) 产包。
 - 原生 dialog 在所发平台矩阵执行；macOS/Windows 均发布时均需覆盖。
 - 使用非敏感 fixture 路径；截图、日志与验证文档不得出现真实 tenant、token 或用户私有文件名。
 - CODE 合并不等于父需求完成；父票仅在 AC1–AC4 对上述证据逐条 PASS 后由验收人手工关闭。
