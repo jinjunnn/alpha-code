@@ -56,7 +56,7 @@ review_after: 2027-01-16
 | 空回合行(跑完却零正文;安全审核作为可能原因,不断言) | `#empty-turn` | [`2026-09-11-req160-empty-turn-row/`](../../2026-09-11-req160-empty-turn-row/frame.html) | 2026-09-11 | ac#1318 · ac#1325 | 2026-09-11 | `session-timeline/timeline-model.ts`(`isEmptyUnknownTurn` 四条判据 + 投影)· `session-timeline-view.tsx`(`EmptyTurnRow`,复用中断行骨架)· `cards/timeline-intents.ts`(`focusPrompt`) | 已实现 |
 | 整轮运行指示(回合脚行:运行面 / 等你面,等你批准与等你回答共用) | `#turn-running` | [`2026-09-22-1399-turn-running-indicator/`](../../2026-09-22-1399-turn-running-indicator/frame.html) | 2026-09-22 | ac#1399 | 2026-09-22 | `session-timeline/timeline-model.ts`(`turnfoot` 行:活跃回合最后一行,取代只在首 part 前入列的 thinking 行;`formatTurnElapsed`)· `session-timeline-view.tsx`(`TurnRunningRow`:一槽两面,`data-face` / `data-wait`,同一节点翻面)· `session-workspace/session-dock-core.ts`(`turnWaitOf`,审批优先于提问)· `session-composer-dock.tsx`(`publishTurnWait`)· `alpha-session-workspace.tsx`(信号接线到时间线) | 已实现;**视觉形态被 `#process-fold` 取代(2026-10-10 批准,待实现)** |
 | 工作过程折叠(思考 + 工具调用 + 过渡话收成一行;每步一行;某一步的详情;进行中的实时标题与收起时机) | `#process-fold` | [`2026-10-10-timeline-process-fold/`](../../2026-10-10-timeline-process-fold/frame.html) | 2026-10-10 | — | — | — | 待实现。取代「推理 / 思考块」「通用工具卡四态」「各工具类型卡」「工具折叠分组」「全来源工具卡来源徽标」「整轮运行指示」六行的视觉形态(行为与安全规则继承) |
-| 时间线弹出层统一(菜单 / 提示 / 浮层 / 确认的同一套外观与关闭方式) | `#overlays` | [`2026-10-10-timeline-process-fold/`](../../2026-10-10-timeline-process-fold/frame.html) | 2026-10-10 | — | — | — | 待实现。含:工具批准从全屏遮罩改为输入框上方的等你处理卡(owner 2026-10-10 定) |
+| 时间线弹出层统一(菜单 / 提示 / 浮层 / 确认的同一套外观与关闭方式) | `#overlays` | [`2026-10-10-timeline-process-fold/`](../../2026-10-10-timeline-process-fold/frame.html) | 2026-10-10 | — | — | — | 待实现。含:工具批准保持全应用唯一面板,去掉遮罩与页面冻结、停在输入框之上(owner 2026-10-10 定,保留 2026-07-25 单一呈现面裁决的三条依据) |
 
 ## 本次登记时发现的两处不一致
 
