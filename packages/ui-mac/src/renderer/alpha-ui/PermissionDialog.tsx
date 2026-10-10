@@ -4,10 +4,10 @@ import type {
   PermissionV2DecisionReceipt,
   PermissionV2Request,
 } from "@opencode-ai/sdk/v2/client"
-import { For, onMount, Show } from "solid-js"
+import { createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Portal } from "solid-js/web"
 import { Button } from "./Button"
-import { Dialog } from "./Dialog"
 import { t } from "../i18n"
 import "./permission-dialog.css"
 
@@ -93,15 +93,10 @@ export function PermissionDialog(props: {
   }
 
   return (
-    <Dialog
-      open
+    <PermissionPanel
       title={t("alpha.permission.title")}
       description={<span>{t("alpha.permission.description")}</span>}
-      size="md"
-      dismissible={false}
       busy={!!state.submitting}
-      restoreFocus={() => document.querySelector<HTMLTextAreaElement>('[data-alpha-composer="session"] textarea')}
-      onClose={() => {}}
       footer={
         <div class="a-permission-footer">
           <small class="a-permission-grant-note">{t("alpha.permission.alwaysNote")}</small>
@@ -265,8 +260,160 @@ export function PermissionDialog(props: {
           </div>
         )}
       </Show>
-    </Dialog>
+    </PermissionPanel>
   )
+}
+
+/** 会话输入框的锚点:面板贴在它上方这么多像素。 */
+const PANEL_GAP = 12
+const COMPOSER_SELECTOR = '[data-alpha-composer="session"]'
+
+type PanelAnchor = { bottom: number; left: number; width: number }
+
+/**
+ * 工具批准面板的外壳(#1478 / REQ-230 AC4,owner 2026-10-10 裁决)。
+ *
+ * 仍是全应用**唯一**的批准呈现面(PermissionWatcher 在应用根挂它,任何路由都在),
+ * 仍**关不掉**(没有关闭按钮;Esc 在面板内被吞掉,不关面板、也不漏给页面);
+ * 但**不再是强模态**:没有遮罩,不给页面其余部分写 inert / aria-hidden,不建焦点陷阱 ——
+ * 时间线照常可翻看可读。只在两处动焦点:出现时落到「允许一次」,消失时(焦点仍在面板里)
+ * 还给会话输入框。
+ *
+ * 位置:窗口底部居中;页面上有会话输入框时贴在它正上方、与它同宽。
+ */
+function PermissionPanel(props: {
+  title: string
+  description?: JSX.Element
+  busy?: boolean
+  footer: JSX.Element
+  children: JSX.Element
+}) {
+  const titleId = createUniqueId()
+  const descriptionId = createUniqueId()
+  const [anchor, setAnchor] = createSignal<PanelAnchor>()
+  let panel!: HTMLDivElement
+  const trigger = document.activeElement
+
+  const measure = () => {
+    const composer = document.querySelector<HTMLElement>(COMPOSER_SELECTOR)
+    const rect = composer?.getBoundingClientRect()
+    if (!rect || (rect.width === 0 && rect.height === 0)) return setAnchor(undefined)
+    setAnchor({ bottom: Math.max(0, window.innerHeight - rect.top) + PANEL_GAP, left: rect.left, width: rect.width })
+  }
+
+  onMount(() => {
+    let frame: number | undefined
+    let observed: Element | undefined
+    const resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => schedule()) : undefined
+    const schedule = () => {
+      if (frame !== undefined) return
+      frame = requestAnimationFrame(() => {
+        frame = undefined
+        const composer = document.querySelector(COMPOSER_SELECTOR) ?? undefined
+        if (composer !== observed) {
+          if (observed) resize?.unobserve(observed)
+          if (composer) resize?.observe(composer)
+          observed = composer
+        }
+        measure()
+      })
+    }
+    // 会话页进出、输入框增高都会挪动锚点:结构变化与尺寸变化各一路,按帧合并。
+    const mutations = new MutationObserver(schedule)
+    mutations.observe(document.body, { childList: true, subtree: true })
+    window.addEventListener("resize", schedule)
+    measure()
+    schedule()
+    queueMicrotask(() => focusInitial(panel))
+
+    onCleanup(() => {
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      mutations.disconnect()
+      resize?.disconnect()
+      window.removeEventListener("resize", schedule)
+      // 焦点仍在面板里(或已随面板消失落回 body)才归还;用户已经把焦点移到别处就不抢。
+      const active = document.activeElement
+      if (active && active !== document.body && !panel.contains(active)) return
+      queueMicrotask(() => restoreFocus(trigger, panel))
+    })
+  })
+
+  const style = () => {
+    const value = anchor()
+    if (!value) return undefined
+    return {
+      bottom: `${value.bottom}px`,
+      "--a-permission-panel-bottom": `${value.bottom}px`,
+      left: `${value.left}px`,
+      width: `${value.width}px`,
+      transform: "none",
+    }
+  }
+
+  return (
+    <Portal>
+      <div class="a-ui a-permission-panel-root" data-anchored={anchor() ? "composer" : "window"} style={style()}>
+        <div
+          ref={(element) => (panel = element)}
+          class="a-permission-panel"
+          role="dialog"
+          aria-labelledby={titleId}
+          aria-describedby={props.description ? descriptionId : undefined}
+          aria-busy={props.busy ? "true" : undefined}
+          tabIndex={-1}
+          data-alpha-permission-panel=""
+          // 关不掉:Esc 在面板内不做任何事,也不冒泡到页面(免得被当作「停止生成」之类)。
+          // 用原生监听而非 Solid 的委托事件 —— 委托挂在 document 上,那里 stopPropagation 已经太晚。
+          on:keydown={(event) => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        >
+          <header class="a-permission-panel-header">
+            <span class="a-permission-panel-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
+                <circle cx="8" cy="8" r="6.25" stroke="currentColor" stroke-width="1.5" />
+                <path d="M8 4.75V8l2.25 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </span>
+            <div id={titleId} class="a-permission-panel-title">
+              {props.title}
+            </div>
+          </header>
+          <div class="a-permission-panel-body">
+            <Show when={props.description}>
+              <div id={descriptionId} class="a-permission-panel-description">
+                {props.description}
+              </div>
+            </Show>
+            {props.children}
+          </div>
+          <footer class="a-permission-panel-footer">{props.footer}</footer>
+        </div>
+      </div>
+    </Portal>
+  )
+}
+
+function focusInitial(panel: HTMLElement) {
+  if (!panel.isConnected) return
+  const once = panel.querySelector<HTMLButtonElement>('[data-permission-decision="once"]')
+  if (once && !once.disabled) {
+    once.focus()
+    if (document.activeElement === once) return
+  }
+  panel.focus()
+}
+
+function restoreFocus(trigger: Element | null, panel: HTMLElement) {
+  const composer = document.querySelector<HTMLTextAreaElement>(`${COMPOSER_SELECTOR} textarea`)
+  const candidates = [composer, trigger]
+  for (const target of candidates) {
+    if (!(target instanceof HTMLElement) || !target.isConnected || panel.contains(target)) continue
+    target.focus()
+    if (document.activeElement === target) return
+  }
 }
 
 export function permissionDecisionSubmitError(error: unknown): PermissionDecisionSubmitError {
