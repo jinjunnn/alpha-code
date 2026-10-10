@@ -25,7 +25,7 @@ import {
   discardStaleEditRequest,
 } from "./session-edit-user-message"
 import { sessionSlashOriginsFor } from "./session-slash-origin"
-import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
+import { createComposerFocusChannel, sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
 import "./session-workspace.css"
 
@@ -63,6 +63,8 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
   // `#1399`:活跃回合「在等你」(审批 / 提问)—— dock 发布(它是审批 feed 与 question 投影的唯一真相源),
   // 时间线的回合脚行消费。审批卡本身仍只在独立 Permission surface(2026-07-26 裁决),这里传的只是一个词。
   const [turnWait, setTurnWait] = createSignal<TimelineTurnWait | undefined>(undefined)
+  // `#1318` AC3:composer 登记「聚焦我的输入框」,时间线空回合行「修改后再试」调用它。
+  const composerFocus = createComposerFocusChannel()
   // 编辑预填只属于发起时的 I8 身份；一旦离开该会话就销毁，返回时不得再次覆盖草稿。
   createEffect(() => discardStaleEditRequest(editRequest(), current()?.identity, () => setEditRequest(undefined)))
   const canEditUserMessage = createMemo(() => {
@@ -125,6 +127,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
               slashOriginsFor={sessionSlashOriginsFor}
               onEditUserMessage={canEditUserMessage() ? editUserMessage : undefined}
               turnWait={turnWait}
+              onFocusPrompt={composerFocus.focus}
             />
           )}
           composer={() => (
@@ -133,6 +136,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
               projects={props.projects}
               editRequest={editRequest}
               publishTurnWait={setTurnWait}
+              registerComposerFocus={composerFocus.register}
             />
           )}
           panels={{

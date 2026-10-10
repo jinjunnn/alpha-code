@@ -65,3 +65,24 @@ export function sameSessionIdentity(
 export function identityKey(identity: AlphaSessionIdentity | undefined): string | undefined {
   return identity ? `${identity.serverKey}\u0000${identity.directory}\u0000${identity.sessionID}` : undefined
 }
+
+/**
+ * `#1318` AC3:会话页「把焦点放回输入框」的小通道。workspace 持有;会话 composer 挂载时登记
+ * 「聚焦我的 textarea」、卸载时注销;时间线拿 `focus` 当空回合行「修改后再试」的动作。
+ * 没人登记(子会话卡顶替了 composer / 身份未解析)时 `focus` 是 no-op —— 不去 DOM 里找输入框。
+ * 注销只撤自己那一份:按身份 keyed 重挂时新实例可能先登记、旧实例后清理,不能把新的也清掉。
+ */
+export function createComposerFocusChannel() {
+  let current: (() => void) | undefined
+  return {
+    register(focus: () => void): () => void {
+      current = focus
+      return () => {
+        if (current === focus) current = undefined
+      }
+    },
+    focus(): void {
+      current?.()
+    },
+  }
+}

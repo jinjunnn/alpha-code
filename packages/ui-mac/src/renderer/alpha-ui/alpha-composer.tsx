@@ -633,6 +633,8 @@ export type ComposerSessionDockApi = {
   approvalPending: () => boolean
   /** 斜杠命令发送成功后的捕获回调。 */
   onSlashCommand?: (capture: ComposerSlashCapture) => void
+  /** `#1318` AC3:登记「聚焦我的输入框」,返回注销函数。挂载登记、卸载注销;缺席 = 不登记。 */
+  registerFocus?: (focus: () => void) => () => void
 }
 
 /** #894:home 首发建成会话那一刻的落点快照 —— 会话就是 `startChat` 在 `serverKey` 这个 server
@@ -971,6 +973,12 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const contextUsage = createMemo(() =>
     props.mode === "session" ? (props.sessionDock?.contextUsage() ?? null) : null,
   )
+  // `#1318` AC3:把「聚焦输入框」登记给会话页的焦点通道(时间线空回合行「修改后再试」消费)。
+  onMount(() => {
+    if (props.mode !== "session") return
+    const unregister = props.sessionDock?.registerFocus?.(() => taRef?.focus())
+    if (unregister) onCleanup(unregister)
+  })
   const placeholder = () => {
     if (approvalPending()) return t("alpha.composer.placeholderDecision")
     if (running()) return t("alpha.composer.placeholderQueue")

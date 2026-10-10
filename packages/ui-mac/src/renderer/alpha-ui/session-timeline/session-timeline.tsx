@@ -40,6 +40,8 @@ export interface AlphaSessionTimelineProps {
    * 缺席 = 回合脚行只有运行面(fail-closed)。审批卡本身仍不进时间线(2026-07-26 裁决)。
    */
   turnWait?: Accessor<TimelineTurnWait | undefined>
+  /** `#1318` AC3:把焦点放回会话输入框(workspace 焦点通道);缺席 = 空回合行只陈述事实。 */
+  onFocusPrompt?: () => void
 }
 
 export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
@@ -158,6 +160,10 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     },
     get editUserMessage() {
       return props.onEditUserMessage
+    },
+    // 空回合行「修改后再试」:只把焦点交回 composer,不代发任何东西(`#1318` AC3)。
+    get focusPrompt() {
+      return props.onFocusPrompt
     },
     // 中断态「继续生成」:走 composer 同一条发送入口。#652 起那条入口是 v1 session.promptAsync
     // (与首页 startChat 同一条),不再是 v2 durable 队列 —— 理由见 alpha-composer 的送出段。

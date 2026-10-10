@@ -248,6 +248,7 @@ const { AlphaSessionTimeline } = await import("../src/renderer/alpha-ui/session-
 const { composerModel, resetComposerModelProjection, setComposerAgent, setComposerModel } = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
+const { createComposerFocusChannel } = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-core")
 
 /* ── composer 的模型链前置(与既有 composer 组件用例同一套 fixture)────────────── */
 const catalog = {
@@ -468,5 +469,104 @@ describe("#652 会话内连发三条:每一条都必须渲染出来", () => {
 
     expect(host.querySelector("textarea")!.value).toBe("会被拒绝的一条")
     expect(engine.message[SESSION_ID]).toHaveLength(2)
+  })
+})
+
+/* ── `#1318` AC3:空回合行「修改后再试」——生产时间线 + 生产会话 composer,经 workspace 同一个焦点通道。
+   变异验证:把 session-timeline.tsx 的 `focusPrompt` getter 删掉(生产装配不供给该 intent),
+   第一条用例转红 —— 那正是缺陷原样:按钮永远不渲染。 */
+function seedEmptyTurn() {
+  engine.message[SESSION_ID] = [
+    {
+      id: "msg_u_empty",
+      sessionID: SESSION_ID,
+      role: "user",
+      time: { created: 1000 },
+      agent: "build",
+      model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+    },
+    {
+      id: "msg_a_empty",
+      sessionID: SESSION_ID,
+      role: "assistant",
+      time: { created: 1001, completed: 1002 },
+      parentID: "msg_u_empty",
+      modelID: "deepseek-reasoner",
+      providerID: "deepseek",
+      mode: "build",
+      agent: "build",
+      finish: "unknown",
+      path: { cwd: DIRECTORY, root: DIRECTORY },
+      cost: 0,
+      tokens: { input: 12, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+  ]
+  engine.part = { msg_u_empty: [{ id: "prt_u_empty", sessionID: SESSION_ID, messageID: "msg_u_empty", type: "text", text: "写个函数" }] }
+  bumpStoreVersion((value) => value + 1)
+}
+
+function mountWithFocusChannel(options: { composer: boolean }) {
+  const channel = createComposerFocusChannel()
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(
+    render(
+      () => [
+        createComponent(AlphaSessionTimeline, { onFocusPrompt: channel.focus }),
+        ...(options.composer
+          ? [
+              createComponent(AlphaComposerRuntime, {
+                mode: "session",
+                projects,
+                directory: () => DIRECTORY,
+                sessionID: () => SESSION_ID,
+                command,
+                modelContract: readyContract(),
+                sessionDock: {
+                  running: () => false,
+                  contextUsage: () => null,
+                  approvalPending: () => false,
+                  registerFocus: channel.register,
+                },
+              }),
+            ]
+          : []),
+      ],
+      host,
+    ),
+  )
+  return host
+}
+
+const retryButton = (host: HTMLElement) =>
+  host.querySelector<HTMLButtonElement>("[data-alpha-timeline-row='empty-turn'] button.a-tl-int-continue")
+
+describe("#1318 AC3 空回合行「修改后再试」把焦点放回输入框", () => {
+  test("按钮在生产装配下渲染,点击后会话 composer 的 textarea 获得焦点", async () => {
+    seedEmptyTurn()
+    const host = mountWithFocusChannel({ composer: true })
+    await waitFor(() => expect(host.querySelector("[data-alpha-timeline-row='empty-turn']")).not.toBeNull())
+    const button = retryButton(host)
+    expect(button).not.toBeNull()
+    const textarea = surfaceOf(host, "session").querySelector("textarea")!
+    expect(document.activeElement).not.toBe(textarea)
+
+    button!.click()
+    await flush()
+    expect(document.activeElement).toBe(textarea)
+    // 只交回焦点,不代发任何东西。
+    expect(engine.v1Prompts).toEqual([])
+    expect(host.querySelector("[data-alpha-timeline-row='empty-turn'] .a-tl-int-failed")).toBeNull()
+  })
+
+  test("没有 composer 登记时点击是 no-op:不抛、不出失败提示", async () => {
+    seedEmptyTurn()
+    const host = mountWithFocusChannel({ composer: false })
+    await waitFor(() => expect(retryButton(host)).not.toBeNull())
+    const before = document.activeElement
+    retryButton(host)!.click()
+    await flush()
+    expect(document.activeElement).toBe(before)
+    expect(host.querySelector("[data-alpha-timeline-row='empty-turn'] .a-tl-int-failed")).toBeNull()
   })
 })
