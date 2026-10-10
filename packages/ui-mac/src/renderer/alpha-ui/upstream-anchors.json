@@ -5,6 +5,7 @@
     "action:prompt-model",
     "action:prompt-submit",
     "component:image-preview",
+    "component:logo",
     "component:logo-mark",
     "component:logo-splash",
     "component:prompt-input-v2",

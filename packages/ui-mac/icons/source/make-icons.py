@@ -50,6 +50,24 @@ Two decisions worth keeping:
     (1024), `dock.png` (512) and `128x128@2x.png` (256) byte-identical to that approval.
 
 No test can judge this; the evidence is the before/after contact sheet in the `ac#1160` PR.
+
+THE PUPPY TILE (`ac#1479`, 2026-10-10)
+-------------------------------------
+The source changed shape a second time. The new brand art is a FINISHED tile: a dark rounded
+square (measured tile colour (28, 28, 30)) with a white masked-puppy illustration that runs off
+its bottom edge, delivered as RGBA with transparent corners. There is no separable glyph — the
+puppy's paws touch the edge — so the corner flood-fill / glyph re-placement of `ac#1160` no
+longer applies. The art IS the tile: its transparent corners are filled with the tile colour,
+the whole square is scaled to the 824 content box, and the same n=5 superellipse decides the
+silhouette, so every size keeps the squircle this app has always shipped.
+
+The keyline is now conditional. It existed because the cream tile measured 1.05:1 against
+light chrome; the dark tile measures ~16:1 there, so the rule below computes the contrast and
+draws nothing. (Against dark chrome the dark tile is low-contrast, as every dark macOS icon is;
+the large white puppy carries the mark at small sizes — see the contact sheet in the PR.)
+
+The source as delivered is 512x512, so the 1024 master is upscaled 1.6x. Drop a larger
+original into this folder as icon.png and re-run; nothing else needs to change.
 """
 import os
 import shutil
@@ -67,52 +85,49 @@ WORK = tempfile.mkdtemp(prefix="alpha-icons-")
 CANVAS = 1024  # full icon canvas
 CONTENT = 824  # Apple's content box inside it
 SQUIRCLE_N = 5.0  # superellipse exponent; matches the previously shipped squircle
-GLYPH_SCALE = 0.78  # glyph long edge / CONTENT — see the visual sheet in the ac#1160 PR
 SUPERSAMPLE = 4  # mask is drawn at 4x and resampled, so the curve has no stair-steps
-FLOOD_THRESH = 70  # unchanged from the previous script
 KEYLINE_PX = 1.0  # keyline width, in DEVICE pixels of the size being written (not artwork units)
 KEYLINE_MAX_PX = 128  # above this the line is <0.8% of the icon and does nothing — see below
+KEYLINE_MIN_CONTRAST = 3.0  # draw the keyline only when the tile is weaker than this on light chrome
+LIGHT_CHROME = (246, 246, 246)  # macOS light window chrome, #f6f6f6
+BRAND_MARK = os.path.join(ICONS, "..", "src", "renderer", "brand", "brand-mark.png")  # in-app mark
+BRAND_MARK_PX = 256
 
-src = Image.open(SRC).convert("RGB")
+src = Image.open(SRC).convert("RGBA")
 W, H = src.size
 
-# 0) Tile colour = the modal colour of the four 32x32 corner patches. The artwork carries a
-#    faint paper grain (measured +/-3 levels), so a single sampled pixel is not the colour.
-counts = Counter()
-for bx, by in [(0, 0), (W - 32, 0), (0, H - 32), (W - 32, H - 32)]:
-    counts.update(src.crop((bx, by, bx + 32, by + 32)).getdata())
+# 0) Tile colour = the modal OPAQUE colour of a band just inside the top edge. The puppy never
+#    reaches the top, and the corners are transparent, so this is the tile and nothing else.
+counts = Counter(p[:3] for p in src.crop((W // 4, H // 64, 3 * W // 4, H // 16)).getdata() if p[3] == 255)
+if not counts:
+    raise SystemExit("no opaque pixels along the top edge — the source is not a filled tile")
 TILE = counts.most_common(1)[0][0]
 
-# 0b) Ink colour = the modal colour among pixels that are NOT the tile. Used only by the
-#     keyline (step 2b). Derived rather than hard-coded so that re-arting the source cannot
-#     leave a stale hex behind; measured 2026-08-28 on the shipped source: (45, 74, 144).
-ink_counts = Counter()
-for pixel in src.getdata():
-    if sum(abs(a - b) for a, b in zip(pixel, TILE)) > 120:
-        ink_counts[pixel] += 1
+# 0b) Ink colour = the modal opaque colour that is NOT the tile (the puppy's white). Used only
+#     if the keyline is drawn (step 2b).
+ink_counts = Counter(
+    p[:3] for p in src.getdata() if p[3] == 255 and sum(abs(a - b) for a, b in zip(p[:3], TILE)) > 120
+)
 if not ink_counts:
     raise SystemExit("no non-tile pixels — the source is a flat colour, check TILE")
 INK = ink_counts.most_common(1)[0][0]
 
-# 1) Corner flood-fill → glyph alpha. Enclosed interior regions survive (that is the whole
-#    point of filling from the corners rather than keying the background colour globally).
-probe = src.copy()
-MARK = (255, 0, 255)
-for corner in [(0, 0), (W - 1, 0), (0, H - 1), (W - 1, H - 1)]:
-    ImageDraw.floodfill(probe, corner, MARK, thresh=FLOOD_THRESH)
-mask = Image.new("L", (W, H), 255)
-pp, mp = probe.load(), mask.load()
-for y in range(H):
-    for x in range(W):
-        if pp[x, y] == MARK:
-            mp[x, y] = 0
-mask = mask.filter(ImageFilter.GaussianBlur(0.6))
-glyph = src.convert("RGBA")
-glyph.putalpha(mask)
-bbox = glyph.getbbox()
-if bbox is None:
-    raise SystemExit("flood-fill knocked out every pixel — check FLOOD_THRESH against the source")
-glyph = glyph.crop(bbox)
+
+def _luminance(rgb):
+    def ch(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (ch(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a, b):
+    la, lb = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+TILE_ON_LIGHT = contrast(TILE, LIGHT_CHROME)
+DRAW_KEYLINE = TILE_ON_LIGHT < KEYLINE_MIN_CONTRAST
 
 
 def squircle_mask(size: int) -> Image.Image:
@@ -167,7 +182,7 @@ def render(size: int) -> Image.Image:
     if size == CANVAS:
         return master
     out = master.resize((size, size), Image.LANCZOS)
-    if size > KEYLINE_MAX_PX:
+    if size > KEYLINE_MAX_PX or not DRAW_KEYLINE:
         return out
     band = Image.new("RGBA", (size, size), INK + (255,))
     band.putalpha(keyline_alpha(size, KEYLINE_PX))
@@ -180,15 +195,18 @@ def render(size: int) -> Image.Image:
     return out
 
 
-# 2) Compose the master: flat tile → glyph centred at GLYPH_SCALE → squircle alpha → 824/1024.
-tile = Image.new("RGBA", (CONTENT, CONTENT), TILE + (255,))
-gw, gh = glyph.size
-k = (CONTENT * GLYPH_SCALE) / max(gw, gh)
-placed = glyph.resize((max(1, round(gw * k)), max(1, round(gh * k))), Image.LANCZOS)
-tile.alpha_composite(placed, ((CONTENT - placed.size[0]) // 2, (CONTENT - placed.size[1]) // 2))
+# 2) Compose the master: art flattened onto its own tile colour (fills the transparent corners
+#    so the squircle, not the art's own rounding, decides the silhouette) → 824 → n=5 squircle.
+flat = Image.new("RGBA", (W, H), TILE + (255,))
+flat.alpha_composite(src)
+tile = flat.resize((CONTENT, CONTENT), Image.LANCZOS)
 tile.putalpha(squircle_mask(CONTENT))
 master = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
 master.paste(tile, ((CANVAS - CONTENT) // 2, (CANVAS - CONTENT) // 2))
+
+# 2c) The in-app mark (sidebar brand, splash): the squircle tile WITHOUT the 1024 grid margin.
+os.makedirs(os.path.dirname(BRAND_MARK), exist_ok=True)
+tile.resize((BRAND_MARK_PX, BRAND_MARK_PX), Image.LANCZOS).save(BRAND_MARK, optimize=True)
 
 # 3) icon.icns — the ten variants macOS actually asks for, 16 through 1024.
 iconset = os.path.join(WORK, "icon.iconset")
@@ -223,6 +241,6 @@ for ch in ["dev", "beta", "prod"]:
         shutil.copy(os.path.join(WORK, f), os.path.join(ICONS, ch, f))
 shutil.rmtree(WORK, ignore_errors=True)
 print(
-    f"tile={TILE} ink={INK} glyph_bbox={bbox} keyline={KEYLINE_PX}px<={KEYLINE_MAX_PX} "
-    f"— {len(FILES)} files regenerated for dev/beta/prod; now run ship:mac"
+    f"tile={TILE} ink={INK} tile-on-light={TILE_ON_LIGHT:.1f}:1 keyline={'on' if DRAW_KEYLINE else 'off'} "
+    f"— {len(FILES)} files regenerated for dev/beta/prod + brand-mark.png; now run ship:mac"
 )

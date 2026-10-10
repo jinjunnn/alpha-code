@@ -4,6 +4,7 @@ import appPlugin from "@opencode-ai/app/vite"
 import * as fs from "node:fs/promises"
 import { brandI18nPlugin } from "./scripts/brand-i18n"
 import { patchUpstreamPlugin } from "./scripts/patch-upstream"
+import { UPSTREAM_LOGO_ALIAS } from "./scripts/upstream-logo-alias"
 
 const OPENCODE_SERVER_DIST = "../opencode/dist/node"
 
@@ -115,6 +116,7 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       appPlugin,
       sentry,
     ],
+    resolve: { alias: [UPSTREAM_LOGO_ALIAS] },
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {
