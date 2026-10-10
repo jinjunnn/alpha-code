@@ -1,35 +1,48 @@
 @import "./tokens.css";
 
-/* alpha-ui Tooltip — CSS-only hover/focus label. Zero JS, zero deps. */
+/* alpha-ui Tooltip(`#1476`)—— 反色小签、6px 圆角、无箭头;0.4s 延迟由 Tooltip.tsx 的定时器负责,
+   这里只管样子。Portal 到 body,fixed 定位(坐标由组件算),不受祖先 overflow 裁剪。 */
 .a-tip-wrap {
   position: relative;
   display: inline-flex;
 }
 .a-tip {
-  position: absolute;
   z-index: var(--a-z-toast);
   pointer-events: none;
   white-space: nowrap;
-  padding: 5px 9px;
-  border-radius: var(--a-radius-md);
+  max-width: min(360px, calc(100vw - 16px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 4px 8px;
+  border-radius: var(--a-radius-sm);
   background: var(--a-text);
   color: var(--a-bg-canvas);
   font-size: var(--a-text-xs);
   font-weight: var(--a-weight-medium);
-  box-shadow: var(--a-shadow-md);
-  opacity: 0;
-  transform: translateY(2px) scale(0.97);
-  transition:
-    opacity var(--a-dur-fast) var(--a-ease-out),
-    transform var(--a-dur-fast) var(--a-ease-out);
+  line-height: 1.4;
+  box-shadow: var(--a-shadow-sm);
+  translate: -50% 0;
+  animation: a-tip-in var(--a-dur-fast) var(--a-ease-out) both;
 }
-.a-tip[data-placement="top"] { bottom: calc(100% + 6px); left: 50%; translate: -50% 0; }
-.a-tip[data-placement="bottom"] { top: calc(100% + 6px); left: 50%; translate: -50% 0; }
-.a-tip[data-placement="left"] { right: calc(100% + 6px); top: 50%; translate: 0 -50%; }
-.a-tip[data-placement="right"] { left: calc(100% + 6px); top: 50%; translate: 0 -50%; }
-.a-tip-wrap:hover .a-tip,
-.a-tip-wrap:focus-within .a-tip {
-  opacity: 1;
-  transform: translateY(0) scale(1);
+@keyframes a-tip-in {
+  from {
+    opacity: 0;
+  }
 }
-@media (prefers-reduced-motion: reduce) { .a-tip { transition: none; } }
+/* 说明文字的无障碍副本:视觉隐藏,经 aria-describedby 被读出。 */
+.a-tip-desc {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-tip {
+    animation: none;
+  }
+}

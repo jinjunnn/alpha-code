@@ -973,6 +973,7 @@ export const dict = {
   "alpha.brand.wordmark": "CODE PUPPY",
   "alpha.common.back": "返回",
   "alpha.common.close": "关闭",
+  "alpha.common.copied": "已复制",
   "alpha.common.remove": "移除",
   "alpha.common.retry": "重试",
   // REQ-126 CODE-F:alpha 自有会话搜索面板(壳注册 command.palette)。

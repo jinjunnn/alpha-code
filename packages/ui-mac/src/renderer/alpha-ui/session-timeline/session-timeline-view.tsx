@@ -7,6 +7,8 @@
 // CSS 只用 --a-* 令牌;卡片交互经可选 intents(缺席即降级为纯展示,fail-closed)。
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { t } from "../../i18n"
+import { CopyButton } from "../CopyButton"
+import { Tooltip } from "../Tooltip"
 import {
   ContextToolGroupCard,
   RetryCard,
@@ -354,13 +356,6 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
   // 引擎无「重试」操作(SDK 无对应端点),分支只有 v1 `session.fork`(建新会话 + 导航,
   // 属另建链路)—— 两者均不在时间线的数据面内,不为凑形态伪造。
   const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard && !!props.row.copyText()
-  const copy = () => {
-    try {
-      void navigator.clipboard.writeText(props.row.copyText()).catch(() => {})
-    } catch {
-      // 剪贴板拒绝(权限/环境)→ 静默;不阻断时间线。
-    }
-  }
   return (
     <div class="a-tl-row a-tl-footnote" data-alpha-timeline-row="footnote">
       <Show when={footnote().provider || footnote().agent}>
@@ -377,9 +372,11 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
         <span class="a-tl-fn-item">{footnote().model}</span>
       </Show>
       <Show when={footnote().cacheHit !== undefined}>
-        <span class="a-tl-fn-item" title={t("alpha.timeline.cacheHit", { percent: footnote().cacheHit! })}>
-          {efficiencyLabel(footnote().cacheHit!)}
-        </span>
+        <Tooltip label={t("alpha.timeline.cacheHit", { percent: footnote().cacheHit! })}>
+          <span class="a-tl-fn-item" tabindex="0">
+            {efficiencyLabel(footnote().cacheHit!)}
+          </span>
+        </Tooltip>
       </Show>
       <Show when={footnote().durationMs !== undefined}>
         <span class="a-tl-fn-item a-tl-fn-num">
@@ -393,17 +390,7 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
       </Show>
       <Show when={canCopy}>
         <span class="a-tl-fn-actions">
-          <button
-            type="button"
-            title={t("alpha.timeline.copyResponse")}
-            aria-label={t("alpha.timeline.copyResponse")}
-            onClick={copy}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="9" y="9" width="11" height="11" rx="2" />
-              <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-            </svg>
-          </button>
+          <CopyButton label={t("alpha.timeline.copyResponse")} text={() => props.row.copyText()} />
         </span>
       </Show>
     </div>
@@ -470,13 +457,6 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
     return items.filter(Boolean).join(" · ")
   }
   const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard && !!props.row.copyText()
-  const copy = () => {
-    try {
-      void navigator.clipboard.writeText(props.row.copyText()).catch(() => {})
-    } catch {
-      // 剪贴板拒绝不阻断时间线。
-    }
-  }
   const edit = () => {
     const handler = intents.editUserMessage
     const text = props.row.copyText()
@@ -625,30 +605,17 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
         <Show when={canCopy || (!!intents.editUserMessage && !!props.row.copyText())}>
           <span class="a-tl-user-actions">
             <Show when={canCopy}>
-              <button
-                type="button"
-                title={t("alpha.timeline.copyMessage")}
-                aria-label={t("alpha.timeline.copyMessage")}
-                onClick={copy}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="11" height="11" rx="2" />
-                  <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-                </svg>
-              </button>
+              <CopyButton label={t("alpha.timeline.copyMessage")} text={() => props.row.copyText()} />
             </Show>
             <Show when={intents.editUserMessage && !!props.row.copyText()}>
-              <button
-                type="button"
-                title={t("alpha.timeline.editResend")}
-                aria-label={t("alpha.timeline.editResend")}
-                onClick={edit}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
-                </svg>
-              </button>
+              <Tooltip label={t("alpha.timeline.editResend")}>
+                <button type="button" aria-label={t("alpha.timeline.editResend")} onClick={edit}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                  </svg>
+                </button>
+              </Tooltip>
             </Show>
           </span>
         </Show>
@@ -692,9 +659,7 @@ function ReasoningRow(props: { row: Extract<TimelineRow, { kind: "reasoning" }> 
                   ·
                 </span>
               </Show>
-              <span class="a-tl-reason-summary" title={summary()}>
-                {summary()}
-              </span>
+              <span class="a-tl-reason-summary">{summary()}</span>
             </Show>
           </span>
         </Show>

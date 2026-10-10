@@ -112,6 +112,9 @@ export function AddProvider(props: {
     const p = props.catalog?.byokProviders.find((x) => x.id === id)
     if (p) openPreset(p)
   })
+  let backBtn: HTMLButtonElement | undefined
+  // 二级页滑入后焦点落在「返回」上:键盘用户能立刻 Esc / 回车退回,Esc 也一定落在本页的处理器里。
+  onMount(() => queueMicrotask(() => backBtn?.isConnected && backBtn.focus()))
   function back() {
     if (inForm()) {
       setSel(null)
@@ -206,9 +209,19 @@ export function AddProvider(props: {
   }
 
   return (
-    <div class="a-mpa" onClick={(e) => e.stopPropagation()}>
+    <div
+      class="a-mpa"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        // #1476:二级页里 Esc 先退一级(表单 → 供应商列表 → 模型列表),不整个关掉菜单。
+        if (e.key !== "Escape") return
+        e.preventDefault()
+        e.stopPropagation()
+        back()
+      }}
+    >
       <div class="a-mpa-head">
-        <button class="a-mpa-back" onClick={back} aria-label={t("alpha.common.back")}>
+        <button ref={backBtn} class="a-mpa-back" onClick={back} aria-label={t("alpha.common.back")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="m15 18-6-6 6-6" />
           </svg>

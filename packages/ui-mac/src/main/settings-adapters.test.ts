@@ -157,6 +157,25 @@ describe("Settings typed adapter", () => {
     expect(seeded.value.appearance.fontSize).toBe(14)
   })
 
+  test("#1476 the upstream 'Introducing tabs' promo stays off on read and write", () => {
+    const fresh = createSettingsAdapter(file).read()
+    expect(fresh.ok).toBe(true)
+    if (fresh.ok) expect(fresh.value.general.shouldDisplayTabsToast).toBe(false)
+
+    // 上游设置层曾写入 true(或旧版本落了 true)—— 读回来一律是 false,推广卡永不出现。
+    writeAuthority(file, JSON.stringify({ general: { shouldDisplayTabsToast: true } }))
+    const stored = createSettingsAdapter(file).read()
+    expect(stored.ok).toBe(true)
+    if (!stored.ok) return
+    expect(stored.value.general.shouldDisplayTabsToast).toBe(false)
+
+    const next = structuredClone(stored.value)
+    next.general.shouldDisplayTabsToast = true
+    const saved = createSettingsAdapter(file).write({ value: next, expectedRevision: stored.revision })
+    expect(saved.ok).toBe(true)
+    if (saved.ok) expect(saved.value.general.shouldDisplayTabsToast).toBe(false)
+  })
+
   test("validate accepts the complete schema and rejects wrong types, unknown fields and unsafe keybind keys", () => {
     const adapter = createSettingsAdapter(file)
     expect(adapter.validate(settings())).toEqual({ ok: true })

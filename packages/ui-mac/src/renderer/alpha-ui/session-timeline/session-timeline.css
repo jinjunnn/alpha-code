@@ -487,11 +487,12 @@
 .a-tl-user-actions button {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  /* #1476:悬停动作统一 24px、--a-radius-sm(与 CopyButton 同一尺寸)。 */
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--a-radius-sm);
   background: transparent;
   color: var(--a-text-tertiary);
   cursor: pointer;
@@ -748,8 +749,8 @@ button.a-tl-cmd-chip:focus-visible {
 }
 
 .a-tl-fn-actions svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;

@@ -64,6 +64,7 @@ export function ModelPickPop(props: {
   const [readyListEpoch, setReadyListEpoch] = createSignal<string | null>(null)
   const [query, setQuery] = createSignal("")
   const [addOpen, setAddOpen] = createSignal(false)
+  let addRow: HTMLButtonElement | undefined
   const [configureId, setConfigureId] = createSignal<string | null>(null)
   const [switching, setSwitching] = createSignal<string | null>(null)
   const [switchError, setSwitchError] = createSignal(false)
@@ -672,6 +673,7 @@ export function ModelPickPop(props: {
       </div>
 
       <button
+        ref={addRow}
         type="button"
         class="a-pop-item a-mpp-addrow"
         disabled={!catalog() || selectionBlocked()}
@@ -690,6 +692,8 @@ export function ModelPickPop(props: {
           onClose={() => {
             setAddOpen(false)
             setConfigureId(null)
+            // #1476:退回一级后焦点回到「添加供应商」,不掉到 body(否则下一次 Esc 会直接关掉整个菜单)。
+            queueMicrotask(() => addRow?.isConnected && !addRow.disabled && addRow.focus())
           }}
           onSaved={retryAll}
         />

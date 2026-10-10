@@ -24,6 +24,8 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import type { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { useCommand } from "./providers"
+import { claimOverlay, releaseOverlay } from "./overlay-stack"
+import { Tooltip } from "./Tooltip"
 import { setExtHubOpen, setHubSection } from "../extensions/ext-hub-state"
 import { composerAgent, composerPerm, INTERNAL_AGENTS, permLocksAgent, setComposerAgent, type PermMode } from "./composer-state"
 
@@ -325,6 +327,20 @@ export function createComposerAutocomplete(opts: {
     if (items().length > 0) return true
     return v.query.length > 0
   })
+  // #1476:与芯片菜单共用「同时只开一个」—— 本列表打开时关掉开着的芯片菜单;反之芯片打开时关掉本列表。
+  const overlayOwner = {}
+  const closeFromOverlay = () => {
+    if (!open()) return
+    if (buttonOpen()) {
+      setButtonOpen(false)
+      return
+    }
+    const v = view()
+    if (v) setDismissed(triggerSignature(v, opts.text()))
+  }
+  createEffect(on(open, (isOpen) => (isOpen ? claimOverlay(overlayOwner, closeFromOverlay) : releaseOverlay(overlayOwner))))
+  onCleanup(() => releaseOverlay(overlayOwner))
+
   const activeDescendant = createMemo(() => {
     const item = items()[active()]
     return open() && item ? optionId(item) : undefined
@@ -456,12 +472,13 @@ export function createComposerAutocomplete(opts: {
     bump()
   }
 
-  // button 模式点击弹窗外关闭(popover-hit 同精神:composer 树内的点击不算外部)
+  // 点弹窗外关闭(popover-hit 同精神:composer 树内的点击不算外部)。#1476:与芯片菜单同一条规则 ——
+  // 「+」打开的装配列表与打字触发的「/ @」列表都适用(此前只有前者会关)。
   const onDocDown = (e: MouseEvent) => {
-    if (!buttonOpen()) return
+    if (!open()) return
     const t = e.target as Element | null
     if (t && t.closest(".a-comp")) return
-    setButtonOpen(false)
+    closeFromOverlay()
   }
   document.addEventListener("mousedown", onDocDown)
   onCleanup(() => document.removeEventListener("mousedown", onDocDown))
@@ -553,9 +570,9 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={SECTION_ICON[it.section]} />
           <span class="a-auto-trig">/{it.trigger}</span>
-          <span class="a-auto-desc" title={slashDescription(it)}>
-            {slashDescription(it)}
-          </span>
+          <Tooltip label={slashDescription(it)}>
+            <span class="a-auto-desc">{slashDescription(it)}</span>
+          </Tooltip>
           <span class="a-auto-tag" data-personal={it.tag === "个人" ? "" : undefined}>
             {sourceLabel(it.tag)}
           </span>
@@ -566,9 +583,9 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={ACTION_ICON[it.id]} />
           <span class="a-auto-nm">{actionLabel(it)}</span>
-          <span class="a-auto-desc" title={actionDescription(it)}>
-            {actionDescription(it)}
-          </span>
+          <Tooltip label={actionDescription(it)}>
+            <span class="a-auto-desc">{actionDescription(it)}</span>
+          </Tooltip>
           <Show when={it.kbd}>
             <span class="a-auto-tag">{it.kbd}</span>
           </Show>
@@ -579,9 +596,9 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={ACTION_ICON.mode} />
           <span class="a-auto-nm">{t("alpha.autocomplete.mode", { name: it.id })}</span>
-          <span class="a-auto-desc" title={t("alpha.autocomplete.modeDesc")}>
-            {t("alpha.autocomplete.modeDesc")}
-          </span>
+          <Tooltip label={t("alpha.autocomplete.modeDesc")}>
+            <span class="a-auto-desc">{t("alpha.autocomplete.modeDesc")}</span>
+          </Tooltip>
           <Show when={it.on}>
             <span class="a-auto-tag" data-personal="">
               {t("alpha.autocomplete.enabled")}
@@ -594,9 +611,9 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={AT_ICON.agent} />
           <span class="a-auto-trig">@{it.name}</span>
-          <span class="a-auto-desc" title={agentDescription(it)}>
-            {agentDescription(it)}
-          </span>
+          <Tooltip label={agentDescription(it)}>
+            <span class="a-auto-desc">{agentDescription(it)}</span>
+          </Tooltip>
           <span class="a-auto-tag" data-personal={it.tag === "个人" ? "" : undefined}>
             {sourceLabel(it.tag)}
           </span>

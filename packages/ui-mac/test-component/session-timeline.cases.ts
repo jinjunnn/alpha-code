@@ -2937,10 +2937,13 @@ describe("#591 富脚注:provider 图标 + 效率段", () => {
     expect(footnote.querySelector(".a-tl-fn-prov")!.textContent).toBe("D")
     expect(footnote.querySelector(".a-tl-fn-agent")!.textContent).toContain("build")
     expect(footnote.textContent).toContain("deepseek-reasoner")
-    // 命中 3000/(3000+1000) = 75% → 高档,title 给出具体口径。
+    // 命中 3000/(3000+1000) = 75% → 高档,具体口径在统一提示里(#1476:不再用原生 title;
+    // 键盘可聚焦,且经 aria-describedby 被读出)。
     const efficiency = [...footnote.querySelectorAll(".a-tl-fn-item")].find((el) => el.textContent === "高")!
     expect(efficiency).not.toBeUndefined()
-    expect(efficiency.getAttribute("title")).toBe("缓存命中 75%")
+    expect(efficiency.hasAttribute("title")).toBe(false)
+    expect(efficiency.getAttribute("tabindex")).toBe("0")
+    expect(document.getElementById(efficiency.getAttribute("aria-describedby")!)!.textContent).toBe("缓存命中 75%")
     expect(footnote.textContent).toContain("5.2 秒")
     expect(footnote.textContent).toContain("3.2k tokens")
 

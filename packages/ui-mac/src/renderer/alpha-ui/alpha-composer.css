@@ -228,6 +228,7 @@
 .a-chip[data-muted] {
   opacity: 0.55;
 }
+/* C28(S17 T4):popover 内的诚实说明行(effort「预设 · 暂未生效」等)。全 alpha-ui 唯一定义(#1476)。 */
 .a-pop-note {
   padding: 2px 10px 8px;
   font-size: 12px;
@@ -510,8 +511,9 @@
   z-index: 5;
   display: flex;
   flex-direction: column;
-  background: var(--a-surface);
-  border-radius: var(--a-radius-xl);
+  /* #1476:二级页与菜单同一底色、同一圆角(同一个容器里滑入)。 */
+  background: var(--a-surface-raised);
+  border-radius: var(--a-radius-lg);
 }
 .a-mpa-head {
   flex: none;
@@ -852,4 +854,17 @@
   .a-mpa * {
     transition-duration: 0ms !important;
   }
+}
+
+/* #1476:芯片「为什么不能用 / 为什么不生效」的原因 —— 控件旁的可见文字(不再藏进原生悬停 title)。 */
+.a-chip-reason {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--a-text-2xs);
+  line-height: 1.4;
+  color: var(--a-text-tertiary);
 }

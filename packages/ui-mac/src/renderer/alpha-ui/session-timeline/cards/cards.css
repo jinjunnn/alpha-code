@@ -337,39 +337,9 @@ button.a-tc-head:focus-visible {
   padding-bottom: 9px;
 }
 
-.a-tc-err-copy {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 24px;
-  height: 24px;
+/* #1476:按钮本体的尺寸 / 圆角 / 已复制反馈归 CopyButton(copy-button.css);这里只负责靠右。 */
+.a-tc-err-head > .a-tip-wrap {
   margin-left: auto;
-  padding: 0;
-  border: 0;
-  border-radius: var(--a-radius-sm);
-  background: transparent;
-  color: var(--a-text-tertiary);
-  cursor: pointer;
-}
-
-.a-tc-err-copy:hover {
-  background: var(--a-bg-subtle);
-  color: var(--a-text);
-}
-
-.a-tc-err-copy:focus-visible {
-  outline: none;
-  box-shadow: var(--a-ring-focus);
-}
-
-.a-tc-err-copy svg {
-  width: 13px;
-  height: 13px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 /* 正文缩进对齐标题文字(13px 内边距 + 15px 图标 + 9px 间距)。 */

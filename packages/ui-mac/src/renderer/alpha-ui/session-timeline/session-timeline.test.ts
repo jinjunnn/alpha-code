@@ -161,8 +161,9 @@ describe("REQ-125 C5 shell 接线(最小增量)", () => {
       /\.a-tl-user:hover \.a-tl-user-meta,[\s\S]*?\.a-tl-user:focus-within \.a-tl-user-meta \{\s*opacity: 1;/,
     )
     const actions = css.match(/\.a-tl-user-actions button \{[^}]*\}/)?.[0] ?? ""
-    expect(actions).toContain("width: 22px")
-    expect(actions).toContain("height: 22px")
+    // #1476:悬停动作统一 24px(与 CopyButton 同一尺寸)。
+    expect(actions).toContain("width: 24px")
+    expect(actions).toContain("height: 24px")
     expect(actions).toContain("background: transparent")
   })
 })
