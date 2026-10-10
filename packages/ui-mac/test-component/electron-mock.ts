@@ -28,9 +28,38 @@
 // `mock.module("electron", …)`。
 import { mock } from "bun:test"
 
+// Bun locks a mocked CJS module's export-name set to the first factory that runs.
+// Keep every runtime Electron name used by the main-process tree present before a
+// test-specific factory supplies its real doubles; otherwise Linux can reject a
+// later named import during module linking, before that test has run any cases.
+const electronRuntimeShape: Record<string, unknown> = {
+  app: {},
+  BrowserWindow: class {},
+  clipboard: {},
+  crashReporter: {},
+  dialog: {},
+  ipcMain: {},
+  Menu: {},
+  nativeImage: {},
+  nativeTheme: {},
+  net: {},
+  netLog: {},
+  Notification: class {},
+  powerMonitor: {},
+  protocol: {},
+  safeStorage: {},
+  session: {},
+  shell: {},
+  utilityProcess: {},
+  webContents: {},
+}
+
 export function mockElectron(factory: () => Record<string, unknown>): void {
   mock.module("electron", () => {
     const exports = factory()
+    for (const [name, fallback] of Object.entries(electronRuntimeShape)) {
+      if (!(name in exports)) exports[name] = fallback
+    }
     exports.default = exports
     return exports
   })

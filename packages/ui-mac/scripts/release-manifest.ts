@@ -124,6 +124,7 @@ const { values } = parseArgs({
     channel: { type: "string" },
     dist: { type: "string", default: "dist" },
     "windows-dir": { type: "string" },
+    "allow-unsigned-windows": { type: "boolean", default: false },
     key: { type: "string" },
     repo: { type: "string", default: "jinjunnn/alpha-code" },
     out: { type: "string" },
@@ -132,6 +133,8 @@ const { values } = parseArgs({
 
 const channel = values.channel as ReleaseChannel
 if (channel !== "dev" && channel !== "beta" && channel !== "prod") die("--channel must be dev | beta | prod")
+if (values["allow-unsigned-windows"] && channel !== "prod")
+  die("--allow-unsigned-windows is restricted to the prod manual-download release path")
 if (!values.key) die("--key <ed25519 pkcs8 pem> is required")
 const keyPath = values.key.replace(/^~(?=\/)/, process.env.HOME ?? "~")
 if (!fs.existsSync(keyPath)) die(`signing key not found: ${keyPath}`)
@@ -201,12 +204,19 @@ if (values["windows-dir"]) {
     const exe = `alpha-code-win-${arch}.exe`
     const p = path.join(winDir, exe)
     if (!fs.existsSync(p)) continue
-    artifacts.push({ filename: exe, platform: "win32", arch, kind: "installer", ...fileFacts(p) })
+    artifacts.push({
+      filename: exe,
+      platform: "win32",
+      arch,
+      kind: "installer",
+      ...(values["allow-unsigned-windows"] ? { manualDownloadOnly: true as const } : {}),
+      ...fileFacts(p),
+    })
     const bm = `${exe}.blockmap`
     if (fs.existsSync(path.join(winDir, bm)))
       artifacts.push({ filename: bm, platform: "win32", arch, kind: "blockmap", ...fileFacts(path.join(winDir, bm)) })
   }
-  const feed = readFeed(winDir, `${feedPrefix}.yml`)
+  const feed = values["allow-unsigned-windows"] ? null : readFeed(winDir, `${feedPrefix}.yml`)
   if (feed) feeds.push(feed)
   const factsPath = path.join(winDir, "windows-signing-facts.json")
   if (fs.existsSync(factsPath)) {
@@ -261,7 +271,11 @@ const result = buildReleaseManifest({
   macSigning,
   windowsFacts,
   sbom,
-  policy: { appleTeamId: APPLE_TEAM_ID, windowsPublisherAllowlist: WINDOWS_PUBLISHER_ALLOWLIST },
+  policy: {
+    appleTeamId: APPLE_TEAM_ID,
+    windowsPublisherAllowlist: WINDOWS_PUBLISHER_ALLOWLIST,
+    allowUnsignedWindowsManualDownload: values["allow-unsigned-windows"],
+  },
 })
 
 if (!result.ok) {
