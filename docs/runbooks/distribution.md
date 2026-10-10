@@ -4,7 +4,7 @@ kind: runbook
 status: active
 owners:
   - Code Puppy maintainers
-last_reviewed: 2026-09-09
+last_reviewed: 2026-10-10
 review_after: 2026-10-14
 ---
 
@@ -115,8 +115,67 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 - `--target alpha`:tag 打在自有代码所在分支。
 - 只想本机自己用、不分发 → 用 `bun run ship:mac`(= build + package + 装到 `/Applications`);发布用 `package:mac`(只出产物,不动你在用的 app)。
 
-## 2. 只 Apple Silicon(arm64)
-当前只出 `mac-arm64`。要 Intel(x64)/universal:electron-builder 加 `--x64`/`--universal`(未验证,首个 Intel 包需实测)。
+## 2. Intel 芯片 Mac(x64)包(#1496)
+
+一次发版出**两套** mac 包:`alpha-code-mac-arm64.*` 与 `alpha-code-mac-x64.*`,`latest-mac.yml` 同时列出两者
+(electron-updater 在 mac 上按文件名里的架构挑自己那一份)。不做 universal。
+
+**为什么不能「在 arm64 机器上加个 `--x64` 就完事」**:包里有按芯片编译的部件,今天只按打包机架构准备 ——
+直接加 `--x64` 会得到一个终端打不开、引擎文件监听起不来的 Intel 包。架构相关的东西全部清单:
+
+| 部件 | 文件 | 怎么按目标架构准备 |
+| --- | --- | --- |
+| 内置终端 | `@lydell/node-pty-darwin-<arch>`(`pty.node` + `spawn-helper`) | **包名在 build 时编进 `out/main`**(`electron.vite.config.ts` 的 node-pty narrower)⇒ build 必须带 `ALPHA_TARGET_ARCH` |
+| 引擎文件监听 | `@parcel/watcher-darwin-<arch>`(`watcher.node`) | 引擎产物运行时按 `process.arch` require ⇒ 只要求该架构的包在 `node_modules` 里被打进去 |
+| 进程围栏 | `native/alpha-fence/build/alpha_fence.node` | 本来就是 fat(arm64 + x86_64),见下 |
+| Electron 本体 | electron-builder 按打包架构下载 | 无需操作 |
+| 引擎本体 / ext / 预览 | `../opencode/dist/node/node.js` + `*.wasm`、`../ext/dist/plugin.js` + photon wasm、tree-sitter wasm、ghostty-web(wasm,渲染层) | 纯 JS / wasm,与架构无关 |
+
+目标架构的**唯一**选择点是 `packages/ui-mac/scripts/target-arch.ts`:`ALPHA_TARGET_ARCH=arm64|x64`,缺省 = 打包机架构
+(所以 `bun run build && bun run package:mac` 的行为与以前一样)。electron-builder 的 `beforePack` 在装包前核对:
+正在打的架构 == `ALPHA_TARGET_ARCH`、`out/main` 里编进的 node-pty 包名 == 该架构、该架构的原生包都在 `node_modules`
+里且每个 Mach-O 文件都含这一片 —— 任一项不过就**拒绝出包**并列出原因(判据:`src/main/mac-target-arch.test.ts`)。
+
+```bash
+# ⓪ 一次性(以及每次 bun install 之后):把两种架构的 darwin 原生包都装上。
+#    bun 默认只装与本机 cpu 匹配的 optionalDependencies,arm64 机器上 x64 的包根本不在盘上。
+cd <仓根> && bun install --os=darwin --cpu='*'      # 只改 node_modules,不改 bun.lock
+
+source ~/.alpha-code-signing/signing.env
+cd packages/ui-mac
+rm -f dist/latest-mac-*.yml
+
+# ① arm64 一轮(与 §1 ② 相同,只是把 feed 留底)
+OPENCODE_CHANNEL=prod bun run build
+OPENCODE_CHANNEL=prod bun run package:mac
+cp dist/latest-mac.yml dist/latest-mac-arm64.yml
+
+# ② x64 一轮 —— build 必须重跑(out/ 会被换成 x64 的),顺序不能颠倒成「先 build 两次再打两次」
+OPENCODE_CHANNEL=prod bun run build:mac-x64        # = ALPHA_TARGET_ARCH=x64 bun run build
+OPENCODE_CHANNEL=prod bun run package:mac-x64      # = ALPHA_TARGET_ARCH=x64 electron-builder --mac --x64
+cp dist/latest-mac.yml dist/latest-mac-x64.yml
+
+# ③ 合并 feed:写回 dist/latest-mac.yml(两种架构都列出;版本不一或两份放反即拒)
+bun run merge:latest-mac
+
+# ④ 验证 x64 那一份(arm64 那一份照 §1 ③)
+xcrun stapler validate "dist/mac/Code Puppy.app"          # x64 的 .app 在 dist/mac/(electron-builder 对 x64 不加后缀)
+spctl -a -vvv -t install "dist/mac/Code Puppy.app"
+lipo -archs "dist/mac/Code Puppy.app/Contents/MacOS/Code Puppy"                                   # 期望 x86_64
+find "dist/mac/Code Puppy.app" \( -name "*.node" -o -name spawn-helper \) -exec lipo -archs {} \;   # 每行都含 x86_64
+ls dist/alpha-code-mac-x64.dmg dist/alpha-code-mac-x64.zip
+grep -c "url: alpha-code-mac-" dist/latest-mac.yml       # 期望 4(两种架构各 dmg + zip)
+```
+
+之后照 §1 ③′ 产 release manifest(`release-manifest.ts` 本来就枚举 `mac-arm64` 与 `mac-x64` 两套产物),
+④ 上传时把 x64 的 `alpha-code-mac-x64.dmg` / `.zip` / 两个 `.blockmap` 一并加上。官网 `/download` 的 Intel
+卡位读 manifest 里 darwin/x64 的产物,不需要改站点。
+
+只出 x64 时(例如重打 Intel 包)只跑 ② 即可,此时 `dist/latest-mac.yml` 只含 x64 —— **不要**单独上传它,
+否则会把 arm64 用户的自动更新 feed 覆盖掉;仍按 ③ 与留底的 arm64 feed 合并。
+
+**未验证(需真 Intel 机)**:x64 包在 Intel Mac 上启动、本地引擎起来、内置终端能打开并执行命令(#1496 AC2)。
+本仓 CI 与开发机都没有 x86_64 运行时,上面的 `lipo` 只证明**装进去的片对**,不证明跑得起来。
 
 **进程围栏的原生模块不需要为 x64 多做任何事**(REQ-159 `#1321`):`prebuild` 里的
 `scripts/build-fence-addon.ts` 一次编出 **fat** 的 `native/alpha-fence/build/alpha_fence.node`(arm64 + x86_64
