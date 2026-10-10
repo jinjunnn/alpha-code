@@ -81,6 +81,8 @@ function turnRows(prefix: string, index: number, order: number): TimelineRow[] {
             rev: "1",
             userMessageID: userID,
             active: false,
+            startedAt: createdAt,
+            answering: false,
             turnFailed: false,
             steps: [
               {

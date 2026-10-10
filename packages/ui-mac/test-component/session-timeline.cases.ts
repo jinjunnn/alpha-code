@@ -481,13 +481,19 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     expect(head.querySelector(".a-tl-pf-v")!.textContent).toBe("思考")
   })
 
-  test("流式回合:末段 Markdown 带光标,工作过程默认展开、思考步骤进行中标记且不露小标题,busy 空输出显示回合脚行", async () => {
+  test("流式回合:末段 Markdown 带光标,回答已开始 ⇒ 工作过程收成一行(仍计时);思考步骤进行中标记且不露小标题,busy 空输出出实时标题", async () => {
     const host = mount()
     runtime.setTimelineRows(conversationRows("busy"))
     await flush()
 
     expect(host.querySelector("[data-alpha-timeline-row='markdown'][data-streaming='true']")).not.toBeNull()
     expect(host.querySelector(".a-tl-cursor")).not.toBeNull()
+    // `#1474`:回答开始输出 ⇒ 工作过程收成一行摘要,带脉冲点、继续计时。
+    const sum = host.querySelector<HTMLButtonElement>(".a-tl-pf-sum")!
+    expect(sum.getAttribute("aria-expanded")).toBe("false")
+    expect(sum.querySelector(".a-tl-pf-pulse")).not.toBeNull()
+    expect(sum.querySelector("[data-alpha-process-segment='elapsed']")).not.toBeNull()
+    await openProcess(host)
     const thinking = host.querySelector("[data-alpha-process-step='reasoning'][data-streaming='true']")!
     expect(thinking.querySelector(".a-tl-pf-v")!.textContent).toBe("正在思考…")
     expect(thinking.querySelector(".a-tl-pf-o")).toBeNull()
@@ -509,9 +515,12 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
       }),
     )
     await flush()
-    // `#1399`:首个 part 未到这一格现在是回合脚行的运行面,不再是「正在思考」胶囊。
+    // `#1474`:首个 part 未到这一格是工作过程的实时标题「正在思考」,不再是胶囊或回合脚行。
     expect(host.querySelector("[data-alpha-timeline-row='thinking']")).toBeNull()
-    expect(host.querySelector("[data-alpha-timeline-row='turn-running']")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='turn-running']")).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='process'] [data-alpha-process-title]")!.textContent).toBe(
+      "正在思考",
+    )
     expect(host.querySelector(".a-tl-cursor")).toBeNull()
   })
 })
@@ -848,17 +857,23 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       status: "running",
       input: { command: "bun test src", description: "跑一遍单元测试" },
       metadata: { output: "✓ one\n" },
-      time: { start: 0 },
+      // 刚开始跑(不足 10 秒):行尾写「运行中」;等久了才换「已等」(见 #1474 用例)。
+      time: { start: Date.now() },
     })
     runtime.setTimelineRows(assistantFixture([toolPartFixture("prt_b1", "bash", state as never)], "busy"))
     await flush()
 
-    // 回合在跑:工作过程默认展开;正在跑的那一步默认展开,终端输出照常实时可见。
+    // 回合在跑:工作过程默认展开(实时区);正在跑的命令不整张展开,行下露最后几行输出(`#1474`)。
     const card = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
     expect(card.getAttribute("data-status")).toBe("running")
-    expect(card.getAttribute("data-open")).toBe("true")
+    expect(card.getAttribute("data-open")).toBeNull()
     expect(card.querySelector(".a-tl-pf-v")!.textContent).toBe("运行")
     expect(card.querySelector(".a-tl-pf-end")!.textContent).toContain("运行中")
+    expect([...card.querySelectorAll(".a-tl-pf-tail-line")].map((line) => line.textContent)).toEqual(["✓ one"])
+    expect(card.querySelector(".a-tc-term")).toBeNull()
+    // 手动点开:今天的终端卡正文(命令 + 流式输出 + 块状光标),尾巴让位给完整输出。
+    await openStep(card)
+    expect(card.querySelector("[data-alpha-process-tail]")).toBeNull()
     const term = card.querySelector(".a-tc-term")!
     expect(term.textContent).toContain("$ bun test src")
     expect(term.textContent).toContain("✓ one")
@@ -872,8 +887,8 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(host.querySelector("[data-alpha-tool-card][data-tool='bash']")).toBe(cardBefore)
     expect(card.querySelector(".a-tc-term")!.textContent).toContain("✓ two")
 
-    // 完成:成功不挂状态(不再写「退出 0」),光标消失;回合结束后工作过程收起,
-    // 打开后这一步回到收起态,点开详情输出定格。
+    // 完成:成功不挂状态(不再写「退出 0」),光标消失;回合结束后工作过程收起;
+    // 打开后这一步仍是用户手动展开过的状态(你开过的,系统不替你关),详情输出定格。
     setState("status", "completed" as never)
     setState("metadata", { output: "✓ one\n✓ two\n", exit: 0 } as never)
     setState("output" as never, "✓ one\n✓ two\n2 pass" as never)
@@ -883,8 +898,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     await openProcess(host)
     const done = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
     expect(done.getAttribute("data-status")).toBe("success")
-    expect(done.getAttribute("data-open")).toBeNull()
-    await openStep(done)
+    expect(done.getAttribute("data-open")).toBe("true")
     expect(done.textContent).not.toContain("退出 0")
     expect(done.querySelector(".a-tl-pf-end")!.textContent).not.toContain("完成")
     expect(done.querySelector(".a-tc-term")!.textContent).toContain("2 pass")
@@ -1682,14 +1696,14 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(patch.textContent).toContain("删除")
   })
 
-  test("task 步骤:运行中详情默认展开,「打开子会话」经 openSession intent;intent 缺席无按钮", async () => {
+  test("task 步骤:运行中点开详情,「打开子会话」经 openSession intent;intent 缺席无按钮", async () => {
     const host = mount()
     runtime.setTimelineIntentsEnabled(true)
     const taskPart = toolPartFixture("prt_t1", "task", {
       status: "running",
       input: { description: "校验 AGENTS.md", subagent_type: "general" },
       metadata: { sessionId: "ses_child", parentSessionId: "ses_1" },
-      time: { start: 0 },
+      time: { start: Date.now() },
     })
     runtime.setTimelineRows(assistantFixture([taskPart], "busy"))
     await flush()
@@ -1698,6 +1712,9 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(card.querySelector(".a-tl-pf-v")!.textContent).toBe("子任务")
     expect(card.querySelector(".a-tl-pf-o")!.textContent).toBe("校验 AGENTS.md")
     expect(card.querySelector(".a-tl-pf-end")!.textContent).toContain("运行中")
+    // `#1474`:正在跑的步骤不再默认整张展开(实时区只露行);点开这一步看详情。
+    expect(card.querySelector(".a-tc-open")).toBeNull()
+    await openStep(card)
     const open = card.querySelector(".a-tc-open") as HTMLButtonElement
     expect(open.textContent).toContain("打开子会话")
     open.click()
@@ -1904,7 +1921,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(cleanGroup.querySelector("[data-alpha-tool-card] .a-tl-pf-o")!.textContent).toBe("AGENTS.md")
   })
 
-  test("回合级错误卡:全宽纯文本无动作,与工具级错误卡分离;重试卡显示第 N 次", async () => {
+  test("回合级错误卡:全宽纯文本无动作,与工具级错误卡分离;自动重试写进工作过程标题(第 N 次 · 原因)", async () => {
     const host = mount()
     runtime.setTimelineRows(
       model.projectTimelineRows({
@@ -1951,9 +1968,13 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(err.querySelector(".a-turn-err-code")!.textContent).toBe("rate_limit_exceeded")
     expect(err.querySelector("button")).toBeNull()
 
-    const retry = host.querySelector("[data-alpha-timeline-row='retry']")!
-    expect(retry.textContent).toContain("第 2 次")
-    expect(retry.textContent).toContain("gateway 429")
+    // `#1474`:重试不再另挂一张卡,写进工作过程的实时标题(不与运行行并存)。
+    expect(host.querySelector("[data-alpha-timeline-row='retry']")).toBeNull()
+    const process = host.querySelector("[data-alpha-timeline-row='process']")!
+    expect(process.getAttribute("data-face")).toBe("retry")
+    expect(process.querySelector("[data-alpha-process-title]")!.textContent).toBe("正在重试 · 第 2 次")
+    expect(process.querySelector("[data-alpha-process-retry-reason]")!.textContent).toBe("gateway 429")
+    expect(process.querySelectorAll(".a-tl-pf-pulse")).toHaveLength(0)
   })
 
   // `#1382` —— 最后一跳:归因真的被**渲染**出来。断源码文本不算(组件还在但渲染出空节点照样通过),
@@ -3033,11 +3054,19 @@ describe("#591 富脚注:provider 图标 + 效率段", () => {
   })
 })
 
-// `#1399` 回合脚行(design ② #turn-running,2026-09-22 已批):活跃回合的最后一行,一槽两面。
+// `#1474`(REQ-229 AC4)进行中的工作过程(design §3 / 帧 ③ ⑦,2026-10-10 已批)。
+// 原 `#1399` 回合脚行(design ② #turn-running)并入工作过程的实时标题:与回合同寿命、等你面两种触发、
+// 播报预算、结局同帧让位这四条行为原样保留,位置从「回合最后一行」挪进工作过程。
 // 判据字面量全部照稿手写;期望值不从 i18n 字典取(锚点要独立于被测对象)。
-describe("#1399 回合脚行:活跃回合最后一行,一槽两面", () => {
-  function turnRows(input: { status: string; assistant?: Record<string, unknown>; assistantText?: string }) {
-    const startedAt = Date.now() - 65_000
+describe("#1474 进行中的工作过程:实时标题 / 最近两步 / 已等 / 自动收起(含 #1399 回合脚行的行为)", () => {
+  function liveTurn(input: {
+    status?: string
+    parts?: unknown[]
+    assistant?: Record<string, unknown>
+    startedAt?: number
+    retry?: { attempt: number; message: string }
+  }) {
+    const startedAt = input.startedAt ?? Date.now() - 65_000
     return model.projectTimelineRows({
       messages: [
         {
@@ -3067,96 +3096,284 @@ describe("#1399 回合脚行:活跃回合最后一行,一槽两面", () => {
       partsOf: (messageID: string) =>
         (messageID === "msg_u1"
           ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" }]
-          : input.assistantText === undefined
-            ? []
-            : [{ id: "prt_t1", sessionID: "ses_1", messageID: "msg_a1", type: "text", text: input.assistantText }]) as never,
-      status: input.status,
+          : (input.parts ?? [])) as never,
+      status: input.status ?? "busy",
+      ...(input.retry ? { retry: input.retry } : {}),
     })
   }
-  const runningRows = () => turnRows({ status: "busy", assistantText: "正文已经在吐了" })
-  const foot = (host: HTMLElement) => host.querySelector("[data-alpha-timeline-row='turn-running']")
+  const say = (id: string, text: string) => ({ id, sessionID: "ses_1", messageID: "msg_a1", type: "text", text })
+  const reasoning = (id: string, text: string, time: Record<string, number>) => ({
+    id,
+    sessionID: "ses_1",
+    messageID: "msg_a1",
+    type: "reasoning",
+    text,
+    time,
+  })
+  const search = (id: string, query: string, state: Record<string, unknown>) =>
+    toolPartFixture(id, "websearch", { input: { query }, ...state })
+  const running = (start = Date.now() - 2_000) => ({ status: "running", title: "q", time: { start } })
+  const done = { status: "completed", output: "", title: "q", metadata: {}, time: { start: 0, end: 1_000 } }
+  const answerRows = () => liveTurn({ parts: [say("prt_t1", "正文已经在吐了")] })
+  const processOf = (host: HTMLElement) => host.querySelector<HTMLElement>("[data-alpha-timeline-row='process']")
+  const titleOf = (host: HTMLElement) => processOf(host)?.querySelector("[data-alpha-process-title]")?.textContent
+  const liveLines = (host: HTMLElement) =>
+    [...processOf(host)!.querySelectorAll(".a-tl-pf-list > * > .a-tl-pf-step, .a-tl-pf-list > .a-tl-pf-step")].map(
+      (line) => line.querySelector(".a-tl-pf-v")!.textContent,
+    )
 
-  test("运行面:吐出正文之后脚行仍在 —— 脉冲点 + 「正在生成」(role=status)+ 计时(status 之外、aria-hidden、m:ss),无按钮", async () => {
+  test("刚发出:工作过程在回合开始即出现 —— 「正在思考」+ 计时(从用户消息起算、aria-hidden、不在 live 区),不再有回合脚行", async () => {
     const host = mount()
-    runtime.setTimelineRows(runningRows())
+    runtime.setTimelineRows(liveTurn({}))
     await flush()
 
-    const row = foot(host)!
-    expect(row).not.toBeNull()
-    expect(host.querySelector("[data-alpha-timeline-row='markdown']")).not.toBeNull()
-    expect(host.querySelector("[data-alpha-timeline-row='thinking']")).toBeNull()
+    const row = processOf(host)!
+    expect(host.querySelector("[data-alpha-timeline-row='turn-running']")).toBeNull()
     expect(row.getAttribute("data-face")).toBe("running")
-    expect(row.hasAttribute("data-wait")).toBe(false)
-    // 回合最后一行:正文在它之前,它之后没有别的行。
-    expect(row.previousElementSibling?.getAttribute("data-alpha-timeline-row")).toBe("markdown")
     expect(row.nextElementSibling).toBeNull()
-
-    const status = row.querySelector("[role='status']")!
-    expect(status).not.toBeNull()
-    expect(status.textContent).toBe("正在生成")
-    expect(row.querySelector(".a-tl-turnfoot-mark")!.getAttribute("aria-hidden")).toBe("true")
-    expect(row.querySelector(".a-tl-turnfoot-live")).not.toBeNull()
-    const time = row.querySelector(".a-tl-turnfoot-time")!
-    expect(time).not.toBeNull()
+    const sum = row.querySelector<HTMLButtonElement>(".a-tl-pf-sum")!
+    expect(sum.getAttribute("aria-expanded")).toBe("true")
+    expect(titleOf(host)).toBe("正在思考")
+    expect(sum.querySelector(".a-tl-pf-pulse")!.getAttribute("aria-hidden")).toBe("true")
+    const time = sum.querySelector("[data-alpha-process-segment='elapsed']")!
     expect(time.getAttribute("aria-hidden")).toBe("true")
-    expect(status.contains(time)).toBe(false)
-    // 起点 = 用户消息 time.created(65 秒前),不是行挂载时刻。
+    // 一步都还没有:不写「第 N 步」,只有计时;起点 = 用户消息 time.created(65 秒前)。
     expect(time.textContent).toMatch(/^1:0[5-9]$/)
-    expect(row.querySelector("button")).toBeNull()
+    const status = row.querySelector("[role='status']")!
+    expect(status.textContent).toBe("正在生成")
+    expect(status.contains(time)).toBe(false)
   })
 
-  test("等你面:审批挂起与模型提问共用一面、只换文案 —— 琥珀卡、脉冲停、计时收起、无按钮;同一个节点翻面", async () => {
+  test("思考不露原文:标题只写「正在思考」;开头给了明确小标题(且那一行已写完)才附在后面", async () => {
     const host = mount()
-    runtime.setTimelineRows(runningRows())
+    const parts = [reasoning("prt_r1", "Let me think about the criteria nesting rules first", { start: Date.now() - 2_000 })]
+    runtime.setTimelineRows(liveTurn({ parts }))
     await flush()
-    const row = foot(host)!
+    expect(titleOf(host)).toBe("正在思考")
+    expect(processOf(host)!.querySelector("[data-alpha-process-reasoning-title]")).toBeNull()
+    expect(processOf(host)!.textContent).not.toContain("criteria nesting")
+
+    // 小标题还没写完(没换行):不露半截。
+    runtime.setTimelineRows(liveTurn({ parts: [reasoning("prt_r1", "**核对字段", { start: Date.now() - 2_000 })] }))
+    await flush()
+    expect(processOf(host)!.querySelector("[data-alpha-process-reasoning-title]")).toBeNull()
+
+    runtime.setTimelineRows(
+      liveTurn({ parts: [reasoning("prt_r1", "**核对字段表**\n\nThe docs say criteria are flat", { start: Date.now() - 2_000 })] }),
+    )
+    await flush()
+    expect(titleOf(host)).toBe("正在思考")
+    expect(processOf(host)!.querySelector("[data-alpha-process-reasoning-title]")!.textContent).toBe("核对字段表")
+    expect(processOf(host)!.textContent).not.toContain("criteria are flat")
+  })
+
+  test("并行 4 次搜索:标题「正在搜索 4 个问题 · 第 2 步」,每一步单独一行各自转圈;跑完并成一行,标题回到实时动作", async () => {
+    const host = mount()
+    const think = reasoning("prt_r1", "先想想", { start: 0, end: 2_000 })
+    const queries = ["system one api", "nested criteria", "pydantic model", "timeout field"]
+    runtime.setTimelineRows(
+      liveTurn({ parts: [think, ...queries.map((query, index) => search(`prt_s${index}`, query, running()))] }),
+    )
+    await flush()
+
+    expect(titleOf(host)).toBe("正在搜索 4 个问题")
+    expect(processOf(host)!.querySelector("[data-alpha-process-segment='elapsed']")!.textContent).toMatch(/^第 2 步 · 1:0[5-9]$/)
+    expect(liveLines(host)).toEqual(["思考 2 秒", "搜索", "搜索", "搜索", "搜索"])
+    expect(processOf(host)!.querySelectorAll("[data-alpha-process-step='tool'] .a-tl-pf-spin")).toHaveLength(4)
+
+    // 只剩一个在跑:标题回到单数;已结束的三个并成一行。
+    runtime.setTimelineRows(
+      liveTurn({
+        parts: [think, ...queries.map((query, index) => search(`prt_s${index}`, query, index === 3 ? running() : done))],
+      }),
+    )
+    await flush()
+    expect(titleOf(host)).toBe("正在搜索")
+    expect(liveLines(host)).toEqual(["思考 2 秒", "搜索 3 次", "搜索"])
+  })
+
+  test("实时区只留最近 2 个已结束的行 + 所有正在跑的;更早的收成「前面还有 N 步」,点开看全部", async () => {
+    const host = mount()
+    const parts = [
+      reasoning("prt_r1", "a", { start: 0, end: 2_000 }),
+      search("prt_s1", "q1", done),
+      reasoning("prt_r2", "b", { start: 0, end: 3_000 }),
+      toolPartFixture("prt_f1", "webfetch", { ...done, input: { url: "https://docs.typesafe.ai/api" } }),
+      reasoning("prt_r3", "c", { start: 0, end: 4_000 }),
+      search("prt_s2", "q2", running()),
+      search("prt_s3", "q3", running()),
+    ]
+    runtime.setTimelineRows(liveTurn({ parts }))
+    await flush()
+
+    const more = processOf(host)!.querySelector<HTMLButtonElement>("[data-alpha-process-more]")!
+    expect(more.textContent).toBe("前面还有 3 步")
+    expect(liveLines(host)).toEqual(["打开网页", "思考 4 秒", "搜索", "搜索"])
+    // 第 N 步:已结束 5 步 + 正在跑的这一步(并行的两个算同一步)。
+    expect(processOf(host)!.querySelector("[data-alpha-process-segment='elapsed']")!.textContent).toMatch(/^第 6 步 · /)
+
+    more.click()
+    await flush()
+    expect(processOf(host)!.querySelector("[data-alpha-process-more]")).toBeNull()
+    expect(liveLines(host)).toEqual(["思考 2 秒", "搜索", "思考 3 秒", "打开网页", "思考 4 秒", "搜索", "搜索"])
+  })
+
+  test("一步超过 10 秒,行尾「运行中」换成「已等 m:ss」;正在跑的命令露最后 3 行输出,结束即收起", async () => {
+    const host = mount()
+    const slow = search("prt_s1", "slow", running(Date.now() - 130_000))
+    const fast = search("prt_s2", "fast", running(Date.now() - 4_000))
+    const bash = (state: Record<string, unknown>) =>
+      toolPartFixture("prt_b1", "bash", { input: { command: "bun test" }, ...state })
+    const bashRunning = bash({
+      status: "running",
+      metadata: { output: "line 1\nline 2\n\nline 3\nline 4\n" },
+      time: { start: Date.now() - 3_000 },
+    })
+    runtime.setTimelineRows(liveTurn({ parts: [slow, fast, bashRunning] }))
+    await flush()
+
+    const items = [...processOf(host)!.querySelectorAll("[data-alpha-tool-card]")]
+    expect(items[0]!.querySelector("[data-alpha-step-waited]")!.textContent).toBe("已等 2:10")
+    expect(items[1]!.querySelector("[data-alpha-step-waited]")).toBeNull()
+    expect(items[1]!.querySelector(".a-tl-pf-end")!.textContent).toContain("运行中")
+    expect([...items[2]!.querySelectorAll(".a-tl-pf-tail-line")].map((line) => line.textContent)).toEqual([
+      "line 2",
+      "line 3",
+      "line 4",
+    ])
+    // 搜索不是命令:没有尾巴。
+    expect(items[0]!.querySelector("[data-alpha-process-tail]")).toBeNull()
+
+    runtime.setTimelineRows(
+      liveTurn({
+        parts: [slow, fast, bash({ status: "completed", output: "line 4", title: "bash", metadata: { exit: 0 }, time: { start: 0, end: 1 } })],
+      }),
+    )
+    await flush()
+    expect(processOf(host)!.querySelector("[data-alpha-process-tail]")).toBeNull()
+  })
+
+  test("回答第一个字出现 ⇒ 自动收成一行(脉冲点 + 继续计时);回答之后又调工具 ⇒ 那段文字移入过程成为过渡话,实时标题恢复", async () => {
+    const host = mount()
+    const first = search("prt_s1", "q1", done)
+    runtime.setTimelineRows(liveTurn({ parts: [first, search("prt_s2", "q2", running())] }))
+    await flush()
+    expect(processOf(host)!.querySelector(".a-tl-pf-sum")!.getAttribute("aria-expanded")).toBe("true")
+
+    const answered = liveTurn({ parts: [first, search("prt_s2", "q2", done), say("prt_t1", "我先去官方文档确认一下字段表。")] })
+    runtime.setTimelineRows(answered)
+    await flush()
+    const sum = processOf(host)!.querySelector(".a-tl-pf-sum")!
+    expect(sum.getAttribute("aria-expanded")).toBe("false")
+    expect(sum.querySelector("[data-alpha-process-title]")).toBeNull()
+    expect([...sum.querySelectorAll("[data-alpha-process-segment]")].map((el) => el.textContent)[0]).toBe("搜索 2 次")
+    expect(sum.querySelector("[data-alpha-process-segment='elapsed']")!.textContent).toMatch(/^1:0[5-9]$/)
+    expect(sum.querySelector(".a-tl-pf-pulse")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='markdown']")!.textContent).toContain("字段表")
+
+    runtime.setTimelineRows(
+      liveTurn({
+        parts: [
+          first,
+          search("prt_s2", "q2", done),
+          say("prt_t1", "我先去官方文档确认一下字段表。"),
+          toolPartFixture("prt_f1", "webfetch", { ...running(), input: { url: "https://docs.typesafe.ai/api" } }),
+        ],
+      }),
+    )
+    await flush()
+    expect(host.querySelector("[data-alpha-timeline-row='markdown']")).toBeNull()
+    expect(processOf(host)!.querySelector(".a-tl-pf-sum")!.getAttribute("aria-expanded")).toBe("true")
+    expect(titleOf(host)).toBe("正在打开网页")
+    expect(processOf(host)!.querySelector("[data-alpha-process-step='say']")!.textContent).toContain("字段表")
+  })
+
+  test("手动开或关过之后,本回合内系统不再替你开关", async () => {
+    const host = mount()
+    const first = search("prt_s1", "q1", done)
+    runtime.setTimelineRows(liveTurn({ parts: [first, search("prt_s2", "q2", running())] }))
+    await flush()
+    // 进行中手动收起:答案没出来也保持收起;收起时仍在计时。
+    processOf(host)!.querySelector<HTMLButtonElement>(".a-tl-pf-sum")!.click()
+    await flush()
+    expect(processOf(host)!.querySelector(".a-tl-pf-sum")!.getAttribute("aria-expanded")).toBe("false")
+    expect(processOf(host)!.querySelector(".a-tl-pf-list")).toBeNull()
+
+    runtime.setTimelineRows(liveTurn({ parts: [first, search("prt_s2", "q2", done), search("prt_s3", "q3", running())] }))
+    await flush()
+    expect(processOf(host)!.querySelector(".a-tl-pf-sum")!.getAttribute("aria-expanded")).toBe("false")
+
+    // 手动展开后回答开始:不再自动收起。
+    processOf(host)!.querySelector<HTMLButtonElement>(".a-tl-pf-sum")!.click()
+    await flush()
+    runtime.setTimelineRows(liveTurn({ parts: [first, search("prt_s2", "q2", done), say("prt_t1", "结论")] }))
+    await flush()
+    expect(processOf(host)!.querySelector(".a-tl-pf-sum")!.getAttribute("aria-expanded")).toBe("true")
+  })
+
+  test("等你面(#1399 保留):审批与提问共用一面只换文案 —— 琥珀、脉冲停、计时收起;等的那一步同色高亮写「等你批准」", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      liveTurn({ parts: [toolPartFixture("prt_b1", "bash", { status: "running", input: { command: "rm -rf dist" }, time: { start: Date.now() } })] }),
+    )
+    await flush()
+    const row = processOf(host)!
     const status = row.querySelector("[role='status']")!
 
     runtime.setTimelineTurnWait("approval")
     await flush()
-    expect(foot(host)).toBe(row)
+    expect(processOf(host)).toBe(row)
     expect(row.getAttribute("data-face")).toBe("waiting")
     expect(row.getAttribute("data-wait")).toBe("approval")
     expect(row.querySelector("[role='status']")).toBe(status)
-    expect(status.textContent).toBe("等待你的决定生成已暂停,到审批窗口里选择")
-    expect(row.querySelector(".a-tl-turnfoot-live")).toBeNull()
-    expect(row.querySelector(".a-tl-turnfoot-time")).toBeNull()
-    expect(row.querySelector(".a-tl-turnfoot-pause")!.getAttribute("aria-hidden")).toBe("true")
-    expect(row.querySelector("button")).toBeNull()
+    expect(titleOf(host)).toBe("等待你的决定")
+    expect(row.querySelector(".a-tl-pf-hint")!.textContent).toBe("生成已暂停,到审批窗口里选择")
+    expect(status.textContent).toBe("等待你的决定 生成已暂停,到审批窗口里选择")
+    expect(row.querySelector(".a-tl-pf-sum .a-tl-pf-pulse")).toBeNull()
+    expect(row.querySelector(".a-tl-pf-sum [data-alpha-process-segment='elapsed']")).toBeNull()
+    expect(row.querySelector(".a-tl-pf-pause")!.getAttribute("aria-hidden")).toBe("true")
+    const waiting = row.querySelector("[data-alpha-process-step='tool']")!
+    expect(waiting.getAttribute("data-tone")).toBe("wait")
+    expect(waiting.querySelector("[data-alpha-step-waiting]")!.textContent).toBe("等你批准")
 
     runtime.setTimelineTurnWait("question")
     await flush()
-    expect(foot(host)).toBe(row)
-    expect(row.getAttribute("data-face")).toBe("waiting")
     expect(row.getAttribute("data-wait")).toBe("question")
-    expect(status.textContent).toBe("等你回答生成已暂停,到输入框上方的提问卡回答")
-    expect(row.querySelector(".a-tl-turnfoot-live")).toBeNull()
-    expect(row.querySelector(".a-tl-turnfoot-time")).toBeNull()
-    expect(row.querySelector("button")).toBeNull()
+    expect(titleOf(host)).toBe("等你回答")
+    expect(status.textContent).toBe("等你回答 生成已暂停,到输入框上方的提问卡回答")
+    expect(row.querySelector("[data-alpha-process-step='tool']")!.getAttribute("data-tone")).toBe("run")
 
     runtime.setTimelineTurnWait(undefined)
     await flush()
     expect(row.getAttribute("data-face")).toBe("running")
     expect(row.hasAttribute("data-wait")).toBe(false)
     expect(status.textContent).toBe("正在生成")
-    expect(row.querySelector(".a-tl-turnfoot-live")).not.toBeNull()
-    expect(row.querySelector(".a-tl-turnfoot-time")).not.toBeNull()
+    expect(titleOf(host)).toBe("正在运行命令")
+    expect(row.querySelector(".a-tl-pf-sum .a-tl-pf-pulse")).not.toBeNull()
   })
 
-  test("播报预算:整轮 status 文字只在出现 / 转成等你 / 回到运行三个时刻变;计时每秒跳动不进 live 区", async () => {
+  test("等你面在工作过程收起时也露出(标题不被藏起来)", async () => {
     const host = mount()
-    runtime.setTimelineRows(runningRows())
+    runtime.setTimelineRows(answerRows())
     await flush()
-    const row = foot(host)!
+    expect(processOf(host)!.querySelector(".a-tl-pf-sum")!.getAttribute("aria-expanded")).toBe("false")
+    runtime.setTimelineTurnWait("question")
+    await flush()
+    expect(titleOf(host)).toBe("等你回答")
+    expect(processOf(host)!.querySelector(".a-tl-pf-list")).toBeNull()
+  })
+
+  test("播报预算(#1399 保留):status 文字只在出现 / 转成等你 / 回到运行三个时刻变;换动作、计时跳动都不进 live 区", async () => {
+    const host = mount()
+    runtime.setTimelineRows(answerRows())
+    await flush()
+    const row = processOf(host)!
     const status = row.querySelector("[role='status']")!
-    // Solid 的 DOM 更新在 signal 写入时同步落地,所以在每个「值得听的时刻」之后采样 status 的文字,
-    // 就是屏幕阅读器会听到的序列(live region 按落定后的 DOM 播报,不看同步中间态)。
     const heard: string[] = [status.textContent ?? ""]
 
-    // 让计时真的走一格(1.1s):status 里一个字都不该变,变的只有 status 之外那个 aria-hidden 的计时。
-    const before = row.querySelector(".a-tl-turnfoot-time")!.textContent
+    const before = row.querySelector("[data-alpha-process-segment='elapsed']")!.textContent
     await new Promise((resolve) => setTimeout(resolve, 1_100))
-    const after = row.querySelector(".a-tl-turnfoot-time")!.textContent
+    const after = row.querySelector("[data-alpha-process-segment='elapsed']")!.textContent
     expect(before).toMatch(/^1:0[5-9]$/)
     expect(after).not.toBe(before)
     heard.push(status.textContent ?? "")
@@ -3168,50 +3385,80 @@ describe("#1399 回合脚行:活跃回合最后一行,一槽两面", () => {
     await flush()
     heard.push(status.textContent ?? "")
 
-    // 同一个 live region 节点贯穿全程(不插拔),文字只在两次翻面时变 ⇒ 出现 + 两次翻面 = 三次播报。
     expect(row.querySelector("[role='status']")).toBe(status)
-    expect(heard).toEqual(["正在生成", "正在生成", "等待你的决定生成已暂停,到审批窗口里选择", "正在生成"])
+    expect(heard).toEqual(["正在生成", "正在生成", "等待你的决定 生成已暂停,到审批窗口里选择", "正在生成"])
     expect(heard.filter((text, index) => index === 0 || text !== heard[index - 1])).toHaveLength(3)
   })
 
-  test("结局同帧让位:完成 → 脚注;停止 → 中断行;出错 → 错误卡;零正文 → 空回合行 —— 脚行同帧消失", async () => {
+  test("自动重试:标题写「正在重试 · 第 N 次 · 原因」,不与运行行并存;回到运行后恢复当前动作", async () => {
     const host = mount()
-    runtime.setTimelineRows(runningRows())
+    runtime.setTimelineRows(liveTurn({ status: "retry", retry: { attempt: 3, message: "rate limited" } }))
     await flush()
-    expect(foot(host)).not.toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='retry']")).toBeNull()
+    expect(host.querySelectorAll("[data-alpha-timeline-row='process']")).toHaveLength(1)
+    expect(processOf(host)!.getAttribute("data-face")).toBe("retry")
+    expect(titleOf(host)).toBe("正在重试 · 第 3 次")
+    expect(processOf(host)!.querySelector("[data-alpha-process-retry-reason]")!.textContent).toBe("rate limited")
+    expect(processOf(host)!.querySelector("[role='status']")!.textContent).toBe("正在重试 · 第 3 次")
 
-    runtime.setTimelineRows(turnRows({ status: "idle", assistant: { time: { created: 10, completed: 20 } }, assistantText: "回答" }))
+    runtime.setTimelineRows(liveTurn({}))
     await flush()
-    expect(foot(host)).toBeNull()
+    expect(processOf(host)!.getAttribute("data-face")).toBe("running")
+    expect(titleOf(host)).toBe("正在思考")
+  })
+
+  test("结局同帧让位(#1399 保留):完成 → 脚注;停止 → 中断行;出错 → 错误卡;零正文 → 空回合行 —— 实时标题同帧消失", async () => {
+    const host = mount()
+    const live = () => processOf(host)?.querySelector("[role='status']") ?? null
+    runtime.setTimelineRows(answerRows())
+    await flush()
+    expect(live()).not.toBeNull()
+
+    runtime.setTimelineRows(
+      liveTurn({ status: "idle", assistant: { time: { created: 10, completed: 20 } }, parts: [say("prt_t1", "回答")] }),
+    )
+    await flush()
+    expect(live()).toBeNull()
     expect(host.querySelector("[data-alpha-timeline-row='footnote']")).not.toBeNull()
 
-    runtime.setTimelineRows(runningRows())
+    runtime.setTimelineRows(answerRows())
     await flush()
-    expect(foot(host)).not.toBeNull()
+    expect(live()).not.toBeNull()
     runtime.setTimelineRows(
-      turnRows({ status: "idle", assistant: { error: { name: "MessageAbortedError", data: { message: "" } } }, assistantText: "写到一半" }),
+      liveTurn({
+        status: "idle",
+        assistant: { error: { name: "MessageAbortedError", data: { message: "" } } },
+        parts: [say("prt_t1", "写到一半")],
+      }),
     )
     await flush()
-    expect(foot(host)).toBeNull()
+    expect(live()).toBeNull()
     expect(host.querySelector("[data-alpha-timeline-row='divider'][data-label='interrupted']")).not.toBeNull()
 
-    runtime.setTimelineRows(runningRows())
+    runtime.setTimelineRows(answerRows())
     await flush()
-    expect(foot(host)).not.toBeNull()
     runtime.setTimelineRows(
-      turnRows({ status: "idle", assistant: { error: { name: "APIError", data: { message: "rate_limit_exceeded" } } } }),
+      liveTurn({ status: "idle", assistant: { error: { name: "APIError", data: { message: "rate_limit_exceeded" } } } }),
     )
     await flush()
-    expect(foot(host)).toBeNull()
+    expect(live()).toBeNull()
     expect(host.querySelector("[data-alpha-timeline-row='turn-error']")).not.toBeNull()
 
-    runtime.setTimelineRows(runningRows())
+    runtime.setTimelineRows(answerRows())
     await flush()
-    expect(foot(host)).not.toBeNull()
-    runtime.setTimelineRows(turnRows({ status: "idle", assistant: { finish: "unknown", time: { created: 10, completed: 20 } } }))
+    runtime.setTimelineRows(liveTurn({ status: "idle", assistant: { finish: "unknown", time: { created: 10, completed: 20 } } }))
     await flush()
-    expect(foot(host)).toBeNull()
+    expect(live()).toBeNull()
     expect(host.querySelector("[data-alpha-timeline-row='empty-turn']")).not.toBeNull()
+
+    // 有步骤的回合结束:工作过程留成一行摘要,用时定格、不再脉冲。
+    runtime.setTimelineRows(
+      liveTurn({ status: "idle", assistant: { time: { created: 10, completed: 20 } }, parts: [search("prt_s1", "q", done), say("prt_t1", "回答")] }),
+    )
+    await flush()
+    expect(processOf(host)!.querySelector(".a-tl-pf-sum")!.getAttribute("aria-expanded")).toBe("false")
+    expect(processOf(host)!.querySelector(".a-tl-pf-pulse")).toBeNull()
+    expect(live()).toBeNull()
   })
 })
 

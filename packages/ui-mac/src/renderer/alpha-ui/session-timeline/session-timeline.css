@@ -1077,64 +1077,35 @@ button.a-tl-cmd-chip:focus-visible {
   white-space: pre-wrap;
 }
 
-/* ── 回合脚行(design ② turn-running 锚,ac 1399,2026-09-22 已批):活跃回合最后一行,一槽两面 ──
-   运行面 = 与中断行同族的安静行(12px 图标槽 + 次级灰文字);等你面 = 与自动重试卡(.a-retry)同族的
-   琥珀底小卡。两面共用同一个节点,只翻 data-face —— live region 不插拔。 */
-.a-tl-turnfoot {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  align-self: flex-start;
+/* ── 工作过程 · 进行中(design §3 / 帧 ③,ac 1474,2026-10-10 已批):实时标题 + 实时区 ──────────
+   回合开始即出现、与回合同寿命(取代原回合脚行 ac 1399 与自动重试卡;二者的样式与文案并入这里):
+   运行 = 强调色脉冲点 + 当前动作 + 第 N 步 · 计时;等你 = 琥珀底(原回合脚行等你面);重试 = 琥珀转圈。 */
+.a-tl-pf-sum[data-live="true"] {
   color: var(--a-text-secondary);
-  font-size: var(--a-text-sm);
 }
 
-.a-tl-turnfoot-mark {
-  display: grid;
-  flex: none;
-  width: 12px;
-  height: 12px;
-  place-items: center;
+.a-tl-pf-title {
+  color: var(--a-text);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-tl-pf-sum .a-tl-pf-o {
+  max-width: 28em;
 }
 
 /* 顶栏状态胶囊同一个脉冲(a-swk-status-pulse 的本地副本 —— 两份样式各自成文件,keyframes 不跨文件引用)。 */
-.a-tl-turnfoot-live {
+.a-tl-pf-pulse {
+  flex: none;
   width: 7px;
   height: 7px;
   border-radius: var(--a-radius-full);
   background: var(--a-accent);
-  animation: a-tl-turnfoot-pulse 1.4s var(--a-ease-in-out) infinite;
+  animation: a-tl-pf-pulse 1.4s var(--a-ease-in-out) infinite;
 }
 
-.a-tl-turnfoot-text {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.a-tl-turnfoot-label {
-  font-weight: var(--a-weight-medium);
-}
-
-.a-tl-turnfoot-sep {
-  flex: none;
-  width: 3px;
-  height: 3px;
-  border-radius: var(--a-radius-full);
-  background: var(--a-text-disabled);
-}
-
-.a-tl-turnfoot-time {
-  color: var(--a-text-tertiary);
-  font-size: var(--a-text-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 等你面:脉冲停(节点已换成静止暂停符号)、计时收起(节点不渲染)、琥珀底、零动效、无按钮。 */
-.a-tl-turnfoot[data-face="waiting"] {
-  gap: 9px;
+.a-tl-pf[data-face="waiting"] > .a-tl-pf-sum,
+.a-tl-pf[data-face="retry"] > .a-tl-pf-sum {
+  margin-left: 0;
   padding: 8px 13px;
   border: 1px solid color-mix(in srgb, var(--a-warning) 40%, transparent);
   border-radius: var(--a-radius-lg);
@@ -1142,7 +1113,12 @@ button.a-tl-cmd-chip:focus-visible {
   color: var(--a-text);
 }
 
-.a-tl-turnfoot-pause {
+.a-tl-pf[data-face="retry"] > .a-tl-pf-sum .a-tl-pf-spin {
+  border-color: var(--a-warning);
+  border-top-color: transparent;
+}
+
+.a-tl-pf-pause {
   flex: none;
   width: 12px;
   height: 12px;
@@ -1152,9 +1128,75 @@ button.a-tl-cmd-chip:focus-visible {
   stroke-linecap: round;
 }
 
-.a-tl-turnfoot-hint {
+.a-tl-pf-hint {
   color: var(--a-text-tertiary);
   font-size: var(--a-text-xs);
+}
+
+/* 播报只走这个视觉隐藏的 status(整轮只在出现 / 等你 / 重试 / 回到运行时改字)。 */
+.a-tl-pf-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* 实时区:已结束的行变淡,正在跑的与等你的那一步保持正文色。 */
+.a-tl-pf-list[data-live="true"] .a-tl-pf-step:not([data-tone]) .a-tl-pf-v {
+  color: var(--a-text-tertiary);
+}
+
+.a-tl-pf-step[data-tone="wait"] {
+  background: var(--a-warning-subtle);
+}
+
+.a-tl-pf-step[data-tone="wait"] .a-tl-pf-ico,
+.a-tl-pf-step[data-tone="wait"] .a-tl-pf-end {
+  color: var(--a-warning);
+}
+
+.a-tl-pf-more {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  align-self: flex-start;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  font: inherit;
+  font-size: var(--a-text-sm);
+  cursor: pointer;
+}
+
+.a-tl-pf-more:hover {
+  background: var(--a-overlay-hover);
+  color: var(--a-text-secondary);
+}
+
+.a-tl-pf-more:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+
+/* 正在跑的命令:行下露最后 3 行输出,结束即收起。 */
+.a-tl-pf-tail {
+  margin: 0 0 4px 28px;
+  padding: 4px 9px;
+  border-left: 2px solid var(--a-border);
+  color: var(--a-text-tertiary);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+  line-height: 1.5;
+}
+
+.a-tl-pf-tail-line {
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
 }
 
 /* ── 会话内空态(轻着陆) ────────────────────────────────────────────── */
@@ -1247,7 +1289,7 @@ button.a-tl-cmd-chip:focus-visible {
   }
 }
 
-@keyframes a-tl-turnfoot-pulse {
+@keyframes a-tl-pf-pulse {
   0%,
   100% {
     opacity: 1;
@@ -1271,8 +1313,8 @@ button.a-tl-cmd-chip:focus-visible {
     animation: none;
   }
 
-  /* ac 1399:脉冲点静止;计时刻意不在这里 —— 减弱动效下它是唯一的「还活着」信号,照走。 */
-  .a-tl-turnfoot-live {
+  /* ac 1399 / 1474:脉冲点静止;计时刻意不在这里 —— 减弱动效下它是唯一的「还活着」信号,照走。 */
+  .a-tl-pf-pulse {
     animation: none;
   }
 }

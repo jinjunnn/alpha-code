@@ -9,7 +9,7 @@
 //     投影成**一个** process 行(有序步骤;连续、同类、同来源、都已结束的步骤合成一组),
 //     回答 = 最后一次工具调用之后的 text;助手侧 file part → media 预览行;完成的第一方
 //     cloud facade 工具(identity 判定)→ artifacts 产物链接行 —— 二者都挂在回答之后;
-//   · 回合级错误(非中断)→ turnError 行;session_status=retry → retry 行(对齐 v2 行模型);
+//   · 回合级错误(非中断)→ turnError 行;session_status=retry → 工作过程实时标题写重试(`#1474`,不再另挂重试行);
 //   · 未知 part 类型 fail-closed:不渲染、不猜测(subtask 同上游 v1/v2 一致不渲染);
 //   · I7 有界:boundedText 把超大文本截断后才交给渲染管线(sanitizer/Shiki 不吃整串)。
 import type {
@@ -204,8 +204,17 @@ export type TimelineRow =
       rev: string
       userMessageID: string
       steps: TimelineProcessStep[]
-      /** 回合仍在跑(session_status 非 idle)。 */
+      /**
+       * 回合仍在跑(session_status 非 idle)。`#1474` 起工作过程在回合开始即出现、与回合同寿命
+       * (取代原回合脚行与只在首 part 前出现的思考胶囊):活跃回合即使还没有任何步骤也出这一行。
+       */
       active: boolean
+      /** `#1474` 实时计时起点 = 用户消息 time.created(不是行挂载时刻:中途重开会话显示真实已过时长)。 */
+      startedAt: number
+      /** `#1474` 活跃回合里回答已经开始输出(最后一次工具之后有文字)⇒ 工作过程自动收成一行。 */
+      answering: boolean
+      /** `#1474` session_status=retry 的载荷:实时标题写「正在重试 · 第 N 次 · 原因」(不再另挂重试卡)。 */
+      retry?: { attempt: number; message: string }
       /** 回合失败(回合错误卡在外面)⇒ 摘要不写「哪里不顺」。 */
       turnFailed: boolean
       /** 整轮用时 = 用户消息创建 → 最后一条助手消息完成;未完成 / 时钟异常 → 缺席。 */
@@ -213,7 +222,6 @@ export type TimelineRow =
     }
   | { kind: "media"; key: string; rev: string; media: TimelineMediaSource }
   | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
-  | { kind: "retry"; key: string; rev: string; userMessageID: string; attempt: number; message: string }
   | {
       kind: "turnError"
       key: string
@@ -236,19 +244,6 @@ export type TimelineRow =
   | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "interrupted" }
   | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "emptyTurn" }
   | {
-      /**
-       * `#1399` 回合脚行(design ② #turn-running):活跃回合的**最后一行**,从这条用户消息成为活跃回合起
-       * 到 session_status 回到 idle 止,贯穿首个 part 未到 / 正文流式 / 推理中 / 工具执行中 / 自动重试。
-       * 面(运行 / 等你)不在行模型里 —— 「等你」的真相住在 dock 的审批 feed 与 question 通道,经视图 prop 供给。
-       */
-      kind: "turnfoot"
-      key: string
-      rev: string
-      userMessageID: string
-      /** 计时起点 = 用户消息 time.created(不是行挂载时刻:中途重开会话显示真实已过时长)。 */
-      startedAt: number
-    }
-  | {
       kind: "footnote"
       key: string
       rev: string
@@ -268,7 +263,10 @@ export type TimelineRow =
       truncated: boolean
     }
 
-/** `#1399`:活跃回合在等你 —— 等你批准(审批弹窗)或等你回答(输入框上方的提问卡)。缺席 = 运行面。 */
+/**
+ * `#1399`:活跃回合在等你 —— 等你批准(审批弹窗)或等你回答(输入框上方的提问卡)。缺席 = 运行面。
+ * `#1474` 起由工作过程的实时标题消费(原回合脚行并入工作过程)。
+ */
 export type TimelineTurnWait = "approval" | "question"
 
 /** `#1399` 回合脚行计时:m:ss,整秒向下取整,分钟不进位到小时;负值(时钟偏斜)钉 0:00。 */
@@ -284,7 +282,7 @@ export interface TimelineProjectionInput {
   partsOf: (messageID: string) => readonly Part[]
   /** session_status[sessionID].type;缺省视为 "idle"。 */
   status: string
-  /** session_status[sessionID] 为 retry 时的载荷(attempt/message),对齐 v2 行模型的 Retry 行。 */
+  /** session_status[sessionID] 为 retry 时的载荷(attempt/message);`#1474` 起由工作过程的实时标题消费。 */
   retry?: { attempt: number; message: string }
   /** 斜杠命令来源登记(C7 可选供给;缺席 = 不出 chip,fail-closed)。 */
   slashOrigins?: readonly TimelineSlashOrigin[]
@@ -1084,7 +1082,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           }
           default:
             // agent/snapshot/subtask/retry/compaction 等非文本流 part:无视觉合同,fail-closed
-            // 不渲染(subtask 与上游 v1/v2 行为一致;retry 行由 session_status 驱动)。
+            // 不渲染(subtask 与上游 v1/v2 行为一致;重试由 session_status 驱动)。
             continue
         }
       }
@@ -1112,11 +1110,14 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
     items.forEach((item, index) => {
       if (item.type === "tool") lastTool = index
     })
+    const turnActive = userMessage.id === activeUserID && input.status !== "idle"
     const answer = new Set<number>()
     items.forEach((item, index) => {
       if (item.type === "text" && index > lastTool) answer.add(index)
     })
-    if (answer.size === 0) {
+    // `#1474`:「把最后一段过渡话提为回答」只属于结束态(design §4)。回合还在跑时,工具之前的文字
+    // 就是过渡话 —— 提前提成回答会让工作过程在工具还在跑时被误判为「回答已开始」而收起。
+    if (answer.size === 0 && !turnActive) {
       for (let index = lastTool - 1; index >= 0; index -= 1) {
         if (items[index]!.type !== "text") continue
         answer.add(index)
@@ -1130,22 +1131,35 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       else processItems.push(item)
     })
     const steps = buildProcessSteps(processItems)
-    const turnActive = userMessage.id === activeUserID && input.status !== "idle"
     const turnError = turnErrorOf(assistants)
-    if (steps.length > 0) {
+    // `#1474`:活跃回合从开始就出工作过程(与回合同寿命);结束后只在有步骤时保留。
+    if (steps.length > 0 || turnActive) {
       const durationMs = turnActive ? undefined : turnDurationOf(userMessage, assistants)
+      const answering = turnActive && answer.size > 0
+      const retry =
+        turnActive && input.status === "retry" && input.retry
+          ? {
+              attempt: input.retry.attempt,
+              message: boundedText(input.retry.message, RETRY_MESSAGE_MAX_CHARS).text,
+            }
+          : undefined
       rows.push({
         kind: "process",
         key: `process:${userMessage.id}`,
         rev: [
           steps.map(processStepRevOf).join("|"),
           String(turnActive),
+          String(answering),
+          retry ? `${retry.attempt}\u0000${retry.message}` : "",
           String(!!turnError),
           durationMs ?? "",
         ].join("§"),
         userMessageID: userMessage.id,
         steps,
         active: turnActive,
+        startedAt: userMessage.time.created,
+        answering,
+        ...(retry ? { retry } : {}),
         turnFailed: !!turnError,
         ...(durationMs !== undefined ? { durationMs } : {}),
       })
@@ -1198,18 +1212,6 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         truncated: turnDiffs.truncated,
       })
 
-    if (userMessage.id === activeUserID && input.status === "retry" && input.retry) {
-      const message = boundedText(input.retry.message, RETRY_MESSAGE_MAX_CHARS).text
-      rows.push({
-        kind: "retry",
-        key: `retry:${userMessage.id}`,
-        rev: `${input.retry.attempt}§${message}`,
-        userMessageID: userMessage.id,
-        attempt: input.retry.attempt,
-        message,
-      })
-    }
-
     if (turnError)
       rows.push({
         kind: "turnError",
@@ -1219,20 +1221,6 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         name: turnError.name,
         message: turnError.message,
         ...(turnError.egressDenied ? { egressDenied: turnError.egressDenied } : {}),
-      })
-
-    // `#1399` 回合脚行:活跃回合(session_status 非 idle)的**最后一行**。此前这里是 thinking 行,只在
-    // `emitted === 0` 时入列 —— 吐出第一个 part 就消失,正文流式 / 推理中 / 工具执行中三个子状态里时间线
-    // 一动不动,那正是 owner 观察到的「一轮在跑时页面什么都不动」。现在它与回合同寿命:结局(完成 / 中止 /
-    // 出错 / 空回合)到来时 status 已回到 idle,本行不再入列,位置由脚注 / 中断行 / 错误卡 / 空回合行接管。
-    // rev 只带计时起点:面翻转不重建行对象(视图靠同一个 DOM 节点翻 data-face,live region 不插拔)。
-    if (userMessage.id === activeUserID && input.status !== "idle")
-      rows.push({
-        kind: "turnfoot",
-        key: `turnfoot:${userMessage.id}`,
-        rev: String(userMessage.time.created),
-        userMessageID: userMessage.id,
-        startedAt: userMessage.time.created,
       })
   })
 
