@@ -76,18 +76,29 @@ function turnRows(prefix: string, index: number, order: number): TimelineRow[] {
     ...(index % 2 === 0
       ? ([
           {
-            kind: "reasoning",
-            key: `${prefix}:${index}:reasoning`,
+            kind: "process",
+            key: `${prefix}:${index}:process`,
             rev: "1",
-            streaming: false,
-            part: {
-              id: `prt_${prefix}_reasoning_${index}`,
-              sessionID: "ses_alpha_timeline_benchmark",
-              messageID: assistantID,
-              type: "reasoning",
-              text: `Reviewing deterministic fixture row ${index}.`,
-              time: { start: createdAt + 500, end: createdAt + 900 },
-            } as never,
+            userMessageID: userID,
+            active: false,
+            turnFailed: false,
+            steps: [
+              {
+                kind: "reasoning",
+                key: `reason:prt_${prefix}_reasoning_${index}`,
+                streaming: false,
+                parts: [
+                  {
+                    id: `prt_${prefix}_reasoning_${index}`,
+                    sessionID: "ses_alpha_timeline_benchmark",
+                    messageID: assistantID,
+                    type: "reasoning",
+                    text: `Reviewing deterministic fixture row ${index}.`,
+                    time: { start: createdAt + 500, end: createdAt + 900 },
+                  } as never,
+                ],
+              },
+            ],
           } satisfies TimelineRow,
         ] as TimelineRow[])
       : []),

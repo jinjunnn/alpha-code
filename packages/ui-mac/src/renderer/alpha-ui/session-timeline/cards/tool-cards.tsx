@@ -1,8 +1,8 @@
 // REQ-125 C6 — alpha 时间线卡片全集(呈现层)。
 //
-// 形态权威 = docs/design/current/conversation-timeline/design.html ②③④⑥ 节帧:
-// 通用工具卡四态(运行扫线/呼吸)、各工具分支体、task v2(agent 色点+环形+打开子会话)、
-// 回合级错误卡 / 工具级错误态 / 重试卡、「已探索」折叠组、媒体预览行、产物链接行。
+// 形态权威 = docs/design/current/conversation-timeline/design.html ②③④⑥⑧ 节帧:
+// 各工具分支体(`#1473` 起作为工作过程某一步的详情,不再常驻)、task(打开子会话)、
+// 回合级错误卡 / 工具级错误态 / 重试卡、媒体预览行、产物链接行。
 // 数据全部经 store proxy 反应式读取(行对象引用稳定);内容一律纯文本节点(I3),
 // 输出体有界(I7,tool-card-model 的双帽);CSS 只用 --a-* 令牌(I5)。
 // 未知工具 fail-closed:有界纯文本通用卡。
@@ -14,14 +14,10 @@ import type { TimelineMediaSource, TimelineRow } from "../timeline-model"
 import {
   basenameOf,
   bashDescriptionOf,
-  cappedItem,
-  contextGroupSummaryOf,
-  contextRowOf,
   diagnosticsOf,
   dirnameOf,
   mediaLabelOf,
   mediaThumbable,
-  OPEN_DEFAULT_MAX_CHARS,
   openTargetOf,
   taskCardInfoOf,
   toolCardBodyOf,
@@ -36,6 +32,11 @@ import { useTimelineIntents } from "./timeline-intents"
 import "./cards.css"
 
 // ── 图标(design.html 帧内路径的本地内联版) ─────────────────────────────────
+/** 工具类图标(identity 分派出的 kind;未知 / 降级 = 立方体)。工作过程步骤行复用。 */
+export function toolIcon(kind: string): JSX.Element {
+  return icons(kind)
+}
+
 function icons(kind: string): JSX.Element {
   switch (kind) {
     case "read":
@@ -147,22 +148,9 @@ const SOURCE_KEYS: Record<ToolSourceCategory, string> = {
   unknown: "alpha.timeline.sourceUnknown",
 }
 
-// ── #587 来源徽标(主层级;只读 head.category = 持久化 identity+authority 投影)──
-const SOURCE_BADGE_KEYS: Record<ToolSourceCategory, string> = {
-  builtin: "alpha.timeline.srcBuiltin",
-  host: "alpha.timeline.srcHost",
-  "alpha-cloud": "alpha.timeline.srcCloud",
-  mcp: "alpha.timeline.srcMcp",
-  plugin: "alpha.timeline.srcPlugin",
-  unknown: "alpha.timeline.srcUnknown",
-}
-
-function SourceBadge(props: { category: ToolSourceCategory }) {
-  return (
-    <span class="a-tc-srcbadge" data-alpha-source-badge data-category={props.category}>
-      {t(SOURCE_BADGE_KEYS[props.category] as Parameters<typeof t>[0])}
-    </span>
-  )
+/** metadata-only 降级步骤的主标题(来源分类文案的 i18n key)。 */
+export function sourceCategoryKey(category: ToolSourceCategory): string {
+  return SOURCE_KEYS[category]
 }
 
 // #587 安全通用卡的确定隐藏理由(AC2;静态文案,不携带任何调用数据)。
@@ -171,43 +159,7 @@ const HIDDEN_REASON_KEYS = {
   "no-rule": "alpha.timeline.hiddenNoRule",
 } as const
 
-// ── 状态徽标 ────────────────────────────────────────────────────────────────
-function StatusChip(props: { head: ToolCardHead }) {
-  const label = () => {
-    const head = props.head
-    if (head.status === "pending") return t("alpha.timeline.toolPending")
-    if (head.status === "running") return t("alpha.timeline.toolRunning")
-    if (head.status === "error") return t("alpha.timeline.toolError")
-    if (head.kind === "bash" && head.exit !== undefined) return t("alpha.timeline.exit", { code: head.exit })
-    if (head.kind === "skill") return t("alpha.timeline.skillLoaded")
-    if (head.count) {
-      if (head.count.unit === "matches") return t("alpha.timeline.countMatches", { count: head.count.value })
-      if (head.count.unit === "items") return t("alpha.timeline.countItems", { count: head.count.value })
-      if (head.count.unit === "results") return t("alpha.timeline.countResults", { count: head.count.value })
-      return t("alpha.timeline.countFiles", { count: head.count.value })
-    }
-    return t("alpha.timeline.toolCompleted")
-  }
-  const tone = () => {
-    const head = props.head
-    if (head.status === "running") return "running"
-    if (head.status === "error") return "error"
-    if (head.status === "pending") return "muted"
-    if (head.kind === "bash" && head.exit !== undefined) return head.exit === 0 ? "ok" : "error"
-    if (head.kind === "skill") return "ok"
-    return "muted"
-  }
-  return (
-    <span class="a-tc-status" data-tone={tone()}>
-      <Show when={props.head.status === "running"}>
-        <span class="a-tc-spin" aria-hidden="true" />
-      </Show>
-      {label()}
-    </span>
-  )
-}
-
-function StatBadge(props: { stat: { additions: number; deletions: number } }) {
+export function StatBadge(props: { stat: { additions: number; deletions: number } }) {
   return (
     <span class="a-tc-stat">
       <Show when={props.stat.additions > 0}>
@@ -433,7 +385,7 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
 }
 
 // ── 工具级错误卡(#590,design §③ .errcard 帧) ─────────────────────────────
-// 标题行 = 固定标题「工具执行失败」+ 复制,由 TimelineToolCard **常驻渲染**
+// 标题行 = 固定标题「工具执行失败」+ 复制,由 ToolStepDetail **常驻渲染**
 // (R1 Major:超帽错误默认收起时也必须能看到标题、能复制,与设计稿的常驻卡片头
 // 同口径);受开合控制的只有 mono 错误正文。error 体不走 CardBody 分支。
 // 复制:剪贴板通道缺席即不渲染按钮(fail-closed),与回合末脚注同一口径。
@@ -533,74 +485,36 @@ function DiffBody(props: { patch: string }) {
   )
 }
 
-// ── 通用工具卡(四态外壳 + 分派) ───────────────────────────────────────────
-export function TimelineToolCard(props: { part: ToolPart }) {
+// ── `#1473` 工作过程某一步的详情(复用各类卡片正文,不再常驻) ─────────────
+// 头部信息(动作 / 对象 / 失败)已在步骤行上说过一遍,这里不重复(design §6「每样信息只出现
+// 一次」);成功不挂状态;「开发者详情」只在详情底部。来源安全规则不变:metadata-only 降级
+// 只有确定的隐藏理由与开发者详情,input / output / error 的内容零字符进 DOM。
+export function ToolStepDetail(props: { part: ToolPart }) {
   const head = createMemo(() => toolCardHeadOf(props.part))
   const body = createMemo(() => toolCardBodyOf(props.part))
-  // hidden 体(AC5)不算可展开体:确定标记常驻显示,没有 raw 查看旁路。
-  const hasBody = () => body().type !== "none" && body().type !== "hidden"
-  // 默认展开:终端流(bash)/错误体,且**原始**体量在帽内 —— 被截断过(truncated)
-  // 即视为超帽收起,不用截后长度比(I7:大输出体默认收起,防多卡累积常驻 DOM);
-  // 其余折叠。用户显式选择永远优先。
-  const [chosen, setChosen] = createSignal<boolean>()
-  const defaultOpen = () => {
-    const value = body()
-    if (value.type === "term") return !value.truncated && value.output.length <= OPEN_DEFAULT_MAX_CHARS
-    if (value.type === "error") return !value.truncated && value.message.length <= OPEN_DEFAULT_MAX_CHARS
-    return false
-  }
-  const open = () => chosen() ?? defaultOpen()
+  const hasBody = () => body().type !== "none" && body().type !== "hidden" && body().type !== "error"
   // #879:命令说明副行经模型层 identity 分派 + redactor(不再直读 input)。
   const description = createMemo(() => bashDescriptionOf(props.part))
   const task = createMemo(() => (head().kind === "task" ? taskCardInfoOf(props.part) : undefined))
   const intents = useTimelineIntents()
-  // T8「在面板打开」pill:write/edit 的文件目标 + openFile intent 双在场才渲染(fail-closed)。
+  // T8「在面板打开」:write/edit 的文件目标 + openFile intent 双在场才渲染(fail-closed)。
   const openPath = createMemo(() => openTargetOf(props.part))
   // T19 诊断行:edit/write 完成态的本文件 ERROR 级诊断(有界;缺席零渲染)。
   const diag = createMemo(() => diagnosticsOf(props.part))
   // #587 开发者详情:快照在场才有(无快照历史行没有可信 identity 可陈列)。
   const dev = createMemo(() => toolDevDetailsOf(props.part))
-  // error 体单独出 CardBody:标题行 + 复制常驻,open() 只控 mono 正文(R1 Major)。
   const errorBody = () => {
     const value = body()
     return value.type === "error" ? value : undefined
   }
-
-  const headInner = () => (
-    <>
-      <span class="a-tc-ico" data-kind={head().kind} aria-hidden="true">
-        {icons(head().kind)}
-      </span>
-      <span class="a-tc-title">
-        {/* #879 metadata-only 降级卡:来源分类 + 被动净化名称(+ origin),无参数。 */}
-        <Show
-          when={!head().metadataOnly}
-          fallback={
-            <>
-              <b>{t(SOURCE_KEYS[head().category] as Parameters<typeof t>[0])}</b>
-              <span class="a-tc-name">{head().toolName}</span>
-              <Show when={head().origin}>
-                <span class="a-tc-detail">{head().origin}</span>
-              </Show>
-            </>
-          }
-        >
-          <Show when={head().titleKey} fallback={<b class="a-tc-name">{head().toolName}</b>}>
-            <b>{t(head().titleKey! as Parameters<typeof t>[0])}</b>
-          </Show>
-          <Show when={head().target}>
-            <span class="a-tc-target">{head().target}</span>
-          </Show>
-          {/* AC5:目标存在但 redactor 失败 → 确定的「详情已隐藏」,无 raw 旁路。 */}
-          <Show when={head().targetHidden}>
-            <span class="a-tc-detail" data-alpha-details-hidden>
-              {t("alpha.timeline.detailsHidden")}
-            </span>
-          </Show>
+  return (
+    <div class="a-tl-pf-detail" data-alpha-step-detail>
+      {/* 次级事实(原卡头的第二行):目录 / include、子任务 agent。脱敏失败出确定标记(AC5)。 */}
+      <Show when={head().detail || head().detailHidden || task()?.agent || task()?.agentHidden}>
+        <div class="a-tc-facts">
           <Show when={head().detail}>
             <span class="a-tc-detail">{head().detail}</span>
           </Show>
-          {/* #934 Minor(AC5 标记半边):次级细节(如 grep include)脱敏失败也出确定标记。 */}
           <Show when={head().detailHidden}>
             <span class="a-tc-detail" data-alpha-details-hidden>
               {t("alpha.timeline.detailsHidden")}
@@ -612,70 +526,12 @@ export function TimelineToolCard(props: { part: ToolPart }) {
               {task()!.agent}
             </span>
           </Show>
-          {/* #934 Minor:task agent 名脱敏失败 → 确定标记,chip 不凭空消失。 */}
           <Show when={task()?.agentHidden}>
             <span class="a-tc-agent" data-alpha-details-hidden>
               <i aria-hidden="true" />
               {t("alpha.timeline.detailsHidden")}
             </span>
           </Show>
-        </Show>
-      </span>
-      <Show when={head().stat}>{(stat) => <StatBadge stat={stat()} />}</Show>
-      <Show when={task() && head().status === "running"}>
-        <span class="a-tc-ring" aria-hidden="true" />
-      </Show>
-      {/* #587 来源徽标:全来源常驻主层级,只读持久化快照的投影(T3/T7)。 */}
-      <SourceBadge category={head().category} />
-      <StatusChip head={head()} />
-    </>
-  )
-
-  return (
-    <section
-      class="a-tl-row a-tc"
-      data-alpha-timeline-row="tool"
-      data-alpha-tool-card
-      data-kind={head().kind}
-      data-category={head().category}
-      data-tool={cappedItem(props.part.tool)}
-      data-status={head().status}
-      data-open={hasBody() && open() ? "true" : undefined}
-    >
-      <div class="a-tc-headwrap">
-        <Show when={hasBody()} fallback={<div class="a-tc-head">{headInner()}</div>}>
-          <button type="button" class="a-tc-head" aria-expanded={open()} onClick={() => setChosen(!open())}>
-            {headInner()}
-          </button>
-        </Show>
-        <Show when={openPath() && intents.openFile}>
-          <button
-            type="button"
-            class="a-tc-openp"
-            data-alpha-open-in-panel
-            onClick={() => intents.openFile!({ path: openPath()! })}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
-            </svg>
-            {t("alpha.timeline.openInPanel")}
-          </button>
-        </Show>
-        <Show when={hasBody()}>
-          {/* 装饰性开合指示;点击等效头部按钮(键盘路径在头部按钮上)。 */}
-          <span class="a-tc-chevhit" aria-hidden="true" onClick={() => setChosen(!open())}>
-            {chevron()}
-          </span>
-        </Show>
-      </div>
-      <Show when={task()?.childSessionID && intents.openSession}>
-        <div class="a-tc-actions">
-          <button type="button" class="a-tc-open" onClick={() => intents.openSession!(task()!.childSessionID!)}>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
-            </svg>
-            {t("alpha.timeline.openSubtask")}
-          </button>
         </div>
       </Show>
       <Show when={description()?.value}>
@@ -687,60 +543,69 @@ export function TimelineToolCard(props: { part: ToolPart }) {
           {t("alpha.timeline.detailsHidden")}
         </div>
       </Show>
-      {/* #587 安全通用卡(AC2):metadata-only 降级卡陈述确定的隐藏理由;
-          纯静态文案,不携带参数/错误/输出,也没有任何展开入口。
-          #1214 AC2:审批超时(fail-closed)是确定结局,不是「被隐藏的错误详情」——
-          分类来自引擎 UnansweredError 首行形态(tool-card-model 钉住),文案仍纯静态,
-          错误原文零字符进 DOM。 */}
+      <Show when={(task()?.childSessionID && intents.openSession) || (openPath() && intents.openFile)}>
+        <div class="a-tc-actions">
+          <Show when={task()?.childSessionID && intents.openSession}>
+            <button type="button" class="a-tc-open" onClick={() => intents.openSession!(task()!.childSessionID!)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+              </svg>
+              {t("alpha.timeline.openSubtask")}
+            </button>
+          </Show>
+          <Show when={openPath() && intents.openFile}>
+            <button
+              type="button"
+              class="a-tc-openp"
+              data-alpha-open-in-panel
+              onClick={() => intents.openFile!({ path: openPath()! })}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+              </svg>
+              {t("alpha.timeline.openInPanel")}
+            </button>
+          </Show>
+        </div>
+      </Show>
+      {/* #587 安全通用卡(AC2):metadata-only 降级陈述确定的隐藏理由;纯静态文案,
+          不携带参数/错误/输出,也没有任何展开入口。#1214 AC2:审批超时是确定结局,
+          文案仍纯静态,错误原文零字符进 DOM。 */}
       <Show when={head().metadataOnly && head().hiddenReason}>
         {(reason) => (
-          <div class="a-tc-body">
-            <div class="a-tc-safe" data-alpha-safe-card>
-              <Show
-                when={head().askTimedOut}
-                fallback={
-                  <>
-                    <b>{head().status === "error" ? t("alpha.timeline.safeHiddenError") : t("alpha.timeline.safeHidden")}</b>
-                    <span>{t(HIDDEN_REASON_KEYS[reason()] as Parameters<typeof t>[0])}</span>
-                  </>
-                }
-              >
-                <b data-alpha-ask-timeout>{t("alpha.timeline.askTimeout")}</b>
-                <span>{t("alpha.timeline.askTimeoutBody")}</span>
-              </Show>
-            </div>
+          <div class="a-tc-safe" data-alpha-safe-card>
+            <Show
+              when={head().askTimedOut}
+              fallback={
+                <>
+                  <b>{head().status === "error" ? t("alpha.timeline.safeHiddenError") : t("alpha.timeline.safeHidden")}</b>
+                  <span>{t(HIDDEN_REASON_KEYS[reason()] as Parameters<typeof t>[0])}</span>
+                </>
+              }
+            >
+              <b data-alpha-ask-timeout>{t("alpha.timeline.askTimeout")}</b>
+              <span>{t("alpha.timeline.askTimeoutBody")}</span>
+            </Show>
           </div>
         )}
       </Show>
-      {/* AC5:redactor 失败的整字段 → 常驻的确定「详情已隐藏」,无展开、无 raw 旁路。 */}
+      {/* AC5:redactor 失败的整字段 → 确定「详情已隐藏」,无 raw 旁路。 */}
       <Show when={body().type === "hidden"}>
-        <div class="a-tc-body">
-          <div class="a-tc-out" data-alpha-details-hidden>
-            {t("alpha.timeline.detailsHidden")}
-          </div>
+        <div class="a-tc-out" data-alpha-details-hidden>
+          {t("alpha.timeline.detailsHidden")}
         </div>
       </Show>
-      <Show
-        when={errorBody()}
-        fallback={
-          <Show when={hasBody() && open()}>
-            <div class="a-tc-body">
-              <CardBody head={head()} body={body()} />
-            </div>
-          </Show>
-        }
-      >
+      <Show when={hasBody()}>
+        <CardBody head={head()} body={body()} />
+      </Show>
+      <Show when={errorBody()}>
         {(err) => (
-          <div class="a-tc-body">
-            <div class="a-tc-err" role="alert">
-              <ToolErrorHead message={err().message} />
-              <Show when={open()}>
-                <div class="a-tc-error-body">
-                  {err().message}
-                  <Show when={err().truncated}>
-                    <TruncatedNote />
-                  </Show>
-                </div>
+          <div class="a-tc-err" role="alert">
+            <ToolErrorHead message={err().message} />
+            <div class="a-tc-error-body">
+              {err().message}
+              <Show when={err().truncated}>
+                <TruncatedNote />
               </Show>
             </div>
           </div>
@@ -762,9 +627,9 @@ export function TimelineToolCard(props: { part: ToolPart }) {
           </Show>
         </div>
       </Show>
-      {/* #587 开发者详情(AC3/AC4):technical-id / canonical identity / authority
-          证明只在这里;默认折叠(原生 details 无 open 属性),纯文本、已限长,
-          不参与任何授权/策略/计费判定(cards-contract 的 import 面棘轮钉着)。 */}
+      {/* #587 开发者详情(AC3/AC4):technical-id / canonical identity / authority 证明只在这里,
+          且只在详情底部;默认折叠(原生 details 无 open 属性),纯文本、已限长,不参与任何
+          授权/策略/计费判定(cards-contract 的 import 面棘轮钉着)。 */}
       <Show when={dev()}>
         {(info) => (
           <details class="a-tc-dev" data-alpha-dev-details>
@@ -777,7 +642,7 @@ export function TimelineToolCard(props: { part: ToolPart }) {
           </details>
         )}
       </Show>
-    </section>
+    </div>
   )
 }
 
@@ -833,66 +698,6 @@ export function TurnDiffSummaryRow(props: { row: Extract<TimelineRow, { kind: "d
           <Show when={props.row.truncated}>
             <TruncatedNote />
           </Show>
-        </div>
-      </Show>
-    </section>
-  )
-}
-
-// ── 「已探索」折叠组 ────────────────────────────────────────────────────────
-export function ContextToolGroupCard(props: { parts: ToolPart[] }) {
-  const [open, setOpen] = createSignal(false)
-  const summary = createMemo(() => contextGroupSummaryOf(props.parts))
-  const summaryText = () => {
-    const value = summary()
-    const segments: string[] = []
-    if (value.reads > 0) segments.push(t("alpha.timeline.exploreReads", { count: value.reads }))
-    if (value.searches > 0) segments.push(t("alpha.timeline.exploreSearches", { count: value.searches }))
-    if (value.lists > 0) segments.push(t("alpha.timeline.exploreLists", { count: value.lists }))
-    return segments.join(" · ")
-  }
-  return (
-    <section class="a-tl-row a-explore" data-alpha-timeline-row="toolgroup" data-open={open() ? "true" : undefined}>
-      <button type="button" class="a-explore-head" aria-expanded={open()} onClick={() => setOpen((value) => !value)}>
-        <span class="a-explore-ico" aria-hidden="true">
-          {icons("read")}
-        </span>
-        <span class="a-explore-label">{t("alpha.timeline.explored")}</span>
-        <span class="a-explore-count">· {summaryText()}</span>
-        {chevron()}
-      </button>
-      <Show when={open()}>
-        <div class="a-explore-body">
-          <For each={props.parts}>
-            {(part) => {
-              const row = () => contextRowOf(part)
-              return (
-                <div class="a-explore-row" data-tool={cappedItem(part.tool)}>
-                  {/* #879:图标与动词按 identity 分派的 kind,不再按裸别名。 */}
-                  <span class="a-explore-ri" data-kind={row().kind} aria-hidden="true">
-                    {icons(row().kind)}
-                  </span>
-                  <span class="a-explore-verb" data-kind={row().kind}>
-                    <Show when={row().titleKey} fallback={row().tool}>
-                      {t(row().titleKey! as Parameters<typeof t>[0])}
-                    </Show>
-                  </span>
-                  <Show when={row().target}>
-                    <span class="a-explore-target">{row().target}</span>
-                  </Show>
-                  {/* #934 Minor:折叠组行的目标/include 脱敏失败 → 确定标记,不凭空消失(AC5)。 */}
-                  <Show when={row().targetHidden}>
-                    <span class="a-explore-arg" data-alpha-details-hidden>
-                      {t("alpha.timeline.detailsHidden")}
-                    </span>
-                  </Show>
-                  <Show when={row().args.length > 0}>
-                    <span class="a-explore-arg">{row().args.join(" ")}</span>
-                  </Show>
-                </div>
-              )
-            }}
-          </For>
         </div>
       </Show>
     </section>

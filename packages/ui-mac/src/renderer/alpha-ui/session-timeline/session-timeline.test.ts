@@ -40,7 +40,7 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // #1214 AC2:审批超时呈现 —— mcp 降级卡出「审批已超时,未获批准」,普通错误不冒充(59 → 60)。
     // `#1382`:围栏拒绝在回合级错误卡上的归因 + 其控制臂(非围栏失败文案不变)(60 → 62)。
     // `#1399`:回合脚行 —— 运行面 / 等你面两种触发 / 播报预算 / 四种结局同帧让位(62 → 66)。
-    expect(output).toContain("66 pass")
+    expect(output).toContain("68 pass")
     expect(output).toContain("0 fail")
   })
 })

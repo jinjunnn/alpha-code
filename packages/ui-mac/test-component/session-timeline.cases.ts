@@ -190,7 +190,40 @@ function mount() {
   return host
 }
 
+/**
+ * `#1473`:工具调用收进工作过程。打开每个回合的工作过程摘要(已开的不动),
+ * 让步骤行进入 DOM;单步详情由 openStep 按需打开。
+ */
+async function openProcess(host: Element) {
+  for (const summary of host.querySelectorAll<HTMLButtonElement>(".a-tl-pf-sum[aria-expanded='false']")) summary.click()
+  await flush()
+}
+
+/** 打开一个条目(一次工具调用)的详情:点它自己的步骤行。已开的不动。 */
+async function openStep(item: Element) {
+  const line = item.querySelector<HTMLButtonElement>(":scope > .a-tl-pf-step")!
+  if (line.getAttribute("aria-expanded") !== "true") line.click()
+  await flush()
+}
+
+/** 打开工作过程 + 每个合并组 + 每个条目的详情(安全断言要看到全部可见内容)。 */
+async function openAll(host: Element) {
+  await openProcess(host)
+  for (const group of host.querySelectorAll<HTMLButtonElement>("[data-alpha-process-step='toolgroup'][aria-expanded='false']"))
+    group.click()
+  await flush()
+  for (const item of host.querySelectorAll("[data-alpha-tool-card]")) await openStep(item)
+}
+
 type Fixture = Parameters<typeof model.projectTimelineRows>[0]
+
+/** conversationRows 里那段思考(工作过程的第一步)—— 用例就地改它的正文 / 时间。 */
+function reasoningPartOf(rows: ReturnType<typeof model.projectTimelineRows>) {
+  for (const row of rows)
+    if (row.kind === "process")
+      for (const step of row.steps) if (step.kind === "reasoning") return step.parts[0]!
+  throw new Error("reasoning fixture missing")
+}
 
 function conversationRows(status = "idle") {
   const fixture: Fixture = {
@@ -328,7 +361,7 @@ describe("REQ-125 C5 会话内空态", () => {
 })
 
 describe("REQ-125 C5 行 → DOM:文本类组件", () => {
-  test("完整回合:用户气泡(提及/附件卡/评论卡)+ 推理块 + Markdown 引擎行 + 工具占位行 + 回合分隔", async () => {
+  test("完整回合:用户气泡(提及/附件卡/评论卡)+ 一行工作过程 + Markdown 回答 + 回合分隔", async () => {
     const host = mount()
     runtime.setTimelineRows(conversationRows())
     await flush()
@@ -336,7 +369,7 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     const kinds = [...host.querySelectorAll("[data-alpha-timeline-row]")].map((el) =>
       el.getAttribute("data-alpha-timeline-row"),
     )
-    expect(kinds).toEqual(["user", "reasoning", "tool", "markdown", "footnote", "turn", "user"])
+    expect(kinds).toEqual(["user", "process", "markdown", "footnote", "turn", "user"])
 
     const bubble = host.querySelector(".a-tl-bubble")!
     expect(bubble.textContent).toContain("对照 README.md 改一版")
@@ -354,7 +387,15 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     const markdown = host.querySelector("[data-alpha-timeline-row='markdown'] [data-md-stub]")!
     expect(markdown.textContent).toBe("**发现**:结构完好")
 
-    const toolCard = host.querySelector("[data-alpha-timeline-row='tool']")!
+    // 历史回合的工作过程默认收起:回答前只有这一行;点开后每步一行。
+    const process = host.querySelector("[data-alpha-timeline-row='process']")!
+    expect(process.querySelector(".a-tl-pf-list")).toBeNull()
+    await openProcess(host)
+    const steps = [...process.querySelectorAll("[data-alpha-process-step]")].map((el) =>
+      el.getAttribute("data-alpha-process-step"),
+    )
+    expect(steps).toEqual(["reasoning", "tool"])
+    const toolCard = process.querySelector("[data-alpha-tool-card]")!
     expect(toolCard.getAttribute("data-tool")).toBe("bash")
     expect(toolCard.getAttribute("data-status")).toBe("running")
     expect(toolCard.textContent).toContain("运行中")
@@ -395,64 +436,61 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     expect(first.querySelector("button[aria-label='复制消息']")).not.toBeNull()
   })
 
-  test("推理块默认折叠并在时长旁显示安全摘要,点击展开正文并回写 aria-expanded", async () => {
+  test("思考步骤默认收起,写「思考 N 秒」与显式小标题,点击展开正文并回写 aria-expanded", async () => {
     const host = mount()
     runtime.setTimelineRows(conversationRows())
     await flush()
+    await openProcess(host)
 
-    const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
+    const head = host.querySelector<HTMLButtonElement>("[data-alpha-process-step='reasoning']")!
     expect(head.getAttribute("aria-expanded")).toBe("false")
-    expect(head.querySelector(".a-tl-reason-duration")!.textContent).toBe("6 秒")
-    expect(head.querySelector(".a-tl-reason-summary")!.textContent).toBe("规划探查顺序")
-    expect(head.textContent).toContain("6 秒·规划探查顺序")
-    expect(host.querySelector(".a-tl-reason-body")).toBeNull()
+    expect(head.querySelector(".a-tl-pf-v")!.textContent).toBe("思考 6 秒")
+    expect(head.querySelector(".a-tl-pf-o")!.textContent).toBe("规划探查顺序")
+    expect(host.querySelector(".a-tl-pf-think")).toBeNull()
 
     head.click()
     await flush()
     expect(head.getAttribute("aria-expanded")).toBe("true")
-    expect(host.querySelector(".a-tl-reason-body")!.textContent).toContain("先列目录看结构")
+    expect(host.querySelector(".a-tl-pf-think")!.textContent).toContain("先列目录看结构")
   })
 
   test("推理正文没有显式摘要时稳定降级为时长,不从正文猜常显文案", async () => {
     const host = mount()
     const rows = conversationRows()
-    const reasoning = rows.find((row) => row.kind === "reasoning")
-    if (!reasoning || reasoning.kind !== "reasoning") throw new Error("reasoning fixture missing")
-    reasoning.part.text = "先列目录看结构,再读 README 抓事实。"
+    reasoningPartOf(rows).text = "先列目录看结构,再读 README 抓事实。"
     runtime.setTimelineRows(rows)
     await flush()
+    await openProcess(host)
 
-    const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
-    expect(head.querySelector(".a-tl-reason-duration")!.textContent).toBe("6 秒")
-    expect(head.querySelector(".a-tl-reason-summary")).toBeNull()
-    expect(head.querySelector(".a-tl-reason-separator")).toBeNull()
+    const head = host.querySelector<HTMLButtonElement>("[data-alpha-process-step='reasoning']")!
+    expect(head.querySelector(".a-tl-pf-v")!.textContent).toBe("思考 6 秒")
+    expect(head.querySelector(".a-tl-pf-o")).toBeNull()
     expect(head.textContent).not.toContain("先列目录")
   })
 
   test("推理时长缺席但完成态有起始摘要时只显示摘要,不显示分隔点", async () => {
     const host = mount()
     const rows = conversationRows()
-    const reasoning = rows.find((row) => row.kind === "reasoning")
-    if (!reasoning || reasoning.kind !== "reasoning") throw new Error("reasoning fixture missing")
-    reasoning.part.time = { start: 0 }
+    reasoningPartOf(rows).time = { start: 0 }
     runtime.setTimelineRows(rows)
     await flush()
+    await openProcess(host)
 
-    const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
-    expect(head.querySelector(".a-tl-reason-summary")!.textContent).toBe("规划探查顺序")
-    expect(head.querySelector(".a-tl-reason-duration")).toBeNull()
-    expect(head.querySelector(".a-tl-reason-separator")).toBeNull()
+    const head = host.querySelector<HTMLButtonElement>("[data-alpha-process-step='reasoning']")!
+    expect(head.querySelector(".a-tl-pf-o")!.textContent).toBe("规划探查顺序")
+    expect(head.querySelector(".a-tl-pf-v")!.textContent).toBe("思考")
   })
 
-  test("流式回合:末段 Markdown 带光标,推理块进行中标记,busy 空输出显示思考中", async () => {
+  test("流式回合:末段 Markdown 带光标,工作过程默认展开、思考步骤进行中标记且不露小标题,busy 空输出显示回合脚行", async () => {
     const host = mount()
     runtime.setTimelineRows(conversationRows("busy"))
     await flush()
 
     expect(host.querySelector("[data-alpha-timeline-row='markdown'][data-streaming='true']")).not.toBeNull()
     expect(host.querySelector(".a-tl-cursor")).not.toBeNull()
-    expect(host.querySelector(".a-tl-reason[data-streaming='true']")).not.toBeNull()
-    expect(host.querySelector(".a-tl-reason-summary")).toBeNull()
+    const thinking = host.querySelector("[data-alpha-process-step='reasoning'][data-streaming='true']")!
+    expect(thinking.querySelector(".a-tl-pf-v")!.textContent).toBe("正在思考…")
+    expect(thinking.querySelector(".a-tl-pf-o")).toBeNull()
 
     runtime.setTimelineRows(
       model.projectTimelineRows({
@@ -815,9 +853,12 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     runtime.setTimelineRows(assistantFixture([toolPartFixture("prt_b1", "bash", state as never)], "busy"))
     await flush()
 
+    // 回合在跑:工作过程默认展开;正在跑的那一步默认展开,终端输出照常实时可见。
     const card = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
     expect(card.getAttribute("data-status")).toBe("running")
     expect(card.getAttribute("data-open")).toBe("true")
+    expect(card.querySelector(".a-tl-pf-v")!.textContent).toBe("运行命令")
+    expect(card.querySelector(".a-tl-pf-end")!.textContent).toContain("运行中")
     const term = card.querySelector(".a-tc-term")!
     expect(term.textContent).toContain("$ bun test src")
     expect(term.textContent).toContain("✓ one")
@@ -825,25 +866,32 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(card.textContent).toContain("跑一遍单元测试")
     const cardBefore = card
 
-    // 流式增行:同一 store proxy 的 delta,不重建卡 DOM。
+    // 流式增行:同一 store proxy 的 delta,不重建条目 DOM。
     setState("metadata", { output: "✓ one\n✓ two\n" } as never)
     await flush()
     expect(host.querySelector("[data-alpha-tool-card][data-tool='bash']")).toBe(cardBefore)
     expect(card.querySelector(".a-tc-term")!.textContent).toContain("✓ two")
 
-    // 完成:退出 0 徽标,光标消失,输出定格(卡片本体不换 —— 行 rev 稳定)。
+    // 完成:成功不挂状态(不再写「退出 0」),光标消失;回合结束后工作过程收起,
+    // 打开后这一步回到收起态,点开详情输出定格。
     setState("status", "completed" as never)
     setState("metadata", { output: "✓ one\n✓ two\n", exit: 0 } as never)
     setState("output" as never, "✓ one\n✓ two\n2 pass" as never)
     runtime.setTimelineRows(assistantFixture([toolPartFixture("prt_b1", "bash", state as never)], "idle"))
     await flush()
+    expect(host.querySelector("[data-alpha-tool-card][data-tool='bash']")).toBeNull()
+    await openProcess(host)
     const done = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
     expect(done.getAttribute("data-status")).toBe("success")
-    expect(done.textContent).toContain("退出 0")
+    expect(done.getAttribute("data-open")).toBeNull()
+    await openStep(done)
+    expect(done.textContent).not.toContain("退出 0")
+    expect(done.querySelector(".a-tl-pf-end")!.textContent).not.toContain("完成")
+    expect(done.querySelector(".a-tc-term")!.textContent).toContain("2 pass")
     expect(done.querySelector(".a-tc-cursor")).toBeNull()
   })
 
-  test("#879 metadata-only 降级卡:第三方 MCP / 历史行只有来源分类+名称+状态,无 body 无展开;error 正文也不显示", async () => {
+  test("#879 metadata-only 降级步骤:第三方 MCP / 历史行只有来源分类+名称(+失败),详情里也没有 body;error 正文也不显示", async () => {
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -893,12 +941,12 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    // 详情全部打开:即便如此,输入 / 输出 / 错误也一个字都不进 DOM。
+    await openAll(host)
 
     const mcpCard = host.querySelector("[data-alpha-tool-card][data-category='mcp']")!
-    expect(mcpCard.textContent).toContain("第三方 MCP 工具")
-    expect(mcpCard.querySelector(".a-tc-name")!.textContent).toBe("resolve-library-id")
-    expect(mcpCard.getAttribute("data-open")).toBeNull()
-    // 无展开体、无按钮头(没有可展开的东西)。
+    expect(mcpCard.querySelector(".a-tl-pf-v")!.textContent).toBe("第三方 MCP 工具")
+    expect(mcpCard.querySelector(".a-tl-pf-o")!.textContent).toBe("resolve-library-id · context7")
     expect(mcpCard.querySelector(".a-tc-out")).toBeNull()
     expect(mcpCard.textContent).not.toContain("raw output text")
     expect(mcpCard.textContent).not.toContain("solid")
@@ -906,7 +954,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     const legacy = host.querySelector("[data-alpha-tool-card][data-category='unknown']")!
     expect(legacy.textContent).toContain("未知来源的工具")
     expect(legacy.getAttribute("data-status")).toBe("error")
-    expect(legacy.textContent).toContain("失败")
+    expect(legacy.querySelector("[data-alpha-step-failure]")!.textContent).toBe("没成功")
     expect(legacy.querySelector(".a-tc-err")).toBeNull()
     expect(legacy.textContent).not.toContain("ENOTREACHABLE")
 
@@ -918,7 +966,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(impostor.querySelector(".a-tc-term")).toBeNull()
   })
 
-  test("#587 Alpha Cloud 专用卡:中文标题+关键目标+云端徽标+状态;technical-id 只在默认折叠的开发者详情(T8)", async () => {
+  test("#587 Alpha Cloud 专用步骤:中文动作+关键目标,无常驻来源徽标与成功状态;technical-id 只在详情底部默认折叠的开发者详情(T8)", async () => {
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -952,42 +1000,45 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
-    // 完成态 web search:owner 已批行形态 = 图标 + 网页搜索 + "query" + 云端 + 完成。
+    // 完成态 web search(design ⑧):图标 + 网页搜索 + "query";来源徽标与「完成」都不再常驻。
     const search = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_web_search']")!
     expect(search.getAttribute("data-kind")).toBe("cloud")
     expect(search.getAttribute("data-category")).toBe("alpha-cloud")
-    expect(search.querySelector(".a-tc-title b")!.textContent).toBe("网页搜索")
-    expect(search.querySelector(".a-tc-target")!.textContent).toBe("alpha-code e7 部署证据")
-    expect(search.querySelector("[data-alpha-source-badge]")!.textContent).toBe("云端")
-    expect(search.querySelector(".a-tc-status")!.textContent).toContain("完成")
-    // T8:主层级(头部行)拿不到任何一层技术 id;它们只活在默认折叠的开发者详情里。
-    const headText = search.querySelector(".a-tc-head")!.textContent!
+    expect(search.querySelector(".a-tl-pf-v")!.textContent).toBe("网页搜索")
+    expect(search.querySelector(".a-tl-pf-o")!.textContent).toBe("alpha-code e7 部署证据")
+    expect(search.querySelector("[data-alpha-source-badge]")).toBeNull()
+    expect(search.querySelector(".a-tl-pf-end")!.textContent).not.toContain("完成")
+    expect(search.querySelector("[data-alpha-dev-details]")).toBeNull()
+    // T8:步骤行拿不到任何一层技术 id;它们只活在详情底部默认折叠的开发者详情里。
+    const headText = search.querySelector(".a-tl-pf-step")!.textContent!
     expect(headText).not.toContain("cloud_cloud_web_search")
     expect(headText).not.toContain("cloud_web_search")
+    await openStep(search)
+    const detail = search.querySelector("[data-alpha-step-detail]")!
+    expect(detail.lastElementChild!.hasAttribute("data-alpha-dev-details")).toBe(true)
     const dev = search.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!
     expect(dev.open).toBe(false)
     expect(dev.querySelector("summary")!.textContent).toBe("开发者详情")
     expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("cloud_cloud_web_search")
     expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("mcp:cloud:cloud_web_search")
-    // 链接体:URL 过 redactor 后可点(matched 云卡有 body;默认折叠与否不影响存在性)。
+    // 链接体:URL 过 redactor 后可点(matched 云卡有 body)。
     // #586 起链接行 = 富链接形态(字母徽 + 域名),云卡与 builtin websearch 同一管线。
-    ;(search.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
     const links = [...search.querySelectorAll(".a-tc-wr")].map((node) => node.getAttribute("href"))
     expect(links).toEqual(["https://docs.example.org/deploy", "https://blog.example.net/e7"])
 
     // 运行态 await:同一形态的语义标题 + 关键目标 + 运行中;绝不显示拼接 id。
     const awaiting = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_await']")!
     expect(awaiting.getAttribute("data-status")).toBe("running")
-    expect(awaiting.querySelector(".a-tc-title b")!.textContent).toBe("等待云端任务")
-    expect(awaiting.querySelector(".a-tc-target")!.textContent).toBe("run_77bd")
-    expect(awaiting.querySelector("[data-alpha-source-badge]")!.textContent).toBe("云端")
-    expect(awaiting.querySelector(".a-tc-status")!.textContent).toContain("运行中")
-    expect(awaiting.querySelector(".a-tc-head")!.textContent).not.toContain("cloud_cloud_await")
+    expect(awaiting.querySelector(".a-tl-pf-v")!.textContent).toBe("等待云端任务")
+    expect(awaiting.querySelector(".a-tl-pf-o")!.textContent).toBe("run_77bd")
+    expect(awaiting.querySelector("[data-alpha-source-badge]")).toBeNull()
+    expect(awaiting.querySelector(".a-tl-pf-end")!.textContent).toContain("运行中")
+    expect(awaiting.querySelector(".a-tl-pf-step")!.textContent).not.toContain("cloud_cloud_await")
   })
 
-  test("#587 全来源徽标 + 安全通用卡:降级卡陈述确定的隐藏理由,matched 卡没有安全卡", async () => {
+  test("#587 来源呈现 + 安全通用卡:常驻徽标退场,降级步骤写来源分类、详情陈述确定的隐藏理由,matched 步骤没有安全卡", async () => {
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -1046,19 +1097,23 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openAll(host)
+    // design ⑧ 改了 #4:常驻来源徽标整体退场(第三方行内来源的写法归 #1475)。
+    expect(host.querySelector("[data-alpha-source-badge]")).toBeNull()
 
     const builtinCard = host.querySelector("[data-alpha-tool-card][data-category='builtin']")!
-    expect(builtinCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("本机")
+    // 防冒充:我方步骤行永远不写来源分类。
+    expect(builtinCard.querySelector(".a-tl-pf-v")!.textContent).toBe("运行命令")
     expect(builtinCard.querySelector("[data-alpha-safe-card]")).toBeNull()
 
     const mcpCard = host.querySelector("[data-alpha-tool-card][data-category='mcp']")!
-    expect(mcpCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("第三方 MCP")
+    expect(mcpCard.querySelector(".a-tl-pf-v")!.textContent).toBe("第三方 MCP 工具")
     const mcpSafe = mcpCard.querySelector("[data-alpha-safe-card]")!
     expect(mcpSafe.textContent).toContain("详情未展示")
     expect(mcpSafe.textContent).toContain("没有命中 Code Puppy 拥有的展示规则")
 
     const unknownCard = host.querySelector("[data-alpha-tool-card][data-category='unknown']")!
-    expect(unknownCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("未知来源")
+    expect(unknownCard.querySelector(".a-tl-pf-v")!.textContent).toBe("未知来源的工具")
     const unknownSafe = unknownCard.querySelector("[data-alpha-safe-card]")!
     expect(unknownSafe.textContent).toContain("错误详情已隐藏")
     expect(unknownSafe.textContent).toContain("缺少完整来源快照")
@@ -1067,7 +1122,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(unknownCard.querySelector("[data-alpha-dev-details]")).toBeNull()
 
     const pluginCard = host.querySelector("[data-alpha-tool-card][data-category='plugin']")!
-    expect(pluginCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("插件")
+    expect(pluginCard.querySelector(".a-tl-pf-v")!.textContent).toBe("插件工具")
     expect(pluginCard.querySelector("[data-alpha-safe-card]")!.textContent).toContain("详情未展示")
     // 降级卡的开发者详情仍保留排障能力(AC4):快照在场即陈列,默认折叠。
     const pluginDev = pluginCard.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!
@@ -1110,9 +1165,13 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const timeoutCard = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_web_search']")!
     expect(timeoutCard.getAttribute("data-status")).toBe("error")
+    // 步骤行尾就写「审批已超时」,不用点开也读得出来;详情里再给完整的人话。
+    expect(timeoutCard.querySelector("[data-alpha-step-failure]")!.textContent).toBe("审批已超时,未获批准")
+    await openAll(host)
     const timeoutSafe = timeoutCard.querySelector("[data-alpha-safe-card]")!
     // 可辨识原因:包含「已超时」与「未获批准」两类词,替换回通用失败文案即红(#1214 AC2 变异判据)。
     expect(timeoutSafe.textContent).toContain("审批已超时,未获批准")
@@ -1147,16 +1206,17 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const card = host.querySelector("[data-alpha-tool-card][data-tool='list']")!
-    // 头部:路径折叠 home 前缀(基线明令不显示带用户名的 home 前缀);状态徽标 = 计数。
-    expect(card.querySelector(".a-tc-target")!.textContent).toBe("~/proj/site")
+    // 步骤行:路径折叠 home 前缀(基线明令不显示带用户名的 home 前缀);成功不挂状态,
+    // 计数只在详情 footer 里说一次(design §6「每样信息只出现一次」)。
+    expect(card.querySelector(".a-tl-pf-o")!.textContent).toBe("~/proj/site")
     expect(card.textContent).not.toContain("/Users/")
-    expect(card.querySelector(".a-tc-status")!.textContent).toBe("共 5 项")
+    expect(card.querySelector(".a-tl-pf-end")!.textContent).toBe("")
 
-    // 展开体:网格分类渲染,目录先于文件各带图标,footer 复述计数。
-    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    // 详情:网格分类渲染,目录先于文件各带图标,footer 写计数。
+    await openStep(card)
     const grid = card.querySelector("[data-alpha-dir-grid]")!
     const dirs = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='dir']")].map((node) => node.textContent)
     const files = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='file']")].map((node) => node.textContent)
@@ -1183,12 +1243,11 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const card = host.querySelector("[data-alpha-tool-card][data-tool='list']")!
-    // 头部:计数诚实缺席,退回「完成」(#583 既有规则,这里当对照锚)。
-    expect(card.querySelector(".a-tc-status")!.textContent).toBe("完成")
-    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    expect(card.querySelector(".a-tl-pf-end")!.textContent).toBe("")
+    await openStep(card)
 
     const grid = card.querySelector("[data-alpha-dir-grid]")!
     // 先证明这不是空卡/未截断卡:首项在、末项(mod-62.ts)被帽掉 —— 判据不依赖帽的具体数值。
@@ -1243,15 +1302,14 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
-    // 用户可观察结果:铸出来的是目录网格卡(列目录语义),不是 read 文件卡。
+    // 用户可观察结果:铸出来的是目录网格(列目录语义),不是 read 文件详情。
     const card = host.querySelector("[data-alpha-tool-card][data-tool='read']")!
-    expect(card.querySelector(".a-tc-title b")!.textContent).toBe("列出目录")
-    expect(card.querySelector(".a-tc-target")!.textContent).toBe("~/lab/ops-kit")
+    expect(card.querySelector(".a-tl-pf-v")!.textContent).toBe("列出目录")
+    expect(card.querySelector(".a-tl-pf-o")!.textContent).toBe("~/lab/ops-kit")
     expect(card.textContent).not.toContain("/Users/")
-    expect(card.querySelector(".a-tc-status")!.textContent).toBe("共 7 项")
-    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    await openStep(card)
     const grid = card.querySelector("[data-alpha-dir-grid]")!
     const dirs = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='dir']")].map((node) => node.textContent)
     const files = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='file']")].map((node) => node.textContent)
@@ -1291,9 +1349,10 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openAll(host)
 
     const card = host.querySelector("[data-alpha-tool-card][data-tool='read']")!
-    expect(card.querySelector(".a-tc-title b")!.textContent).toBe("读取")
+    expect(card.querySelector(".a-tl-pf-v")!.textContent).toBe("读取")
     expect(card.querySelector("[data-alpha-dir-grid]")).toBeNull()
     expect(card.textContent).not.toContain("项")
   })
@@ -1319,11 +1378,12 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const card = host.querySelector("[data-alpha-tool-card][data-tool='grep']")!
-    expect(card.querySelector(".a-tc-status")!.textContent).toBe("2 处命中")
-    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    // 成功不挂状态:「2 处命中」不再上步骤行,命中内容在详情里。
+    expect(card.querySelector(".a-tl-pf-end")!.textContent).toBe("")
+    await openStep(card)
     const body = card.querySelector("[data-alpha-grep-body]")!
     // 文件行分色 + 路径脱敏(home 前缀折叠)。
     expect(body.querySelector(".a-tc-grep-file")!.textContent).toBe("~/proj/wrangler.toml")
@@ -1348,8 +1408,9 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openAll(host)
     const hiddenCard = host.querySelector("[data-alpha-tool-card][data-tool='grep']")!
-    expect(hiddenCard.querySelector("[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+    expect(hiddenCard.querySelector("[data-alpha-step-detail] [data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
     expect(hiddenCard.querySelector("[data-alpha-grep-body]")).toBeNull()
     expect(hiddenCard.textContent).not.toContain("vault.ts")
   })
@@ -1374,15 +1435,15 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const card = host.querySelector("[data-alpha-tool-card][data-tool='websearch']")!
-    // 头部:query 目标 + 「N 条结果」;供应商名(Exa)不在基线白名单,任何位置都不显示。
-    expect(card.querySelector(".a-tc-target")!.textContent).toBe("solid-js loading a11y")
-    expect(card.querySelector(".a-tc-status")!.textContent).toBe("2 条结果")
+    // 步骤行:query 目标;成功不挂「N 条结果」;供应商名(Exa)不在基线白名单,任何位置都不显示。
+    expect(card.querySelector(".a-tl-pf-o")!.textContent).toBe("solid-js loading a11y")
+    expect(card.querySelector(".a-tl-pf-end")!.textContent).toBe("")
+    await openStep(card)
     expect(card.textContent).not.toContain("Exa")
     expect(card.textContent).not.toContain("exa")
-    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
 
     // 富链接行:字母徽是纯文本首字母块(非 favicon,零 <img>、零远端请求面)。
     const rows = [...card.querySelectorAll(".a-tc-wr")]
@@ -1406,7 +1467,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     })
   })
 
-  test("#586 websearch 卡:结构化结果缺 url 键被丢掉时出缺席提示 —— 头部条数低报不得静默", async () => {
+  test("#586 websearch 详情:结构化结果缺 url 键被丢掉时出缺席提示 —— 条数低报不得静默", async () => {
     const host = mount()
     // 引擎回了 4 条,其中一条没有 url 键(不可信 payload 的常态)。渲染得出的只有 3 条,
     // 头部就只能说 3 —— 那么这张卡必须同时带缺席提示,否则用户读到的是「一共就 3 条」。
@@ -1430,11 +1491,10 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const card = host.querySelector("[data-alpha-tool-card][data-tool='websearch']")!
-    expect(card.querySelector(".a-tc-status")!.textContent).toBe("3 条结果")
-    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    await openStep(card)
 
     const links = card.querySelector(".a-tc-links")!
     expect(links.querySelectorAll(".a-tc-wr")).toHaveLength(3)
@@ -1443,7 +1503,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(links.querySelector(".a-tc-truncated")!.textContent).toBe("内容过长,已截断展示")
   })
 
-  test("工具级错误卡(matched 卡):标题行 + 复制常驻;超帽错误默认收起;错误体先过 redactor", async () => {
+  test("工具级错误(matched 步骤):行尾写人话、失败不自动展开;详情里标题行 + 复制 + 正文;错误体先过 redactor", async () => {
     // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
     const copied: string[] = []
     Object.defineProperty(window.navigator, "clipboard", {
@@ -1493,21 +1553,24 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const failed = host.querySelector("[data-alpha-tool-card][data-tool='grep']")!
+    // 失败不自动展开(design ⑦「中途某步失败,回合成功 —— 不自动展开」);行尾用人话。
+    expect(failed.getAttribute("data-open")).toBeNull()
+    expect(failed.querySelector("[data-alpha-step-failure]")!.textContent).toBe("没成功")
+    expect(failed.querySelector(".a-tl-pf-step")!.getAttribute("data-tone")).toBe("warn")
+    expect(failed.textContent).not.toContain("ENOTREACHABLE")
+    await openAll(host)
     expect(failed.getAttribute("data-open")).toBe("true")
     expect(failed.querySelector(".a-tc-error-body")!.textContent).toContain("ENOTREACHABLE")
-    expect(failed.textContent).toContain("失败")
-    // 错误卡标题统一为「工具执行失败」,没有分类、没有编造的错误代码副标。
+    // 错误标题统一为「工具执行失败」,没有分类、没有编造的错误代码副标。
     expect(failed.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
     expect(failed.querySelector(".a-tc-err-code")).toBeNull()
 
     const bigError = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
     expect(bigError.getAttribute("data-status")).toBe("error")
-    expect(bigError.getAttribute("data-open")).toBeNull()
-    // R1 Major:超帽错误默认收起时,标题行与复制钮**常驻可见**,收起只藏 mono 正文。
     expect(bigError.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
-    expect(bigError.querySelector(".a-tc-error-body")).toBeNull()
     const bigCopy = bigError.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
     bigCopy.click()
     await flush()
@@ -1515,9 +1578,6 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(copied).toHaveLength(1)
     expect(copied[0]!.length).toBeLessThanOrEqual(4_000)
     expect(copied[0]!.startsWith("EEEE")).toBe(true)
-    ;(bigError.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
-    expect(bigError.getAttribute("data-open")).toBe("true")
     expect(bigError.querySelector(".a-tc-error-body")!.textContent).toContain("EEEE")
 
     // R3 Blocker 反例:网关味最浓的 task 错误(代理 baseURL/模型 ID/Not Found)
@@ -1586,33 +1646,32 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
+    // 改动增删数是内容不是状态:留在步骤行尾。
     const edit = host.querySelector("[data-alpha-tool-card][data-kind='edit']")!
-    expect(edit.textContent).toContain("+1")
-    expect(edit.textContent).toContain("−1")
-    ;(edit.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    expect(edit.querySelector(".a-tl-pf-end")!.textContent).toContain("+1")
+    expect(edit.querySelector(".a-tl-pf-end")!.textContent).toContain("−1")
+    await openStep(edit)
     const diffKinds = [...edit.querySelectorAll(".a-tc-diff-line")].map((el) => el.getAttribute("data-kind"))
     expect(diffKinds).toEqual(["context", "del", "add"])
     expect(edit.querySelector(".a-tc-diff-line[data-kind='add']")!.textContent).toContain("hello world")
 
     const write = host.querySelector("[data-alpha-tool-card][data-kind='write']")!
-    expect(write.textContent).toContain("+4")
-    ;(write.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    expect(write.querySelector(".a-tl-pf-end")!.textContent).toContain("+4")
+    await openStep(write)
     expect(write.querySelector(".a-tc-out")!.textContent).toContain("# AGENTS.md")
     expect(write.querySelector(".a-tc-write-note")!.textContent).toContain("4")
 
     const patch = host.querySelector("[data-alpha-tool-card][data-kind='apply_patch']")!
-    ;(patch.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    await openStep(patch)
     const badges = [...patch.querySelectorAll(".a-tc-badge")].map((el) => el.getAttribute("data-badge"))
     expect(badges).toEqual(["add", "delete"])
     expect(patch.textContent).toContain("新增")
     expect(patch.textContent).toContain("删除")
   })
 
-  test("task v2 卡:agent 色点 + 运行环 + 打开子会话经 openSession intent;intent 缺席无按钮", async () => {
+  test("task 步骤:运行中详情默认展开,「打开子会话」经 openSession intent;intent 缺席无按钮", async () => {
     const host = mount()
     runtime.setTimelineIntentsEnabled(true)
     const taskPart = toolPartFixture("prt_t1", "task", {
@@ -1625,8 +1684,9 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     await flush()
 
     const card = host.querySelector("[data-alpha-tool-card][data-kind='task']")!
-    expect(card.querySelector(".a-tc-agent")!.textContent).toContain("general")
-    expect(card.querySelector(".a-tc-ring")).not.toBeNull()
+    expect(card.querySelector(".a-tl-pf-v")!.textContent).toBe("子任务")
+    expect(card.querySelector(".a-tl-pf-o")!.textContent).toBe("校验 AGENTS.md")
+    expect(card.querySelector(".a-tl-pf-end")!.textContent).toContain("运行中")
     const open = card.querySelector(".a-tc-open") as HTMLButtonElement
     expect(open.textContent).toContain("打开子会话")
     open.click()
@@ -1637,7 +1697,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(host.querySelector(".a-tc-open")).toBeNull()
   })
 
-  test("read 列表行带「读取」徽章;write 预览带「写入」徽章行;大输出 bash 默认收起(I7)", async () => {
+  test("read 列表行带「读取」徽章;write 预览带「写入」徽章行;已完成步骤的详情都默认收起(I7)", async () => {
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -1668,39 +1728,38 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       ]),
     )
     await flush()
+    await openProcess(host)
 
     const read = host.querySelector("[data-alpha-tool-card][data-kind='read']")!
-    ;(read.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    await openStep(read)
     const readBadges = [...read.querySelectorAll(".a-tc-badge")].map((el) => el.getAttribute("data-badge"))
     expect(readBadges).toEqual(["read", "read"])
     expect(read.querySelector(".a-tc-badge")!.textContent).toBe("读取")
 
     const write = host.querySelector("[data-alpha-tool-card][data-kind='write']")!
-    ;(write.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    await openStep(write)
     const writeBadge = write.querySelector(".a-tc-badge[data-badge='write']")!
     expect(writeBadge.textContent).toBe("写入")
     expect(write.textContent).toContain("NOTES.md")
 
-    // 输出体超过默认展开帽 → 默认收起(用户显式展开仍可用,内容仍有界)。
+    // 已完成的步骤详情不常驻(用户显式展开仍可用,内容仍有界)。
     const bash = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
     expect(bash.getAttribute("data-open")).toBeNull()
-    ;(bash.querySelector(".a-tc-head") as HTMLButtonElement).click()
-    await flush()
+    expect(bash.querySelector(".a-tc-term")).toBeNull()
+    await openStep(bash)
     expect(bash.getAttribute("data-open")).toBe("true")
     expect(bash.querySelector(".a-tc-term")).not.toBeNull()
   })
 })
 
 describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
-  test("「已探索」折叠组:计数条默认折叠,展开出行(动词+目标+参数)", async () => {
+  test("合并组(design ⑧ 第二层):连续同类已完成的步骤合成一行「动作 N 次 + 第一项对象」,点开每项一行、再点一项看详情", async () => {
     const host = mount()
     const completed = (id: string, tool: string, input: Record<string, unknown>) =>
       toolPartFixture(id, tool, {
         status: "completed",
         input,
-        output: "",
+        output: "ok",
         title: tool,
         metadata: {},
         time: { start: 0, end: 1 },
@@ -1708,23 +1767,27 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     runtime.setTimelineRows(
       assistantFixture([
         completed("prt_g1", "read", { filePath: "/a/README.md", limit: 30 }),
-        completed("prt_g2", "grep", { pattern: "image" }),
+        completed("prt_g2", "read", { filePath: "/a/AGENTS.md" }),
+        completed("prt_g3", "grep", { pattern: "image" }),
       ]),
     )
     await flush()
+    await openProcess(host)
 
-    const group = host.querySelector("[data-alpha-timeline-row='toolgroup']")!
-    expect(group.textContent).toContain("已探索")
-    expect(group.textContent).toContain("1 次读取")
-    expect(group.textContent).toContain("1 次搜索")
-    expect(group.querySelector(".a-explore-body")).toBeNull()
-    ;(group.querySelector(".a-explore-head") as HTMLButtonElement).click()
+    const group = host.querySelector("[data-alpha-process-group]")!
+    const line = group.querySelector<HTMLButtonElement>("[data-alpha-process-step='toolgroup']")!
+    expect(line.querySelector(".a-tl-pf-v")!.textContent).toBe("读取 2 次")
+    expect(line.querySelector(".a-tl-pf-o")!.textContent).toBe("README.md")
+    expect(group.querySelector(".a-tl-pf-sublist")).toBeNull()
+    line.click()
     await flush()
-    const rows = [...group.querySelectorAll(".a-explore-row")]
-    expect(rows).toHaveLength(2)
-    expect(rows[0]!.textContent).toContain("README.md")
-    expect(rows[0]!.textContent).toContain("limit=30")
-    expect(rows[1]!.textContent).toContain("image")
+    const items = [...group.querySelectorAll("[data-alpha-tool-card]")]
+    expect(items.map((item) => item.querySelector(".a-tl-pf-o")!.textContent)).toEqual(["README.md", "AGENTS.md"])
+    expect(group.querySelector("[data-alpha-step-detail]")).toBeNull()
+    await openStep(items[1]!)
+    expect(items[1]!.querySelector("[data-alpha-step-detail]")).not.toBeNull()
+    // 不同类的 grep 不并进来,自己一行。
+    expect(host.querySelector("[data-alpha-tool-card][data-kind='grep']")!.closest("[data-alpha-process-group]")).toBeNull()
   })
 
   // ── #934 Minor-2:AC5「详情已隐藏」确定标记的**渲染接线**判据 ──────────────────
@@ -1734,7 +1797,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
   // 或写成 `<Show when={…target}>`,provenance gates 与整包地板**全绿** —— 用户看到的
   // 却是「目标凭空消失」,正是 AC5 要关掉的那个洞。
   // 站点集合用两条互相独立的检索轴交叉枚举(属性 `data-alpha-details-hidden` 与 i18n 键
-  // `alpha.timeline.detailsHidden`),tool-cards.tsx 各命中 6 处 —— 本条逐处钉在 DOM 上。
+  // `alpha.timeline.detailsHidden`),tool-cards.tsx + process-fold.tsx 的站点 —— 本条逐处钉在 DOM 上。
   test("#934 AC5 确定标记的渲染接线:六处脱敏失败站点各出「详情已隐藏」、零原文泄漏;干净输入零标记", async () => {
     const host = mount()
     // 单项帽 TOOL_ITEM_MAX_CHARS=400:不间断 token 超帽 ⇒ 安全切点回看窗内无空白 ⇒ 整字段清空。
@@ -1755,8 +1818,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     const cardOf = (kind: string) => host.querySelector(`[data-alpha-tool-card][data-kind='${kind}']`)!
     const markersIn = (el: Element) => [...el.querySelectorAll("[data-alpha-details-hidden]")]
 
-    // 顺序有讲究:探查类(read/glob/grep/list)连续 ≥2 个才折叠 —— grep 两侧夹着非探查卡
-    // 保持独立卡,末尾两个 read 才成组。
+    // 顺序有讲究:连续同类已完成的步骤才合并 —— 末尾两个 read 合成一组,其余各自一步。
     runtime.setTimelineRows(
       assistantFixture([
         done("prt_hd1", "websearch", { query: UNBROKEN }), // ① head.targetHidden
@@ -1769,38 +1831,38 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
       ]),
     )
     await flush()
+    await openAll(host)
 
-    // ① 目标凭空消失 ⇒ 出确定标记(而不是一片空白)。
+    // ① 步骤行的目标凭空消失 ⇒ 出确定标记(而不是一片空白)。
     const search = cardOf("websearch")
-    expect(search.querySelector(".a-tc-target")).toBeNull()
+    expect(search.querySelector(".a-tl-pf-o:not([data-alpha-details-hidden])")).toBeNull()
     expect(markersIn(search).map((el) => el.textContent)).toEqual(["详情已隐藏"])
 
     // ② 次级细节(grep include)失败,而目标(pattern)干净 —— 两处标记站点在此分得开。
     const grep = cardOf("grep")
-    expect(grep.querySelector(".a-tc-target")!.textContent).toBe("image")
+    expect(grep.querySelector(".a-tl-pf-o")!.textContent).toBe("image")
     expect(markersIn(grep).map((el) => el.textContent)).toEqual(["详情已隐藏"])
 
-    // ③ task 的 agent chip 不凭空消失。
+    // ③ task 的 agent chip 不凭空消失(详情顶部的事实行)。
     expect(cardOf("task").querySelector(".a-tc-agent[data-alpha-details-hidden]")!.textContent).toContain("详情已隐藏")
 
     // ④ bash 命令说明副行。
     expect(cardOf("bash").querySelector(".a-tc-subdesc[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
 
-    // ⑤ 整个输出体隐藏(diff 超帽):常驻标记,无展开、无 raw 旁路。
+    // ⑤ 整个输出体隐藏(diff 超帽):确定标记,无 raw 旁路。
     expect(cardOf("edit").querySelector(".a-tc-out[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
 
-    // ⑥ 折叠组行:目标没了就得说「详情已隐藏」,相邻的干净行照常显示目标。
-    const group = host.querySelector("[data-alpha-timeline-row='toolgroup']")!
-    ;(group.querySelector(".a-explore-head") as HTMLButtonElement).click()
-    await flush()
-    const rows = [...group.querySelectorAll(".a-explore-row")]
-    expect(rows).toHaveLength(2)
-    expect(rows[0]!.querySelector(".a-explore-target")).toBeNull()
-    expect(rows[0]!.querySelector("[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
-    expect(rows[1]!.querySelector(".a-explore-target")!.textContent).toContain("README.md")
+    // ⑥ 合并组:第一项目标没了 ⇒ 组行与该项各说一次「详情已隐藏」,相邻的干净项照常显示目标。
+    const group = host.querySelector("[data-alpha-process-group]")!
+    const groupLine = group.querySelector("[data-alpha-process-step='toolgroup']")!
+    expect(groupLine.querySelector("[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+    const items = [...group.querySelectorAll("[data-alpha-tool-card]")]
+    expect(items).toHaveLength(2)
+    expect(items[0]!.querySelector(".a-tl-pf-step [data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+    expect(items[1]!.querySelector(".a-tl-pf-o")!.textContent).toBe("README.md")
 
-    // 六处站点各一个标记,且被隐藏的原文一个字符都没进 DOM。
-    expect(markersIn(host)).toHaveLength(6)
+    // 每处站点各一个标记(组行另有一个),且被隐藏的原文一个字符都没进 DOM。
+    expect(markersIn(host)).toHaveLength(7)
     expect(host.textContent).not.toContain("S3CR3T")
     expect(host.textContent).not.toContain("zzzz")
 
@@ -1817,17 +1879,14 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
       ]),
     )
     await flush()
-    const cleanGroup = host.querySelector("[data-alpha-timeline-row='toolgroup']")!
-    ;(cleanGroup.querySelector(".a-explore-head") as HTMLButtonElement).click()
-    await flush()
+    await openAll(host)
     expect(markersIn(host)).toHaveLength(0)
-    expect(cardOf("websearch").querySelector(".a-tc-target")!.textContent).toBe("焦点环")
+    expect(cardOf("websearch").querySelector(".a-tl-pf-o")!.textContent).toBe("焦点环")
     expect(cardOf("grep").querySelector(".a-tc-detail")!.textContent).toBe("include=*.tsx")
     expect(cardOf("task").querySelector(".a-tc-agent")!.textContent).toContain("general")
     expect(cardOf("bash").querySelector(".a-tc-subdesc")!.textContent).toBe("跑一遍单元测试")
-    expect(cleanGroup.querySelector(".a-explore-row")!.querySelector(".a-explore-target")!.textContent).toContain(
-      "AGENTS.md",
-    )
+    const cleanGroup = host.querySelector("[data-alpha-process-group]")!
+    expect(cleanGroup.querySelector("[data-alpha-tool-card] .a-tl-pf-o")!.textContent).toBe("AGENTS.md")
   })
 
   test("回合级错误卡:全宽纯文本无动作,与工具级错误卡分离;重试卡显示第 N 次", async () => {
@@ -2093,7 +2152,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
 // ═══════════════ #568 — 富脚注 / pill / 斜杠 chip / 诊断行 / 改动汇总 ═══════════════
 
 describe("#568 回合末富脚注(A6/A7)", () => {
-  test("完成回合渲染脚注(agent·model·时长),复制动作写剪贴板;流式回合无脚注", async () => {
+  test("完成回合渲染脚注(agent·model,用时已移到工作过程摘要),复制动作写剪贴板;流式回合无脚注", async () => {
     const copied: string[] = []
     Object.defineProperty(window.navigator, "clipboard", {
       value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
@@ -2107,8 +2166,8 @@ describe("#568 回合末富脚注(A6/A7)", () => {
     expect(footnote).not.toBeNull()
     expect(footnote.querySelector(".a-tl-fn-agent")!.textContent).toContain("build")
     expect(footnote.textContent).toContain("deepseek-reasoner")
-    // duration 10ms → 0 秒;零 tokens 诚实缺席。
-    expect(footnote.textContent).toContain("0 秒")
+    // `#1473`:脚注不再写用时(只量最后一条助手消息,与整轮计时同名不同量);零 tokens 诚实缺席。
+    expect(footnote.textContent).not.toContain("秒")
     expect(footnote.textContent).not.toContain("tokens")
 
     const copy = footnote.querySelector<HTMLButtonElement>(".a-tl-fn-actions button")!
@@ -2125,7 +2184,7 @@ describe("#568 回合末富脚注(A6/A7)", () => {
 })
 
 describe("#568 「在面板打开」pill(T8)", () => {
-  test("write/edit 卡头出 pill,点击发 openFile intent;intent 缺席零渲染;read 卡永无 pill", async () => {
+  test("write/edit 详情出 pill,点击发 openFile intent;intent 缺席零渲染;read 永无 pill", async () => {
     const host = mount()
     runtime.setTimelineIntentsEnabled(true)
     runtime.setTimelineRows(
@@ -2149,6 +2208,7 @@ describe("#568 「在面板打开」pill(T8)", () => {
       ]),
     )
     await flush()
+    await openAll(host)
 
     const write = host.querySelector("[data-alpha-tool-card][data-kind='write']")!
     const pill = write.querySelector<HTMLButtonElement>(".a-tc-openp")!
@@ -2157,11 +2217,12 @@ describe("#568 「在面板打开」pill(T8)", () => {
     expect(runtime.getIntentLog().openFile).toEqual([{ path: "/repo/AGENTS.md" }])
     expect(host.querySelector("[data-alpha-tool-card][data-kind='read'] .a-tc-openp")).toBeNull()
 
-    // fail-closed:openFile handler 缺席 → pill 消失,卡头照常。
+    // fail-closed:openFile handler 缺席 → pill 消失,步骤行与详情照常。
     runtime.setTimelineIntentsEnabled(false)
     await flush()
     expect(host.querySelector(".a-tc-openp")).toBeNull()
-    expect(write.querySelector(".a-tc-head")).not.toBeNull()
+    expect(write.querySelector(".a-tl-pf-step")).not.toBeNull()
+    expect(write.querySelector("[data-alpha-step-detail]")).not.toBeNull()
   })
 })
 
@@ -2357,6 +2418,7 @@ describe("#568 诊断行(T19)", () => {
       ]),
     )
     await flush()
+    await openAll(host)
 
     const rows = [...host.querySelectorAll(".a-tc-diag-row")]
     expect(rows).toHaveLength(1)
@@ -2928,7 +2990,7 @@ describe("#591 富脚注:provider 图标 + 效率段", () => {
     })
   }
 
-  test("脚注按稿出 provider 图标 · agent · model · 效率 · 时长 · tokens;缓存缺席时效率段消失", async () => {
+  test("脚注按稿出 provider 图标 · agent · model · 效率 · tokens(用时在工作过程摘要);缓存缺席时效率段消失", async () => {
     const host = mount()
     runtime.setTimelineRows(footnoteRows({ input: 1000, output: 2100, reasoning: 100, cache: { read: 3000, write: 0 } }))
     await flush()
@@ -2941,7 +3003,7 @@ describe("#591 富脚注:provider 图标 + 效率段", () => {
     const efficiency = [...footnote.querySelectorAll(".a-tl-fn-item")].find((el) => el.textContent === "高")!
     expect(efficiency).not.toBeUndefined()
     expect(efficiency.getAttribute("title")).toBe("缓存命中 75%")
-    expect(footnote.textContent).toContain("5.2 秒")
+    expect(footnote.textContent).not.toContain("秒")
     expect(footnote.textContent).toContain("3.2k tokens")
 
     runtime.setTimelineRows(footnoteRows({ input: 1000, output: 2100, reasoning: 100, cache: { read: 0, write: 0 } }))
@@ -3131,5 +3193,112 @@ describe("#1399 回合脚行:活跃回合最后一行,一槽两面", () => {
     await flush()
     expect(foot(host)).toBeNull()
     expect(host.querySelector("[data-alpha-timeline-row='empty-turn']")).not.toBeNull()
+  })
+})
+
+// ── `#1473`(REQ-229 AC1–AC3)工作过程折叠:真实形态的 18 步研究回合,经生产投影 + 真视图挂载 ──
+describe("#1473 工作过程折叠(design ⑧ #process-fold)", () => {
+  async function mountResearch() {
+    const { researchTurn } = await import("./process-fold.fixture")
+    const { messages, parts } = researchTurn()
+    const host = mount()
+    runtime.setTimelineRows(
+      model.projectTimelineRows({ messages: messages as never, partsOf: (id) => (parts[id] ?? []) as never, status: "idle" }),
+    )
+    await flush()
+    return host
+  }
+
+  test("回答之前恰好一行工作过程:摘要 = 动作计数 · 琥珀色的不顺 · 整轮用时;回答完整在外面", async () => {
+    const host = await mountResearch()
+    const kinds = [...host.querySelectorAll("[data-alpha-timeline-row]")].map((el) =>
+      el.getAttribute("data-alpha-timeline-row"),
+    )
+    expect(kinds).toEqual(["user", "process", "markdown", "footnote"])
+
+    const summary = host.querySelector<HTMLButtonElement>(".a-tl-pf-sum")!
+    expect(summary.getAttribute("aria-expanded")).toBe("false")
+    const segments = [...summary.querySelectorAll("[data-alpha-process-segment]")].map((el) => el.textContent)
+    expect(segments).toEqual(["网页搜索 16 次", "2 步没成功", "3 分 27 秒"])
+    expect(summary.querySelector(".a-tl-pf-warn")!.textContent).toBe("2 步没成功")
+    // 思考次数不进摘要;收起时一个步骤、一张卡、一个来源徽标都不在 DOM 里。
+    expect(summary.textContent).not.toContain("思考")
+    expect(host.querySelector("[data-alpha-process-step]")).toBeNull()
+    expect(host.querySelector("[data-alpha-tool-card]")).toBeNull()
+    expect(host.querySelector("[data-alpha-source-badge]")).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='markdown'] [data-md-stub]")!.textContent).toContain(
+      "criteria 本身不能嵌套",
+    )
+    // 用时只在摘要里说一次,脚注不再写。
+    expect(host.querySelector("[data-alpha-timeline-row='footnote']")!.textContent).not.toContain("秒")
+  })
+
+  test("展开后 12 行;合并行点开每项一行,再点一项看该类已有的卡片正文;成功不挂状态", async () => {
+    const host = await mountResearch()
+    host.querySelector<HTMLButtonElement>(".a-tl-pf-sum")!.click()
+    await flush()
+
+    const list = host.querySelector(".a-tl-pf-list")!
+    const lines = [...list.querySelectorAll(":scope > * > .a-tl-pf-step, :scope > .a-tl-pf-step")]
+    expect(lines).toHaveLength(12)
+    expect(lines.map((line) => line.querySelector(".a-tl-pf-v")!.textContent)).toEqual([
+      "思考 2 秒",
+      "网页搜索 4 次",
+      "思考 2 秒",
+      "抓取网页 2 次",
+      "网页搜索 2 次",
+      "思考 3 秒",
+      "网页搜索 4 次",
+      "思考 5 秒",
+      "网页搜索 4 次",
+      "思考 4 秒",
+      "网页搜索 2 次",
+      "思考 6 秒",
+    ])
+    // 只有超过 10 秒的那组写用时;两次打开网页都失败写人话;其余行尾空。
+    const ends = lines.map((line) => line.querySelector(".a-tl-pf-end")?.textContent ?? "")
+    expect(ends[8]).toBe("2 分 15 秒")
+    expect(ends[3]).toBe("都没成功")
+    expect(lines[3]!.getAttribute("data-tone")).toBe("warn")
+    expect(ends.filter((end, index) => index !== 3 && index !== 8).every((end) => end === "")).toBe(true)
+    expect(list.textContent).not.toContain("完成")
+    expect(list.textContent).not.toContain("条结果")
+
+    // 第一组搜索:先展开成 4 项,每项一行(对象 = 查询词)。
+    const firstSearch = lines[1] as HTMLButtonElement
+    expect(firstSearch.querySelector(".a-tl-pf-o")!.textContent).toBe(
+      "docs.typesafe.ai System One API request fields model state questions",
+    )
+    firstSearch.click()
+    await flush()
+    const group = firstSearch.closest("[data-alpha-process-group]")!
+    const items = [...group.querySelectorAll("[data-alpha-tool-card]")]
+    expect(items).toHaveLength(4)
+    expect(group.querySelector("[data-alpha-step-detail]")).toBeNull()
+
+    // 再点一项:复用今天搜索卡的富链接正文;「开发者详情」只在详情底部且默认折叠。
+    items[0]!.querySelector<HTMLButtonElement>(".a-tl-pf-step")!.click()
+    await flush()
+    const detail = items[0]!.querySelector("[data-alpha-step-detail]")!
+    expect([...detail.querySelectorAll(".a-tc-wr")].map((link) => link.getAttribute("href"))).toEqual([
+      "https://docs.typesafe.ai/api",
+      "https://docs.typesafe.ai/primitives/choice",
+    ])
+    const dev = detail.lastElementChild as HTMLDetailsElement
+    expect(dev.hasAttribute("data-alpha-dev-details")).toBe(true)
+    expect(dev.open).toBe(false)
+
+    // 失败的那组:展开后每项一行写「没成功」;点开看到错误正文(今天的错误卡体)。
+    ;(lines[3] as HTMLButtonElement).click()
+    await flush()
+    const fetchGroup = lines[3]!.closest("[data-alpha-process-group]")!
+    const fetches = [...fetchGroup.querySelectorAll("[data-alpha-tool-card]")]
+    expect(fetches.map((item) => item.querySelector("[data-alpha-step-failure]")!.textContent)).toEqual([
+      "没成功",
+      "没成功",
+    ])
+    fetches[0]!.querySelector<HTMLButtonElement>(".a-tl-pf-step")!.click()
+    await flush()
+    expect(fetches[0]!.querySelector(".a-tc-error-body")!.textContent).toContain("Transport error")
   })
 })
