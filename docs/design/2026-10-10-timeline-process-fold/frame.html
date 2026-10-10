@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>工作过程折叠 · 时间线一回合的新形态</title>
+<link rel="stylesheet" href="../current/conversation-timeline/design.css" />
+<style>
+/* 本稿自有类一律 pf- 前缀;--a-* token 与既有帧的类(.frame / .tl / .row-user / .bubble /
+   .row-ai / .ai-md / .meta / .tc / .reason …)全部来自链接的 conversation-timeline/design.css。 */
+body{padding:0 0 96px}
+.pf-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 92%,transparent);backdrop-filter:blur(14px)}
+.pf-bar b{font-size:var(--a-text-sm)}
+.pf-bar nav{display:flex;gap:1px;flex-wrap:wrap}
+.pf-bar nav a{padding:4px 8px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.pf-bar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.pf-grow{flex:1}
+.pf-wrap{max-width:1120px;margin:0 auto;padding:28px 24px 0}
+.pf-intro h1{margin:0 0 8px;font-size:24px;letter-spacing:var(--a-tracking-tight)}
+.pf-intro p{margin:0 0 6px;color:var(--a-text-secondary);line-height:1.65;max-width:800px}
+.pf-rel{margin:18px 0 6px;padding:14px 16px;border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);background:var(--a-bg-canvas);font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.65}
+.pf-rel h3{margin:0 0 6px;font-size:var(--a-text-sm);color:var(--a-text)}
+.pf-rel ul{margin:0 0 8px;padding-left:18px}
+.pf-rel li{margin:2px 0}
+.pf-rel b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+.pf-h{margin:38px 0 4px;font-size:var(--a-text-xl);letter-spacing:var(--a-tracking-tight)}
+.pf-sub{margin:0 0 4px;color:var(--a-text-secondary);font-size:var(--a-text-base);line-height:1.6;max-width:820px}
+.pf-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
+.pf-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+@media (max-width:980px){.pf-grid3{grid-template-columns:1fr 1fr}}
+@media (max-width:820px){.pf-grid,.pf-grid3{grid-template-columns:1fr}}
+.pf-grid>div,.pf-grid3>div{min-width:0}
+.pf-grid .frame,.pf-grid3 .frame,.pf-one .frame{margin-top:0}
+.pf-one{margin-top:14px}
+.pf-cap{margin:8px 2px 0;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:1.55}
+.pf-cap b{color:var(--a-text-secondary);font-weight:var(--a-weight-medium)}
+.pf-tag{display:inline-block;margin-bottom:6px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.frame .tl{gap:12px;padding:18px 20px}
+
+/* ── 图标 ── */
+.pf-i{flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── 第一层:收起的工作过程(一行) ── */
+.pf{align-self:stretch;display:flex;flex-direction:column}
+.pf-sum{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;max-width:100%;margin-left:-8px;padding:4px 8px;border:0;background:transparent;border-radius:var(--a-radius-md);font:inherit;font-size:var(--a-text-sm);color:var(--a-text-secondary);cursor:pointer;text-align:left}
+.pf-sum:hover{background:var(--a-overlay-hover);color:var(--a-text)}
+.pf-chev{flex:none;width:12px;height:12px;fill:none;stroke:var(--a-text-tertiary);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--a-dur) var(--a-ease-out)}
+.pf[data-open] > .pf-sum .pf-chev{transform:rotate(90deg)}
+.pf-dot{flex:none;width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)}
+.pf-warn{color:var(--a-warning)}
+.pf-err{color:var(--a-error)}
+.pf-num{font-variant-numeric:tabular-nums}
+.pf-t{color:var(--a-text-tertiary);font-size:var(--a-text-xs);font-variant-numeric:tabular-nums}
+
+/* ── 第二层:步骤列表(每步一行) ── */
+.pf-list{display:flex;flex-direction:column;gap:0;margin:2px 0 2px 5px;padding-left:13px;border-left:1.5px solid var(--a-border)}
+.pf-step{display:flex;align-items:center;gap:8px;min-height:26px;margin-left:-6px;padding:2px 6px;border-radius:var(--a-radius-sm);font-size:var(--a-text-sm);color:var(--a-text-secondary);cursor:pointer;min-width:0}
+.pf-step:hover{background:var(--a-overlay-hover)}
+.pf-step .pf-i{color:var(--a-text-tertiary)}
+.pf-v{flex:none;color:var(--a-text);font-weight:var(--a-weight-medium)}
+.pf-o{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--a-text-tertiary)}
+.pf-o.mono{font-family:var(--a-font-mono);font-size:var(--a-text-xs)}
+.pf-end{margin-left:auto;padding-left:8px;flex:none;display:inline-flex;align-items:center;gap:6px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+.pf-sc{width:11px;height:11px;fill:none;stroke:var(--a-text-tertiary);stroke-width:2.2;opacity:0;transition:opacity var(--a-dur-fast),transform var(--a-dur) var(--a-ease-out)}
+.pf-step:hover .pf-sc{opacity:1}
+.pf-step[data-open] .pf-sc{opacity:1;transform:rotate(90deg)}
+.pf-step.think .pf-v{font-weight:var(--a-weight-normal);color:var(--a-text-secondary)}
+.pf-step[data-tone=warn] .pf-i,.pf-step[data-tone=warn] .pf-end{color:var(--a-warning)}
+.pf-step[data-tone=err] .pf-i,.pf-step[data-tone=err] .pf-end{color:var(--a-error)}
+.pf-src{flex:none;color:var(--a-text);font-weight:var(--a-weight-medium)}
+.pf-src + .pf-v{font-weight:var(--a-weight-normal);color:var(--a-text-secondary)}
+.pf-say{margin:3px 0;font-size:var(--a-text-sm);line-height:1.55;color:var(--a-text-secondary)}
+.pf-sub-list{display:flex;flex-direction:column;margin:0 0 4px 16px}
+.pf-sub-list .pf-step{min-height:24px;font-size:var(--a-text-xs)}
+
+/* ── 第三层:某一步的详情 ── */
+.pf-detail{margin:2px 0 8px 22px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-bg-subtle);overflow:hidden}
+.pf-detail-out{margin:0;padding:9px 12px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);line-height:1.6;color:var(--a-text-secondary);white-space:pre-wrap;max-height:180px;overflow:auto}
+.pf-detail-txt{padding:9px 12px;font-size:var(--a-text-sm);line-height:1.6;color:var(--a-text-secondary)}
+.pf-detail-foot{display:flex;align-items:center;gap:10px;padding:6px 12px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.pf-detail-foot a{flex:none;color:var(--a-text-secondary);text-decoration:none}
+.pf-detail-foot>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-detail-foot a:hover{color:var(--a-text)}
+.pf-detail-foot .pf-grow{flex:1}
+.pf-links{display:flex;flex-direction:column;padding:4px 0}
+.pf-link{display:flex;align-items:baseline;gap:8px;padding:4px 12px;font-size:var(--a-text-sm);text-decoration:none;color:var(--a-text)}
+.pf-link:hover{background:var(--a-overlay-hover)}
+.pf-link b{font-weight:var(--a-weight-medium);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-link span{flex:none;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.pf-errline{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:var(--a-text-sm);color:var(--a-text)}
+.pf-errline .pf-i{color:var(--a-error)}
+.pf-errline small{margin-left:auto;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+
+/* ── 进行中:实时标题 + 最近几步 ── */
+.pf-live-head{display:flex;align-items:center;gap:8px;min-height:24px;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.pf-live-head b{color:var(--a-text);font-weight:var(--a-weight-medium)}
+.pf-pulse{flex:none;width:7px;height:7px;margin:0 3.5px;border-radius:50%;background:var(--a-accent);animation:pf-pulse 1.4s ease-in-out infinite}
+@keyframes pf-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.pf-spin{flex:none;width:12px;height:12px;margin:1px;border:1.6px solid var(--a-border-strong);border-top-color:var(--a-accent);border-radius:50%;animation:pf-rot .9s linear infinite}
+@keyframes pf-rot{to{transform:rotate(360deg)}}
+.pf-step.done{opacity:.62}
+.pf-more{min-height:22px;display:flex;align-items:center;gap:6px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);cursor:pointer}
+.pf-more:hover{color:var(--a-text-secondary)}
+.pf-step.run .pf-v{color:var(--a-text)}
+.pf-wait{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;padding:5px 11px;background:var(--a-warning-subtle);border:1px solid color-mix(in srgb,var(--a-warning) 40%,transparent);border-radius:var(--a-radius-lg);font-size:var(--a-text-sm);color:var(--a-text)}
+.pf-wait b{font-weight:var(--a-weight-medium)}
+.pf-step[data-tone=wait]{background:color-mix(in srgb,var(--a-warning-subtle) 60%,transparent)}
+.pf-step[data-tone=wait] .pf-i,.pf-step[data-tone=wait] .pf-end{color:var(--a-warning)}
+.pf-caret{display:inline-block;width:7px;height:15px;margin-left:2px;vertical-align:-2px;background:var(--a-accent);border-radius:1px;animation:pf-blink 1s steps(2) infinite}
+@keyframes pf-blink{50%{opacity:0}}
+.pf-arrow{display:flex;align-items:center;justify-content:center;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+
+/* ── 今天的样子(对照用,只摘头部) ── */
+.pf-fade{position:relative;max-height:520px;overflow:hidden}
+.pf-fade>*{flex-shrink:0}
+.pf-fade::after{content:"";position:absolute;left:0;right:0;bottom:0;height:120px;background:linear-gradient(transparent,var(--a-bg-canvas))}
+.pf-count{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:2;padding:4px 12px;border-radius:var(--a-radius-full);background:var(--a-surface);border:1px solid var(--a-border);box-shadow:var(--a-shadow-sm);font-size:var(--a-text-xs);color:var(--a-text-secondary);white-space:nowrap}
+.pf-badge{flex:none;padding:1px 7px;border-radius:var(--a-radius-full);background:var(--a-accent-subtle);color:var(--a-accent);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold)}
+.pf-badge.third{background:var(--a-warning-subtle);color:var(--a-warning)}
+.pf-errbody{padding:9px 13px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-error);border-top:1px solid var(--a-border-faint);background:color-mix(in srgb,var(--a-error-subtle) 40%,transparent)}
+.pf-safe{padding:9px 13px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:1.55}
+.pf-safe b{display:block;color:var(--a-text);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.pf-devsum{padding:6px 13px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+
+/* ── 回合尾部的既有行(只为装配示意) ── */
+.pf-foot{display:flex;align-items:center;gap:8px;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.pf-row{display:flex;align-items:center;gap:8px;align-self:flex-start;padding:7px 12px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-edge-light);font-size:var(--a-text-sm);color:var(--a-text)}
+.pf-row .pf-i{color:var(--a-text-tertiary)}
+.pf-row small{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.pf-row.err{border-color:color-mix(in srgb,var(--a-error) 30%,transparent);background:color-mix(in srgb,var(--a-error-subtle) 45%,var(--a-surface))}
+.pf-row.err .pf-i{color:var(--a-error)}
+.pf-stop{display:flex;align-items:center;gap:8px;font-size:var(--a-text-sm);color:var(--a-text-tertiary)}
+.pf-add{color:var(--a-success);font-family:var(--a-font-mono);font-size:var(--a-text-xs)}
+.pf-del{color:var(--a-error);font-family:var(--a-font-mono);font-size:var(--a-text-xs)}
+
+/* ── 步骤目录 ── */
+.pf-cat{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) minmax(0,.9fr);border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md);margin-top:14px}
+@media (max-width:900px){.pf-cat{grid-template-columns:1fr}}
+.pf-cat>div{padding:10px 14px;border-bottom:1px solid var(--a-border-faint);min-width:0}
+.pf-cat>.pf-cat-h{background:var(--a-bg-subtle);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);padding:8px 14px}
+.pf-cat>.pf-cat-g{grid-column:1/-1;background:color-mix(in srgb,var(--a-bg-subtle) 60%,transparent);font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold);color:var(--a-text-secondary);padding:7px 14px}
+.pf-cat .pf-step{margin-left:-6px;cursor:default}
+.pf-cat .pf-detail{margin:0}
+.pf-cat .pf-note{font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:1.6}
+.pf-cat .pf-note s{color:var(--a-text-tertiary)}
+.pf-none{font-size:var(--a-text-xs);color:var(--a-text-disabled)}
+.pf-grid-dir{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px 10px;padding:8px 12px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.pf-grid-dir span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-grep{padding:6px 12px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);line-height:1.7;color:var(--a-text-secondary)}
+.pf-grep b{display:block;color:var(--a-text);font-weight:var(--a-weight-medium)}
+.pf-grep mark{background:var(--a-warning-subtle);color:var(--a-text);border-radius:3px;padding:0 2px}
+.pf-diff{font-family:var(--a-font-mono);font-size:var(--a-text-xs);line-height:1.65}
+.pf-diff div{padding:0 12px;white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.pf-diff .a{background:var(--a-success-subtle);color:var(--a-text)}
+.pf-diff .d{background:var(--a-error-subtle);color:var(--a-text)}
+.pf-diag{padding:6px 12px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-error);border-bottom:1px solid var(--a-border-faint)}
+.pf-opt{display:flex;flex-direction:column;gap:3px;padding:8px 12px;font-size:var(--a-text-sm)}
+.pf-opt span{padding:3px 8px;border-radius:var(--a-radius-sm);color:var(--a-text-secondary)}
+.pf-opt span.on{background:var(--a-accent-subtle);color:var(--a-text);font-weight:var(--a-weight-medium)}
+.pf-tail{margin:0 0 2px 22px;padding:4px 10px;border-left:2px solid var(--a-border);font-family:var(--a-font-mono);font-size:var(--a-text-2xs);line-height:1.6;color:var(--a-text-tertiary);white-space:pre}
+.pf-mono{font-family:var(--a-font-mono);font-size:var(--a-text-xs)}
+
+/* ── 弹出层 ── */
+.pf-ov-stage{position:relative;padding:22px;background:var(--a-bg-subtle);display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.pf-spec{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pf-spec>small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary);line-height:1.5}
+.pf-old{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;padding:20px;background:var(--a-bg-subtle)}
+@media (max-width:900px){.pf-old{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.pf-old>div{display:flex;flex-direction:column;gap:7px;min-width:0}
+.pf-old .box{height:58px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);display:flex;align-items:center;justify-content:center;font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.pf-old small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary);line-height:1.45}
+/* 提示 */
+.pf-tip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:var(--a-radius-sm);background:var(--a-text);color:var(--a-bg-canvas);font-size:var(--a-text-xs);box-shadow:var(--a-shadow-sm);white-space:nowrap}
+.pf-tip kbd{font:inherit;font-size:var(--a-text-2xs);opacity:.7}
+/* 浮层 / 菜单 */
+.pf-menu{width:300px;padding:4px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-md)}
+.pf-menu-h{display:flex;align-items:center;gap:6px;padding:6px 8px 4px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.pf-mi{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 8px;border-radius:var(--a-radius-sm);font-size:var(--a-text-sm);color:var(--a-text)}
+.pf-mi small{margin-left:auto;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.pf-mi.on{background:var(--a-overlay-hover)}
+.pf-mi .ck{width:14px;color:var(--a-accent);font-weight:var(--a-weight-bold)}
+.pf-msep{height:1px;margin:4px 6px;background:var(--a-border-faint)}
+.pf-mnote{padding:6px 8px 4px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:1.5}
+.pf-back{display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.pf-back .pf-chev{transform:rotate(180deg)}
+/* 对话 / 等你处理卡 */
+.pf-ask{width:420px;max-width:100%;padding:14px 16px;background:var(--a-surface);border:1px solid color-mix(in srgb,var(--a-warning) 40%,var(--a-border-faint));border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-sm)}
+.pf-ask h4{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
+.pf-ask h4 .pf-i{color:var(--a-warning)}
+.pf-ask p{margin:0 0 10px;font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.55}
+.pf-ask code{display:block;margin:0 0 12px;padding:7px 10px;border-radius:var(--a-radius-sm);background:var(--a-bg-subtle);font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text)}
+.pf-btns{display:flex;gap:8px;justify-content:flex-end}
+.pf-btn{height:28px;padding:0 12px;border-radius:var(--a-radius-md);border:1px solid var(--a-border);background:var(--a-surface);font:inherit;font-size:var(--a-text-sm);color:var(--a-text)}
+.pf-btn.pri{background:var(--a-accent-solid);border-color:var(--a-accent-solid);color:var(--a-text-on-accent)}
+/* 通知 */
+.pf-toast{display:flex;align-items:flex-start;gap:10px;width:320px;max-width:100%;padding:10px 12px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg);font-size:var(--a-text-sm);color:var(--a-text)}
+.pf-toast .dot{flex:none;width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--a-success)}
+.pf-toast.err .dot{background:var(--a-error)}
+.pf-toast small{display:block;color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.pf-toast .x{margin-left:auto;color:var(--a-text-tertiary);font-size:var(--a-text-sm)}
+/* 悬停动作 */
+.pf-acts{display:inline-flex;gap:2px;padding:2px;background:var(--a-surface);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);box-shadow:var(--a-shadow-xs)}
+.pf-act{width:24px;height:24px;display:grid;place-items:center;border-radius:var(--a-radius-sm);color:var(--a-text-tertiary)}
+.pf-act.ok{color:var(--a-success)}
+.pf-ov-table td:first-child{white-space:normal}
+
+/* ── 规则表 ── */
+.pf-table{width:100%;border-collapse:separate;border-spacing:0;margin-top:14px;font-size:var(--a-text-sm);border:1px solid var(--a-border);border-radius:var(--a-radius-md);overflow:hidden;background:var(--a-bg-canvas)}
+.pf-table th,.pf-table td{text-align:left;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--a-border-faint);line-height:1.55}
+.pf-table thead th{background:var(--a-bg-subtle);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.pf-table tbody tr:last-child td{border-bottom:0}
+.pf-table td:first-child{white-space:nowrap;color:var(--a-text);font-weight:var(--a-weight-medium)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-think" viewBox="0 0 24 24"><path d="M9.5 2a4.5 4.5 0 0 0-4.3 5.8A4 4 0 0 0 6 15.5a4 4 0 0 0 7 1 4 4 0 0 0 7-1 4 4 0 0 0 .8-7.7A4.5 4.5 0 0 0 14.5 2 4.5 4.5 0 0 0 12 3.3 4.5 4.5 0 0 0 9.5 2z"/></symbol>
+  <symbol id="i-web" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></symbol>
+  <symbol id="i-read" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-glob" viewBox="0 0 24 24"><path d="M3 7l2-3h5l2 3h7v11H3z"/><path d="M8 13h8"/></symbol>
+  <symbol id="i-grep" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-write" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+  <symbol id="i-skill" viewBox="0 0 24 24"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></symbol>
+  <symbol id="i-task" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19a4.5 4.5 0 0 0 .8-8.94 6 6 0 0 0-11.7 1.4A3.75 3.75 0 0 0 7 19z"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M4 7l8-4 8 4-8 4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M4 8h4V6a2 2 0 1 1 4 0v2h4v4h-2a2 2 0 1 0 0 4h2v4H4z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14M12 17.5h.01"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+  <symbol id="i-todo" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11"/><circle cx="5" cy="18" r="1.3"/></symbol>
+  <symbol id="i-ask" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></symbol>
+  <symbol id="i-diff" viewBox="0 0 24 24"><path d="M12 3v14M5 10h14"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+</svg>
+
+<div class="pf-bar">
+  <b>工作过程折叠</b>
+  <span class="pf-grow"></span>
+  <nav><a href="#compare">对照</a><a href="#expand">逐层展开</a><a href="#live">进行中</a><a href="#end">结束态</a><a href="#steps">步骤目录</a><a href="#overlays">弹出层</a><a href="#rules">收纳规则</a></nav>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="pf-wrap">
+<div class="pf-intro">
+  <h1>一回合 = 一行工作过程 + 完整的回答</h1>
+  <p>思考、工具调用、工具之间的过渡话,收进回答上方的一行「工作过程」。回答、要你处理的事、产出的文件和改动留在外面,永远不折叠。成功不打任何状态,只有<b>正在运行</b>、<b>失败</b>、<b>等你处理</b>才出现标记。</p>
+  <p>点开这一行看每一步(一步一行),再点某一步看它的详情。本稿所有帧用同一个真实回合当样本:用户问「是否支持多级的 criteria,请求体都支持哪些字段」,模型思考 6 次、搜索 16 次、打开网页 2 次都失败,共 3 分 27 秒,其中有 4 次搜索各等了 2 分多钟。</p>
+</div>
+
+<div class="pf-rel">
+  <h3>与上一稿的关系</h3>
+  <ul>
+    <li><b>继承</b>:活稿的 token 与样式(本页直接链接它);每类工具已有的详情内容(终端输出、改动对比、搜索结果、文件列表、错误正文)原样复用为第三层;第三方 / 插件 / 未知来源的工具<b>只显示来源和名称、不显示输入输出</b>的规则不变;回合错误卡、中断行、空回合行、产物链接行、本回合改动行、回合脚注的形态不变。</li>
+    <li><b>改了</b>:①每段思考一行、每次工具调用一张卡 → 一回合一个工作过程块;②「已探索」只合并读文件 / 搜代码 / 列目录 → 任何连续同类步骤都合并;③成功的「完成 / 已加载 / 退出 0」状态不再显示;④每张卡常驻的来源徽标 → 第三方步骤在行内写服务名并配插头图标,原来常驻的「详情未展示」说明移进详情里;⑤回合脚行(运行中 / 等你批准 / 等你回答)并入工作过程的实时标题;⑥回合用时从脚注移到工作过程摘要。</li>
+    <li><b>为什么</b>:本机真实会话里,一次 18 步的研究在回答前要翻 25 行,一次 24 步的回合有 36 行;「已探索」在 114 次真实调用中只覆盖到 2 次 —— 这类用法以联网搜索、跑命令、写文档为主,不是读代码。</li>
+  </ul>
+</div>
+
+<!-- ══════════ ① 对照 ══════════ -->
+<h2 class="pf-h" id="compare">① 同一回合,今天和改后</h2>
+<p class="pf-sub">左边是今天的样子(只摘了开头,完整有 25 行才到回答);右边是改后:回答前只有一行。</p>
+<div class="pf-grid">
+  <div>
+    <div class="pf-tag">今天</div>
+    <div class="frame"><div class="tl pf-fade">
+      <div class="row-user"><div class="bubble">是否支持多级的 criteria,还有请求体都支持哪些字段,我需要完整的。</div></div>
+      <div class="reason"><div class="reason-head"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-think"/></svg><span class="lab">思考</span><span class="dur">2 秒</span><svg class="ic sm chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div></div>
+      <div class="tc"><div class="tc-head"><span class="tc-ico" style="background:var(--t-mcp,#8957e5)"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-cloud"/></svg></span><div class="tc-tt"><b>网页搜索</b><span class="tgt">docs.typesafe.ai System One API request fields…</span></div><span class="pf-badge">云端</span><span class="tc-st muted">完成</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div><div class="pf-devsum">› 开发者详情</div></div>
+      <div class="tc"><div class="tc-head"><span class="tc-ico" style="background:var(--t-mcp,#8957e5)"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-cloud"/></svg></span><div class="tc-tt"><b>网页搜索</b><span class="tgt">typesafe jev nested criteria multi-level…</span></div><span class="pf-badge">云端</span><span class="tc-st muted">完成</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div><div class="pf-devsum">› 开发者详情</div></div>
+      <div class="tc"><div class="tc-head"><span class="tc-ico" style="background:var(--t-mcp,#8957e5)"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-cloud"/></svg></span><div class="tc-tt"><b>网页搜索</b><span class="tgt">typesafe system_one pydantic nested model…</span></div><span class="pf-badge">云端</span><span class="tc-st muted">完成</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div><div class="pf-devsum">› 开发者详情</div></div>
+      <div class="tc"><div class="tc-head"><span class="tc-ico" style="background:var(--t-mcp,#8957e5)"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-cloud"/></svg></span><div class="tc-tt"><b>网页搜索</b><span class="tgt">typesafe jev request body fields "timeout"…</span></div><span class="pf-badge">云端</span><span class="tc-st muted">完成</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div><div class="pf-devsum">› 开发者详情</div></div>
+      <div class="reason"><div class="reason-head"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-think"/></svg><span class="lab">思考</span><span class="dur">2 秒</span><svg class="ic sm chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div></div>
+      <div class="tc open" style="border-color:color-mix(in srgb,var(--a-error) 35%,transparent)"><div class="tc-head"><span class="tc-ico web"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-link"/></svg></span><div class="tc-tt"><b>抓取网页</b><span class="tgt">https://docs.typesafe.ai/api</span></div><span class="pf-badge">本机</span><span class="tc-st err">失败</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div><div class="pf-errbody"><b style="font-family:var(--a-font-sans)">工具执行失败</b> <span style="float:right;font-family:var(--a-font-sans);color:var(--a-text-tertiary)">复制</span><br>Transport error (GET https://docs.typesafe.ai/api)</div><div class="pf-devsum">› 开发者详情</div></div>
+      <div class="tc open" style="border-color:color-mix(in srgb,var(--a-error) 35%,transparent)"><div class="tc-head"><span class="tc-ico web"><svg class="ic sm" viewBox="0 0 24 24"><use href="#i-link"/></svg></span><div class="tc-tt"><b>抓取网页</b><span class="tgt">https://docs.typesafe.ai/primitives/choice</span></div><span class="pf-badge">本机</span><span class="tc-st err">失败</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><use href="#i-chev"/></svg></div><div class="pf-errbody"><b style="font-family:var(--a-font-sans)">工具执行失败</b> <span style="float:right;font-family:var(--a-font-sans);color:var(--a-text-tertiary)">复制</span><br>Transport error (GET https://docs.typesafe.ai/primitives/choice)</div><div class="pf-devsum">› 开发者详情</div></div>
+      <span class="pf-count">再往下还有 15 行,才到回答</span>
+    </div></div>
+    <p class="pf-cap">每次搜索一张卡,每张都挂「云端」徽标、「完成」和一行「开发者详情」;两张失败卡默认展开「工具执行失败」与报错原文。真正的回答在第 26 行。</p>
+  </div>
+  <div>
+    <div class="pf-tag">改后</div>
+    <div class="frame"><div class="tl">
+      <div class="row-user"><div class="bubble">是否支持多级的 criteria,还有请求体都支持哪些字段,我需要完整的。</div></div>
+      <div class="pf">
+        <button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>搜索 16 次</span><span class="pf-dot"></span><span class="pf-warn">2 个网页没打开</span><span class="pf-dot"></span><span class="pf-num">3 分 27 秒</span></button>
+      </div>
+      <div class="row-ai"><div class="ai-md">
+        <p>结论先说:<strong>criteria 本身不能嵌套,Jev 没有多级 / 条件式的 criteria;「多级」要靠把任务拆成多个并列问题、再在代码里组合。</strong>完整的请求体只有三层结构,字段是封闭的一小组。</p>
+        <h3>一、criteria 是扁平的,且问题之间互不依赖</h3>
+        <table><thead><tr><th>原语</th><th>criteria 形态</th><th>约束</th></tr></thead><tbody>
+          <tr><td><code>choice</code></td><td>对象:<code>{标签: 描述}</code></td><td>1–255 项</td></tr>
+          <tr><td><code>score</code></td><td>有序数组,位置即整数分</td><td>2–10 级</td></tr>
+          <tr><td><code>noul</code></td><td>可选对象:<code>{"true", "false"}</code></td><td>可省略</td></tr>
+        </tbody></table>
+        <p>关键限制:<strong>同一请求里所有问题是对同一份 state 并行求值的</strong>,后一个问题不会看到前一个问题的答案……</p>
+      </div>
+      <div class="pf-foot"><span>deepseek-flash</span><span class="pf-dot"></span><span>2.4 万 tokens</span></div></div>
+    </div></div>
+    <p class="pf-cap">摘要只写<b>做了什么</b>和<b>哪里不顺</b>:2 次打开网页失败用琥珀色(回合本身成功了,所以不用红)。思考次数不进摘要 —— 它在展开后的列表里。</p>
+  </div>
+</div>
+
+<!-- ══════════ ② 逐层展开 ══════════ -->
+<h2 class="pf-h" id="expand">② 逐层展开:一行 → 每步一行 → 某一步的详情</h2>
+<p class="pf-sub">第二层是 25 行变 12 行:连续的同类步骤合成一行(「搜索 4 次」),思考只写时长。第三层复用每类工具已有的详情内容。</p>
+<div class="pf-grid">
+  <div>
+    <div class="pf-tag">第二层 · 每步一行</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open>
+        <button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>搜索 16 次</span><span class="pf-dot"></span><span class="pf-warn">2 个网页没打开</span><span class="pf-dot"></span><span class="pf-num">3 分 27 秒</span></button>
+        <div class="pf-list">
+          <div class="pf-step think"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 2 秒</span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 4 次</span><span class="pf-o">docs.typesafe.ai System One API request fields…</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step think"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 2 秒</span></div>
+          <div class="pf-step" data-tone="warn"><svg class="pf-i"><use href="#i-link"/></svg><span class="pf-v">打开网页 2 次</span><span class="pf-o">docs.typesafe.ai/api · docs.typesafe.ai/primitives/choice</span><span class="pf-end">都没打开<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 2 次</span><span class="pf-o">docs.rs typesafe-systemone Question struct fields…</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step think"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 3 秒</span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 4 次</span><span class="pf-o">docs.typesafe.ai concepts how to build with system one…</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step think"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 5 秒</span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 4 次</span><span class="pf-o">"how-to-build-with-system-one" typesafe question…</span><span class="pf-end">2 分 15 秒<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step think"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 4 秒</span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 2 次</span><span class="pf-o">docs.typesafe.ai concepts how to build with system one…</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step think"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 6 秒</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="pf-cap">右侧时长<b>只在一步超过 10 秒时出现</b>(这里只有那组 2 分多钟的搜索);失败用琥珀色写成人话「都没打开」,不写「出错」。合并后的一行显示第一项的对象,其余在下一层。</p>
+  </div>
+  <div>
+    <div class="pf-tag">第三层 · 点开某一步</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open>
+        <div class="pf-list">
+          <div class="pf-step" data-open><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 4 次</span><span class="pf-o">docs.typesafe.ai System One API request fields…</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-sub-list">
+            <div class="pf-step" data-open><span class="pf-o" style="color:var(--a-text-secondary)">docs.typesafe.ai System One API request fields model state questions…</span><span class="pf-end">8 条<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-detail"><div class="pf-links">
+              <a class="pf-link" href="#"><b>API reference - TypeSafe AI</b><span>docs.typesafe.ai</span></a>
+              <a class="pf-link" href="#"><b>Choice - TypeSafe AI</b><span>docs.typesafe.ai</span></a>
+              <a class="pf-link" href="#"><b>typesafe_systemone - Rust</b><span>docs.rs</span></a>
+              <a class="pf-link" href="#"><b>TypeSafe AI Releases Jev: A System One Model That Returns …</b><span>marktechpost.com</span></a>
+            </div><div class="pf-detail-foot"><span>还有 4 条</span><span class="pf-grow"></span><a href="#">复制查询</a></div></div>
+            <div class="pf-step"><span class="pf-o">typesafe jev nested criteria multi-level hierarchy…</span><span class="pf-end">8 条<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><span class="pf-o">typesafe system_one pydantic nested model BaseModel…</span><span class="pf-end">8 条<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><span class="pf-o">typesafe jev request body fields "timeout" OR "metadata"…</span><span class="pf-end">8 条<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          </div>
+          <div class="pf-step" data-tone="warn" data-open><svg class="pf-i"><use href="#i-link"/></svg><span class="pf-v">打开网页 2 次</span><span class="pf-o">docs.typesafe.ai/api · docs.typesafe.ai/primitives/choice</span><span class="pf-end">都没打开<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-detail">
+            <div class="pf-errline"><svg class="pf-i"><use href="#i-x"/></svg><span>docs.typesafe.ai/api</span><small>连不上这个网站</small></div>
+            <div class="pf-errline"><svg class="pf-i"><use href="#i-x"/></svg><span>docs.typesafe.ai/primitives/choice</span><small>连不上这个网站</small></div>
+            <div class="pf-detail-foot"><span>原始报错:Transport error (GET …)</span><span class="pf-grow"></span><a href="#">复制</a></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <p class="pf-cap">合并行先展开成每一项一行,再点一项看结果 —— 和今天卡片里的内容一样,只是不再常驻。失败先给人话原因,原始报错放在详情底部一行,可复制。</p>
+  </div>
+</div>
+
+<!-- ══════════ ③ 进行中 ══════════ -->
+<h2 class="pf-h" id="live">③ 进行中:露出什么、何时收起</h2>
+<p class="pf-sub">进行中,工作过程块是这一回合的最后一行,所以「它正在干什么」永远在视线底部。露出的是<b>动作</b>(在搜什么、在跑什么),不是思考原文 —— 真实样本的思考是 2–6 秒的英文内心独白,露出来只会一闪一闪。</p>
+<div class="pf-grid3">
+  <div>
+    <div class="pf-tag">刚发出 · 还没有任何输出</div>
+    <div class="frame"><div class="tl">
+      <div class="row-user"><div class="bubble">是否支持多级的 criteria……</div></div>
+      <div class="pf"><div class="pf-live-head"><span class="pf-pulse"></span><b>正在思考</b><span class="pf-dot"></span><span class="pf-t">0:02</span></div></div>
+    </div></div>
+    <p class="pf-cap">只有一行。思考在进行时不展示原文;模型若在思考开头给了明确的小标题,标题写在「正在思考」后面。</p>
+  </div>
+  <div>
+    <div class="pf-tag">工具在跑 · 同时 4 个</div>
+    <div class="frame"><div class="tl">
+      <div class="pf">
+        <div class="pf-live-head"><span class="pf-pulse"></span><b>正在搜索</b><span class="pf-dot"></span><span class="pf-t">第 2 步 · 0:06</span></div>
+        <div class="pf-list">
+          <div class="pf-step think done"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 2 秒</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">docs.typesafe.ai System One API request…</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">typesafe jev nested criteria multi-level…</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">typesafe system_one pydantic nested model…</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">typesafe jev request body fields "timeout"…</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="pf-cap">正在跑的每一步都单独一行、各自转圈;跑完就并成「搜索 4 次」。已完成的步骤变淡。</p>
+  </div>
+  <div>
+    <div class="pf-tag">慢 · 4 次搜索各等了 2 分多钟</div>
+    <div class="frame"><div class="tl">
+      <div class="pf">
+        <div class="pf-live-head"><span class="pf-pulse"></span><b>正在搜索 4 个问题</b><span class="pf-dot"></span><span class="pf-t">第 9 步 · 2:21</span></div>
+        <div class="pf-list">
+          <div class="pf-more"><svg class="pf-chev"><use href="#i-chev"/></svg>前面还有 6 步</div>
+          <div class="pf-step done"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 4 次</span><span class="pf-o">docs.typesafe.ai concepts how to build…</span></div>
+          <div class="pf-step think done"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 5 秒</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">"how-to-build-with-system-one" typesafe…</span><span class="pf-end">已等 1:41</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">docs.rs typesafe_client NoulQuestion…</span><span class="pf-end">已等 1:41</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">typesafe system one question optional…</span><span class="pf-end">已等 1:41</span></div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">搜索</span><span class="pf-o">TypeSafe Jev conditional question cascade…</span><span class="pf-end">已等 1:41</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="pf-cap">实时区只留<b>最近 2 步 + 所有正在跑的</b>,更早的收成「前面还有 N 步」。一步超过 10 秒,行尾出现「已等 m:ss」—— 让人看得出是慢,不是卡死。</p>
+  </div>
+  <div>
+    <div class="pf-tag">等你批准</div>
+    <div class="frame"><div class="tl">
+      <div class="pf">
+        <div class="pf-wait"><svg class="pf-i" style="color:var(--a-warning)"><use href="#i-pause"/></svg><b>等你批准</b><span class="pf-t">在下方输入框里批准或拒绝</span></div>
+        <div class="pf-list">
+          <div class="pf-step done"><svg class="pf-i"><use href="#i-write"/></svg><span class="pf-v">写入</span><span class="pf-o mono">report/criteria.md</span></div>
+          <div class="pf-step" data-tone="wait"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o mono">rm -rf dist &amp;&amp; bun run build</span><span class="pf-end">等你批准</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="pf-cap">示意(真实样本里没有这一步)。标题换成琥珀色的「等你批准」,等的那一步同色高亮;批准按钮仍在输入框位置,不搬进时间线。等你回答同理。</p>
+  </div>
+  <div>
+    <div class="pf-tag">回答开始输出</div>
+    <div class="frame"><div class="tl">
+      <div class="pf">
+        <button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>搜索 16 次</span><span class="pf-dot"></span><span class="pf-warn">2 个网页没打开</span><span class="pf-dot"></span><span class="pf-num">3:21</span><span class="pf-pulse"></span></button>
+      </div>
+      <div class="row-ai"><div class="ai-md"><p>结论先说:<strong>criteria 本身不能嵌套,Jev 没有多级 / 条件式的 criteria;</strong>「多级」要靠把任务拆成<span class="pf-caret"></span></p></div></div>
+    </div></div>
+    <p class="pf-cap">第一个回答字出现的那一刻,工作过程<b>自动收成一行</b>,注意力交给回答。这一行仍在计时、带脉冲点,直到回合结束才定格;底部的光标是「还在写」的信号。</p>
+  </div>
+  <div>
+    <div class="pf-tag">过渡话的去向</div>
+    <div class="frame"><div class="tl">
+      <div class="pf"><button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>搜索 4 次</span><span class="pf-dot"></span><span class="pf-num">0:14</span></button></div>
+      <div class="row-ai"><div class="ai-md"><p style="margin:0">我先去官方文档确认一下字段表。<span class="pf-caret"></span></p></div></div>
+      <div class="pf-arrow">↓ 紧接着又开始调用工具</div>
+      <div class="pf">
+        <div class="pf-live-head"><span class="pf-pulse"></span><b>正在打开网页</b><span class="pf-dot"></span><span class="pf-t">第 4 步 · 0:15</span></div>
+        <div class="pf-list">
+          <div class="pf-step done"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索 4 次</span><span class="pf-o">docs.typesafe.ai System One API…</span></div>
+          <div class="pf-say">我先去官方文档确认一下字段表。</div>
+          <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">打开网页</span><span class="pf-o">docs.typesafe.ai/api</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="pf-cap">示意(这一回合的模型没说过渡话)。先按回答显示;一旦后面又调工具,这句话就是过渡话,淡出后进入工作过程,标题恢复实时。真实会话里过渡话中位数 56 个字,移动幅度很小。</p>
+  </div>
+</div>
+
+<!-- ══════════ ④ 结束态 ══════════ -->
+<h2 class="pf-h" id="end">④ 结束态:哪些东西永远在外面</h2>
+<p class="pf-sub">回答、导致失败的错误、被你打断、产出的文件、本回合改动 —— 这些是结果,不进工作过程。下面四帧里,外面的行全是今天已有的组件,形态不变。</p>
+<div class="pf-grid">
+  <div>
+    <div class="pf-tag">回合失败</div>
+    <div class="frame"><div class="tl">
+      <div class="pf"><button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>搜索 3 次</span><span class="pf-dot"></span><span class="pf-num">0:41</span></button></div>
+      <div class="pf-row err"><svg class="pf-i"><use href="#i-alert"/></svg><span>模型服务暂时过载,这次没能回答</span><small>重试</small></div>
+    </div></div>
+    <p class="pf-cap">错误卡在外面、形态不变;摘要里不重复写「失败」。</p>
+  </div>
+  <div>
+    <div class="pf-tag">被你打断</div>
+    <div class="frame"><div class="tl">
+      <div class="pf"><button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>搜索 8 次</span><span class="pf-dot"></span><span class="pf-num">1:02</span></button></div>
+      <div class="pf-stop"><svg class="pf-i"><use href="#i-stop"/></svg>已中断</div>
+    </div></div>
+    <p class="pf-cap">打断时还在跑的步骤,在列表里标「已停止」;摘要不变。</p>
+  </div>
+  <div>
+    <div class="pf-tag">没写文字,只产出了文件</div>
+    <div class="frame"><div class="tl">
+      <div class="pf"><button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>运行命令 5 次</span><span class="pf-dot"></span><span>写入 1 个文件</span><span class="pf-dot"></span><span class="pf-num">48 秒</span></button></div>
+      <div class="pf-row"><svg class="pf-i"><use href="#i-file"/></svg><span>criteria-字段说明.docx</span><small>Word 文档 · 点开预览</small></div>
+      <div class="pf-row"><svg class="pf-i"><use href="#i-diff"/></svg><span>本回合改动 2 个文件</span><span class="pf-add">+86</span><span class="pf-del">−4</span></div>
+    </div></div>
+    <p class="pf-cap">产物行、改动行照旧挂在回合末。若回合里有过渡话但最后一次工具之后没写字,把<b>最后一句话</b>提出来当回答;一个字都没有、也没有产物时,走今天的「空回合」行。</p>
+  </div>
+  <div>
+    <div class="pf-tag">只思考、没用工具</div>
+    <div class="frame"><div class="tl">
+      <div class="pf"><button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>思考 4 秒</span></button></div>
+      <div class="row-ai"><div class="ai-md"><p style="margin:0">可以。<code>noul</code> 的 criteria 是可选的,省略时模型按命题字面判断……</p></div></div>
+    </div></div>
+    <p class="pf-cap">今天单独的「思考」行就是这个组件的最小形态 —— 一套组件覆盖有工具和没工具两种回合。</p>
+  </div>
+</div>
+
+<!-- ══════════ ⑤ 步骤目录 ══════════ -->
+<h2 class="pf-h" id="steps">⑤ 步骤目录:今天时间线能出现的每一种工具,在新形态里长什么样</h2>
+<p class="pf-sub">逐类过了一遍今天的卡片。每行左边是第二层的那一行,中间是点开后的第三层,右边写和今天比改了什么。没有详情的步骤不显示箭头、点不开。右栏的<s>删除线</s>是今天有、改后去掉的东西。</p>
+<div class="pf-cat">
+  <div class="pf-cat-h">步骤行</div><div class="pf-cat-h">点开后</div><div class="pf-cat-h">和今天比</div>
+
+  <div class="pf-cat-g">查看</div>
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-read"/></svg><span class="pf-v">读取</span><span class="pf-o">message.ts</span><span class="pf-o">src/session</span></div>
+       <div class="pf-step"><svg class="pf-i"><use href="#i-read"/></svg><span class="pf-v">读取 5 个文件</span><span class="pf-o">message.ts 等</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-links"><span class="pf-link"><b class="pf-mono">src/session/message.ts</b></span><span class="pf-link"><b class="pf-mono">src/session/prompt.ts</b></span><span class="pf-link"><b class="pf-mono">… 另 3 个</b></span></div></div></div>
+  <div class="pf-note">单次读取没有详情(文件内容今天也不显示);连续读取合成一行,点开是文件清单。<s>「完成」</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-list"/></svg><span class="pf-v">列出目录</span><span class="pf-o pf-mono">~/app/kama-bot-local</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-grid-dir"><span>docker/</span><span>src/</span><span>README.md</span><span>compose.yml</span><span>.env.example</span><span>package.json</span></div><div class="pf-detail-foot"><span>共 14 项</span></div></div></div>
+  <div class="pf-note">条目数只在详情底部出现一次。<s>头部「共 14 项」</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-glob"/></svg><span class="pf-v">查找文件</span><span class="pf-o pf-mono">**/*.test.ts</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step"><svg class="pf-i"><use href="#i-glob"/></svg><span class="pf-v">查找文件</span><span class="pf-o pf-mono">**/*.spec.ts</span><span class="pf-end">没找到</span></div></div>
+  <div><div class="pf-detail"><div class="pf-links"><span class="pf-link"><b class="pf-mono">src/a.test.ts</b></span><span class="pf-link"><b class="pf-mono">src/b.test.ts</b></span></div><div class="pf-detail-foot"><span>共 4 个</span></div></div></div>
+  <div class="pf-note">数量只有为零时才上行尾(「没找到」本身是有用的结果)。<s>「4 个文件」</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-grep"/></svg><span class="pf-v">查找内容</span><span class="pf-o pf-mono">image</span><span class="pf-o">在 docker-compose* 里</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-grep"><b>docker-compose.yml</b>:12  <mark>image</mark>: postgres:16<br>:31  <mark>image</mark>: redis:7</div></div></div>
+  <div class="pf-note">动作名从「检索」改成「查找内容」,与「搜索(网页)」分开。<s>「2 处命中」</s></div>
+
+  <div class="pf-cat-g">网络</div>
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索</span><span class="pf-o">docs.typesafe.ai System One API request…</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-links"><a class="pf-link" href="#"><b>API reference - TypeSafe AI</b><span>docs.typesafe.ai</span></a><a class="pf-link" href="#"><b>Choice - TypeSafe AI</b><span>docs.typesafe.ai</span></a></div><div class="pf-detail-foot"><span>还有 6 条</span><span class="pf-grow"></span><a href="#">复制查询</a></div></div></div>
+  <div class="pf-note">本机搜索与云端搜索<b>同一个写法</b>(今天一个叫「联网搜索」带条数,一个叫「网页搜索」只写完成)。<s>「云端」徽标 · 「完成」</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-link"/></svg><span class="pf-v">打开网页</span><span class="pf-o">pydantic.dev/docs/ai/models/typesafe</span></div>
+       <div class="pf-step" data-tone="warn"><svg class="pf-i"><use href="#i-link"/></svg><span class="pf-v">打开网页</span><span class="pf-o">docs.typesafe.ai/api</span><span class="pf-end">没打开<svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-errline"><svg class="pf-i"><use href="#i-x"/></svg><span>连不上这个网站</span></div><div class="pf-detail-foot"><span class="pf-mono">Transport error (GET https://docs.typesafe.ai/api)</span><span class="pf-grow"></span><a href="#">复制</a></div></div></div>
+  <div class="pf-note">成功时没有详情(今天也没有);失败才能点开。<s>「抓取网页」→「打开网页」· 默认展开的报错</s></div>
+
+  <div class="pf-cat-g">动手</div>
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">安装依赖</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step" data-tone="err"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">跑单元测试</span><span class="pf-end">退出 1<svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step run"><span class="pf-spin"></span><span class="pf-v">运行</span><span class="pf-o">构建桌面包</span><span class="pf-end">已等 0:48</span></div>
+       <div class="pf-tail">vite v5.4.2 building for production...
+✓ 1532 modules transformed.
+rendering chunks (12/31)...</div></div>
+  <div><div class="pf-detail"><pre class="pf-detail-out">$ bun test src
+ 412 pass
+   1 fail  timeline-model.test.ts › groups explore runs</pre><div class="pf-detail-foot"><span>退出 1</span><span class="pf-grow"></span><a href="#">复制输出</a></div></div></div>
+  <div class="pf-note">有说明就写说明,命令原文进详情首行。退出码只在非 0 时上行尾。正在跑的命令在实时区下方露<b>最后 3 行输出</b>,结束即收起。<s>「退出 0」· 默认展开的输出</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-edit"/></svg><span class="pf-v">编辑</span><span class="pf-o">message.ts</span><span class="pf-end"><span class="pf-add">+12</span><span class="pf-del">−3</span><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step" data-tone="err"><svg class="pf-i"><use href="#i-edit"/></svg><span class="pf-v">编辑</span><span class="pf-o">prompt.ts</span><span class="pf-end">2 个报错<svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-diag">ERR prompt.ts:88 Property 'parts' does not exist</div><div class="pf-diff"><div>  const rows = []</div><div class="d">- for (const p of msg.part)</div><div class="a">+ for (const p of msg.parts)</div></div><div class="pf-detail-foot"><span class="pf-grow"></span><a href="#">在审查面板打开</a></div></div></div>
+  <div class="pf-note">改动的增删数保留在行尾 —— 它是内容,不是状态。编辑后的报错改成行尾一句「N 个报错」,原文在详情顶部。<s>常驻的报错块 · 头部「在面板打开」</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-write"/></svg><span class="pf-v">写入</span><span class="pf-o">report/criteria.md</span><span class="pf-end"><span class="pf-add">+86</span><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step"><svg class="pf-i"><use href="#i-edit"/></svg><span class="pf-v">修改 3 个文件</span><span class="pf-end"><span class="pf-add">+40</span><span class="pf-del">−12</span><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><pre class="pf-detail-out"># Criteria 字段说明
+| 字段 | 必填 | 类型 |</pre><div class="pf-detail-foot"><span>全文 86 行</span><span class="pf-grow"></span><a href="#">在审查面板打开</a></div></div></div>
+  <div class="pf-note">「应用补丁」改叫「修改 N 个文件」,点开是逐文件的新增 / 修改 / 删除。路径、行数各只出现一次。<s>头部与正文重复的路径和行数</s></div>
+
+  <div class="pf-cat-g">其他我方工具</div>
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-skill"/></svg><span class="pf-v">使用技能</span><span class="pf-o">pdf</span></div></div>
+  <div class="pf-none">没有详情</div>
+  <div class="pf-note"><s>绿色「已加载」</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-task"/></svg><span class="pf-v">子任务</span><span class="pf-o">调研竞品定价 · researcher</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-detail-txt">对比 5 家竞品的公开定价页,输出表格。</div><div class="pf-detail-foot"><span class="pf-grow"></span><a href="#">打开子会话 ›</a></div></div></div>
+  <div class="pf-note">跑的时候同其他步骤一样转圈、超 10 秒计时。<s>转圈的圆环 + 「运行中」两套运行标记</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-ask"/></svg><span class="pf-v">问了你</span><span class="pf-o">导出成哪种格式?</span><span class="pf-end">你选了 Word<svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-opt"><span class="on">Word 文档</span><span>PDF</span><span>Markdown</span></div></div></div>
+  <div class="pf-note"><b>今天答完的提问是一张「本机工具 · 详情未展示」的空卡,你的回答哪里都看不到。</b>它是我方工具,可以给它展示规则,把问题和你的选择写出来。</div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-cloud"/></svg><span class="pf-v">下发云端任务</span><span class="pf-o">生成季度报告</span><span class="pf-end">已等 2:10</span></div></div>
+  <div class="pf-none">没有详情;产出的文件在回合末的产物行</div>
+  <div class="pf-note">动作名本身写着「云端」,不再另挂徽标。查询 / 等待 / 列出产物 / 定时任务同一写法。<s>「云端」徽标 · 「完成」</s></div>
+
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">本机工具</span><span class="pf-o pf-mono">lsp</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-detail-txt">这一步的输入和结果不在这里显示。</div><div class="pf-detail-foot"><span>› 开发者详情</span></div></div></div>
+  <div class="pf-note">还没有展示规则的我方工具(代码检查、计划切换、代码模式等)。<s>常驻说明段 · 「本机」徽标与「本机工具」标题重复</s></div>
+
+  <div class="pf-cat-g">不是我们的工具</div>
+  <div><div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">obsidian-tools</span><span class="pf-v">open_note</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step"><svg class="pf-i"><use href="#i-help"/></svg><span class="pf-src">来源不明</span><span class="pf-v">fetch_data</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
+  <div><div class="pf-detail"><div class="pf-detail-txt">这个工具来自第三方(Notion),我们不显示它收到和返回的内容。</div><div class="pf-detail-foot"><span>› 开发者详情</span></div></div></div>
+  <div class="pf-note">插头 = 第三方连接,拼图 = 插件,问号 = 来源不明。我方步骤永远不带服务名和这三种图标,所以第三方起名「读取」也冒充不了。失败只写「没成功」,不显示错误原文(规则不变)。<s>标题「第三方 MCP 工具」+ 徽标「第三方 MCP」重复 · 常驻说明段</s></div>
+
+  <div class="pf-cat-g">任何步骤都可能出现的状态</div>
+  <div><div class="pf-step" data-tone="err"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">部署到预发环境</span><span class="pf-end">失败<svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-step" data-tone="warn"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">清理构建目录</span><span class="pf-end">没等到你批准</span></div>
+       <div class="pf-step"><svg class="pf-i"><use href="#i-edit"/></svg><span class="pf-v">编辑</span><span class="pf-o">详情已隐藏</span></div>
+       <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索</span><span class="pf-o">typesafe jev …</span><span class="pf-end">已停止</span></div></div>
+  <div><div class="pf-detail"><div class="pf-detail-txt">等了 60 秒没人批准,这一步没有执行。</div></div></div>
+  <div class="pf-note">「没等到你批准」今天只在第三方卡上有人话,我方工具超时显示的是引擎原文 —— 统一成人话。<s>失败卡的红边框 + 红底 + 「失败」+「工具执行失败」四重标记</s></div>
+
+  <div class="pf-cat-g">不是工具,但也在工作过程里</div>
+  <div><div class="pf-step think"><svg class="pf-i"><use href="#i-think"/></svg><span class="pf-v">思考 4 秒</span><span class="pf-o">规划探查顺序</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
+       <div class="pf-say" style="margin-left:2px">我先去官方文档确认一下字段表。</div>
+       <div class="pf-live-head" style="margin-top:4px"><span class="pf-pulse" style="background:var(--a-warning)"></span><b>正在重试</b><span class="pf-dot"></span><span class="pf-t">第 2 次 · 模型服务暂时过载</span></div></div>
+  <div><div class="pf-detail"><div class="pf-detail-txt">先列目录看结构,再读 README 与 compose 抓事实,最后浓缩成简介。</div></div></div>
+  <div class="pf-note">思考:小标题只用模型明确给出的。过渡话:灰色正文,无图标。自动重试:进实时标题,不再和「正在生成」两行并存。</div>
+</div>
+<p class="pf-cap"><b>不进工作过程、形态不变的</b>:回合分隔、用户气泡、上下文压缩分隔、回答正文、图片 / 媒体预览行、产物链接行、本回合改动、回合错误卡、中断行、空回合行。待办清单更新今天就不在时间线里,保持不显示。</p>
+
+<!-- ══════════ ⑥ 弹出层 ══════════ -->
+<h2 class="pf-h" id="overlays">⑥ 弹出层:从十几种样子收成四种</h2>
+<p class="pf-sub">清点了时间线和下方输入框周围所有会浮起来的东西。时间线本身几乎不弹出(只有代码块的复制提示,而且是上游的);乱的是输入框一带和全局层:两套下拉、四种批准样式、两套通知、7 种圆角、6 种阴影。一条总则:<b>时间线里的内容一律原地展开,不弹出;弹出只用于提示、选择、确认、通知四件事。</b></p>
+
+<div class="pf-tag" style="margin-top:14px">今天 · 同一屏里能同时见到的样子</div>
+<div class="frame"><div class="pf-old">
+  <div><div class="box" style="border-radius:11px;box-shadow:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10)">模型 / 权限菜单</div><small>11px 圆角 + 和对话框同一档的重阴影;点别处才关,Esc 只在焦点在里面时有效</small></div>
+  <div><div class="box" style="border-radius:11px;box-shadow:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10)">「+」「/」「@」列表</div><small>看着一样,却是另一套:不浮到顶层、按下鼠标就关、能上下键</small></div>
+  <div><div class="box" style="border-radius:11px;border-color:var(--a-border);box-shadow:var(--a-shadow-lg)">只读说明</div><small>唯一带小箭头的;边框更深、阴影另一档、宽度写死 320</small></div>
+  <div><div class="box" style="border-radius:4px;background:#1f2023;color:#fff;height:28px;align-self:flex-start;padding:0 8px">Copy</div><small>代码块复制提示:上游组件,4px 圆角,英文</small></div>
+  <div><div class="box" style="border-radius:8px;box-shadow:var(--a-shadow-md)">上游通知</div><small>与我方通知并存于右下角:偏移、宽度、圆角、停留时长都不同</small></div>
+  <div><div class="box" style="border-radius:18px;box-shadow:0 24px 64px rgba(15,17,21,.20)">工具批准</div><small>全屏遮罩、挡住时间线;而「联网批准」是系统原生弹窗,「模型提问」是输入框上方的卡片</small></div>
+</div></div>
+<p class="pf-cap">另有 22 处只靠浏览器原生悬停文字(缓存命中率、选项说明、按钮为什么不能点),键盘用户和慢一点的鼠标都看不到;我方的三个复制按钮大小、圆角各不同,点了也没有「已复制」反馈。</p>
+
+<div class="pf-grid" style="margin-top:22px">
+  <div>
+    <div class="pf-tag">① 提示 · 悬停或键盘聚焦 0.4 秒后出现</div>
+    <div class="frame"><div class="pf-ov-stage">
+      <div class="pf-spec"><span class="pf-tip">复制回答 <kbd>⌘C</kbd></span><small>反色小签,6px 圆角,不带箭头</small></div>
+      <div class="pf-spec"><span class="pf-tip">缓存命中 82%</span><small>取代原生悬停文字</small></div>
+      <div class="pf-spec"><span class="pf-acts"><span class="pf-act"><svg class="pf-i"><use href="#i-file"/></svg></span><span class="pf-act ok"><svg class="pf-i"><use href="#i-check"/></svg></span><span class="pf-act"><svg class="pf-i"><use href="#i-edit"/></svg></span></span><small>悬停动作统一 24px;复制后图标变绿勾 1.5 秒</small></div>
+    </div></div>
+    <p class="pf-cap"><b>只放补充说明</b>。凡是解释「为什么不能点」的(计划模式锁住、思考强度不可调),改成控件旁可见的一行字,不藏进提示。代码块复制换成同一套提示和「已复制」反馈。</p>
+  </div>
+  <div>
+    <div class="pf-tag">② 菜单 · 点了才开,选完就关</div>
+    <div class="frame"><div class="pf-ov-stage">
+      <div class="pf-menu">
+        <div class="pf-menu-h">运行权限</div>
+        <div class="pf-mi"><span class="ck"></span>全部批准<small>改文件 / 执行命令不再询问</small></div>
+        <div class="pf-mi on"><span class="ck">✓</span>请求审批<small>逐次询问</small></div>
+        <div class="pf-mi"><span class="ck"></span>只读<small>不能改文件 / 执行命令</small></div>
+      </div>
+      <div class="pf-menu">
+        <div class="pf-back"><svg class="pf-chev"><use href="#i-chev"/></svg>添加供应商</div>
+        <div class="pf-msep"></div>
+        <div class="pf-mi">OpenRouter</div>
+        <div class="pf-mi">DeepSeek</div>
+        <div class="pf-mi">自定义地址…</div>
+      </div>
+    </div></div>
+    <p class="pf-cap">模型、权限、思考强度、「+」「/」「@」<b>同一个容器、同一套键盘</b>:↑↓ 移动,回车选,Esc 关并把焦点还给按钮;点别处关;同时只开一个;窗口变化时跟着重新定位。二级页在同一个容器里滑入,Esc 先退回一级。阴影降到中档 —— 菜单不该和对话框一样重。</p>
+  </div>
+  <div>
+    <div class="pf-tag">③ 等你处理 · 全应用唯一的批准面板,停在输入框之上,不遮时间线</div>
+    <div class="frame"><div class="pf-ov-stage">
+      <div class="pf-ask">
+        <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+        <p>运行命令(删除 dist 目录后重新构建)</p>
+        <code>rm -rf dist &amp;&amp; bun run build</code>
+        <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button">始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div>
+      </div>
+    </div></div>
+    <p class="pf-cap">工具批准仍是<b>全应用唯一一个批准面板</b>:任何页面都会出现,五项事实全显示,Esc 关不掉 —— 只是不再加遮罩、不冻结页面,停在窗口底部输入框之上,时间线可继续往上翻看;外观与模型提问卡同族。出现时焦点落在「允许一次」;文案与按钮沿用今天批准框的;工作过程标题同时变成琥珀色「等你批准」。联网批准与项目扩展信任仍用系统原生弹窗 —— 它们由应用主进程发起,原生弹窗的内容网页无法伪造,不动。</p>
+  </div>
+  <div>
+    <div class="pf-tag">④ 通知 · 右下角,只有一套</div>
+    <div class="frame"><div class="pf-ov-stage" style="flex-direction:column;align-items:flex-end">
+      <div class="pf-toast"><span class="dot"></span><div>已切换到 deepseek-flash<small>下一条消息生效</small></div><span class="x">×</span></div>
+      <div class="pf-toast err"><span class="dot"></span><div>发送失败<small>网络断开,内容还在输入框里</small></div><span class="x">×</span></div>
+    </div></div>
+    <p class="pf-cap">上游那套通知并进这一套。普通通知 4 秒自动消失、鼠标停在上面时暂停;<b>出错的通知不自动消失</b>,并会被读屏软件立即读出。全局横幅放到对话框下面一层(今天横幅压在对话框之上)。</p>
+  </div>
+</div>
+
+<table class="pf-table pf-ov-table">
+  <thead><tr><th>今天的弹出</th><th>归到</th><th>主要变化</th></tr></thead>
+  <tbody>
+    <tr><td>模型 / 权限 / 思考强度菜单</td><td>② 菜单</td><td>阴影降档;补上下键;Esc 在任何焦点下都关;跟随重新定位</td></tr>
+    <tr><td>「+」「/」「@」列表</td><td>② 菜单</td><td>同一容器与关闭方式;「/」「@」仍让焦点留在输入框里(边打字边选)</td></tr>
+    <tr><td>添加供应商(菜单内的二级页)</td><td>② 菜单</td><td>同底色、同圆角;Esc 退回上一级而不是整个关掉</td></tr>
+    <tr><td>顶栏「只读」说明</td><td>① 提示</td><td>去掉小箭头和写死的宽度</td></tr>
+    <tr><td>代码块复制提示 · 22 处原生悬停文字</td><td>① 提示</td><td>中文、同一样式;解释「为什么不能点」的改成可见文字</td></tr>
+    <tr><td>工具批准(全屏)· 模型提问(卡片)</td><td>③ 等你处理</td><td>批准仍是唯一的全局面板,去掉遮罩与页面冻结;与提问卡同族外观</td></tr>
+    <tr><td>联网批准 · 项目扩展信任 · 生态导入</td><td>系统原生(不变)</td><td>由主进程发起,保留原生弹窗</td></tr>
+    <tr><td>我方通知 · 上游通知</td><td>④ 通知</td><td>合成一套;错误不自动消失</td></tr>
+    <tr><td>全局横幅</td><td>横幅(不变)</td><td>层级放到对话框之下</td></tr>
+    <tr><td>上游「Introducing tabs」推广卡</td><td>不显示</td><td>与本产品无关</td></tr>
+    <tr><td>会话搜索(⌘K)· 运行恢复页</td><td>对话框(不变)</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<!-- ══════════ ⑦ 收纳规则 ══════════ -->
+<h2 class="pf-h" id="rules">⑦ 收纳规则一览</h2>
+<p class="pf-sub">一条总则:<b>你手动开或关过的,系统不再替你开关</b>(本回合内有效)。其余按下表自动。</p>
+<table class="pf-table">
+  <thead><tr><th>时机</th><th>工作过程</th><th>外面显示</th></tr></thead>
+  <tbody>
+    <tr><td>刚发出</td><td>出现实时标题「正在思考 · 计时」</td><td>—</td></tr>
+    <tr><td>思考 / 工具在跑</td><td>实时标题写当前动作;下面露最近 2 步 + 所有正在跑的;超过 10 秒的步骤显示「已等」</td><td>—</td></tr>
+    <tr><td>等你批准 / 回答</td><td>标题变琥珀「等你批准」「等你回答」,等的那一步高亮</td><td>输入框位置的批准 / 提问面板(不变)</td></tr>
+    <tr><td>回答开始输出</td><td>收成一行摘要</td><td>回答流式输出,带光标</td></tr>
+    <tr><td>输出后又调工具</td><td>刚才那段话移入过程成为过渡话,恢复实时标题</td><td>—</td></tr>
+    <tr><td>正常结束</td><td>保持一行摘要;用时定格</td><td>回答 · 产物行 · 本回合改动 · 脚注</td></tr>
+    <tr><td>中途某步失败,回合成功</td><td>摘要用琥珀色写「N 个网页没打开」之类;不自动展开</td><td>同上</td></tr>
+    <tr><td>回合失败</td><td>一行摘要</td><td>回合错误卡(不变)</td></tr>
+    <tr><td>被打断</td><td>一行摘要;列表里跑到一半的步骤标「已停止」</td><td>「已中断」行(不变)</td></tr>
+    <tr><td>重新打开历史会话</td><td>全部收起</td><td>同正常结束</td></tr>
+  </tbody>
+</table>
+
+</div>
+<script>
+(function(){
+  var seg=document.getElementById('themeSeg'); if(!seg) return;
+  seg.addEventListener('click',function(e){var b=e.target.closest('button'); if(!b) return;
+    document.documentElement.setAttribute('data-theme',b.dataset.theme);
+    seg.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});});
+})();
+</script>
+</body>
+</html>
