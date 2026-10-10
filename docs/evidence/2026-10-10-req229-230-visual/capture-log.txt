@@ -1,0 +1,20 @@
+fold-collapsed light: ERRORS Failed to load resource: the server responded with a status of 404 (Not Found)
+fold-collapsed dark: ok
+fold-expanded light: ok
+fold-expanded dark: ok
+fold-step-detail light: ok
+fold-step-detail dark: ok
+fold-search-detail light: ok
+provenance light: ok
+live-running light: ok
+live-running dark: ok
+live-waiting light: ok
+live-waiting dark: ok
+approval DOM facts: {"anchored":"composer","activeElement":"允许一次","inertAnywhere":0,"ariaModal":0,"timelineTopHitIsTimeline":true,"panelRect":{"top":268,"bottom":730,"left":254,"width":772},"composerTop":742,"timelineScrollable":true}
+approval light: ok
+approval dark: ok
+menu-perm light: ok
+menu-perm dark: ok
+menu-model light: ok
+menu-model dark: ok
+toast-tooltip light: ok

@@ -1,0 +1,31 @@
+/* harness 自有布局:只负责把时间线与输入框按会话页的上下关系摆好,不改任何生产样式。 */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--a-bg-canvas);
+  color: var(--a-text);
+  font-family: var(--a-font-sans, system-ui);
+}
+#root {
+  height: 100%;
+}
+.vh-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.vh-timeline {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.vh-composer {
+  flex: none;
+  padding: 0 24px 16px;
+  max-width: 820px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
