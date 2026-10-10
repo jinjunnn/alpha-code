@@ -8,11 +8,12 @@
  * 缺的只是 renderer 里一个「现在有强模态」的共同真相 —— 就是这个模块。
  *
  * 这不是窗口层管理框架:一个计数器 + 一组订阅者,生产者与消费者都在本仓内点名。
- *   · 生产者①:`dialog-core` 的模态栈 —— 每一个 `alpha-ui/Dialog`(权限审批 PermissionDialog、
+ *   · 生产者①:`dialog-core` 的模态栈 —— 每一个 `alpha-ui/Dialog`(
  *     能力授权 ext-authz、上传同意、上游 dialog host、会话搜索、扩展导入)都经 registerDialog。
  *   · 生产者②:`settings` 全屏面 —— 自报 role=dialog + aria-modal=true 且 position:fixed inset:0。
  *   · 消费者:`session-rail/files/file-viewer-view` 的 OverlayRegion(转发 railPreview.setVisible)。
- * 非模态浮层(tooltip / 下拉 / toast)与 role=region 的全屏面(扩展中心、自动化面板)不在此列。
+ * 非模态浮层(tooltip / 下拉 / toast、工具批准面板 PermissionDialog —— #1478 起不再是强模态,
+ * 它贴在会话输入框上方,不与右栏预览重叠)与 role=region 的全屏面(扩展中心、自动化面板)不在此列。
  */
 
 let depth = 0

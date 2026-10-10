@@ -132,3 +132,70 @@
     margin-right: 0;
   }
 }
+
+/* ── 工具批准面板(#1478):非模态、全应用唯一、关不掉 ──────────────────────
+   没有遮罩、不冻结页面;窗口底部居中,有会话输入框时由 JS 锚到它正上方(写 left/width/bottom)。
+   视觉沿用提问卡一族:细边框、11px 圆角、轻阴影、琥珀色「等你处理」图标。 */
+.a-permission-panel-root {
+  position: fixed;
+  z-index: var(--a-z-overlay);
+  bottom: var(--a-space-4);
+  left: 50%;
+  width: min(640px, calc(100vw - 2 * var(--a-space-4)));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.a-permission-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(560px, calc(100vh - var(--a-permission-panel-bottom, 16px) - 16px));
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface-raised);
+  box-shadow: var(--a-shadow-md);
+  color: var(--a-text);
+  pointer-events: auto;
+}
+
+.a-permission-panel:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+.a-permission-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-2);
+  padding: 12px 14px 0;
+}
+
+.a-permission-panel-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--a-warning);
+}
+
+.a-permission-panel-title {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+}
+
+.a-permission-panel-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--a-space-2) 14px 0;
+}
+
+.a-permission-panel-description {
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+}
+
+.a-permission-panel-body .a-permission-facts {
+  margin-top: var(--a-space-3);
+}
+
+.a-permission-panel-footer {
+  padding: var(--a-space-3) 14px 12px;
+}

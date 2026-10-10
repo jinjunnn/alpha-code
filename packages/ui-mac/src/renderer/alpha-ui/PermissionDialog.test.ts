@@ -106,27 +106,29 @@ function mount(
   onSubmit: (command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>,
   projectID: string | null = "prj_alpha",
   permissionRequest = request,
+  options: { composer?: boolean } = {},
 ) {
-  const composer = document.createElement("div")
-  composer.dataset.alphaComposer = "session"
   const textarea = document.createElement("textarea")
-  composer.append(textarea)
-  document.body.append(composer)
+  if (options.composer !== false) {
+    const composer = document.createElement("div")
+    composer.dataset.alphaComposer = "session"
+    composer.append(textarea)
+    document.body.append(composer)
+  }
 
   const host = document.createElement("div")
   document.body.append(host)
-  disposers.push(
-    runtime.render(
-      () =>
-        runtime.createComponent(runtime.PermissionDialog, {
-          request: permissionRequest,
-          projectID: projectID ?? undefined,
-          onSubmit,
-        }),
-      host,
-    ),
+  const dispose = runtime.render(
+    () =>
+      runtime.createComponent(runtime.PermissionDialog, {
+        request: permissionRequest,
+        projectID: projectID ?? undefined,
+        onSubmit,
+      }),
+    host,
   )
-  return { textarea }
+  disposers.push(dispose)
+  return { textarea, dispose }
 }
 
 function mountWatcher(client: PermissionClient) {
@@ -322,26 +324,78 @@ describe("Alpha Permission real Solid render", () => {
     expect(alert.textContent).toContain("different facts")
   })
 
-  test("reuses Dialog safe focus, keyboard trap, and non-dismissible close contract", async () => {
+  // #1478(REQ-230 AC4,owner 2026-10-10):批准面板不再是强模态 —— 无遮罩、不冻结页面,
+  // 但仍关不掉、出现时焦点落在「允许一次」、结束后还给会话输入框。
+  test("#1478 非模态:无遮罩,页面其余部分零 inert / aria-hidden,时间线照常可聚焦", async () => {
+    const page = document.createElement("main")
+    page.dataset.testPage = ""
+    const timelineItem = document.createElement("button")
+    timelineItem.textContent = "timeline"
+    page.append(timelineItem)
+    document.body.append(page)
     mount(async (command) => receipt(command))
     await flush()
 
-    const dialog = document.querySelector<HTMLElement>("[role='dialog']")!
-    expect(dialog.getAttribute("aria-modal")).toBe("true")
-    expect(dialog.querySelector(".a-dialog-close")).toBeNull()
+    const panel = document.querySelector<HTMLElement>("[data-alpha-permission-panel]")!
+    expect(panel).not.toBeNull()
+    expect(panel.getAttribute("role")).toBe("dialog")
+    expect(panel.hasAttribute("aria-modal")).toBeFalse()
+    expect(document.querySelector(".a-dialog-backdrop, .a-dialog-root")).toBeNull()
+    expect(panel.querySelector(".a-dialog-close, [aria-label='Close']")).toBeNull()
+    for (const element of Array.from(document.querySelectorAll("*"))) {
+      expect(element.hasAttribute("inert")).toBeFalse()
+      expect(element.hasAttribute("aria-hidden") && !panel.contains(element)).toBeFalse()
+    }
+
+    // 没有焦点陷阱:用户可以把焦点移到时间线上,面板不把它拽回来。
+    timelineItem.focus()
+    await flush()
+    expect(document.activeElement).toBe(timelineItem)
+    expect(document.querySelector("[data-alpha-permission-panel]")).toBe(panel)
+  })
+
+  test("#1478 出现时焦点落在「允许一次」;Esc 关不掉、也不漏给页面", async () => {
+    let pageSawEscape = false
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") pageSawEscape = true
+    })
+    mount(async (command) => receipt(command))
+    await flush()
+
+    const panel = document.querySelector<HTMLElement>("[data-alpha-permission-panel]")!
     expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("once")
 
     const escape = keydown(decision("once"), "Escape")
     await flush()
     expect(escape.defaultPrevented).toBeTrue()
-    expect(document.querySelector("[role='dialog']") === dialog).toBeTrue()
+    expect(pageSawEscape).toBeFalse()
+    expect(document.querySelector("[data-alpha-permission-panel]")).toBe(panel)
+    for (const fact of ["subject", "action", "resources", "scope", "expiry"]) {
+      expect(panel.querySelector(`[data-permission-fact="${fact}"]`)).not.toBeNull()
+    }
+  })
 
-    keydown(dialog, "Tab")
-    dialog.querySelector<HTMLElement>('[data-dialog-focus-guard="end"]')!.focus()
-    expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("reject")
-    keydown(dialog, "Tab", { shiftKey: true })
-    dialog.querySelector<HTMLElement>('[data-dialog-focus-guard="start"]')!.focus()
+  test("#1478 没有会话页也呈现(首页):锚在窗口底部居中", async () => {
+    mount(async (command) => receipt(command), "prj_alpha", request, { composer: false })
+    await flush()
+
+    const panel = document.querySelector<HTMLElement>("[data-alpha-permission-panel]")!
+    expect(panel).not.toBeNull()
+    expect(panel.closest<HTMLElement>(".a-permission-panel-root")!.dataset.anchored).toBe("window")
+    expect(document.querySelectorAll("[data-permission-decision]")).toHaveLength(3)
     expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("once")
+  })
+
+  test("#1478 面板消失后焦点还给会话输入框", async () => {
+    const { textarea, dispose } = mount(async (command) => receipt(command))
+    await flush()
+    expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("once")
+
+    dispose()
+    disposers.splice(disposers.indexOf(dispose), 1)
+    await flush()
+    expect(document.querySelector("[data-alpha-permission-panel]")).toBeNull()
+    expect(document.activeElement).toBe(textarea)
   })
 })
 
