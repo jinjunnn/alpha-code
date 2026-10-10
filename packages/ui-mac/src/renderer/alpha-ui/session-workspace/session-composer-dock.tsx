@@ -47,6 +47,8 @@ export function SessionComposerDock(props: {
    * (审批 feed 只在这里建),所以由 dock 发布、workspace 持信号、时间线消费;缺席 = 不发布(harness)。
    */
   publishTurnWait?: (wait: TimelineTurnWait | undefined) => void
+  /** `#1318` AC3:workspace 焦点通道的登记口,原样交给 composer;缺席 = 不登记(harness)。 */
+  registerComposerFocus?: (focus: () => void) => () => void
 }) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
@@ -191,6 +193,7 @@ export function SessionComposerDock(props: {
     running,
     contextUsage: usage,
     approvalPending,
+    registerFocus: (focus) => props.registerComposerFocus?.(focus) ?? (() => {}),
     onSlashCommand: (capture: ComposerSlashCapture) => {
       const bound = identity()
       if (!bound || bound.sessionID !== capture.sessionID || bound.directory !== capture.directory) return
