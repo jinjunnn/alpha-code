@@ -85,6 +85,7 @@ export type ToolCardKind =
   | "apply_patch"
   | "skill"
   | "task"
+  | "question"
   | "cloud"
   | "unknown"
 
@@ -160,6 +161,9 @@ const HOST_BUILTIN_RULES = new Map<string, ToolCardKind>([
   ["apply_patch", "apply_patch"],
   ["skill", "skill"],
   ["task", "task"],
+  // #1475 AC6:答完的内置提问。只有引擎铸造的 builtin identity 才命中 —— 第三方起名
+  // question 仍是 metadata-only 降级(规则表的 key 是完整 identity,不是别名)。
+  ["question", "question"],
 ])
 
 const IDENTITY_SOURCES: ReadonlySet<string> = new Set(["builtin", "builtin-v2", "plugin", "mcp", "host"])
@@ -397,6 +401,7 @@ const TITLE_KEYS: Partial<Record<ToolCardKind, string>> = {
   apply_patch: "alpha.timeline.tool.patch",
   skill: "alpha.timeline.tool.skill",
   task: "alpha.timeline.tool.task",
+  question: "alpha.timeline.tool.question",
 }
 
 /**
@@ -564,6 +569,11 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
     }
     case "task": {
       assignInline(head, input.description)
+      return head
+    }
+    case "question": {
+      // #1475 AC6:对象 = 第一个问题(经共享 redactor;失败 = 确定的「详情已隐藏」)。
+      assignInline(head, firstQuestionOf(input)?.question)
       return head
     }
     default:
@@ -1065,6 +1075,8 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
       return patchBodyOf(part)
     case "skill":
     case "task":
+    case "question":
+      // question 的详情是选项清单(questionStepInfoOf),不走通用正文。
       return { type: "none" }
     default:
       // 命中规则的 kind 已全部枚举;不可达,fail-closed 兜底。
@@ -1258,6 +1270,245 @@ export function diagnosticsOf(part: ToolPart): { rows: DiagnosticRow[]; truncate
     })
   }
   return { rows, truncated }
+}
+
+// ── #1475 步骤行(REQ-229 AC3 / AC5 / AC6):动作名 · 对象 · 行尾 ────────────────
+// 形态权威 = docs/design/2026-10-10-timeline-process-fold/design.md §5 §6 与 frame.html ⑤。
+// 行尾只放三种东西:超过 10 秒的用时(视图算)、失败或等你的人话、改动增删数;计数只在
+// 为零时上行尾(「没找到」)。非我方工具不给动作名,改由 source 在行内写来源(插头 / 拼图 /
+// 问号 + 服务名);我方步骤的 source 恒缺席 —— 第三方起名「读取」也冒充不了。
+// metadata-only 的纪律不变:这里对降级卡只读 dispatch(来源分类 + 净化名称)与审批超时
+// 的布尔分类,input / metadata / output / error 的内容零字符进投影。
+
+/** 非我方来源的行内标记:mcp = 插头 + 服务名;plugin = 拼图 + 插件名;unknown = 问号 + 来源不明。 */
+export type ToolStepSourceKind = "mcp" | "plugin" | "unknown"
+
+export interface ToolStepEnd {
+  key: string
+  params?: Record<string, string | number>
+  /** 列表参数(如「你选了」的多选答案):视图按语言的分隔符拼接后作为 params.answer。 */
+  list?: string[]
+  /** true = 这是失败 / 未执行的人话(琥珀色,带 data-alpha-step-failure)。 */
+  failure?: boolean
+}
+
+export interface ToolStepLine {
+  /** 我方工具的动作名(i18n key);非我方来源恒缺席。 */
+  verbKey?: string
+  verbParams?: Record<string, string | number>
+  /** 非我方来源(防冒充:我方步骤恒缺席)。label = 净化后的服务 / 插件名,缺席时视图用通用文案。 */
+  source?: { kind: ToolStepSourceKind; label?: string }
+  /** 被动净化且有界的工具名(非我方 / 无规则我方工具的对象)。 */
+  name: string
+  object?: string
+  objectMono?: boolean
+  /** 对象存在但 redactor 失败 / 清空 → 确定的「详情已隐藏」(AC5)。 */
+  objectHidden?: boolean
+  end?: ToolStepEnd
+  stat?: { additions: number; deletions: number }
+}
+
+/** 还没有展示规则的我方工具的通用动作名(「本机工具」「云端工具」……)。 */
+const OWN_GENERIC_KEYS: Partial<Record<ToolSourceCategory, string>> = {
+  builtin: "alpha.timeline.sourceBuiltin",
+  host: "alpha.timeline.sourceHost",
+  "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
+}
+
+/** 非我方来源分类(mcp / plugin / unknown);我方(builtin / host / alpha-cloud)= undefined。 */
+export function toolStepSourceOf(dispatch: Pick<ToolCardDispatch, "category" | "origin">): { kind: ToolStepSourceKind; label?: string } | undefined {
+  if (dispatch.category === "mcp") return { kind: "mcp", label: dispatch.origin }
+  if (dispatch.category === "plugin") return { kind: "plugin", label: dispatch.origin }
+  if (dispatch.category === "unknown") return { kind: "unknown" }
+  return undefined
+}
+
+/** 网页地址在步骤行上去掉协议头(详情里仍是完整、可点的地址)。 */
+function displayUrl(url: string): string {
+  return url.replace(/^https?:\/\//, "")
+}
+
+/** 答完的提问:第一个问题(防御读取;非对象 / 缺 question 键 = 缺席)。 */
+function firstQuestionOf(input: Record<string, unknown>): { question?: unknown } | undefined {
+  const questions = input.questions
+  if (!Array.isArray(questions) || questions.length === 0) return undefined
+  const first = questions[0]
+  return typeof first === "object" && first !== null ? (first as { question?: unknown }) : undefined
+}
+
+function stepEndOf(part: ToolPart, dispatch: ToolCardDispatch, head: ToolCardHead): ToolStepEnd | undefined {
+  // AC6:审批超时对所有来源、所有 kind 都是同一句人话(分类只产布尔,不读错误原文)。
+  if (head.askTimedOut) return { key: "alpha.timeline.stepAskTimeout", failure: true }
+  if (head.status === "error") {
+    if (dispatch.kind === "webfetch") return { key: "alpha.timeline.stepNotOpened", failure: true }
+    return { key: "alpha.timeline.stepFailed", failure: true }
+  }
+  if (head.status !== "success" || dispatch.metadataOnly) return undefined
+  switch (dispatch.kind) {
+    case "glob":
+    case "grep":
+      return head.count?.value === 0 ? { key: "alpha.timeline.stepNotFound" } : undefined
+    case "bash":
+      // 退出码只在非 0 时上行尾;0 是成功,成功不挂状态。
+      return head.exit !== undefined && head.exit !== 0
+        ? { key: "alpha.timeline.stepExit", params: { code: head.exit } }
+        : undefined
+    case "edit":
+    case "write": {
+      const count = diagnosticsOf(part).rows.length
+      return count > 0 ? { key: "alpha.timeline.stepDiagErrors", params: { count } } : undefined
+    }
+    case "question": {
+      const chosen = questionStepInfoOf(part)?.items[0]?.chosen ?? []
+      return chosen.length > 0 ? { key: "alpha.timeline.stepYouChose", list: chosen } : undefined
+    }
+    default:
+      return undefined
+  }
+}
+
+/**
+ * 一次工具调用的步骤行(单项)。合并行的动作名见 toolGroupVerbOf。
+ * 输入只有 identity 分派 + 已脱敏的头部投影(toolCardHeadOf)+ 本模块既有的有界读取器。
+ */
+export function toolStepLineOf(part: ToolPart): ToolStepLine {
+  const dispatch = toolCardDispatchOf(part)
+  const head = toolCardHeadOf(part)
+  const line: ToolStepLine = { name: dispatch.name, end: stepEndOf(part, dispatch, head) }
+  const source = toolStepSourceOf(dispatch)
+  if (source !== undefined) {
+    // AC5:非我方 = 来源标记 + 工具名;没有动作名、没有参数、没有输出。
+    line.source = source
+    line.object = dispatch.name
+    return line
+  }
+  if (dispatch.metadataOnly) {
+    // 还没有展示规则的我方工具:「本机工具 · 名称」通用行。
+    line.verbKey = OWN_GENERIC_KEYS[dispatch.category]
+    line.object = dispatch.name
+    return line
+  }
+  line.verbKey = toolTitleKeyOf(dispatch)
+  line.object = head.target
+  line.objectHidden = head.targetHidden
+  line.objectMono = dispatch.kind !== "task" && dispatch.kind !== "question" && dispatch.kind !== "skill"
+  line.stat = head.stat
+  switch (dispatch.kind) {
+    case "bash": {
+      // 有说明就写说明(人话),命令原文进详情首行(终端正文的 `$ …`)。说明脱敏失败
+      // 时退回命令,确定标记留在详情(bashDescriptionOf().hidden,AC5)。
+      const description = bashDescriptionOf(part)
+      if (description?.value !== undefined) {
+        line.object = description.value
+        line.objectHidden = undefined
+        line.objectMono = false
+      }
+      break
+    }
+    case "webfetch":
+      if (line.object !== undefined) line.object = cappedItem(displayUrl(line.object))
+      break
+    case "apply_patch":
+      // 「修改 N 个文件」:文件数进动作名,增删数留在行尾;路径各只在详情出现一次。
+      if (head.count !== undefined && head.count.value > 0) {
+        line.verbKey = "alpha.timeline.step.patchFiles"
+        line.verbParams = { count: head.count.value }
+      }
+      break
+  }
+  return line
+}
+
+/** 合并行(连续同类、同来源)的动作名:读取 / 编辑 / 写入按文件数说,其余缺席(视图写「X N 次」)。 */
+export function toolGroupVerbOf(part: ToolPart, count: number): { key: string; params: { count: number } } | undefined {
+  const dispatch = toolCardDispatchOf(part)
+  if (dispatch.metadataOnly) return undefined
+  if (dispatch.kind === "read") return { key: "alpha.timeline.step.readFiles", params: { count } }
+  if (dispatch.kind === "edit") return { key: "alpha.timeline.step.editFiles", params: { count } }
+  if (dispatch.kind === "write") return { key: "alpha.timeline.step.writeFiles", params: { count } }
+  return undefined
+}
+
+// ── #1475 AC6:答完的内置提问 —— 问题、选项与你的选择 ─────────────────────────
+export const QUESTION_MAX_ITEMS = 8
+export const QUESTION_MAX_OPTIONS = 16
+
+export interface QuestionStepItem {
+  question?: string
+  questionHidden?: boolean
+  options: { label: string; selected: boolean }[]
+  /** 你的选择(按回答顺序;已脱敏;含自己输入的答案)。 */
+  chosen: string[]
+  /** 不在选项里的答案(自己输入的),详情里单列。 */
+  custom: string[]
+  truncated: boolean
+}
+
+/**
+ * 只对 builtin identity 的 question 成立(冒名的第三方 question 仍是 metadata-only 降级)。
+ * 读 input.questions(问题 + 选项标签)与引擎铸造的 metadata.answers(按问题顺序的标签数组);
+ * 每个字符串都过共享 redactor 且有界,失败的选项 / 答案整项丢弃并标记截断(不回退原文)。
+ */
+export function questionStepInfoOf(part: ToolPart): { items: QuestionStepItem[]; truncated: boolean } | undefined {
+  const dispatch = toolCardDispatchOf(part)
+  if (dispatch.metadataOnly || dispatch.kind !== "question") return undefined
+  const questions = inputOf(part).questions
+  if (!Array.isArray(questions)) return undefined
+  const answersRaw = metadataOf(part).answers
+  const answers = Array.isArray(answersRaw) ? answersRaw : []
+  const items: QuestionStepItem[] = []
+  let truncated = questions.length > QUESTION_MAX_ITEMS
+  for (let index = 0; index < Math.min(questions.length, QUESTION_MAX_ITEMS); index += 1) {
+    const raw = questions[index]
+    if (typeof raw !== "object" || raw === null) {
+      truncated = true
+      continue
+    }
+    const record = raw as { question?: unknown; options?: unknown }
+    const question = redactedInlineOf(record.question)
+    const answerRaw = answers[index]
+    const picked = new Set<string>(
+      Array.isArray(answerRaw)
+        ? answerRaw.slice(0, QUESTION_MAX_OPTIONS).filter((value): value is string => typeof value === "string")
+        : [],
+    )
+    const item: QuestionStepItem = {
+      question: question.value,
+      questionHidden: question.hidden || undefined,
+      options: [],
+      chosen: [],
+      custom: [],
+      truncated: false,
+    }
+    const optionLabels = new Set<string>()
+    const options = Array.isArray(record.options) ? record.options : []
+    if (options.length > QUESTION_MAX_OPTIONS) item.truncated = true
+    for (const option of options.slice(0, QUESTION_MAX_OPTIONS)) {
+      const label = typeof option === "object" && option !== null ? (option as { label?: unknown }).label : undefined
+      if (typeof label !== "string") {
+        item.truncated = true
+        continue
+      }
+      optionLabels.add(label)
+      const clean = redactedInlineOf(label)
+      if (clean.value === undefined) {
+        item.truncated = true
+        continue
+      }
+      item.options.push({ label: clean.value, selected: picked.has(label) })
+    }
+    for (const answer of picked) {
+      const clean = redactedInlineOf(answer)
+      if (clean.value === undefined) {
+        item.truncated = true
+        continue
+      }
+      item.chosen.push(clean.value)
+      if (!optionLabels.has(answer)) item.custom.push(clean.value)
+    }
+    items.push(item)
+  }
+  return { items, truncated }
 }
 
 // ── #587 开发者详情(默认折叠;AC3/AC4)─────────────────────────────────────

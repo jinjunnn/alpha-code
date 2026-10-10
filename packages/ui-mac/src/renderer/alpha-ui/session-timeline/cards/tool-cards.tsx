@@ -20,13 +20,15 @@ import {
   mediaLabelOf,
   mediaThumbable,
   openTargetOf,
+  questionStepInfoOf,
   taskCardInfoOf,
   toolCardBodyOf,
   toolCardHeadOf,
   toolDevDetailsOf,
+  toolStepSourceOf,
   type ToolCardBody,
   type ToolCardHead,
-  type ToolSourceCategory,
+  type ToolStepSourceKind,
 } from "./tool-card-model"
 import { diffViewOf } from "./tool-diff"
 import { useTimelineIntents } from "./timeline-intents"
@@ -131,6 +133,34 @@ function icons(kind: string): JSX.Element {
   }
 }
 
+/**
+ * `#1475` AC5 非我方来源的行内图标:插头 = 第三方连接(MCP),拼图 = 插件,问号 = 来源不明。
+ * 只给非我方步骤用 —— 我方步骤永远不带这三种图标(防冒充)。
+ */
+export function stepSourceIcon(kind: ToolStepSourceKind): JSX.Element {
+  switch (kind) {
+    case "mcp":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5" />
+        </svg>
+      )
+    case "plugin":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 3a2 2 0 0 1 4 0v2h4a1 1 0 0 1 1 1v4h-2a2 2 0 0 0 0 4h2v4a1 1 0 0 1-1 1h-4v-2a2 2 0 0 0-4 0v2H6a1 1 0 0 1-1-1v-4h2a2 2 0 0 0 0-4H5V6a1 1 0 0 1 1-1h4z" />
+        </svg>
+      )
+    default:
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.5 2.5 0 0 1 4.8 1c0 1.7-2.3 2.2-2.3 3.6M12 17h.01" />
+        </svg>
+      )
+  }
+}
+
 function chevron() {
   return (
     <svg class="a-tc-chev" viewBox="0 0 24 24" aria-hidden="true">
@@ -139,26 +169,87 @@ function chevron() {
   )
 }
 
-// ── 来源分类标签(#879:metadata-only 降级卡的主标题;视觉形态归 #587) ──────
-const SOURCE_KEYS: Record<ToolSourceCategory, string> = {
-  builtin: "alpha.timeline.sourceBuiltin",
-  host: "alpha.timeline.sourceHost",
-  "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
-  mcp: "alpha.timeline.sourceMcp",
-  plugin: "alpha.timeline.sourcePlugin",
-  unknown: "alpha.timeline.sourceUnknown",
+/**
+ * `#1475` AC5 降级步骤详情里的那一句人话(原来常驻的「详情未展示」挪进详情):第三方 / 插件写出
+ * 来源名,来源不明直说,还没有展示规则的我方工具只说「不在这里显示」。来源名是 dispatch 已净化
+ * 有界的 origin;调用的输入 / 输出 / 错误零字符进文案。
+ */
+function safeSentence(head: ToolCardHead): string {
+  const source = toolStepSourceOf(head)
+  if (source?.kind === "mcp")
+    return source.label
+      ? t("alpha.timeline.stepHiddenMcp", { origin: source.label })
+      : t("alpha.timeline.stepHiddenMcpAnon")
+  if (source?.kind === "plugin")
+    return source.label
+      ? t("alpha.timeline.stepHiddenPlugin", { origin: source.label })
+      : t("alpha.timeline.stepHiddenPluginAnon")
+  if (source?.kind === "unknown") return t("alpha.timeline.stepHiddenUnknown")
+  return t("alpha.timeline.stepHiddenOwn")
 }
 
-/** metadata-only 降级步骤的主标题(来源分类文案的 i18n key)。 */
-export function sourceCategoryKey(category: ToolSourceCategory): string {
-  return SOURCE_KEYS[category]
+/** `#1475` AC6:审批超时对所有 kind、所有来源都是同一句人话(纯静态,错误原文零字符进 DOM)。 */
+function AskTimeoutNote() {
+  return (
+    <>
+      <b data-alpha-ask-timeout>{t("alpha.timeline.askTimeout")}</b>
+      <span>{t("alpha.timeline.askTimeoutBody")}</span>
+    </>
+  )
 }
 
-// #587 安全通用卡的确定隐藏理由(AC2;静态文案,不携带任何调用数据)。
-const HIDDEN_REASON_KEYS = {
-  "no-snapshot": "alpha.timeline.hiddenNoSnapshot",
-  "no-rule": "alpha.timeline.hiddenNoRule",
-} as const
+/** `#1475` AC6:答完的提问 —— 每个问题列出选项,高亮你选的那项;自己输入的答案单列。 */
+function QuestionDetail(props: { part: ToolPart }) {
+  const info = createMemo(() => questionStepInfoOf(props.part))
+  return (
+    <Show when={info()}>
+      {(value) => (
+        <div class="a-tc-qa" data-alpha-question-detail>
+          <For each={value().items}>
+            {(item) => (
+              <div class="a-tc-qa-item">
+                <Show
+                  when={item.question}
+                  fallback={
+                    <Show when={item.questionHidden}>
+                      <div class="a-tc-qa-q" data-alpha-details-hidden>
+                        {t("alpha.timeline.detailsHidden")}
+                      </div>
+                    </Show>
+                  }
+                >
+                  <div class="a-tc-qa-q">{item.question}</div>
+                </Show>
+                <div class="a-tc-qa-opts">
+                  <For each={item.options}>
+                    {(option) => (
+                      <span class="a-tc-qa-opt" data-selected={option.selected ? "true" : undefined}>
+                        {option.label}
+                      </span>
+                    )}
+                  </For>
+                  <For each={item.custom}>
+                    {(answer) => (
+                      <span class="a-tc-qa-opt" data-selected="true" data-custom="true">
+                        {answer}
+                      </span>
+                    )}
+                  </For>
+                </div>
+                <Show when={item.truncated}>
+                  <TruncatedNote />
+                </Show>
+              </div>
+            )}
+          </For>
+          <Show when={value().truncated}>
+            <TruncatedNote />
+          </Show>
+        </div>
+      )}
+    </Show>
+  )
+}
 
 export function StatBadge(props: { stat: { additions: number; deletions: number } }) {
   return (
@@ -490,9 +581,10 @@ export function ToolStepDetail(props: { part: ToolPart }) {
   const diag = createMemo(() => diagnosticsOf(props.part))
   // #587 开发者详情:快照在场才有(无快照历史行没有可信 identity 可陈列)。
   const dev = createMemo(() => toolDevDetailsOf(props.part))
+  // `#1475` AC6:审批超时只说人话,不再显示引擎原文(所有 kind 同一句)。
   const errorBody = () => {
     const value = body()
-    return value.type === "error" ? value : undefined
+    return value.type === "error" && !head().askTimedOut ? value : undefined
   }
   return (
     <div class="a-tl-pf-detail" data-alpha-step-detail>
@@ -521,10 +613,8 @@ export function ToolStepDetail(props: { part: ToolPart }) {
           </Show>
         </div>
       </Show>
-      <Show when={description()?.value}>
-        <div class="a-tc-subdesc">{description()!.value}</div>
-      </Show>
-      {/* #934 Minor:bash 命令说明脱敏失败 → 确定标记,副行不静默消失(AC5)。 */}
+      {/* `#1475`:命令说明已是步骤行的对象(每样信息只出现一次),命令原文是终端正文首行。
+          #934 Minor:说明脱敏失败 → 步骤行退回命令,确定标记留在这里(AC5)。 */}
       <Show when={description()?.hidden}>
         <div class="a-tc-subdesc" data-alpha-details-hidden>
           {t("alpha.timeline.detailsHidden")}
@@ -558,23 +648,20 @@ export function ToolStepDetail(props: { part: ToolPart }) {
       {/* #587 安全通用卡(AC2):metadata-only 降级陈述确定的隐藏理由;纯静态文案,
           不携带参数/错误/输出,也没有任何展开入口。#1214 AC2:审批超时是确定结局,
           文案仍纯静态,错误原文零字符进 DOM。 */}
-      <Show when={head().metadataOnly && head().hiddenReason}>
-        {(reason) => (
-          <div class="a-tc-safe" data-alpha-safe-card>
-            <Show
-              when={head().askTimedOut}
-              fallback={
-                <>
-                  <b>{head().status === "error" ? t("alpha.timeline.safeHiddenError") : t("alpha.timeline.safeHidden")}</b>
-                  <span>{t(HIDDEN_REASON_KEYS[reason()] as Parameters<typeof t>[0])}</span>
-                </>
-              }
-            >
-              <b data-alpha-ask-timeout>{t("alpha.timeline.askTimeout")}</b>
-              <span>{t("alpha.timeline.askTimeoutBody")}</span>
-            </Show>
-          </div>
-        )}
+      <Show when={head().metadataOnly}>
+        <div class="a-tc-safe" data-alpha-safe-card>
+          <Show when={head().askTimedOut} fallback={<span>{safeSentence(head())}</span>}>
+            <AskTimeoutNote />
+          </Show>
+        </div>
+      </Show>
+      <Show when={!head().metadataOnly && head().askTimedOut}>
+        <div class="a-tc-safe" data-alpha-ask-timeout-card>
+          <AskTimeoutNote />
+        </div>
+      </Show>
+      <Show when={head().kind === "question"}>
+        <QuestionDetail part={props.part} />
       </Show>
       {/* AC5:redactor 失败的整字段 → 确定「详情已隐藏」,无 raw 旁路。 */}
       <Show when={body().type === "hidden"}>

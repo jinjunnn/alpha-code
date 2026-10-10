@@ -1030,3 +1030,38 @@ button.a-diffsum-row:focus-visible {
     animation: none;
   }
 }
+
+/* ── ac 1475 AC6 答完的提问:问题 + 选项,你选的那项高亮(design ⑤「问了你」) ── */
+.a-tc-qa {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.a-tc-qa-q {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+}
+
+.a-tc-qa-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.a-tc-qa-opt {
+  padding: 2px 8px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-sm);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+}
+
+.a-tc-qa-opt[data-selected="true"] {
+  border-color: var(--a-accent-border);
+  background: var(--a-accent-subtle);
+  color: var(--a-text);
+  font-weight: var(--a-weight-medium);
+}

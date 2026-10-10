@@ -5,21 +5,24 @@
 //   · 收起(一行):成功动作计数(最多三类,按次数排)· 有失败步骤且回合成功时的琥珀色人话 · 整轮用时;
 //   · 每步一行:图标 + 动作 + 对象 + 行尾(超过 10 秒的用时 / 失败的人话 / 改动增删数);成功不挂状态;
 //   · 某一步的详情:复用 cards/tool-cards.tsx 的各类卡片正文(ToolStepDetail),合并行先展开成每项一行。
-// 进行中的实时标题 / 最近两步窗口 / 自动收起时机归 #1474;每类步骤的人话动作名、第三方行内来源
-// 归 #1475 —— 本组件里非我方工具沿用「来源分类 + 名称」,不显示输入输出(来源安全规则不变)。
+// 进行中的实时标题 / 最近两步窗口 / 自动收起时机归 #1474。每类步骤的人话动作名、行尾规则、第三方
+// 行内来源(插头 / 拼图 / 问号 + 服务名)与答完的提问(#1475)由 cards/tool-card-model 的
+// toolStepLineOf 投影 —— 非我方工具仍不显示输入输出(来源安全规则不变)。
 //
 // 开合状态住在视图级的信号里(按回合 / 步骤键),不住在行对象上:步骤状态翻转会换行对象,
 // 用户手动开或关过的不能因此被系统重置(design §3「你手动开或关过的,本回合内系统不再替你开关」)。
 import type { ReasoningPart, ToolPart } from "@opencode-ai/sdk/v2/client"
 import { createContext, createMemo, createSignal, For, type JSX, Show, useContext } from "solid-js"
 import { t } from "../../i18n"
-import { sourceCategoryKey, StatBadge, ToolStepDetail, toolIcon } from "./cards/tool-cards"
+import { StatBadge, stepSourceIcon, ToolStepDetail, toolIcon } from "./cards/tool-cards"
 import {
   cappedItem,
   toolCardDispatchOf,
-  toolCardHeadOf,
   toolCardStatusOf,
-  toolTitleKeyOf,
+  toolGroupVerbOf,
+  toolStepLineOf,
+  type ToolStepEnd,
+  type ToolStepLine,
 } from "./cards/tool-card-model"
 import { TimelineMarkdown } from "./timeline-markdown"
 import {
@@ -68,12 +71,57 @@ function reasoningVerb(step: Extract<TimelineProcessStep, { kind: "reasoning" }>
   return t("alpha.timeline.stepReasoning", { seconds: Math.max(0, Math.round(ms / 1000)) })
 }
 
-/** 步骤 / 摘要的动作名:我方工具 = 动词;metadata-only = 来源分类(规则不变,名称作对象)。 */
-function toolVerb(part: ToolPart): string {
-  const dispatch = toolCardDispatchOf(part)
-  if (dispatch.metadataOnly) return t(sourceCategoryKey(dispatch.category) as I18nKey)
-  const key = toolTitleKeyOf(dispatch)
-  return key ? t(key as I18nKey) : dispatch.name
+/** 我方步骤的动作名(i18n);非我方来源没有动作名(行内写来源,见 StepSource)。 */
+function lineVerb(line: ToolStepLine): string {
+  return line.verbKey ? t(line.verbKey as I18nKey, line.verbParams) : line.name
+}
+
+const SOURCE_FALLBACK_KEYS = {
+  mcp: "alpha.timeline.stepSourceMcp",
+  plugin: "alpha.timeline.stepSourcePlugin",
+  unknown: "alpha.timeline.stepSourceUnknown",
+} as const
+
+/** 非我方来源的行内标签:服务名 / 插件名;缺席时用通用文案;来源不明恒为「来源不明」。 */
+export function stepSourceLabel(source: NonNullable<ToolStepLine["source"]>): string {
+  if (source.kind !== "unknown" && source.label) return source.label
+  return t(SOURCE_FALLBACK_KEYS[source.kind])
+}
+
+function endText(end: ToolStepEnd): string {
+  const params = end.list ? { ...end.params, answer: end.list.join(t("alpha.timeline.listSep")) } : end.params
+  return t(end.key as I18nKey, params)
+}
+
+/**
+ * 步骤行左侧:我方 = 类别图标 + 动作名;非我方 = 来源图标(插头 / 拼图 / 问号)+ 服务名。
+ * 防冒充(AC5):data-alpha-step-source 与这三种图标只出现在非我方步骤上。
+ */
+function StepLead(props: { line: ToolStepLine; kind: string; verb?: string }) {
+  return (
+    <Show
+      when={props.line.source}
+      fallback={
+        <>
+          <span class="a-tl-pf-ico" data-kind={props.kind} aria-hidden="true">
+            {toolIcon(props.kind)}
+          </span>
+          <span class="a-tl-pf-v">{props.verb ?? lineVerb(props.line)}</span>
+        </>
+      }
+    >
+      {(source) => (
+        <>
+          <span class="a-tl-pf-ico" data-alpha-step-source={source().kind} aria-hidden="true">
+            {stepSourceIcon(source().kind)}
+          </span>
+          <span class="a-tl-pf-v" data-alpha-step-origin>
+            {stepSourceLabel(source())}
+          </span>
+        </>
+      )}
+    </Show>
+  )
 }
 
 function chev(cls: string) {
@@ -227,42 +275,36 @@ function ReasoningStep(props: {
   )
 }
 
-/** 一项工具调用的对象(目标 / 降级名称);脱敏失败 → 确定的「详情已隐藏」(AC5)。 */
-function ToolObject(props: { part: ToolPart }) {
-  const head = createMemo(() => toolCardHeadOf(props.part))
+/** 一项工具调用的对象(目标 / 名称);脱敏失败 → 确定的「详情已隐藏」(AC5)。 */
+function ToolObject(props: { line: ToolStepLine; text?: string }) {
   return (
-    <Show
-      when={!head().metadataOnly}
-      fallback={
-        <span class="a-tl-pf-o">
-          {head().toolName}
-          <Show when={head().origin}>
-            {" · "}
-            {head().origin}
-          </Show>
-        </span>
-      }
-    >
-      <Show when={head().target}>
-        <span class="a-tl-pf-o" data-mono="true">
-          {head().target}
-        </span>
+    <>
+      <Show when={props.text ?? props.line.object}>
+        {(text) => (
+          <span class="a-tl-pf-o" data-mono={props.line.objectMono ? "true" : undefined}>
+            {text()}
+          </span>
+        )}
       </Show>
-      <Show when={head().targetHidden}>
+      <Show when={props.line.objectHidden}>
         <span class="a-tl-pf-o" data-alpha-details-hidden>
           {t("alpha.timeline.detailsHidden")}
         </span>
       </Show>
-    </Show>
+    </>
   )
 }
 
 /** 行尾:运行中 / 等待 · 失败的人话 · 超过 10 秒的用时 · 改动增删数。成功不挂状态。 */
-function ToolEnd(props: { parts: readonly ToolPart[]; group: boolean }) {
+function ToolEnd(props: {
+  parts: readonly ToolPart[]
+  group: boolean
+  line?: ToolStepLine
+  stat?: { additions: number; deletions: number }
+}) {
   const failed = () => props.parts.filter((part) => part.state.status === "error").length
   const running = () => props.parts.some((part) => part.state.status === "running")
   const pending = () => !running() && props.parts.some((part) => part.state.status === "pending")
-  const head = createMemo(() => (props.parts.length === 1 ? toolCardHeadOf(props.parts[0]!) : undefined))
   const longest = () => {
     let max: number | undefined
     for (const part of props.parts) {
@@ -271,13 +313,16 @@ function ToolEnd(props: { parts: readonly ToolPart[]; group: boolean }) {
     }
     return max !== undefined && max > PROCESS_STEP_DURATION_MIN_MS ? max : undefined
   }
+  // 单项:失败 / 审批超时的人话来自步骤行投影(同一句话覆盖所有 kind 与来源);合并行按次数说。
   const failure = () => {
+    if (!props.group) return props.line?.end?.failure ? endText(props.line.end) : undefined
     const count = failed()
     if (count === 0) return undefined
-    if (!props.group) return head()?.askTimedOut ? t("alpha.timeline.askTimeout") : t("alpha.timeline.stepFailed")
     if (count === props.parts.length) return t("alpha.timeline.stepAllFailed")
     return t("alpha.timeline.stepSomeFailed", { count })
   }
+  // 成功时行尾只放有用的信息:「没找到」「退出 1」「2 个报错」「你选了 …」。
+  const note = () => (!props.group && props.line?.end && !props.line.end.failure ? endText(props.line.end) : undefined)
   return (
     <span class="a-tl-pf-end">
       <Show when={running()}>
@@ -286,8 +331,9 @@ function ToolEnd(props: { parts: readonly ToolPart[]; group: boolean }) {
       </Show>
       <Show when={pending()}>{t("alpha.timeline.toolPending")}</Show>
       <Show when={failure()}>{(text) => <span data-alpha-step-failure>{text()}</span>}</Show>
+      <Show when={note()}>{(text) => <span data-alpha-step-note>{text()}</span>}</Show>
       <Show when={longest()}>{(ms) => <span>{formatProcessDuration(ms())}</span>}</Show>
-      <Show when={head()?.stat}>{(stat) => <StatBadge stat={stat()} />}</Show>
+      <Show when={props.stat}>{(stat) => <StatBadge stat={stat()} />}</Show>
       {chev("a-tl-pf-sc")}
     </span>
   )
@@ -308,6 +354,7 @@ function ToolItem(props: { part: ToolPart; openKey: string; state: ProcessOpenSt
   // 进行中的完整形态(实时标题、最近两步窗口)归 #1474。
   const open = () => props.state.get(props.openKey) ?? props.part.state.status === "running"
   const dispatch = createMemo(() => toolCardDispatchOf(props.part))
+  const line = createMemo(() => toolStepLineOf(props.part))
   return (
     <div
       class="a-tl-pf-item"
@@ -328,13 +375,10 @@ function ToolItem(props: { part: ToolPart; openKey: string; state: ProcessOpenSt
         onClick={() => props.state.set(props.openKey, !open())}
       >
         <Show when={!props.sub}>
-          <span class="a-tl-pf-ico" data-kind={dispatch().kind} aria-hidden="true">
-            {toolIcon(dispatch().kind)}
-          </span>
-          <span class="a-tl-pf-v">{toolVerb(props.part)}</span>
+          <StepLead line={line()} kind={dispatch().kind} />
         </Show>
-        <ToolObject part={props.part} />
-        <ToolEnd parts={[props.part]} group={false} />
+        <ToolObject line={line()} />
+        <ToolEnd parts={[props.part]} group={false} line={line()} stat={line().stat} />
       </button>
       <Show when={open()}>
         <ToolStepDetail part={props.part} />
@@ -352,6 +396,26 @@ function ToolGroupStep(props: {
   const open = () => props.state.get(key()) ?? false
   const first = () => props.step.parts[0]!
   const dispatch = createMemo(() => toolCardDispatchOf(first()))
+  const line = createMemo(() => toolStepLineOf(first()))
+  const count = () => props.step.parts.length
+  // 合并后的动作名:读取 / 编辑 / 写入按文件数(「读取 5 个文件」),其余「X N 次」;
+  // 非我方来源:来源标签在前,「工具名 N 次」作对象(仍不显示任何参数)。
+  const verb = () => {
+    const grouped = toolGroupVerbOf(first(), count())
+    if (grouped) return t(grouped.key as I18nKey, grouped.params)
+    return t("alpha.timeline.processAction", { verb: lineVerb(line()), count: count() })
+  }
+  // 改动增删数是内容不是状态:合并行写全组之和(任一项有数才写)。
+  const stat = createMemo(() => {
+    let sum: { additions: number; deletions: number } | undefined
+    for (const part of props.step.parts) {
+      const value = toolStepLineOf(part).stat
+      if (value) sum = { additions: (sum?.additions ?? 0) + value.additions, deletions: (sum?.deletions ?? 0) + value.deletions }
+    }
+    return sum
+  })
+  const object = () =>
+    line().source ? t("alpha.timeline.processAction", { verb: line().name, count: count() }) : undefined
   return (
     <div
       class="a-tl-pf-group"
@@ -371,14 +435,9 @@ function ToolGroupStep(props: {
         aria-expanded={open()}
         onClick={() => props.state.set(key(), !open())}
       >
-        <span class="a-tl-pf-ico" data-kind={dispatch().kind} aria-hidden="true">
-          {toolIcon(dispatch().kind)}
-        </span>
-        <span class="a-tl-pf-v">
-          {t("alpha.timeline.processAction", { verb: toolVerb(first()), count: props.step.parts.length })}
-        </span>
-        <ToolObject part={first()} />
-        <ToolEnd parts={props.step.parts} group={true} />
+        <StepLead line={line()} kind={dispatch().kind} verb={verb()} />
+        <ToolObject line={line()} text={object()} />
+        <ToolEnd parts={props.step.parts} group={true} line={line()} stat={stat()} />
       </button>
       <Show when={open()}>
         <div class="a-tl-pf-sublist">
