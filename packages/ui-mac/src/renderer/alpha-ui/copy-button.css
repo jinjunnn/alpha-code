@@ -1,6 +1,6 @@
 @import "./tokens.css";
 
-/* alpha-ui CopyButton(`#1476`)—— 时间线一带所有复制按钮同一个尺寸与圆角;复制后绿勾 1.5 秒。 */
+/* alpha-ui CopyButton(`REQ-230`)—— 时间线一带所有复制按钮同一个尺寸与圆角;复制后绿勾 1.5 秒。 */
 .a-copy-btn {
   display: grid;
   place-items: center;

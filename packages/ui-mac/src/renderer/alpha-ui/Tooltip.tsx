@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { children as resolveChildren, createSignal, createUniqueId, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import "./tooltip.css"
 
@@ -9,10 +9,12 @@ import "./tooltip.css"
  * - 反色小签、6px 圆角、无箭头;Portal 到 body + fixed 定位,不会被时间线 / 输入框的
  *   `overflow: hidden` 裁掉。
  * - 只放**补充说明**。解释「为什么不能点」的原因不得藏进这里 —— 那要写成控件旁可见的文字。
- * - 无障碍:说明文字常驻在一个视觉隐藏节点里,并经 `aria-describedby` 挂到触发控件上;
+ * - 无障碍:说明文字放在一个视觉隐藏节点里,经 `aria-describedby` 挂到触发控件上;
  *   与触发控件的 `aria-label` 相同时不挂(否则读屏会把同一句话念两遍)。
  *
- * 包一个可交互触发控件(第一个元素子节点)。`open` 让调用方临时强制显示(如复制后的「已复制」)。
+ * 不包外壳元素:监听直接挂在唯一的子元素(触发控件)上,DOM 结构与不加提示时完全一致
+ * (`[data-kind] > button` 这类结构选择器、flex 布局都不受影响)。
+ * `open` 让调用方临时强制显示(如复制后的「已复制」)。
  */
 export const TOOLTIP_DELAY_MS = 400
 
@@ -24,12 +26,20 @@ export function Tooltip(props: {
   children: JSX.Element
 }) {
   const id = `a-tip-${createUniqueId()}`
+  const resolved = resolveChildren(() => props.children)
   const [shown, setShown] = createSignal(false)
   const [rect, setRect] = createSignal<DOMRect | undefined>()
-  let wrap: HTMLSpanElement | undefined
+  const [describes, setDescribes] = createSignal(false)
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  const measure = () => wrap && setRect(wrap.getBoundingClientRect())
+  const trigger = () => {
+    const node = resolved.toArray().find((item) => item instanceof Element)
+    return node instanceof Element ? node : undefined
+  }
+  const measure = () => {
+    const el = trigger()
+    if (el) setRect(el.getBoundingClientRect())
+  }
   const show = () => {
     clearTimeout(timer)
     timer = setTimeout(() => {
@@ -41,17 +51,32 @@ export function Tooltip(props: {
     clearTimeout(timer)
     setShown(false)
   }
+  const onKey = (event: Event) => {
+    if ((event as KeyboardEvent).key === "Escape") hide()
+  }
   const visible = () => shown() || !!props.open
 
-  const [describes, setDescribes] = createSignal(false)
   onMount(() => {
-    const trigger = wrap?.firstElementChild
-    if (trigger && trigger.getAttribute("aria-label") !== props.label) {
-      const prev = trigger.getAttribute("aria-describedby")
-      trigger.setAttribute("aria-describedby", prev ? `${prev} ${id}` : id)
+    const el = trigger()
+    if (!el) return
+    el.addEventListener("pointerenter", show)
+    el.addEventListener("pointerleave", hide)
+    el.addEventListener("focusin", show)
+    el.addEventListener("focusout", hide)
+    el.addEventListener("keydown", onKey)
+    if (el.getAttribute("aria-label") !== props.label) {
+      const prev = el.getAttribute("aria-describedby")
+      el.setAttribute("aria-describedby", prev ? `${prev} ${id}` : id)
       setDescribes(true)
     }
     window.addEventListener("resize", measure)
+    onCleanup(() => {
+      el.removeEventListener("pointerenter", show)
+      el.removeEventListener("pointerleave", hide)
+      el.removeEventListener("focusin", show)
+      el.removeEventListener("focusout", hide)
+      el.removeEventListener("keydown", onKey)
+    })
   })
   onCleanup(() => {
     clearTimeout(timer)
@@ -59,7 +84,7 @@ export function Tooltip(props: {
   })
 
   const style = (): JSX.CSSProperties => {
-    const r = rect() ?? wrap?.getBoundingClientRect()
+    const r = rect() ?? trigger()?.getBoundingClientRect()
     if (!r) return {}
     const center = Math.round(r.left + r.width / 2)
     const left = `${Math.min(Math.max(8, center), Math.max(8, window.innerWidth - 8))}px`
@@ -69,18 +94,8 @@ export function Tooltip(props: {
   }
 
   return (
-    <span
-      ref={wrap}
-      class="a-tip-wrap"
-      onPointerEnter={show}
-      onPointerLeave={hide}
-      onFocusIn={show}
-      onFocusOut={hide}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && visible()) hide()
-      }}
-    >
-      {props.children}
+    <>
+      {resolved()}
       <Show when={describes()}>
         <span id={id} class="a-tip-desc">
           {props.label}
@@ -93,6 +108,6 @@ export function Tooltip(props: {
           </span>
         </Portal>
       </Show>
-    </span>
+    </>
   )
 }

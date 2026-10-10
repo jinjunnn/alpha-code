@@ -307,7 +307,6 @@ describe("#1476 tooltip", () => {
     expect(document.getElementById(describedBy)!.textContent).toBe("缓存命中 82%")
 
     trigger.focus()
-    trigger.dispatchEvent(new FocusEvent("focusin", { bubbles: true }))
     await sleep(100)
     expect(document.querySelector("[role='tooltip']")).toBeNull() // 0.4s 之前不出
     await sleep(400)
@@ -320,11 +319,13 @@ describe("#1476 tooltip", () => {
 
   test("pointer hover reveals it; leaving hides it", async () => {
     mount(() => runtime.TooltipHarness())
-    const wrap = document.querySelector<HTMLElement>(".a-tip-wrap")!
-    wrap.dispatchEvent(new PointerEvent("pointerenter"))
+    const trigger = document.querySelector<HTMLElement>("[data-tip-trigger]")!
+    // 不包外壳:DOM 结构与不加提示时一致(结构选择器不受影响)。
+    expect(trigger.parentElement!.classList.contains("a-tip-wrap")).toBe(false)
+    trigger.dispatchEvent(new PointerEvent("pointerenter"))
     await sleep(450)
     expect(document.querySelector("[role='tooltip']")).not.toBeNull()
-    wrap.dispatchEvent(new PointerEvent("pointerleave"))
+    trigger.dispatchEvent(new PointerEvent("pointerleave"))
     await flush()
     expect(document.querySelector("[role='tooltip']")).toBeNull()
   })

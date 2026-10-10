@@ -337,8 +337,8 @@ button.a-tc-head:focus-visible {
   padding-bottom: 9px;
 }
 
-/* #1476:按钮本体的尺寸 / 圆角 / 已复制反馈归 CopyButton(copy-button.css);这里只负责靠右。 */
-.a-tc-err-head > .a-tip-wrap {
+/* REQ-230:按钮本体的尺寸 / 圆角 / 已复制反馈归 CopyButton(copy-button.css);这里只负责靠右。 */
+.a-tc-err-copy {
   margin-left: auto;
 }
 

@@ -338,7 +338,7 @@ body[data-alpha-sidebar="open"] .a-home--page {
   position: relative;
   display: inline-flex;
 }
-/* #1476:所有菜单(模型 / 权限 / 思考强度 / 「+」「/」「@」)同一个容器 —— 抬升底色、细边框、
+/* REQ-230:所有菜单(模型 / 权限 / 思考强度 / 「+」「/」「@」)同一个容器 —— 抬升底色、细边框、
    11px 圆角、**中档阴影**(菜单不该和对话框一样重;--a-shadow-overlay 只留给对话框);
    层级用 tokens.css 的 --a-z-dropdown。 */
 .a-pop {
@@ -375,7 +375,7 @@ body[data-alpha-sidebar="open"] .a-home--page {
   text-transform: uppercase;
   color: var(--a-text-tertiary);
 }
-/* .a-pop-note(popover 内的诚实说明行)唯一定义在 alpha-composer.css(#1476 去重)。 */
+/* .a-pop-note(popover 内的诚实说明行)唯一定义在 alpha-composer.css(REQ-230 去重)。 */
 .a-pop-item {
   display: flex;
   align-items: center;
@@ -608,12 +608,4 @@ body[data-alpha-sidebar="open"] .a-home--page {
   width: 9px;
   height: 9px;
   color: inherit;
-}
-/* #1476:描述包进统一提示后,提示外壳接替描述在行内吃掉剩余宽度(省略号仍生效)。 */
-.a-auto-row > .a-tip-wrap {
-  flex: 1;
-  min-width: 0;
-}
-.a-auto-row > .a-tip-wrap > .a-auto-desc {
-  width: 100%;
 }

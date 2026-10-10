@@ -1,11 +1,7 @@
 @import "./tokens.css";
 
-/* alpha-ui Tooltip(`#1476`)—— 反色小签、6px 圆角、无箭头;0.4s 延迟由 Tooltip.tsx 的定时器负责,
+/* alpha-ui Tooltip(`REQ-230`)—— 反色小签、6px 圆角、无箭头;0.4s 延迟由 Tooltip.tsx 的定时器负责,
    这里只管样子。Portal 到 body,fixed 定位(坐标由组件算),不受祖先 overflow 裁剪。 */
-.a-tip-wrap {
-  position: relative;
-  display: inline-flex;
-}
 .a-tip {
   z-index: var(--a-z-toast);
   pointer-events: none;
