@@ -399,6 +399,18 @@ const TITLE_KEYS: Partial<Record<ToolCardKind, string>> = {
   task: "alpha.timeline.tool.task",
 }
 
+/**
+ * `#1473` 工作过程步骤行 / 摘要的动词(i18n key)。与卡头的 titleKey 同源,另补一条:
+ * bash 卡头今天不带动词(命令本身就是标题),步骤行需要「运行命令」才读得通。
+ * metadata-only 降级不给动词 —— 那里只显示来源分类 + 名称(规则不变)。
+ */
+export function toolTitleKeyOf(dispatch: ToolCardDispatch): string | undefined {
+  if (dispatch.metadataOnly) return undefined
+  if (dispatch.kind === "cloud") return dispatch.cloudRule?.titleKey
+  if (dispatch.kind === "bash") return "alpha.timeline.step.bash"
+  return TITLE_KEYS[dispatch.kind]
+}
+
 function assignInline(head: ToolCardHead, value: unknown) {
   const result = redactedInlineOf(value)
   if (result.hidden) head.targetHidden = true

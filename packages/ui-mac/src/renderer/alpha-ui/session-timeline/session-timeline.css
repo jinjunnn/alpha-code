@@ -806,102 +806,273 @@ button.a-tl-cmd-chip:focus-visible {
   margin-left: 6px;
 }
 
-/* ── 推理块 ───────────────────────────────────────────────────────────── */
-.a-tl-reason {
-  align-self: flex-start;
-  width: 100%;
-  max-width: 760px;
-  overflow: hidden;
-  border: 1px solid var(--a-border-faint);
-  border-left: 2px solid var(--a-accent-border);
-  border-radius: var(--a-radius-md);
-  background: var(--a-bg-subtle);
+/* ── 工作过程折叠(design ⑧ #process-fold,ac 1473,2026-10-10 已批)──────────────────
+   活稿 ⑧ 段的 pf- 类实现为时间线自己的 a-tl-pf- 类:收起一行 → 每步一行 → 某一步的详情。
+   详情正文复用 cards.css 的 a-tc-* 体(终端 / 改动对比 / 搜索结果 / 文件列表 / 目录 / 错误)。 */
+.a-tl-pf {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 0;
 }
 
-.a-tl-reason-head {
-  display: flex;
-  gap: 9px;
+.a-tl-pf-sum {
+  display: inline-flex;
+  gap: 7px;
   align-items: center;
-  width: 100%;
-  padding: 9px 12px;
+  align-self: flex-start;
+  max-width: 100%;
+  margin-left: -8px;
+  padding: 4px 8px;
   border: 0;
+  border-radius: var(--a-radius-md);
   background: transparent;
   color: var(--a-text-secondary);
-  font-family: inherit;
+  font: inherit;
   font-size: var(--a-text-sm);
   text-align: left;
   cursor: pointer;
 }
 
-.a-tl-reason-head:focus-visible {
-  outline: none;
-  box-shadow: inset var(--a-ring-focus);
+.a-tl-pf-sum:hover {
+  background: var(--a-overlay-hover);
+  color: var(--a-text);
 }
 
-.a-tl-reason-icon {
+.a-tl-pf-sum:focus-visible,
+.a-tl-pf-step:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-tl-pf-chev {
   flex: none;
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   fill: none;
-  stroke: var(--a-accent);
-  stroke-width: 1.7;
+  stroke: var(--a-text-tertiary);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--a-dur) var(--a-ease-out);
+}
+
+.a-tl-pf[data-open="true"] > .a-tl-pf-sum .a-tl-pf-chev {
+  transform: rotate(90deg);
+}
+
+.a-tl-pf-dot {
+  flex: none;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--a-text-disabled);
+}
+
+.a-tl-pf-warn {
+  color: var(--a-warning);
+}
+
+.a-tl-pf-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.a-tl-pf-list {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 2px 5px;
+  padding-left: 13px;
+  border-left: 1.5px solid var(--a-border);
+}
+
+.a-tl-pf-item,
+.a-tl-pf-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.a-tl-pf-step {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 26px;
+  margin-left: -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font: inherit;
+  font-size: var(--a-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.a-tl-pf-step:hover {
+  background: var(--a-overlay-hover);
+}
+
+.a-tl-pf-i,
+.a-tl-pf-ico svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.a-tl-reason-label {
+.a-tl-pf-ico {
+  display: inline-flex;
+  flex: none;
+}
+
+.a-tl-pf-step .a-tl-pf-i,
+.a-tl-pf-step .a-tl-pf-ico {
+  color: var(--a-text-tertiary);
+}
+
+.a-tl-pf-v {
+  flex: none;
+  color: var(--a-text);
   font-weight: var(--a-weight-medium);
 }
 
-.a-tl-reason[data-streaming="true"] .a-tl-reason-label {
+.a-tl-pf-step[data-think="true"] .a-tl-pf-v {
+  color: var(--a-text-secondary);
+  font-weight: var(--a-weight-normal);
+}
+
+.a-tl-pf-step[data-streaming="true"] .a-tl-pf-v {
   color: var(--a-accent);
 }
 
-.a-tl-reason-duration {
-  flex: none;
-  color: var(--a-text-tertiary);
-}
-
-.a-tl-reason-meta {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  min-width: 0;
-  color: var(--a-text-tertiary);
-}
-
-.a-tl-reason-separator {
-  flex: none;
-}
-
-.a-tl-reason-summary {
+.a-tl-pf-o {
   min-width: 0;
   overflow: hidden;
+  color: var(--a-text-tertiary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.a-tl-reason-chev {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  margin-left: auto;
-  fill: none;
-  stroke: var(--a-text-tertiary);
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform var(--a-dur-fast) var(--a-ease-out);
+.a-tl-pf-o[data-mono="true"] {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
 }
 
-.a-tl-reason[data-open="true"] .a-tl-reason-chev {
+.a-tl-pf-end {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.a-tl-pf-sc {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: var(--a-text-tertiary);
+  stroke-width: 2.2;
+  opacity: 0;
+  transition:
+    opacity var(--a-dur-fast),
+    transform var(--a-dur) var(--a-ease-out);
+}
+
+.a-tl-pf-step:hover .a-tl-pf-sc,
+.a-tl-pf-step:focus-visible .a-tl-pf-sc {
+  opacity: 1;
+}
+
+.a-tl-pf-step[data-open="true"] .a-tl-pf-sc {
+  opacity: 1;
   transform: rotate(90deg);
 }
 
-.a-tl-reason-body {
-  padding: 0 14px 12px 34px;
+.a-tl-pf-step[data-tone="warn"] .a-tl-pf-ico,
+.a-tl-pf-step[data-tone="warn"] .a-tl-pf-end {
+  color: var(--a-warning);
+}
+
+.a-tl-pf-step[data-tone="run"] .a-tl-pf-v {
+  color: var(--a-text);
+}
+
+.a-tl-pf-spin {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1.6px solid var(--a-border-strong);
+  border-top-color: var(--a-accent);
+  border-radius: 50%;
+  animation: a-tl-pf-rot 0.9s linear infinite;
+}
+
+@keyframes a-tl-pf-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.a-tl-pf-say {
+  margin: 3px 0;
   color: var(--a-text-secondary);
   font-size: var(--a-text-sm);
+  line-height: 1.55;
+}
+
+.a-tl-pf-sublist {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 4px 16px;
+}
+
+.a-tl-pf-sublist .a-tl-pf-step {
+  min-height: 24px;
+  font-size: var(--a-text-xs);
+}
+
+.a-tl-pf-sublist .a-tl-pf-o {
+  color: var(--a-text-secondary);
+}
+
+.a-tl-pf-detail {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 8px 22px;
+  overflow: hidden;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+}
+
+/* 复用的卡片正文原本以卡头为参照留了左缩进;在详情框里归零。 */
+.a-tl-pf-detail .a-tc-subdesc {
+  margin-top: 0;
+  padding: 7px 12px 0;
+}
+
+.a-tl-pf-detail .a-tc-actions {
+  justify-content: flex-start;
+  padding: 8px 12px 0;
+}
+
+.a-tl-pf-think {
+  max-height: 240px;
+  padding: 9px 12px;
+  overflow: auto;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  line-height: 1.6;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -1093,6 +1264,10 @@ button.a-tl-cmd-chip:focus-visible {
   }
 
   .a-tl-cursor {
+    animation: none;
+  }
+
+  .a-tl-pf-spin {
     animation: none;
   }
 
