@@ -5,8 +5,10 @@
 //   · 行对象只承载「结构」(kind/key/引用),内容(text/时长/工具状态)由视图经 solid store
 //     proxy 反应式读取 —— 流式 delta 不重建行 DOM;
 //   · reuseTimelineRows 以 key+rev+proxy 同一性做行复用,保证 <For> 的引用稳定;
-//   · 工具 part → tool 行(C6 真卡);连续已完成的探查类工具 ≥2 个 → toolgroup 折叠组;
-//     助手侧 file part → media 预览行;完成的第一方 cloud facade 工具(identity 判定)→ artifacts 产物链接行;
+//   · `#1473`:一回合的 reasoning / tool / 过渡话 → **一个** process 行(有序步骤;连续同类同来源且已
+//     结束的工具调用合成一步);回答 = 最后一次工具调用之后的 text → markdown 行;
+//     助手侧 file part → media 预览行;完成的第一方 cloud facade 工具(identity 判定)→ artifacts 产物链接行
+//     —— 两者都是结果,排在回答之后;
 //   · 回合级错误(非中断)→ turnError 行;session_status=retry → retry 行(对齐 v2 行模型);
 //   · 未知 part 类型 fail-closed:不渲染、不猜测(subtask 同上游 v1/v2 一致不渲染);
 //   · I7 有界:boundedText 把超大文本截断后才交给渲染管线(sanitizer/Shiki 不吃整串)。
@@ -150,7 +152,6 @@ export interface TimelineFootnote {
   model?: string
   /** input+output+reasoning 合计;非有限或 ≤0 → 缺席。 */
   tokens?: number
-  durationMs?: number
   /** 效率段:本回合提示词的缓存命中率(0–100 整数);无缓存读取即缺席(见 footnoteOf)。 */
   cacheHit?: number
 }
@@ -184,10 +185,21 @@ export type TimelineRow =
       /** 斜杠命令来源(C7 可选供给;缺席 = 普通气泡)。 */
       slash?: { command: string; arguments?: string; source?: "command" | "mcp" | "skill" }
     }
-  | { kind: "reasoning"; key: string; rev: string; part: ReasoningPart; streaming: boolean }
   | { kind: "markdown"; key: string; rev: string; part: TextPart; streaming: boolean }
-  | { kind: "tool"; key: string; rev: string; part: ToolPart; tool: string }
-  | { kind: "toolgroup"; key: string; rev: string; parts: ToolPart[] }
+  | {
+      /**
+       * `#1473` 工作过程(design ⑧ #process-fold):一回合的思考 / 工具调用 / 过渡话收成**一行**,
+       * 有序步骤列表;收起时一行摘要,展开后每步一行,再点一步看该类卡片的既有正文。
+       * 它取代了逐 part 的 reasoning / tool / toolgroup 行;回答(最后一次工具调用之后的 text)
+       * 仍是 markdown 行,媒体 / 产物 / 错误 / 中断 / 脚注 / 改动行仍在回答之后、工作过程之外。
+       */
+      kind: "process"
+      key: string
+      rev: string
+      userMessageID: string
+      steps: ProcessStep[]
+      summary: ProcessSummary
+    }
   | { kind: "media"; key: string; rev: string; media: TimelineMediaSource }
   | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
   | { kind: "retry"; key: string; rev: string; userMessageID: string; attempt: number; message: string }
@@ -244,6 +256,102 @@ export type TimelineRow =
       deletions: number
       truncated: boolean
     }
+
+// ── `#1473` 工作过程:步骤 / 分组 / 摘要 ─────────────────────────────────────
+/**
+ * 工具步骤的「同类同来源」判据(design ⑧ §2:连续、同类、同来源、都已结束的步骤合成一行)。
+ * 类 = identity 分派的 kind(#879,不是裸别名);来源 = 分类 + origin;metadata-only 降级
+ * 工具还按名称分 —— 两个不同的第三方工具不该被数成「同一个动作 N 次」。cloud 专用卡按规则
+ * 标题分(网页搜索与下发任务不是一类动作)。
+ */
+export interface ProcessGroupLabel {
+  kind: string
+  category: string
+  /** 动词的 i18n key(命中宿主规则的专用卡);缺席 = 渲染层退回名称。 */
+  titleKey?: string
+  /** 被动净化且有界的名称(metadata-only 时与来源分类一起显示;专用卡无 titleKey 时的退路)。 */
+  name: string
+  origin?: string
+  metadataOnly: boolean
+}
+
+export type ProcessStep =
+  | { kind: "reasoning"; key: string; part: ReasoningPart; streaming: boolean }
+  | {
+      /** 过渡话:后面还有工具调用的 text part;一行灰色正文,不参与合并,但切断合并。 */
+      kind: "text"
+      key: string
+      part: TextPart
+    }
+  | {
+      /** 一个或多个(已合并)工具调用;parts 按时间顺序,首项提供行上的「对象」。 */
+      kind: "tools"
+      key: string
+      parts: ToolPart[]
+      group: ProcessGroupLabel
+    }
+
+export interface ProcessSummary {
+  /** 动作计数(按次数降序,最多 PROCESS_SUMMARY_ACTIONS_MAX 类);思考不进摘要。 */
+  actions: { group: ProcessGroupLabel; count: number }[]
+  /** 失败(error 态)的工具调用次数 —— 只在回合本身成功时由渲染层写成琥珀提示。 */
+  failed: number
+  /** 思考总时长(毫秒,只在没有任何工具动作时供摘要退回「思考 N 秒」)。 */
+  reasoningMs: number
+  /** 整轮用时:用户消息创建 → 最后一条助手消息完成;回合未结束即缺席。 */
+  durationMs?: number
+  /** 回合本身是否成功结束(无回合级错误、未被中止、已完成);失败提示只在 true 时出现。 */
+  turnSucceeded: boolean
+}
+
+export const PROCESS_SUMMARY_ACTIONS_MAX = 3
+/** I7:单个合并步骤的成员上限;超长连续段切成多个步骤。 */
+export const PROCESS_GROUP_MAX = 24
+
+function processGroupLabelOf(part: ToolPart): ProcessGroupLabel {
+  const dispatch = toolCardDispatchOf(part)
+  return {
+    kind: dispatch.kind,
+    category: dispatch.category,
+    titleKey: dispatch.cloudRule?.titleKey ?? PROCESS_TITLE_KEYS[dispatch.kind],
+    name: dispatch.name,
+    origin: dispatch.origin,
+    metadataOnly: dispatch.metadataOnly,
+  }
+}
+
+/** 与 cards/tool-card-model 的 TITLE_KEYS 同一张表的只读副本(模型层不 import 渲染层的表)。 */
+const PROCESS_TITLE_KEYS: Record<string, string | undefined> = {
+  read: "alpha.timeline.tool.read",
+  list: "alpha.timeline.tool.list",
+  glob: "alpha.timeline.tool.glob",
+  grep: "alpha.timeline.tool.grep",
+  webfetch: "alpha.timeline.tool.webfetch",
+  websearch: "alpha.timeline.tool.websearch",
+  edit: "alpha.timeline.tool.edit",
+  write: "alpha.timeline.tool.write",
+  apply_patch: "alpha.timeline.tool.patch",
+  skill: "alpha.timeline.tool.skill",
+  task: "alpha.timeline.tool.task",
+}
+
+/** 合并键:同类(kind / 云规则标题)+ 同来源(分类 + origin)+ metadata-only 时再按名称。 */
+export function processGroupKeyOf(label: ProcessGroupLabel): string {
+  const base = `${label.category}\u0000${label.origin ?? ""}\u0000${label.titleKey ?? label.kind}`
+  return label.metadataOnly ? `${base}\u0000${label.name}` : base
+}
+
+/** 已结束 = completed / error;pending / running 的步骤永不合并。 */
+export function toolStepFinished(part: ToolPart): boolean {
+  return part.state.status === "completed" || part.state.status === "error"
+}
+
+/** 一次工具调用的用时(毫秒);未结束 / 时间非法即缺席。 */
+export function toolStepDurationMs(part: ToolPart): number | undefined {
+  const time = (part.state as { time?: { start?: unknown; end?: unknown } }).time
+  if (typeof time?.start !== "number" || typeof time.end !== "number") return undefined
+  return time.end >= time.start ? time.end - time.start : undefined
+}
 
 /** `#1399`:活跃回合在等你 —— 等你批准(审批弹窗)或等你回答(输入框上方的提问卡)。缺席 = 运行面。 */
 export type TimelineTurnWait = "approval" | "question"
@@ -393,27 +501,6 @@ function renderableToolPart(part: ToolPart) {
   // 记录;这条接管同样只属于 builtin identity 的 question(#934,与 HIDDEN_TOOLS 同闸)。
   if (builtinName === "question") return part.state.status !== "pending" && part.state.status !== "running"
   return true
-}
-
-/** 「已探索」折叠组的成员 kind(与上游 CONTEXT_GROUP_TOOLS 同集合;#934 起按
- * identity 分派命中的专用卡 kind 判归属,冒名的第三方工具进不了第一方分组)。 */
-const CONTEXT_GROUP_KINDS = new Set(["read", "glob", "grep", "list"])
-/** 连续多少个已完成探查工具起折叠成组(单个保留独立卡)。 */
-export const CONTEXT_GROUP_MIN = 2
-/** I7:单个折叠组的成员上限;超长连续段切成多个组行。 */
-export const CONTEXT_GROUP_MAX = 24
-
-/**
- * 只有「已完成、且无附件」的探查工具进折叠组 —— 运行中/出错的工具保留独立卡
- * (状态可见);带附件(如 read 图片)的保留独立卡,媒体预览行不被折叠吞掉。
- */
-function groupableToolPart(part: ToolPart) {
-  // #934:归属按 identity 分派的 kind(只有合法 builtin 快照命中宿主规则表才铸得出
-  // read/glob/grep/list),不再按 part.tool 裸别名;metadata-only 降级卡一律独立成卡。
-  const dispatch = toolCardDispatchOf(part)
-  if (dispatch.metadataOnly || !CONTEXT_GROUP_KINDS.has(dispatch.kind)) return false
-  if (part.state.status !== "completed") return false
-  return toolMediaOf(part).length === 0
 }
 
 // ── 媒体预览行:工具附件是生产上图片/PDF 的真实通道(processor 完成时写入
@@ -572,9 +659,8 @@ export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFoo
       footnote.cacheHit = Math.round((cached / prompt) * 100)
     }
   }
-  const completed = source.time.completed
-  if (typeof completed === "number" && Number.isFinite(source.time.created) && completed >= source.time.created)
-    footnote.durationMs = completed - source.time.created
+  // `#1473`:用时不再进脚注 —— 它此前只量最后一条助手消息(created → completed),与整轮计时同名
+  // 不同量;整轮用时(用户消息创建 → 最后一条助手完成)现在住在工作过程摘要(ProcessSummary.durationMs)。
   return footnote
 }
 
@@ -815,53 +901,21 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
 
     let emitted = 0
     const assistants = turnAssistants
+    const turnActive = userMessage.id === activeUserID && input.status !== "idle"
 
-    // 连续已完成的探查工具缓冲:≥ CONTEXT_GROUP_MIN 折叠成「已探索」组,单个保留独立卡;
-    // 单组成员 ≤ CONTEXT_GROUP_MAX(I7),超长连续段切成多个组行。
-    let contextRun: ToolPart[] = []
-    const pushToolRow = (part: ToolPart) => {
-      rows.push({ kind: "tool", key: `part:${part.id}`, rev: `tool:${part.tool}`, part, tool: part.tool })
-      const links = artifactLinksOf(part)
-      if (links.length > 0)
-        rows.push({
-          kind: "artifacts",
-          key: `artifacts:${part.id}`,
-          rev: links.map((link) => `${link.runId}/${link.id ?? ""}/${link.name}`).join("|"),
-          partID: part.id,
-          links,
-        })
-      // 工具附件(生产上图片/PDF 的真实通道)→ 媒体预览行,挂在工具卡之后。
-      // #587 审计 R-final:媒体行与卡同一条 identity 分派闸 —— metadata-only 降级
-      // (第三方 MCP/plugin/快照缺失或非法)的 part,其附件(远端可控的 data: URL 与
-      // 文件名)不得绕过降级卡在主时间线渲染。fail-closed:降级即零媒体行。
-      if (toolCardDispatchOf(part).metadataOnly) return
-      toolMediaOf(part).forEach((media, index) => {
-        rows.push({
-          kind: "media",
-          key: `media:${part.id}:${index}`,
-          rev: `${media.mime}§${media.name}§${media.url.length}`,
-          media,
-        })
-      })
-    }
-    const flushContextRun = () => {
-      if (contextRun.length === 0) return
-      const run = contextRun
-      contextRun = []
-      for (let start = 0; start < run.length; start += CONTEXT_GROUP_MAX) {
-        const chunk = run.slice(start, start + CONTEXT_GROUP_MAX)
-        if (chunk.length >= CONTEXT_GROUP_MIN) {
-          rows.push({
-            kind: "toolgroup",
-            key: `group:${chunk[0]!.id}`,
-            rev: chunk.map((part) => part.id).join("|"),
-            parts: chunk,
-          })
-        } else {
-          chunk.forEach(pushToolRow)
-        }
-      }
-    }
+    // ── `#1473` 一回合 = 一行工作过程 + 完整的回答(design ⑧ §2 / §4) ──────────────
+    // 先把整回合(跨本回合全部助手消息)的可见 part 按时间顺序摊平,再按「最后一次工具调用」
+    // 切成两半:之前的 reasoning / tool / text 进工作过程(text 即过渡话),之后的 text 是回答。
+    type TurnItem =
+      | { type: "text"; part: TextPart; assistant: AssistantMessage; streaming: boolean }
+      | { type: "reasoning"; part: ReasoningPart; assistant: AssistantMessage; streaming: boolean }
+      | { type: "tool"; part: ToolPart; assistant: AssistantMessage }
+    const items: TurnItem[] = []
+    // 媒体行(顶层 file part / 工具附件)与产物行:结果,不进工作过程 —— 回答之后按原顺序列出。
+    const trailing: TimelineRow[] = []
+    const emittedByAssistant = new Map<string, number>()
+    const bump = (assistant: AssistantMessage) =>
+      emittedByAssistant.set(assistant.id, (emittedByAssistant.get(assistant.id) ?? 0) + 1)
 
     for (const assistant of assistants) {
       const parts = input.partsOf(assistant.id)
@@ -885,51 +939,54 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           case "text": {
             if (!part.text?.trim()) continue
             if (compactionSummary) continue
-            flushContextRun()
-            rows.push({
-              kind: "markdown",
-              key: `md:${part.id}`,
-              rev: String(streamingHere && lastVisible === part),
-              part,
-              streaming: streamingHere && lastVisible === part,
-            })
-            emitted += 1
+            items.push({ type: "text", part, assistant, streaming: streamingHere && lastVisible === part })
+            bump(assistant)
             continue
           }
           case "reasoning": {
             if (!part.text?.trim()) continue
             if (compactionSummary) continue
-            flushContextRun()
-            rows.push({
-              kind: "reasoning",
-              key: `reason:${part.id}`,
-              rev: String(streamingHere && part.time.end === undefined),
-              part,
-              streaming: streamingHere && part.time.end === undefined,
-            })
-            emitted += 1
+            items.push({ type: "reasoning", part, assistant, streaming: streamingHere && part.time.end === undefined })
+            bump(assistant)
             continue
           }
           case "tool": {
             if (!renderableToolPart(part)) continue
-            if (groupableToolPart(part)) contextRun.push(part)
-            else {
-              flushContextRun()
-              pushToolRow(part)
-            }
-            emitted += 1
+            items.push({ type: "tool", part, assistant })
+            bump(assistant)
+            const links = artifactLinksOf(part)
+            if (links.length > 0)
+              trailing.push({
+                kind: "artifacts",
+                key: `artifacts:${part.id}`,
+                rev: links.map((link) => `${link.runId}/${link.id ?? ""}/${link.name}`).join("|"),
+                partID: part.id,
+                links,
+              })
+            // 工具附件(生产上图片/PDF 的真实通道)→ 媒体预览行。
+            // #587 审计 R-final:媒体行与卡同一条 identity 分派闸 —— metadata-only 降级
+            // (第三方 MCP/plugin/快照缺失或非法)的 part,其附件(远端可控的 data: URL 与
+            // 文件名)不得绕过降级卡在主时间线渲染。fail-closed:降级即零媒体行。
+            if (toolCardDispatchOf(part).metadataOnly) continue
+            toolMediaOf(part).forEach((media, index) => {
+              trailing.push({
+                kind: "media",
+                key: `media:${part.id}:${index}`,
+                rev: `${media.mime}§${media.name}§${media.url.length}`,
+                media,
+              })
+            })
             continue
           }
           case "file": {
-            flushContextRun()
             const media = mediaSourceOfFilePart(part)
-            rows.push({
+            trailing.push({
               kind: "media",
               key: `part:${part.id}`,
               rev: `${media.mime}§${media.name}§${media.url.length}`,
               media,
             })
-            emitted += 1
+            bump(assistant)
             continue
           }
           default:
@@ -938,7 +995,138 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
             continue
         }
       }
-      flushContextRun()
+    }
+
+    // 回答 = 最后一次工具调用之后的 text part(§4)。没有时把最后一段过渡话提为回答 ——
+    // 只对已结束的回合这么做:活跃回合里「文字之后又开始调工具」正是过渡话的定义,不能一边
+    // 跑一边把它提成回答再收回去(实时形态归 #1474)。
+    let lastToolIndex = -1
+    items.forEach((item, index) => {
+      if (item.type === "tool") lastToolIndex = index
+    })
+    const isAnswer = (item: TurnItem, index: number) => item.type === "text" && index > lastToolIndex
+    const answerIndexes = new Set(items.map((_, index) => index).filter((index) => isAnswer(items[index]!, index)))
+    if (answerIndexes.size === 0 && !turnActive) {
+      for (let index = items.length - 1; index >= 0; index -= 1) {
+        if (items[index]!.type === "text") {
+          answerIndexes.add(index)
+          break
+        }
+      }
+    }
+
+    const steps: ProcessStep[] = []
+    const actionCounts = new Map<string, { group: ProcessGroupLabel; count: number }>()
+    let failed = 0
+    let reasoningMs = 0
+    let run: { key: string; group: ProcessGroupLabel; parts: ToolPart[] } | undefined
+    const flushRun = () => {
+      if (!run) return
+      const { group, parts } = run
+      run = undefined
+      // I7:超长连续段切成多个步骤。
+      for (let start = 0; start < parts.length; start += PROCESS_GROUP_MAX) {
+        const chunk = parts.slice(start, start + PROCESS_GROUP_MAX)
+        steps.push({ kind: "tools", key: `tools:${chunk[0]!.id}`, parts: chunk, group })
+      }
+    }
+    items.forEach((item, index) => {
+      if (answerIndexes.has(index)) {
+        // 被提为回答的过渡话不进步骤,但它仍然切断合并 —— 它前后的两次工具调用在时间上本就隔着一段话,
+        // 不因为那段话被提走就并成「同一个动作 2 次」。
+        flushRun()
+        return
+      }
+      if (item.type === "text") {
+        // 过渡话:一行灰色正文,不参与合并,但切断合并。
+        flushRun()
+        steps.push({ kind: "text", key: `say:${item.part.id}`, part: item.part })
+        return
+      }
+      if (item.type === "reasoning") {
+        // 思考不与工具合并,也不与思考合并(每段一行:思考 N 秒)。
+        flushRun()
+        steps.push({ kind: "reasoning", key: `reason:${item.part.id}`, part: item.part, streaming: item.streaming })
+        const { start, end } = item.part.time
+        if (typeof end === "number" && end >= start) reasoningMs += end - start
+        return
+      }
+      const part = item.part
+      const group = processGroupLabelOf(part)
+      const key = processGroupKeyOf(group)
+      const counted = actionCounts.get(key)
+      if (counted) counted.count += 1
+      else actionCounts.set(key, { group, count: 1 })
+      if (part.state.status === "error") failed += 1
+      // 合并:连续、同类同来源、都已结束;运行中 / 待运行的步骤永不合并(自己一行,也不吸收后者)。
+      if (run && run.key === key && toolStepFinished(part)) {
+        run.parts.push(part)
+        return
+      }
+      flushRun()
+      if (toolStepFinished(part)) run = { key, group, parts: [part] }
+      else steps.push({ kind: "tools", key: `tools:${part.id}`, parts: [part], group })
+    })
+    flushRun()
+
+    const lastAssistant = assistants.at(-1)
+    const turnFinished =
+      !turnActive && assistants.length > 0 && assistants.every((assistant) => typeof assistant.time.completed === "number")
+    const turnSucceeded = turnFinished && assistants.every((assistant) => !assistant.error)
+    const completedAt = lastAssistant?.time.completed
+    const durationMs =
+      turnFinished && typeof completedAt === "number" && completedAt >= userMessage.time.created
+        ? completedAt - userMessage.time.created
+        : undefined
+    const actions = [...actionCounts.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, PROCESS_SUMMARY_ACTIONS_MAX)
+    const summary: ProcessSummary = {
+      actions,
+      failed,
+      reasoningMs,
+      turnSucceeded,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+    }
+    if (steps.length > 0)
+      rows.push({
+        kind: "process",
+        key: `process:${userMessage.id}`,
+        rev: [
+          steps
+            .map((step) =>
+              step.kind === "tools"
+                ? `${step.key}=${step.parts.map((part) => `${part.id}:${part.state.status}`).join(",")}`
+                : step.kind === "reasoning"
+                  ? `${step.key}=${String(step.streaming)}:${String(step.part.time.end ?? "")}`
+                  : step.key,
+            )
+            .join("|"),
+          actions.map((action) => `${processGroupKeyOf(action.group)}=${action.count}`).join(","),
+          String(failed),
+          String(reasoningMs),
+          String(durationMs ?? ""),
+          String(turnSucceeded),
+        ].join("§"),
+        userMessageID: userMessage.id,
+        steps,
+        summary,
+      })
+
+    items.forEach((item, index) => {
+      if (!answerIndexes.has(index) || item.type !== "text") return
+      rows.push({
+        kind: "markdown",
+        key: `md:${item.part.id}`,
+        rev: String(item.streaming),
+        part: item.part,
+        streaming: item.streaming,
+      })
+    })
+    rows.push(...trailing)
+
+    for (const assistant of assistants) {
+      emitted += emittedByAssistant.get(assistant.id) ?? 0
       if (assistant.error?.name === "MessageAbortedError")
         rows.push({
           kind: "divider",
@@ -959,7 +1147,6 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
 
     // 回合末富脚注(A6):只在回合尾态成功完成且有可见内容时出行;当前活跃回合
     // (busy/retry 等非 idle)尾态未定,一律不出(审计 Major-1)。
-    const turnActive = userMessage.id === activeUserID && input.status !== "idle"
     const footnote = emitted > 0 && !turnActive ? footnoteOf(assistants) : undefined
     if (footnote)
       rows.push({
@@ -971,7 +1158,6 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           footnote.model ?? "",
           footnote.cacheHit ?? "",
           footnote.tokens ?? "",
-          footnote.durationMs ?? "",
         ].join("§"),
         userMessageID: userMessage.id,
         footnote,
@@ -1037,6 +1223,13 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
   return rows
 }
 
+function sameProcessStep(before: ProcessStep, next: ProcessStep): boolean {
+  if (before.kind !== next.kind || before.key !== next.key) return false
+  if (before.kind === "tools" && next.kind === "tools")
+    return before.parts.length === next.parts.length && before.parts.every((part, index) => part === next.parts[index])
+  return (before as { part: unknown }).part === (next as { part: unknown }).part
+}
+
 /** 行复用:key+kind+rev 相同且承载的 store proxy 同一 → 保留旧行对象(<For> 引用稳定,流式不重建 DOM)。 */
 export function reuseTimelineRows(previous: readonly TimelineRow[] | undefined, next: TimelineRow[]): TimelineRow[] {
   if (!previous || previous.length === 0) return next
@@ -1047,9 +1240,10 @@ export function reuseTimelineRows(previous: readonly TimelineRow[] | undefined, 
     if (!before || before.kind !== row.kind || before.rev !== row.rev) return row
     if ("part" in before && "part" in row && before.part !== row.part) return row
     if (before.kind === "user" && row.kind === "user" && before.message !== row.message) return row
-    if (before.kind === "toolgroup" && row.kind === "toolgroup") {
-      if (before.parts.length !== row.parts.length) return row
-      if (before.parts.some((part, index) => part !== row.parts[index])) return row
+    if (before.kind === "process" && row.kind === "process") {
+      // rev 已含每步的 key 与状态;这里只再核对承载的 store proxy 同一性(防 stale proxy)。
+      if (before.steps.length !== row.steps.length) return row
+      if (before.steps.some((step, index) => !sameProcessStep(step, row.steps[index]!))) return row
     }
     reused += 1
     return before

@@ -17,7 +17,20 @@ import {
   toolCardHeadOf,
   toolDevDetailsOf,
 } from "./tool-card-model"
-import { artifactLinksOf, projectTimelineRows } from "../timeline-model"
+import { artifactLinksOf, projectTimelineRows, type TimelineRow } from "../timeline-model"
+
+/** `#1473`:工具调用现在是工作过程行里的步骤(逐 part 的 tool / toolgroup 行已退役)。把一次投影里的
+ * 工具 part / 工具步骤摊平回来 —— 本文件断言的是「出不出、几个」,与行形态无关。 */
+function toolPartsOf(rows: readonly TimelineRow[]) {
+  return rows.flatMap((row) =>
+    row.kind === "process" ? row.steps.flatMap((step) => (step.kind === "tools" ? step.parts : [])) : [],
+  )
+}
+function toolStepsOf(rows: readonly TimelineRow[]) {
+  return rows.flatMap((row) =>
+    row.kind === "process" ? row.steps.flatMap((step) => (step.kind === "tools" ? [step.parts.map((part) => part.id)] : [])) : [],
+  )
+}
 // 生产字典是被验对象(标题必须真的解析成中文);期望值用本文件的独立字面量,
 // 不 import 被测模型的常量(自指等价链禁忌)。
 import { dict as zhDict } from "../../../i18n/zh"
@@ -691,7 +704,7 @@ describe("#587 R-final — 媒体行受同一条 identity 分派闸:第三方附
     const rows = projectRowsOf(
       toolPart({ tool: "srv_capture", display: mcp("srv", "capture"), state: attachedState() }),
     )
-    expect(rows.filter((row) => row.kind === "tool")).toHaveLength(1)
+    expect(toolPartsOf(rows)).toHaveLength(1)
     expect(rows.some((row) => row.kind === "media")).toBe(false)
   })
 
@@ -874,13 +887,13 @@ describe("#934 — 时间线隐藏是第一方特权:冒名 todowrite/question �
       const rows = timelineRowsOf([
         toolPart({ tool, display, state: completed({ todos: [{ content: "静默动作" }] }, "done") }),
       ])
-      expect({ tool, toolRows: rows.filter((row) => row.kind === "tool").length }).toEqual({ tool, toolRows: 1 })
+      expect({ tool, toolRows: toolPartsOf(rows).length }).toEqual({ tool, toolRows: 1 })
     }
     // 对照(杀「一律渲染」的错误实现):引擎铸造的 builtin todowrite 仍被 dock 接管,零工具行。
     const real = timelineRowsOf([
       toolPart({ tool: "todowrite", display: builtin("todowrite"), state: completed({ todos: [] }, "ok") }),
     ])
-    expect(real.filter((row) => row.kind === "tool")).toHaveLength(0)
+    expect(toolPartsOf(real)).toHaveLength(0)
   })
 
   test("pending/running 的 question 接管同闸:冒名 question 运行中也可见(静默执行窗口关死)", () => {
@@ -888,20 +901,20 @@ describe("#934 — 时间线隐藏是第一方特权:冒名 todowrite/question �
     const spoof = timelineRowsOf([
       toolPart({ tool: "question", display: plugin("qa-pack", "question"), state: runningState }),
     ])
-    expect(spoof.filter((row) => row.kind === "tool")).toHaveLength(1)
+    expect(toolPartsOf(spoof)).toHaveLength(1)
     // 对照:builtin question 运行中仍归 composer dock,时间线零行;完成后记录回归时间线。
     const real = timelineRowsOf([toolPart({ tool: "question", display: builtin("question"), state: runningState })])
-    expect(real.filter((row) => row.kind === "tool")).toHaveLength(0)
+    expect(toolPartsOf(real)).toHaveLength(0)
     const answered = timelineRowsOf([
       toolPart({ tool: "question", display: builtin("question"), state: completed({}, "答案 B") }),
     ])
-    expect(answered.filter((row) => row.kind === "tool")).toHaveLength(1)
+    expect(toolPartsOf(answered)).toHaveLength(1)
   })
 })
 
-describe("#934 — 「已探索」折叠组归属按 identity:冒名探查工具挤不进第一方分组", () => {
+describe("#934 — 工作过程的合并归属按 identity(`#1473` 起取代「已探索」折叠组):冒名探查工具挤不进第一方的一步", () => {
   const readState = () => completed({ filePath: "/w/docs/overview.md" }, "")
-  test("plugin 裸名 read / MCP 远端 read / 无快照历史行:与真 read 相邻也不成组,各自独立成卡", () => {
+  test("plugin 裸名 read / MCP 远端 read / 无快照历史行:与真 read 相邻也不合并,各自独立成步", () => {
     const spoofs: Array<[string, ToolDisplaySnapshotV1 | undefined]> = [
       ["read", plugin("fs-tools", "read")],
       ["files-srv_read", mcp("files-srv", "read")],
@@ -912,19 +925,16 @@ describe("#934 — 「已探索」折叠组归属按 identity:冒名探查工具
         withId(toolPart({ tool: "read", display: builtin("read"), state: readState() }), "prt_real"),
         withId(toolPart({ tool, display, state: readState() }), "prt_spoof"),
       ])
-      expect({ tool, group: rows.some((row) => row.kind === "toolgroup") }).toEqual({ tool, group: false })
-      expect({ tool, toolRows: rows.filter((row) => row.kind === "tool").length }).toEqual({ tool, toolRows: 2 })
+      expect({ tool, steps: toolStepsOf(rows) }).toEqual({ tool, steps: [["prt_real"], ["prt_spoof"]] })
     }
   })
 
-  test("对照(杀「一律不成组」的错误实现):两个 builtin identity 探查工具照常折叠", () => {
+  test("对照(杀「一律不合并」的错误实现):两个 builtin identity 的 read 照常合成一步", () => {
     const rows = timelineRowsOf([
       withId(toolPart({ tool: "read", display: builtin("read"), state: readState() }), "prt_b1"),
-      withId(toolPart({ tool: "list", display: builtin("list"), state: completed({ path: "/w/src" }, "") }), "prt_b2"),
+      withId(toolPart({ tool: "read", display: builtin("read"), state: readState() }), "prt_b2"),
     ])
-    const groups = rows.filter((row) => row.kind === "toolgroup")
-    expect(groups).toHaveLength(1)
-    expect(groups[0]!.kind === "toolgroup" && groups[0]!.parts).toHaveLength(2)
+    expect(toolStepsOf(rows)).toEqual([["prt_b1", "prt_b2"]])
   })
 })
 

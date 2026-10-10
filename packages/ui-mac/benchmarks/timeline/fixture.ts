@@ -76,18 +76,27 @@ function turnRows(prefix: string, index: number, order: number): TimelineRow[] {
     ...(index % 2 === 0
       ? ([
           {
-            kind: "reasoning",
-            key: `${prefix}:${index}:reasoning`,
+            // `#1473`:推理不再是独立行,而是工作过程的一步(收起时一行「思考 N 秒」)。
+            kind: "process",
+            key: `${prefix}:${index}:process`,
             rev: "1",
-            streaming: false,
-            part: {
-              id: `prt_${prefix}_reasoning_${index}`,
-              sessionID: "ses_alpha_timeline_benchmark",
-              messageID: assistantID,
-              type: "reasoning",
-              text: `Reviewing deterministic fixture row ${index}.`,
-              time: { start: createdAt + 500, end: createdAt + 900 },
-            } as never,
+            userMessageID: userID,
+            steps: [
+              {
+                kind: "reasoning",
+                key: `${prefix}:${index}:reasoning`,
+                streaming: false,
+                part: {
+                  id: `prt_${prefix}_reasoning_${index}`,
+                  sessionID: "ses_alpha_timeline_benchmark",
+                  messageID: assistantID,
+                  type: "reasoning",
+                  text: `Reviewing deterministic fixture row ${index}.`,
+                  time: { start: createdAt + 500, end: createdAt + 900 },
+                } as never,
+              },
+            ],
+            summary: { actions: [], failed: 0, reasoningMs: 400, turnSucceeded: true, durationMs: 900 },
           } satisfies TimelineRow,
         ] as TimelineRow[])
       : []),

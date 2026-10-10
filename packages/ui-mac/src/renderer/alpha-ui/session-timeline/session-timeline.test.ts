@@ -17,7 +17,7 @@ const workspace = readFileSync(join(dir, "../session-workspace/alpha-session-wor
 const shell = readFileSync(join(dir, "../session-workspace/session-workspace-shell.tsx"), "utf8")
 
 describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () => {
-  test("空态/文本类行/历史驻点/连续锚定/引擎窗口化/截断冻结/C6 卡片全集全部通过", () => {
+  test("空态/文本类行/历史驻点/连续锚定/引擎窗口化/截断冻结/C6 卡片全集/工作过程折叠全部通过", () => {
     const result = Bun.spawnSync({
       cmd: [process.execPath, "test", resolve(dir, "../../../../test-component/session-timeline.cases.ts")],
       cwd: resolve(dir, "../../../.."),
@@ -40,7 +40,9 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // #1214 AC2:审批超时呈现 —— mcp 降级卡出「审批已超时,未获批准」,普通错误不冒充(59 → 60)。
     // `#1382`:围栏拒绝在回合级错误卡上的归因 + 其控制臂(非围栏失败文案不变)(60 → 62)。
     // `#1399`:回合脚行 —— 运行面 / 等你面两种触发 / 播报预算 / 四种结局同帧让位(62 → 66)。
-    expect(output).toContain("66 pass")
+    // `#1473`:工作过程折叠 —— 18 步研究回合(一行 / 12 行 / 详情)+ 回合失败不写「没成功」与手动开合保持
+    //   + 只思考的摘要(66 → 69);既有工具卡用例改为「步骤行 + 详情」的三层形态,条数不变。
+    expect(output).toContain("69 pass")
     expect(output).toContain("0 fail")
   })
 })

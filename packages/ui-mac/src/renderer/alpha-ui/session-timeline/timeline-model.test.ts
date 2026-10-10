@@ -17,6 +17,10 @@ import {
   formatTurnElapsed,
   MARKDOWN_MAX_CHARS,
   MENTION_LABEL_MAX_CHARS,
+  PROCESS_GROUP_MAX,
+  PROCESS_SUMMARY_ACTIONS_MAX,
+  type ProcessStep,
+  processGroupKeyOf,
   projectTimelineRows,
   REASONING_MAX_CHARS,
   REASONING_SUMMARY_MAX_CHARS,
@@ -32,7 +36,31 @@ import {
   turnErrorOf,
   TURN_ERROR_MAX_CHARS,
   USER_TEXT_MAX_CHARS,
+  type TimelineRow,
 } from "./timeline-model"
+import {
+  RESEARCH_COMPLETED_AT,
+  RESEARCH_CREATED_AT,
+  RESEARCH_EXPECTED_STEPS,
+  researchProjectionInput,
+} from "../../../../test-component/fixtures/research-turn"
+
+/** `#1473`:工具调用现在是工作过程行里的步骤。把一次投影里的工具步骤 / 工具 part 摊平回来,
+ * 供「出不出行 / 几个 part」这类与形态无关的断言复用。 */
+function processRowOf(rows: readonly TimelineRow[]) {
+  const found = rows.filter((row) => row.kind === "process")
+  if (found.length > 1) throw new Error(`expected at most one process row, got ${found.length}`)
+  const row = found[0]
+  return row && row.kind === "process" ? row : undefined
+}
+function toolStepsOf(rows: readonly TimelineRow[]) {
+  return (processRowOf(rows)?.steps ?? []).filter(
+    (step): step is Extract<ProcessStep, { kind: "tools" }> => step.kind === "tools",
+  )
+}
+function toolPartsOf(rows: readonly TimelineRow[]) {
+  return toolStepsOf(rows).flatMap((step) => step.parts)
+}
 
 describe("#863 reasoning 折叠头安全摘要", () => {
   test("只提取显式标题并清理展示标记；普通正文不猜摘要", () => {
@@ -135,7 +163,7 @@ function project(
 }
 
 describe("REQ-125 C5 行模型投影:消息 → 行", () => {
-  test("完整回合投影为 用户气泡 → 推理块 → Markdown → 工具卡行,首回合无分隔", () => {
+  test("完整回合投影为 用户气泡 → 工作过程(推理 + 工具)→ 回答 Markdown,首回合无分隔", () => {
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "检查仓库结构")],
       msg_a1: [
@@ -145,10 +173,16 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       ],
     })
 
-    expect(rows.map((row) => row.kind)).toEqual(["user", "reasoning", "markdown", "tool", "footnote"])
-    expect(rows.map((row) => row.key)).toEqual(["user:msg_u1", "reason:prt_r1", "md:prt_t1", "part:prt_o1", "footnote:msg_u1"])
-    const tool = rows[3]!
-    expect(tool.kind === "tool" && tool.tool).toBe("bash")
+    // `#1473`:推理与工具收进一行工作过程;文字后面还有工具调用 ⇒ 它是过渡话,但回合结束时最后一次
+    // 工具之后没有别的文字 ⇒ 最后一段过渡话被提为回答(design §4)。
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process", "markdown", "footnote"])
+    expect(rows.map((row) => row.key)).toEqual(["user:msg_u1", "process:msg_u1", "md:prt_t1", "footnote:msg_u1"])
+    const process = processRowOf(rows)!
+    expect(process.steps.map((step) => [step.kind, step.key])).toEqual([
+      ["reasoning", "reason:prt_r1"],
+      ["tools", "tools:prt_o1"],
+    ])
+    expect(toolPartsOf(rows).map((part) => part.tool)).toEqual(["bash"])
   })
 
   test("第二回合前插入带时间戳的回合分隔", () => {
@@ -280,9 +314,9 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       "busy",
     )
 
-    const reasoning = rows[1]!
+    const process = rows[1]!
     const markdown = rows[2]!
-    expect(reasoning.kind === "reasoning" && reasoning.streaming).toBe(true)
+    expect(process.kind === "process" && process.steps[0]).toMatchObject({ kind: "reasoning", streaming: true })
     expect(markdown.kind === "markdown" && markdown.streaming).toBe(true)
 
     const idleRows = project(
@@ -319,7 +353,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       { ...userParts, msg_a1: [reasoningPart("prt_r1", "msg_a1", "先想想", { time: { start: 0 } })] },
       "busy",
     )
-    expect(reasoning.map((row) => row.kind)).toEqual(["user", "reasoning", "turnfoot"])
+    expect(reasoning.map((row) => row.kind)).toEqual(["user", "process", "turnfoot"])
 
     const tool = project(
       [user, streaming],
@@ -333,7 +367,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       },
       "busy",
     )
-    expect(tool.map((row) => row.kind)).toEqual(["user", "tool", "turnfoot"])
+    expect(tool.map((row) => row.kind)).toEqual(["user", "process", "turnfoot"])
 
     const retry = project([user, streaming], { ...userParts, msg_a1: [textPart("prt_t1", "msg_a1", "输出")] }, "retry", {
       attempt: 2,
@@ -414,39 +448,67 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       ],
     })
 
-    expect(rows.filter((row) => row.kind === "tool").map((row) => row.key)).toEqual(["part:prt_o3"])
+    expect(toolPartsOf(rows).map((part) => part.id)).toEqual(["prt_o3"])
     // subtask part 与上游 v1/v2 一致:无视觉合同,不渲染。
     expect(rows.some((row) => "key" in row && row.key.includes("prt_o5"))).toBe(false)
   })
 
-  test("折叠组:连续 ≥2 个已完成探查工具成组;运行中/穿插非探查工具打断分组", () => {
+  test("#1473 合并规则:连续、同类、同来源、都已结束才合成一步;不同类 / 思考 / 过渡话切断;运行中永不合并", () => {
+    const running = (id: string) =>
+      toolPart(id, "msg_a1", "read", {
+        display: builtinDisplay("read"),
+        state: { status: "running", input: {}, title: "read", time: { start: 0 } },
+      })
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
       msg_a1: [
-        // #934:分组归属按 identity 分派,夹具带 builtin 快照(与真实调用同形状)。
+        // #934:归属按 identity 分派,夹具带 builtin 快照(与真实调用同形状)。
         toolPart("prt_g1", "msg_a1", "read", { display: builtinDisplay("read") }),
-        toolPart("prt_g2", "msg_a1", "grep", { display: builtinDisplay("grep") }),
-        toolPart("prt_g3", "msg_a1", "list", { display: builtinDisplay("list") }),
-        toolPart("prt_x1", "msg_a1", "bash", { display: builtinDisplay("bash") }),
-        toolPart("prt_g4", "msg_a1", "glob", { display: builtinDisplay("glob") }),
-        toolPart("prt_g5", "msg_a1", "read", {
+        toolPart("prt_g2", "msg_a1", "read", { display: builtinDisplay("read") }),
+        toolPart("prt_g3", "msg_a1", "grep", { display: builtinDisplay("grep") }),
+        toolPart("prt_g4", "msg_a1", "read", { display: builtinDisplay("read") }),
+        reasoningPart("prt_r1", "msg_a1", "换个方向"),
+        toolPart("prt_g5", "msg_a1", "read", { display: builtinDisplay("read") }),
+        toolPart("prt_g6", "msg_a1", "read", {
           display: builtinDisplay("read"),
-          state: { status: "running", input: {}, title: "read", time: { start: 0 } },
+          state: { status: "error", input: {}, error: "ENOENT", time: { start: 0, end: 1 } },
         }),
+        textPart("prt_t1", "msg_a1", "我再看一眼"),
+        toolPart("prt_g7", "msg_a1", "read", { display: builtinDisplay("read") }),
+        running("prt_g8"),
+        toolPart("prt_g9", "msg_a1", "read", { display: builtinDisplay("read") }),
+        toolPart("prt_g10", "msg_a1", "read", { display: builtinDisplay("read") }),
+        textPart("prt_t2", "msg_a1", "回答"),
       ],
     })
 
-    expect(rows.map((row) => row.kind)).toEqual(["user", "toolgroup", "tool", "tool", "tool", "footnote"])
-    const group = rows[1]!
-    if (group.kind !== "toolgroup") throw new Error("expected toolgroup row")
-    expect(group.key).toBe("group:prt_g1")
-    expect(group.parts.map((part) => part.id)).toEqual(["prt_g1", "prt_g2", "prt_g3"])
-    // 单个已完成探查工具(glob)不成组;运行中的 read 保留独立卡。
-    expect(rows.slice(2, -1).map((row) => (row.kind === "tool" ? row.part.id : ""))).toEqual([
-      "prt_x1",
-      "prt_g4",
-      "prt_g5",
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process", "markdown", "footnote"])
+    const steps = processRowOf(rows)!.steps
+    expect(
+      steps.map((step) => (step.kind === "tools" ? ["tools", step.parts.map((part) => part.id).join(",")] : [step.kind, step.key])),
+    ).toEqual([
+      ["tools", "prt_g1,prt_g2"], // 同类同来源、都已结束 ⇒ 合并
+      ["tools", "prt_g3"], // 不同类(grep)⇒ 新的一步
+      ["tools", "prt_g4"], // 回到 read,但前一步是 grep ⇒ 不回填到 g1/g2
+      ["reasoning", "reason:prt_r1"], // 思考不与工具合并
+      ["tools", "prt_g5,prt_g6"], // 失败也是「已结束」,照常合并(失败数进行尾)
+      ["text", "say:prt_t1"], // 过渡话切断合并
+      ["tools", "prt_g7"],
+      ["tools", "prt_g8"], // 运行中:自己一行
+      ["tools", "prt_g9,prt_g10"], // 运行中的那一步不吸收后者;后面两步重新成组
     ])
+    expect(steps.map((step) => step.key)).toEqual([
+      "tools:prt_g1",
+      "tools:prt_g3",
+      "tools:prt_g4",
+      "reason:prt_r1",
+      "tools:prt_g5",
+      "say:prt_t1",
+      "tools:prt_g7",
+      "tools:prt_g8",
+      "tools:prt_g9",
+    ])
+    expect(processRowOf(rows)!.summary).toMatchObject({ failed: 1, turnSucceeded: true })
   })
 
   test("媒体行:助手侧 file part 投影为 media 行(快照含名字/mime/url)", () => {
@@ -460,7 +522,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(media.media).toMatchObject({ partID: "prt_f1", name: "screenshot.png", mime: "image/png" })
   })
 
-  test("媒体行(生产通道):完成态工具附件投影为 media 行,带附件的探查工具不进折叠组", () => {
+  test("媒体行(生产通道):完成态工具附件投影为 media 行,排在工作过程之后", () => {
     const withAttachment = toolPart("prt_r1", "msg_a1", "read", {
       display: builtinDisplay("read"),
       state: {
@@ -482,8 +544,9 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
         toolPart("prt_r3", "msg_a1", "grep", { display: builtinDisplay("grep") }),
       ],
     })
-    // 带附件的 read 保留独立卡 + 媒体行;其后两个无附件探查工具正常成组。
-    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "media", "toolgroup", "footnote"])
+    // `#1473`:媒体行是结果,排在工作过程(与回答)之后;附件不再阻止同类步骤合并(read ×2 合成一步)。
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process", "media", "footnote"])
+    expect(toolStepsOf(rows).map((step) => step.parts.map((part) => part.id))).toEqual([["prt_r1", "prt_r2"], ["prt_r3"]])
     const media = rows[2]!
     if (media.kind !== "media") throw new Error("expected media row")
     expect(media.key).toBe("media:prt_r1:0")
@@ -535,11 +598,11 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       msg_u1: [textPart("prt_u1", "msg_u1", "x")],
       msg_a1: [thirdParty, noSnapshot],
     })
-    expect(rows.filter((row) => row.kind === "tool")).toHaveLength(2)
+    expect(toolPartsOf(rows)).toHaveLength(2)
     expect(rows.some((row) => row.kind === "media")).toBe(false)
   })
 
-  test("I7 折叠组成员上限:超长连续探查段切成多个组行", () => {
+  test("I7 合并步骤成员上限:超长连续同类段切成多个步骤", () => {
     const many = Array.from({ length: 30 }, (_, index) =>
       toolPart(`prt_g${index}`, "msg_a1", "read", { display: builtinDisplay("read") }),
     )
@@ -547,8 +610,8 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       msg_u1: [textPart("prt_u1", "msg_u1", "翻仓库")],
       msg_a1: many,
     })
-    const groups = rows.filter((row) => row.kind === "toolgroup")
-    expect(groups.map((group) => (group.kind === "toolgroup" ? group.parts.length : 0))).toEqual([24, 6])
+    expect(toolStepsOf(rows).map((step) => step.parts.length)).toEqual([PROCESS_GROUP_MAX, 30 - PROCESS_GROUP_MAX])
+    expect(PROCESS_GROUP_MAX).toBe(24)
   })
 
   test("产物链接行:identity 为第一方 cloud facade 且完成态、输出解析出 artifacts 名单才出行(fail-closed)", () => {
@@ -570,7 +633,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       msg_u1: [textPart("prt_u1", "msg_u1", "跑云任务")],
       msg_a1: [cloudDone],
     })
-    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "artifacts", "footnote"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process", "artifacts", "footnote"])
     const artifacts = rows[2]!
     if (artifacts.kind !== "artifacts") throw new Error("expected artifacts row")
     expect(artifacts.links).toEqual([
@@ -821,6 +884,218 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
 
 // ═══════════════ #588 — 连接器 chip(TL-06) ═══════════════
 
+describe("#1473 工作过程:一回合 = 一行工作过程 + 完整的回答(design 2026-10-10 §2 / §4)", () => {
+  test("18 步研究回合(思考 6 段 + 搜索 16 次 + 打开网页 2 次失败 + 回答):回答前恰好一行工作过程,展开 12 行", () => {
+    const rows = projectTimelineRows(researchProjectionInput())
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process", "markdown", "footnote"])
+    const process = processRowOf(rows)!
+    expect(process.steps.map((step) => [step.kind, step.kind === "tools" ? step.parts.length : 1])).toEqual(
+      RESEARCH_EXPECTED_STEPS,
+    )
+    expect(process.steps).toHaveLength(12)
+    expect(toolPartsOf(rows)).toHaveLength(18)
+    // 回答 = 最后一次工具调用之后的 text part。
+    expect(rows[2]).toMatchObject({ kind: "markdown", key: "md:prt_ranswer", streaming: false })
+    // 摘要:动作计数按次数降序(搜索 16 · 打开网页 2),思考不进摘要;失败 2 步且回合成功;整轮用时。
+    expect(process.summary.actions.map((action) => [action.group.kind, action.count])).toEqual([
+      ["websearch", 16],
+      ["webfetch", 2],
+    ])
+    expect(process.summary.actions.map((action) => action.group.titleKey)).toEqual([
+      "alpha.timeline.tool.websearch",
+      "alpha.timeline.tool.webfetch",
+    ])
+    expect(process.summary).toMatchObject({
+      failed: 2,
+      turnSucceeded: true,
+      durationMs: RESEARCH_COMPLETED_AT - RESEARCH_CREATED_AT,
+      reasoningMs: 22_000,
+    })
+    expect(process.summary.durationMs).toBe(207_000)
+    // 失败的两步合成一行(都已结束、同类同来源),它们的失败在行内可见:
+    const fetchStep = process.steps[3]!
+    expect(fetchStep.kind === "tools" && fetchStep.parts.every((part) => part.state.status === "error")).toBe(true)
+    // 脚注不再带用时。
+    const footnote = rows[3]!
+    expect(footnote.kind === "footnote" && "durationMs" in footnote.footnote).toBe(false)
+  })
+
+  test("回答判定:最后一次工具之后的全部 text 是回答(可多段);之前的 text 是过渡话步骤", () => {
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [
+        textPart("prt_t0", "msg_a1", "我先搜一下"),
+        toolPart("prt_o1", "msg_a1", "websearch", { display: builtinDisplay("websearch") }),
+        textPart("prt_t1", "msg_a1", "再看看文档"),
+        toolPart("prt_o2", "msg_a1", "webfetch", { display: builtinDisplay("webfetch") }),
+        textPart("prt_t2", "msg_a1", "结论一"),
+        textPart("prt_t3", "msg_a1", "结论二"),
+      ],
+    })
+    expect(rows.map((row) => row.key)).toEqual(["user:msg_u1", "process:msg_u1", "md:prt_t2", "md:prt_t3", "footnote:msg_u1"])
+    expect(processRowOf(rows)!.steps.map((step) => step.key)).toEqual([
+      "say:prt_t0",
+      "tools:prt_o1",
+      "say:prt_t1",
+      "tools:prt_o2",
+    ])
+  })
+
+  test("回答判定:最后一次工具之后没有文字 ⇒ 最后一段过渡话提为回答;一个字都没有 ⇒ 无回答行(空回合判定沿用)", () => {
+    const promoted = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [
+        textPart("prt_t0", "msg_a1", "先跑命令"),
+        toolPart("prt_o1", "msg_a1", "bash", { display: builtinDisplay("bash") }),
+        textPart("prt_t1", "msg_a1", "改好了,再验一下"),
+        toolPart("prt_o2", "msg_a1", "bash", { display: builtinDisplay("bash") }),
+      ],
+    })
+    expect(promoted.map((row) => row.key)).toEqual(["user:msg_u1", "process:msg_u1", "md:prt_t1", "footnote:msg_u1"])
+    // 被提出来的那段不再出现在步骤里;前一段过渡话仍在。
+    expect(processRowOf(promoted)!.steps.map((step) => step.key)).toEqual(["say:prt_t0", "tools:prt_o1", "tools:prt_o2"])
+
+    const silent = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [toolPart("prt_o1", "msg_a1", "write", { display: builtinDisplay("write") })],
+    })
+    expect(silent.map((row) => row.kind)).toEqual(["user", "process", "footnote"])
+    // 零正文 + finish=unknown + tokens.output=0 的空回合判定不受影响(工具步骤算可见内容,不算空回合)。
+    const unknown = project(
+      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { finish: "unknown" } as never)],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")], msg_a1: [toolPart("prt_o1", "msg_a1", "write", { display: builtinDisplay("write") })] },
+    )
+    expect(unknown.some((row) => row.kind === "divider")).toBe(false)
+  })
+
+  test("活跃回合不提升过渡话:文字之后又开始调工具时它就是过渡话,回答行不出(实时形态归 #1474)", () => {
+    const rows = project(
+      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { time: { created: 1010 } })],
+      {
+        msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+        msg_a1: [
+          textPart("prt_t0", "msg_a1", "我先搜一下"),
+          toolPart("prt_o1", "msg_a1", "websearch", {
+            display: builtinDisplay("websearch"),
+            state: { status: "running", input: {}, title: "websearch", time: { start: 0 } },
+          }),
+        ],
+      },
+      "busy",
+    )
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process", "turnfoot"])
+    const process = processRowOf(rows)!
+    expect(process.steps.map((step) => step.key)).toEqual(["say:prt_t0", "tools:prt_o1"])
+    expect(process.summary.durationMs).toBeUndefined()
+    expect(process.summary.turnSucceeded).toBe(false)
+  })
+
+  test("摘要:动作最多三类按次数排序;失败提示只在回合成功时;只思考时退回思考时长;用时 = 用户消息创建 → 最后助手完成", () => {
+    const builtinTool = (id: string, tool: string, status: "completed" | "error" = "completed") =>
+      toolPart(id, "msg_a1", tool, {
+        display: builtinDisplay(tool),
+        state:
+          status === "error"
+            ? { status: "error", input: {}, error: "boom", time: { start: 0, end: 1 } }
+            : { status: "completed", input: {}, output: "", title: tool, metadata: {}, time: { start: 0, end: 1 } },
+      })
+    const rows = project(
+      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { time: { created: 1500, completed: 61_000 } })],
+      {
+        msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+        msg_a1: [
+          builtinTool("prt_1", "bash"),
+          builtinTool("prt_2", "bash"),
+          builtinTool("prt_3", "bash", "error"),
+          builtinTool("prt_4", "read"),
+          builtinTool("prt_5", "read"),
+          builtinTool("prt_6", "grep"),
+          builtinTool("prt_7", "write"),
+          builtinTool("prt_8", "write"),
+          builtinTool("prt_9", "write"),
+          builtinTool("prt_10", "write"),
+          textPart("prt_t1", "msg_a1", "完成"),
+        ],
+      },
+    )
+    const summary = processRowOf(rows)!.summary
+    expect(summary.actions.map((action) => [action.group.kind, action.count])).toEqual([
+      ["write", 4],
+      ["bash", 3],
+      ["read", 2],
+    ])
+    expect(summary.actions).toHaveLength(PROCESS_SUMMARY_ACTIONS_MAX)
+    expect(summary).toMatchObject({ failed: 1, turnSucceeded: true, durationMs: 60_000 })
+
+    // 回合失败:失败步骤照记,但 turnSucceeded=false(渲染层不写琥珀提示,错误卡已在外面)。
+    const failedTurn = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", { error: { name: "APIError", data: { message: "rate_limit_exceeded" } } }),
+      ],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")], msg_a1: [builtinTool("prt_3", "bash", "error")] },
+    )
+    expect(failedTurn.map((row) => row.kind)).toEqual(["user", "process", "turnError"])
+    expect(processRowOf(failedTurn)!.summary).toMatchObject({ failed: 1, turnSucceeded: false })
+
+    // 只思考、没用工具:actions 为空,思考时长供摘要退回「思考 N 秒」。
+    const thinkOnly = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [reasoningPart("prt_r1", "msg_a1", "想一想", { time: { start: 0, end: 4000 } }), textPart("prt_t1", "msg_a1", "可以。")],
+    })
+    expect(processRowOf(thinkOnly)!.summary).toMatchObject({ actions: [], reasoningMs: 4000, failed: 0 })
+    expect(thinkOnly.map((row) => row.kind)).toEqual(["user", "process", "markdown", "footnote"])
+  })
+
+  test("非我方(metadata-only)工具:步骤只带来源分类 + 名称,按名称分组;不同第三方工具不合并;输入输出不进投影", () => {
+    const mcp = (id: string, origin: string, name: string, input: Record<string, unknown>) =>
+      toolPart(id, "msg_a1", `${origin}_${name}`, {
+        display: { identity: { source: "mcp", origin, name }, technicalId: `${origin}_${name}`, authority: { kind: "not-asserted" } },
+        state: { status: "completed", input, output: "secret output", title: name, metadata: {}, time: { start: 0, end: 1 } },
+      } as Partial<ToolPart>)
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [
+        mcp("prt_m1", "notion", "search_pages", { query: "q1" }),
+        mcp("prt_m2", "notion", "search_pages", { query: "q2" }),
+        mcp("prt_m3", "notion", "read_page", { id: "p" }),
+        mcp("prt_m4", "other", "search_pages", { query: "q3" }),
+        textPart("prt_t1", "msg_a1", "答"),
+      ],
+    })
+    const steps = toolStepsOf(rows)
+    expect(steps.map((step) => step.parts.map((part) => part.id))).toEqual([["prt_m1", "prt_m2"], ["prt_m3"], ["prt_m4"]])
+    expect(steps.map((step) => step.group)).toEqual([
+      { kind: "unknown", category: "mcp", titleKey: undefined, name: "search_pages", origin: "notion", metadataOnly: true },
+      { kind: "unknown", category: "mcp", titleKey: undefined, name: "read_page", origin: "notion", metadataOnly: true },
+      { kind: "unknown", category: "mcp", titleKey: undefined, name: "search_pages", origin: "other", metadataOnly: true },
+    ])
+    expect(new Set(steps.map((step) => processGroupKeyOf(step.group))).size).toBe(3)
+    // 投影里没有任何输入 / 输出字段(只有 part 引用与来源标签)。
+    expect(JSON.stringify(processRowOf(rows)!.summary)).not.toContain("q1")
+    expect(JSON.stringify(processRowOf(rows)!.summary)).not.toContain("secret output")
+  })
+
+  test("行复用:同一数据两次投影返回同一行对象;步骤状态变化(运行中 → 完成)才重建", () => {
+    const user = userMsg("msg_u1", 1000)
+    const assistant = assistantMsg("msg_a1", "msg_u1", { time: { created: 1010 } })
+    const running = toolPart("prt_o1", "msg_a1", "bash", {
+      display: builtinDisplay("bash"),
+      state: { status: "running", input: {}, title: "bash", time: { start: 0 } },
+    })
+    const parts = { msg_u1: [textPart("prt_u1", "msg_u1", "开始")], msg_a1: [running] }
+    const first = project([user, assistant], parts, "busy")
+    const second = reuseTimelineRows(first, project([user, assistant], parts, "busy"))
+    expect(second).toBe(first)
+
+    running.state = { status: "completed", input: {}, output: "", title: "bash", metadata: {}, time: { start: 0, end: 1 } }
+    const third = reuseTimelineRows(first, project([user, assistant], parts, "busy"))
+    expect(third).not.toBe(first)
+    expect(third[1]).not.toBe(first[1])
+    expect(third[1]!.kind).toBe("process")
+  })
+})
+
 describe("#588 连接器提及(resource source → chip 段)", () => {
   const resourceFile = (over: Partial<FilePart> = {}) =>
     filePart("prt_res1", "msg_u1", {
@@ -962,20 +1237,21 @@ describe("REQ-125 C5 行复用:流式 delta 不重建行", () => {
 // ═══════════════ #568 — 富脚注 / 本回合改动汇总 / 斜杠命令来源 ═══════════════
 
 describe("#568 回合末富脚注(A6)", () => {
-  test("完成回合出 footnote 行:agent/model/时长在场,零 tokens 诚实缺席;copyText 取全部助手正文", () => {
+  test("完成回合出 footnote 行:agent/model 在场、用时已移走,零 tokens 诚实缺席;copyText 取全部助手正文", () => {
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
       msg_a1: [textPart("prt_t1", "msg_a1", "第一段"), textPart("prt_t2", "msg_a1", "第二段")],
     })
     const last = rows.at(-1)!
     if (last.kind !== "footnote") throw new Error("expected footnote row")
+    // `#1473`:用时不再进脚注(整轮用时住在工作过程摘要)。
     expect(last.footnote).toEqual({
       provider: "deepseek",
       agent: "build",
       model: "deepseek-reasoner",
-      durationMs: 10,
       tokens: undefined,
     })
+    expect("durationMs" in last.footnote).toBe(false)
     expect(last.copyText()).toBe("第一段\n\n第二段")
   })
 

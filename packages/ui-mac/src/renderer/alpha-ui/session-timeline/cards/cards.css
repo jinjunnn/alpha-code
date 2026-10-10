@@ -1,64 +1,12 @@
 /*
- * REQ-125 C6 — 时间线卡片(工具/错误/重试/折叠组/媒体/产物行)。
- * 形态权威:docs/design/current/conversation-timeline/design.html ②③④⑥ 节。
+ * REQ-125 C6 — 时间线卡片(工具详情正文/错误/重试/媒体/产物行)。
+ * 形态权威:docs/design/current/conversation-timeline/design.html ②③④⑥⑧ 节;
+ * REQ-229 (issue 1473) 起工具卡的外壳 / 头部 / 状态胶囊 / 来源徽标 / 「已探索」折叠组退役,
+ * 工具调用的头部由工作过程的步骤行承担(session-timeline.css 的 .a-pf-*),本文件留正文分支与详情外壳。
  * I5:只消费 --a-* 令牌;明暗随 tokens.css 自动翻转;过渡时长走 --a-dur-*
  * (reduced-motion 下令牌归零),关键帧动画在文末显式关断。
  */
 @import "../../tokens.css";
-
-/* ── 通用工具卡外壳 ──────────────────────────────────────────────────────── */
-.a-tc {
-  align-self: flex-start;
-  width: 100%;
-  max-width: 760px;
-  overflow: hidden;
-  border: 1px solid var(--a-border-faint);
-  border-radius: var(--a-radius-lg);
-  background: var(--a-surface);
-  box-shadow: var(--a-edge-light);
-}
-
-/* 头部行:展开按钮(flex:1)+「在面板打开」pill + 开合指示,同一行(T8)。 */
-.a-tc-headwrap {
-  display: flex;
-  align-items: center;
-}
-
-.a-tc-headwrap:has(> button.a-tc-head):hover {
-  background: var(--a-bg-subtle);
-}
-
-.a-tc-head {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  padding: 9px 12px;
-  border: 0;
-  background: transparent;
-  color: var(--a-text);
-  font-family: inherit;
-  font-size: var(--a-text-sm);
-  text-align: left;
-}
-
-button.a-tc-head {
-  cursor: pointer;
-}
-
-button.a-tc-head:focus-visible {
-  outline: none;
-  box-shadow: inset var(--a-ring-focus);
-}
-
-.a-tc-chevhit {
-  display: grid;
-  flex: none;
-  place-items: center;
-  padding: 9px 12px 9px 0;
-  cursor: pointer;
-}
 
 /* 「在面板打开」pill(T8) */
 .a-tc-openp {
@@ -96,99 +44,6 @@ button.a-tc-head:focus-visible {
   stroke-linejoin: round;
 }
 
-.a-tc-ico {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 23px;
-  height: 23px;
-  border-radius: var(--a-radius-sm);
-  background: var(--a-tool-mcp);
-  color: var(--a-text-on-accent);
-}
-
-.a-tc-ico svg {
-  width: 13px;
-  height: 13px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.a-tc-ico[data-kind="read"] {
-  background: var(--a-tool-read);
-}
-.a-tc-ico[data-kind="list"] {
-  background: var(--a-tool-list);
-}
-.a-tc-ico[data-kind="glob"] {
-  background: var(--a-tool-list);
-}
-.a-tc-ico[data-kind="grep"] {
-  background: var(--a-tool-search);
-}
-.a-tc-ico[data-kind="webfetch"] {
-  background: var(--a-tool-web);
-}
-.a-tc-ico[data-kind="websearch"] {
-  background: var(--a-tool-web);
-}
-.a-tc-ico[data-kind="bash"] {
-  background: var(--a-tool-bash);
-}
-.a-tc-ico[data-kind="edit"] {
-  background: var(--a-tool-edit);
-}
-.a-tc-ico[data-kind="apply_patch"] {
-  background: var(--a-tool-edit);
-}
-.a-tc-ico[data-kind="write"] {
-  background: var(--a-tool-write);
-}
-.a-tc-ico[data-kind="skill"] {
-  background: var(--a-tool-skill);
-}
-.a-tc-ico[data-kind="task"] {
-  background: var(--a-tool-task);
-}
-
-.a-tc-title {
-  display: flex;
-  gap: 7px;
-  align-items: baseline;
-  min-width: 0;
-  flex: 1;
-}
-
-.a-tc-title b {
-  font-weight: var(--a-weight-medium);
-  white-space: nowrap;
-}
-
-.a-tc-name {
-  font-family: var(--a-font-mono);
-}
-
-.a-tc-target {
-  overflow: hidden;
-  min-width: 0;
-  color: var(--a-text-secondary);
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-xs);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.a-tc-detail {
-  flex: none;
-  color: var(--a-text-tertiary);
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-2xs);
-  white-space: nowrap;
-}
-
 .a-tc-agent {
   display: inline-flex;
   flex: none;
@@ -205,35 +60,6 @@ button.a-tc-head:focus-visible {
   background: var(--a-tool-task);
 }
 
-.a-tc-status {
-  display: inline-flex;
-  flex: none;
-  gap: 5px;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: var(--a-radius-full);
-  background: var(--a-bg-muted);
-  color: var(--a-text-tertiary);
-  font-size: var(--a-text-2xs);
-  font-weight: var(--a-weight-semibold);
-}
-
-.a-tc-status[data-tone="running"] {
-  background: var(--a-accent-subtle);
-  color: var(--a-accent);
-}
-
-.a-tc-status[data-tone="ok"] {
-  background: var(--a-success-subtle);
-  color: var(--a-success);
-}
-
-.a-tc-status[data-tone="error"] {
-  background: var(--a-error-subtle);
-  color: var(--a-error);
-}
-
-.a-tc-spin,
 .a-retry-spin {
   width: 9px;
   height: 9px;
@@ -269,42 +95,6 @@ button.a-tc-head:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
   transition: transform var(--a-dur-fast) var(--a-ease-out);
-}
-
-.a-tc[data-open="true"] .a-tc-chev {
-  transform: rotate(90deg);
-}
-
-/* 运行态:强调边框 + 头部扫线 + 图标呼吸(design ③ running 帧)。 */
-.a-tc[data-status="running"] {
-  border-color: var(--a-accent-border);
-}
-
-.a-tc[data-status="running"] .a-tc-headwrap {
-  position: relative;
-  overflow: hidden;
-}
-
-.a-tc[data-status="running"] .a-tc-headwrap::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -40%;
-  width: 40%;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--a-accent);
-  animation: a-tc-prog 1.3s ease-in-out infinite;
-}
-
-.a-tc[data-status="running"] .a-tc-ico {
-  animation: a-tc-pulse 1.4s ease-in-out infinite;
-}
-
-/* 错误态:工具级错误卡(红边 + 错误底 + 标题行 + mono 错误体)。 */
-.a-tc[data-status="error"] {
-  border-color: var(--a-error);
-  background: var(--a-error-subtle);
 }
 
 /* 标题行(design ③ .errcard-head):错误图标 + 固定标题 + 右端复制。 */
@@ -384,35 +174,6 @@ button.a-tc-head:focus-visible {
 
 .a-tc-body {
   border-top: 1px solid var(--a-border-faint);
-}
-
-/* ── REQ-125 tool-provenance 来源徽标(主层级;data-category 只来自持久化快照投影) ──────────── */
-.a-tc-srcbadge {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: var(--a-radius-full);
-  background: var(--a-bg-muted);
-  color: var(--a-text-secondary);
-  font-size: var(--a-text-2xs);
-  font-weight: var(--a-weight-semibold);
-  white-space: nowrap;
-}
-
-.a-tc-srcbadge[data-category="alpha-cloud"],
-.a-tc-srcbadge[data-category="builtin"] {
-  background: var(--a-accent-subtle);
-  color: var(--a-accent);
-}
-
-.a-tc-srcbadge[data-category="mcp"] {
-  background: var(--a-warning-subtle);
-  color: var(--a-warning);
-}
-
-.a-tc-srcbadge[data-category="unknown"] {
-  color: var(--a-text-tertiary);
 }
 
 /* ── REQ-125 tool-provenance 安全通用卡(metadata-only 的确定隐藏理由;无展开、无数据) ───────── */
@@ -514,25 +275,6 @@ button.a-tc-head:focus-visible {
   stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-/* task v2:环形进度(数据面无真实百分比 → 诚实的不定量环)。 */
-.a-tc-ring {
-  position: relative;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: var(--a-radius-full);
-  background: conic-gradient(var(--a-tool-task) 25%, var(--a-bg-inset) 0);
-  animation: a-tc-spin 1.1s linear infinite;
-}
-
-.a-tc-ring::after {
-  content: "";
-  position: absolute;
-  inset: 3.5px;
-  border-radius: var(--a-radius-full);
-  background: var(--a-surface);
 }
 
 /* ── 输出体 ──────────────────────────────────────────────────────────────── */
@@ -900,146 +642,6 @@ button.a-tc-head:focus-visible {
   height: 8px;
   margin: 4px 12px;
   border-bottom: 1px dashed var(--a-border);
-}
-
-/* ── 「已探索」折叠组 ────────────────────────────────────────────────────── */
-.a-explore {
-  align-self: flex-start;
-  width: 100%;
-  max-width: 760px;
-  overflow: hidden;
-  border: 1px solid var(--a-border-faint);
-  border-radius: var(--a-radius-lg);
-  background: var(--a-bg-subtle);
-}
-
-.a-explore-head {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  width: 100%;
-  padding: 9px 12px;
-  border: 0;
-  background: transparent;
-  color: var(--a-text);
-  font-family: inherit;
-  font-size: var(--a-text-sm);
-  text-align: left;
-  cursor: pointer;
-}
-
-.a-explore-head:hover {
-  background: var(--a-overlay-hover);
-}
-
-.a-explore-head:focus-visible {
-  outline: none;
-  box-shadow: inset var(--a-ring-focus);
-}
-
-.a-explore-head .a-tc-chev {
-  margin-left: auto;
-}
-
-.a-explore-ico {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 23px;
-  height: 23px;
-  border-radius: var(--a-radius-sm);
-  background: var(--a-tool-read);
-  color: var(--a-text-on-accent);
-}
-
-.a-explore-ico svg {
-  width: 13px;
-  height: 13px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.a-explore-label {
-  font-weight: var(--a-weight-medium);
-}
-
-.a-explore-count {
-  color: var(--a-text-tertiary);
-}
-
-.a-explore-body {
-  padding: 2px 8px 8px;
-}
-
-.a-explore-row {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  padding: 5px 8px;
-  border-radius: var(--a-radius-md);
-  color: var(--a-text-secondary);
-  font-size: var(--a-text-sm);
-}
-
-.a-explore-row:hover {
-  background: var(--a-surface);
-}
-
-.a-explore-ri {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--a-radius-sm);
-  background: var(--a-bg-muted);
-  color: var(--a-tool-read);
-}
-
-.a-explore-ri[data-kind="grep"],
-.a-explore-ri[data-kind="glob"] {
-  color: var(--a-tool-search);
-}
-
-.a-explore-ri svg {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.a-explore-verb {
-  flex: none;
-  color: var(--a-tool-read);
-  font-weight: var(--a-weight-medium);
-}
-
-.a-explore-verb[data-kind="grep"],
-.a-explore-verb[data-kind="glob"] {
-  color: var(--a-tool-search);
-}
-
-.a-explore-target {
-  overflow: hidden;
-  color: var(--a-text);
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-xs);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.a-explore-arg {
-  flex: none;
-  margin-left: auto;
-  color: var(--a-text-tertiary);
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-2xs);
 }
 
 /* ── 回合级错误卡(全宽,纯文本,无动作) ──────────────────────────────── */
@@ -1438,36 +1040,41 @@ button.a-diffsum-row:focus-visible {
   }
 }
 
-@keyframes a-tc-prog {
-  to {
-    left: 110%;
-  }
-}
-
-@keyframes a-tc-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.55;
-  }
-}
-
 @keyframes a-tc-caret {
   50% {
     opacity: 0;
   }
 }
 
+/* ── REQ-229 (issue 1473) 某一步的详情外壳(工作过程第三层;正文分支样式沿用下方各 .a-tc-* 规则) ── */
+.a-tc-detail {
+  width: 100%;
+  margin: 2px 0 8px 22px;
+  overflow: hidden;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+}
+
+.a-tc-detail[data-status="error"] {
+  border-color: color-mix(in srgb, var(--a-error) 35%, var(--a-border-faint));
+}
+
+.a-tc-detail .a-tc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px 0;
+}
+
+.a-tc-nodetail {
+  color: var(--a-text-tertiary);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .a-tc-spin,
   .a-retry-spin,
-  .a-tc-ring,
-  .a-tc-cursor,
-  .a-tc[data-status="running"] .a-tc-headwrap::after,
-  .a-tc[data-status="running"] .a-tc-ico {
+  .a-tc-cursor {
     animation: none;
   }
 }

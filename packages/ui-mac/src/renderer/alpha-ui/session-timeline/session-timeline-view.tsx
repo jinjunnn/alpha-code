@@ -1,29 +1,21 @@
 // REQ-125 C5/C6 — alpha 时间线视图(呈现层,数据源无关)。
 //
-// 形态权威 = docs/design/current/conversation-timeline/design.html ①②③④⑥ 节帧
-// (用户气泡/附件卡/内联评论卡/助手 Markdown/推理块/流式光标/回合分隔/会话内空态,
-// 以及 C6 卡片全集:工具卡四态/折叠组/回合级错误/重试/媒体预览行/产物链接行)。
+// 形态权威 = docs/design/current/conversation-timeline/design.html ①②③④⑥⑧ 节帧
+// (用户气泡/附件卡/内联评论卡/助手 Markdown/流式光标/回合分隔/会话内空态,
+// 以及 C6 卡片全集:回合级错误/重试/媒体预览行/产物链接行;`#1473` 起推理块与工具卡
+// 收进工作过程行,组件在 process-fold.tsx)。
 // 数据经 props 注入(rows 来自 timeline-model 投影),本文件零上游 session DOM/选择器依赖,
 // CSS 只用 --a-* 令牌;卡片交互经可选 intents(缺席即降级为纯展示,fail-closed)。
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { t } from "../../i18n"
-import {
-  ContextToolGroupCard,
-  RetryCard,
-  TimelineArtifactRows,
-  TimelineMediaRow,
-  TimelineToolCard,
-  TurnDiffSummaryRow,
-  TurnErrorCard,
-} from "./cards/tool-cards"
+import { RetryCard, TimelineArtifactRows, TimelineMediaRow, TurnDiffSummaryRow, TurnErrorCard } from "./cards/tool-cards"
 import { TimelineIntentsContext, type TimelineIntents, useTimelineIntents } from "./cards/timeline-intents"
+import { clearProcessOpenState, ProcessRow } from "./process-fold"
 import { TimelineMarkdown } from "./timeline-markdown"
 import {
   boundedText,
   formatTurnElapsed,
   MARKDOWN_MAX_CHARS,
-  REASONING_MAX_CHARS,
-  reasoningSummary,
   type TimelineComment,
   type TimelineRow,
   type TimelineSegment,
@@ -221,6 +213,8 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     on(
       () => `${props.epoch}|${props.ready}`,
       () => {
+        // `#1473`:换会话 / 重新打开会话 ⇒ 工作过程全部收起(design §4),手动开合只在本次停留内记住。
+        clearProcessOpenState()
         if (!props.ready) return
         setAtBottom(true)
         schedule(scrollToEnd)
@@ -305,10 +299,8 @@ function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDispl
   const row = props.row
   if (row.kind === "turn") return <TurnRow row={row} />
   if (row.kind === "user") return <UserRow row={row} displayNames={props.displayNames} />
-  if (row.kind === "reasoning") return <ReasoningRow row={row} />
+  if (row.kind === "process") return <ProcessRow row={row} />
   if (row.kind === "markdown") return <MarkdownRow row={row} />
-  if (row.kind === "tool") return <TimelineToolCard part={row.part} />
-  if (row.kind === "toolgroup") return <ContextToolGroupCard parts={row.parts} />
   if (row.kind === "media") return <TimelineMediaRow media={row.media} />
   if (row.kind === "artifacts") return <TimelineArtifactRows row={row} />
   if (row.kind === "retry") return <RetryCard row={row} />
@@ -329,13 +321,8 @@ function TurnRow(props: { row: Extract<TimelineRow, { kind: "turn" }> }) {
   )
 }
 
-// ── 回合末富脚注(A6/A7):agent·model·时长·tokens + hover 复制;字段诚实缺席 ──
-function formatDurationSeconds(ms: number): string {
-  const seconds = ms / 1000
-  if (seconds < 10) return (Math.round(seconds * 10) / 10).toString()
-  return Math.round(seconds).toString()
-}
-
+// ── 回合末富脚注(A6/A7):agent·model·tokens + hover 复制;字段诚实缺席 ──
+// `#1473`:用时移出脚注,进工作过程摘要(整轮计时,不再只量最后一条助手消息)。
 function formatTokens(count: number): string {
   if (count >= 1000) return `${Math.round(count / 100) / 10}k`
   return String(count)
@@ -379,11 +366,6 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
       <Show when={footnote().cacheHit !== undefined}>
         <span class="a-tl-fn-item" title={t("alpha.timeline.cacheHit", { percent: footnote().cacheHit! })}>
           {efficiencyLabel(footnote().cacheHit!)}
-        </span>
-      </Show>
-      <Show when={footnote().durationMs !== undefined}>
-        <span class="a-tl-fn-item a-tl-fn-num">
-          {t("alpha.timeline.reasoningDuration", { seconds: formatDurationSeconds(footnote().durationMs!) })}
         </span>
       </Show>
       <Show when={footnote().tokens !== undefined}>
@@ -654,63 +636,6 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
         </Show>
       </div>
     </article>
-  )
-}
-
-function ReasoningRow(props: { row: Extract<TimelineRow, { kind: "reasoning" }> }) {
-  const [open, setOpen] = createSignal(false)
-  const seconds = () => {
-    const time = props.row.part.time
-    if (typeof time?.end !== "number") return undefined
-    return Math.max(0, Math.round((time.end - time.start) / 1000))
-  }
-  const body = () => boundedText(props.row.part.text ?? "", REASONING_MAX_CHARS)
-  // 流式期不读取不断增长的正文：完成态一次提取，避免折叠头随分片跳变。
-  const summary = createMemo(() => (props.row.streaming ? undefined : reasoningSummary(props.row.part.text ?? "")))
-  return (
-    <section
-      class="a-tl-row a-tl-reason"
-      data-alpha-timeline-row="reasoning"
-      data-streaming={props.row.streaming ? "true" : undefined}
-      data-open={open() ? "true" : undefined}
-    >
-      <button type="button" class="a-tl-reason-head" aria-expanded={open()} onClick={() => setOpen((value) => !value)}>
-        <svg class="a-tl-reason-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M9.5 2a4.5 4.5 0 0 0-4.3 5.8A4 4 0 0 0 6 15.5a4 4 0 0 0 7 1 4 4 0 0 0 7-1 4 4 0 0 0 .8-7.7A4.5 4.5 0 0 0 14.5 2 4.5 4.5 0 0 0 12 3.3 4.5 4.5 0 0 0 9.5 2z" />
-        </svg>
-        <span class="a-tl-reason-label">
-          {props.row.streaming ? t("alpha.timeline.thinking") : t("alpha.timeline.reasoning")}
-        </span>
-        <Show when={seconds() !== undefined || summary()}>
-          <span class="a-tl-reason-meta">
-            <Show when={seconds() !== undefined}>
-              <span class="a-tl-reason-duration">{t("alpha.timeline.reasoningDuration", { seconds: seconds()! })}</span>
-            </Show>
-            <Show when={summary()}>
-              <Show when={seconds() !== undefined}>
-                <span class="a-tl-reason-separator" aria-hidden="true">
-                  ·
-                </span>
-              </Show>
-              <span class="a-tl-reason-summary" title={summary()}>
-                {summary()}
-              </span>
-            </Show>
-          </span>
-        </Show>
-        <svg class="a-tl-reason-chev" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M9 6l6 6-6 6" />
-        </svg>
-      </button>
-      <Show when={open()}>
-        <div class="a-tl-reason-body">
-          {body().text}
-          <Show when={body().truncated}>
-            <span class="a-tl-truncated-inline">{t("alpha.timeline.truncated")}</span>
-          </Show>
-        </div>
-      </Show>
-    </section>
   )
 }
 
