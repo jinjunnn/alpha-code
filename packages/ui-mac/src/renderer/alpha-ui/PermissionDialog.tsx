@@ -4,10 +4,11 @@ import type {
   PermissionV2DecisionReceipt,
   PermissionV2Request,
 } from "@opencode-ai/sdk/v2/client"
-import { For, onMount, Show } from "solid-js"
+import { createUniqueId, For, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Portal } from "solid-js/web"
 import { Button } from "./Button"
-import { Dialog } from "./Dialog"
+import { enterModal } from "./modal-presence"
 import { t } from "../i18n"
 import "./permission-dialog.css"
 
@@ -93,15 +94,8 @@ export function PermissionDialog(props: {
   }
 
   return (
-    <Dialog
-      open
-      title={t("alpha.permission.title")}
-      description={<span>{t("alpha.permission.description")}</span>}
-      size="md"
-      dismissible={false}
+    <PermissionPanel
       busy={!!state.submitting}
-      restoreFocus={() => document.querySelector<HTMLTextAreaElement>('[data-alpha-composer="session"] textarea')}
-      onClose={() => {}}
       footer={
         <div class="a-permission-footer">
           <small class="a-permission-grant-note">{t("alpha.permission.alwaysNote")}</small>
@@ -265,7 +259,116 @@ export function PermissionDialog(props: {
           </div>
         )}
       </Show>
-    </Dialog>
+    </PermissionPanel>
+  )
+}
+
+const COMPOSER_SELECTOR = '[data-alpha-composer="session"]'
+/** 面板底边与会话输入框顶边之间的间距(px);无输入框时离窗口底边同值。 */
+const PANEL_GAP = 12
+
+/**
+ * #1478(REQ-230 AC4):工具批准的呈现外壳 —— **非模态**全局浮动面板。
+ *
+ * 与之前的强模态 `Dialog` 相比,只换呈现手段,不换合同:
+ *  - 无遮罩,不给页面其余部分写 inert / aria-hidden,不困住焦点 —— 时间线可继续翻看、可读;
+ *  - 仍然关不掉:没有关闭按钮,面板内的 Esc 被吞掉(不关闭、也不冒泡去触发别的 Esc 行为);
+ *  - 出现时焦点落在「允许一次」(autofocus);面板消失时若焦点还在面板里,回到会话输入框;
+ *  - 固定在窗口底部居中;页面上有会话输入框时,停在它正上方;
+ *  - 仍声明 modal-presence:右栏 html/pdf 预览是原生层(WebContentsView),DOM 层级管不到它,
+ *    不藏起来它可能盖住批准面板 —— 「不得被遮挡」比「预览继续可见」优先。
+ */
+function PermissionPanel(props: { busy: boolean; footer: JSX.Element; children: JSX.Element }) {
+  const titleId = createUniqueId()
+  const descriptionId = createUniqueId()
+  const [layout, setLayout] = createStore<{ bottom: number }>({ bottom: PANEL_GAP })
+  let panel!: HTMLDivElement
+  const trigger = document.activeElement
+
+  const measure = () => {
+    const composer = document.querySelector<HTMLElement>(COMPOSER_SELECTOR)
+    const rect = composer?.getBoundingClientRect()
+    const viewport = window.innerHeight
+    const bottom =
+      rect && rect.height > 0 && rect.top > 0 && rect.top < viewport ? viewport - rect.top + PANEL_GAP : PANEL_GAP
+    if (bottom !== layout.bottom) setLayout("bottom", bottom)
+  }
+
+  onMount(() => {
+    const releaseModal = enterModal()
+    measure()
+    window.addEventListener("resize", measure)
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : undefined
+    observer?.observe(document.body)
+    const composer = document.querySelector<HTMLElement>(COMPOSER_SELECTOR)
+    if (composer) observer?.observe(composer)
+    queueMicrotask(() => {
+      if (!panel.isConnected) return
+      const initial = Array.from(panel.querySelectorAll<HTMLButtonElement>("button")).find(
+        (element) => (element.hasAttribute("autofocus") || element.autofocus) && !element.disabled,
+      )
+      ;(initial ?? panel).focus()
+    })
+    onCleanup(() => {
+      releaseModal()
+      window.removeEventListener("resize", measure)
+      observer?.disconnect()
+      const active = document.activeElement
+      if (active && active !== document.body && !panel.contains(active)) return
+      if (
+        trigger instanceof HTMLElement &&
+        trigger !== document.body &&
+        trigger.isConnected &&
+        !panel.contains(trigger)
+      ) {
+        trigger.focus()
+        if (document.activeElement === trigger) return
+      }
+      document.querySelector<HTMLTextAreaElement>(`${COMPOSER_SELECTOR} textarea`)?.focus()
+    })
+  })
+
+  return (
+    <Portal>
+      <div class="a-ui a-permission-layer" data-alpha-permission-panel="">
+        <div
+          ref={(element) => (panel = element)}
+          class="a-permission-panel"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          aria-busy={props.busy ? "true" : undefined}
+          tabIndex={-1}
+          style={{ bottom: `${layout.bottom}px` }}
+          // 原生监听(非 Solid 委托):委托挂在 document 上,到那时再 stopPropagation 已来不及。
+          on:keydown={(event) => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        >
+          <header class="a-permission-head">
+            <span class="a-permission-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="8" cy="8" r="6.25" />
+                <path d="M8 4.75V8l2.25 1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <div class="a-permission-titles">
+              <div id={titleId} class="a-permission-title">
+                {t("alpha.permission.title")}
+              </div>
+              <div id={descriptionId} class="a-permission-description">
+                {t("alpha.permission.description")}
+              </div>
+            </div>
+          </header>
+          <div class="a-permission-body">{props.children}</div>
+          <footer class="a-permission-foot">{props.footer}</footer>
+        </div>
+      </div>
+    </Portal>
   )
 }
 

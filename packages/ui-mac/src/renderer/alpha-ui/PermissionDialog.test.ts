@@ -322,30 +322,91 @@ describe("Alpha Permission real Solid render", () => {
     expect(alert.textContent).toContain("different facts")
   })
 
-  test("reuses Dialog safe focus, keyboard trap, and non-dismissible close contract", async () => {
+  // #1478(REQ-230 AC4):呈现从强模态 Dialog 改为非模态全局面板 —— 仍唯一、仍关不掉、
+  // 仍把焦点放在「允许一次」,但不再遮罩、不再冻结页面其余部分。
+  test("non-modal panel: nothing else is inert or aria-hidden, no scrim, no focus trap", async () => {
+    const { textarea } = mount(async (command) => receipt(command))
+    const timeline = document.createElement("section")
+    timeline.dataset.harnessTimeline = ""
+    document.body.append(timeline)
+    await flush()
+
+    const panel = document.querySelector<HTMLElement>("[role='dialog']")!
+    expect(panel).not.toBeNull()
+    expect(panel.getAttribute("aria-modal")).toBe("false")
+    expect(document.querySelector(".a-dialog-backdrop")).toBeNull()
+    expect(document.querySelector("[data-dialog-focus-guard]")).toBeNull()
+    expect(panel.querySelector(".a-dialog-close")).toBeNull()
+    const layer = panel.closest("[data-alpha-permission-panel]")!
+    for (const element of Array.from(document.querySelectorAll("*"))) {
+      if (layer.contains(element)) continue
+      expect(element.hasAttribute("inert")).toBeFalse()
+      expect(element.getAttribute("aria-hidden")).toBeNull()
+    }
+    // 页面其余部分照常可聚焦(焦点不被困住)。
+    textarea.focus()
+    expect(document.activeElement).toBe(textarea)
+    expect(document.querySelector("[role='dialog']") === panel).toBeTrue()
+  })
+
+  test("initial focus lands on 允许一次 and Esc never closes the panel", async () => {
     mount(async (command) => receipt(command))
     await flush()
 
-    const dialog = document.querySelector<HTMLElement>("[role='dialog']")!
-    expect(dialog.getAttribute("aria-modal")).toBe("true")
-    expect(dialog.querySelector(".a-dialog-close")).toBeNull()
+    const panel = document.querySelector<HTMLElement>("[role='dialog']")!
     expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("once")
+    expect(decision("once").textContent).toContain(zh["alpha.permission.once"])
 
+    let escapedToPage = false
+    const pageListener = (event: KeyboardEvent) => {
+      if (event.key === "Escape") escapedToPage = true
+    }
+    document.addEventListener("keydown", pageListener)
     const escape = keydown(decision("once"), "Escape")
     await flush()
+    document.removeEventListener("keydown", pageListener)
     expect(escape.defaultPrevented).toBeTrue()
-    expect(document.querySelector("[role='dialog']") === dialog).toBeTrue()
+    expect(escapedToPage).toBeFalse()
+    expect(document.querySelector("[role='dialog']") === panel).toBeTrue()
 
-    keydown(dialog, "Tab")
-    dialog.querySelector<HTMLElement>('[data-dialog-focus-guard="end"]')!.focus()
-    expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("reject")
-    keydown(dialog, "Tab", { shiftKey: true })
-    dialog.querySelector<HTMLElement>('[data-dialog-focus-guard="start"]')!.focus()
-    expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("once")
+    // 页面级 Esc(焦点不在面板里)同样关不掉它。
+    keydown(document.body, "Escape")
+    await flush()
+    expect(document.querySelector("[role='dialog']") === panel).toBeTrue()
   })
+
+  test("returns focus to the session composer once the decision resolves", async () => {
+    const { textarea } = mount(async (command) => receipt(command))
+    await flush()
+    decision("once").click()
+    await flush()
+    // 本 mount 不由 watcher 驱动,决定落地后面板仍在;移除宿主模拟 watcher 收起面板。
+    disposers.splice(0).forEach((dispose) => dispose())
+    await flush()
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+    expect(document.activeElement).toBe(textarea)
+  })
+
 })
 
 describe("Alpha Permission watcher reconciliation", () => {
+  test("#1478: the watcher shows the panel on a page with no session composer (e.g. home)", async () => {
+    mountWatcher({
+      list: async () => [request],
+      reply: async (_requestID, command) => receipt(command),
+      subscribe: () => () => {},
+    })
+    await flush()
+
+    expect(document.querySelector('[data-alpha-composer="session"]')).toBeNull()
+    const panels = document.querySelectorAll<HTMLElement>("[role='dialog']")
+    expect(panels).toHaveLength(1)
+    expect(panels[0]!.getAttribute("aria-modal")).toBe("false")
+    // 无输入框时贴着窗口底边(固定间距),不依赖任何会话页节点。
+    expect(panels[0]!.style.bottom).toBe("12px")
+    expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("once")
+  })
+
   test("does not resurrect an auto-denied malformed request from stale snapshots or asked events", async () => {
     const malformed = { ...request, id: "per_ui_malformed", expiresAt: -1 } as unknown as PermissionV2Request
     const commands: PermissionV2DecisionCommand[] = []

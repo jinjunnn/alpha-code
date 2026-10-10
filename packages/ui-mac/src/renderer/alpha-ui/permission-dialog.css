@@ -132,3 +132,84 @@
     margin-right: 0;
   }
 }
+
+/* #1478(REQ-230 AC4):非模态全局批准面板 —— 无遮罩、不冻结页面,固定在窗口底部居中,
+ * 有会话输入框时停在其正上方(bottom 由组件实测输入框位置后内联写入)。外观与提问卡同族:
+ * border-faint、11px 圆角、轻阴影、琥珀色等待图标。外层 layer 不吃指针,页面其余部分照常可交互。 */
+.a-permission-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--a-z-modal);
+  pointer-events: none;
+}
+
+.a-permission-panel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(70vh, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-md);
+  color: var(--a-text);
+}
+
+.a-ui .a-permission-panel:focus-visible {
+  box-shadow: var(--a-shadow-md), var(--a-ring-focus);
+}
+
+.a-permission-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px 0;
+}
+
+.a-permission-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+
+.a-permission-titles {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.a-permission-title {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-text);
+}
+
+.a-permission-description {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+}
+
+.a-permission-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 14px;
+}
+
+.a-permission-body .a-permission-facts {
+  margin-top: var(--a-space-3);
+}
+
+.a-permission-foot {
+  padding: 12px 14px;
+}
