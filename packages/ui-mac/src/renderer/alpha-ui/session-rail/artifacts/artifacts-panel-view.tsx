@@ -14,7 +14,7 @@ import { createEffect, createMemo, createSignal, ErrorBoundary, For, Index, onCl
 import { Dynamic } from "solid-js/web"
 import { t } from "../../../i18n"
 import { boundaryErrorText } from "../../boundary-error-text"
-import { MetadataView, STATE_LABEL_KEYS, TAB_LABEL_KEYS } from "../../artifact-workbench/artifact-workbench"
+import { MetadataView, STATE_LABEL_KEYS, TAB_LABEL_KEYS } from "../../artifact-workbench/metadata-view"
 import {
   downloadBusy,
   formatBytes,
