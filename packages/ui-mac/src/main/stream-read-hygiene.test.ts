@@ -117,8 +117,9 @@ describe("Stream.runForEachWhile 类级禁令 (#647)", () => {
       const hits = FILES.filter((file) => file.path.startsWith(prefix))
       expect(hits.length, `workspace 根 ${prefix} 一个文件都没被扫到 —— 枚举漏了这一块`).toBeGreaterThan(0)
     }
-    // 上一版可绕过的那个具体文件,现在必须在集合里。
-    expect(FILES.map((file) => file.path)).toContain("packages/stats/server/src/ingest.ts")
+    // 上一版可绕过的那个嵌套根里的文件,现在必须在集合里。原锚点 src/ingest.ts 已被上游
+    // dc3182800(remove s3 lake ingestion)删除,锚点移到同一嵌套根里仍在的文件。
+    expect(FILES.map((file) => file.path)).toContain("packages/stats/server/src/stat-sync.ts")
     // 两次事故现场同样必须在集合里。
     expect(FILES.map((file) => file.path)).toContain("packages/opencode/src/tool/read.ts")
     expect(FILES.map((file) => file.path)).toContain("packages/opencode/src/tool/mcp-websearch.ts")
