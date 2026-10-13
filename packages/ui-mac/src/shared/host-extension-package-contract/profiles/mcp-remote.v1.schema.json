@@ -113,6 +113,9 @@
               }
             }
           ]
+        },
+        "officialRecipe": {
+          "const": "github-remote-v1"
         }
       }
     }

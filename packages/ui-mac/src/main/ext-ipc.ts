@@ -1,3 +1,5 @@
+import { isOfficialConnector } from "./official-connector-recipes"
+import { removeOfficialConnector, releaseOfficialConnectorResources } from "./official-connector-resources"
 // Extension Hub IPC handlers (main process). Mirrors ipc.ts's ipcMain.handle pattern. Three thin
 // privileged operations the renderer can't do itself: persist/remove an MCP server in the user
 // config (ext-config.ts), and a runtime which-check so the UI can warn before adding a local MCP
@@ -18,7 +20,7 @@ import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { assertProjectMcpTransactionRootIdentity, assertProjectRecoveryJournalAlgebra, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
+import { assertProjectMcpTransactionRootIdentity, assertProjectRecoveryJournalAlgebra, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { probeProjectMcpActivation, reloadInstalledMcp } from "./ext-mcp-activation"
@@ -100,6 +102,7 @@ export function registerExtIpcHandlers(
   registryChannel: "stable" | "preview" | "dev",
   awaitServer: () => Promise<ServerReadyData>,
   homeDir: string = homedir(),
+  officialRuntime?: { stop(): Promise<void>; refresh(): Promise<boolean> },
 ) {
   assertAlphaEnvironmentIdentity()
   const resolveProjectEntry = (projectDir: unknown) => resolveProjectIpcEntry(projectDir, homeDir)
@@ -752,7 +755,7 @@ export function registerExtIpcHandlers(
     // REQ-136 C3/C6:prepared identities name the process-global MCP secret store. Project plans
     // never produce them, and a D journal must never gain a global cleanup capability.
     ...(root === alphaGlobalRoot()
-      ? { releasePrepared: (resources) => releasePreparedTxResources(userDataPath, resources) }
+      ? { releasePrepared: (resources) => releaseOfficialConnectorResources(userDataPath, resources) }
       : {}),
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
   })
@@ -850,6 +853,14 @@ export function registerExtIpcHandlers(
     // 本 installers 只在锁外路径(整包卸载 / skipConfig 的 update 清理,后者不触 config)被调。
     removeCommandConfig: (name) => removeCommandEntry(name),
     removeMcpSecretsStrict: (name) => {
+      if (isOfficialConnector(name)) {
+        try {
+          removeOfficialConnector(alphaGlobalRoot(), name)
+          return { ok: true as const }
+        } catch {
+          return { ok: false as const, reason: "official connector cleanup failed; retry removal" }
+        }
+      }
       const live = listConfiguredMcpServerNamesStrict()
       if (!live.ok) return { ok: false as const, reason: `secret revocation blocked: ${live.reason}` }
       const names = new Set(live.names)
@@ -950,6 +961,14 @@ export function registerExtIpcHandlers(
         removeMcpConfigInLock,
         removeProjectMcpConfigInLock,
         removeMcpSecretsStrict: (name) => {
+          if (isOfficialConnector(name)) {
+            try {
+              removeOfficialConnector(alphaGlobalRoot(), name)
+              return { ok: true as const }
+            } catch {
+              return { ok: false as const, reason: "official connector cleanup failed; retry removal" }
+            }
+          }
           // r8 Major:兄弟备份删除的活体排除种子 —— 在册名集合读不出 = 吊销失败(可观察),
           // 绝不冒险把可能是另一在册 server 的目录当备份删。
           const live = listConfiguredMcpServerNamesStrict()
@@ -1080,7 +1099,15 @@ export function registerExtIpcHandlers(
   const setInstallStateBody = async (intent: unknown) => {
     // #397:enable 方向的 curation 闸需要 resolveEntry(已验 effective catalog)—— 直接用
     // plannerDeps(自带 #314/#315 security browse-only 语义与懒冻结 advisory 视图)。
-    return setInstallStateByKey(intent, plannerDeps())
+    const official = !!intent && typeof intent === "object" && "name" in intent && typeof intent.name === "string" && isOfficialConnector(intent.name)
+    if (official && !officialRuntime) return { ok: false, reason: "official connector runtime unavailable" }
+    if (official) await officialRuntime!.stop()
+    try {
+      return await setInstallStateByKey(intent, plannerDeps())
+    } finally {
+      if (official && !(await officialRuntime!.refresh()))
+        return { ok: false, reason: "official-connector-needs-reentry: runtime refresh failed" }
+    }
   }
   // ADR-030(#372):收回路径的残留检测(只读)与显式清理(journal 在场 fail-closed;
   // generation-aware —— 删受控 ext-store + 对应账本,绝不落 flat 删除)。
@@ -1154,48 +1181,71 @@ export function registerExtIpcHandlers(
     },
     bodies: {
       installCatalog: async (intent) => {
-        const result = await runCatalogInstallWithPackagePreflight(intent, {
-          loadVerifiedCatalog: async () => {
-            const loaded = await refreshRemoteCatalog(userDataPath, registryChannel)
-            return loaded.source === "none"
-              ? { source: "none", error: loaded.error }
-              : { source: loaded.source, catalog: loaded.catalog }
-          },
-          installLegacy: (legacyIntent) => installCatalog(legacyIntent, plannerDeps()),
-          installPackage: admitPackage,
-        })
-        if (!result.ok) return result
-        // legacy planner(catalog entry 意图):一次只装一个 live MCP,判据与 `#697` 之前逐字相同。
-        if (!("activateMcp" in result)) {
-          if (result.kind !== "mcp") return result
-          // REQ-136 C4/C5:the existing reload helper is name-only and global. A project commit
-          // instead lets the project-aware installed read below return the consent-gated D-scoped
-          // projection; it must not reload or report a same-name global server here.
-          const decoded = decodeCatalogInstallIntent(intent)
-          if (decoded.ok && decoded.intent.scope.scope === "project") return result
-          if (result.installedDisabled) return result
-          return { ...result, mcpActivation: await reloadInstalledMcp(result.name, awaitServer) }
+        const official = !!intent && typeof intent === "object" && "catalogId" in intent &&
+          (intent.catalogId === "package:github-official" || intent.catalogId === "package:dbhub-readonly") && "authorization" in intent
+        if (official && !officialRuntime) return { ok: false, reason: "official connector runtime unavailable" }
+        if (official) await officialRuntime!.stop()
+        let restarted = false
+        try {
+          const result = await runCatalogInstallWithPackagePreflight(intent, {
+            loadVerifiedCatalog: async () => {
+              const loaded = await refreshRemoteCatalog(userDataPath, registryChannel)
+              return loaded.source === "none"
+                ? { source: "none", error: loaded.error }
+                : { source: loaded.source, catalog: loaded.catalog }
+            },
+            installLegacy: (legacyIntent) => installCatalog(legacyIntent, plannerDeps()),
+            installPackage: admitPackage,
+          })
+          if (official) {
+            restarted = true
+            if (!(await officialRuntime!.refresh()))
+              return { ok: false, reason: "official-connector-needs-reentry: runtime refresh failed" }
+          }
+          if (!result.ok) return result
+          // legacy planner(catalog entry 意图):一次只装一个 live MCP,判据与 `#697` 之前逐字相同。
+          if (!("activateMcp" in result)) {
+            if (result.kind !== "mcp") return result
+            // REQ-136 C4/C5:the existing reload helper is name-only and global. A project commit
+            // instead lets the project-aware installed read below return the consent-gated D-scoped
+            // projection; it must not reload or report a same-name global server here.
+            const decoded = decodeCatalogInstallIntent(intent)
+            if (decoded.ok && decoded.intent.scope.scope === "project") return result
+            if (result.installedDisabled) return result
+            return { ...result, mcpActivation: await reloadInstalledMcp(result.name, awaitServer) }
+          }
+          // `#697` package 图:一个 Bundle 可以带**多个** MCP 组件,而 live 重载的对象是组件不是包。
+          // admission 报的是「哪些 MCP 组件落了 enabled」(已去重排序),这里逐个重载**一次**;
+          // 按 root 的 kind/name 判会让叶 MCP 永远不被重载,并把根组件的名字当成整包的名字。
+          // 单组件 package 的 `activateMcp` 恰是 `[name]` 或 `[]`,行为逐字不变。
+          //
+          // `activateMcp` 是 main 内部的重载指令,不是 renderer 事实:剥掉再过线,免得一个内部
+          // 指令变成半个公开契约。
+          const { activateMcp, ...wire } = result
+          if (activateMcp.length === 0) return wire
+          const activations = await Promise.all(activateMcp.map((name) => reloadInstalledMcp(name, awaitServer)))
+          // 渲染层的连接状态面是 root-scoped(`r.kind !== "mcp"` 就不看它),所以 `mcpActivation`
+          // 仍然只报 root 那一条;叶子的重载是副作用,不改这个契约。
+          const rootActivation = activations.find((entry) => entry.reference === result.name)
+          return rootActivation ? { ...wire, mcpActivation: rootActivation } : wire
+        } finally {
+          if (official && !restarted) await officialRuntime!.refresh()
         }
-        // `#697` package 图:一个 Bundle 可以带**多个** MCP 组件,而 live 重载的对象是组件不是包。
-        // admission 报的是「哪些 MCP 组件落了 enabled」(已去重排序),这里逐个重载**一次**;
-        // 按 root 的 kind/name 判会让叶 MCP 永远不被重载,并把根组件的名字当成整包的名字。
-        // 单组件 package 的 `activateMcp` 恰是 `[name]` 或 `[]`,行为逐字不变。
-        //
-        // `activateMcp` 是 main 内部的重载指令,不是 renderer 事实:剥掉再过线,免得一个内部
-        // 指令变成半个公开契约。
-        const { activateMcp, ...wire } = result
-        if (activateMcp.length === 0) return wire
-        const activations = await Promise.all(activateMcp.map((name) => reloadInstalledMcp(name, awaitServer)))
-        // 渲染层的连接状态面是 root-scoped(`r.kind !== "mcp"` 就不看它),所以 `mcpActivation`
-        // 仍然只报 root 那一条;叶子的重载是副作用,不改这个契约。
-        const rootActivation = activations.find((entry) => entry.reference === result.name)
-        return rootActivation ? { ...wire, mcpActivation: rootActivation } : wire
       },
       uninstallV2: (intent) => uninstallByKey(intent, plannerDeps()),
       // `#698`:整包卸载。renderer 只运输 packageId —— 删什么、能不能删,全部由 main 从自己的
       // 账本图重算(与 `uninstallV2` 同一信任边界)。
-      uninstallPackage: async (packageId) =>
-        uninstallPackageV1(packageId, { globalRoot: alphaGlobalRoot, installers: packageArtifactInstallers() }),
+      uninstallPackage: async (packageId) => {
+        const official = packageId === "package:github-official" || packageId === "package:dbhub-readonly"
+        if (official && !officialRuntime) return { ok: false, reason: "official connector runtime unavailable" }
+        if (official) await officialRuntime!.stop()
+        try {
+          return await uninstallPackageV1(packageId, { globalRoot: alphaGlobalRoot, installers: packageArtifactInstallers() })
+        } finally {
+          if (official && !(await officialRuntime!.refresh()))
+            return { ok: false, reason: "official-connector-needs-reentry: runtime refresh failed" }
+        }
+      },
       rollback: async (intent, genId) => rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) }),
       setInstallState: setInstallStateBody,
       // #347:清理前先经 gate 对项目根做显式恢复收敛(ADR-030「先显式恢复再清理」);clean 自身

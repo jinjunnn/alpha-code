@@ -3194,14 +3194,14 @@ export function ExtensionHub(props: {
                     <For each={packagePrerequisites()}>
                       {(item) => (
                         <label class="alpha-ext-key-field">
-                          <span class="alpha-ext-key-name">{item.label}</span>
+                          <span class="alpha-ext-key-name">{item.prerequisiteId === "mcp:github-official#GITHUB_PERSONAL_ACCESS_TOKEN" ? t("alpha.ext.officialGithubPat") : item.prerequisiteId === "mcp:dbhub-readonly#DSN" ? t("alpha.ext.officialSqliteDsn") : item.label}</span>
                           <input
                             class="alpha-ext-key-input"
                             type="password"
                             autocomplete="off"
                             spellcheck={false}
                             required
-                            placeholder={t("alpha.ext.packageKeyPlaceholder")}
+                            placeholder={t(item.prerequisiteId === "mcp:github-official#GITHUB_PERSONAL_ACCESS_TOKEN" ? "alpha.ext.officialGithubPat" : item.prerequisiteId === "mcp:dbhub-readonly#DSN" ? "alpha.ext.officialSqliteDsn" : "alpha.ext.packageKeyPlaceholder")}
                             value={envValues()[item.prerequisiteId] ?? ""}
                             onInput={(event) =>
                               setEnvValues((current) => ({

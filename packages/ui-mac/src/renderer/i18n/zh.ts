@@ -367,6 +367,8 @@ export const dict = {
   "alpha.ext.installScopeProjectLost": "安装前当前项目已变化。请重新打开连接器并再次选择范围。",
   "alpha.ext.keyPlaceholder": "粘贴密钥…(可留空)",
   "alpha.ext.packageConfirmEnv": "需要密钥(全部必填)",
+  "alpha.ext.officialGithubPat": "GitHub PAT(仓库读取权限;失效时重新填写)",
+  "alpha.ext.officialSqliteDsn": "本机 SQLite:sqlite:///绝对路径/数据库.db(需要 Node ≥22.5、系统加密存储)",
   "alpha.ext.packageKeyPlaceholder": "粘贴密钥…(必填)",
   "alpha.ext.packageKeysRequired": "全部密钥均为必填;填写完整后才能确认安装。",
   "alpha.ext.keyHint": "密钥保存在本机 Code Puppy 安全文件(0600),配置里只存引用、绝不明文。",

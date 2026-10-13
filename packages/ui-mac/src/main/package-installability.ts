@@ -1,3 +1,5 @@
+import { officialConnectorPrerequisite } from "./official-connector-recipes"
+import { alphaGlobalRoot } from "./engine-config-truth"
 import { createHash } from "node:crypto"
 import { isAbsolute } from "node:path"
 import type {
@@ -318,6 +320,14 @@ export async function evaluatePackageForHost(
       component.capabilities,
     )
     if (!decoded.ok) return refuse("package-payload-invalid")
+    if (["mcp:github-official", "mcp:dbhub-readonly"].includes(component.id) && !("officialRecipe" in decoded.payload.behavior))
+      return refuse("package-payload-invalid")
+    if ("officialRecipe" in decoded.payload.behavior && decoded.payload.behavior.officialRecipe) {
+      const name = decoded.payload.behavior.officialRecipe === "github-remote-v1" ? "github-official" : "dbhub-readonly"
+      if (supported.length !== 1 || component.id !== `mcp:${name}` || header.envelope.prelude.packageId !== `package:${name}`)
+        return refuse("package-payload-invalid")
+      try { officialConnectorPrerequisite(name, alphaGlobalRoot()) } catch { return refuse("package-prerequisite-invalid") }
+    }
 
     const prerequisite = (deps.decodeSecretPrerequisite ?? decodePackageSecretPrerequisiteProfileV1)(
       component,

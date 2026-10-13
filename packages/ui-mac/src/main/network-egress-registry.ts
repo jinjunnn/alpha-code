@@ -98,6 +98,7 @@ export const EGRESS_REGISTRY: readonly EgressDestination[] = Object.freeze([
   https("pypi.org", "子进程:包管理(uv)", "§2.2 E13 实测 CONNECT"),
   https("files.pythonhosted.org", "子进程:包管理(uv)", "§2.2 E13 实测 CONNECT"),
   https("github.com", "子进程:git(https 形态)+ LSP 下载", "§2.2 E13;packages/opencode/src/lsp/server.ts:183"),
+  https("api.githubcopilot.com", "连接器:GitHub 官方 remote", "alpha-web#256 编排器裁决 2; https://github.com/github/github-mcp-server/blob/v2.0.2/docs/remote-server.md"),
   https("api.github.com", "子进程:gh + LSP 下载", "§2.2 E13;packages/opencode/src/lsp/server.ts:600"),
   https("download-cdn.jetbrains.com", "子进程:LSP 自动下载", "packages/opencode/src/lsp/server.ts:1330"),
   https("api.releases.hashicorp.com", "子进程:LSP 自动下载", "packages/opencode/src/lsp/server.ts:1632"),

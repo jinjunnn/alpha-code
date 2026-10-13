@@ -378,6 +378,8 @@ export const dict = {
   "alpha.ext.installScopeProjectLost": "The current project changed before installation. Reopen the connector and choose a scope again.",
   "alpha.ext.keyPlaceholder": "Paste key… (optional)",
   "alpha.ext.packageConfirmEnv": "Required keys (all required)",
+  "alpha.ext.officialGithubPat": "GitHub PAT (repository read access; re-enter if expired)",
+  "alpha.ext.officialSqliteDsn": "Local SQLite: sqlite:///absolute/path/database.db (Node ≥22.5, OS secure storage required)",
   "alpha.ext.packageKeyPlaceholder": "Paste key… (required)",
   "alpha.ext.packageKeysRequired": "All keys are required; enter each one to confirm installation.",
   "alpha.ext.keyHint": "Keys are saved to a local Code Puppy secure file (0600); the config stores only a reference, never plaintext.",

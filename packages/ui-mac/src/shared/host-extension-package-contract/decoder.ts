@@ -274,7 +274,7 @@ export type CommandPayloadV1 = {
 
 export type McpLocalPayloadV1 = {
   schema: "alpha.host-extension-package.payload.mcp-local.v1"
-  behavior: { command: string[]; environment: Record<string, string>; requiredSecrets: string[] }
+  behavior: { command: string[]; environment: Record<string, string>; requiredSecrets: string[]; officialRecipe?: "dbhub-readonly-v1" }
 }
 
 /**
@@ -302,6 +302,7 @@ export type McpRemoteAuthV1 =
     }
 
 export type McpRemoteBehaviorV1 = {
+  officialRecipe?: "github-remote-v1"
   url: string
   headersTemplate: Record<string, string>
   requiredSecrets: string[]
@@ -400,8 +401,8 @@ const COMMAND_BEHAVIOR_KEYS = new Set(["template", "description", "agent", "mode
 /** `#828`:skill 的 behavior 与 agent 分家(载荷是一份**有界文件清单**)。 */
 const SKILL_BEHAVIOR_KEYS = new Set(["targetDir", "files"])
 const SKILL_ASSET_FILE_KEYS = new Set(["path", "sha256", "bytes", "url"])
-const MCP_LOCAL_BEHAVIOR_KEYS = new Set(["command", "environment", "requiredSecrets"])
-const MCP_REMOTE_BEHAVIOR_KEYS = new Set(["url", "headersTemplate", "requiredSecrets", "auth"])
+const MCP_LOCAL_BEHAVIOR_KEYS = new Set(["command", "environment", "requiredSecrets", "officialRecipe"])
+const MCP_REMOTE_BEHAVIOR_KEYS = new Set(["url", "headersTemplate", "requiredSecrets", "auth", "officialRecipe"])
 const MCP_REMOTE_AUTH_KINDS = ["alpha-connection", "mcp-oauth"] as const
 const MCP_OAUTH_AUTH_KEYS = new Set(["kind", "prerequisiteId", "required", "label"])
 const ALPHA_CONNECTION_AUTH_KEYS = new Set([
@@ -520,6 +521,8 @@ export function decodePackageProfilePayloadV1(
 
 export function derivePayloadCapabilitiesV1(payload: PackageProfilePayloadV1): PackageCapabilityV1[] {
   const capabilities: PackageCapabilityV1[] = []
+  if ("officialRecipe" in payload.behavior && payload.behavior.officialRecipe)
+    capabilities.push("alpha.official-connectors.v1")
   if (
     (payload.schema === "alpha.host-extension-package.payload.mcp-local.v1" ||
       payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1") &&
@@ -1205,12 +1208,17 @@ function decodeMcpLocalPayload(value: unknown): PackageProfilePayloadDecodeV1 {
     ENV_NAME_RE,
     errors,
   )
+  if (behavior.officialRecipe !== undefined && (
+    behavior.officialRecipe !== "dbhub-readonly-v1" ||
+    JSON.stringify(command) !== JSON.stringify(["npx", "-y", "@bytebase/dbhub@1.5.0", "--transport", "stdio"]) ||
+    Object.keys(environment ?? {}).length !== 0 || requiredSecrets.join() !== "DSN"
+  )) errors.push("payload.behavior.officialRecipe: invalid DBHub readonly recipe")
   if (errors.length || !environment) return { ok: false, errors }
   return {
     ok: true,
     payload: {
       schema: "alpha.host-extension-package.payload.mcp-local.v1",
-      behavior: { command, environment, requiredSecrets },
+      behavior: { command, environment, requiredSecrets, ...(behavior.officialRecipe === "dbhub-readonly-v1" ? { officialRecipe: behavior.officialRecipe } : {}) },
     },
   }
 }
@@ -1241,12 +1249,18 @@ function decodeMcpRemotePayload(value: unknown): PackageProfilePayloadDecodeV1 {
   if (headersTemplate) checkMcpRemotePlaceholdersV1(headersTemplate, requiredSecrets, errors)
   if (auth && auth !== "none" && headersTemplate)
     checkMcpRemoteAuthInvariantsV1(auth, headersTemplate, requiredSecrets, errors)
+  if (behavior.officialRecipe !== undefined && (
+    behavior.officialRecipe !== "github-remote-v1" || url !== "https://api.githubcopilot.com/mcp/" || auth !== "none" ||
+    requiredSecrets.join() !== "GITHUB_PERSONAL_ACCESS_TOKEN" || Object.keys(headersTemplate ?? {}).length !== 3 ||
+    headersTemplate?.Authorization !== "Bearer {GITHUB_PERSONAL_ACCESS_TOKEN}" ||
+    headersTemplate?.["X-MCP-Toolsets"] !== "repos" || headersTemplate?.["X-MCP-Readonly"] !== "true"
+  )) errors.push("payload.behavior.officialRecipe: invalid GitHub readonly recipe")
   if (errors.length || !url || !headersTemplate || !auth) return { ok: false, errors }
   return {
     ok: true,
     payload: {
       schema: "alpha.host-extension-package.payload.mcp-remote.v1",
-      behavior: { url, headersTemplate, requiredSecrets, auth },
+      behavior: { url, headersTemplate, requiredSecrets, auth, ...(behavior.officialRecipe === "github-remote-v1" ? { officialRecipe: behavior.officialRecipe } : {}) },
     },
   }
 }

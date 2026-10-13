@@ -1,3 +1,5 @@
+import { isOfficialConnector } from "./official-connector-recipes"
+import { officialConnectorConfig, prepareOfficialConnector } from "./official-connector-resources"
 // ext-package-tx-builders — REQ-128 #705:把「一个已接受的 package 组件 → 一次事务里的那几条 item」
 // 从 package-admission 的执行体里抽成**纯计划构造**。
 //
@@ -310,14 +312,18 @@ export function buildCommandTxItems(input: CommandTxBuildInputV1): PackageTxBuil
 /** mcp:单 config item + 版本化密钥 prepared resource;live 叶未在册即拒(不认领、不覆盖)。 */
 export function buildMcpTxItems(input: McpTxBuildInputV1): PackageTxBuildResultV1 {
   const receipt = input.receipt
+  const official = "officialRecipe" in input.payload.behavior && input.payload.behavior.officialRecipe
+  if (official && !isOfficialConnector(input.name)) return { ok: false, reason: "invalid official connector identity" }
   const secretVersion = input.prerequisite.items.length ? input.newSecretVersionId() : undefined
+  const officialConfig = official && isOfficialConnector(input.name)
+    ? officialConnectorConfig(input.root, input.name, secretVersion!) : undefined
   const refs = Object.fromEntries(
     input.prerequisite.items.map((item) => [
       item.target.variable,
-      mcpSecretVersionedRef(input.userDataPath, input.prerequisite.server, secretVersion!, item.target.variable),
+      officialConfig ? `{file:${officialConfig.file}}` : mcpSecretVersionedRef(input.userDataPath, input.prerequisite.server, secretVersion!, item.target.variable),
     ]),
   )
-  const config =
+  const config = officialConfig?.config ?? (
     input.payload.schema === "alpha.host-extension-package.payload.mcp-local.v1"
       ? {
           type: "local",
@@ -339,6 +345,7 @@ export function buildMcpTxItems(input: McpTxBuildInputV1): PackageTxBuildResultV
             ),
           }
         : undefined
+  )
   if (!config) return { ok: false, reason: "profile cannot build an MCP transaction" }
   const valid = validateServer(config)
   if (!valid.ok) return { ok: false, reason: valid.reason }
@@ -372,12 +379,16 @@ export function buildMcpTxItems(input: McpTxBuildInputV1): PackageTxBuildResultV
     ? {
         descriptor: {
           kind: "mcp-secret-version",
-          store: "alpha-mcp-secrets",
+          store: official ? "official-connectors" : "alpha-mcp-secrets",
           server: input.prerequisite.server,
           version: secretVersion,
         },
         files: secretFiles,
         populate: () => {
+          if (official && isOfficialConnector(input.name)) {
+            prepareOfficialConnector(input.root, input.name, secretVersion, input.secretValues[input.prerequisite.items[0]!.prerequisiteId]!)
+            return
+          }
           const claimed = claimMcpSecretVersionDir(input.userDataPath, input.prerequisite.server, secretVersion)
           if (!claimed.ok) throw new Error(claimed.reason)
           for (const item of input.prerequisite.items) {

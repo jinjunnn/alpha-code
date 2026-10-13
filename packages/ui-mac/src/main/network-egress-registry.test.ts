@@ -21,6 +21,7 @@ const EXPECTED_INITIAL_SET = [
   "alpha-cloud.tidelabs.click:443",
   "alpha-gateway.tidelabs.click:443",
   "api.github.com:443",
+  "api.githubcopilot.com:443",
   "api.releases.hashicorp.com:443",
   "codepuppy.cn:443",
   "download-cdn.jetbrains.com:443",

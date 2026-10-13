@@ -1,9 +1,10 @@
+import { isOfficialConnector } from "./official-connector-recipes"
+import { collectOldOfficialConnectorVersions, releaseOfficialConnectorResources, restoreCommittedOfficialConnectors } from "./official-connector-resources"
 import { createHash } from "node:crypto"
 import { isAbsolute } from "node:path"
 import type { AppEnvironment } from "./alpha-environment"
 import { newMcpSecretVersionId } from "./alpha-mcp-secrets"
 import { agentMdToEntry } from "./agent-md-entry"
-import { releasePreparedTxResources } from "./ext-config"
 import { evaluateBundleAuthorization, evaluateCapabilityDiff, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
@@ -1008,7 +1009,7 @@ async function executePreparedPackage(
               }
               return verdict
             },
-            releasePrepared: (resources) => releasePreparedTxResources(deps.userDataPath, resources),
+            releasePrepared: (resources) => releaseOfficialConnectorResources(deps.userDataPath, resources),
           }
         : {}),
       probe: async (input) => {
@@ -1029,6 +1030,15 @@ async function executePreparedPackage(
   )
   // 事务返回之后 = 锁已释放。惰性残留在这里清,失败只报不改结果(离场 child 此刻已不可能被加载)。
   const cleanupWarnings: string[] = []
+  if (result.ok) for (const resource of preparedResources) {
+    if (resource.descriptor.store !== "official-connectors" || !isOfficialConnector(resource.descriptor.server)) continue
+    try {
+      restoreCommittedOfficialConnectors()
+      collectOldOfficialConnectorVersions(root, resource.descriptor.server, resource.descriptor.version)
+    } catch {
+      cleanupWarnings.push("official-connector-needs-reentry: committed projection or old resource cleanup failed")
+    }
+  }
   if (result.ok && doomed.length > 0 && deps.removePackageChildArtifacts) {
     const removal = deps.removePackageChildArtifacts(doomed.map((verdict) => ({ kind: verdict.kind, name: verdict.name })))
     if (!removal.ok)
