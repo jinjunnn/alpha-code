@@ -13,18 +13,16 @@ import {
   writeFileSync,
 } from "node:fs"
 import { tmpdir, userInfo } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { Database } from "bun:sqlite"
 import { createRequire } from "node:module"
 
 // The OS keychain boundary is replaced with real AES-GCM, not a plaintext/base64 stand-in.
 const key = randomBytes(32)
 let available = true
-let basicText = false
 mock.module("../src/main/alpha-keychain-backend", () => ({
   keychainBackend: () => ({
     isEncryptionAvailable: () => available,
-    getSelectedStorageBackend: () => (basicText ? "basic_text" : "keychain"),
     encryptString: (value: string) => {
       const iv = randomBytes(12)
       const c = createCipheriv("aes-256-gcm", key, iv)
@@ -71,7 +69,6 @@ let iso = "",
 const pat = "github_pat_FAKE_aw256_CANARY_ONLY"
 beforeEach(() => {
   available = true
-  basicText = false
   __resetAlphaEnvironmentForTests()
   delete process.env.ALPHA_GLOBAL_DIR
   iso = mkdtempSync(join(tmpdir(), "official-connectors-"))
@@ -284,9 +281,6 @@ test("missing/ref-injected secrets, non-SQLite DSN, unavailable encryption and s
   const f = await fixture()
   expect((await evaluatePackageForHost(f.envelope, { fetchPayload: async () => f.bytes })).verdict).toBe("blocked")
   available = true
-  basicText = true
-  expect(() => prepareOfficialConnector(root, "github-official", "v-bad", pat)).toThrow("needs-reentry")
-  basicText = false
   const outside = join(iso, "outside")
   mkdirSync(outside, { mode: 0o700 })
   symlinkSync(outside, join(home, "state", "connector-secrets"))
@@ -542,6 +536,12 @@ test("actual Node >=22.5, HOME/workspace exclusion, protected cwd and template t
   chmodSync(join(paths.config, "dbhub.toml"), 0o600)
   writeFileSync(join(paths.config, "dbhub.toml"), DBHUB_READONLY_TOML.replace("readonly = true", "readonly = false"))
   expect(() => restoreOfficialConnector(root, "dbhub-readonly", "v-boundary")).toThrow("needs-reentry")
+  const orphan = join(dirname(officialRuntimeRoot(root)), "2147483647-00000000-0000-0000-0000-000000000000")
+  clearOfficialConnectorRuntime()
+  mkdirSync(orphan, { mode: 0o700 })
+  writeFileSync(join(orphan, "fake-secret"), pat, { mode: 0o600 })
+  officialRuntimeRoot(root)
+  expect(existsSync(orphan)).toBe(false)
 })
 
 // Protocol fixture copied from the official MCP 2025-06-18 lifecycle/tools examples;
@@ -800,6 +800,7 @@ test("real IPC previews/cancels without secrets, installs both recipes, stops be
       expect(events).toEqual(["stop", "refresh", "stop", "refresh"])
       events.length = 0
       expect(existsSync(paths.secret)).toBe(false)
+      expect(existsSync(parent)).toBe(false)
       expect(existsSync(paths.config)).toBe(false)
       expect(existsSync(dbfile)).toBe(true)
       expect(JSON.stringify(logs)).not.toContain(value)

@@ -252,9 +252,10 @@ tree, outside the engine's writable state root. The TOML contains `${DSN}`;
 neither argv nor sidecar-global environment contains the submitted value.
 Only `{file:}` references cross the engine boundary. The runtime files are 0600
 in owned 0700 directories under system temporary storage, outside actual HOME
-and registered workspaces. Unavailable encryption (including Linux basic_text),
-unsafe temporary roots, links and unsupported Windows ACL provisioning fail
-closed; this implementation makes no Windows availability claim.
+and registered workspaces. Unavailable encryption, unsafe temporary roots and links fail closed. These
+recipes currently require macOS, the platform with the existing process fence
+protecting the TOML/ciphertext/working directory. Linux (including basic_text)
+and Windows are refused before secret input; chmod alone is insufficient.
 
 The prepared journal stores only server/version/store identities. Installation
 stops the sidecar before resource replacement; rollback releases the new version

@@ -26,6 +26,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  rmdirSync,
   writeFileSync,
 } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path"
@@ -242,6 +243,7 @@ export function removeOfficialConnector(root: string, name: OfficialConnectorNam
     parents.flatMap((parent) => (existsSync(parent) ? (directory(parent), readdirSync(parent)) : [])),
   )
   for (const version of versions) removeOfficialConnectorVersion(root, name, version)
+  for (const parent of parents) if (existsSync(parent)) rmdirSync(parent)
 }
 
 export function collectOldOfficialConnectorVersions(root: string, name: OfficialConnectorName, keep: string) {

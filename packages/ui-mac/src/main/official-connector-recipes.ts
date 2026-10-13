@@ -20,13 +20,9 @@ export const insideDirectory = (root: string, target: string) => target === root
 
 export function officialConnectorBackend() {
   const value = keychainBackend()
-  if (process.platform === "win32" || !value?.isEncryptionAvailable()) throw officialConnectorFailure()
-  if (
-    "getSelectedStorageBackend" in value &&
-    typeof value.getSelectedStorageBackend === "function" &&
-    value.getSelectedStorageBackend() === "basic_text"
-  )
-    throw officialConnectorFailure()
+  // Only macOS currently supplies the process fence that keeps ciphertext/TOML/cwd outside
+  // engine-write roots. chmod alone cannot provide that boundary on the other platforms.
+  if (process.platform !== "darwin" || !value?.isEncryptionAvailable()) throw officialConnectorFailure()
   return value
 }
 
