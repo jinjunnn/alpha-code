@@ -78,7 +78,7 @@ export interface AgentInstallSpec {
 export interface CloudPipelineSpec {
   kind: "cloud"
   /** B 侧 pipeline 注册表键(alpha-platform gateway/src/pipelines.ts)。 */
-  pipelineKind: "research" | "code-review" | "docs"
+  pipelineKind: "research" | "code-review" | "docs" | "office-report"
   /** 输入契约(详情页展示;dispatch 构造与此对齐)。 */
   inputContract: { field: string; description: string; required?: boolean }[]
   /** A 侧派发默认预算;上限为 B 侧按租户 clamp 的天花板(policy 永远赢)。 */
