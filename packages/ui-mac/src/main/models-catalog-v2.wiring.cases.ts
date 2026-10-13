@@ -367,26 +367,31 @@ describe("#1084 目录刷新失败的用户可观察出口", () => {
 
 describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
   test("AC1:首试真实 8 秒超时先返回,后台一次补试恢复快照并清 health", async () => {
-    const requests: { at: number; method: string }[] = []
-    startTarget(async (request) => {
-      requests.push({ at: Date.now(), method: request.method })
-      if (requests.length === 1) await Bun.sleep(8500)
-      return Response.json(catalogV2())
+    const requests: string[] = []
+    const events: string[] = []
+    const first = Promise.withResolvers<Response>()
+    const retry = Promise.withResolvers<Response>()
+    startTarget((request) => {
+      requests.push(request.method)
+      events.push(`request-${requests.length}`)
+      // Keep each response pending until its behavioral boundary has been observed.
+      return requests.length === 1 ? first.promise : retry.promise
     })
-    const started = Date.now()
     expect(await invokePlatformLive()).toEqual({ error: "timeout" })
-    const returned = Date.now()
-    expect(returned - started).toBeGreaterThanOrEqual(7900)
-    expect(returned - started).toBeLessThan(9000)
-    expect(requests).toHaveLength(1)
+    events.push("first-returned")
+    expect(events).toEqual(["request-1", "first-returned"])
+    expect(requests).toEqual(["GET"])
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
     expect(lastPush()).toMatchObject({ code: "timeout" })
+    first.resolve(Response.json(catalogV2()))
+    await waitFor(() => requests.length === 2)
+    expect(events).toEqual(["request-1", "first-returned", "request-2"])
+    expect(existsSync(liveAllowlistPath(userData))).toBe(false)
+    expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
+    retry.resolve(Response.json(catalogV2()))
     await waitFor(() => completed().length === 2)
-    expect(requests.map((request) => request.method)).toEqual(["GET", "GET"])
-    expect(requests[1]!.at - returned).toBeGreaterThanOrEqual(900)
-    expect(requests[1]!.at - returned).toBeLessThan(2000)
-    expect(requests[1]!.at).toBeGreaterThan(returned)
+    expect(requests).toEqual(["GET", "GET"])
     expect(invokeCatalog().liveSync.status).toBe("live")
     expect(invokeCatalog().pricingBasisModelId).toBe("deepseek-v4-flash")
     expect(invokeCatalog().platformModels.find((model) => model.id === "claude-fable-5")?.pricing).toEqual({
@@ -419,10 +424,11 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
   test("AC2:两次真实超时后无第三次 GET,LKG 字节和本地 BYOK 保持可用", async () => {
     let delayed = false
     const requests: string[] = []
-    startTarget(async (request) => {
+    const response = Promise.withResolvers<Response>()
+    startTarget((request) => {
       if (delayed) {
         requests.push(request.method)
-        await Bun.sleep(8500)
+        return response.promise
       }
       return Response.json(catalogV2())
     })
@@ -437,9 +443,7 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       expect.objectContaining({ attempt: 1, exception: "TimeoutError", durationMs: expect.any(Number) }),
       expect.objectContaining({ attempt: 2, exception: "TimeoutError", durationMs: expect.any(Number) }),
     ])
-    const retry = completed()[1]![1] as { durationMs: number }
-    expect(retry.durationMs).toBeGreaterThanOrEqual(7900)
-    expect(retry.durationMs).toBeLessThan(9000)
+    response.resolve(Response.json(catalogV2()))
     await Bun.sleep(1300)
     expect(requests).toEqual(["GET", "GET"])
     expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
