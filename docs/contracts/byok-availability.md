@@ -143,6 +143,11 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
   此前分类码只到 `fetchPlatformModels()` 的返回值为止 —— 三个刷新入口(启动、登录后 respawn 前、
   `models-platform-live` IPC)一个都不消费它,于是「失败处理」写得再好,用户永远看不到。
   横幅是 warning 而不是 error:BYOK 与上次成功的缓存目录照常可用,这是降级不是阻断。
+  #1500:实际 `TimeoutError` 的分类码为 `timeout`,经同一横幅说明超时。首试仍最多等待 8 秒,
+  超时后约 1 秒后台补试一次(仍最多 8 秒),首轮调用不等待补试;成功经现有快照路径清空失败状态,
+  再次失败保留 LKG/BYOK。HTTP 拒绝与契约不兼容不补试。新刷新或账号身份变化使旧轮失效,
+  旧轮不得写快照或覆盖 health。GET 完成日志仅记 origin/path、method、attempt、durationMs
+  与 HTTP status/异常类别,不记录查询、凭据、头或正文。
   contract-incompatible 两个通道都记(main 侧「最后一次刷新结局」是单一真源),renderer 侧由
   `CatalogFailureBanner` 在契约横幅在场时自抑制 —— 两条横幅是同一个 fixed 位。
 
