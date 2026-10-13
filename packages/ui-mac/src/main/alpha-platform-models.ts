@@ -11,8 +11,8 @@
 //   3. getEffectiveCatalog —— picker 的目录视图:平台段经**唯一投影**装配 + liveSync 来源标注
 //      (live/cache/static,降级提示 B20;picker 永不空白)。
 //
-// 刷新点只有两处:启动(main/index.ts,fire-and-forget)与登录后 respawn 前。**picker 打开不刷新** ——
-// 那是既存缺陷,本模块不假装它已修好(见 models-ipc.ts 抬头对「为什么不加后台刷新」的记录)。
+// 刷新入口:启动(main/index.ts,fire-and-forget)、认证变化后 respawn 前与 models-platform-live IPC。
+// picker 的 models-catalog 读取不刷新;首试超时后的唯一一次补试在后台进行,不延长 respawn 等待。
 //
 // REQ-109 #595(owner 裁决 2026-07-24):**BYOK 段不再受平台任何干预**。网关 wire 的
 // `byok_providers` 撤销后没有任何策略消费方,本模块不再解码、缓存、记录或传递它;BYOK 目录只由本地
@@ -26,7 +26,7 @@
 import { resolveEndpoints } from "./alpha-endpoints"
 import { httpErrorCode } from "./platform-error-code"
 import { ContractIncompatibleError, decodeJsonContract, isContractIncompatibleError } from "@alpha-code/contracts-consumer"
-import { getAccessToken } from "./alpha-auth"
+import { getAccessToken, getAuthIdentityTag } from "./alpha-auth"
 import { getLogger } from "./logging"
 import { ALPHA_PATHS } from "../shared/alpha-config"
 import type { CloudResult, PlatformLiveModel } from "../preload/types"
@@ -43,15 +43,28 @@ export type PlatformModelsResult = CloudResult<{
   pricingBasisModelId: string
 }>
 
+let refreshSequence = 0
+
 export async function fetchPlatformModels(): Promise<PlatformModelsResult> {
+  return fetchModels(1)
+}
+
+async function fetchModels(attempt: number): Promise<PlatformModelsResult> {
   const base = resolveEndpoints().platform
   if (!base) return { error: "no-platform-endpoint" }
+  const url = new URL(`${base}${ALPHA_PATHS.models}`)
+  const sequence = refreshSequence
+  const identity = getAuthIdentityTag()
+  const started = Date.now()
+  let status: number | undefined
+  let exception: string | undefined
   try {
     const token = getAccessToken("model.invoke") // /v1/models 不强制鉴权;持登录态带上 → 网关按租户 edition 收窄
     const res = await fetch(`${base}${ALPHA_PATHS.models}`, {
       headers: token ? { authorization: `Bearer ${token}` } : {},
       signal: AbortSignal.timeout(8000),
     })
+    status = res.status
     if (res.status === 401) return { error: "unauthorized" }
     // [#940] 平台拒绝经唯一咽喉:分类码优先,无码保持 http-<status>。
     if (!res.ok) return { error: await httpErrorCode(res) }
@@ -77,53 +90,78 @@ export async function fetchPlatformModels(): Promise<PlatformModelsResult> {
       pricingBasisModelId: j.pricing_basis_model_id,
     }
   } catch (error) {
+    exception = error instanceof Error ? error.name : "unknown"
     if (isContractIncompatibleError(error)) {
       // 上报走独立通道(alpha-contract-health → renderer Banner);目录读取路径不受影响。
-      reportContractFailure(error)
+      if (sequence === refreshSequence && identity === getAuthIdentityTag()) reportContractFailure(error)
       return { error: "contract-incompatible" }
     }
-    getLogger().warn("alpha-platform-models: fetch failed", error)
-    return { error: "network" }
+    return { error: exception === "TimeoutError" ? "timeout" : "network" }
+  } finally {
+    // 只记录完成字段;URL 查询、凭据和错误消息可能含秘密,不进入日志。
+    getLogger().log("alpha-platform-models: request completed", {
+      origin: url.origin,
+      path: url.pathname,
+      method: "GET",
+      attempt,
+      durationMs: Date.now() - started,
+      ...(status === undefined ? {} : { status }),
+      ...(exception === undefined ? {} : { exception }),
+    })
   }
 }
 
 /** 拉网关目录并同步到本地 catalog LKG(成功才写;失败保留 last-known,fail-open),返回拉取结果本身。
- *  调用点:启动(fire-and-forget,不阻塞窗口,B1 纪律)、登录后 respawn 前。 */
+ *  启动、认证变化后的 respawn 与 IPC 共用。首试仍最多 8 秒;timeout 约 1 秒后后台补试一次,
+ *  补试也最多 8 秒。新刷新或账号身份变化使旧轮失效,包括旧轮的契约/目录 health 上报。 */
 let syncedThisSession = false
 export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformModelsResult> {
-  const r = await fetchPlatformModels()
-  // #1084(#987 CHOICE=A):刷新结局在**这里**落到用户可观察出口 —— 三个刷新入口(启动、登录后
-  // respawn 前、models-platform-live IPC)共用本函数,所以调用点上的 `.catch(() => {})` 再也吞不掉
-  // 分类码。成功走到末尾清空出口;下面每一条提前返回都必须先上报,否则那条路径又变回静默。
-  if ("error" in r) {
-    reportCatalogRefresh(r.error)
-    return r
-  }
-  try {
-    // writeCatalogSnapshot 再校验一次同一份判据后才落盘 —— 写侧与读侧共用一个校验函数,
-    // 「什么算有效缓存」在本仓只有一份定义。
-    const written = writeCatalogSnapshot(userDataPath, {
-      fetchedAt: new Date().toISOString(),
-      edition: r.edition,
-      pricingBasisModelId: r.pricingBasisModelId,
-      models: r.models.map((m) => ({ id: m.id, provider: m.provider, minPlan: m.minPlan, pricing: m.pricing })),
-    })
-    if (!written) {
-      getLogger().warn("alpha-platform-models: refusing to overwrite last-known-good with an invalid snapshot")
-      // 拉到了,但那份快照过不了落盘侧的同一份判据 ⇒ 用户看到的目录仍是旧的。这也是刷新失败。
-      reportCatalogRefresh("snapshot-rejected")
+  const sequence = ++refreshSequence
+  const identity = getAuthIdentityTag()
+  const current = () => sequence === refreshSequence && identity === getAuthIdentityTag()
+  const refresh = async (attempt: number) => {
+    const r = await fetchModels(attempt)
+    if (!current()) return r
+    // #1084(#987 CHOICE=A):刷新结局在**这里**落到用户可观察出口 —— 三个刷新入口(启动、登录后
+    // respawn 前、models-platform-live IPC)共用本函数,所以调用点上的 `.catch(() => {})` 再也吞不掉
+    // 分类码。成功走到末尾清空出口;下面每一条提前返回都必须先上报,否则那条路径又变回静默。
+    if ("error" in r) {
+      reportCatalogRefresh(r.error)
       return r
     }
-    syncedThisSession = true
-    getLogger().log("alpha-platform-models: catalog snapshot synced", {
-      edition: r.edition,
-      models: r.models.length,
-      pricingBasisModelId: r.pricingBasisModelId,
-    })
-    reportCatalogRefresh(null)
-  } catch (error) {
-    getLogger().warn("alpha-platform-models: cache write failed", error)
-    reportCatalogRefresh("cache-write-failed")
+    try {
+      // writeCatalogSnapshot 再校验一次同一份判据后才落盘 —— 写侧与读侧共用一个校验函数,
+      // 「什么算有效缓存」在本仓只有一份定义。
+      const written = writeCatalogSnapshot(userDataPath, {
+        fetchedAt: new Date().toISOString(),
+        edition: r.edition,
+        pricingBasisModelId: r.pricingBasisModelId,
+        models: r.models.map((m) => ({ id: m.id, provider: m.provider, minPlan: m.minPlan, pricing: m.pricing })),
+      })
+      if (!written) {
+        getLogger().warn("alpha-platform-models: refusing to overwrite last-known-good with an invalid snapshot")
+        // 拉到了,但那份快照过不了落盘侧的同一份判据 ⇒ 用户看到的目录仍是旧的。这也是刷新失败。
+        reportCatalogRefresh("snapshot-rejected")
+        return r
+      }
+      syncedThisSession = true
+      getLogger().log("alpha-platform-models: catalog snapshot synced", {
+        edition: r.edition,
+        models: r.models.length,
+        pricingBasisModelId: r.pricingBasisModelId,
+      })
+      reportCatalogRefresh(null)
+    } catch (error) {
+      getLogger().warn("alpha-platform-models: cache write failed", error)
+      reportCatalogRefresh("cache-write-failed")
+    }
+    return r
+  }
+  const r = await refresh(1)
+  if ("error" in r && r.error === "timeout" && current()) {
+    setTimeout(() => {
+      if (current()) void refresh(2)
+    }, 1000)
   }
   return r
 }

@@ -22,7 +22,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-const logger = { log: () => {}, warn: () => {}, error: () => {} }
+const logged: unknown[][] = []
+const logger = {
+  log: (...args: unknown[]) => logged.push(args),
+  warn: (...args: unknown[]) => logged.push(args),
+  error: (...args: unknown[]) => logged.push(args),
+}
+let endpoint = "https://gateway.test"
+let accessToken: string | undefined
+let identity: string | undefined
 
 /** 生产代码注册到 ipcMain 上的 handler —— 测试只能经这里拿到它们。 */
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -70,9 +78,9 @@ mock.module("./logging", () => ({
   rotateServerLogs: () => {},
 }))
 mock.module("./alpha-endpoints", () => ({
-  resolveEndpoints: () => ({ platform: "https://gateway.test" }),
+  resolveEndpoints: () => ({ platform: endpoint }),
 }))
-mock.module("./alpha-auth", () => ({ getAccessToken: () => undefined }))
+mock.module("./alpha-auth", () => ({ getAccessToken: () => accessToken, getAuthIdentityTag: () => identity }))
 
 const { registerModelsIpcHandlers } = await import("./models-ipc")
 const { buildAlphaModelConfig, getModelCatalog } = await import("./alpha-models")
@@ -142,6 +150,10 @@ const invokeRefreshHealth = () => handlers.get("alpha-catalog-health")!() as { c
 const lastPush = () => pushed.filter((p) => p.channel === "alpha-catalog-failure").at(-1)?.payload
 
 beforeEach(() => {
+  endpoint = "https://gateway.test"
+  accessToken = undefined
+  identity = undefined
+  logged.length = 0
   for (const key of MANAGED) {
     saved[key] = process.env[key]
     delete process.env[key]
@@ -160,6 +172,7 @@ beforeEach(() => {
   writeFileSync(join(userData, "alpha-secrets", "ALPHA_API_KEY"), "jwt", { mode: 0o600 })
 })
 afterEach(() => {
+  targets.splice(0).forEach((stop) => stop())
   globalThis.fetch = realFetch
   for (const key of MANAGED) {
     if (saved[key] === undefined) delete process.env[key]
@@ -167,6 +180,22 @@ afterEach(() => {
   }
   for (const dir of [userData, configDir]) rmSync(dir, { recursive: true, force: true })
 })
+
+// #1500:超时只由本地 HTTP 靶站的真实延迟产生,不替换 fetch / AbortSignal / 时钟。
+const targets: (() => void)[] = []
+const startTarget = (fetch: (request: Request) => Response | Promise<Response>) => {
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch })
+  targets.push(() => server.stop(true))
+  endpoint = server.url.origin
+}
+const completed = () => logged.filter((entry) => entry[0] === "alpha-platform-models: request completed")
+const waitFor = async (ready: () => boolean, timeoutMs = 11000) => {
+  const started = Date.now()
+  while (!ready()) {
+    if (Date.now() - started >= timeoutMs) throw new Error("HTTP target observation timed out")
+    await Bun.sleep(20)
+  }
+}
 
 const engineModelIds = () => Object.keys((buildAlphaModelConfig(userData)!.provider.alpha as any).models)
 
@@ -334,4 +363,233 @@ describe("#1084 目录刷新失败的用户可观察出口", () => {
     expect(invokeRefreshHealth()).toBeNull()
     expect(lastPush()).toBeNull()
   })
+})
+
+describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
+  test("AC1:首试真实 8 秒超时先返回,后台一次补试恢复快照并清 health", async () => {
+    const requests: string[] = []
+    const events: string[] = []
+    const first = Promise.withResolvers<Response>()
+    const retry = Promise.withResolvers<Response>()
+    startTarget((request) => {
+      requests.push(request.method)
+      events.push(`request-${requests.length}`)
+      // Keep each response pending until its behavioral boundary has been observed.
+      return requests.length === 1 ? first.promise : retry.promise
+    })
+    expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+    events.push("first-returned")
+    expect(events).toEqual(["request-1", "first-returned"])
+    expect(requests).toEqual(["GET"])
+    expect(existsSync(liveAllowlistPath(userData))).toBe(false)
+    expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
+    expect(lastPush()).toMatchObject({ code: "timeout" })
+    first.resolve(Response.json(catalogV2()))
+    await waitFor(() => requests.length === 2)
+    expect(events).toEqual(["request-1", "first-returned", "request-2"])
+    expect(existsSync(liveAllowlistPath(userData))).toBe(false)
+    expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
+    retry.resolve(Response.json(catalogV2()))
+    await waitFor(() => completed().length === 2)
+    expect(requests).toEqual(["GET", "GET"])
+    expect(invokeCatalog().liveSync.status).toBe("live")
+    expect(invokeCatalog().pricingBasisModelId).toBe("deepseek-v4-flash")
+    expect(invokeCatalog().platformModels.find((model) => model.id === "claude-fable-5")?.pricing).toEqual({
+      input: 71.4,
+      output: 178.6,
+    })
+    expect(invokeRefreshHealth()).toBeNull()
+    expect(lastPush()).toBeNull()
+    expect(completed()[0]![1]).toEqual({
+      origin: endpoint,
+      path: "/v1/models",
+      method: "GET",
+      attempt: 1,
+      durationMs: expect.any(Number),
+      exception: "TimeoutError",
+    })
+    expect(completed()[1]![1]).toEqual({
+      origin: endpoint,
+      path: "/v1/models",
+      method: "GET",
+      attempt: 2,
+      durationMs: expect.any(Number),
+      status: 200,
+    })
+    expect(logged.flat().some((value) => value instanceof Error)).toBe(false)
+    await Bun.sleep(1200)
+    expect(requests).toHaveLength(2)
+  }, 30000)
+
+  test("AC2:两次真实超时后无第三次 GET,LKG 字节和本地 BYOK 保持可用", async () => {
+    let delayed = false
+    const requests: string[] = []
+    const response = Promise.withResolvers<Response>()
+    startTarget((request) => {
+      if (delayed) {
+        requests.push(request.method)
+        return response.promise
+      }
+      return Response.json(catalogV2())
+    })
+    await invokePlatformLive()
+    const bytes = readFileSync(liveAllowlistPath(userData))
+    const byok = structuredClone(invokeCatalog().byokProviders)
+    delayed = true
+    logged.length = 0
+    expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+    await waitFor(() => completed().length === 2)
+    expect(completed().map((entry) => entry[1])).toEqual([
+      expect.objectContaining({ attempt: 1, exception: "TimeoutError", durationMs: expect.any(Number) }),
+      expect.objectContaining({ attempt: 2, exception: "TimeoutError", durationMs: expect.any(Number) }),
+    ])
+    response.resolve(Response.json(catalogV2()))
+    await Bun.sleep(1300)
+    expect(requests).toEqual(["GET", "GET"])
+    expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
+    expect(invokeCatalog().platformModels).toHaveLength(12)
+    expect(invokeCatalog().byokProviders).toEqual(byok)
+    expect(byok.length).toBeGreaterThan(0)
+    expect(byok.every((provider) => provider.models.length > 0)).toBe(true)
+    expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
+  }, 30000)
+
+  test("AC3:安全完成日志可计数,真实 429 样本和 V1 拒绝保留原码且不补试", async () => {
+    // 429 字节沿用 alpha-platform-catalog.cases.ts 的真 worker 捕获样本(原第 276–286 行)。
+    const rateLimited = '{"error":{"message":"rate limited: too many requests from this IP","code":"rate_limited"}}'
+    let rejected = true
+    const requests: string[] = []
+    startTarget((request) => {
+      requests.push(request.method)
+      expect(request.headers.get("authorization")).toBe("Bearer request-secret-1500")
+      return rejected
+        ? new Response(rateLimited, { status: 429, headers: { "set-cookie": "response-secret-1500" } })
+        : Response.json(catalogV1())
+    })
+    const origin = endpoint
+    endpoint += "?token=query-secret-1500"
+    accessToken = "request-secret-1500"
+    expect(await invokePlatformLive()).toEqual({ error: "rate_limited" })
+    expect(invokeRefreshHealth()).toMatchObject({ code: "rate_limited" })
+    await Bun.sleep(1200)
+    expect(requests).toHaveLength(1)
+    rejected = false
+    expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
+    expect(invokeRefreshHealth()).toMatchObject({ code: "contract-incompatible" })
+    await Bun.sleep(1200)
+    expect(requests).toEqual(["GET", "GET"])
+    expect(completed()).toHaveLength(2)
+    expect(completed()[0]![1]).toEqual({
+      origin,
+      path: "/",
+      method: "GET",
+      attempt: 1,
+      durationMs: expect.any(Number),
+      status: 429,
+    })
+    expect(completed()[1]![1]).toEqual({
+      origin,
+      path: "/",
+      method: "GET",
+      attempt: 1,
+      durationMs: expect.any(Number),
+      status: 200,
+      exception: expect.any(String),
+    })
+    for (const secret of [
+      "Authorization",
+      "Cookie",
+      "request-secret-1500",
+      "query-secret-1500",
+      "response-secret-1500",
+      rateLimited,
+      JSON.stringify(catalogV1()),
+    ]) {
+      expect(JSON.stringify(logged)).not.toContain(secret)
+    }
+  })
+
+  for (const change of ["refresh", "account"] as const) {
+    test(`AC4:补试开始前 ${change} 变化使旧轮失效,首轮按 8 秒返回`, async () => {
+      identity = "account-a"
+      let phase = "seed"
+      const requests: number[] = []
+      const newer = catalogV2()
+      newer.data[0].pricing_multiplier = { input: 2, output: 3 }
+      startTarget(async () => {
+        if (phase === "seed") return Response.json(catalogV2())
+        requests.push(Date.now())
+        if (phase === "first") await Bun.sleep(8500)
+        return Response.json(phase === "new" ? newer : catalogV2())
+      })
+      await invokePlatformLive()
+      phase = "first"
+      expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+      expect(requests).toHaveLength(1)
+      if (change === "refresh") {
+        phase = "new"
+        expect((await invokePlatformLive()).error).toBeUndefined()
+      }
+      if (change === "account") identity = "account-b"
+      const bytes = readFileSync(liveAllowlistPath(userData))
+      const health = invokeRefreshHealth()
+      const pushes = pushed.length
+      await Bun.sleep(1400)
+      expect(requests).toHaveLength(change === "refresh" ? 2 : 1)
+      expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
+      expect(invokeRefreshHealth()).toEqual(health)
+      expect(pushed).toHaveLength(pushes)
+    }, 30000)
+  }
+
+  for (const race of [
+    { change: "refresh", reply: "success" },
+    { change: "refresh", reply: "429" },
+    { change: "account", reply: "success" },
+    { change: "account", reply: "V1" },
+  ] as const) {
+    test(`AC4:补试在途时 ${race.change} 变化,旧 ${race.reply} 不覆盖快照或 health`, async () => {
+      identity = "account-a"
+      let seeded = false
+      const requests: number[] = []
+      const release = Promise.withResolvers<void>()
+      const newer = catalogV2()
+      newer.data[0].pricing_multiplier = { input: 2, output: 3 }
+      startTarget(async () => {
+        if (!seeded) return Response.json(catalogV2())
+        requests.push(Date.now())
+        const attempt = requests.length
+        if (attempt === 1) await Bun.sleep(8500)
+        if (attempt === 2) {
+          await release.promise
+          if (race.reply === "429")
+            return new Response(
+              '{"error":{"message":"rate limited: too many requests from this IP","code":"rate_limited"}}',
+              { status: 429 },
+            )
+          return Response.json(race.reply === "V1" ? catalogV1() : catalogV2())
+        }
+        return Response.json(attempt === 3 ? newer : catalogV2())
+      })
+      await invokePlatformLive()
+      seeded = true
+      logged.length = 0
+      expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+      expect(requests).toHaveLength(1)
+      await waitFor(() => requests.length === 2)
+      if (race.change === "refresh") expect((await invokePlatformLive()).error).toBeUndefined()
+      if (race.change === "account") identity = "account-b"
+      const bytes = readFileSync(liveAllowlistPath(userData))
+      const health = invokeRefreshHealth()
+      const contract = getContractFailure()
+      const pushes = pushed.length
+      release.resolve()
+      await waitFor(() => completed().length === (race.change === "refresh" ? 3 : 2))
+      expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
+      expect(invokeRefreshHealth()).toEqual(health)
+      expect(getContractFailure()).toEqual(contract)
+      expect(pushed).toHaveLength(pushes)
+      expect(requests).toHaveLength(race.change === "refresh" ? 3 : 2)
+    }, 30000)
+  }
 })

@@ -91,14 +91,19 @@ describe("alpha-catalog 完整性", () => {
     expect(memberIds.sort()).toEqual(["skill:brand-guidelines", "skill:canvas-design"])
   })
 
-  test("S23 存量条目:mcp:dbhub(E6)在场且只读档;中国办公三件套随 REQ-081 退役不在场", () => {
+  test("AC4 snapshot installable view excludes GitHub, DBHub, unresolved notes and invalid bundle references", () => {
+    const entries = installableCatalogEntries(catalog.entries)
+    const ids = new Set(entries.map((entry) => entry.id))
+    expect(ids.has("mcp:github")).toBe(false)
+    expect(ids.has("mcp:dbhub")).toBe(false)
+    for (const entry of entries) {
+      expect(entry._verify?.trim() || entry.installSpec?._verify?.trim(), entry.id).toBeFalsy()
+      for (const item of entry.bundleItems ?? []) expect(ids.has(item.catalogEntryId), entry.id).toBe(true)
+    }
+  })
+
+  test("中国办公三件套随 REQ-081 退役不在场", () => {
     const ids = new Set(catalog.entries.map((e) => e.id))
-    expect(ids.has("mcp:dbhub")).toBe(true)
-    // dbhub 只读档:--readonly 必须在命令里(0.12.0 CLI 档;丢失=静默变可写,supply-chain 回归锁)
-    const dbhub = catalog.entries.find((e) => e.id === "mcp:dbhub")!
-    const spec = dbhub.installSpec as McpInstallSpec
-    expect(spec.command).toContain("--readonly")
-    expect(spec.mirrorCommand).toContain("--readonly")
     // S23 同批上架的 dingtalk(E2)及 feishu/yuque/bundle:china-office 已于 2026-07-09 随
     // REQ-081 从 C 端 catalog 退役(产品拍板「接入形态未想清楚,先下架」,git 留档可重上架);
     // 2026-07-13.1 快照刷新起不在场是正确现实。未来 conscious 重上架时连同本断言一起更新

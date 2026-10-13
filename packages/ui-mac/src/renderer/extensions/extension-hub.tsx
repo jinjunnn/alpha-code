@@ -894,11 +894,26 @@ export function ExtensionHub(props: {
       .toLowerCase()
       .includes(q)
   }
+  // 公示阻断事实(main 派生已验公示 LKG + 随包基线;advisory 永远赢,§1)—— 每次打开刷新。
+  // r1-1(Major):**不可判定 ≠ 空集** —— 加载中 / IPC 失败 / 公示不新鲜(fresh=false:冷启动、
+  // 过期 LKG)时,renderer 无法证明条目未被公示阻断,推荐面必须保守(不建货架,诚实降级文案),
+  // 与 main 闸「advisories 不可验即拒激活」同向 fail-closed。fetcher 自吞异常归一为不可判定态。
+  const [advisoryFacts] = createResource(
+    () => (props.open() ? "open" : null),
+    () => extIpc.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
+  )
+  const advisoryState = createMemo<"loading" | "unavailable" | "ready">(() => {
+    if (advisoryFacts.loading) return "loading"
+    if (advisoryFacts.error) return "unavailable"
+    const f = advisoryFacts()
+    return f && f.fresh ? "ready" : "unavailable"
+  })
+  const advisoryBlocked = createMemo(() => new Set(advisoryFacts()?.ids ?? []))
   // REQ-135:the signed snapshot remains byte-honest for installed-item identity, while every surface
-  // that can lead to installation consumes this retirement-filtered view.
-  const installableEntries = createMemo(() => installableCatalogEntries(catalog().entries))
+  // that can lead to installation consumes this installable view, including verified advisory blocks.
+  const installableEntries = createMemo(() => installableCatalogEntries(catalog().entries, advisoryBlocked()))
   const installablePackages = createMemo(() =>
-    installableCatalogPackages(catalog().packages ?? [], catalog().entries),
+    installableCatalogPackages(catalog().packages ?? [], catalog().entries, advisoryBlocked()),
   )
   const byType = (type: CatalogEntry["type"]) => installableEntries().filter((e) => e.type === type)
   // 浏览区/搜索共用的筛选视图(T7/E11:来源+许可证)。
@@ -932,21 +947,6 @@ export function ExtensionHub(props: {
   const statusOf = (id: string): CurationStatus => curationOf(curationById(), id)
   // 复审期限比较的时钟:每次打开 hub 取一次(合同:消费端时钟仅用于此比较)。
   const nowIso = createMemo(() => (props.open(), new Date().toISOString()))
-  // 公示阻断事实(main 派生已验公示 LKG + 随包基线;advisory 永远赢,§1)—— 每次打开刷新。
-  // r1-1(Major):**不可判定 ≠ 空集** —— 加载中 / IPC 失败 / 公示不新鲜(fresh=false:冷启动、
-  // 过期 LKG)时,renderer 无法证明条目未被公示阻断,推荐面必须保守(不建货架,诚实降级文案),
-  // 与 main 闸「advisories 不可验即拒激活」同向 fail-closed。fetcher 自吞异常归一为不可判定态。
-  const [advisoryFacts] = createResource(
-    () => (props.open() ? "open" : null),
-    () => extIpc.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
-  )
-  const advisoryState = createMemo<"loading" | "unavailable" | "ready">(() => {
-    if (advisoryFacts.loading) return "loading"
-    if (advisoryFacts.error) return "unavailable"
-    const f = advisoryFacts()
-    return f && f.fresh ? "ready" : "unavailable"
-  })
-  const advisoryBlocked = createMemo(() => new Set(advisoryFacts()?.ids ?? []))
   // 推荐页四货架(固定序 核心→精选→接入→实验室;空货架隐藏;未策展/归档/失养/过期/公示不进)。
   // 公示事实未就绪 = 零货架(保守;featured JSX 按 advisoryState 给诚实降级态)。
   const shelves = createMemo(() =>
