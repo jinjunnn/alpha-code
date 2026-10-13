@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import bundledCatalog from "../src/renderer/extensions/alpha-catalog.json"
+import d5OldCatalog from "../src/renderer/extensions/testvectors/d5-old-catalog.json"
 import type { CatalogPackageViewV1 } from "../src/shared/catalog-package-view"
 import type {
   AlphaPackageEnvelopeV1,
@@ -258,7 +259,16 @@ const packageFixture = async () => {
     source: "remote",
     catalog: {
       version: "2026-07-31",
-      entries: bundledCatalog.entries,
+      // Legacy key-form coverage mutates real Git with D5 DBHub's requiredEnvVars.
+      entries: bundledCatalog.entries.map((entry) =>
+        entry.id !== "mcp:git" ? entry : {
+          ...entry,
+          installSpec: {
+            ...entry.installSpec,
+            requiredEnvVars: d5OldCatalog.entries.find((entry) => entry.id === "mcp:dbhub")!.installSpec!.requiredEnvVars,
+          },
+        },
+      ),
       packages: envelopes,
     },
     version: "2026-07-31",
@@ -550,11 +560,10 @@ async function mountHarness(options?: {
     else process.env.ALPHA_GLOBAL_DIR = previousRoot
     rmSync(tmp, { recursive: true, force: true })
   })
-  await waitFor(() =>
-    expect(
-      document.querySelectorAll("[data-package-card]").length,
-    ).toBe(6),
-  )
+  await waitFor(() => {
+    expect(browseResults.length).toBeGreaterThan(0)
+    expectInstallablePackageCards()
+  })
   return {
     browseResults,
     detailResults,
@@ -597,6 +606,26 @@ function persistentToastsContaining(canary: string): number {
 }
 
 const sleep = (ms: number) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+
+const unavailablePackageIds = [
+  "package:renderer-update",
+  "package:renderer-blocked",
+  "package:renderer-payload-blocked",
+]
+
+// https://github.com/jinjunnn/alpha-web/issues/255 裁决第 1 条取代「分类里可看不可装」旧契约。
+function expectInstallablePackageCards() {
+  const ids = Array.from(
+    document.querySelectorAll("[data-package-card]"),
+    (card) => card.getAttribute("data-package-card"),
+  )
+  expect(ids).toHaveLength(3)
+  expect(ids).toEqual(["package:renderer-ready", "package:renderer-prerequisite", MIXED_BUNDLE_PACKAGE_ID])
+  for (const id of unavailablePackageIds) {
+    expect(document.querySelector(`[data-package-card='${id}']`)).toBeNull()
+    expect(document.querySelector(`[data-package-detail='${id}']`)).toBeNull()
+  }
+}
 
 function packageCard(catalogId: string) {
   const card = document.querySelector<HTMLElement>(`[data-package-card="${catalogId}"]`)
@@ -862,6 +891,17 @@ describe("package detail production renderer path", () => {
         action: zh["alpha.ext.packageActionResolvePrerequisite"],
       },
     ]) {
+      const view = browse.catalog.packages.find((view) => view.catalogId === expected.catalogId)
+      expect(view).toMatchObject({
+        catalogId: expected.catalogId,
+        verdict: expected.verdict,
+        prerequisites: { status: expected.prerequisite },
+      })
+      if (expected.verdict !== "compatible") {
+        expect(view!.action.kind).toBe(expected.verdict === "update-required" ? "update-alpha" : "none")
+        expect(document.querySelector(`[data-package-card='${expected.catalogId}']`)).toBeNull()
+        continue
+      }
       const card = packageCard(expected.catalogId)
       expect({
         catalogId: card.getAttribute("data-package-card"),
@@ -880,13 +920,19 @@ describe("package detail production renderer path", () => {
         Array.from(document.querySelectorAll("[data-package-card]")).map(
           (card) => card.getAttribute("data-package-card"),
         ),
-      ).toEqual(["package:renderer-update"]),
+      ).toEqual([]),
+    )
+    expect(document.querySelector("[data-package-detail='package:renderer-update']")).toBeNull()
+    search!.value = "renderer-ready"
+    search!.dispatchEvent(new Event("input", { bubbles: true }))
+    await waitFor(() =>
+      expect(
+        Array.from(document.querySelectorAll("[data-package-card]"), (card) => card.getAttribute("data-package-card")),
+      ).toEqual(["package:renderer-ready"]),
     )
     search!.value = ""
     search!.dispatchEvent(new Event("input", { bubbles: true }))
-    await waitFor(() =>
-      expect(document.querySelectorAll("[data-package-card]").length).toBe(6),
-    )
+    await waitFor(expectInstallablePackageCards)
 
     click(packageCard("package:renderer-ready"))
     await waitFor(() =>
@@ -1404,70 +1450,49 @@ describe("package detail production renderer path", () => {
     expect(harness.installIntents).toHaveLength(2)
   })
 
-  test("update-required checks for an app update and both blocked reasons stay off install IPC", async () => {
+  test("unavailable packages have no recommendation, category, search or detail entry and trigger no install/update IPC", async () => {
     const harness = await mountHarness()
-    click(packageCard("package:renderer-update"))
-    await waitFor(() =>
-      expect(
-        document.querySelector("[data-package-detail='package:renderer-update']"),
-      ).toBeInstanceOf(HTMLElement),
-    )
-    // 第二个不同的 verdict 值:与用例 2 的 "compatible" 一起,让 data-verdict 钉不成常量。
+    const browse = harness.browseResults.at(-1) as { catalog: { packages: CatalogPackageViewV1[] } }
+    expect(browse.catalog.packages.find((view) => view.catalogId === "package:renderer-update")).toMatchObject({
+      verdict: "update-required",
+      presentation: { displayName: "Renderer Update Package", description: "Only this fixture carries this description." },
+    })
     expect(
-      document.querySelector("[data-package-detail] [data-verdict]")?.getAttribute("data-verdict"),
-    ).toBe("update-required")
-    // 本票要修的就是这两行看得见的东西:update-required 以前把裸 package id 当标题、简介为空。
-    // 夹具的 presentation 与 corpus 不同 ⇒ 这两条同时杀掉「回落」「写死常量」「取错包」三种形状。
-    {
-      const detail = document.querySelector("[data-package-detail]")!
-      expect(detail.querySelector("h2")?.textContent).toBe("Renderer Update Package")
-      expect(detail.querySelector(".alpha-ext-dabout")?.textContent).toBe(
-        "Only this fixture carries this description.",
-      )
+      browse.catalog.packages.find((view) => view.catalogId === "package:renderer-blocked")!.action.reasonCode,
+    ).toBe("package-invalid")
+    expect(
+      browse.catalog.packages.find((view) => view.catalogId === "package:renderer-payload-blocked")!.action.reasonCode,
+    ).toBe("package-payload-integrity")
+    for (const section of ["featured", "connectors", "skills", "agents", "plugins", "bundles"] as const) {
+      setHubSection(section)
+      await flush()
+      if (section === "featured") expectInstallablePackageCards()
+      const search = document.querySelector<HTMLInputElement>(".alpha-ext-search input")!
+      for (const id of unavailablePackageIds) {
+        expect(document.querySelector(`[data-package-card='${id}']`)).toBeNull()
+        search.value = id
+        search.dispatchEvent(new Event("input", { bubbles: true }))
+        await waitFor(() => expect(document.querySelectorAll("[data-package-card]")).toHaveLength(0))
+        expect(document.querySelector(`[data-package-detail='${id}']`)).toBeNull()
+      }
+      search.value = ""
+      search.dispatchEvent(new Event("input", { bubbles: true }))
+      await flush()
     }
-    click(document.querySelector("[data-package-detail] .alpha-ext-dsub button"))
-    await waitFor(() => expect(harness.updateChecks()).toBe(1))
+    expect(harness.detailResults).toEqual([])
     expect(harness.installIntents).toEqual([])
-    click(document.querySelector(".alpha-ext-crumb-link"))
-    await waitFor(() => expect(document.querySelector("[data-package-detail]")).toBeNull())
-
-    for (const catalogId of [
-      "package:renderer-blocked",
-      "package:renderer-payload-blocked",
-    ]) {
-      const button = packageCard(catalogId).querySelector<HTMLButtonElement>("button")!
-      expect(button.disabled).toBe(true)
-      click(button)
-    }
-    await flush()
-    expect(harness.installIntents).toEqual([])
-    expect(harness.updateChecks()).toBe(1)
-
-    click(packageCard("package:renderer-blocked"))
-    await waitFor(() =>
-      expect(document.querySelector("[data-package-detail]")?.textContent).toContain(
-        zh["alpha.ext.packageReasonInvalid"],
-      ),
-    )
-    click(document.querySelector(".alpha-ext-crumb-link"))
-    await waitFor(() => expect(document.querySelector("[data-package-detail]")).toBeNull())
-    click(packageCard("package:renderer-payload-blocked"))
-    await waitFor(() =>
-      expect(document.querySelector("[data-package-detail]")?.textContent).toContain(
-        zh["alpha.ext.packageReasonPayloadIntegrity"],
-      ),
-    )
+    expect(harness.updateChecks()).toBe(0)
   })
 
   test("legacy MCP keeps optional-key copy and allows confirmation with an empty value", async () => {
     await mountHarness()
     setHubSection("connectors")
     await waitFor(() =>
-      expect(document.querySelector(".alpha-ext-card-name b[title='dbhub']")).toBeInstanceOf(
+      expect(document.querySelector(".alpha-ext-card-name b[title='git']")).toBeInstanceOf(
         HTMLElement,
       ),
     )
-    const card = document.querySelector(".alpha-ext-card-name b[title='dbhub']")!.closest(".alpha-ext-card")!
+    const card = document.querySelector(".alpha-ext-card-name b[title='git']")!.closest(".alpha-ext-card")!
     click(card.querySelector(".alpha-ext-add"))
     const keys = document.querySelector<HTMLElement>(".alpha-ext-confirm-keys")
     expect(keys).toBeInstanceOf(HTMLElement)
