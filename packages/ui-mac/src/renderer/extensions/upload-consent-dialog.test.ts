@@ -6,12 +6,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { build } from "vite"
+import { decodeContract } from "@alpha-code/contracts-consumer"
 import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
-import type { CloudUploadResult, UploadPreview } from "../../preload/types"
+import type { CloudJobEnvelope, CloudUploadResult, UploadPreview } from "../../preload/types"
 import type { UploadConsentDialog } from "./upload-consent-dialog"
 import type { CloudDispatchBox } from "./cloud-dispatch-box"
-import type { CloudPipelineSpec } from "./catalog-types"
+import type { ExtensionDetail } from "./extension-detail"
+import type { CatalogEntry, CloudPipelineSpec } from "./catalog-types"
+import bundledCatalog from "./alpha-catalog.json"
 import { dict as zh } from "../i18n/zh"
 
 type Runtime = {
@@ -19,6 +22,7 @@ type Runtime = {
   render: typeof render
   UploadConsentDialog: typeof UploadConsentDialog
   CloudDispatchBox: typeof CloudDispatchBox
+  ExtensionDetail: typeof ExtensionDetail
 }
 
 const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-upload-consent-render-"))
@@ -355,5 +359,131 @@ describe("four approved upload UI outcomes", () => {
     const err = document.querySelector(".alpha-ext-card-err")?.textContent ?? ""
     expect(err).toContain(zh["alpha.cloud.consent.errScope"])
     expect(err).not.toContain("upload-main-gate-required")
+  })
+})
+
+// Server shapes come from the pinned producer corpus, not a handwritten HTTP payload.
+// Input/result contents below are synthetic; fields match gateway/src/pipelines.ts researchRun/docsRun.
+const producer = join(import.meta.dir, "../../../../alpha-contracts-consumer/vendor/alpha-platform/contracts/v1/fixtures/producer")
+const requestFixture = (await Bun.file(join(producer, "cloud-job-request.json")).json()).value
+const acceptedFixture = (await Bun.file(join(producer, "cloud-job-accepted.json")).json()).value
+const statusFixture = (await Bun.file(join(producer, "cloud-job-status.json")).json()).value
+
+function mountCloudEntry(id: string, kind: CloudPipelineSpec["pipelineKind"], result: unknown) {
+  const entry = {
+    ...bundledCatalog.entries.find((entry) => entry.id === (kind === "office-report" ? "cloud:docs" : id))!,
+    id,
+    displayName: id,
+    installSpec: { ...spec, pipelineKind: kind },
+  } as CatalogEntry
+  const envelopes: CloudJobEnvelope[] = []
+  const saves: unknown[][] = []
+  const opened: string[] = []
+  let event: ((payload: { jobId: string; event: string; data: unknown }) => void) | undefined
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    value: {
+      openDirectoryPicker: async () => ["/results"],
+      openPath: async (path: string) => { opened.push(path) },
+      cloud: {
+        dispatch: async (envelope: CloudJobEnvelope) => {
+          envelopes.push(envelope)
+          return { ...acceptedFixture, kind }
+        },
+        gitDiff: async () => ({ ok: true, diff: requestFixture.input.diff, source: "worktree" }),
+        status: async () => ({ ...statusFixture, job_id: acceptedFixture.job_id, kind, result }),
+        subscribe: async () => ({ ok: true }),
+        unsubscribe: async () => ({ ok: true }),
+        onEvent: (handler: typeof event) => { event = handler; return () => {} },
+        saveRun: async (...args: unknown[]) => {
+          saves.push(args)
+          return { ok: true, dir: "/results/.code-puppy/runs/job", files: kind === "office-report" ? [`artifacts/output.${id === "cloud:word" ? "docx" : id === "cloud:excel" ? "xlsx" : "pptx"}`] : [], warnings: [] }
+        },
+      },
+    },
+  })
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(runtime.render(() => runtime.createComponent(runtime.ExtensionDetail, {
+    target: { kind: "entry", entry },
+    ext: { store: { mcp: {}, receipts: [] }, isInstalled: () => false } as unknown as Parameters<typeof ExtensionDetail>[0]["ext"],
+    catalogVersion: bundledCatalog.version, byId: () => undefined, busy: () => null, crumb: "Cloud",
+    onBack: () => {}, onInstall: () => {}, onUninstall: () => {}, onOpenEntry: () => {},
+    onPackageAction: async () => undefined, cloudReady: () => true,
+    curationStatus: () => ({ kind: "uncurated" }), nowIso: () => "2026-10-12T00:00:00Z",
+    onToggleState: async () => {}, sessionViewFor: () => ({ on: false, textKey: "alpha.ext.sessionOffRow", tone: "muted" }),
+    sessionAvailable: () => false, sessionBusyFor: () => false, onSessionToggle: async () => {},
+  }), host))
+  return {
+    envelopes, saves, opened,
+    sse: (name: string) => event?.({ jobId: acceptedFixture.job_id, event: name, data: {} }),
+  }
+}
+
+describe("#1509 customization center cloud entries", () => {
+  test.each([
+    ["research", "question", { finalAnswer: "Research result\nSources: https://example.com" }],
+    ["docs", "code", { docs: "# Generated README\nUsage example" }],
+  ] as const)("AC1 %s detail dispatches producer-shaped input and displays/copies the final text", async (kind, field, result) => {
+    const harness = mountCloudEntry(`cloud:${kind}`, kind, result)
+    const input = document.querySelector<HTMLTextAreaElement>("textarea")
+    expect(input).not.toBeNull()
+    const button = document.querySelector<HTMLButtonElement>("[data-cloud-input]")!
+    expect(button.disabled).toBe(true)
+    input!.value = "  Input for the cloud task  "
+    input!.dispatchEvent(new Event("input", { bubbles: true }))
+    button.click()
+    await flush()
+    expect(harness.envelopes).toHaveLength(1)
+    expect(harness.envelopes[0]).toMatchObject({ autonomy: requestFixture.autonomy, kind, input: { [field]: "Input for the cloud task" } })
+    expect(decodeContract("CloudJobRequestV1", { ...requestFixture, ...harness.envelopes[0] }, "cloud-http").kind).toBe(kind)
+    harness.sse("workflow.step.completed")
+    await flush()
+    expect(document.querySelector("[data-live]")?.textContent).toContain("workflow.step.completed")
+    harness.sse("job.completed")
+    await flush()
+    const text = "finalAnswer" in result ? result.finalAnswer : result.docs
+    expect(document.querySelector("[data-cloud-result]")?.textContent).toBe(text)
+    document.querySelector<HTMLButtonElement>("[data-copy-cloud-result]")!.click()
+    await flush()
+    expect(await navigator.clipboard.readText()).toBe(text)
+    expect(harness.saves[0]).toEqual(["/results", acceptedFixture.job_id, harness.envelopes[0]])
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudDone"])
+    expect(document.body.textContent).not.toContain(zh["alpha.cloud.consent.legacyDiff"])
+  })
+
+  test.each([
+    ["word", "docx"], ["excel", "xlsx"], ["powerpoint", "pptx"],
+  ])("AC2 %s detail sends explicit %s and opens the downloaded file", async (name, format) => {
+    const harness = mountCloudEntry(`cloud:${name}`, "office-report", {})
+    const input = document.querySelector<HTMLTextAreaElement>("textarea")!
+    expect(input).not.toBeNull()
+    input.value = "Quarterly report"
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+    document.querySelector<HTMLButtonElement>("[data-cloud-input]")!.click()
+    await flush()
+    expect(harness.envelopes[0]).toMatchObject({ kind: "office-report", input: { topic: "Quarterly report", format } })
+    expect(decodeContract("CloudJobRequestV1", { ...requestFixture, ...harness.envelopes[0] }, "cloud-http").input).toEqual({ topic: "Quarterly report", format })
+    harness.sse("job.completed")
+    await flush()
+    expect(harness.saves[0]).toEqual(["/results", acceptedFixture.job_id, harness.envelopes[0]])
+    const file = document.querySelector<HTMLButtonElement>("[data-cloud-file]")!
+    expect(file.textContent).toBe(`artifacts/output.${format}`)
+    file.click()
+    await flush()
+    expect(harness.opened).toEqual([`/results/.code-puppy/runs/job/artifacts/output.${format}`])
+  })
+
+  test("AC3 code-review retains its diff dispatch and completed run display", async () => {
+    const harness = mountCloudEntry("cloud:code-review", "code-review", statusFixture.result)
+    expect(document.querySelector("textarea")).toBeNull()
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent === zh["alpha.cloud.consent.legacyDiff"])!.click()
+    await flush()
+    expect(harness.envelopes[0]).toMatchObject({ kind: requestFixture.kind, input: requestFixture.input })
+    harness.sse("job.completed")
+    await flush()
+    expect(harness.saves).toHaveLength(1)
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudDone"])
+    expect(document.querySelector("[data-cloud-result]")).toBeNull()
   })
 })
