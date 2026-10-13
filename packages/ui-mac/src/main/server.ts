@@ -553,7 +553,7 @@ export async function spawnLocalServer(
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   rotateServerLogs()
-  const runtimeGeneration = restoreCommittedOfficialConnectors()
+  const runtimeGeneration = tryGetAlphaEnvironment() ? restoreCommittedOfficialConnectors() : []
   const child = (() => {
     try {
       return (options.fork ?? electronNs.utilityProcess.fork)(sidecar, [], {

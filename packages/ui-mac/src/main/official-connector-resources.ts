@@ -252,15 +252,18 @@ export function collectOldOfficialConnectorVersions(root: string, name: Official
 
 /** Main admission/recovery share the same release decision; never touch a still-live version. */
 export function releaseOfficialConnectorResources(userDataPath: string, resources: readonly TxPreparedResourceV1[]) {
-  for (const resource of resources) {
-    if (resource.store === "official-connectors" && isOfficialConnector(resource.server)) {
-      const live = collectMergedMcpRefPathsStrict(resource.server)
-      if (!live.ok || live.refs.some((file) => file.includes(`/${resource.server}/${resource.version}/`)))
-        throw new Error("official connector version still referenced or config unreadable")
-      removeOfficialConnectorVersion(alphaGlobalRoot(), resource.server, resource.version)
-      continue
-    }
-    releasePreparedTxResources(userDataPath, [resource])
+  // Preserve the legacy batch release's collect-all-errors semantics, including live + orphan
+  // versions in one recovered journal. Official recipes cannot introduce mixed package graphs.
+  releasePreparedTxResources(
+    userDataPath,
+    resources.filter((resource) => resource.store !== "official-connectors"),
+  )
+  for (const resource of resources.filter((resource) => resource.store === "official-connectors")) {
+    if (!isOfficialConnector(resource.server)) throw new Error("invalid official connector resource")
+    const live = collectMergedMcpRefPathsStrict(resource.server)
+    if (!live.ok || live.refs.some((file) => file.includes(`/${resource.server}/${resource.version}/`)))
+      throw new Error("official connector version still referenced or config unreadable")
+    removeOfficialConnectorVersion(alphaGlobalRoot(), resource.server, resource.version)
   }
 }
 
