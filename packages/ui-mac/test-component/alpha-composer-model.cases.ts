@@ -248,6 +248,7 @@ function input(element: HTMLInputElement, value: string) {
 }
 
 afterEach(() => {
+  setLocale("zh")
   activeDisposals.splice(0).forEach((dispose) => dispose())
   resetAuthRecoveryForTests()
   setProviderLifecycleDeps()
@@ -1051,6 +1052,38 @@ describe("AlphaComposer production model seam", () => {
 })
 
 describe("ModelPickPop production component", () => {
+  test.each(["zh", "en"] as const)("#1506 AC1/AC3 [%s]:未登录提示与平台分组统一为 Code Puppy 模型", async (locale) => {
+    setLocale(locale)
+    for (const auth of [loggedOut, loggedIn]) {
+      installApi({ auth: async () => auth })
+      const mounted = mount(() =>
+        createComponent(ModelPickPop, {
+          contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+          directory: () => "/workspace",
+          selected: () => null,
+          onSelect: async () => {},
+          onPicked: () => {},
+        }),
+      )
+      await waitFor(() =>
+        expect(
+          mounted.host.querySelector(auth === loggedOut ? ".a-acct-banner.out .bt" : ".a-pop-label")?.textContent,
+        ).toBe(
+          auth === loggedOut
+            ? locale === "zh"
+              ? "登录解锁 Code Puppy 模型"
+              : "Sign in to unlock Code Puppy models"
+            : locale === "zh"
+              ? "Code Puppy 模型"
+              : "Code Puppy models",
+        ),
+      )
+      expect(mounted.host.textContent).not.toContain("代理节点")
+      mounted.dispose()
+    }
+    setLocale("zh")
+  })
+
   test("list/auth 瞬态失败显示恢复中，KEY 硬失败显示重试，不伪装成业务否定态", async () => {
     resetComposerModelProjection()
     installApi({

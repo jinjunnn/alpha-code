@@ -59,6 +59,7 @@ const [contractFailure, setContractFailure] = createSignal<ContractFailure | nul
 mock.module("../src/renderer/alpha-ui/providers", () => ({ useContractHealth: () => contractFailure }))
 
 const { CatalogFailureBanner } = await import("../src/renderer/alpha-ui/Banner")
+const { setLocale } = await import("../src/renderer/i18n")
 
 /** preload 桥替身:renderer 侧拿刷新结局只有这两条路,生产组件走的就是它们。 */
 function bridge(initial: CatalogRefreshFailure | null) {
@@ -87,13 +88,14 @@ beforeEach(() => {
   document.body.appendChild(host)
 })
 afterEach(() => {
+  setLocale("zh")
   dispose?.()
   dispose = undefined
   host.remove()
 })
 
 describe("#1084 目录刷新失败到得了用户", () => {
-  test("启动那次刷新已经失败 ⇒ 挂载即显示分类码(挂载前的失败不会丢)", async () => {
+  test("#1506 AC2/AC3:刷新失败横幅使用 Code Puppy 模型,保留旧清单/BYOK/原因码说明", async () => {
     bridge({ code: "rate_limited", at: "2026-08-23T00:00:00.000Z" })
     dispose = render(() => CatalogFailureBanner({}), host)
     await flush()
@@ -103,6 +105,15 @@ describe("#1084 目录刷新失败到得了用户", () => {
     // 文案走 i18n(不是组件里写死的字面量),且分类码真的贴在用户读得到的那行上。
     expect(node?.textContent).toContain(zh["alpha.model.refreshFailedTitle"])
     expect(node?.textContent).toContain("rate_limited")
+    expect(node?.querySelector(".a-banner-title")?.textContent).toBe("Code Puppy 模型清单刷新失败")
+    expect(node?.querySelector(".a-banner-detail")?.textContent).toBe(
+      "当前显示的是上次拿到的清单;自带 KEY 的节点不受影响。原因:rate_limited",
+    )
+    setLocale("en")
+    expect(node?.querySelector(".a-banner-title")?.textContent).toBe("Code Puppy models could not be refreshed")
+    expect(node?.querySelector(".a-banner-detail")?.textContent).toBe(
+      "Showing the last known list. Your own API keys are unaffected. Reason: rate_limited",
+    )
     // 降级不是阻断:BYOK 与上次缓存照常可用,所以是 warning 而不是 error/alert。
     expect(node?.querySelector(".a-banner")?.className).toContain("warning")
     expect(node?.querySelector(".a-banner")?.getAttribute("role")).toBe("status")
