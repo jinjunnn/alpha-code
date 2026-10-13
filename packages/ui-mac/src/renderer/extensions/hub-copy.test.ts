@@ -39,6 +39,7 @@ test("local preview refusal codes keep size, expiry and in-flight states distinc
     expect(extensionError(undefined, "alpha.ext.error.localInstall", "unknown-preview")).toBe(t("alpha.ext.error.previewExpired"))
     expect(extensionError(undefined, "alpha.ext.error.localInstall", "install-in-flight")).toBe(t("alpha.ext.error.previewBusy"))
     expect(extensionError("unrecognized diagnostic", "alpha.ext.error.installUnknown")).toBe(t("alpha.ext.error.installUnknown"))
+    expect(extensionError("constructor", "alpha.ext.error.installUnknown", "toString")).toBe(t("alpha.ext.error.installUnknown"))
     expect(extensionWarning("unrecognized diagnostic")).toBe(t("alpha.ext.error.warningUnknown"))
   }
 })

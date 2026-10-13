@@ -438,7 +438,7 @@ describe("#1509 customization center cloud entries", () => {
     expect(decodeContract("CloudJobRequestV1", { ...requestFixture, ...harness.envelopes[0] }, "cloud-http").kind).toBe(kind)
     harness.sse("workflow.step.completed")
     await flush()
-    expect(document.querySelector("[data-live]")?.textContent).toContain("workflow.step.completed")
+    expect(document.querySelector("[data-live]")?.textContent).toContain(zh["alpha.ext.cloudProgress"])
     harness.sse("job.completed")
     await flush()
     const text = "finalAnswer" in result ? result.finalAnswer : result.docs

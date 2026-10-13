@@ -214,10 +214,9 @@ const LOCAL_PACKAGE_ERROR_KEYS: Record<string, Parameters<typeof t>[0]> = {
 export function extensionError(reason: string | undefined, fallback: Parameters<typeof t>[0], code?: string): string {
   const name = reason?.match(/^技能名「(.+)」不能作为扩展包的组件标识/)
   if (name) return t("alpha.ext.error.packageSkillName", { name: name[1] })
-  if (code && LOCAL_PACKAGE_ERROR_KEYS[code]) return t(LOCAL_PACKAGE_ERROR_KEYS[code])
+  if (code && Object.hasOwn(LOCAL_PACKAGE_ERROR_KEYS, code)) return t(LOCAL_PACKAGE_ERROR_KEYS[code])
   if (!reason) return t(fallback)
-  const key = EXTENSION_REASON_KEYS[reason]
-  if (key) return t(key)
+  if (Object.hasOwn(EXTENSION_REASON_KEYS, reason)) return t(EXTENSION_REASON_KEYS[reason])
   if (reason.startsWith("catalog kind mismatch:")) return t("alpha.ext.error.kindMismatch")
   if (reason.startsWith("config busy:")) return t("alpha.ext.error.configBusy")
   if (reason.startsWith("config unparseable")) return t("alpha.ext.error.configInvalid")
