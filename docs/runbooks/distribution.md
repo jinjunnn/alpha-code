@@ -65,7 +65,7 @@ OPENCODE_CHANNEL=prod bun run package:mac               # 签名 → 上传 Appl
 # ③ 验证产物真的签名+公证了(必须都过)
 xcrun stapler validate "dist/mac-arm64/Code Puppy.app"    # 期望 "The validate action worked!"
 spctl -a -vvv -t install "dist/mac-arm64/Code Puppy.app"  # 期望 "accepted / source=Notarized Developer ID"
-ls dist/alpha-code-mac-arm64.dmg dist/alpha-code-mac-arm64.zip dist/latest-mac.yml   # 三件齐
+ls dist/code-puppy-mac-arm64.dmg dist/code-puppy-mac-arm64.zip dist/latest-mac.yml   # 三件齐
 
 # ③′ 产签名 release manifest(#175;契约 docs/contracts/desktop-release-manifest.md)。
 #    从最终 dist 字节计算全部事实(size/digest/签名/公证/SBOM/updater metadata),任何缺失或
@@ -96,8 +96,8 @@ OPENCODE_CHANNEL=prod bun scripts/release-manifest.ts produce \
 #    tag = v<版本>)。manifest 是 alpha-web 消费的唯一发布真相,漏传 = 该版本对 web 不存在。
 cd dist
 gh release create v0.1.1 \
-  alpha-code-mac-arm64.dmg alpha-code-mac-arm64.zip \
-  alpha-code-mac-arm64.dmg.blockmap alpha-code-mac-arm64.zip.blockmap \
+  code-puppy-mac-arm64.dmg code-puppy-mac-arm64.zip \
+  code-puppy-mac-arm64.dmg.blockmap code-puppy-mac-arm64.zip.blockmap \
   latest-mac.yml \
   alpha-release-manifest.json alpha-release-manifest.json.sig \
   alpha-code-0.1.1-sbom.cdx.json \
@@ -117,7 +117,7 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 
 ## 2. Intel 芯片 Mac(x64)包(#1496)
 
-一次发版出**两套** mac 包:`alpha-code-mac-arm64.*` 与 `alpha-code-mac-x64.*`,`latest-mac.yml` 同时列出两者
+一次发版出**两套** mac 包:`code-puppy-mac-arm64.*` 与 `code-puppy-mac-x64.*`,`latest-mac.yml` 同时列出两者
 (electron-updater 在 mac 上按文件名里的架构挑自己那一份)。不做 universal。
 
 **为什么不能「在 arm64 机器上加个 `--x64` 就完事」**:包里有按芯片编译的部件,今天只按打包机架构准备 ——
@@ -163,12 +163,12 @@ xcrun stapler validate "dist/mac/Code Puppy.app"          # x64 的 .app 在 dis
 spctl -a -vvv -t install "dist/mac/Code Puppy.app"
 lipo -archs "dist/mac/Code Puppy.app/Contents/MacOS/Code Puppy"                                   # 期望 x86_64
 find "dist/mac/Code Puppy.app" \( -name "*.node" -o -name spawn-helper \) -exec lipo -archs {} \;   # 每行都含 x86_64
-ls dist/alpha-code-mac-x64.dmg dist/alpha-code-mac-x64.zip
-grep -c "url: alpha-code-mac-" dist/latest-mac.yml       # 期望 4(两种架构各 dmg + zip)
+ls dist/code-puppy-mac-x64.dmg dist/code-puppy-mac-x64.zip
+grep -c "url: code-puppy-mac-" dist/latest-mac.yml       # 期望 4(两种架构各 dmg + zip)
 ```
 
 之后照 §1 ③′ 产 release manifest(`release-manifest.ts` 本来就枚举 `mac-arm64` 与 `mac-x64` 两套产物),
-④ 上传时把 x64 的 `alpha-code-mac-x64.dmg` / `.zip` / 两个 `.blockmap` 一并加上。官网 `/download` 的 Intel
+④ 上传时把 x64 的 `code-puppy-mac-x64.dmg` / `.zip` / 两个 `.blockmap` 一并加上。官网 `/download` 的 Intel
 卡位读 manifest 里 darwin/x64 的产物,不需要改站点。
 
 只出 x64 时(例如重打 Intel 包)只跑 ② 即可,此时 `dist/latest-mac.yml` 只含 x64 —— **不要**单独上传它,
