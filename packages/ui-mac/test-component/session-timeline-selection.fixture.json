@@ -1,0 +1,230 @@
+{
+  "source": {
+    "database": "opencode.db, opened with mode=ro and query_only=ON for #1502",
+    "table": "part",
+    "partRows": {
+      "user": "prt_f3aa437b9001ScbmS8y1kcVPxu",
+      "assistant": "prt_f3aa44e25001bQau78T2JnAFAl",
+      "code": "prt_00f42c759001MrKwIseYrCIuzh",
+      "reasoning": "prt_f3adfa54f001lLcaatIcJ1zitR",
+      "bash": "prt_00f41f4de0018jZn4gZp0h5s6r",
+      "write": "prt_00f42a39d001UW0pRRIo4L1LWC",
+      "media": "prt_0ccf4dd94001twC8GHZUtQ7WN3"
+    },
+    "messageRows": {
+      "user": "msg_f3aa437b7001EnI0ZYJ6eooLqL",
+      "assistant": "msg_f3aa437bf00107ulOAFHNXAqn4"
+    },
+    "sanitization": "Same stored fields; ids, timestamps, paths, model names and all prose replaced. Bash/write bytes from a generated small text file; attachment bytes from a generated 1x1 PNG. Identity discriminants retain only builtin technical constants."
+  },
+  "messages": [
+    {
+      "role": "user",
+      "time": {
+        "created": 1000
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "fixture",
+        "modelID": "fixture"
+      },
+      "summary": {
+        "diffs": []
+      },
+      "id": "msg_selection_user",
+      "sessionID": "ses_selection"
+    },
+    {
+      "parentID": "msg_selection_user",
+      "role": "assistant",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/tmp/selection-sample",
+        "root": "/tmp/selection-sample"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 0,
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      },
+      "modelID": "fixture",
+      "providerID": "fixture",
+      "time": {
+        "created": 2000,
+        "completed": 10000
+      },
+      "finish": "stop",
+      "id": "msg_selection_assistant",
+      "sessionID": "ses_selection"
+    }
+  ],
+  "parts": [
+    {
+      "type": "text",
+      "text": "用户正文：复制这一小段文字，不包括后面的内容。",
+      "id": "prt_selection_user",
+      "messageID": "msg_selection_user",
+      "sessionID": "ses_selection"
+    },
+    {
+      "type": "reasoning",
+      "text": "思考正文：核对生成样本的字段，保留已有控件行为。",
+      "time": {
+        "start": 6000,
+        "end": 7000
+      },
+      "id": "prt_selection_reasoning",
+      "messageID": "msg_selection_assistant",
+      "sessionID": "ses_selection"
+    },
+    {
+      "type": "tool",
+      "tool": "bash",
+      "callID": "call_selection_bash",
+      "display": {
+        "identity": {
+          "source": "builtin",
+          "origin": "",
+          "name": "bash"
+        },
+        "technicalId": "bash",
+        "authority": {
+          "kind": "not-asserted"
+        }
+      },
+      "state": {
+        "status": "completed",
+        "input": {
+          "command": "cat selection-sample.txt"
+        },
+        "output": "工具输出：alpha β\n第二行：空格  与标点。\n",
+        "metadata": {
+          "output": "工具输出：alpha β\n第二行：空格  与标点。\n",
+          "exit": 0,
+          "truncated": false
+        },
+        "title": "Generated terminal output",
+        "time": {
+          "start": 3000,
+          "end": 4000
+        }
+      },
+      "id": "prt_selection_bash",
+      "messageID": "msg_selection_assistant",
+      "sessionID": "ses_selection"
+    },
+    {
+      "type": "tool",
+      "tool": "write",
+      "callID": "call_selection_write",
+      "display": {
+        "identity": {
+          "source": "builtin",
+          "origin": "",
+          "name": "write"
+        },
+        "technicalId": "write",
+        "authority": {
+          "kind": "not-asserted"
+        }
+      },
+      "state": {
+        "status": "completed",
+        "input": {
+          "filePath": "selection-sample.txt",
+          "content": "工具输出：alpha β\n第二行：空格  与标点。\n"
+        },
+        "output": "Generated selection sample",
+        "metadata": {
+          "diagnostics": {},
+          "filepath": "selection-sample.txt",
+          "exists": false,
+          "truncated": false
+        },
+        "title": "selection-sample.txt",
+        "time": {
+          "start": 3000,
+          "end": 4000
+        }
+      },
+      "id": "prt_selection_write",
+      "messageID": "msg_selection_assistant",
+      "sessionID": "ses_selection"
+    },
+    {
+      "type": "tool",
+      "tool": "read",
+      "callID": "call_selection_media",
+      "display": {
+        "identity": {
+          "source": "builtin",
+          "origin": "",
+          "name": "read"
+        },
+        "technicalId": "read",
+        "authority": {
+          "kind": "not-asserted"
+        }
+      },
+      "state": {
+        "status": "completed",
+        "input": {
+          "filePath": "selection-sample.png"
+        },
+        "output": "Generated image preview",
+        "metadata": {
+          "preview": "Generated preview",
+          "truncated": false,
+          "loaded": []
+        },
+        "title": "selection-sample.png",
+        "time": {
+          "start": 3000,
+          "end": 4000
+        },
+        "attachments": [
+          {
+            "type": "file",
+            "mime": "image/png",
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMwSJgAAAHkASHKbNIyAAAAAElFTkSuQmCC",
+            "id": "prt_selection_attachment_0",
+            "sessionID": "ses_selection",
+            "messageID": "msg_selection_assistant"
+          }
+        ]
+      },
+      "id": "prt_selection_media",
+      "messageID": "msg_selection_assistant",
+      "sessionID": "ses_selection"
+    },
+    {
+      "type": "text",
+      "text": "助手正文：保留标点、空格与中文。\n\n用于验证滚动的自生成段落 1。\n\n用于验证滚动的自生成段落 2。\n\n用于验证滚动的自生成段落 3。\n\n用于验证滚动的自生成段落 4。",
+      "time": {
+        "start": 6000,
+        "end": 7000
+      },
+      "id": "prt_selection_assistant",
+      "messageID": "msg_selection_assistant",
+      "sessionID": "ses_selection"
+    },
+    {
+      "type": "text",
+      "text": "```ts\nconst copied = \"alpha β\";\nconsole.log(copied)\n```",
+      "time": {
+        "start": 6000,
+        "end": 7000
+      },
+      "id": "prt_selection_code",
+      "messageID": "msg_selection_assistant",
+      "sessionID": "ses_selection"
+    }
+  ]
+}
