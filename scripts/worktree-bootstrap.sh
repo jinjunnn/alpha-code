@@ -45,7 +45,8 @@ usage() {
   --detach        不建分支,直接 detach 到 <ref>(与 -b 互斥)
   --base <ref>    基线 ref(默认 origin/alpha)
 
-幂等:<name> 已经是一棵注册在案的 worktree 时跳过创建,只重跑 `bun install`
+幂等:<name> 已经是一棵注册在案的 worktree 时跳过创建,重跑 `bun install`,
+      已就绪的 Electron 与 alpha-fence addon 不重复复制/编译
       (bun install 本身幂等;实测已装好的树重跑 3.5s / exit 0,不破坏它)。
 
 失败:任何一步失败都**非零退出并说清楚**。若 worktree 是**本次**创建的,失败时把它
@@ -103,7 +104,7 @@ done < <(git -C "$MAIN" worktree list --porcelain 2>/dev/null)
 
 CREATED_HERE=0
 if [ "$ALREADY" -eq 1 ]; then
-  echo "▶ .worktrees/$NAME 已注册 —— 跳过创建,只重跑 bun install(幂等)"
+  echo "▶ .worktrees/$NAME 已注册 —— 跳过创建,重跑依赖安装(幂等)"
 else
   if [ -e "$TARGET" ]; then
     echo "✗ $TARGET 已存在,但**不是**一棵注册在案的 worktree。" >&2
@@ -171,7 +172,48 @@ echo "▶ bun install(worktree 本地依赖;CI 跑的是同一条命令)"
 # (本仓点名过的形态:断言粒度比缺陷粗一格。)
 INSTALL_RC=0
 set -m
-(cd "$TARGET" && bun install) &
+(
+  cd "$TARGET" || exit 1
+  bun install || exit $?
+  # #1512:bare bun install 不下载 Electron,也不编译 darwin 围栏 addon。
+  [ "$(uname -s)" = Darwin ] && [ -f packages/ui-mac/scripts/build-fence-addon.ts ] || exit 0
+  ELECTRON="$TARGET/packages/ui-mac/node_modules/electron"
+  SOURCE="$MAIN/packages/ui-mac/node_modules/electron"
+  VERSION="$(bun -p 'require("./packages/ui-mac/node_modules/electron/package.json").version')" || exit 1
+  if [ ! -s "$ELECTRON/path.txt" ] || [ "$(cat "$ELECTRON/dist/version" 2>/dev/null)" != "$VERSION" ] ||
+    [ ! -x "$ELECTRON/dist/$(cat "$ELECTRON/path.txt" 2>/dev/null)" ]; then
+    rm -rf "$ELECTRON/dist" "$ELECTRON/path.txt"
+    if [ -f "$SOURCE/package.json" ] &&
+      [ "$(cd "$MAIN" && bun -p 'require("./packages/ui-mac/node_modules/electron/package.json").version')" = "$VERSION" ] &&
+      [ "$(cat "$SOURCE/dist/version" 2>/dev/null)" = "$VERSION" ] &&
+      [ -s "$SOURCE/path.txt" ] && [ -x "$SOURCE/dist/$(cat "$SOURCE/path.txt")" ]; then
+      echo "▶ 从主 checkout 复制 Electron $VERSION(dist + path.txt)"
+      cp -Rc "$SOURCE/dist" "$SOURCE/path.txt" "$ELECTRON/" || {
+        rm -rf "$ELECTRON/dist" "$ELECTRON/path.txt"
+        cp -R "$SOURCE/dist" "$SOURCE/path.txt" "$ELECTRON/"
+      }
+      electron_rc=$?
+    else
+      echo "▶ 主 checkout 无可用的同版本 Electron $VERSION —— 运行 electron/install.js"
+      node "$ELECTRON/install.js"
+      electron_rc=$?
+    fi
+    if [ "$electron_rc" -ne 0 ] || [ ! -s "$ELECTRON/path.txt" ] ||
+      [ "$(cat "$ELECTRON/dist/version" 2>/dev/null)" != "$VERSION" ] ||
+      [ ! -x "$ELECTRON/dist/$(cat "$ELECTRON/path.txt" 2>/dev/null)" ]; then
+      rm -rf "$ELECTRON/dist" "$ELECTRON/path.txt"
+      echo "✗ Electron $VERSION 复制/安装失败(rc=$electron_rc)—— 已清理半装的 dist/path.txt" >&2
+      exit 1
+    fi
+  fi
+  if [ ! -f packages/ui-mac/native/alpha-fence/build/alpha_fence.node ]; then
+    echo "▶ 编译 alpha-fence 原生 addon"
+    (cd packages/ui-mac && bun run scripts/build-fence-addon.ts) || {
+      echo "✗ alpha-fence 原生 addon 编译失败" >&2
+      exit 1
+    }
+  fi
+) &
 INSTALL_PID=$!
 set +m
 # 不用裸 `wait` 等它:pid 级 INT 在 bash 3.2 的 `wait` 内建里被整个丢弃(实测,见上)。
@@ -190,7 +232,7 @@ if [ "$INSTALL_RC" -eq 0 ]; then
 fi
 
 restore_hooks_path
-echo "✗ bun install 失败(rc=$INSTALL_RC)——**依赖没装上**。" >&2
+echo "✗ worktree 依赖安装失败(rc=$INSTALL_RC,bun install / Electron / alpha-fence)——**依赖没装上**。" >&2
 echo "  不要在这棵树上跑 typecheck/测试:它会给出成千上万条与你的改动无关的 \`Cannot find module\` 假红," >&2
 echo "  而那些红看起来跟「基线既有」一模一样。" >&2
 if [ "$CREATED_HERE" -eq 1 ]; then
