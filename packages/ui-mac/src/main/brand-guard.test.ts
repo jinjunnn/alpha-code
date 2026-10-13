@@ -180,9 +180,9 @@ describe("AC3 提示词与技能文案 — 模型上下文里的品牌串", () =
     expect(src).toContain("You are Code Puppy's codebase exploration agent")
   })
   test("拒答模板两处", () => {
-    expect(read("packages/ui-mac/src/main/alpha-builtin-policy.ts")).toContain("定制 Code Puppy 请改用 /customize-alpha")
+    expect(read("packages/ui-mac/src/main/alpha-builtin-policy.ts")).toContain("定制 Code Puppy 请改用 /customize-code-puppy")
     // REQ-157 `#1284`:ext 侧拒答模板搬进 context-injection 登记簿(factory-deny.ts 经 renderTemplate 取用),坐标跟着搬。
-    expect(read("packages/ext/src/context-injection.ts")).toContain("定制 Code Puppy 请改用 /customize-alpha")
+    expect(read("packages/ext/src/context-injection.ts")).toContain("定制 Code Puppy 请改用 /customize-code-puppy")
   })
   test("出厂技能六份 + upstream-sync 文案", () => {
     for (const f of [
@@ -190,13 +190,13 @@ describe("AC3 提示词与技能文案 — 模型上下文里的品牌串", () =
       "packages/ui-mac/resources/factory-skills/alpha-workspace/SKILL.md",
       "packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md",
       "packages/ui-mac/resources/factory-skills/integrate-project/SKILL.md",
-      "packages/ui-mac/resources/factory-skills/customize-alpha/SKILL.md",
+      "packages/ui-mac/resources/factory-skills/customize-code-puppy/SKILL.md",
       "packages/ui-mac/resources/factory-skills/office-docs/SKILL.md",
       "packages/ui-mac/resources/skills/alpha-upstream-sync/SKILL.md",
     ]) {
       expect(read(f).includes("Code Puppy")).toBe(true)
     }
-    expect(read("packages/ui-mac/resources/factory-skills/customize-alpha/SKILL.md")).toContain("# Customize Code Puppy")
+    expect(read("packages/ui-mac/resources/factory-skills/customize-code-puppy/SKILL.md")).toContain("# Customize Code Puppy")
     // repo 名是身份不是展示:sync 指令仍指向 jinjunnn/alpha-code
     expect(read("packages/ui-mac/resources/skills/alpha-upstream-sync/SKILL.md")).toContain("gh repo sync jinjunnn/alpha-code")
   })

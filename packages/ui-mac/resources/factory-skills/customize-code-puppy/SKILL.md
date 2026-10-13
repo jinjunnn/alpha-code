@@ -1,5 +1,5 @@
 ---
-name: customize-alpha
+name: customize-code-puppy
 description: Configure and customize Code Puppy — global/project engine config (alpha.jsonc), connectors (MCP), skills, agents, commands, plugins, governance of built-ins, and hot reload. Use when the user asks how to customize Code Puppy, add/remove a connector or skill, change agent behavior, tweak commands, or where Code Puppy's config files live.
 license: MIT (Code Puppy original)
 ---

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Permission } from "../../../opencode/src/permission/index"
 import {
   DEFAULT_BUILTIN_POLICY,
   applyBuiltinPolicy,
@@ -58,6 +59,17 @@ describe("validateBuiltinPolicy — 保护名单硬校验(验收③)", () => {
 })
 
 describe("materializeEdits — 物化叶子计算", () => {
+  test("#1513: customization deny matches the new skill and command name", () => {
+    const edits = materializeEdits(gov({ skills: { deny: ["customize-code-puppy"] } }), [])
+    const m = new Map(edits.map((e) => [e.path.join("."), e.value]))
+    expect(m.get("permission.skill.customize-code-puppy")).toBe("deny")
+    expect(m.get("command.customize-code-puppy.template")).toContain("该技能(customize-code-puppy)")
+    expect(m.has("permission.skill.customize-alpha")).toBe(false)
+    const rules = Permission.fromConfig({
+      skill: { "*": "allow", "customize-code-puppy": m.get("permission.skill.customize-code-puppy") },
+    } as never)
+    expect(Permission.evaluate("skill", "customize-code-puppy", rules).action).toBe("deny")
+  })
   test("denylist:hide/disable/override → agent.<n>.<字段> 叶子", () => {
     const g = gov({
       agents: { hide: ["build"], disable: ["explore"], allow: [], override: { plan: { prompt: "自定义" } } },
@@ -84,7 +96,7 @@ describe("materializeEdits — 物化叶子计算", () => {
     expect(m.get("permission.skill.customize-opencode")).toBe("deny")
     expect(m.get("command.customize-opencode.description")).toBe("(已禁用)该技能已在 Code Puppy 治理中禁用")
     expect(String(m.get("command.customize-opencode.template"))).toContain("已在 Code Puppy 的治理设置中被禁用")
-    expect(String(m.get("command.customize-opencode.template"))).toContain("/customize-alpha(Code Puppy 自带的定制指南技能)")
+    expect(String(m.get("command.customize-opencode.template"))).toContain("/customize-code-puppy(Code Puppy 自带的定制指南技能)")
     expect(edits.find((e) => e.path.join(".") === "permission.skill.*")?.onlyIfAbsent).toBe(true)
   })
   test("command override → command.<n>.template(重写 /init,验收⑤)", () => {

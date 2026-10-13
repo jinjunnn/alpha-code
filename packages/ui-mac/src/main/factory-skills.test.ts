@@ -3,7 +3,7 @@
 // 幂等、绝不动用户内容、同名遮蔽不注入(防引擎双源)、REQ-059 逃生门不拆不改、
 // legacy `~/.opencode/skill/` 直链清理。
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FACTORY_SKILL_IDS, factorySkillIds, factorySkillSources, isAlphaFactoryLink, reconcileFactorySkills } from "./factory-skills"
@@ -41,6 +41,14 @@ const truthPath = (name: string) => join(home, ".alpha", "skills", name)
 const legacyPath = (name: string) => join(home, ".opencode", "skill", name)
 
 describe("factorySkillSources", () => {
+  test("#1513: shipped customization skill registers only customize-code-puppy", () => {
+    const dev = factorySkillSources({ packaged: false, resourcesPath: "/ignored", moduleDir: import.meta.dir })
+    expect(FACTORY_SKILL_IDS).toContain("customize-code-puppy")
+    expect(FACTORY_SKILL_IDS).not.toContain("customize-alpha")
+    expect(readFileSync(join(dev["customize-code-puppy"], "SKILL.md"), "utf8")).toContain("name: customize-code-puppy\n")
+    expect(sources["customize-code-puppy"]).toBe(join(res, "factory-skills", "customize-code-puppy"))
+    expect(reconcileFactorySkills(sources, roots).active).toContain("customize-code-puppy")
+  })
   test("packaged resolves under resourcesPath; dev under moduleDir/../../resources", () => {
     expect(sources["skill-creator"]).toBe(join(res, "skills", "skill-creator"))
     const dev = factorySkillSources({ packaged: false, resourcesPath: "/ignored", moduleDir: join(tmp, "repo/out/main") })

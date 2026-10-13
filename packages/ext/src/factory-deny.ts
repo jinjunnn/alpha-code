@@ -6,7 +6,7 @@
 // (出厂清单 − 用户在治理面的解禁)→ `ALPHA_FACTORY_DENY_SKILLS`(JSON 数组)→ 本模块在
 // config hook 里内存注入:
 //   - `permission.skill.<n> = "deny"`(set-if-absent:用户任何层显式配了该键 → 让位);
-//   - 同名占位 command(键入兜底,诚实说明 + 指路 /customize-alpha;set-if-absent)。
+//   - 同名占位 command(键入兜底,诚实说明 + 指路 /customize-code-puppy;set-if-absent)。
 // 斜杠菜单的隐藏由 renderer 读 gov-read 的 factoryDenied 完成(REQ-066 过滤同源)。
 //
 // REQ-157 `#1284`:占位 command 的 description / template 是 alpha 的字、会进模型上下文(template 在用户

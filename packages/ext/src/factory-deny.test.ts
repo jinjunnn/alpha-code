@@ -11,7 +11,7 @@ describe("applyFactoryDeny — env → cfg 内存注入", () => {
     expect(applyFactoryDeny(cfg, ENV)).toEqual(["customize-opencode"])
     expect((cfg.permission as any).skill["customize-opencode"]).toBe("deny")
     expect((cfg.command as any)["customize-opencode"].description).toContain("已禁用")
-    expect((cfg.command as any)["customize-opencode"].template).toContain("/customize-alpha")
+    expect((cfg.command as any)["customize-opencode"].template).toContain("/customize-code-puppy")
   })
   test("set-if-absent:用户任何层已配同名键 → 让位(权限与占位各自独立判)", () => {
     const cfg: Record<string, unknown> = {

@@ -31,7 +31,7 @@ need_dir() { { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]; } || miss "$1"
 need_dir "$res/skills"                    # builtin skills (installable via 定制中心)
 need_file "$res/skills/skill-creator/SKILL.md"       # REQ-036 出厂技能(skills.paths 原位引用)
 # 出厂技能基线(REQ-082 时点 = 7 件,与 factory-skills.ts FACTORY_SKILL_IDS 一致;skill-creator 在上面)
-for fs in agent-creator customize-alpha integrate-project alpha-workspace cloud-dispatch office-docs; do
+for fs in agent-creator customize-code-puppy integrate-project alpha-workspace cloud-dispatch office-docs; do
   need_file "$res/factory-skills/$fs/SKILL.md"
 done
 need_file "$res/agents/code-reviewer.md"  # REQ-023 vendored agent (zero-network install)
