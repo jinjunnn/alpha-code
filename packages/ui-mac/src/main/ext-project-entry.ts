@@ -19,7 +19,7 @@ export function withProjectIpcEntryIdentity<T>(
 ): { ok: true; value: T } | { ok: false; reason: string } {
   const current = resolveProjectIpcEntry(expected.projectDir, homeDir)
   if (!current.ok || current.projectDir !== expected.projectDir || current.root !== expected.root)
-    return { ok: false, reason: "fail closed: project alpha root identity drifted" }
+    return { ok: false, reason: "fail closed: project Code Puppy root identity drifted" }
   // 分类重验到紧随的一次路径 I/O 仍有微秒级窗口；沿用 #358 r3 threat model，不引入 openat。
   return { ok: true, value: operation(current) }
 }

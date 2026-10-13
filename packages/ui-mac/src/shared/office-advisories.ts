@@ -183,7 +183,7 @@ export function checkAlphaOfficeMcpSafety(
     return { ok: false, reason: `${connector.name} only allows local stdio; remote transport is refused (REQ-133)` }
   }
   if (!workspace || !alphaResources || (workspace !== WORKSPACE_MARKER && !isAbsolutePath(workspace)) || !isAbsolutePath(alphaResources)) {
-    return { ok: false, reason: `${connector.name} requires the workspace marker or absolute managed workspace plus an absolute Alpha resource root (REQ-134)` }
+    return { ok: false, reason: `${connector.name} requires the workspace marker or absolute managed workspace plus an absolute Code Puppy resource root (REQ-134)` }
   }
   if (hasTraversal(workspace) || hasTraversal(alphaResources)) {
     return { ok: false, reason: `${connector.name} path contains traversal segments (REQ-133)` }

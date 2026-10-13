@@ -1052,6 +1052,30 @@ describe("AlphaComposer production model seam", () => {
 })
 
 describe("ModelPickPop production component", () => {
+  test("#1507 AC2/AC3:Code Puppy 读屏名与 C 小标不改变 alpha 模型选择身份", async () => {
+    installApi()
+    const picks: ComposerModel[] = []
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async (model) => { picks.push(model) },
+        onPicked: () => {},
+      }),
+    )
+    await waitFor(() => expect(mounted.host.querySelector(".a-mpp-row")?.getAttribute("aria-label")).toContain("Code Puppy"))
+    const rows = [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].filter((row) => row.getAttribute("aria-label")?.includes(",Code Puppy,"))
+    expect(rows).toHaveLength(catalog.platformModels.length)
+    expect(rows.map((row) => row.querySelector(".a-pico")?.textContent)).toEqual(catalog.platformModels.map(() => "C"))
+    expect(catalog.platformProvider.id).toBe("alpha")
+    click(rows[0] ?? null)
+    await waitFor(() => expect(picks).toHaveLength(1))
+    expect(picks[0]?.providerID).toBe("alpha")
+    expect(picks[0]?.id).toBe("claude-opus-4.8")
+    mounted.dispose()
+  })
+
   test.each(["zh", "en"] as const)("#1506 AC1/AC3 [%s]:未登录提示与平台分组统一为 Code Puppy 模型", async (locale) => {
     setLocale(locale)
     for (const auth of [loggedOut, loggedIn]) {
@@ -3479,7 +3503,7 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
     expect(platform.length, "平台行数").toBe(pricedCatalog.platformModels.length)
     for (const model of pricedCatalog.platformModels) {
       expectRowExactly(rowFor(model.id), dict, {
-        letter: "α",
+        letter: "C",
         name: model.name,
         id: model.id,
         providerName: pricedCatalog.platformProvider.name,

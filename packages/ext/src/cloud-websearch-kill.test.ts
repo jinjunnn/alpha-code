@@ -16,6 +16,7 @@ import {
   localWebSearchDenied,
   type McpOwnership,
   WebSearchSovereigntyError,
+  webSearchToolDenial,
 } from "./cloud-websearch-kill"
 
 /** alpha 自己写的那份云 server 定义的端点身份(注入面经 ALPHA_CLOUD_MCP_DEF 过河)。 */
@@ -88,6 +89,11 @@ const siblingCloudTools = [
 ]
 
 describe("cloud web search kill switch", () => {
+  test("#1507 AC1:搜网拒绝理由使用 Code Puppy,ADR 原因码不变", () => {
+    expect(webSearchToolDenial("cloud_web_search", ON, owned(ON))).toBe("the Code Puppy web search kill switch (ADR-009 B2) is set")
+    expect(webSearchToolDenial("exa_web_search_exa", ON, owned(ON))).toStartWith("the Code Puppy web search kill switch (ADR-009 B2) is set; it turns off Code Puppy's own web search tools ")
+  })
+
   test("fail-closed:只有缺省/空串/\"0\" 放行(云侧与本地侧同一条规则)", () => {
     for (const [denied, name] of [
       [cloudWebSearchDenied, CLOUD_WEBSEARCH_DENY_ENV],

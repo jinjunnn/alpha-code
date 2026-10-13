@@ -58,7 +58,7 @@ Bun.plugin({
 const [contractFailure, setContractFailure] = createSignal<ContractFailure | null>(null)
 mock.module("../src/renderer/alpha-ui/providers", () => ({ useContractHealth: () => contractFailure }))
 
-const { CatalogFailureBanner } = await import("../src/renderer/alpha-ui/Banner")
+const { CatalogFailureBanner, ContractFailureBanner } = await import("../src/renderer/alpha-ui/Banner")
 const { setLocale } = await import("../src/renderer/i18n")
 
 /** preload 桥替身:renderer 侧拿刷新结局只有这两条路,生产组件走的就是它们。 */
@@ -132,7 +132,7 @@ describe("#1084 目录刷新失败到得了用户", () => {
     expect(banner()).toBeNull()
   })
 
-  test("契约横幅在场时自抑制(同一个 fixed 位,不抑制就精确重叠)", async () => {
+  test("#1507 AC1:契约横幅显示 Code Puppy 并保留失败详情;目录横幅自抑制", async () => {
     setContractFailure({
       code: "contract-incompatible",
       surface: "model-catalog",
@@ -141,9 +141,11 @@ describe("#1084 目录刷新失败到得了用户", () => {
       reason: "schema-validation",
     })
     bridge({ code: "contract-incompatible", at: "2026-08-23T00:00:02.000Z" })
-    dispose = render(() => CatalogFailureBanner({}), host)
+    dispose = render(() => [CatalogFailureBanner({}), ContractFailureBanner({})], host)
     await flush()
     expect(banner()).toBeNull()
+    expect(host.querySelector(".a-contract-failure .a-banner-title")?.textContent).toBe("Code Puppy platform contract is incompatible")
+    expect(host.querySelector(".a-contract-failure .a-banner-detail")?.textContent).toBe("model-catalog: schema-validation (expected v2, received 1)")
 
     // 契约横幅撤下之后,同一份刷新结局仍然到得了用户 —— 抑制的是重叠,不是这条信息本身。
     setContractFailure(null)

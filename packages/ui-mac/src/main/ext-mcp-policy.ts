@@ -52,7 +52,7 @@ function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, un
   const connector = ALPHA_OFFICE_CONNECTORS.find((candidate) =>
     candidate.name === name || command.includes(candidate.format),
   )
-  if (!connector) return { ok: false, reason: "unknown Alpha Office connector mode (REQ-133 fail-closed)" }
+  if (!connector) return { ok: false, reason: "unknown Code Puppy Office connector mode (REQ-133 fail-closed)" }
   const template = alphaOfficeInstallCommand(connector.format)
   if (
     command.length !== template.length ||
@@ -60,7 +60,7 @@ function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, un
       argument !== WORKSPACE_MARKER && !argument.includes("{alphaResources}") && command[index] !== argument,
     )
   ) {
-    return { ok: false, reason: `${connector.name} command differs from the pinned Alpha stdio command (REQ-133)` }
+    return { ok: false, reason: `${connector.name} command differs from the pinned Code Puppy stdio command (REQ-133)` }
   }
   const workspaceArg = command[template.indexOf(WORKSPACE_MARKER)]
   if (workspaceArg !== WORKSPACE_MARKER) {
@@ -70,7 +70,7 @@ function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, un
     const alphaResources = fs.realpathSync(resourcesRoot())
     const serverPath = fs.realpathSync(path.join(alphaResources, "office-mcp", "server.py"))
     if (path.relative(alphaResources, serverPath).startsWith(`..${path.sep}`)) {
-      return { ok: false, reason: `${connector.name} bundled server escaped Alpha resources (REQ-133)` }
+      return { ok: false, reason: `${connector.name} bundled server escaped Code Puppy resources (REQ-133)` }
     }
     server.command = template.map((argument) =>
       argument.replace(`{alphaResources}/${BUNDLED_OFFICE_SERVER_PATH}`, serverPath),

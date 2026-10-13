@@ -148,13 +148,13 @@ export function validateBuiltinPolicy(gov: BuiltinPolicy, confirmBuildDisable: b
     if ((HARD_PROTECTED_AGENTS as readonly string[]).includes(n))
       v.push({ kind: "agent", name: n, reason: `受保护:禁用 ${n} 会破坏引擎(compaction 自动压缩必崩 / title·summary 为内部消费),已拒绝` })
     if ((ALPHA_INJECTED_AGENTS as readonly string[]).includes(n))
-      v.push({ kind: "agent", name: n, reason: `受保护:${n} 是 alpha 注入的功能载体(自动化等),禁用会使其静默失效,已拒绝` })
+      v.push({ kind: "agent", name: n, reason: `受保护:${n} 是 Code Puppy 注入的功能载体(自动化等),禁用会使其静默失效,已拒绝` })
     if ((CONFIRM_AGENTS as readonly string[]).includes(n) && !confirmBuildDisable)
       v.push({ kind: "agent", name: n, reason: `build 是引擎兜底 agent,禁用需在确认框中确认(未确认,已拒绝)` })
   }
   for (const n of gov.agents.hide) {
     if ((ALPHA_INJECTED_AGENTS as readonly string[]).includes(n))
-      v.push({ kind: "agent", name: n, reason: `受保护:${n} 是 alpha 注入的功能载体,隐藏会使其入口消失,已拒绝` })
+      v.push({ kind: "agent", name: n, reason: `受保护:${n} 是 Code Puppy 注入的功能载体,隐藏会使其入口消失,已拒绝` })
   }
   return v
 }
@@ -188,9 +188,9 @@ export function materializeEdits(gov: BuiltinPolicy, visibleAgents: string[]): B
       edits.push({ path: ["permission", "skill", n], value: "deny" })
       // 键入兜底占位(REQ-066 后菜单已隐藏,此模板只服务手动键入全名):诚实说明,非误导执行。
       // REQ-062 T4:customize-opencode 的占位额外指路接替者 customize-alpha。
-      const successor = n === "customize-opencode" ? `定制 Code Puppy 请改用 /customize-alpha(alpha 自带的定制指南技能)。` : ""
-      edits.push({ path: ["command", n, "description"], value: `(已禁用)该技能已在 alpha 治理中禁用` })
-      edits.push({ path: ["command", n, "template"], value: `该技能(${n})已在 alpha 的治理设置中被禁用。请告知用户:此技能不可用;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。${successor}不要尝试其它方式执行该技能。` })
+      const successor = n === "customize-opencode" ? `定制 Code Puppy 请改用 /customize-alpha(Code Puppy 自带的定制指南技能)。` : ""
+      edits.push({ path: ["command", n, "description"], value: `(已禁用)该技能已在 Code Puppy 治理中禁用` })
+      edits.push({ path: ["command", n, "template"], value: `该技能(${n})已在 Code Puppy 的治理设置中被禁用。请告知用户:此技能不可用;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。${successor}不要尝试其它方式执行该技能。` })
     }
   }
   for (const [n, o] of Object.entries(gov.commands.override)) {
