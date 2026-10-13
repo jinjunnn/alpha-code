@@ -33,6 +33,7 @@ import type { ProviderAddressRejection } from "../../shared/alpha-model-types"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
 import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
 import { extIpc } from "./ext-ipc"
+import { subscribeRuntimeRecovery } from "../runtime-recovery"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
 
@@ -514,6 +515,7 @@ export function useExtensions(
 
   let client: Client | undefined
   let generation = 0
+  let statusGeneration = 0
   let abortRef = new AbortController()
 
   // REQ-018:安装账本(current-environment global)。receipts 覆盖 skill/agent/plugin 的「已安装」真相
@@ -573,9 +575,10 @@ export function useExtensions(
     const c = client
     if (!c) return
     const gen = generation
+    const statusGen = statusGeneration
     try {
       const { data, error } = await c.mcp.status({} as any)
-      if (gen !== generation) return
+      if (gen !== generation || statusGen !== statusGeneration) return
       if (error || !data) {
         setStore("error", true)
         return
@@ -1069,8 +1072,26 @@ export function useExtensions(
     void loadAgents()
     void loadSessionGrants()
     void subscribe()
+    // Hub's server is the local sidebarServer. Invalidate status reads without retiring its SSE.
+    let recovering = false
+    const unsubscribeRecovery = subscribeRuntimeRecovery((state) => {
+      if (gen !== generation) return
+      if (state.status === "recovering") {
+        recovering = true
+        statusGeneration++
+        return
+      }
+      if (state.status !== "ready" || !recovering) return
+      recovering = false
+      statusGeneration++
+      if (store.error || !store.ready) void loadStatus()
+    })
     onCleanup(() => {
-      if (gen === generation) client = undefined
+      unsubscribeRecovery()
+      if (gen === generation) {
+        generation++
+        client = undefined
+      }
       abortRef.abort()
     })
   })
