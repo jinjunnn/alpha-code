@@ -117,7 +117,8 @@ describe("#1250 随包技能资产的可达性普查", () => {
       "factory-skills/office-docs → factory",
       "skills/alpha-upstream-sync → catalog(skill:alpha-upstream-sync)",
       "skills/safe-refactor → catalog(skill:safe-refactor)",
-      "skills/skill-creator → factory + catalog(skill:skill-creator)",
+      // alpha-web#255:catalog installSpec._verify 尚在,新安装面不可达;出厂注入仍覆盖该资产。
+      "skills/skill-creator → factory",
     ])
   })
 
