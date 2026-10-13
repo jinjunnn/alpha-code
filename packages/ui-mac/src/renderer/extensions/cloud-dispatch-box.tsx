@@ -24,14 +24,16 @@ type CancelState = "none" | "requesting" | "cancelling" | "rejected"
 
 // [#918] 云端拒收带分类码(main 的 alpha-cloud-jobs 只透传 `code` 槽)。两条会真实发生在
 // 用户面前的,给出诚实说明而不是把一个裸码贴在错误行里 —— 前者告诉用户「要的限制强制不了」,
-// 后者告诉用户「作业没送出去,因为送出去也是白跑」。其余码保持原样透出,不假装认识。
-function dispatchError(code: string): string {
+// 后者告诉用户「作业没送出去,因为送出去也是白跑」。其它码只影响显示，保留原始返回值供诊断。
+function dispatchError(code: string, fallback: Parameters<typeof t>[0] = "alpha.ext.cloudUnknownSend"): string {
   if (code === "not-authenticated" || code === "unauthorized") return t("alpha.ext.cloudErrAuth")
   if (code === "no-cloud-endpoint") return t("alpha.ext.cloudErrEndpoint")
   if (code === "network") return t("alpha.ext.cloudErrNetwork")
   if (code === "denied_paths_unenforceable_for_execution_form") return t("alpha.ext.cloudErrDeniedPaths")
   if (code === "tools-not-declared") return t("alpha.ext.cloudErrToolsUndeclared")
-  return code
+  if (code.startsWith("envelope-too-large:")) return t("alpha.ext.cloudEnvelopeLarge")
+  if (code.startsWith("secrets-detected:")) return t("alpha.ext.cloudSecretsDetected", { fields: code.slice("secrets-detected: ".length).split(" —— ")[0] })
+  return t(fallback)
 }
 
 function uploadError(code: Extract<CloudUploadResult, { status: "failed" }>["error"]) {
@@ -50,8 +52,8 @@ function uploadError(code: Extract<CloudUploadResult, { status: "failed" }>["err
   if (code.startsWith("upload-")) return t("alpha.cloud.consent.errScope")
   // 派发腿不再坍缩成 "upload-dispatch-failed":到这里的是平台分类码(upload_reserved_input …)
   // 或 unauthorized / network / http-<status> 回退,与 dispatch 面同一呈现纪律 ——
-  // 认识的给人话,不认识的原样透出,不假装认识。
-  return dispatchError(code)
+  // 已知码说明原因，未知结果提示先核对任务状态。
+  return dispatchError(code, "alpha.ext.cloudUnknownUpload")
 }
 
 /** `#624`:`ready` 是**放行**判据(恢复中为 false);`recovering` 只改那句「为什么不能点」——
@@ -117,7 +119,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
       if (terminal !== "job.completed") setState("err", t("alpha.ext.cloudRunFailed"))
       return
     }
-    setState({ phase: "failed", err: `${t("alpha.ext.cloudSaveFailed")}: ${saved.reason}` })
+    setState({ phase: "failed", err: t("alpha.ext.cloudSaveFailed") })
   }
 
   const beginJob = async (
@@ -204,7 +206,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
     setState("phase", "dispatching")
     const diff = await window.api.cloud.gitDiff(directory)
     if (!diff.ok) {
-      setState({ err: diff.reason === "no-diff" ? t("alpha.ext.cloudNoDiff") : diff.reason, phase: "failed" })
+      setState({ err: diff.reason === "no-diff" ? t("alpha.ext.cloudNoDiff") : t("alpha.ext.cloudDiffReadFailed"), phase: "failed" })
       return
     }
     setState("diffSource", diff.source)
@@ -266,7 +268,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
     setState({ cancel: "requesting", err: "" })
     const result = await window.api.cloud.cancel(state.jobId)
     if ("error" in result) {
-      setState({ cancel: "none", err: dispatchError(result.error) })
+      setState({ cancel: "none", err: dispatchError(result.error, "alpha.ext.cloudUnknownCancel") })
       return
     }
     if (result.accepted || result.status === "cancelling" || result.status === "cancelled") {
@@ -328,7 +330,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
           </span>
         </Show>
         <Show when={state.phase === "running"}>
-          <span class="alpha-ext-meta" data-live="">{state.jobId} · {state.step}</span>
+          <span class="alpha-ext-meta" data-live="">{t(state.step === "queued" ? "alpha.ext.cloudQueued" : state.step === "job.completed" ? "alpha.ext.cloudCompleted" : state.step === "job.failed" ? "alpha.ext.cloudFailed" : state.step === "job.cancelled" ? "alpha.ext.cloudCancelled" : "alpha.ext.cloudProgress")}</span>
         </Show>
         <Show when={state.phase === "running" && state.cancel !== "cancelling"}>
           <button

@@ -1,3 +1,4 @@
+import { t } from "../i18n"
 import { Show, type JSX, createEffect, createUniqueId, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import {
@@ -99,7 +100,7 @@ export function Dialog(props: {
                   {accessibleTitle()}
                 </div>
                 <Show when={canDismiss()}>
-                  <button type="button" class="a-dialog-close" aria-label={props.closeLabel ?? "Close"} onClick={requestClose}>
+                  <button type="button" class="a-dialog-close" aria-label={props.closeLabel ?? t("alpha.ext.closeWindow")} onClick={requestClose}>
                     ✕
                   </button>
                 </Show>

@@ -42,7 +42,7 @@ export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined
       try {
         const r = await extIpc.trustCheck(dir)
         if (r.persistError) {
-          pushToast({ kind: "error", title: t("alpha.ext.trustPersistFailed"), detail: r.persistError })
+          pushToast({ kind: "error", title: t("alpha.ext.trustPersistFailed"), detail: t("alpha.ext.trustPersistDetail") })
           checked.delete(dir) // 未留痕 = 未决,允许本会话稍后重试
           return
         }
@@ -55,7 +55,7 @@ export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined
         // REQ-063:外部生态导入门(.claude/.agents skills + CLAUDE.md)——信任门之后串行,
         // 避免两个原生对话框叠弹;导入成功同走 dispose 免重启链。
         const ext = await extIpc.externalCheck(dir)
-        if (ext.persistError) pushToast({ kind: "error", title: t("alpha.ext.trustPersistFailed"), detail: ext.persistError })
+        if (ext.persistError) pushToast({ kind: "error", title: t("alpha.ext.trustPersistFailed"), detail: t("alpha.ext.trustPersistDetail") })
         if (ext.prompted && ext.imported) {
           const c = createOpencodeClient({ baseUrl: info.baseUrl, headers: authHeaders(info) })
           await (c as unknown as { global: { dispose(): Promise<unknown> } }).global.dispose().catch(() => {})
@@ -65,7 +65,7 @@ export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined
             detail: ext.importedSkills.length ? ext.importedSkills.map((s) => `/${s}`).join(" · ") : undefined,
           })
           if (ext.claudeMd === "agents-md-exists") pushToast({ kind: "error", title: t("alpha.ext.externalClaudeMdConflict") })
-          for (const s of ext.skipped) pushToast({ kind: "error", title: t("alpha.ext.externalSkipped"), detail: `${s.name}: ${s.reason}` })
+          for (const s of ext.skipped) pushToast({ kind: "error", title: t("alpha.ext.externalSkipped"), detail: t("alpha.ext.externalSkippedDetail", { name: s.name }) })
         }
       } catch {
         checked.delete(dir) // IPC 瞬时失败允许重查
