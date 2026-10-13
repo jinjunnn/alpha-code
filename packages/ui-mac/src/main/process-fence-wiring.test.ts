@@ -15,12 +15,17 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { EventEmitter } from "node:events"
+import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import * as net from "node:net"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { mockElectron } from "../../test-component/electron-mock"
+import { ALPHA_OFFICE_CONNECTORS, alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/office-advisories"
+import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
+import { renderProcessFenceProfile, resolveEngineRoots } from "./process-fence-profile"
+import { upsertRecordV2 } from "./ext-receipt-v2"
 
 const appEvents = new EventEmitter()
 
@@ -112,6 +117,167 @@ afterEach(() => {
     else process.env[key] = value
   }
   rmSync(userDataPath, { recursive: true, force: true })
+})
+
+// #1504: real uv + bundled commands + production env/profile/proxy. Only Electron's fork is
+// recorded; sandbox-exec applies that profile to uv. This does not replace packaged Hub validation.
+describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence", () => {
+  let root: string
+  let workspace: string
+  let globalRoot: string
+  let env: Record<string, string>
+  let profile: string
+  let proxy: EgressProxyHandle
+  let previous: Record<string, string | undefined>
+  let installedHashes: string[]
+  const proxyLog: EgressLogRecord[] = []
+  const commands = new Map<AlphaOfficeFormat, string[]>()
+
+  beforeEach(async () => {
+    const uv = Bun.which("uv")
+    const python = Bun.which("python3")
+    if (!uv || !python) throw new Error("#1504 requires installed uv and Python; missing tools must not skip-green")
+    // Outside W11/W12: putting HOME in tmp would accidentally allow the broken default cache.
+    root = realpathSync(mkdtempSync(resolve(import.meta.dir, "../../.office-cache-")))
+    workspace = join(root, "home", "code-puppy")
+    globalRoot = join(root, "state", "env", "dev")
+    const isolated = {
+      HOME: join(root, "home"),
+      PATH: `${dirname(uv)}:${dirname(python)}:/usr/bin:/bin`,
+      XDG_CACHE_HOME: join(root, "home", ".cache"),
+      XDG_DATA_HOME: join(root, "home", ".local", "share"),
+      XDG_CONFIG_HOME: join(root, "home", ".config"),
+      XDG_STATE_HOME: join(root, "userData"),
+      ALPHA_GLOBAL_DIR: globalRoot,
+      ALPHA_OPENCODE_HOME: join(root, "home", ".opencode"),
+      OPENCODE_CONFIG_DIR: join(root, "home", ".config", "opencode"),
+      ALPHA_ENV_ALLOWLIST_EXTRA: "",
+      UV_CACHE_DIR: join(root, "home", ".cache", "uv"),
+      UV_OFFLINE: "1", // Must not leak through the unchanged UV_ allowlist.
+    }
+    previous = Object.fromEntries(Object.keys(isolated).map((key) => [key, process.env[key]]))
+    Object.assign(process.env, isolated)
+    for (const dir of [workspace, isolated.ALPHA_GLOBAL_DIR, isolated.XDG_STATE_HOME, isolated.UV_CACHE_DIR]) mkdirSync(dir, { recursive: true })
+    commands.clear()
+    // Receipt/config shape from alpha-office-instance.test.ts's recorded 2026-09-04 sample;
+    // production writer generates isolated receipts with synthetic timestamps and transaction IDs.
+    for (const connector of ALPHA_OFFICE_CONNECTORS) {
+      commands.set(connector.format, alphaOfficeInstallCommand(connector.format).map((argument) =>
+        argument.replace("{alphaResources}", resolve(import.meta.dir, "../../resources")),
+      ))
+      expect(upsertRecordV2(globalRoot, {
+        id: connector.catalogId, name: connector.name, kind: "mcp", environment: "dev", scope: { kind: "global" },
+        version: "1.0.0", manifestDigest: `sha256:${"00".repeat(32)}`, grantDigest: `sha256:${"11".repeat(32)}`,
+        desiredState: "enabled", origin: "catalog", configKey: `mcp.${connector.name}`,
+        transaction: { id: `test-1504-${connector.name}`, state: "committed" },
+        installedAt: "2026-10-12T00:00:00Z", updatedAt: "2026-10-12T00:00:00Z",
+      }).ok).toBe(true)
+    }
+    writeFileSync(join(globalRoot, "alpha.jsonc"), JSON.stringify({ mcp: Object.fromEntries(ALPHA_OFFICE_CONNECTORS.map((connector) =>
+      [connector.name, { type: "local", command: commands.get(connector.format), timeout: 5000 }],
+    )) }))
+    installedHashes = hashes()
+    __resetAlphaEnvironmentForTests()
+    proxyLog.length = 0
+    proxy = await startEgressPolicyProxy({ log: (record) => void proxyLog.push(record) })
+    const child = new RecordingChild()
+    creditDanglingSweepForSpawn()
+    const result = await spawnLocalServer("127.0.0.1", 4319, "password", {
+      userDataPath: isolated.XDG_STATE_HOME,
+      healthCheck: async () => true,
+      egressProxy: async () => proxy,
+      planFence: (input) => {
+        profile = renderProcessFenceProfile({
+          workspaces: [workspace], alphaGlobalRoot: isolated.ALPHA_GLOBAL_DIR,
+          userDataPath: input.userDataPath, stateHome: isolated.XDG_STATE_HOME,
+          roots: resolveEngineRoots(input.sidecarEnv, isolated.HOME), egressProxyPort: input.egressProxyPort!,
+        })
+        return { profile, addonPath: "/unused-by-sandbox-exec" }
+      },
+      fork: ((_: string, __: string[], options: { env: Record<string, string> }) => {
+        env = options.env
+        return child
+      }) as unknown as typeof import("electron").utilityProcess.fork,
+    })
+    await result.health.wait
+    await result.listener.stop()
+  })
+
+  afterEach(async () => {
+    await proxy?.close()
+    for (const [key, value] of Object.entries(previous ?? {})) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    setConfiguredEgressDestinations([])
+    if (root) rmSync(root, { recursive: true, force: true })
+  })
+
+  async function exchange(format: AlphaOfficeFormat, childEnv = env) {
+    const command = commands.get(format)!.map((argument) => argument.replace("{workspace}", workspace))
+    const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile, ...command], {
+      cwd: workspace, env: childEnv, stdin: "pipe", stdout: "pipe", stderr: "pipe", timeout: 120_000,
+    })
+    // Same wire requests as office-mcp.test.ts; no owner documents or conversation payloads.
+    child.stdin.write([
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } }),
+      JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }), "",
+    ].join("\n"))
+    child.stdin.end()
+    const [stdout, stderr, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
+    console.log(JSON.stringify({ issue: 1504, command, executable: Bun.which(command[0], { PATH: childEnv.PATH }), cache: childEnv.UV_CACHE_DIR, stdout, stderr, exitCode }))
+    return { stdout, stderr, exitCode }
+  }
+
+  function connected(format: AlphaOfficeFormat, result: Awaited<ReturnType<typeof exchange>>) {
+    expect(result.exitCode, result.stderr).toBe(0)
+    const messages = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
+    expect(messages.find((message) => message.id === 1)?.result).toMatchObject({ protocolVersion: "2025-06-18", serverInfo: { name: `alpha-office-${format}` } })
+    const extension = ALPHA_OFFICE_CONNECTORS.find((connector) => connector.format === format)!.extension.slice(1)
+    expect(messages.find((message) => message.id === 2)?.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([`read_${extension}`, `write_${extension}`])
+  }
+
+  function hashes() {
+    return ["alpha.jsonc", "installs.json"].map((file) => createHash("sha256").update(readFileSync(join(globalRoot, file))).digest("hex"))
+  }
+
+  test("AC1: four cached Office commands initialize and list their read/write tools through production env", async () => {
+    for (const connector of ALPHA_OFFICE_CONNECTORS) {
+      connected(connector.format, await exchange(connector.format))
+      const cached = await exchange(connector.format)
+      connected(connector.format, cached)
+      expect(cached.stderr).not.toMatch(/Downloading|Installed/)
+    }
+    expect(env.UV_CACHE_DIR).toBe(join(root, "userData", "uv-cache"))
+    expect(env.UV_OFFLINE).toBeUndefined()
+  }, 180_000)
+
+  test("AC2: empty app cache downloads pinned Word dependencies through the real policy proxy and reconnects", async () => {
+    expect(fs.existsSync(join(root, "userData", "uv-cache"))).toBe(false)
+    const cold = await exchange("word")
+    connected("word", cold)
+    expect(cold.stderr).toContain("Installed")
+    expect(cold.stderr).not.toContain("Operation not permitted")
+    expect(proxyLog).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: "egress.connect", host: "pypi.org", verdict: "allow", status: 200 }),
+      expect.objectContaining({ event: "egress.connect", host: "files.pythonhosted.org", verdict: "allow", status: 200 }),
+    ]))
+    console.log(JSON.stringify({ issue: 1504, coldCache: env.UV_CACHE_DIR, proxyLog }))
+    connected("word", await exchange("word"))
+  }, 180_000)
+
+  test("AC3: W3 cache works while default uv cache stays denied and installed commands/receipts stay unchanged", async () => {
+    connected("word", await exchange("word"))
+    const withoutCache = { ...env }
+    delete withoutCache.UV_CACHE_DIR
+    const denied = await exchange("word", withoutCache)
+    expect(denied.exitCode).toBe(2)
+    expect(denied.stderr).toContain(join(root, "home", ".cache", "uv"))
+    expect(denied.stderr).toContain("Operation not permitted")
+    expect(hashes()).toEqual(installedHashes)
+    console.log(JSON.stringify({ issue: 1504, before: installedHashes, after: hashes(), profileSha256: createHash("sha256").update(profile).digest("hex") }))
+  }, 180_000)
 })
 
 describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
