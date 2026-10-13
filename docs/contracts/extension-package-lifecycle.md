@@ -233,3 +233,47 @@ per-child mechanism and are not a package rollback channel.
 | Canonical permutations, ordering, tampered/dangling/overreaching mutations | `packages/ui-mac/src/main/ext-package-lifecycle-permutations.test.ts` |
 | Update through real admission, transaction and ledger; planning-time conflict; the crash matrix under real recovery; and the **real production cleanup seam run while the bundle lock is held** (with the full seam's `config busy` failure as its discrimination proof) | `packages/ui-mac/src/main/package-update.test.ts` |
 | User-reachable removal (hub card → detail → production main) | `packages/ui-mac/src/renderer/extensions/ext-package-detail-wiring.test.ts` |
+
+## Official GitHub and SQLite recipes (alpha-web#256)
+
+Only `package:github-official` / `mcp:github-official` and
+`package:dbhub-readonly` / `mcp:dbhub-readonly` may use
+`alpha.official-connectors.v1`. These single-component packages use the closed
+`officialRecipe` payloads in the [host contract](../../packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md).
+Unknown capabilities are refused before secret input. GitHub uses the official
+hosted endpoint with a user PAT, readonly repository headers and the existing
+CONNECT proxy (`api.githubcopilot.com:443`). DBHub pins 1.5.0 and checks the
+actual Node executable for >=22.5; only existing local SQLite files are accepted.
+
+The main process owns versioned safeStorage ciphertext under
+`<alphaStateBase>/connector-secrets/<env>/<server>/<version>`. DBHub's fixed
+readonly TOML and empty working directory live in the sibling `connector-config`
+tree, outside the engine's writable state root. The TOML contains `${DSN}`;
+neither argv nor sidecar-global environment contains the submitted value.
+Only `{file:}` references cross the engine boundary. The runtime files are 0600
+in owned 0700 directories under system temporary storage, outside actual HOME
+and registered workspaces. Unavailable encryption (including Linux basic_text),
+unsafe temporary roots, links and unsupported Windows ACL provisioning fail
+closed; this implementation makes no Windows availability claim.
+
+The prepared journal stores only server/version/store identities. Installation
+stops the sidecar before resource replacement; rollback releases the new version
+only after its references are gone. Success retires older encrypted versions.
+Startup waits for recovery, rejects pending journals, and rebinds enabled,
+committed configuration references to the current runtime directory. Remote truth
+is rebuilt by main from the closed recipe after commit, never replayed from a
+journal-supplied privileged target. Disabled installs retain ciphertext and use
+empty runtime files so the engine can parse their references without a secret. Exit deletes the
+current runtime tree; next startup removes owned trees whose PID is dead.
+
+Uninstall stops the sidecar, removes config and remote truth, releases all
+managed secret/config versions and then completes existing grant/receipt cleanup.
+A cleanup failure retains the receipt for retry. SQLite files are never owned or
+deleted by the installer. Errors at the credential boundary contain only a
+needs-reentry reason. Runtime deletion is not a physical secure-erase guarantee.
+
+`official-connectors.test.ts` gates real installation IPC, rollback/recovery,
+uninstall retry, actual DBHub SQLite SELECT/refused CREATE and independent table
+inspection. GitHub's local test uses the official MCP specification examples,
+explicitly not a real GitHub repository response. Real authorized GitHub and
+catalog publication evidence remain release acceptance owned by the orchestrator.

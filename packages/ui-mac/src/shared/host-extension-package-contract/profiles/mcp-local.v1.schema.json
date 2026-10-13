@@ -50,6 +50,9 @@
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]{0,127}$"
           }
+        },
+        "officialRecipe": {
+          "const": "dbhub-readonly-v1"
         }
       }
     }

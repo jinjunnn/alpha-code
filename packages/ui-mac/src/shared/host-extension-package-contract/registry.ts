@@ -4,6 +4,7 @@ export type PackageProfileIdV1 = "skill" | "agent" | "command" | "mcp-local" | "
 export type PackageCapabilityV1 =
   | "alpha.connection.v1"
   | "alpha.mcp-oauth.v1"
+  | "alpha.official-connectors.v1"
   | "alpha.secret-prerequisite.v1"
 
 export type PackageProfileRegistrationV1 = {
@@ -100,7 +101,7 @@ export function assertHostExtensionPackageRegistryV1(): void {
   const capabilities = CAPABILITY_REGISTRY_V1.map((capability) => capability.token)
   if (
     capabilities.join("\n") !==
-    ["alpha.connection.v1", "alpha.mcp-oauth.v1", "alpha.secret-prerequisite.v1"].join("\n")
+    ["alpha.connection.v1", "alpha.mcp-oauth.v1", "alpha.official-connectors.v1", "alpha.secret-prerequisite.v1"].join("\n")
   )
     throw new Error("capability registry must contain the sorted host vocabulary exactly once")
   // 界也是合同的一部分。少一条界 = 宿主某处又回去写死一个常量(#737 记在案的 5 MiB 残留就是
