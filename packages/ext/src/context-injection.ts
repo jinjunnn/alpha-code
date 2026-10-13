@@ -312,9 +312,9 @@ export const TOOL_TEXT = {
 } as const
 
 /** REQ-067 被禁技能的占位 command(`factory-deny.ts` 从这里取)。 */
-export const FACTORY_DENY_COMMAND_DESCRIPTION = "(已禁用)该技能已由 alpha 出厂默认禁用"
+export const FACTORY_DENY_COMMAND_DESCRIPTION = "(已禁用)该技能已由 Code Puppy 出厂默认禁用"
 export const FACTORY_DENY_COMMAND_TEMPLATE =
-  "该技能({name})已由 alpha 出厂默认禁用。请告知用户:此技能不可用;定制 Code Puppy 请改用 /customize-alpha;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。不要尝试其它方式执行该技能。"
+  "该技能({name})已由 Code Puppy 出厂默认禁用。请告知用户:此技能不可用;定制 Code Puppy 请改用 /customize-alpha;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。不要尝试其它方式执行该技能。"
 
 function toolFragments(): TextFragment[] {
   const out: TextFragment[] = []

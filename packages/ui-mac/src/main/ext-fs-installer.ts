@@ -152,7 +152,7 @@ export function writeSkill(
   const roots = resolveRoots(target)
   if ("error" in roots) return { ok: false, reason: roots.error }
   const dir = safeResolveUnder(roots.alphaDir, "skills", name)
-  if (!dir) return { ok: false, reason: "refused: path escapes alpha root" }
+  if (!dir) return { ok: false, reason: "refused: path escapes Code Puppy root" }
   // Codex review #355:未策展写盘前先过冲突预检 —— 不许先覆盖再被拒(那会毁掉既有 flat 内容)。
   if (!meta?.catalogId) {
     const conflict = checkUncuratedConflict(roots.alphaDir, "skill", name)
@@ -213,7 +213,7 @@ export function writeAgent(name: string, content: string, target?: InstallTarget
     if (!conflict.ok) return conflict
   }
   const dir = safeResolveUnder(roots.alphaDir, "agents")
-  if (!dir) return { ok: false, reason: "refused: path escapes alpha root" }
+  if (!dir) return { ok: false, reason: "refused: path escapes Code Puppy root" }
   const file = path.join(dir, `${name}.md`)
   const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
   // 覆盖场景(更新)的 before-image:失败时按快照复原旧 md/旧条目,不再「撤新 = 毁旧」。
@@ -324,7 +324,7 @@ export function installBuiltinSkill(
   const roots = resolveRoots(target)
   if ("error" in roots) return { ok: false, reason: roots.error }
   const destDir = safeResolveUnder(roots.alphaDir, "skills", name)
-  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  if (!destDir) return { ok: false, reason: "refused: path escapes Code Puppy root" }
   try {
     fs.mkdirSync(destDir, { recursive: true })
     // Bundled content is trusted (we authored/vendored it); copy the whole skill dir.
@@ -357,7 +357,7 @@ export function installRemoteSkill(
   const roots = resolveRoots(target)
   if ("error" in roots) return { ok: false, reason: roots.error }
   const destDir = safeResolveUnder(roots.alphaDir, "skills", name)
-  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  if (!destDir) return { ok: false, reason: "refused: path escapes Code Puppy root" }
   try {
     fs.mkdirSync(destDir, { recursive: true })
     for (const c of contents) {
@@ -702,7 +702,7 @@ export function importSkillFolder(
   const roots = resolveRoots(target)
   if ("error" in roots) return { ok: false, reason: roots.error }
   const destDir = safeResolveUnder(roots.alphaDir, "skills", name)
-  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  if (!destDir) return { ok: false, reason: "refused: path escapes Code Puppy root" }
   if (fs.existsSync(destDir)) return { ok: false, reason: `同名技能已存在(${name}),请先卸载再导入` }
   // Codex review #355:复制前过账本冲突预检(catalog 同键/generation store)——省掉复制后再拒的补偿。
   const conflict = checkUncuratedConflict(roots.alphaDir, "skill", name)
@@ -919,7 +919,7 @@ export function stageVendoredPluginVersioned(
   for (let attempt = 0; attempt < 3 && destDir === null; attempt++) {
     const versioned = `${name}@${crypto.randomBytes(4).toString("hex")}`
     const candidate = safeResolveUnder(alphaGlobalRoot(), "plugins", versioned)
-    if (!candidate) return { ok: false, reason: "refused: path escapes alpha root" }
+    if (!candidate) return { ok: false, reason: "refused: path escapes Code Puppy root" }
     try {
       fs.mkdirSync(candidate) // 非递归:已存在 = EEXIST,绝不复用他人目录
       destDir = candidate

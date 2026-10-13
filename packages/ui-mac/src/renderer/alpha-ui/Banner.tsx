@@ -46,7 +46,7 @@ export function ContractFailureBanner() {
         <div class="a-contract-failure" data-alpha-contract-failure={value.surface}>
           <Banner
             kind="error"
-            title="Alpha platform contract is incompatible"
+            title="Code Puppy platform contract is incompatible"
             detail={`${value.surface}: ${value.reason} (expected v${value.expected_version}, received ${value.received_version})`}
           />
         </div>

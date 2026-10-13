@@ -138,17 +138,17 @@ export function resolveProjectAlphaRoot(projectDir: string, homeDir: string = os
   if (!retired.ok) return { status: "unknown", reason: "retired global root identity cannot be confirmed" }
   const root = path.join(project, ".code-puppy")
   if (sameOrInside(project, retired.path) || related(root, retiredLexical) || related(root, retired.path))
-    return { status: "retired-home", reason: "project alpha root is related to the retired global root" }
+    return { status: "retired-home", reason: "project Code Puppy root is related to the retired global root" }
 
   try {
     const stat = fs.lstatSync(root)
     if (stat.isSymbolicLink() || !stat.isDirectory())
-      return { status: "unknown", reason: "project alpha endpoint is not a real directory" }
+      return { status: "unknown", reason: "project Code Puppy endpoint is not a real directory" }
     if (path.normalize(fs.realpathSync(root)) !== root)
-      return { status: "unknown", reason: "project alpha endpoint is a canonical alias" }
+      return { status: "unknown", reason: "project Code Puppy endpoint is a canonical alias" }
   } catch (error) {
     if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT")
-      return { status: "unknown", reason: "project alpha root identity cannot be confirmed" }
+      return { status: "unknown", reason: "project Code Puppy root identity cannot be confirmed" }
   }
   return { status: "project", projectDir: project, root }
 }
