@@ -7,12 +7,18 @@ import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import presetSolid from "babel-preset-solid"
+import { resolveObjectURL } from "node:buffer"
 
+// The image renderer's native URL.createObjectURL requires Bun's Blob, not happy-dom's Blob.
+const nativeBlob = Blob
 GlobalRegistrator.register()
+Object.defineProperty(globalThis, "Blob", { value: nativeBlob, writable: true, configurable: true })
 const solid = await import("solid-js/dist/solid.js")
 mock.module("solid-js", () => solid)
 const solidWeb = await import("solid-js/web/dist/web.js")
 mock.module("solid-js/web", () => solidWeb)
+const storeRuntime = await import("solid-js/store/dist/store.js")
+mock.module("solid-js/store", () => storeRuntime)
 
 // Major-1 契约的可控 IntersectionObserver:autoVisible=true 时 observe 即视为进窗
 // (等价于「行初始就在视口内」),Major-1 用例改为手动 trigger 驱动进窗/出窗。
@@ -100,7 +106,13 @@ const bindingData: {
 } = { message: {}, part: {}, session_status: {} }
 
 mock.module("@opencode-ai/app", () => ({
+  useLayout: () => ({ tabs: () => ({ all: () => [], active: () => undefined }) }),
   useServerSDK: () => () => ({
+    scope: "sidecar",
+    ensureDirSdkContext: () => ({
+      client: { file: { list: async () => ({ data: [] }) } },
+      event: { on: () => () => {} },
+    }),
     client: {
       // #652:续钮与 composer 共用同一条发送入口 = v1 session.promptAsync。
       session: {
@@ -120,6 +132,7 @@ mock.module("@opencode-ai/app", () => ({
     },
   }),
   useServerSync: () => () => ({
+    data: { provider: { all: new Map() } },
     session: {
       sync: () => Promise.resolve(),
       data: bindingData,
@@ -158,6 +171,10 @@ Bun.plugin({
 const runtime = await import("../src/renderer/alpha-ui/session-timeline/session-timeline-test-runtime")
 const model = await import("../src/renderer/alpha-ui/session-timeline/timeline-model")
 const binding = await import("../src/renderer/alpha-ui/session-timeline/session-timeline")
+const previewFixture = await import("./inline-preview.fixture")
+const previewShell = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-shell")
+const previewFiles = await import("../src/renderer/alpha-ui/session-rail/files/session-rail-files")
+const previewArtifacts = await import("../src/renderer/alpha-ui/session-rail/artifacts/session-rail-artifacts")
 
 const disposers: Array<() => void> = []
 
@@ -2081,7 +2098,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(media.textContent).toContain("PNG")
     ;(media.querySelector("button.a-media-row") as HTMLButtonElement).click()
     expect(runtime.getIntentLog().focusArtifact).toEqual([
-      { name: "界面截图.png", partID: "prt_f1", mime: "image/png" },
+      { name: "界面截图.png", partID: "prt_f1", mime: "image/png", url: "data:image/png;base64,eA==" },
     ])
 
     runtime.setTimelineIntentsEnabled(false)
@@ -3798,4 +3815,125 @@ describe("#1475 步骤行:动作名 · 对象 · 行尾 / 行内来源 / 提问 
     expect(fetch!.querySelector("[data-alpha-ask-timeout-card]")).toBeNull()
     expect(fetch!.querySelector(".a-tc-error-body")!.textContent).toContain("Transport error")
   })
+})
+
+// #1503: real timeline binding + shell + resident files/artifacts panels, through user buttons.
+function mountInlinePreview(parts: unknown[]) {
+  bindingData.message[BINDING_SESSION_ID] = [
+    { id: "msg_preview_u", sessionID: BINDING_SESSION_ID, role: "user", time: { created: 1 }, agent: "build", model: { providerID: "test", modelID: "test" } },
+    { id: "msg_preview", sessionID: BINDING_SESSION_ID, role: "assistant", parentID: "msg_preview_u", time: { created: 2, completed: 30 },
+      providerID: "test", modelID: "test", mode: "build", agent: "build", path: { cwd: "/tmp/workspace", root: "/tmp/workspace" },
+      cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } },
+  ]
+  bindingData.part.msg_preview_u = [{ id: "prt_preview_u", type: "text", text: "Preview generated files" }]
+  bindingData.part.msg_preview = parts
+  bindingData.session_status[BINDING_SESSION_ID] = { type: "idle" }
+  const identity = { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: BINDING_SESSION_ID }
+  const live = { current: () => ({ identity, project: "workspace", title: "Preview", activity: "idle" as const }), accepts: (candidate: typeof identity) => candidate.sessionID === identity.sessionID }
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(solidWeb.render(() => solid.createComponent(previewShell.SessionWorkspaceShell, {
+    live,
+    timeline: (rail) => solid.createComponent(binding.AlphaSessionTimeline, { rail }),
+    panels: {
+      files: (rail) => solid.createComponent(previewFiles.SessionRailFiles, { live, rail }),
+      artifacts: (rail) => solid.createComponent(previewArtifacts.SessionRailArtifacts, { live, rail }),
+    },
+  }), host))
+  return host
+}
+
+async function settlePreview() {
+  await new Promise((resolve) => setTimeout(resolve, 1))
+  await flush()
+}
+
+test("AC1 #1503: closed rail shows each same-name PNG from its clicked media row", async () => {
+  ;(window as never as Record<string, unknown>).api = {
+    runArtifacts: { projectUsage: async () => ({ ok: false, reason: "offline" }) },
+    cloud: { onRunSaved: () => () => {}, onArtifactProgress: () => () => {} },
+  }
+  const host = mountInlinePreview(previewFixture.previewParts)
+  await settlePreview()
+  const rows = [...host.querySelectorAll<HTMLButtonElement>("button.a-media-row")]
+  expect(rows).toHaveLength(2)
+  for (const index of [0, 1]) {
+    host.querySelector<HTMLButtonElement>(".a-swk-rail-close")!.click()
+    expect(host.querySelector("[data-alpha-session-rail-host]")).toBeNull()
+    rows[index].focus()
+    rows[index].click()
+    await settlePreview()
+    expect(host.querySelector("[data-alpha-session-rail-panel='files']")).not.toBeNull()
+    expect(host.querySelector(".a-fv-name")!.textContent).toBe("image/png")
+    expect(host.querySelector<HTMLImageElement>("[data-alpha-fv-image] img")!.src).toBe(previewFixture.previewPngs[index])
+    expect(host.querySelector("[data-alpha-file-viewer]")!.getAttribute("data-alpha-file-viewer")).toBe(`prt_image_${index}`)
+    expect(host.querySelector("[data-alpha-fv-kebab]")).toBeNull()
+    expect(host.querySelector("[data-alpha-boundary]")).toBeNull()
+    host.querySelector("[data-alpha-file-viewer]")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    expect(document.activeElement).toBe(rows[index])
+  }
+  rows[0].click()
+  await settlePreview()
+  host.querySelector("[data-alpha-fv-image] img")!.dispatchEvent(new Event("error"))
+  expect(host.querySelector("[data-alpha-fv-image] img")).toBeNull()
+  rows[1].click()
+  await settlePreview()
+  expect(host.querySelector<HTMLImageElement>("[data-alpha-fv-image] img")!.src).toBe(previewFixture.previewPngs[1])
+  delete (window as never as Record<string, unknown>).api
+})
+
+test.each(["image", "document"])("AC2 #1503: cloud %s click previews the selected descriptor across B → A → B", async (kind) => {
+  const selected = kind === "image" ? 0 : 1
+  const runs = previewFixture.previewRuns
+  const entries = runs.map((run) => run.response.artifacts.map((descriptor) => ({ descriptor,
+    local: { savedPath: `artifacts/${descriptor.name}`, downloadedAt: "2026-10-12T00:00:00Z", bytesOnDisk: descriptor.size, state: "verified", warnings: [] },
+  })))
+  let releaseA: (() => void) | undefined
+  let gateA = true
+  const reads: string[] = []
+  ;(window as never as Record<string, unknown>).api = {
+    runArtifacts: {
+      projectUsage: async () => ({ ok: true, usage: { runs: runs.map((run) => ({ runId: run.runId, artifactCount: 2, recordedBytes: 100, diskBytes: 100, legacyBytes: 0, missingCount: 0, readOnly: false, updatedAt: null })), totalDiskBytes: 200, limits: { projectMaxBytes: 1024, runMaxBytes: 1024 } } }),
+      list: async (_dir: string, runId: string) => {
+        if (runId === "job_A" && gateA) await new Promise<void>((resolve) => { releaseA = resolve })
+        return { ok: true, entries: entries[runs.findIndex((run) => run.runId === runId)], legacyFiles: [], warnings: [] }
+      },
+      verify: async (_dir: string, runId: string, id: string) => ({ ok: true, entry: entries[runs.findIndex((run) => run.runId === runId)].find((entry) => entry.descriptor.id === id) }),
+      read: async (_dir: string, runId: string, ref: { artifactId: string }, options: { mode: string }) => {
+        const run = runs.find((run) => run.runId === runId)!
+        const bytes = run.contents[run.response.artifact_ids.indexOf(ref.artifactId)]
+        reads.push(`${runId}:${ref.artifactId}`)
+        return options.mode === "bytes" ? { ok: true, kind: "bytes", bytes, totalBytes: bytes.length }
+          : { ok: true, kind: "text", text: new TextDecoder().decode(bytes), totalBytes: bytes.length, readBytes: bytes.length, binary: false, truncated: false }
+      },
+    },
+    cloud: { artifacts: async (id: string) => runs.find((run) => run.runId === id)!.response, onRunSaved: () => () => {}, onArtifactProgress: () => () => {} },
+  }
+  const parts = runs.map((run, index) => ({ ...toolPartFixture(`prt_cloud_${index}`, "cloud_artifacts", {
+    status: "completed", input: { job_id: run.runId }, output: JSON.stringify(run.response), title: "artifacts", metadata: {}, time: { start: 10 + index, end: 11 + index },
+  }, { identity: { source: "mcp", origin: "cloud", name: "artifacts" }, technicalId: "cloud_artifacts", authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` } }), sessionID: BINDING_SESSION_ID, messageID: "msg_preview" }))
+  const host = mountInlinePreview(parts)
+  await settlePreview()
+  const buttons = [...host.querySelectorAll<HTMLButtonElement>("button.a-artrow")]
+  expect(buttons).toHaveLength(4)
+  for (const index of [1, 0, 1]) {
+    buttons[index * 2 + selected].focus()
+    buttons[index * 2 + selected].click()
+    await settlePreview()
+    if (index === 0) {
+      expect(host.querySelector(".a-wb-image, .a-wb-md") === null).toBe(true) // A's cards have not arrived; B cannot persist.
+      gateA = false
+      releaseA!()
+      await settlePreview()
+    }
+    const descriptor = runs[index].response.artifacts[selected]
+    expect(host.querySelector(".a-rart-runhead-id")!.getAttribute("title")).toBe(runs[index].runId) // selectedRunId
+    expect(host.querySelector(`[data-artifact-card='${descriptor.id}']`)!.closest(".alpha-wb-card")!.hasAttribute("data-active")).toBe(true) // selectedKey
+    expect(reads).toContain(`${runs[index].runId}:${descriptor.id}`)
+    if (kind === "image") {
+      const image = host.querySelector<HTMLImageElement>(".a-wb-image img")!
+      expect(new Uint8Array(await resolveObjectURL(image.src)!.arrayBuffer())).toEqual(runs[index].contents[0])
+    } else expect(host.querySelector(".a-wb-md h1")!.textContent).toBe(`Document ${index === 0 ? "A" : "B"}`)
+  }
+  delete (window as never as Record<string, unknown>).api
 })

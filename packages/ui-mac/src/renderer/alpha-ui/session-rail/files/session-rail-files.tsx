@@ -16,7 +16,7 @@
  */
 
 import { useLayout, useServerSDK, useServerSync } from "@opencode-ai/app"
-import { createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, onCleanup, Show, untrack } from "solid-js"
 import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
 import { turnDiffsOf } from "../review/review-turn-diffs"
 import { sessionStateKey, statusByFile } from "./files-core"
@@ -25,6 +25,7 @@ import { SessionRailFilesView } from "./files-view"
 import { createFileViewerIO, createFileViewerOverlayIO } from "./file-viewer-io"
 import { createFileViewerState } from "./file-viewer-state"
 import { FileViewerView } from "./file-viewer-view"
+import type { TimelineMediaSource } from "../../session-timeline/timeline-model"
 import "./session-rail-files.css"
 
 const SEARCH_LIMIT = 100
@@ -72,7 +73,7 @@ function FilesPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi
   let treeLayer: HTMLDivElement | undefined
   let origin: HTMLElement | undefined
 
-  const openViewer = (path: string) => {
+  const openViewer = (path: string | TimelineMediaSource) => {
     if (!viewer.current()) {
       const active = document.activeElement
       origin = active instanceof HTMLElement ? active : undefined
@@ -130,7 +131,12 @@ function FilesPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi
   // rail linkage:审查文件卡「查看整份文件」→ 查看器(seq 让同文件重复请求也触发)。
   createEffect(() => {
     const target = props.rail.fileViewerTarget?.()
-    if (target) openViewer(target.file)
+    if (target) {
+      untrack(() => {
+        openViewer(target.file)
+        origin = target.origin
+      })
+    }
   })
 
   // AC5:面板被切走 → 读取立即终止(叠放销毁由查看器自身 effect 的 active 依赖兑现)。

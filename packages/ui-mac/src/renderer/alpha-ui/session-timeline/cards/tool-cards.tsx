@@ -840,7 +840,7 @@ export function TimelineMediaRow(props: { media: TimelineMediaSource }) {
           type="button"
           class="a-media-row"
           onClick={() =>
-            intents.focusArtifact!({ name: props.media.name, partID: props.media.partID, mime: props.media.mime })
+            intents.focusArtifact!(props.media)
           }
         >
           {inner()}

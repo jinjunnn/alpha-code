@@ -11,6 +11,7 @@
  */
 
 import { createSignal } from "solid-js"
+import type { TimelineMediaSource } from "../../session-timeline/timeline-model"
 import { detectOoxmlContainer, OOXML_LIMITS, type OoxmlSubtype } from "../../artifact-workbench/renderers/ooxml"
 import {
   presentOfficeStructure,
@@ -53,6 +54,7 @@ export type ViewerFilePhase =
       totalBytes: number
     }
   | { phase: "image"; bytes: Uint8Array; mime: string; totalBytes: number }
+  | { phase: "image"; url: string }
   | { phase: "overlay"; overlay: RailPreviewKind }
   /**
    * OOXML(#1227):`subtype` 是**检测出来的**身份(与扩展名冲突时按检测为准并给 warning);
@@ -84,6 +86,7 @@ export interface ViewerEntry {
   name: string
   dir: string
   plan: ViewerPlan
+  media?: boolean
 }
 
 export interface FileViewerIO {
@@ -259,8 +262,14 @@ export function createFileViewerState(io: FileViewerIO) {
     done(refusalPhase(bytes.failed, entry.plan))
   }
 
-  /** 打开(或切换到)一个 workspace 相对路径。同路径重复打开是显式 reload。 */
-  const open = (path: string) => {
+  /** 打开媒体源或 workspace 相对路径。同路径重复打开是显式 reload。 */
+  const open = (path: string | TimelineMediaSource) => {
+    if (typeof path !== "string") {
+      abortRead()
+      setCurrent({ path: path.partID, name: path.name, dir: "", plan: { kind: "image", mime: path.mime }, media: true })
+      setFilePhase({ phase: "image", url: path.url })
+      return
+    }
     const { name, dir } = splitViewerPath(path)
     const entry: ViewerEntry = { path, name, dir, plan: viewerPlanFor(path) }
     setCurrent(entry)
