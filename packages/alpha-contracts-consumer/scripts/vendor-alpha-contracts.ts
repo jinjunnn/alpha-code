@@ -118,7 +118,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "cdaed4949dfd5457f9283a40a9c494960716c1de",
+    commit: "b22a43472487eed2036cd0a6b296ada8a236638a",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -126,7 +126,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "432ca3ef3b96ed271c0dda392b49129eec1d21cf9956b7ec7aded3afcffc289a",
+    artifactSha256: "914e610dabd7197c87467d6fc610e2f11a0f5ecf1579f083ab273934adbb1b94",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`

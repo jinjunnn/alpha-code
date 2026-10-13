@@ -24,10 +24,11 @@
               "enum": [
                 "alpha.connection.v1",
                 "alpha.mcp-oauth.v1",
+                "alpha.official-connectors.v1",
                 "alpha.secret-prerequisite.v1"
               ]
             },
-            "maxItems": 3,
+            "maxItems": 4,
             "type": "array",
             "uniqueItems": true
           },

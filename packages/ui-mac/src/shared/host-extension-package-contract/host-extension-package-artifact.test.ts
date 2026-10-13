@@ -78,6 +78,7 @@ describe("HostExtensionPackageV1 artifact", () => {
     expect(CAPABILITY_REGISTRY_V1.map((capability) => capability.token)).toEqual([
       "alpha.connection.v1",
       "alpha.mcp-oauth.v1",
+      "alpha.official-connectors.v1",
       "alpha.secret-prerequisite.v1",
     ])
     // 界也是合同。#737 的 5 MiB 残留就是「界只活在某个源文件里的字面量」造成的,
@@ -298,6 +299,7 @@ describe("HostExtensionPackageV1 artifact", () => {
           ([key, definition]) => {
             if (key === "requiredSecrets")
               return [{ key, values: [[], ["SCHEMA_ENUM_PROBE"]] as unknown[] }]
+            if (definition.const !== undefined) return [{ key, values: [definition.const] }]
             if (Array.isArray(definition.enum)) return [{ key, values: definition.enum }]
             if (Array.isArray(definition.oneOf))
               return [{ key, values: definition.oneOf.map(schemaArmProbe) }]

@@ -1,3 +1,4 @@
+import { clearOfficialConnectorRuntime, clearOfficialConnectorRuntimeOnExit, restoreCommittedOfficialConnectors } from "./official-connector-resources"
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -463,6 +464,7 @@ export async function spawnLocalServer(
   // REQ-053 `#982`: refuse fork unless this generation credited a dangling sweep
   // (boot / respawn). Fail closed before secrets sync or utilityProcess.fork.
   consumeDanglingSweepCredit()
+  clearOfficialConnectorRuntime()
 
   // A6: mirror the secret env vars into the {file:} channel on EVERY fork (login/logout/key changes
   // respawn the sidecar through here, so the files always track the current auth/BYOK state), then
@@ -551,12 +553,20 @@ export async function spawnLocalServer(
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   rotateServerLogs()
-  const child = (options.fork ?? electronNs.utilityProcess.fork)(sidecar, [], {
-    cwd: ensureEngineScratchCwd(options.userDataPath),
-    env: sidecarEnv,
-    serviceName: SIDECAR_SERVICE_NAME,
-    stdio: "pipe",
-  })
+  const runtimeGeneration = tryGetAlphaEnvironment() ? restoreCommittedOfficialConnectors() : []
+  const child = (() => {
+    try {
+      return (options.fork ?? electronNs.utilityProcess.fork)(sidecar, [], {
+        cwd: ensureEngineScratchCwd(options.userDataPath),
+        env: sidecarEnv,
+        serviceName: SIDECAR_SERVICE_NAME,
+        stdio: "pipe",
+      })
+    } catch (error) {
+      clearOfficialConnectorRuntime(runtimeGeneration)
+      throw error
+    }
+  })()
   let exited = false
   // #613:ready IPC 带回的注入失败。在此立即 error(main 侧无条件可观测,不依赖后续健康结果),
   // 并随返回值交给终态生产者(armBoot/armRespawnGenerationTerminal)发布 "injection-failed"。
@@ -574,6 +584,7 @@ export async function spawnLocalServer(
   const writeProbes = createWriteProbeRequester((command) => child.postMessage(command))
   child.on("message", (message: unknown) => void writeProbes.receive(message))
   child.once("exit", (code) => {
+    clearOfficialConnectorRuntimeOnExit(runtimeGeneration)
     exited = true
     electronNs.app.off("child-process-gone", onProcessGone)
     writeProbes.close(`sidecar exited with code ${code}`)

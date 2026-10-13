@@ -45,9 +45,9 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "cdaed4949dfd5457f9283a40a9c494960716c1de",
+      commit: "b22a43472487eed2036cd0a6b296ada8a236638a",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "432ca3ef3b96ed271c0dda392b49129eec1d21cf9956b7ec7aded3afcffc289a",
+      artifactSha256: "914e610dabd7197c87467d6fc610e2f11a0f5ecf1579f083ab273934adbb1b94",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
@@ -161,11 +161,12 @@ describe("alpha-web extension package producer artifact pin", () => {
       "skill",
     ])
     // 合同 v2 (`#749`) 把两个 capability 转正。Phase 4 (`#807`) 一度再登记 `engine:config` /
-    // `engine:plugin`,ADR-040 否决后由 `#830` / alpha-web#138 撤回,回到三个。exact-set,
-    // 不是 arrayContaining:多出来一个未经宿主登记的 token 同样要红。
+    // `engine:plugin`,ADR-040 否决后由 `#830` / alpha-web#138 撤回；alpha-web#256 新增
+    // official-connectors，现为四个。exact-set，不是 arrayContaining：未经宿主登记的 token 同样要红。
     expect(registry.capabilities.map((capability: { token: string }) => capability.token)).toEqual([
       "alpha.connection.v1",
       "alpha.mcp-oauth.v1",
+      "alpha.official-connectors.v1",
       "alpha.secret-prerequisite.v1",
     ])
     expect(profiles.mappings.map((mapping: { host: { profileId: string } }) => mapping.host.profileId)).toEqual([

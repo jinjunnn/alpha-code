@@ -1,3 +1,4 @@
+import { clearOfficialConnectorRuntimeOnExit } from "./official-connector-resources"
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import * as http from "node:http"
@@ -667,6 +668,7 @@ const main = Effect.gen(function* () {
   })
 
   app.on("will-quit", () => {
+    clearOfficialConnectorRuntimeOnExit()
     quittingApp = true
     if (selfHealTimer) clearTimeout(selfHealTimer)
     void stopSidecars()
@@ -962,6 +964,8 @@ const main = Effect.gen(function* () {
     app.getPath("userData"),
     registryChannel,
     () => Effect.runPromise(Deferred.await(serverReady)),
+    homedir(),
+    { stop: () => killSidecar("structural"), refresh: () => requestSidecarRespawn?.("structural") ?? Promise.resolve(false) },
   )
   // REQ-135 retirement is a ledger mutation, so it waits for crash recovery and then takes the
   // same global extension lock before touching config/receipts. The result is awaited pre-sidecar.
@@ -1327,6 +1331,7 @@ const main = Effect.gen(function* () {
       return
     }
 
+    yield* Effect.promise(() => extLedgerReady)
     logger.log("spawning sidecar", { url })
     const spawnGen = ++sidecarGen
     publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason: "boot" })

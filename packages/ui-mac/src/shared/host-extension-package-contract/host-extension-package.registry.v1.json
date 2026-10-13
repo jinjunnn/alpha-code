@@ -42,6 +42,10 @@
       "semantic": "Complete an engine-owned MCP OAuth authorization before the component is installed; no token material ever appears in package bytes."
     },
     {
+      "token": "alpha.official-connectors.v1",
+      "semantic": "Install only the closed GitHub remote and DBHub SQLite readonly recipes, with encrypted credentials and protected ephemeral runtime files."
+    },
+    {
       "token": "alpha.secret-prerequisite.v1",
       "semantic": "Resolve declared secret references without placing secret values in package bytes."
     }

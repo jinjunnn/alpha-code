@@ -153,7 +153,7 @@ export type TxSkippedOptional = { key: string; reason?: string }
  */
 export type TxPreparedResourceV1 = {
   kind: "mcp-secret-version"
-  store: "alpha-mcp-secrets"
+  store: "alpha-mcp-secrets" | "official-connectors"
   /** store 内的所有者标识(单个安全路径段;真正的文法由 store 拥有者在释放接缝里再验一次)。 */
   server: string
   /** store 内的版本标识(同上)。 */
@@ -162,7 +162,7 @@ export type TxPreparedResourceV1 = {
 
 /** 已登记的 prepared resource 种类 / store。未登记者一律拒绝(咽喉对新成员默认拒绝)。 */
 const PREPARED_KINDS = new Set<string>(["mcp-secret-version"])
-const PREPARED_STORES = new Set<string>(["alpha-mcp-secrets"])
+const PREPARED_STORES = new Set<string>(["alpha-mcp-secrets", "official-connectors"])
 /** 通用界:单个安全路径段(无分隔符/NUL/相对段,有界)。isExtensionName 与密钥版本名都是其真子集。 */
 const SAFE_PREPARED_SEGMENT = /^[A-Za-z0-9._-]{1,128}$/
 const PREPARED_FIELDS = new Set(["kind", "store", "server", "version"])

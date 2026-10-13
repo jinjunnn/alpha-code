@@ -1,11 +1,11 @@
 {
   "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-  "artifactSha256": "369b73f0ae139ae8fa90b9f1c8a8ab1f379f822aca9cae394ef7f0678e52c4eb",
+  "artifactSha256": "d41c5fdc4ca38ea24dbe404467f5dc9fc8bf69a486867a714ef9a6197b3475ab",
   "files": [
     {
-      "bytes": 16719,
+      "bytes": 18157,
       "path": "CONTRACT.md",
-      "sha256": "dc7569e936bb2f850b7e74a9a5c7b7d485933cc7d5efd262aff12ae4f95814fa"
+      "sha256": "77a7396f0ffcce7a3157ff1d20ad5def39f2e2ba4896bb1577898a7328cd0b71"
     },
     {
       "bytes": 5710,
@@ -13,9 +13,9 @@
       "sha256": "6a4dd390df49ad3fcc991a33d41d4383c9836d6fa3106b99df592164f68400d5"
     },
     {
-      "bytes": 61004,
+      "bytes": 62397,
       "path": "decoder.ts",
-      "sha256": "934063df6ab21254a32f15d280ae85f404f288884590e569842a2020389a1ecd"
+      "sha256": "0b47c3c6609de3bfb47c1a77e58f48b1c1ea5fd4c10852fdf0358c37cbeae4a7"
     },
     {
       "bytes": 18995,
@@ -23,9 +23,9 @@
       "sha256": "63ae0f1c406ef7db0d00adaadbe0e5818ee4825a1078c14d023f3a32b71b3516"
     },
     {
-      "bytes": 2041,
+      "bytes": 2260,
       "path": "host-extension-package.registry.v1.json",
-      "sha256": "df2d5bd9d220f4e2d58017aa7eb2efe02a3690960c76e62070ecd9e450811dbb"
+      "sha256": "f4f656af0acad840c481dd5e8b2be13475d7b11b7e30654aa1f8dc0b111ada16"
     },
     {
       "bytes": 1369,
@@ -38,14 +38,14 @@
       "sha256": "f7188e292dc6b2365a9888e2c07f3172d747943ac3a9a9a14aa17368ba6bd42e"
     },
     {
-      "bytes": 1355,
+      "bytes": 1433,
       "path": "profiles/mcp-local.v1.schema.json",
-      "sha256": "51681a0ab12e5a4f9d2dc4d46353accf4fc5befe95aa92e133e0ca2626dd7923"
+      "sha256": "9f5d2b1a591d6bfdfb48718ba90049583885d1788684d6f58236e6ba2aa1a2a4"
     },
     {
-      "bytes": 3176,
+      "bytes": 3253,
       "path": "profiles/mcp-remote.v1.schema.json",
-      "sha256": "3e39e702eb9c54156aacf60ba0bca920517c259a3e573e132f871443a8150142"
+      "sha256": "857ca8e56f1f119bdfdbd34a32d0b97e8be7cdadf71e34d3cfbc1da91cb5181d"
     },
     {
       "bytes": 1542,
@@ -53,9 +53,9 @@
       "sha256": "4b2a59b129724b11a365cf23dc4af25f0f5664f3345d4f4d34f3a3494158878e"
     },
     {
-      "bytes": 5337,
+      "bytes": 5404,
       "path": "registry.ts",
-      "sha256": "3321c5827e72ed0811e70164352d412e50f0bce645456de4ca12c622b3207300"
+      "sha256": "26547785da8c561bc66fd6bfd4e4e3df2fcb7faccdbed263a59e8d5d69d797a7"
     },
     {
       "bytes": 5105,

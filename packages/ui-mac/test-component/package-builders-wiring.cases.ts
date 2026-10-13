@@ -110,6 +110,22 @@ const builderCalls = { skill: 0, agent: 0, mcp: 0 }
 const routerCalls = { built: 0, invoked: [] as Array<{ key: string; action: string; phase: string }> }
 const txCalls = { runs: 0 }
 
+// Install the Electron boundary before builders can import official recipe prerequisites.
+mock.module("electron", () => ({
+  BrowserWindow: class {
+    static fromWebContents() {
+      return undefined
+    }
+  },
+  dialog: {
+    showMessageBox: async () => ({ response: 1, checkboxChecked: false }),
+    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+  },
+  ipcMain: {
+    handle: (channel: string, handler: IpcHandler) => handlers.set(channel, handler),
+  },
+}))
+
 // mock.module 会就地改写已导入的命名空间对象 —— 真实现必须先取成本地引用,否则包装器会自调。
 const buildersModule = await import("../src/main/ext-package-tx-builders")
 const realSkillBuilder = buildersModule.buildSkillTxItems
@@ -157,20 +173,7 @@ mock.module("../src/main/ext-health-probe-router", () => ({
   },
 }))
 
-mock.module("electron", () => ({
-  BrowserWindow: class {
-    static fromWebContents() {
-      return undefined
-    }
-  },
-  dialog: {
-    showMessageBox: async () => ({ response: 1, checkboxChecked: false }),
-    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
-  },
-  ipcMain: {
-    handle: (channel: string, handler: IpcHandler) => handlers.set(channel, handler),
-  },
-}))
+
 
 mock.module("../src/main/ipc", () => ({
   pickedFiles: {

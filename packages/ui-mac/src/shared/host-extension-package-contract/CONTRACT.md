@@ -323,3 +323,26 @@ This artifact contains no production Catalog wiring, Electron/IPC code,
 network or disk implementation, legacy projection/oracle, same-ID shadow
 policy, nested (depth > 1) graphs, version solving, or any profile whose payload
 is code the engine evaluates in its own process (ADR-040).
+
+## Closed official connector recipes
+
+`alpha.official-connectors.v1` is required whenever `behavior.officialRecipe`
+is present. `mcp-remote` accepts only `github-remote-v1`, with exactly the URL
+`https://api.githubcopilot.com/mcp/`, `auth: "none"`, one required secret
+`GITHUB_PERSONAL_ACCESS_TOKEN`, and headers `Authorization: Bearer
+{GITHUB_PERSONAL_ACCESS_TOKEN}`, `X-MCP-Toolsets: repos`, `X-MCP-Readonly: true`.
+Its only identity is `package:github-official` containing `mcp:github-official`.
+
+`mcp-local` accepts only `dbhub-readonly-v1`, with command
+`["npx", "-y", "@bytebase/dbhub@1.5.0", "--transport", "stdio"]`, empty environment
+and the single required secret `DSN`. Its only identity is
+`package:dbhub-readonly` containing `mcp:dbhub-readonly`. These are single-component
+packages. Their reserved identities cannot omit the recipe. The host checks
+Node >=22.5, encryption and temporary-root prerequisites before requesting secrets.
+Only existing local SQLite file DSNs are supported; remote databases are rejected.
+
+The host supplies the protected fixed readonly TOML, working directory and
+runtime file references. Payloads cannot supply secret storage paths, TOML,
+extra arguments or alternate endpoints. Other MCP payloads retain their existing
+behavior. See the [lifecycle contract](../../../../../docs/contracts/extension-package-lifecycle.md)
+for ciphertext, ephemeral projections, rollback and uninstall ownership.
