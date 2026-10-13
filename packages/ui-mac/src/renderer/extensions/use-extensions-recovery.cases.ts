@@ -1,4 +1,5 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test"
 import { mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -17,6 +18,7 @@ let generation = 0
 let runtime: { createRoot: typeof createRoot; useExtensions: typeof useExtensions }
 let engine: ReturnType<typeof Bun.spawn>
 let engineUrl: string
+let statusPath: string
 let captured: Record<string, { status: string }>
 const disposers: (() => void)[] = []
 const proxies: ReturnType<typeof Bun.serve>[] = []
@@ -61,7 +63,7 @@ function mount(port: number, delayFailure?: Promise<void>) {
   // The hook does not expose SDK fetch injection. Observe its real transport boundary only;
   // delaying an actual refused request makes the late-error arm deterministic.
   globalThis.fetch = (async (input, init) => {
-    const status = new URL(input instanceof Request ? input.url : String(input)).pathname === "/mcp"
+    const status = new URL(input instanceof Request ? input.url : String(input)).pathname === statusPath
     if (status) requests++
     try {
       return await transport(input, init)
@@ -106,9 +108,14 @@ beforeAll(async () => {
     stdout: Bun.file(join(root, "engine.log")), stderr: Bun.file(join(root, "engine.log")),
   })
   await until(async () => (await Bun.file(join(root, "engine.log")).text()).includes(`listening on ${engineUrl}`))
-  const response = await transport(`${engineUrl}/mcp?directory=${encodeURIComponent(join(root, "project"))}`, { signal: AbortSignal.timeout(10_000) })
-  expect(response.ok).toBe(true)
-  captured = await response.json()
+  // Derive the observed HTTP path from the SDK operation that the production hook uses.
+  const client = createOpencodeClient({ baseUrl: engineUrl, fetch: async (request) => {
+    statusPath = new URL(request instanceof Request ? request.url : String(request)).pathname
+    return transport(request)
+  } })
+  const response = await client.mcp.status({ directory: join(root, "project") }, { signal: AbortSignal.timeout(10_000) })
+  expect(response.response.ok).toBe(true)
+  captured = response.data!
   expect(captured["recovery-sample"]).toEqual({ status: "disabled" })
 
   const entry = join(root, "runtime.ts")
