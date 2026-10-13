@@ -112,7 +112,7 @@ describe("#1250 随包技能资产的可达性普查", () => {
       "factory-skills/agent-creator → factory",
       "factory-skills/alpha-workspace → factory",
       "factory-skills/cloud-dispatch → factory",
-      "factory-skills/customize-alpha → factory",
+      "factory-skills/customize-code-puppy → factory",
       "factory-skills/integrate-project → factory",
       "factory-skills/office-docs → factory",
       "skills/alpha-upstream-sync → catalog(skill:alpha-upstream-sync)",

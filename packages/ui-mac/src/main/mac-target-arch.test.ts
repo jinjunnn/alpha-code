@@ -237,13 +237,13 @@ describe("mergeMacFeeds(latest-mac.yml 两架构合并)", () => {
       [
         `version: ${version}`,
         "files:",
-        `  - url: alpha-code-mac-${arch}.zip`,
+        `  - url: code-puppy-mac-${arch}.zip`,
         `    sha512: ${arch}zip`,
         "    size: 10",
-        `  - url: alpha-code-mac-${arch}.dmg`,
+        `  - url: code-puppy-mac-${arch}.dmg`,
         `    sha512: ${arch}dmg`,
         "    size: 20",
-        `path: alpha-code-mac-${arch}.zip`,
+        `path: code-puppy-mac-${arch}.zip`,
         `releaseDate: '2026-10-10T00:00:0${arch === "x64" ? 1 : 0}.000Z'`,
       ].join("\n"),
     )
@@ -252,10 +252,10 @@ describe("mergeMacFeeds(latest-mac.yml 两架构合并)", () => {
     const merged = parse(serialize(mergeMacFeeds(feed("arm64"), feed("x64"))))
     expect(merged.version).toBe("0.1.19")
     expect(merged.files.map((f) => f.url)).toEqual([
-      "alpha-code-mac-arm64.zip",
-      "alpha-code-mac-arm64.dmg",
-      "alpha-code-mac-x64.zip",
-      "alpha-code-mac-x64.dmg",
+      "code-puppy-mac-arm64.zip",
+      "code-puppy-mac-arm64.dmg",
+      "code-puppy-mac-x64.zip",
+      "code-puppy-mac-x64.dmg",
     ])
   })
   test("版本不一致 ⇒ 拒绝", () => {

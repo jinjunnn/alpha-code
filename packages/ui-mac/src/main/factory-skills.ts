@@ -47,7 +47,7 @@ import { alphaGlobalRoot } from "./alpha-installs"
 export const FACTORY_SKILL_IDS = [
   "skill-creator",
   "agent-creator",
-  "customize-alpha",
+  "customize-code-puppy",
   "integrate-project",
   "alpha-workspace",
   "cloud-dispatch",
@@ -69,7 +69,7 @@ export function factorySkillSources(input: {
     "skill-creator": join(root, "skills", "skill-creator"),
     "agent-creator": join(root, "factory-skills", "agent-creator"),
     // REQ-062 T4:接替已禁的上游 customize-opencode(教 .code-puppy/治理/定制中心约定)
-    "customize-alpha": join(root, "factory-skills", "customize-alpha"),
+    "customize-code-puppy": join(root, "factory-skills", "customize-code-puppy"),
     // REQ-063 T6:外部生态内容的对话式导入/重导入载体(default-deny 的补充入口,ADR-024)
     "integrate-project": join(root, "factory-skills", "integrate-project"),
     // REQ-071/ADR-025:~/Alpha 目录契约(Journal/Memory/Outputs)的写入约定载体

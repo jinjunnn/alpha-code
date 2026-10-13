@@ -72,9 +72,9 @@ function validInput(channel: ReleaseChannel = "prod"): BuildManifestInput {
     publishedAt: "2026-08-19T00:00:00Z",
     keyId: KEY_ID,
     artifacts: [
-      { filename: "alpha-code-mac-arm64.dmg", platform: "darwin", arch: "arm64", kind: "installer", size: 111, sha512: sha512b64("dmg"), sha256: sha256hex("dmg") },
-      { filename: "alpha-code-mac-arm64.zip", platform: "darwin", arch: "arm64", kind: "updater-archive", size: 222, sha512: sha512b64("zip"), sha256: sha256hex("zip") },
-      { filename: "alpha-code-mac-arm64.zip.blockmap", platform: "darwin", arch: "arm64", kind: "blockmap", size: 33, sha512: sha512b64("zbm"), sha256: sha256hex("zbm") },
+      { filename: "code-puppy-mac-arm64.dmg", platform: "darwin", arch: "arm64", kind: "installer", size: 111, sha512: sha512b64("dmg"), sha256: sha256hex("dmg") },
+      { filename: "code-puppy-mac-arm64.zip", platform: "darwin", arch: "arm64", kind: "updater-archive", size: 222, sha512: sha512b64("zip"), sha256: sha256hex("zip") },
+      { filename: "code-puppy-mac-arm64.zip.blockmap", platform: "darwin", arch: "arm64", kind: "blockmap", size: 33, sha512: sha512b64("zbm"), sha256: sha256hex("zbm") },
       { filename: "alpha-code-win-x64.exe", platform: "win32", arch: "x64", kind: "installer", size: 444, sha512: sha512b64("exe"), sha256: sha256hex("exe-bytes") },
       { filename: "alpha-code-win-x64.exe.blockmap", platform: "win32", arch: "x64", kind: "blockmap", size: 55, sha512: sha512b64("ebm"), sha256: sha256hex("ebm") },
     ],
@@ -86,8 +86,8 @@ function validInput(channel: ReleaseChannel = "prod"): BuildManifestInput {
         doc: {
           version: "0.1.4",
           files: [
-            { url: "alpha-code-mac-arm64.zip", sha512: sha512b64("zip"), size: 222 },
-            { url: "alpha-code-mac-arm64.dmg", sha512: sha512b64("dmg"), size: 111 },
+            { url: "code-puppy-mac-arm64.zip", sha512: sha512b64("zip"), size: 222 },
+            { url: "code-puppy-mac-arm64.dmg", sha512: sha512b64("dmg"), size: 111 },
           ],
         },
       },
@@ -129,7 +129,7 @@ describe("buildReleaseManifest 正向", () => {
     expect(m.channel).toBe("prod")
     expect(m.version).toBe("0.1.4")
     expect(m.artifacts.length).toBe(5)
-    const dmg = m.artifacts.find((a) => a.filename === "alpha-code-mac-arm64.dmg")!
+    const dmg = m.artifacts.find((a) => a.filename === "code-puppy-mac-arm64.dmg")!
     expect(dmg.signing).toEqual({
       type: "apple",
       signed: true,
@@ -225,6 +225,18 @@ describe("R1 版本与标识", () => {
 // ── R2/R3:artifact inventory 形状 ────────────────────────────────────────────────────
 
 describe("R2/R3 artifact inventory", () => {
+  test("#1513: builder and manifest producer agree on the download names", async () => {
+    const { getConfig } = await import("../../electron-builder.config")
+    expect(getConfig("prod").mac.artifactName).toBe("code-puppy-${os}-${arch}.${ext}")
+    const result = buildReleaseManifest(validInput())
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.errors.join("\n"))
+    expect(result.manifest.artifacts.filter((a) => a.platform === "darwin").map((a) => a.filename)).toEqual([
+      "code-puppy-mac-arm64.dmg",
+      "code-puppy-mac-arm64.zip",
+      "code-puppy-mac-arm64.zip.blockmap",
+    ])
+  })
   test("空 artifacts 拒", () => {
     const i = validInput()
     i.artifacts = []
@@ -294,22 +306,22 @@ describe("R4 updater metadata 一致性", () => {
   test("feed 里的 sha512 与最终字节不一致拒(打包后被改写的包)", () => {
     const i = validInput()
     i.feeds[0]!.doc.files[0]!.sha512 = sha512b64("tampered")
-    expectErrors(i, "R4 digest mismatch (feed vs final bytes): alpha-code-mac-arm64.zip")
+    expectErrors(i, "R4 digest mismatch (feed vs final bytes): code-puppy-mac-arm64.zip")
   })
   test("feed 里的 size 与最终字节不一致拒", () => {
     const i = validInput()
     i.feeds[0]!.doc.files[0]!.size = 99999
-    expectErrors(i, "R4 size mismatch (feed vs final bytes): alpha-code-mac-arm64.zip")
+    expectErrors(i, "R4 size mismatch (feed vs final bytes): code-puppy-mac-arm64.zip")
   })
   test("feed 指向 inventory 里不存在的文件拒", () => {
     const i = validInput()
-    i.feeds[0]!.doc.files.push({ url: "alpha-code-mac-x64.zip", sha512: sha512b64("x"), size: 1 })
-    expectErrors(i, "R4 feed entry not in final inventory: alpha-code-mac-x64.zip")
+    i.feeds[0]!.doc.files.push({ url: "code-puppy-mac-x64.zip", sha512: sha512b64("x"), size: 1 })
+    expectErrors(i, "R4 feed entry not in final inventory: code-puppy-mac-x64.zip")
   })
   test("非 blockmap artifact 不在 feed 覆盖面里拒(updater 拿不到它)", () => {
     const i = validInput()
-    i.feeds[0]!.doc.files = i.feeds[0]!.doc.files.filter((f) => f.url !== "alpha-code-mac-arm64.dmg")
-    expectErrors(i, "R4 artifact missing from updater feed latest-mac.yml: alpha-code-mac-arm64.dmg")
+    i.feeds[0]!.doc.files = i.feeds[0]!.doc.files.filter((f) => f.url !== "code-puppy-mac-arm64.dmg")
+    expectErrors(i, "R4 artifact missing from updater feed latest-mac.yml: code-puppy-mac-arm64.dmg")
   })
   test("feed 条目是绝对 URL 拒(必须裸文件名)", () => {
     const i = validInput()
@@ -676,18 +688,33 @@ describe("parseMacSigningOutputs", () => {
 // ── updater feed 解析(electron-builder 实际输出形状) ─────────────────────────────────
 
 describe("parseUpdaterFeed", () => {
+  test("#1513: existing electron-updater resolves renamed files from the published mac feed shape", async () => {
+    const { parseUpdateInfo, resolveFiles, findFile } = await import("electron-updater/out/providers/Provider")
+    // Source: jinjunnn/alpha-code v0.1.18 latest-mac.yml; only the download prefix changes.
+    const yml = await Bun.file(new URL("./fixtures/code-puppy-latest-mac.yml", import.meta.url)).text()
+    const base = new URL("https://github.com/jinjunnn/alpha-code/releases/download/v0.1.18/")
+    const files = resolveFiles(parseUpdateInfo(yml, "latest-mac.yml", new URL("latest-mac.yml", base)), base)
+    expect(files.map((file) => file.info.url)).toEqual([
+      "code-puppy-mac-arm64.zip",
+      "code-puppy-mac-arm64.dmg",
+      "code-puppy-mac-x64.zip",
+      "code-puppy-mac-x64.dmg",
+    ])
+    expect(findFile(files, "zip")?.url.pathname).toEndWith(`code-puppy-mac-${process.arch}.zip`)
+    expect(parseUpdaterFeed(yml).files.map((file) => file.url)).toEqual(files.map((file) => file.info.url))
+  })
   test("解析 electron-builder latest-mac.yml 形状(多文件 + blockMapSize + path/sha512 尾行)", () => {
     const yml = [
       "version: 0.1.3",
       "files:",
-      "  - url: alpha-code-mac-arm64.zip",
+      "  - url: code-puppy-mac-arm64.zip",
       `    sha512: ${sha512b64("zip")}`,
       "    size: 222",
       "    blockMapSize: 33",
-      "  - url: alpha-code-mac-arm64.dmg",
+      "  - url: code-puppy-mac-arm64.dmg",
       `    sha512: ${sha512b64("dmg")}`,
       "    size: 111",
-      "path: alpha-code-mac-arm64.zip",
+      "path: code-puppy-mac-arm64.zip",
       `sha512: ${sha512b64("zip")}`,
       "releaseDate: '2026-08-19T00:00:00.000Z'",
       "",
@@ -695,8 +722,8 @@ describe("parseUpdaterFeed", () => {
     const parsed = parseUpdaterFeed(yml)
     expect(parsed.version).toBe("0.1.3")
     expect(parsed.files).toEqual([
-      { url: "alpha-code-mac-arm64.zip", sha512: sha512b64("zip"), size: 222 },
-      { url: "alpha-code-mac-arm64.dmg", sha512: sha512b64("dmg"), size: 111 },
+      { url: "code-puppy-mac-arm64.zip", sha512: sha512b64("zip"), size: 222 },
+      { url: "code-puppy-mac-arm64.dmg", sha512: sha512b64("dmg"), size: 111 },
     ])
   })
   test("缺 sha512/size 的残缺条目不进结果(残缺条目随后会在 R4 覆盖面判红,不静默补全)", () => {
