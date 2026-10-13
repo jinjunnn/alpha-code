@@ -522,6 +522,8 @@ export async function spawnLocalServer(
   // 与上面 alpha-secrets sync 失败同一条 fail-closed 路径)。env 先算好:计划要读的 XDG_* / HOME
   // 必须是 sidecar 将拿到的那一份,不是 main 自己的 process.env。
   const sidecarEnv = createSidecarEnv()
+  // uv's default ~/.cache/uv is outside the fence; keep Office dependencies under the existing W3 root.
+  sidecarEnv.UV_CACHE_DIR = join(options.userDataPath, "uv-cache")
   // REQ-137 `#1379`:这一代的 BYOK 放行集合。平台无关(代理只在 darwin 起,但「放行集合 = 这一代的配置」
   // 这条不该长两个样子),排在密钥文件落定之后、fork 之前。
   refreshConfiguredEgressDestinations(options.userDataPath)
