@@ -57,7 +57,7 @@ mock.module("./logging", () => ({
 mock.module("./alpha-endpoints", () => ({
   resolveEndpoints: () => ({ platform: "https://gateway.test" }),
 }))
-mock.module("./alpha-auth", () => ({ getAccessToken: () => undefined }))
+mock.module("./alpha-auth", () => ({ getAccessToken: () => undefined, getAuthIdentityTag: () => undefined }))
 
 const { fetchPlatformModels, getEffectiveCatalog, syncLiveAllowlist } = await import("./alpha-platform-models")
 const { getModelCatalog } = await import("./alpha-models")

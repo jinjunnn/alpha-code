@@ -24,6 +24,6 @@ test("production IPC refreshes through the V2 fetch decoder and returns the pers
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain("12 pass")
+  expect(output).toContain("21 pass")
   expect(output).toContain("0 fail")
-})
+}, 180000)
