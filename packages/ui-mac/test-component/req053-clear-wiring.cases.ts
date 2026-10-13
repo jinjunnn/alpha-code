@@ -469,7 +469,7 @@ test("the final data-clear confirmation tells the user the truth about dangling 
   const confirm = dialogCalls.find((c) => c.title === "永久删除全部数据?")!
   const detail = String(confirm.detail ?? "")
 
-  expect(detail).toContain("Alpha 自有配置中指向已清除数据的悬空连接器/插件引用会一并清理")
+  expect(detail).toContain("Code Puppy 自有配置中指向已清除数据的悬空连接器/插件引用会一并清理")
   expect(detail).not.toContain("事后手动清理其条目")
   expect(exitCalls).toEqual([])
 })
