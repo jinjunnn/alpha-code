@@ -634,7 +634,7 @@ async function resolvePreparedPackage(
     if (kind === "plugin")
       return {
         ok: false,
-        reason: `package admission: component "${component.id}" installs an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing the whole package`,
+        reason: `package admission: component "${component.id}" installs an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing the whole package`,
         package: view,
       }
     // `#840` R1-1(owner 2026-08-05):command 组件的保留名闸。三个名字各是一个已实证的碰撞面:
@@ -934,7 +934,7 @@ async function executePreparedPackage(
           // 分派表保持穷举(新增 kind 仍是编译期红),而 plugin 这条腿没有 builder 可去。
           return {
             ok: false,
-            reason: `component "${component.accepted.component.id}" installs an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing`,
+            reason: `component "${component.accepted.component.id}" installs an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing`,
           }
         case "mcp":
           return buildMcpTxItems({

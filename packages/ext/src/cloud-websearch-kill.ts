@@ -298,10 +298,10 @@ export function webSearchToolDenial(
 ): string | undefined {
   if (!isWebSearchToolId(tool)) return undefined
   if (isGovernedCloudTool(tool, ownership))
-    return cloudWebSearchDenied(env) ? "the alpha web search kill switch (ADR-009 B2) is set" : undefined
+    return cloudWebSearchDenied(env) ? "the Code Puppy web search kill switch (ADR-009 B2) is set" : undefined
   if (localWebSearchDenied(env) || cloudWebSearchDenied(env))
     return (
-      "the alpha web search kill switch (ADR-009 B2) is set; it turns off alpha's own web search tools " +
+      "the Code Puppy web search kill switch (ADR-009 B2) is set; it turns off Code Puppy's own web search tools " +
       "— the local keyless one and the platform-hosted one — and any MCP tool it recognizes as web search " +
       "by name, this one included. Do not look for another web search tool: the switch means web search " +
       "is off on purpose for this session"

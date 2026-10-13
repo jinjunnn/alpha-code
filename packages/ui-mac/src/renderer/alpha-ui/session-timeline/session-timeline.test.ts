@@ -42,7 +42,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // `#1399`:回合脚行 —— 运行面 / 等你面两种触发 / 播报预算 / 四种结局同帧让位(62 → 66)。
     // `#1475`:每类步骤行 / 防冒充来源标记 / 答完的提问 / 我方审批超时人话(68 → 72)。
     // `#1474`:回合脚行并入工作过程实时标题 —— 原 4 条按新位置改写,新增 8 条状态迁移(72 → 80)。
-    expect(output).toContain("80 pass")
+    // #1503: two same-name media sources and cross-run image/document previews (80 → 83).
+    expect(output).toContain("83 pass")
     expect(output).toContain("0 fail")
   })
 })

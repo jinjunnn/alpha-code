@@ -309,7 +309,7 @@ export const AlphaExt: Plugin = async (input) => {
           if (!r.ok) return { title: "alpha_register", output: `refused: ${r.reason}`, metadata: { ok: false } }
           const trusted = args.type === "mcp" ? readProjectExtensionsConsent(project) : true
           if (trusted === null)
-            return { title: "alpha_register", output: "refused: project alpha root identity drifted", metadata: { ok: false } }
+            return { title: "alpha_register", output: "refused: project Code Puppy root identity drifted", metadata: { ok: false } }
           try {
             const created = withProjectDirectoryIdentity(project, (root) => mkdirSync(root, { recursive: true }))
             if (!created.ok)

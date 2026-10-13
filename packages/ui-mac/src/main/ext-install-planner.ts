@@ -489,7 +489,7 @@ export function deriveMcpConfig(
     alphaResourceArgs.length > 0 &&
     (alphaResourceArgs.length !== 1 || alphaResourceArgs[0] !== "{alphaResources}/office-mcp/server.py" || !isAlphaOfficeMcp("", { type: "local", command }))
   ) {
-    return { ok: false, reason: "{alphaResources} is reserved for the bundled Alpha Office server entrypoints — refused" }
+    return { ok: false, reason: "{alphaResources} is reserved for the bundled Code Puppy Office server entrypoints — refused" }
   }
   const cmd = command.map((argument) => argument.split("{alphaResources}").join(alphaResources))
   const environment = { ...(grants.cnMirror ? CN_MIRROR_ENV : {}), ...subst }
@@ -1188,7 +1188,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   if (entry.type === "plugin")
     return {
       ok: false,
-      reason: `entry ${entry.id} installs an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing`,
+      reason: `entry ${entry.id} installs an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing`,
     }
 
   // Phase 1:写盘前 manifest 严格校验(缺字段/未知键/非法 digest/越权 capability/平台不兼容全在此拒)。
@@ -2172,7 +2172,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   if (intent.scope.scope === "global" && asset.type === "plugin")
     return {
       ok: false,
-      reason: `asset ${asset.id} is an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing`,
+      reason: `asset ${asset.id} is an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing`,
     }
   if (intent.scope.scope === "global" && asset.type !== "skill" && asset.type !== "agent" && asset.type !== "mcp")
     return { ok: false, reason: `seed install for type "${asset.type}" is not installable from seed — refused` }

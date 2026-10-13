@@ -8,10 +8,10 @@
   "defaultPlatformModel": "deepseek-v4-flash",
   "platformProvider": {
     "id": "alpha",
-    "name": "ALPHA",
+    "name": "Code Puppy",
     "npm": "@ai-sdk/openai-compatible",
     "pico": {
-      "letter": "α",
+      "letter": "C",
       "color": "#4f46e5"
     }
   },

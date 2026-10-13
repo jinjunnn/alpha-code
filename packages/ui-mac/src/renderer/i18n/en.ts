@@ -1126,7 +1126,7 @@ export const dict = {
   "alpha.model.memberCredit": "{{plan}} member · quota available this period",
   "alpha.model.walletBalance": "Wallet balance {{balance}} · usage based",
   "alpha.model.creditEmpty": "Insufficient balance · recharge to unlock proxy models",
-  "alpha.model.loginUnlock": "Sign in to unlock proxy models",
+  "alpha.model.loginUnlock": "Sign in to unlock Code Puppy models",
   "alpha.model.accountReading": "Reading account status…",
   "alpha.model.accountFailed": "Account status could not be read",
   "alpha.model.keyReading": "Reading key status…",
@@ -1151,7 +1151,7 @@ export const dict = {
   "alpha.model.retryNow": "Retry now",
   "alpha.model.switchFailed": "Could not switch model",
   "alpha.model.switchFailedDetail": "The current selection did not change. Try again.",
-  "alpha.model.platformGroup": "Proxy models · via Code Puppy",
+  "alpha.model.platformGroup": "Code Puppy models",
   "alpha.model.byokGroup": "Direct providers · your own key (BYOK)",
   "alpha.model.catalogLoading": "Loading model catalog…",
   "alpha.model.noMatches": "No matching models",
@@ -1172,7 +1172,7 @@ export const dict = {
   "alpha.model.listLoading": "Models loading",
   "alpha.model.listUnavailable": "Model list unavailable",
   // #1084:平台模型目录刷新失败的横幅。code 是平台的稳定分类码,用户报障时贴得出来。
-  "alpha.model.refreshFailedTitle": "Proxy model list could not be refreshed",
+  "alpha.model.refreshFailedTitle": "Code Puppy models could not be refreshed",
   "alpha.model.refreshFailedDetail":
     "Showing the last known list. Your own API keys are unaffected. Reason: {{code}}",
   "alpha.model.syncing": "Syncing…",

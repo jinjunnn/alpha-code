@@ -236,8 +236,13 @@ function ImageContent(props: { state: FileViewerState; phase: Extract<ViewerFile
   }
   onCleanup(revoke)
   const [decodeError, setDecodeError] = createSignal(false)
+  createEffect(() => {
+    props.phase
+    setDecodeError(false)
+  })
   const src = () => {
     revoke()
+    if ("url" in props.phase) return props.phase.url
     const blob = new Blob([props.phase.bytes as Uint8Array<ArrayBuffer>], { type: props.phase.mime })
     url = URL.createObjectURL(blob)
     return url
@@ -247,16 +252,21 @@ function ImageContent(props: { state: FileViewerState; phase: Extract<ViewerFile
       when={!decodeError()}
       fallback={
         <CenterCard tone="err" title={t("alpha.wb.imgDecodeFailed")} detail={t("alpha.fileViewer.unsupportedDetail")}>
-          <button type="button" class="a-fv-btn" onClick={() => props.state.openExternal()}>
-            {t("alpha.fileViewer.openSystem")}
-          </button>
+          <Show when={!props.state.current()?.media}>
+            <button type="button" class="a-fv-btn" onClick={() => props.state.openExternal()}>
+              {t("alpha.fileViewer.openSystem")}
+            </button>
+          </Show>
         </CenterCard>
       }
     >
       <figure class="a-fv-image" data-alpha-fv-image>
         <img src={src()} alt={props.state.current()?.name ?? ""} onError={() => setDecodeError(true)} />
         <figcaption>
-          {props.state.current()?.name} · {formatBytes(props.phase.totalBytes)}
+          {props.state.current()?.name}
+          <Show when={"totalBytes" in props.phase}>
+            {" · "}{formatBytes("totalBytes" in props.phase ? props.phase.totalBytes : 0)}
+          </Show>
         </figcaption>
       </figure>
     </Show>
@@ -501,7 +511,7 @@ export function FileViewerView(props: {
             setMode={(mode) => props.state.setMode(mode)}
           />
         </Show>
-        <Show when={phase()?.phase !== "unsafe"}>
+        <Show when={phase()?.phase !== "unsafe" && !entry()?.media}>
           <KebabMenu state={props.state} />
         </Show>
       </header>

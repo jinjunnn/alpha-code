@@ -603,7 +603,7 @@ export function registerExtIpcHandlers(
     const opts = {
       type: "info" as const,
       title: "检测到其它工具的扩展内容(首次)",
-      message: "此项目自带 Claude Code / .agents 生态内容,导入为本项目的 alpha 扩展?",
+      message: "此项目自带 Claude Code / .agents 生态内容,导入为本项目的 Code Puppy 扩展?",
       detail:
         `Code Puppy 默认不读取其它工具的目录(防止陌生项目的自带内容未经确认进入模型上下文)。\n发现:\n${items}\n\n` +
         "「导入」= 转换为本项目 .code-puppy 下的原生扩展(快照,与原目录脱钩,原文件不动):技能进 .code-puppy/skills;" +

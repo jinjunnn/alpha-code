@@ -44,9 +44,11 @@ describe("validateBuiltinPolicy — 保护名单硬校验(验收③)", () => {
     expect(v.length).toBe(1)
     expect(v[0].reason).toContain("compaction")
   })
-  test("disable/hide alpha-automation → 拒绝(S18 X2)", () => {
+  test("#1507 AC1:保护治理拒绝使用 Code Puppy,alpha-automation 技术名不变", () => {
     expect(validateBuiltinPolicy(gov({ agents: { hide: ["alpha-automation"], disable: [], allow: [], override: {} } }), false).length).toBe(1)
     expect(validateBuiltinPolicy(gov({ agents: { hide: [], disable: ["alpha-automation"], allow: [], override: {} } }), false).length).toBe(1)
+    expect(validateBuiltinPolicy(gov({ agents: { hide: [], disable: ["alpha-automation"], allow: [], override: {} } }), false)[0]?.reason).toBe("受保护:alpha-automation 是 Code Puppy 注入的功能载体(自动化等),禁用会使其静默失效,已拒绝")
+    expect(validateBuiltinPolicy(gov({ agents: { hide: ["alpha-automation"], disable: [], allow: [], override: {} } }), false)[0]?.reason).toBe("受保护:alpha-automation 是 Code Puppy 注入的功能载体,隐藏会使其入口消失,已拒绝")
   })
   test("disable build:未确认拒绝,确认后放行", () => {
     const g = gov({ agents: { hide: [], disable: ["build"], allow: [], override: {} } })
@@ -80,7 +82,9 @@ describe("materializeEdits — 物化叶子计算", () => {
     const edits = materializeEdits(g, [])
     const m = new Map(edits.map((e) => [e.path.join("."), e.value]))
     expect(m.get("permission.skill.customize-opencode")).toBe("deny")
-    expect(String(m.get("command.customize-opencode.template"))).toContain("已在 alpha 的治理设置中被禁用")
+    expect(m.get("command.customize-opencode.description")).toBe("(已禁用)该技能已在 Code Puppy 治理中禁用")
+    expect(String(m.get("command.customize-opencode.template"))).toContain("已在 Code Puppy 的治理设置中被禁用")
+    expect(String(m.get("command.customize-opencode.template"))).toContain("/customize-alpha(Code Puppy 自带的定制指南技能)")
     expect(edits.find((e) => e.path.join(".") === "permission.skill.*")?.onlyIfAbsent).toBe(true)
   })
   test("command override → command.<n>.template(重写 /init,验收⑤)", () => {
