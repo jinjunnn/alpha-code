@@ -7,48 +7,70 @@ import {
   retiredCommunityOfficeFor,
 } from "../../shared/office-advisories"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
+import { decodeEntryCuration } from "../../shared/catalog-curation"
 import type { CatalogEntry } from "./catalog-types"
 
-/** Exclude retired entries and any bundle that still references one of their catalog ids. */
-export function installableCatalogEntries(entries: readonly CatalogEntry[]): CatalogEntry[] {
-  const retiredIds = retiredCatalogIds(entries)
-
-  return entries.filter(
-    (entry) =>
-      !isRetiredCatalogEntry(entry) &&
-      !(entry.type === "bundle" && (entry.bundleItems ?? []).some((item) => retiredIds.has(item.catalogEntryId))),
-  )
+/** New-content surfaces share this view; installed-item identity keeps the full catalog. */
+export function installableCatalogEntries(
+  entries: readonly CatalogEntry[],
+  advisoryBlocked: ReadonlySet<string> = new Set(),
+): CatalogEntry[] {
+  const unavailableIds = unavailableCatalogIds(entries, advisoryBlocked)
+  return entries.filter((entry) => !unavailableIds.has(entry.id))
 }
 
-/** Exclude package cards whose signed component graph references a retired connector. */
+/** Keep actionable compatible packages whose graph contains no unavailable catalog identities. */
 export function installableCatalogPackages(
   packages: readonly CatalogPackageViewV1[],
   entries: readonly CatalogEntry[],
+  advisoryBlocked: ReadonlySet<string> = new Set(),
 ): CatalogPackageViewV1[] {
-  const retiredIds = retiredCatalogIds(entries)
+  const unavailableIds = unavailableCatalogIds(entries, advisoryBlocked)
   return packages.filter(
     (view) =>
-      !isRetiredComponentId(view.catalogId, retiredIds) &&
-      view.components.every((component) => !isRetiredComponentId(component.componentId, retiredIds)),
+      view.verdict === "compatible" &&
+      view.action.enabled &&
+      !isUnavailableComponentId(view.catalogId, unavailableIds) &&
+      view.components.every((component) => !isUnavailableComponentId(component.componentId, unavailableIds)),
   )
 }
 
-function isRetiredComponentId(componentId: string, retiredIds: ReadonlySet<string>): boolean {
-  if (retiredIds.has(componentId)) return true
-  return retiredCommunityOfficeFor({
-    id: componentId,
-    name: componentId.startsWith("mcp:") ? componentId.slice("mcp:".length) : componentId,
-  }) !== undefined
+function isUnavailableComponentId(componentId: string, unavailableIds: ReadonlySet<string>): boolean {
+  if (unavailableIds.has(componentId)) return true
+  return (
+    retiredCommunityOfficeFor({
+      id: componentId,
+      name: componentId.startsWith("mcp:") ? componentId.slice("mcp:".length) : componentId,
+    }) !== undefined
+  )
 }
 
-function retiredCatalogIds(entries: readonly CatalogEntry[]): Set<string> {
-  const retiredIds = new Set(RETIRED_COMMUNITY_OFFICE_CONNECTORS.map((connector) => connector.catalogId))
-  for (const entry of entries)
-    if (isRetiredCatalogEntry(entry)) retiredIds.add(entry.id)
-  return retiredIds
+function unavailableCatalogIds(entries: readonly CatalogEntry[], advisoryBlocked: ReadonlySet<string>): Set<string> {
+  const unavailableIds = new Set([
+    ...RETIRED_COMMUNITY_OFFICE_CONNECTORS.map((connector) => connector.catalogId),
+    ...advisoryBlocked,
+  ])
+  for (const entry of entries) if (isUnavailableCatalogEntry(entry)) unavailableIds.add(entry.id)
+  const byId = new Map(entries.map((entry) => [entry.id, entry]))
+  for (const entry of entries.filter((entry) => entry.type === "bundle"))
+    if (
+      !entry.bundleItems?.length ||
+      entry.bundleItems.some(
+        (item) =>
+          unavailableIds.has(item.catalogEntryId) ||
+          !byId.has(item.catalogEntryId) ||
+          byId.get(item.catalogEntryId)?.type === "bundle",
+      )
+    )
+      unavailableIds.add(entry.id)
+  return unavailableIds
 }
 
-function isRetiredCatalogEntry(entry: CatalogEntry): boolean {
+function isUnavailableCatalogEntry(entry: CatalogEntry): boolean {
+  if (entry._verify?.trim() || entry.installSpec?._verify?.trim()) return true
+  const status = decodeEntryCuration(entry)
+  if (status.kind === "invalid") return true
+  if (status.kind === "curated" && status.curation.review.upstreamStatus !== "active") return true
   if (retiredCommunityOfficeFor({ id: entry.id, name: entry.name })) return true
   if (entry.type !== "mcp" || entry.installSpec?.kind !== "mcp") return false
   return isRetiredOfficeMcp(entry.name, {
