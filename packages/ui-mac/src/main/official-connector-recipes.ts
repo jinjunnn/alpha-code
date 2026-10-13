@@ -45,7 +45,7 @@ export function officialRuntimeParent(root: string) {
       !Array.isArray(truth.workspaces) ||
       truth.workspaces.some(
         (path: unknown) =>
-          typeof path !== "string" || !isAbsolute(path) || insideDirectory(realpathSync.native(path), temp),
+          typeof path !== "string" || !isAbsolute(path) || (existsSync(path) && insideDirectory(realpathSync.native(path), temp)),
       )
     )
       throw officialConnectorFailure()

@@ -1,4 +1,4 @@
-import { clearOfficialConnectorRuntime } from "./official-connector-resources"
+import { clearOfficialConnectorRuntimeOnExit } from "./official-connector-resources"
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import * as http from "node:http"
@@ -668,7 +668,7 @@ const main = Effect.gen(function* () {
   })
 
   app.on("will-quit", () => {
-    clearOfficialConnectorRuntime()
+    clearOfficialConnectorRuntimeOnExit()
     quittingApp = true
     if (selfHealTimer) clearTimeout(selfHealTimer)
     void stopSidecars()

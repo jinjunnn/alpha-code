@@ -288,6 +288,20 @@ test("missing/ref-injected secrets, non-SQLite DSN, unavailable encryption and s
   expect(readdirSync(outside)).toEqual([])
 })
 
+test("deleted registered workspace does not block either recipe at installation", async () => {
+  const { fenceWorkspaceTruthPath, writeWorkspaceTruth } = await import("../src/main/process-fence-workspaces")
+  const workspace = join(home, "deleted-workspace")
+  mkdirSync(workspace)
+  writeWorkspaceTruth(fenceWorkspaceTruthPath(getAlphaEnvironment().casBaseRoot, "dev"), [workspace], {
+    mkdirSync, writeFileSync, renameSync: require("node:fs").renameSync,
+  })
+  rmSync(workspace, { recursive: true })
+  for (const name of ["github-official", "dbhub-readonly"] as const) {
+    const f = await fixture(name)
+    expect((await evaluatePackageForHost(f.envelope, { fetchPayload: async () => f.bytes })).verdict).toBe("compatible")
+  }
+})
+
 test("real admission commits remote truth plus encrypted resource; failed replacement restores both and successful reentry retires old version", async () => {
   expect(await install("v-one", pat)).toMatchObject({ ok: true })
   const truth = join(home, "state", "mcp-servers", "dev.json")

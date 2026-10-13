@@ -1,4 +1,4 @@
-import { clearOfficialConnectorRuntime, restoreCommittedOfficialConnectors } from "./official-connector-resources"
+import { clearOfficialConnectorRuntime, clearOfficialConnectorRuntimeOnExit, restoreCommittedOfficialConnectors } from "./official-connector-resources"
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -584,7 +584,7 @@ export async function spawnLocalServer(
   const writeProbes = createWriteProbeRequester((command) => child.postMessage(command))
   child.on("message", (message: unknown) => void writeProbes.receive(message))
   child.once("exit", (code) => {
-    clearOfficialConnectorRuntime(runtimeGeneration)
+    clearOfficialConnectorRuntimeOnExit(runtimeGeneration)
     exited = true
     electronNs.app.off("child-process-gone", onProcessGone)
     writeProbes.close(`sidecar exited with code ${code}`)

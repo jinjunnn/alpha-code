@@ -541,6 +541,8 @@ function remoteLeafFromRecord(record: McpServerRecord): Record<string, unknown> 
 /** Persist an MCP server: local ⇒ `mcp[<name>]` in the alpha-owned engine config file (durable); remote ⇒ the main-only truth file. */
 export function persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMeta): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
+  if (name === "github-official" || name === "dbhub-readonly")
+    return { ok: false, reason: `server name "${name}" is reserved by an official connector recipe` }
   if (!server || typeof server !== "object") return { ok: false, reason: "invalid server config" }
   const valid = validateServer(server)
   if (!valid.ok) return valid

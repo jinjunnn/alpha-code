@@ -367,7 +367,7 @@ export const dict = {
   "alpha.ext.installScopeProjectLost": "当前项目已变化。请重新打开连接器的安装窗口，再选择安装范围。",
   "alpha.ext.keyPlaceholder": "粘贴密钥…(可留空)",
   "alpha.ext.packageConfirmEnv": "连接所需的密钥（全部必填）",
-  "alpha.ext.officialGithubPat": "GitHub PAT(仓库读取权限;失效时重新填写)",
+  "alpha.ext.officialGithubPat": "GitHub 请使用只读的 fine-grained PAT（只读由令牌权限决定）；失效时重新填写。",
   "alpha.ext.officialSqliteDsn": "本机 SQLite:sqlite:///绝对路径/数据库.db(需要 Node ≥22.5、系统加密存储)",
   "alpha.ext.packageKeyPlaceholder": "粘贴密钥…(必填)",
   "alpha.ext.packageKeysRequired": "请填写全部密钥，再确认安装。",

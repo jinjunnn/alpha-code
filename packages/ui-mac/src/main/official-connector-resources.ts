@@ -11,7 +11,7 @@ import { collectMcpFileRefPaths } from "./alpha-mcp-secrets"
 import { alphaGlobalRoot } from "./engine-config-truth"
 import { findRecordV2 } from "./ext-receipt-v2"
 import { probeTransactionJournals, type TxPreparedResourceV1 } from "./ext-transaction"
-import { upsertMcpServerRecord } from "./mcp-server-lifecycle"
+import { removeMcpServerRecord, upsertMcpServerRecord } from "./mcp-server-lifecycle"
 // alpha-web#256: two closed recipes; only ciphertext survives a stopped application.
 import { createHash, randomUUID } from "node:crypto"
 import {
@@ -99,23 +99,25 @@ export function officialRuntimeRoot(root: string) {
     directory(existing)
     return existing
   }
+  sweepOfficialConnectorRuntime(root)
   const parent = officialRuntimeParent(root)
   managedDirectory(dirname(parent), parent)
-  // Only roots bearing our own identity and a dead owner PID are eligible for crash cleanup.
-  for (const entry of readdirSync(parent)) {
-    if (!/^\d+-[a-f0-9-]{36}$/.test(entry)) throw officialConnectorFailure()
-    directory(join(parent, entry))
-    try {
-      process.kill(Number(entry.split("-")[0]), 0)
-    } catch (error) {
-      if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") throw officialConnectorFailure()
-      rmSync(join(parent, entry), { recursive: true })
-    }
-  }
   const run = join(parent, `${process.pid}-${randomUUID()}`)
   directory(run)
   runs.set(root, run)
   return run
+}
+
+/** The single main process owns this environment; retain only its current registered generation. */
+export function sweepOfficialConnectorRuntime(root: string) {
+  const parent = officialRuntimeParent(root)
+  if (!existsSync(parent)) return
+  directory(parent)
+  for (const entry of readdirSync(parent)) {
+    if (!/^\d+-[a-f0-9-]{36}$/.test(entry)) throw officialConnectorFailure()
+    directory(join(parent, entry))
+    if (join(parent, entry) !== runs.get(root)) rmSync(join(parent, entry), { recursive: true })
+  }
 }
 
 export function clearOfficialConnectorRuntime(generation = [...runs.values()]) {
@@ -124,6 +126,15 @@ export function clearOfficialConnectorRuntime(generation = [...runs.values()]) {
     directory(run)
     rmSync(run, { recursive: true })
     runs.delete(root)
+  }
+}
+
+/** Both application and child exit must settle even when a protected runtime root cannot be removed. */
+export function clearOfficialConnectorRuntimeOnExit(generation?: string[]) {
+  try {
+    clearOfficialConnectorRuntime(generation)
+  } catch {
+    console.warn("official connector runtime cleanup failed on exit")
   }
 }
 
@@ -200,8 +211,9 @@ export function restoreOfficialConnector(
   try {
     const paths = officialConnectorPaths(root, name, version)
     managedDirectory(paths.base, paths.secret)
-    const bytes = readProtected(join(paths.secret, "secret.enc"))
-    const value = state === "enabled" ? officialConnectorBackend().decryptString(bytes) : ""
+    const value = state === "enabled"
+      ? officialConnectorBackend().decryptString(readProtected(join(paths.secret, "secret.enc")))
+      : ""
     if (state === "enabled") assertOfficialConnectorSecret(name, value)
     const next = officialConnectorConfig(root, name, version)
     managedDirectory(officialRuntimeRoot(root), dirname(next.file))
@@ -269,43 +281,55 @@ export function releaseOfficialConnectorResources(userDataPath: string, resource
   }
 }
 
-/** Rebind only committed identities after transaction recovery, before a sidecar can read refs. */
+/** Rebind each committed connector independently; a credential failure must not stop the engine. */
 export function restoreCommittedOfficialConnectors() {
+  const root = alphaGlobalRoot()
   try {
-    for (const name of OFFICIAL_CONNECTOR_NAMES) {
-      const record = findRecordV2(alphaGlobalRoot(), "mcp", name)
-      if (!record) continue
-      const recovery = probeTransactionJournals(alphaGlobalRoot())
-      if (recovery.unreadableDir || recovery.entries.some((entry) => !entry.terminal))
-        throw new Error("official-connector-needs-reentry: transaction recovery incomplete")
+    sweepOfficialConnectorRuntime(root)
+  } catch {
+    console.warn("official connector orphan runtime cleanup failed")
+  }
+  for (const name of OFFICIAL_CONNECTOR_NAMES) {
+    const record = findRecordV2(root, "mcp", name)
+    if (!record) continue
+    let version = ""
+    try {
+      const recovery = probeTransactionJournals(root)
+      if (recovery.unreadableDir || recovery.entries.some((entry) => !entry.terminal)) throw officialConnectorFailure()
       const live = readMcpLeafStrict(name)
-      if (!live.ok || !live.value) throw new Error("official-connector-needs-reentry: committed config unavailable")
+      if (!live.ok || !live.value) throw officialConnectorFailure()
       const refs = collectMcpFileRefPaths(live.value)
       const file = refs[0]
-      const version = file ? basename(dirname(file)) : ""
-      if (refs.length !== 1 || !file || basename(dirname(dirname(file))) !== name)
-        throw new Error("official-connector-needs-reentry: committed identity unavailable")
-      officialConnectorPaths(alphaGlobalRoot(), name, version)
-      const config = restoreOfficialConnector(
-        alphaGlobalRoot(),
-        name,
-        version,
-        record.desiredState === "enabled" ? "enabled" : "disabled",
-      )
-      const written = withConfigWriteLock(() => {
-        const target = mcpPluginTargetPath()
-        const before = readFileSync(target, "utf8")
-        return writeConfigTextAtomic(target, before, applyEdits(before, modify(before, ["mcp", name], config, {})))
-      })
-      if (!written.ok) throw new Error("official connector config rebind failed")
-      if (config.type === "remote") {
-        const remote = upsertMcpServerRecord({ name, url: config.url, headers: config.headers })
-        if (!remote.ok) throw new Error("official connector remote rebind failed")
+      if (refs.length !== 1 || !file || basename(dirname(dirname(file))) !== name) throw officialConnectorFailure()
+      version = basename(dirname(file))
+      officialConnectorPaths(root, name, version)
+      projectOfficialConnector(name, restoreOfficialConnector(root, name, version, record.desiredState))
+    } catch {
+      // No secret, path or decryption error leaves this boundary. Empty refs remain parseable.
+      console.warn(`official-connector-needs-reentry: ${name}`)
+      let disabled: Record<string, unknown> = { enabled: false }
+      try {
+        disabled = restoreOfficialConnector(root, name, version, "disabled")
+      } catch {
+        // A missing/invalid recipe cannot safely provide a ref; the engine accepts disable-only leaves.
       }
+      projectOfficialConnector(name, disabled)
+      // Truth otherwise injects enabled:true even when the alpha.jsonc leaf is disabled.
+      if (!removeMcpServerRecord(name).ok) throw officialConnectorFailure()
     }
-  } catch (error) {
-    clearOfficialConnectorRuntime()
-    throw error
   }
   return [...runs.values()]
+}
+
+function projectOfficialConnector(name: OfficialConnectorName, config: Record<string, unknown>) {
+  const written = withConfigWriteLock(() => {
+    const target = mcpPluginTargetPath()
+    const before = readFileSync(target, "utf8")
+    return writeConfigTextAtomic(target, before, applyEdits(before, modify(before, ["mcp", name], config, {})))
+  })
+  if (!written.ok) throw officialConnectorFailure()
+  const remote = config.type === "remote"
+    ? upsertMcpServerRecord({ name, url: config.url as string, headers: config.headers as Record<string, string> })
+    : removeMcpServerRecord(name)
+  if (!remote.ok) throw officialConnectorFailure()
 }

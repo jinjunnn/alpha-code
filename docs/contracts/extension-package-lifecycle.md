@@ -241,7 +241,8 @@ Only `package:github-official` / `mcp:github-official` and
 `alpha.official-connectors.v1`. These single-component packages use the closed
 `officialRecipe` payloads in the [host contract](../../packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md).
 Unknown capabilities are refused before secret input. GitHub uses the official
-hosted endpoint with a user PAT, readonly repository headers and the existing
+hosted endpoint with a read-only fine-grained PAT (read access is determined by
+the token permissions), readonly repository headers and the existing
 CONNECT proxy (`api.githubcopilot.com:443`). DBHub pins 1.5.0 and checks the
 actual Node executable for >=22.5; only existing local SQLite files are accepted.
 
@@ -260,12 +261,19 @@ and Windows are refused before secret input; chmod alone is insufficient.
 The prepared journal stores only server/version/store identities. Installation
 stops the sidecar before resource replacement; rollback releases the new version
 only after its references are gone. Success retires older encrypted versions.
-Startup waits for recovery, rejects pending journals, and rebinds enabled,
-committed configuration references to the current runtime directory. Remote truth
+Startup waits for recovery and rebinds each committed connector independently.
+Missing SQLite files or failed decryption disable only that connector, with empty
+runtime references and a named `official-connector-needs-reentry` diagnostic;
+other connectors and the sidecar continue. Pending journals prevent credential
+restoration. Deleted workspace registrations are skipped when checking temporary
+storage eligibility. Remote truth
 is rebuilt by main from the closed recipe after commit, never replayed from a
 journal-supplied privileged target. Disabled installs retain ciphertext and use
 empty runtime files so the engine can parse their references without a secret. Exit deletes the
-current runtime tree; next startup removes owned trees whose PID is dead.
+current runtime tree; cleanup errors are logged without interrupting exit. Before
+restoration, including when no connector is installed, startup removes owned
+runtime trees outside the current registered generation (dead PID or stale owner).
+The generic MCP writer rejects both official connector names.
 
 Uninstall stops the sidecar, removes config and remote truth, releases all
 managed secret/config versions and then completes existing grant/receipt cleanup.
