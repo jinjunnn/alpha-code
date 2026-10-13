@@ -151,12 +151,12 @@ const feedPrefix = FEED_PREFIX[channel]
 const artifacts: ArtifactFact[] = []
 const feeds: UpdaterFeedFact[] = []
 
-// mac artifacts(alpha-code-mac-<arch>.dmg/.zip + blockmaps)—— 从最终 dist 字节计算。
+// mac artifacts(code-puppy-mac-<arch>.dmg/.zip + blockmaps)—— 从最终 dist 字节计算。
 const MAC_ARCHES = ["arm64", "x64"] as const
 let appBundle: string | null = null
 for (const arch of MAC_ARCHES) {
-  const dmg = `alpha-code-mac-${arch}.dmg`
-  const zip = `alpha-code-mac-${arch}.zip`
+  const dmg = `code-puppy-mac-${arch}.dmg`
+  const zip = `code-puppy-mac-${arch}.zip`
   if (!fs.existsSync(path.join(distDir, dmg)) && !fs.existsSync(path.join(distDir, zip))) continue
   for (const [filename, kind] of [
     [dmg, "installer"],

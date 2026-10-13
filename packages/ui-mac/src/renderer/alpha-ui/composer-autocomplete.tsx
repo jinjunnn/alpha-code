@@ -524,7 +524,7 @@ export function createComposerAutocomplete(opts: {
       agents: "alpha.autocomplete.descAgents",
       "skill-creator": "alpha.autocomplete.descSkillCreator",
       "agent-creator": "alpha.autocomplete.descAgentCreator",
-      "customize-alpha": "alpha.autocomplete.descCustomizeAlpha",
+      "customize-code-puppy": "alpha.autocomplete.descCustomizeAlpha",
       "integrate-project": "alpha.autocomplete.descIntegrateProject",
       "alpha-workspace": "alpha.autocomplete.descAlphaWorkspace",
     } as const

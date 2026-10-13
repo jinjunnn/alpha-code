@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **下载文件与定制命令使用 Code Puppy 名称**([#1513](https://github.com/jinjunnn/alpha-code/issues/1513))——mac 安装包使用 `code-puppy-mac-<arch>` 前缀，随包定制技能改为 `/customize-code-puppy`。
+
 ## [0.1.18] - 2026-10-10
 
 ### Added

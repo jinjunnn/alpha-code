@@ -202,7 +202,7 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
       expect(leaves.map((l) => l.pointer)).toContain(p)
     expect(unexplainedDelta(before, after)).toEqual([])
   })
-  test("#1507 AC1:出厂禁项使用 Code Puppy,customize-alpha 与 permission/path 技术名不变", async () => {
+  test("#1507/#1513:出厂禁项指向 /customize-code-puppy,permission/path 技术名不变", async () => {
     const dir = join(root, "factory-skills")
     mkdirSync(dir, { recursive: true })
     process.env.ALPHA_FACTORY_DENY_SKILLS = JSON.stringify(["customize-opencode"])
@@ -210,7 +210,7 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
     const { before, after } = await runConfig({})
     const command = (after.command as Record<string, { description: string; template: string }>)["customize-opencode"]
     expect(command.description).toBe("(已禁用)该技能已由 Code Puppy 出厂默认禁用")
-    expect(command.template).toBe("该技能(customize-opencode)已由 Code Puppy 出厂默认禁用。请告知用户:此技能不可用;定制 Code Puppy 请改用 /customize-alpha;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。不要尝试其它方式执行该技能。")
+    expect(command.template).toBe("该技能(customize-opencode)已由 Code Puppy 出厂默认禁用。请告知用户:此技能不可用;定制 Code Puppy 请改用 /customize-code-puppy;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。不要尝试其它方式执行该技能。")
     const pointers = stringLeaves(after).map((l) => l.pointer)
     expect(pointers).toContain("/command/customize-opencode/template")
     expect(pointers).toContain("/command/customize-opencode/description")

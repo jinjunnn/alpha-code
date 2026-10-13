@@ -172,6 +172,7 @@ const getBase = (appId: string): Configuration => ({
     enableCookieEncryption: true,
   },
   mac: {
+    artifactName: "code-puppy-${os}-${arch}.${ext}",
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
     // Notarization requires hardenedRuntime + entitlements; only when actually signing.

@@ -169,6 +169,7 @@ cleanup() {
     [ -e "$MAIN/.worktrees/$n" ] || continue
     git -C "$MAIN" worktree remove --force "$MAIN/.worktrees/$n" 2>/dev/null || rm -rf "$MAIN/.worktrees/$n"
   done
+  rm -rf "${COPY_PROBE:-}"
   git -C "$MAIN" worktree prune 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -313,6 +314,21 @@ typecheck_in() {
 # 按字面串枚举对新成员默认放行。
 missing_module_lines() { grep -ac "error TS2307" <<<"$1" 2>/dev/null || true; }
 
+# #1512 的真实复现输入:票面 2026-10-12 的 bare bun install 依赖状态与原测试文件。
+FENCE_FILES="network-egress-fence process-fence-apply process-fence-wiring"
+COPY_PROBE="$(mktemp -d)"
+# 强制 clone 失败,正向必须真走普通复制;不替换 Electron 的文件格式。
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> "$0.calls"\n[ "$1" != -Rc ] || exit 47\nexec /bin/cp "$@"\n' > "$COPY_PROBE/cp"
+chmod +x "$COPY_PROBE/cp"
+fence_tests_in() {
+  [ "$(uname -s)" = Darwin ] && [ -f "$SELF_ROOT/packages/ui-mac/scripts/build-fence-addon.ts" ] || return 0
+  local f rc=0
+  for f in $FENCE_FILES; do
+    (cd "$MAIN/.worktrees/$1/packages/ui-mac" && bun test --timeout 120000 "./src/main/$f.test.ts") || rc=1
+  done
+  return "$rc"
+}
+
 echo "  · 探针 id=$ID,base=$BASE_SHA${NESTED:+ ,nested=$NESTED}"
 
 # ── [1/6] 反向:没 bootstrap 的全新 worktree 必须仍然假红 ──────────────────────────
@@ -334,6 +350,25 @@ fi
 if ! grep -aq "Cannot find module 'bun:test'" <<<"$neg_out"; then
   red "未 bootstrap 的 worktree 没有出现票面点名的 \`Cannot find module 'bun:test'\`"
 fi
+if [ "$(uname -s)" = Darwin ] && [ -f "$SELF_ROOT/packages/ui-mac/scripts/build-fence-addon.ts" ]; then
+  if ! run_owned bash -c 'cd "$1" && bun install' bash "$MAIN/.worktrees/$NEG" >/dev/null 2>&1; then
+    note_bootstrap_failure "建不出 bare bun install 的围栏反向探针"
+  else
+    rm -rf "$MAIN/.worktrees/$NEG/packages/ui-mac/node_modules/electron/dist" \
+      "$MAIN/.worktrees/$NEG/packages/ui-mac/node_modules/electron/path.txt" \
+      "$MAIN/.worktrees/$NEG/packages/ui-mac/native/alpha-fence/build"
+    for f in $FENCE_FILES; do
+      neg_fence_out="$(cd "$MAIN/.worktrees/$NEG/packages/ui-mac" && bun test --timeout 120000 "./src/main/$f.test.ts" 2>&1)"; neg_fence_rc=$?
+      if [ "$neg_fence_rc" -eq 0 ]; then
+        red "缺 Electron/addon 时 $f 竟然通过 —— 围栏反向探针不成立"
+      elif ! grep -aqE 'path.txt|electron binary missing|alpha_fence.node' <<<"$neg_fence_out"; then
+        red "$f 的红不来自缺 Electron/addon —— 本次反向测量无效"
+      else
+        echo "    ✓ 缺 Electron/addon:$f rc=$neg_fence_rc(先证明会红)"
+      fi
+    done
+  fi
+fi
 git -C "$MAIN" worktree remove --force "$MAIN/.worktrees/$NEG" 2>/dev/null || true
 
 # ── [3/6] 的前置:把共享 core.hooksPath 设成一个**确定**的值,再跑 [2/6] ──────────────
@@ -342,7 +377,7 @@ git -C "$MAIN" config --local core.hooksPath .githooks 2>/dev/null || true
 # ── [2/6] 正向:bootstrap 一步建出来的 worktree 必须能给出可信 typecheck ──────────────
 echo "  · [2/6] 正向:bootstrap 建出的 worktree 必须 typecheck 干净"
 pos_ready=0
-if ! run_owned bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
+if ! run_owned env "PATH=$COPY_PROBE:$PATH" "ELECTRON_MIRROR=$UNREACHABLE_REGISTRY" bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
   note_bootstrap_failure "bootstrap 自己非零退出 —— 建不出可用的 worktree"
 else
   pos_ready=1
@@ -353,6 +388,15 @@ else
     grep -a "error TS2307" <<<"$pos_out" | head -3 >&2
   else
     echo "    ✓ bootstrap 后:rc=0,TS2307 0 条"
+  fi
+  if [ "$(uname -s)" = Darwin ] && [ -f "$SELF_ROOT/packages/ui-mac/scripts/build-fence-addon.ts" ]; then
+    grep -Fqx -- '-Rc' "$COPY_PROBE/cp.calls" && grep -Fqx -- '-R' "$COPY_PROBE/cp.calls" ||
+      red "Electron 没有先尝试 clone 并回退普通复制"
+    if fence_tests_in "$POS"; then
+      echo "    ✓ bootstrap 后:三个围栏测试文件全绿(Electron 镜像不可达,clone 失败后普通复制)"
+    else
+      red "bootstrap 后围栏测试仍红"
+    fi
   fi
 fi
 
@@ -368,6 +412,9 @@ fi
 
 # ── [4/6] 幂等:对已装好的 worktree 重跑,不破坏它 ──────────────────────────────────
 echo "  · [4/6] 幂等:对已装好的 worktree 重跑 bootstrap"
+fence_before="$(stat -f '%i:%m:%c' "$MAIN/.worktrees/$POS/packages/ui-mac/node_modules/electron/path.txt" \
+  "$MAIN/.worktrees/$POS/packages/ui-mac/node_modules/electron/dist/version" \
+  "$MAIN/.worktrees/$POS/packages/ui-mac/native/alpha-fence/build/alpha_fence.node" 2>/dev/null || true)"
 if [ "$pos_ready" -eq 0 ]; then
   echo "    ⚠️  跳过:[2/6] 没能装出可用的 worktree(见上),幂等这一条本次无从判起"
 elif ! run_owned bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
@@ -379,6 +426,25 @@ else
     red "重跑之后 typecheck 反而坏了:rc=$again_rc,TS2307 ${again_missing} 条 —— 重跑破坏了这棵树"
   else
     echo "    ✓ 重跑 exit 0,且重跑后 typecheck 仍然 rc=0 / TS2307 0 条"
+  fi
+  fence_after="$(stat -f '%i:%m:%c' "$MAIN/.worktrees/$POS/packages/ui-mac/node_modules/electron/path.txt" \
+    "$MAIN/.worktrees/$POS/packages/ui-mac/node_modules/electron/dist/version" \
+    "$MAIN/.worktrees/$POS/packages/ui-mac/native/alpha-fence/build/alpha_fence.node" 2>/dev/null || true)"
+  [ "$fence_before" = "$fence_after" ] || red "重跑重复复制 Electron 或编译 addon(产物身份/时间变了)"
+  fence_tests_in "$POS" || red "重跑后围栏测试反而坏了"
+fi
+
+# AC2:复制两路都失败时,已存在的树保留,但不能留下半装的 Electron。
+if [ "$pos_ready" -eq 1 ] && [ "$(uname -s)" = Darwin ] && [ -f "$SELF_ROOT/packages/ui-mac/scripts/build-fence-addon.ts" ]; then
+  electron="$MAIN/.worktrees/$POS/packages/ui-mac/node_modules/electron"
+  rm -rf "$electron/dist" "$electron/path.txt"
+  printf '#!/usr/bin/env bash\nfor target; do :; done\nmkdir -p "$target/dist"\n: > "$target/path.txt"\nexit 47\n' > "$COPY_PROBE/cp"
+  run_owned env "PATH=$COPY_PROBE:$PATH" bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" > "$COPY_PROBE/failure.log" 2>&1; copy_rc=$?
+  if [ "$copy_rc" -eq 0 ] || [ ! -d "$MAIN/.worktrees/$POS" ] || [ -e "$electron/dist" ] || [ -e "$electron/path.txt" ] ||
+    ! grep -aq 'Electron .*复制/安装失败' "$COPY_PROBE/failure.log"; then
+    red "Electron 复制失败未非零退出、说明原因并清理半装状态(既有 worktree 必须保留)"
+  else
+    echo "    ✓ Electron 复制失败:非零退出、原因可读、半装产物已清理、既有 worktree 保留"
   fi
 fi
 

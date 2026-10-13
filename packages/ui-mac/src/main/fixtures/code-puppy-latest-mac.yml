@@ -1,0 +1,15 @@
+version: 0.1.18
+files:
+  - url: code-puppy-mac-arm64.zip
+    sha512: /VkHTprA6eUJ9HZ6mkJaEqfCakHPXMhJxqFh2ihG39JrbZLGeQFIzHr/tyJ3hynrf7p9RmarAzboRzRGfax0Mw==
+    size: 170093713
+  - url: code-puppy-mac-arm64.dmg
+    sha512: d112lynlm11VFn/URaAo45HqFb3e8EC+XKrDObadd6w2HDQO3vzKLneML4tNBt+F0FdXYyT6S6W2Z6lqwa8zsg==
+    size: 171214229
+  - url: code-puppy-mac-x64.zip
+    sha512: jNJyMpDdM8bzUzCL/VmQJ3J9uk2CUfrgO0Xl4ALmc/+bJMm5zG+VfFB1SdUXu72ScO4zK+WLd+brRqLyQJmv5w==
+    size: 175230254
+  - url: code-puppy-mac-x64.dmg
+    sha512: ak4YEaGqdx3TkOryucYqsK6JWZhwU5k1nMK3NOlnjTrmgRBMD+sgGg6tMAnmMDIwPQxkE4MwD6e2oMd4bSGBuw==
+    size: 176282572
+releaseDate: '2026-10-10T12:12:56.081Z'

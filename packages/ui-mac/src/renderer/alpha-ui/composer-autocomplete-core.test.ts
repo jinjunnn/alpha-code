@@ -215,6 +215,11 @@ describe("slashSection / sourceTag — 类型分节 × 归属四档(拍板①②
 })
 
 describe("displayDescription — 中文映射只覆盖出厂/内置,外来如实原文(拍板③)", () => {
+  test("#1513: customize-code-puppy has the bundled description and matches slash search", () => {
+    const item = entry("customize-code-puppy", "skill")
+    expect(displayDescription(item)).toBe("配置与定制 Code Puppy(连接器 / 技能 / 治理)")
+    expect(buildSlashList([item], "customize-code").flat.map((e) => e.trigger)).toEqual(["customize-code-puppy"])
+  })
   test("映射命中 → 中文;未命中 → 原描述;都没有 → title 兜底", () => {
     expect(displayDescription(entry("init", "builtin", "guided AGENTS.md setup"))).toContain("初始化")
     expect(displayDescription(entry("wrangler", "skill", "Cloudflare Workers CLI"))).toBe("Cloudflare Workers CLI")

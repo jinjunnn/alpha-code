@@ -35,7 +35,7 @@ tool.alpha_reload.description                       text      tool-description  
 vision.system-note-offline                          text      system                   251    1024   25%
 vision.tool.input-omitted                           text      vision-block              23    1024    2%
 vision.tool.refused                                 text      vision-block              24    1024    2%
-command.factory-denied.template                     template  command-template         256    1024   25%
+command.factory-denied.template                     template  command-template         261    1024   25%
 vision.failure.credential                           template  vision-block             108    1024   11%
 vision.failure.image-rejected                       template  vision-block              89    1024    9%
 vision.failure.network                              template  vision-block              76    1024    7%
@@ -59,7 +59,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 59; injected bytes: 25244; declared limits total: 118784
+fragments: 59; injected bytes: 25249; declared limits total: 118784
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
