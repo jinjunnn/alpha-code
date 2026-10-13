@@ -13,6 +13,14 @@
   min-height: 0;
   overflow: hidden;
   background: var(--a-bg-canvas);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.a-tl-root button,
+.a-tl-root summary {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .a-tl-scroll {
