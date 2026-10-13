@@ -58,7 +58,7 @@ const STATES = {
     prerequisite: "ready",
     prerequisiteText: "已就绪",
     prerequisites: [],
-    reason: "此扩展包与当前 Code Puppy 版本兼容。",
+    reason: "此扩展包可以与当前 Code Puppy 版本一起使用。",
     action: "安装",
     actionKind: "install",
     enabled: true,
@@ -77,7 +77,7 @@ const STATES = {
       "ORGANIZATION_RESEARCH_WORKSPACE_ACCESS_TOKEN",
       "TEAM_KNOWLEDGE_INDEX_SIGNING_KEY",
     ],
-    reason: "安装此扩展包前,请先完成必需的前置条件。",
+    reason: "请先完成下面列出的必需准备，再安装此扩展包。",
     action: "处理前置条件",
     actionKind: "resolve-prerequisite",
     enabled: true,
@@ -92,7 +92,7 @@ const STATES = {
     prerequisite: "ready",
     prerequisiteText: "已就绪",
     prerequisites: [],
-    reason: "此扩展包需要较新 Code Puppy 版本提供的能力。",
+    reason: "请先更新 Code Puppy，再使用此扩展包所需的功能。",
     action: "检查更新",
     actionKind: "update-alpha",
     enabled: true,
@@ -100,7 +100,7 @@ const STATES = {
   },
   "blocked-safety": {
     catalogId: "package:unverified-local-agent",
-    name: "Unverified Local Agent",
+    name: "Unverified Local 助手（助手）",
     description: "The host rejected this package before installation.",
     version: "0.8.0",
     verdict: "blocked",
@@ -123,7 +123,7 @@ const STATES = {
     prerequisite: "ready",
     prerequisiteText: "已就绪",
     prerequisites: [],
-    reason: "扩展包内容与已验证的完整性记录不一致。",
+    reason: "下载的内容与已验证的文件记录不一致。请重新下载后重试。",
     action: "不可用",
     actionKind: "none",
     enabled: false,
@@ -138,7 +138,7 @@ const STATES = {
     prerequisite: "required-action",
     prerequisiteText: "需要先处理",
     prerequisites: ["ORGANIZATION_RESEARCH_WORKSPACE_ACCESS_TOKEN"],
-    reason: "安装此扩展包前,请先完成必需的前置条件。",
+    reason: "请先完成下面列出的必需准备，再安装此扩展包。",
     action: "处理前置条件",
     actionKind: "resolve-prerequisite",
     enabled: true,
@@ -254,7 +254,7 @@ if (view.authorization) {
               </div>
             </div>
             <div class="alpha-ext-authz" aria-live="polite">
-              <p class="alpha-ext-authz-intro">「${esc(view.name)}」首次安装,请求以下能力:</p>
+              <p class="alpha-ext-authz-intro">安装「${esc(view.name)}」需要你允许以下操作：</p>
               <div class="alpha-ext-authz-box">
                 <div class="alpha-ext-authz-cap">
                   <span class="alpha-ext-authz-ic" data-tier="mid" aria-hidden="true">?</span>
@@ -263,19 +263,19 @@ if (view.authorization) {
                   <span class="alpha-ext-authz-chip" data-kind="new">新增</span>
                 </div>
               </div>
-              <p class="alpha-ext-confirm-note">确认即授权上述完整能力集;授权仅在安装成功提交后生效。取消不会安装扩展或授予能力。</p>
+              <p class="alpha-ext-confirm-note">确认后，你同意授予上面列出的全部权限。安装成功后，扩展才会获得这些权限。点取消不会安装，也不会授予权限。</p>
             </div>
             <div class="alpha-ext-confirm-keys">
-              <div class="alpha-ext-confirm-line">需要密钥(全部必填)</div>
+              <div class="alpha-ext-confirm-line">连接所需的密钥（全部必填）</div>
               <label class="alpha-ext-key-field">
                 <span class="alpha-ext-key-name">ORGANIZATION_RESEARCH_WORKSPACE_ACCESS_TOKEN</span>
                 <input class="alpha-ext-key-input" type="password" autocomplete="off" spellcheck="false"
                   placeholder="粘贴密钥…(必填)" required>
               </label>
-              <p class="alpha-ext-key-hint" role="status">全部密钥均为必填;填写完整后才能确认安装。</p>
-              <p class="alpha-ext-key-hint">密钥保存在本机 Code Puppy 安全文件(0600),配置里只存引用、绝不明文。</p>
+              <p class="alpha-ext-key-hint" role="status">请填写全部密钥，再确认安装。</p>
+              <p class="alpha-ext-key-hint">密钥保存在本机的 Code Puppy 文件中，只有当前系统用户可读写（0600）。配置文件不保存密钥内容。</p>
             </div>
-            <p class="alpha-ext-confirm-note">将写入你的 ~/.opencode/opencode.jsonc(仅白名单字段),当场生效、免重启。</p>
+            <p class="alpha-ext-confirm-note">会更新你的 ~/.opencode/opencode.jsonc 设置文件，仅修改允许的扩展设置。保存后立即生效，无需重启。</p>
           </div>
         </div>
         <footer class="a-dialog-footer">

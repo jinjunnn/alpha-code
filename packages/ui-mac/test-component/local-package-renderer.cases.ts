@@ -667,7 +667,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // G20 前半:confirm 成功 ⇒ 引擎被要求当场重扫。
     expect(disposeCalls).toBeGreaterThan(0)
     // 用户读得到的提示里必须说清「都还没启用」。
-    expect(toasts().join("\n")).toContain("都还没启用")
+    expect(toasts().join("\n")).toContain(zh["alpha.ext.localPackageInstalled"].replace("{{count}}", "2"))
   })
 
   test("第 9 跳:显示未启用 → 用户拨开关 → **引擎允许集里当场出现它** → 引擎重载", async () => {
@@ -733,7 +733,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     }
     // 包**仍然留在列表里**,错误就在卡上。
     expect(packCard("local:tide")).toBeInstanceOf(HTMLElement)
-    expect(q('[data-package-error="local:tide"]')!.textContent).toContain(zh["alpha.ext.packageRemoveFailed"])
+    expect(q('[data-package-error="local:tide"]')!.textContent).toContain(zh["alpha.ext.error.removePackage"])
     expect(toasts().join("\n")).not.toContain(zh["alpha.ext.packageRemoved"])
     expect(ledgerPackageIds()).toEqual(["local:tide"])
     expect(ledgerSkillNames()).toEqual(["postmarket-review", "premarket-briefing"])
@@ -765,7 +765,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
       await waitFor(() => expect(packCard("local:solo")).toBeInstanceOf(HTMLElement))
       // 账本是 durable 的(装进去了),但呈现必须是「待重载」而不是「当场生效」。
       expect(ledgerPackageIds()).toEqual(["local:solo"])
-      expect(toasts().join("\n")).toContain("没能让引擎立即重新加载")
+      expect(toasts().join("\n")).toContain(zh["alpha.ext.localPackageInstalledPendingReload"].replace("{{count}}", "1"))
       expect(toasts().join("\n")).not.toContain(zh["alpha.ext.localPackageInstalled"].replace("{{count}}", "1"))
     } finally {
       disposeFailure = "none"
@@ -829,7 +829,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
 
       // 界面上必须出现「取消不了」,而**不是**把弹窗关掉。
       await waitFor(() => expect(q("[data-local-package-error]")).toBeInstanceOf(HTMLElement))
-      expect(q("[data-local-package-error]")!.textContent ?? "").toContain("取消不了")
+      expect(q("[data-local-package-error]")!.textContent ?? "").toContain(zh["alpha.ext.error.cancelBusy"])
       expect(previewDialog()).toBeInstanceOf(HTMLElement)
       expect(toasts().join("\n")).not.toContain("已取消")
       // 那批字节**仍然算在计量里** ——「已释放」和「还握着」不能同时为真。

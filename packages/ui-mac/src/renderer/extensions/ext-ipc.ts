@@ -33,6 +33,7 @@
 // 不阻断。若日后 owner 要把这类 warning 收进 Banner,换的是本文件这一处呈现函数,咽喉形状不变。
 //
 // 想要短命 toast 的地方照旧直接 `pushToast(...)`(hub 的 `flash()`),那条路不经过这里。
+import { extensionWarning } from "./ext-presentation"
 import type { ElectronAPI } from "../../preload/types"
 import { pushToast } from "../alpha-ui/Toast"
 import { warningPresentingExt } from "./ext-ipc-warning"
@@ -40,5 +41,5 @@ import { warningPresentingExt } from "./ext-ipc-warning"
 export const extIpc: ElectronAPI["ext"] = warningPresentingExt<ElectronAPI["ext"]>(
   () => window.api.ext,
   // `duration: 0` = 不装拆除定时器,只能由用户按 × 关掉(见 Toast.tsx)。
-  (warning) => pushToast({ kind: "info", title: warning, duration: 0 }),
+  (warning) => pushToast({ kind: "info", title: extensionWarning(warning), duration: 0 }),
 )

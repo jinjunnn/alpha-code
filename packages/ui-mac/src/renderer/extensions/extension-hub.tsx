@@ -61,7 +61,7 @@ import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../sh
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
-import { catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
+import { extensionError, catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { inventoryInstallRow, healthPresentation } from "./ext-inventory-present"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
 import { officeAdvisoryFor, retiredCommunityOfficeFor } from "../../shared/office-advisories"
@@ -320,7 +320,7 @@ export function ExtensionHub(props: {
   })
   const finishEnable = async (args: { receipt: InstallReceipt; type: string; name: string }, r: ActionResult): Promise<void> => {
     if (!r.ok) {
-      pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
+      pushToast({ kind: "error", title: extensionError(r.reason, "alpha.ext.error.enable") })
       return
     }
     let mcPending = false
@@ -412,7 +412,7 @@ export function ExtensionHub(props: {
         pushToast({ kind: "error", title: t("alpha.ext.curationUnverifiable") })
         return
       }
-      pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
+      pushToast({ kind: "error", title: extensionError(r.reason, "alpha.ext.error.toggle") })
       return
     }
     let mcPending = false
@@ -588,7 +588,7 @@ export function ExtensionHub(props: {
       // ↓ 非插件目录:**逐字不变**的既有行为(成功 toast / 失败行内红字)。
       // #336 r1:projectionLag = 本次未注入(重启自愈)—— 不得宣称「当场生效」。
       if (r.ok) flash(t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: r.name ?? "" }), "success")
-      else if (!r.canceled) setImportErr(r.reason ?? t("alpha.ext.installFailed"))
+      else if (!r.canceled) setImportErr(extensionError(r.reason, "alpha.ext.error.importFolder"))
     } finally {
       setImportBusy(false)
     }
@@ -610,7 +610,7 @@ export function ExtensionHub(props: {
     }
     const released = await ext.localPluginCancel(current.previewId)
     if (!released.ok) {
-      setLocalPluginErr(released.reason)
+      setLocalPluginErr(released.reasonCode === "install-in-flight" ? t("alpha.ext.error.cancelBusy") : extensionError(released.reason, "alpha.ext.error.cancelUnknown", released.reasonCode))
       return
     }
     setLocalPlugin(null)
@@ -626,7 +626,7 @@ export function ExtensionHub(props: {
       if (!r.ok) {
         // 「预览过期」「安装中途失败」对用户是同一件事:**一个都没装,盘上没有半成品**。
         // 措辞里不许出现「已装了 N 个」这种中间态。
-        setLocalPluginErr(r.reason)
+        setLocalPluginErr(extensionError(r.reason, "alpha.ext.error.localInstall", r.code))
         return
       }
       setLocalPlugin(null)
@@ -661,7 +661,7 @@ export function ExtensionHub(props: {
       if (!r.ok) {
         // AC:移除失败**必须显示失败**。`ok` 之外的任何东西都不许被读成「已移除」——
         // 包**仍然留在列表里**,错误就在卡上。
-        setPackErr((prev) => ({ ...prev, [packageId]: `${t("alpha.ext.packageRemoveFailed")}: ${r.reason}` }))
+        setPackErr((prev) => ({ ...prev, [packageId]: extensionError(r.reason, "alpha.ext.error.removePackage") }))
         return
       }
       // 留下来的部件必须说得出理由:用户点了移除却发现某个技能还在、而系统说不出为什么,
@@ -694,7 +694,7 @@ export function ExtensionHub(props: {
         setImportDialog(null)
         setImportInput("")
       } else {
-        setImportErr(r.reason ?? t("alpha.ext.installFailed"))
+        setImportErr(extensionError(r.reason, "alpha.ext.error.importGit"))
       }
     } finally {
       setImportBusy(false)
@@ -742,7 +742,7 @@ export function ExtensionHub(props: {
           setPackageAuthz({ view, preview, finish }),
         )
       }
-      if (!result.ok) setErrFor(view.catalogId, result.reason)
+      if (!result.ok) setErrFor(view.catalogId, extensionError(result.reason, "alpha.ext.error.installPackage"))
       // `#810`:引擎重扫失败 ⇒ 如实说「要重载」。今天 admission 的首驱恒走 authorize 臂,
       // 所以这条臂到不了;留着是因为它一旦到得了,缺这一行用户读到的就是一句谎话。
       if (result.ok && result.reloadPending) flash(t("alpha.ext.addedPendingReload"))
@@ -751,7 +751,7 @@ export function ExtensionHub(props: {
       if (latest) rememberPackageView(latest)
       return latest ?? view
     } catch (error) {
-      setErrFor(view.catalogId, error instanceof Error ? error.message : String(error))
+      setErrFor(view.catalogId, t("alpha.ext.error.installUnknown"))
       return view
     } finally {
       setBusy(null)
@@ -802,7 +802,7 @@ export function ExtensionHub(props: {
       if (!r.ok) {
         // `#1381`:地址被拒(main 与出网围栏同一个判据)时按类别用用户的语言说;其余原样。
         const addressCode = "addressCode" in r ? r.addressCode : undefined
-        setCmErr(addressCode ? t(MCP_ADDRESS_REJECTION_KEY[addressCode]) : r.reason ?? "failed")
+        setCmErr(addressCode ? t(MCP_ADDRESS_REJECTION_KEY[addressCode]) : extensionError(r.reason, "alpha.ext.error.addConnector"))
         return
       }
       setCustomMcpOpen(false)
@@ -825,7 +825,7 @@ export function ExtensionHub(props: {
     try {
       const r = await extIpc.importAgentPreview(picked.token, picked.files[0].path)
       if (!r.ok) {
-        setAgentErr(r.reason)
+        setAgentErr(extensionError(r.reason, "alpha.ext.error.previewAgent"))
         return
       }
       setAgentPreview(r)
@@ -840,7 +840,7 @@ export function ExtensionHub(props: {
     try {
       const r = await extIpc.importAgentConfirm(pv.previewId)
       if (!r.ok) {
-        setAgentErr(r.reason)
+        setAgentErr(extensionError(r.reason, "alpha.ext.error.importAgent"))
         return
       }
       setAgentPreview(null)
@@ -1125,7 +1125,7 @@ export function ExtensionHub(props: {
         // #348:扩权 → 授权框(mode=update,场景化文案);调用方据返回值中止批量循环。
         setAuthz({ entry: target, mode: "update", host: "standalone", diffs: res.authorization })
         return "authz"
-      } else setUpdErr((prev) => ({ ...prev, [r.id]: res.reason ?? t("alpha.ext.installFailed") }))
+      } else setUpdErr((prev) => ({ ...prev, [r.id]: extensionError(res.reason, "alpha.ext.error.update") }))
     } finally {
       setUpdBusy(null)
     }
@@ -1151,7 +1151,7 @@ export function ExtensionHub(props: {
         return null
       }
       if (isAuthzRequired(res)) return res.authorization
-      setUpdErr((prev) => ({ ...prev, [target.id]: res.reason ?? t("alpha.ext.installFailed") }))
+      setUpdErr((prev) => ({ ...prev, [target.id]: extensionError(res.reason, "alpha.ext.error.update") }))
       return null
     } finally {
       setUpdBusy(null)
@@ -1221,7 +1221,7 @@ export function ExtensionHub(props: {
     // authorize 拦截:diff 上抛给授权框;其余失败保持行内(B11)。
     const failOr = (res: ActionResult): CapabilityDiffWire[] | null => {
       if (isAuthzRequired(res)) return res.authorization
-      setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
+      setErrFor(e.id, extensionError(res.reason, "alpha.ext.error.install"))
       return null
     }
     // #395:第三方 fresh 安装默认关 —— 成功文案如实说「已安装但未启用」,不暗示立即可用
@@ -1358,7 +1358,7 @@ export function ExtensionHub(props: {
       if (!result.ok) {
         const latest = "package" in result ? result.package : pending.view
         if ("package" in result) rememberPackageView(result.package)
-        setErrFor(pending.view.catalogId, result.reason)
+        setErrFor(pending.view.catalogId, extensionError(result.reason, "alpha.ext.error.confirmPackage"))
         pending.finish(latest)
         setPackageAuthz(null)
         setEnvValues({})
@@ -1375,7 +1375,7 @@ export function ExtensionHub(props: {
       setPackageAuthz(null)
       setEnvValues({})
     } catch (error) {
-      setErrFor(pending.view.catalogId, error instanceof Error ? error.message : String(error))
+      setErrFor(pending.view.catalogId, t("alpha.ext.error.installUnknown"))
       pending.finish(pending.view)
       setPackageAuthz(null)
       setEnvValues({})
@@ -1481,7 +1481,7 @@ export function ExtensionHub(props: {
         ? res.reason === "reload-pending"
           ? t("alpha.ext.statePendingReload")
           : t("alpha.ext.removed")
-        : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
+        : extensionError(res.reason, "alpha.ext.error.remove"),
       res.ok ? (res.reason === "reload-pending" ? "info" : "success") : "error",
     )
     if (res.ok) await refetchPackages()
@@ -1559,7 +1559,7 @@ export function ExtensionHub(props: {
         await extIpc.removeLegacy(e.type as "skill" | "mcp" | "plugin", legacyName)
         ok++
       }
-      flash(fail ? `${t("alpha.ext.migrated", { count: ok })} · ${fail} 失败` : t("alpha.ext.migrated", { count: ok }), fail ? "error" : "success")
+      flash(fail ? `${t("alpha.ext.migrated", { count: ok })} · ${t("alpha.ext.migrateFailedCount", { count: fail })}` : t("alpha.ext.migrated", { count: ok }), fail ? "error" : "success")
       await scanMigration()
     } finally {
       setMigrating(false)
@@ -3532,7 +3532,7 @@ export function ExtensionHub(props: {
                     文字全部来自 main 的具名判定,不在这里重新措辞。 */}
                 <Show when={pv().preview.disposition === "blocked" || !pv().previewId}>
                   <p class="alpha-ext-import-err" data-local-package-blocked={pv().preview.blockedReasonCode ?? pv().reasonCode ?? ""} role="alert">
-                    {pv().headline}
+                    {extensionError(pv().headline, "alpha.ext.error.localInstall", pv().reasonCode ?? pv().preview.blockedReasonCode ?? undefined)}
                   </p>
                 </Show>
 

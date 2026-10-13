@@ -151,3 +151,97 @@ export function PackageLogo(p: { listing: PackageListingV1 | undefined; fallback
     </Show>
   )
 }
+
+// #1508: presentation only. IPC reasons and result discriminants stay unchanged.
+const EXTENSION_REASON_KEYS: Record<string, Parameters<typeof t>[0]> = {
+  "reload-pending": "alpha.ext.error.pendingReload",
+  "project-scope-mcp-only": "alpha.ext.error.projectScopeType",
+  "project-scope-missing-current-project": "alpha.ext.error.projectMissing",
+  "project-scope-current-project-changed": "alpha.ext.error.projectChanged",
+  "project-scope-secret-bearing-mcp": "alpha.ext.error.projectSecrets",
+  "project-scope-workspace-policy-mcp": "alpha.ext.error.projectWorkspacePolicy",
+  "project uninstall requires an open project (context lost — reopen the project session)": "alpha.ext.error.projectRemoveContext",
+  "no server": "alpha.ext.error.noServer",
+  "not an MCP entry": "alpha.ext.error.notConnector",
+  "installed-disabled": "alpha.ext.error.installedDisabled",
+  "connect-failed": "alpha.ext.error.connectFailed",
+  "slow": "alpha.ext.error.connecting",
+  "mcp.add failed": "alpha.ext.error.connectSettings",
+  "名称只能含字母数字 . _ -(1-64 位)": "alpha.ext.error.invalidName",
+  "URL 必填": "alpha.ext.error.urlRequired",
+  "命令必填": "alpha.ext.error.commandRequired",
+  "auth-failed": "alpha.ext.error.authFailed",
+  "project-scoped records have no enable switch": "alpha.ext.error.projectToggle",
+  "not a skill entry": "alpha.ext.error.notSkill",
+  "not a plugin entry": "alpha.ext.error.notPlugin",
+  "not an agent entry": "alpha.ext.error.notAgent",
+  "not a cloud entry": "alpha.ext.error.notCloud",
+  "unsupported type for update": "alpha.ext.error.updateUnsupported",
+  "仅支持 https Git 地址": "alpha.ext.error.importGitHttps",
+  "仓库内未找到 SKILL.md(根目录或唯一子目录)": "alpha.ext.error.importSkillMissing",
+  "import: 是 symlink — 拒(须常规文件)": "alpha.ext.error.importFileAccess",
+  "failed to read config": "alpha.ext.error.configRead",
+  "failed to write config": "alpha.ext.error.configWrite",
+  "请选择 .md agent 文件": "alpha.ext.error.importMd",
+  "文件过大(>256KB)": "alpha.ext.error.importSize",
+  "非法 frontmatter:缺少 --- 头": "alpha.ext.error.importHeader",
+  "非法 agent 文件:缺少 frontmatter --- 头": "alpha.ext.error.importHeader",
+  "非法 frontmatter:未闭合": "alpha.ext.error.importHeaderEnd",
+  "非法 agent 文件:frontmatter 未闭合": "alpha.ext.error.importHeaderEnd",
+  "非法 frontmatter:description 缺失": "alpha.ext.error.importDescription",
+  "description 缺失": "alpha.ext.error.importDescription",
+  "预览已失效,请重新选择文件": "alpha.ext.error.agentPreviewExpired",
+}
+const LOCAL_PACKAGE_ERROR_KEYS: Record<string, Parameters<typeof t>[0]> = {
+  "unknown-preview": "alpha.ext.error.previewExpired",
+  "install-in-flight": "alpha.ext.error.previewBusy",
+  "preview-source-changed": "alpha.ext.error.previewChanged",
+  "preview-budget-bytes": "alpha.ext.error.previewBytes",
+  "preview-budget-files": "alpha.ext.error.previewFiles",
+  "preview-payload-unreadable": "alpha.ext.error.previewRead",
+  "payload-mismatch": "alpha.ext.error.previewMismatch",
+  "unsupported-scope": "alpha.ext.error.packageScope",
+  "preview-not-installable": "alpha.ext.error.packageEmpty",
+  "package-already-installed": "alpha.ext.error.packageAlreadyInstalled",
+  "bijection-mismatch": "alpha.ext.error.packageDuplicate",
+  "preview-stale": "alpha.ext.error.packageStateChanged",
+  "cas-promotion-failed": "alpha.ext.error.packagePrepare",
+  "invalid-input": "alpha.ext.error.packageInvalidPreview",
+  "manifest-unreadable": "alpha.ext.error.packageInvalidPreview",
+  "no-installable-component": "alpha.ext.error.packageEmpty",
+}
+
+export function extensionError(reason: string | undefined, fallback: Parameters<typeof t>[0], code?: string): string {
+  const name = reason?.match(/^技能名「(.+)」不能作为扩展包的组件标识/)
+  if (name) return t("alpha.ext.error.packageSkillName", { name: name[1] })
+  if (code && Object.hasOwn(LOCAL_PACKAGE_ERROR_KEYS, code)) return t(LOCAL_PACKAGE_ERROR_KEYS[code])
+  if (!reason) return t(fallback)
+  if (Object.hasOwn(EXTENSION_REASON_KEYS, reason)) return t(EXTENSION_REASON_KEYS[reason])
+  if (reason.startsWith("catalog kind mismatch:")) return t("alpha.ext.error.kindMismatch")
+  if (reason.startsWith("config busy:")) return t("alpha.ext.error.configBusy")
+  if (reason.startsWith("config unparseable")) return t("alpha.ext.error.configInvalid")
+  if (/^command (not allowed:|arg not allowed:|args must be strings)/.test(reason)) return t("alpha.ext.error.commandUnsupported")
+  if (reason.startsWith("env var not allowed:")) return t("alpha.ext.error.envUnsupported")
+  if (reason.startsWith("field not allowed:")) return t("alpha.ext.error.configFieldUnsupported")
+  if (reason.startsWith('server name "cloud" is reserved')) return t("alpha.ext.error.cloudNameReserved")
+  if (/^(非法 frontmatter:)?name 缺失或不合法/.test(reason)) return t("alpha.ext.error.importName")
+  if (reason.includes("不能隐藏") || reason.includes("隐藏会使其入口消失")) return t("alpha.ext.error.builtinHidden")
+  if (reason.includes("build 是引擎兜底 agent")) return t("alpha.ext.error.builtinConfirmBuild")
+  if (reason.includes("受保护:")) return t("alpha.ext.error.builtinProtected")
+  if (reason.includes("install directory could not be removed")) return t("alpha.ext.error.removeFiles")
+  if (reason.includes("cannot prove which file to remove") || reason.includes("ledger plugin path")) return t("alpha.ext.error.removeIdentity")
+  return t(fallback)
+}
+
+export function extensionWarning(warning: string): string {
+  // Warnings may contain several notes. Keep every recognized consequence visible.
+  const messages: string[] = []
+  const count = warning.match(/(\d+) invalid receipt\(s\) ignored/)
+  if (count) messages.push(t("alpha.ext.warning.invalidRecords", { count: count[1] }))
+  if (warning.includes("installs.json unreadable")) messages.push(t("alpha.ext.warning.recordsUnreadable"))
+  if (warning.includes("corrupt ledger quarantined:")) messages.push(t("alpha.ext.warning.recordsQuarantined"))
+  if (warning.includes("connection binding not released")) messages.push(t("alpha.ext.warning.connectionBinding"))
+  if (warning.includes("removed your standalone claim and kept the files")) messages.push(t("alpha.ext.warning.sharedFiles"))
+  if (warning.includes("skills allow-list final publish failed")) messages.push(t("alpha.ext.warning.reload"))
+  return messages.length ? messages.join("\n") : t("alpha.ext.error.warningUnknown")
+}

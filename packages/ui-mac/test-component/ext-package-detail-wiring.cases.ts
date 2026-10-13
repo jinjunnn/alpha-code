@@ -1119,12 +1119,12 @@ describe("package detail production renderer path", () => {
     confirmPackageAuthorization()
     await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true, warning: canary }))
 
-    // 用户面:toast 视口里真的出现了那条具名 warning。
-    await waitFor(() => expect(toastsContaining(canary)).toBe(1))
+    // 用户面显示可理解的提示；上方仍断言 IPC 原始 warning 未改。
+    await waitFor(() => expect(toastsContaining(zh["alpha.ext.error.warningUnknown"])).toBe(1))
     // `#765`:**恰好一条**。呈现搬进 IPC 包装层之后,调用点再自己 flash 一次就会出现两条
     // 一模一样的提示 —— 那是本次重构最容易留下的尾巴,所以这里判等而不是判「有」。
     await flush()
-    expect(toastsContaining(canary), "the same warning was presented more than once").toBe(1)
+    expect(toastsContaining(zh["alpha.ext.error.warningUnknown"]), "the same warning was presented more than once").toBe(1)
   })
 
   /**
@@ -1151,13 +1151,13 @@ describe("package detail production renderer path", () => {
       expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
     )
     // 装的时候没有注入 warning —— 卸载前的 toast 里不该已经有这条 canary(否则下面判的是别人)。
-    expect(toastsContaining(canary)).toBe(0)
+    expect(toastsContaining(zh["alpha.ext.error.warningUnknown"])).toBe(0)
 
     click(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`))
     await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual({ ok: true, packageGraphs: [] }))
-    await waitFor(() => expect(toastsContaining(canary)).toBe(1))
+    await waitFor(() => expect(toastsContaining(zh["alpha.ext.error.warningUnknown"])).toBe(1))
     await flush()
-    expect(toastsContaining(canary), "the same warning was presented more than once").toBe(1)
+    expect(toastsContaining(zh["alpha.ext.error.warningUnknown"]), "the same warning was presented more than once").toBe(1)
   })
 
   /**
@@ -1195,11 +1195,11 @@ describe("package detail production renderer path", () => {
 
     click(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`))
     await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual({ ok: true, packageGraphs: [] }))
-    await waitFor(() => expect(toastsContaining(canary)).toBe(1))
+    await waitFor(() => expect(toastsContaining(zh["alpha.ext.error.warningUnknown"])).toBe(1))
 
     // ① 呈现出来的那条**就是**常驻的那条(不是「视口里另外还有一条常驻的」)。
     expect(
-      persistentToastsContaining(canary),
+      persistentToastsContaining(zh["alpha.ext.error.warningUnknown"]),
       "the uninstall warning was pushed as a self-expiring toast",
     ).toBe(1)
 
@@ -1216,7 +1216,7 @@ describe("package detail production renderer path", () => {
       "the transient control toast never expired — timers are not running, so the assertion below would be vacuous",
     ).toBe(0)
     expect(
-      toastsContaining(canary),
+      toastsContaining(zh["alpha.ext.error.warningUnknown"]),
       "the uninstall warning expired with the toast timer — `#771` regressed",
     ).toBe(1)
   }, 20000)
@@ -1405,7 +1405,7 @@ describe("package detail production renderer path", () => {
       expect(
         document.querySelector("[data-package-card='package:renderer-prerequisite'] [role='alert']")
           ?.textContent,
-      ).toContain("confirmed capability set"),
+      ).toContain(zh["alpha.ext.error.confirmPackage"]),
     )
     expect(existsSync(join(harness.userData, "alpha-mcp-secrets"))).toBe(false)
     const failedAttempt = (harness.installIntents[0] as { attemptId: string }).attemptId
@@ -1436,7 +1436,7 @@ describe("package detail production renderer path", () => {
     )
     click(document.querySelector("[data-package-detail] .alpha-ext-dsub button"))
     await waitFor(() =>
-      expect(document.querySelector("[data-package-detail] [role='alert']")?.textContent).toContain("transport failed"),
+      expect(document.querySelector("[data-package-detail] [role='alert']")?.textContent).toContain(zh["alpha.ext.error.installUnknown"]),
     )
     expect(document.querySelector("[data-package-authorization]")).toBeNull()
     click(document.querySelector(".alpha-ext-crumb-link"))
@@ -1444,7 +1444,7 @@ describe("package detail production renderer path", () => {
     click(packageCard("package:renderer-prerequisite").querySelector("button"))
     await waitFor(() =>
       expect(packageCard("package:renderer-prerequisite").querySelector("[role='alert']")?.textContent)
-        .toContain("preview unavailable"),
+        .toContain(zh["alpha.ext.error.installPackage"]),
     )
     expect(document.querySelector("[data-package-authorization]")).toBeNull()
     expect(harness.installIntents).toHaveLength(2)
@@ -1499,7 +1499,7 @@ describe("package detail production renderer path", () => {
     const dialog = keys!.closest<HTMLElement>("[role='dialog']")
     expect(dialog).toBeInstanceOf(HTMLElement)
     expect(dialog!.querySelector("[data-package-authorization]")).toBeNull()
-    expect(zh["alpha.ext.confirmEnv"]).toBe("需要密钥(留空则装好后再配)")
+    expect(zh["alpha.ext.confirmEnv"]).toBe("连接所需的密钥（可稍后填写）")
     expect(zh["alpha.ext.keyPlaceholder"]).toBe("粘贴密钥…(可留空)")
     expect(keys!.querySelector(".alpha-ext-confirm-line")?.textContent).toBe(zh["alpha.ext.confirmEnv"])
     const input = keys!.querySelector<HTMLInputElement>(".alpha-ext-key-input")

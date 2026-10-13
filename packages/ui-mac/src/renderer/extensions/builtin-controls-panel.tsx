@@ -7,6 +7,7 @@
 // 泄漏诚实声明:skill deny 后引擎 GET /skill 与斜杠菜单仍会列出该技能(上游行为),但执行被拒 +
 // 斜杠命中的是 alpha 占位模板 —— 面板文案如实说明,不谎称彻底移除。
 
+import { extensionError } from "./ext-presentation"
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaBuiltinPolicy } from "../../preload/types"
 import type { HubAgent } from "./use-extensions"
@@ -74,8 +75,8 @@ export function BuiltinControlsPanel(props: {
     try {
       const r = await extIpc.builtinApply(next, visibleAgentNames(), confirmBuild)
       if (!r.ok) {
-        setErr(r.reason ?? "apply failed")
-        props.flash(r.reason ?? t("alpha.builtin.applyFailed"), "error")
+        setErr(extensionError(r.reason, "alpha.ext.error.builtinApply"))
+        props.flash(extensionError(r.reason, "alpha.ext.error.builtinApply"), "error")
         return
       }
       setGov(next)
@@ -161,7 +162,7 @@ export function BuiltinControlsPanel(props: {
     try {
       const r = await extIpc.builtinReset()
       if (!r.ok) {
-        setErr(r.reason ?? "reset failed")
+        setErr(extensionError(r.reason, "alpha.ext.error.builtinReset"))
         return
       }
       setGov(structuredClone(DEFAULT_GOV))
@@ -207,7 +208,7 @@ export function BuiltinControlsPanel(props: {
               <div class="alpha-ext-man" data-gov-dim={disabled() || hidden() ? "" : undefined}>
                 <span class="alpha-ext-man-name">
                   {name}
-                  <span class="alpha-ext-chip">agent</span>
+                  <span class="alpha-ext-chip">{t("alpha.ext.builtinAgentLabel")}</span>
                   <Show when={hidden()}>
                     <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateHidden")}</span>
                   </Show>
@@ -258,7 +259,7 @@ export function BuiltinControlsPanel(props: {
               <div class="alpha-ext-man" data-gov-dim={denied() ? "" : undefined}>
                 <span class="alpha-ext-man-name">
                   {name}
-                  <span class="alpha-ext-chip">skill</span>
+                  <span class="alpha-ext-chip">{t("alpha.ext.builtinSkillLabel")}</span>
                   <Show when={denied()}>
                     <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateDenied")}</span>
                   </Show>
@@ -281,7 +282,7 @@ export function BuiltinControlsPanel(props: {
               <div class="alpha-ext-man">
                 <span class="alpha-ext-man-name">
                   /{name}
-                  <span class="alpha-ext-chip">command</span>
+                  <span class="alpha-ext-chip">{t("alpha.ext.typeCommand")}</span>
                   <Show when={overridden()}>
                     <span class="alpha-ext-chip">{t("alpha.builtin.stateOverridden")}</span>
                   </Show>

@@ -11,7 +11,7 @@ import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec
 import type { InstallReceipt, ExtInventory } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
-import { catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
+import { extensionError, catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
 import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
@@ -181,7 +181,7 @@ export function ExtensionDetail(props: {
         if (!result.ok) {
           // 失败就说失败。`ok` 之外的任何东西都不许被读成「已移除」——「空操作 + ok」正是
           // `#706` review 抓到的那种谎报(Hub 只看 ok)。
-          setPackageError(`${t("alpha.ext.packageRemoveFailed")}: ${result.reason}`)
+          setPackageError(extensionError(result.reason, "alpha.ext.error.removePackage"))
           return
         }
         setRetained(result.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode })))
@@ -1005,7 +1005,7 @@ export function ExtensionDetail(props: {
                   <>
                     <FactRow label={t("alpha.ext.detailInstallDir")}>{t("alpha.ext.scopeGlobal")}</FactRow>
                     <FactRow label={t("alpha.ext.detailTrigger")}>{catalogDescription(e())}</FactRow>
-                    <Show when={spec().builtinAssetKey} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.skillNoAsset")}</p>}>
+                    <Show when={spec().builtinAssetKey} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.skillDocMissing")}</p>}>
                       <div class="alpha-ext-dsub">
                         <div class="alpha-ext-dsub-t">{t("alpha.ext.detailSkillDoc")}</div>
                         <Show when={!skillDoc.loading} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.loading")}</p>}>
@@ -1013,7 +1013,7 @@ export function ExtensionDetail(props: {
                             when={skillDoc()?.ok && skillDoc()}
                             fallback={
                               <p class="alpha-ext-dnote" data-err="">
-                                {(skillDoc() as { reason?: string } | undefined)?.reason ?? t("alpha.ext.skillNoAsset")}
+                                {t((skillDoc() as { reason?: string } | undefined)?.reason === "技能内容未随此版本打包" ? "alpha.ext.skillDocMissing" : "alpha.ext.skillDocReadFailed")}
                               </p>
                             }
                           >
@@ -1073,7 +1073,7 @@ export function ExtensionDetail(props: {
                       when={skillDoc()?.ok && skillDoc()}
                       fallback={
                         <p class="alpha-ext-dnote" data-err="">
-                          {(skillDoc() as { reason?: string } | undefined)?.reason ?? t("alpha.ext.skillNoAsset")}
+                          {t(!skillDoc() || (skillDoc() as { reason?: string }).reason === "技能内容未随此版本打包" ? "alpha.ext.agentDocMissing" : "alpha.ext.agentDocReadFailed")}
                         </p>
                       }
                     >
@@ -1496,7 +1496,7 @@ export function ExtensionDetail(props: {
           <>
             <Section title={t("alpha.ext.ownTitle")}>
               <FactRows rows={detailOwnershipRows(row().ownership)} />
-              <p class="alpha-ext-dnote">{t("alpha.ext.ownNote")}</p>
+              <p class="alpha-ext-dnote">{t(row().ownership.curated === "alpha" ? "alpha.ext.ownNote" : "alpha.ext.ownNoteSelfAdded")}</p>
             </Section>
             {/* ── #392 已授权能力段:#348 授权账(ext-store/<key>/grants.json)的被动查询面。对安装行渲染
                 (grant 只随 committed 安装存在);无记录 = 如实空态,绝不回填按类型派生的"本应请求"
@@ -1526,7 +1526,7 @@ export function ExtensionDetail(props: {
                         </Show>
                       </div>
                       <p class="alpha-ext-dnote">
-                        {t("alpha.ext.grantedMeta", { date: g().grantedAt.slice(0, 10), tx: g().txId.slice(0, 12) })}
+                        {t("alpha.ext.grantedMeta", { date: g().grantedAt.slice(0, 10) })}
                       </p>
                     </>
                   )}
