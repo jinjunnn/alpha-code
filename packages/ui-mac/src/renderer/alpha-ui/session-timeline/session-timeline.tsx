@@ -30,7 +30,7 @@ import {
 
 export interface AlphaSessionTimelineProps {
   /** C4 右栏联动 api(#568 接线);缺席 = pill/媒体/产物行降级纯展示。 */
-  rail?: Pick<SessionRailApi, "jumpToReview" | "focusArtifact">
+  rail?: Pick<SessionRailApi, "jumpToReview" | "focusArtifact" | "openFileViewer">
   /** #545 C7 的斜杠命令来源供给;缺席 = chip 零渲染(fail-closed)。 */
   slashOriginsFor?: SessionSlashOriginsFor
   /** 用户消息编辑重发接线；缺席时按钮零渲染。 */
@@ -135,14 +135,23 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
         // 非法参数 → 不导航。
       }
     },
-    // 媒体/产物行 → 右栏产物面板。`#906`:id 货币 = **descriptor id**(= 面板 card key),
-    // 不是产物名 —— 只递名字对不上任何卡,于是这条路径从来没有成功过,表现为静默选中该 run
-    // 的第一个产物。换算与绑定收在 bindFocusArtifact 一处;缺 id 的降级形态仍是面板打开但
-    // 不改选中(artifacts-core 的 fail-closed 合同)。
+    // descriptor 保留 run + id;无 descriptor 的内联图片直接送既有文件查看器。
     get focusArtifact() {
       const rail = props.rail
       if (!rail) return undefined
-      return bindFocusArtifact((artifactId) => rail.focusArtifact(artifactId))
+      return bindFocusArtifact(
+        (artifactId, runId) => rail.focusArtifact(artifactId, runId),
+        (media) => {
+          if (media.url.startsWith("data:")) {
+            if (media.mime.startsWith("image/")) rail.openFileViewer(media)
+            return
+          }
+          const identity = live.current()?.identity
+          if (!identity) return
+          const relative = reviewPathOf(media.url, identity.directory)
+          if (relative !== undefined) rail.openFileViewer(relative)
+        },
+      )
     },
     // write/edit pill 与 diffsum 行 → 右栏审查面板的文件卡。路径必须先被证明为
     // 安全 workspace-relative(reviewPathOf,审计 Major-2):证明不了 → 零动作,

@@ -78,8 +78,13 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   const runId = createMemo(() => {
     const runs = sortedRuns()
     const picked = pickedRunId()
-    if (picked !== null && runs.some((run) => run.runId === picked)) return picked
+    if (picked !== null && (props.rail.artifactTarget()?.runId === picked || runs.some((run) => run.runId === picked)))
+      return picked
     return runs[0]?.runId
+  })
+  createEffect(() => {
+    const target = props.rail.artifactTarget()
+    if (target?.runId) setPickedRunId(target.runId)
   })
   const runRows = createMemo(() => {
     const now = new Date()
@@ -97,7 +102,7 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       try {
         const local = await window.api.runArtifacts.list(identity.directory, key.run)
         if (!local.ok) return { ok: false as const, reason: local.reason }
-        return { ok: true as const, entries: local.entries, legacyFiles: local.legacyFiles }
+        return { ok: true as const, run: key.run, entries: local.entries, legacyFiles: local.legacyFiles }
       } catch (error) {
         return { ok: false as const, reason: error instanceof Error ? error.message : "ipc" }
       }
@@ -111,7 +116,7 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       try {
         const result = await window.api.cloud.artifacts(key.run)
         if (result && typeof result === "object" && !("error" in result))
-          return { ok: true as const, artifacts: result.artifacts }
+          return { ok: true as const, run: key.run, artifacts: result.artifacts }
         return { ok: false as const }
       } catch {
         return { ok: false as const }
@@ -124,12 +129,13 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   })
   const cards = createMemo<ArtifactCard[]>(() => {
     const list = listRes()
-    if (!list || !list.ok) return []
+    // Solid resources retain their previous value while a new run is loading.
+    if (!list || !list.ok || list.run !== runId()) return []
     const cloud = cloudRes()
     return deriveCards({
       entries: list.entries,
       legacyFiles: list.legacyFiles,
-      cloudArtifacts: cloud?.ok ? cloud.artifacts : undefined,
+      cloudArtifacts: cloud?.ok && cloud.run === runId() ? cloud.artifacts : undefined,
     })
   })
 
@@ -257,6 +263,7 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   createEffect(() => {
     const target = props.rail.artifactTarget()
     if (!target) return
+    if (target.runId && target.runId !== runId()) return
     const card = findArtifactCard(cards(), target.artifactId)
     if (!card) return
     if (appliedFocus?.request === target) return

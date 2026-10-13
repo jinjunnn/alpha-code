@@ -13,6 +13,7 @@ import {
   rememberRailWidth,
 } from "./rail-width"
 import { sameSessionIdentity, type AlphaSessionIdentity, type AlphaSessionLiveSnapshot } from "./session-workspace-core"
+import type { TimelineMediaSource } from "../session-timeline/timeline-model"
 
 export interface AlphaSessionLiveContext {
   current: Accessor<AlphaSessionLiveSnapshot | undefined>
@@ -31,6 +32,7 @@ export type SessionRailPanel = "review" | "files" | "terminal" | "artifacts"
 export interface ArtifactFocusRequest {
   identity: AlphaSessionIdentity
   artifactId: string
+  runId?: string
   /** Focus origin at request time; Esc inside the artifacts panel returns focus here. */
   origin?: HTMLElement
 }
@@ -46,8 +48,9 @@ export interface SessionRailReviewTarget {
 // 识别为新请求(与 review focusTarget 的「fresh request retriggers」同一语义)。
 export interface SessionRailFileViewerTarget {
   identity: AlphaSessionIdentity
-  file: string
+  file: string | TimelineMediaSource
   seq: number
+  origin?: HTMLElement
 }
 
 // Narrow api handed to injected panels. `jumpToReview` implements the approved linkage contract
@@ -58,10 +61,10 @@ export interface SessionRailApi {
   reviewTarget: Accessor<SessionRailReviewTarget | undefined>
   jumpToReview: (file: string) => void
   artifactTarget: Accessor<ArtifactFocusRequest | undefined>
-  focusArtifact: (artifactId: string) => void
+  focusArtifact: (artifactId: string, runId?: string) => void
   /** REQ-108(#244):审查文件卡「查看整份文件」→ 文件面板查看器(一跳可达的第二跳)。 */
   fileViewerTarget: Accessor<SessionRailFileViewerTarget | undefined>
-  openFileViewer: (file: string) => void
+  openFileViewer: (file: string | TimelineMediaSource) => void
   /** 当前激活面板 —— files 面板据此兑现「切面板 = 读取终止 / 叠放销毁」(AC5/设计 §4)。 */
   activePanel: Accessor<SessionRailPanel | undefined>
 }
@@ -386,11 +389,11 @@ export function SessionWorkspaceShell(props: {
       const target = artifactTarget()
       return target && props.live.accepts(target.identity) ? target : undefined
     },
-    focusArtifact: (artifactId) => {
+    focusArtifact: (artifactId, runId) => {
       const identity = props.live.current()?.identity
       if (!identity) return
       const active = document.activeElement
-      setArtifactTarget({ identity, artifactId, origin: active instanceof HTMLElement ? active : undefined })
+      setArtifactTarget({ identity, artifactId, runId, origin: active instanceof HTMLElement ? active : undefined })
       openPanel("artifacts")
     },
     fileViewerTarget: () => {
@@ -400,7 +403,13 @@ export function SessionWorkspaceShell(props: {
     openFileViewer: (file) => {
       const identity = props.live.current()?.identity
       if (!identity) return
-      setFileViewerTarget({ identity, file, seq: ++fileViewerSeq })
+      const active = document.activeElement
+      setFileViewerTarget({
+        identity,
+        file,
+        seq: ++fileViewerSeq,
+        origin: active instanceof HTMLElement ? active : undefined,
+      })
       openPanel("files")
     },
     activePanel: panel,

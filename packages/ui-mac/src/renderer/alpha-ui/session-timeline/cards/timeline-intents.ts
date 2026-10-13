@@ -6,6 +6,7 @@
 // focusArtifact → rail.focusArtifact(右栏产物面板),openFile → rail.jumpToReview
 // (右栏审查面板的文件卡,write/edit pill 与 diffsum 行同一通道)。
 import { createContext, useContext } from "solid-js"
+import type { TimelineMediaSource } from "../timeline-model"
 
 export interface TimelineFocusArtifactIntent {
   name: string
@@ -21,24 +22,31 @@ export interface TimelineFocusArtifactIntent {
   /** 产物所属 run(产物链接行)。 */
   runId?: string
   mime?: string
+  url?: string
 }
 
 /**
- * `#906` 时间线→产物面板的**唯一**联动换算:递 descriptor id;缺 id 时退回名字,而名字对不上
- * 任何卡 ⇒ 面板打开但不改选中(artifacts-core 的 fail-closed 合同),不猜、不改选。
+ * descriptor id 是产物面板的匹配键;媒体源由文件查看器消费。
  */
 export function artifactFocusIdOf(intent: TimelineFocusArtifactIntent): string {
   return intent.id ?? intent.name
 }
 
 /**
- * 生产绑定:把 rail 的 `focusArtifact(artifactId)` 接成时间线 intent 处理器。绑定层与组件测试
+ * 生产绑定:保留 descriptor 的 run 身份与媒体的实际源。绑定层与组件测试
  * 用**同一个**函数 —— 否则「点第 N 行选中第 N 个」的判据锚点会是测试自己重写的一行。
  */
 export function bindFocusArtifact(
-  focus: (artifactId: string) => void,
+  focus: (artifactId: string, runId?: string) => void,
+  openMedia?: (media: TimelineMediaSource) => void,
 ): (intent: TimelineFocusArtifactIntent) => void {
-  return (intent) => focus(artifactFocusIdOf(intent))
+  return (intent) => {
+    if (intent.url) {
+      openMedia?.({ url: intent.url, name: intent.name, mime: intent.mime!, partID: intent.partID! })
+      return
+    }
+    focus(artifactFocusIdOf(intent), intent.runId)
+  }
 }
 
 /** 「在面板打开」的文件目标;path 可能是绝对(工具 input)或 git 相对(diffsum)。 */
