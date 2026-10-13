@@ -1,10 +1,11 @@
-// Code-review cloud entry. Explicit file upload is main-owned and conditionally consented; the
+// Cloud pipeline entries. Explicit code-review file upload is main-owned and conditionally consented; the
 // existing input.diff route remains available as a grandfathered secondary action.
 
-import { onCleanup, Show } from "solid-js"
+import { For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { t } from "../i18n"
 import { pushToast } from "../alpha-ui/Toast"
+import { CopyButton } from "../alpha-ui/CopyButton"
 import type {
   CloudDispatchResult,
   CloudJobEnvelope,
@@ -55,7 +56,7 @@ function uploadError(code: Extract<CloudUploadResult, { status: "failed" }>["err
 
 /** `#624`:`ready` 是**放行**判据(恢复中为 false);`recovering` 只改那句「为什么不能点」——
  *  恢复中说「需登录平台模式」是假话,用户已经登录了。 */
-export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolean; recovering?: boolean }) {
+export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineSpec; ready: boolean; recovering?: boolean }) {
   const [state, setState] = createStore<{
     phase: Phase
     err: string
@@ -67,6 +68,9 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
     transparent: boolean
     consent: ConsentState | null
     consentBusy: boolean
+    input: string
+    result: string
+    files: string[]
   }>({
     phase: "idle",
     err: "",
@@ -78,6 +82,9 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
     transparent: false,
     consent: null,
     consentBusy: false,
+    input: "",
+    result: "",
+    files: [],
   })
   let triggerButton: HTMLButtonElement | undefined
   let unlisten: (() => void) | undefined
@@ -89,9 +96,24 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
   })
 
   const finish = async (directory: string, id: string, terminal: string, contract: CloudJobEnvelope) => {
+    if (props.spec.pipelineKind !== "code-review" && terminal === "job.completed") {
+      const status = await window.api.cloud.status(id)
+      if (!("job_id" in status)) {
+        setState({ phase: "failed", err: dispatchError(status.error) })
+        return
+      }
+      const result = status.result
+      const text = result && typeof result === "object"
+        ? ("finalAnswer" in result ? result.finalAnswer : "docs" in result ? result.docs : undefined)
+        : result
+      setState("result", typeof text === "string" ? text : "")
+    }
     const saved = await window.api.cloud.saveRun(directory, id, contract)
     if (saved.ok) {
       setState({ savedDir: saved.dir, phase: terminal === "job.completed" ? "done" : "failed" })
+      if (props.spec.pipelineKind !== "code-review") {
+        setState({ files: saved.files.filter((file) => file.startsWith("artifacts/")), err: saved.warnings.join("\n") })
+      }
       if (terminal !== "job.completed") setState("err", t("alpha.ext.cloudRunFailed"))
       return
     }
@@ -114,6 +136,8 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
       savedDir: "",
       consent: null,
       consentBusy: false,
+      result: "",
+      files: [],
     })
     unlisten?.()
     unlisten = window.api.cloud.onEvent((payload) => {
@@ -199,6 +223,41 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
     await beginJob(directory, result, envelope, false)
   }
 
+  // Office uses three catalog identities, each with an explicit server format.
+  const format = () => props.entryId === "cloud:word" ? "docx"
+    : props.entryId === "cloud:excel" ? "xlsx"
+    : props.entryId === "cloud:powerpoint" ? "pptx" : undefined
+  const inputLabel = () => t(props.spec.pipelineKind === "research"
+    ? "alpha.ext.cloudQuestion"
+    : props.spec.pipelineKind === "docs" ? "alpha.ext.cloudCode" : "alpha.ext.cloudTopic")
+  const runInput = async () => {
+    const input = props.spec.pipelineKind === "research"
+      ? { question: state.input.trim() }
+      : props.spec.pipelineKind === "docs"
+        ? { code: state.input.trim() }
+        : { topic: state.input.trim(), format: format() }
+    setState({ phase: "dispatching", err: "", savedDir: "", result: "", files: [] })
+    const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.cloudPickResults") })
+    const directory = Array.isArray(picked) ? picked[0] : picked
+    if (!directory) {
+      setState("phase", "idle")
+      return
+    }
+    const envelope: CloudJobEnvelope = {
+      autonomy: "pipeline",
+      kind: props.spec.pipelineKind,
+      input,
+      budget: props.spec.budgetDefaults,
+      constraints: { network: "restricted" },
+    }
+    const result = await window.api.cloud.dispatch(envelope)
+    if ("error" in result) {
+      setState({ phase: "failed", err: dispatchError(result.error) })
+      return
+    }
+    await beginJob(directory, result, envelope, false)
+  }
+
   // #400:取消请求。可判定结果三分:①受理/已在取消途中 → 显示「正在取消」,等 SSE 终态;
   // ②服务端明确拒绝(accepted=false 且不在取消途中,即已终态)→ 行内说明,不改运行显示;
   // ③传输/契约失败 → 行内错误,取消入口保持可用。任何分支都不把本地状态改成 cancelled。
@@ -222,7 +281,7 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
   return (
     <div class="alpha-ext-dsub">
       <div class="alpha-ext-dsub-t">{t("alpha.ext.cloudDispatchTitle")}</div>
-      <p class="alpha-ext-dnote">{t("alpha.cloud.consent.uploadHint")}</p>
+      <p class="alpha-ext-dnote">{t(props.spec.pipelineKind === "code-review" ? "alpha.cloud.consent.uploadHint" : "alpha.ext.cloudInputHint")}</p>
       <div class="alpha-ext-cloudrun">
         <Show when={props.spec.pipelineKind === "code-review"}>
           <button
@@ -238,10 +297,22 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
                 ? t("alpha.ext.cloudRunning")
                 : t("alpha.cloud.consent.uploadPick")}
           </button>
+          <button class="alpha-ext-add" disabled={!props.ready || busy()} onClick={() => void runLegacyDiff()}>
+            {t("alpha.cloud.consent.legacyDiff")}
+          </button>
         </Show>
-        <button class="alpha-ext-add" disabled={!props.ready || busy()} onClick={() => void runLegacyDiff()}>
-          {t("alpha.cloud.consent.legacyDiff")}
-        </button>
+        <Show when={props.spec.pipelineKind !== "code-review"}>
+          <label style={{ width: "100%" }}>
+            {inputLabel()}
+            <textarea class="alpha-ext-ddoc" style={{ width: "100%" }} rows={6} aria-label={inputLabel()} value={state.input}
+              disabled={!props.ready || busy()} onInput={(event) => setState("input", event.currentTarget.value)} />
+          </label>
+          <button class="alpha-ext-add" data-variant="primary" data-cloud-input=""
+            disabled={!props.ready || busy() || !state.input.trim() || (props.spec.pipelineKind === "office-report" && !format())}
+            onClick={() => void runInput()}>
+            {t(state.phase === "dispatching" ? "alpha.ext.cloudDispatching" : state.phase === "running" ? "alpha.ext.cloudRunning" : "alpha.ext.cloudStart")}
+          </button>
+        </Show>
         <Show when={!props.ready}>
           <span class="alpha-ext-meta">
             {props.recovering ? t("alpha.ext.cloudRecoveringNote") : t("alpha.ext.cloudNeedPlatformNote")}
@@ -278,6 +349,13 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
           ✓ {t("alpha.ext.cloudDone")} · <code class="alpha-ext-dcode">{state.savedDir}</code>
         </p>
       </Show>
+      <Show when={state.result}>
+        <pre class="alpha-ext-ddoc" data-cloud-result="">{state.result}</pre>
+        <CopyButton label={t("alpha.wb.copy")} text={() => state.result} dataAttr="data-copy-cloud-result" />
+      </Show>
+      <For each={state.files}>
+        {(file) => <button class="alpha-ext-add" data-cloud-file="" onClick={() => void window.api.openPath(`${state.savedDir}/${file}`)}>{file}</button>}
+      </For>
       <Show when={state.err}>
         <p class="alpha-ext-card-err">{state.err}</p>
       </Show>

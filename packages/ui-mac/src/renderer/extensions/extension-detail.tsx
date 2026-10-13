@@ -1082,8 +1082,7 @@ export function ExtensionDetail(props: {
                   </Show>
                 </div>
               </Show>
-              {/* 云 pipeline(REQ-020 T4):输入契约 / 预算默认与上限 / 执行层 / 上行数据明细 /
-                  receipts-only 启用语义;code-review 另带 diff-only dispatch 入口 */}
+              {/* 云 pipeline:输入契约 / 预算 / 上行数据与直接派发入口。 */}
               <Show when={cloudSpec(e())}>
                 {(spec) => {
                   const fmtBudget = (b: { max_iter: number; max_tokens: number; max_wall_clock_sec: number }) =>
@@ -1127,9 +1126,7 @@ export function ExtensionDetail(props: {
                             : t("alpha.ext.cloudNeedPlatformNote")}
                         </p>
                       </Show>
-                      <Show when={spec().pipelineKind === "code-review"}>
-                        <CloudDispatchBox spec={spec()} ready={cloudReady()} recovering={cloudRecovering()} />
-                      </Show>
+                      <CloudDispatchBox entryId={e().id} spec={spec()} ready={cloudReady()} recovering={cloudRecovering()} />
                     </>
                   )
                 }}
