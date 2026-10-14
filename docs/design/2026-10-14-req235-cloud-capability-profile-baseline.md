@@ -12,7 +12,7 @@ review_after: 2027-01-14
 
 票面 `alpha-work#114`(L 级,跨 alpha-platform / alpha-web / alpha-code)。本基线是它**升 Ready 的门**;
 `requirement-management` 要求的四段(只读勘破 / 选定方案与被否决的替代 / 安全面 / 子票切分)在第一至第四节,
-第五节是待 owner 裁决,第六节是本基线自己承认的推断。
+第五节是待 owner 裁决,第六节是本基线自己承认的推断,第七节是 R1 审计的逐条处置。
 
 **读法**:alpha-code 坐标以 `origin/alpha@74482625a` 为准 —— 它**就是** tag `v0.1.19`
 (`git ls-remote --tags origin` 实测 `74482625a7697dac0d363bee872c00253b51dd32 refs/tags/v0.1.19`),
@@ -139,6 +139,18 @@ remote-catalog、catalog-channels、catalog-curation、catalog-package-view 零�
   今天 **6 个 legacy 云条目的记录全是 pending**(`catalog-src/intake/runtime-verification.json`,「待云能力核实票提供 / 待 alpha-platform#505 真实派发提供」),
   所以它们今天也发不出去。包还要 root 与组件各一条 curation 决定(`docs/runbooks/catalog-publish.md:79-88`;`build-catalog.mjs:275-279 requireCuration: true`),
   并且包变更必须抬 `catalog-src/catalog.json` 顶层 `version`(runbook `:101-105`)。
+  `build-catalog.mjs:79` 读的是**整份**作者源,`:330` 在签名之前对**全部**条目与包跑 `assertCatalogReady`(`--check` 也要先过它,`:333`)⇒
+  只给两张新卡补证据发不出去,六个 legacy 云条目与两个官方连接器包的证据是**前置**。另外实读比较(§1.4):作者源比线上多
+  `cloud:word / cloud:excel / cloud:powerpoint`,线上比作者源多 `mcp:dbhub / mcp:github`,三张共有云卡的 `description / displayName / installSpec` 都不同 ⇒
+  「只抬顶层 version 就得到与**今天线上**相同的 `entries[]`」不成立;字节不变只能相对于下一次发布(alpha-web#266 / #256 完成后)的目录来断言。
+- 组件 intake **无条件**加载:编译器对每个组件先要 curation 决定(`extension-package-core.mjs:2120-2128`,缺即 `E_CHILD_CURATION_MISSING`),
+  再 `loadIntakeArtifacts`(`:2129-2131` → `curation-gate.mjs:135-163`,四件套缺/坏任何一件即抛),决定书 `approvedManifestSha256` 必须等于
+  intake 清单摘要(`:2132-2137`,`E_CHILD_REVIEW_BINDING`);`assertCapturedAssetsMatchIntake`(`:2053-2070`)只对 `kind === "mcp"` 跳过,
+  其余组件要求编译捕获的资产表与 intake `files` 逐字节相等。第一方无上游组件的先例是 `skill:alpha-first`:spec 把 `source` 钉到
+  **alpha-web 自己的提交**(`catalog-src/intake/specs/skill.alpha-first/1.0.0.json`,`resolved: 0f754372…`),intake 目录就是资产目录。
+- 包路径的安装授权**直接消费**组件的 `capabilities`(编译器派生的宿主 token):`main/package-admission.ts:290-296`(确认框 diff)、`:526`(预览)、`:902-908`(事务 common),
+  **没有**调用 legacy 的 `capabilitiesForCatalogEntry`;`decoder.ts:511-519` 又要求载荷派生的 token 集与组件声明逐字相等。
+  ⇒ 宿主支持 token 与安装授权能力是两个集合,package 路径今天把前者当后者用。
 
 ### 1.3 HTML 生成与图片生成今天的输入字段
 
@@ -163,6 +175,9 @@ remote-catalog、catalog-channels、catalog-curation、catalog-package-view 零�
 | 编译器拒 `kind:"cloud"` | 读 `vectors.v1.json` 中 `input.cloud-profile.invalid.json` 行 | `errorCode: "E_PROFILE_UNSUPPORTED"` |
 | 平台生成物漂移已是门 | 读 `packages/gateway/package.json` scripts + `bin/check` | `bin/check → typecheck → contracts:check → generate-wire-contracts --check` |
 | 线上签名目录云条目 | `python3` 解析 `public/catalog/v1/catalog.json@42d6a05f` | 版本 `2026-08-31.2`,cloud 3 个,package 1 个 |
+| 作者源 ≠ 线上 | `python3` 逐 id 比较 `catalog-src/catalog.json` 与 `public/catalog/v1/catalog.json`(同 `42d6a05f`) | 作者源独有 `cloud:excel/powerpoint/word`;线上独有 `mcp:dbhub/mcp:github`;`cloud:code-review/docs/research` 三者 `description/displayName/installSpec` 均不同 |
+| 服务端先序列化再校验 | 读 `cloud-core.ts:213-216 / :235 / :316 / :350-352 / :500 / :560` | `envelopeJson` 在 `:215` 生成、`:235` 入摘要、`:316` 入账本;执行侧 `:500` 从 `row.envelope_json` 重建信封、`:560` 据此组管线参数 |
+| `denied_paths` 缺省注入已删 | 读 `cloud-envelope-guard.ts:11-21` | `#918` 删除,原因:pipeline 恒不可强制、平台会整个拒收 |
 
 ## 二、选定方案与被否决的替代
 
@@ -192,17 +207,25 @@ interface PipelineInputField {
 PIPELINE_REGISTRY[kind] = { tier, hold_usd?: number, input: Record<name, PipelineInputField> }
 ```
 
-九种 kind **全部**照 `pipelines.ts` 与三处准入 zod 逐个读出来填(与 ap#469 同一纪律),常量复用而不是抄数字:
+**声明的范围(R1 #6 修订)**:`type` 九种 kind 全部填(`desc` 照旧,`json` 用于 `files/data/csv` 这类);
+**`required / minChars / maxChars / enum / default` 只声明在「整个输入合同可被表单表达」的 kind 上**,首批就是 `html-generate` 与 `image-generation`:
 `html-generate.prompt = { type:"string", required:true, minChars:1, maxChars: HTML_PROMPT_MAX_CHARS }`、
-`image-generation.prompt = { …, maxChars: IMAGE_PROMPT_MAX_CHARS }`(把 `image-generation.ts:9` 的字面 `4000` 提成常量)、
-`office-report.format = { type:"string", required:false, enum:["docx","xlsx","pptx"], default:"docx" }`、`office-report.data = { type:"json", required:false }`、
-`hold_usd`:image `IMAGE_HOLD_USD`,office/html `DOCUMENT_HOLD_USD`。别名字段(`task`/`data`)保持为各自独立的可选字段(今天就是这样广播的)。
+`image-generation.prompt = { …, maxChars: IMAGE_PROMPT_MAX_CHARS }`(把 `image-generation.ts:9` 的字面 `4000` 提成常量,两处共用);
+`hold_usd`:image `IMAGE_HOLD_USD`,html `DOCUMENT_HOLD_USD`。其它 kind(research / code-review / docs / office-report / data-analysis / bugfix / migration)
+**只填 `type` 与 `desc`,不声明约束**——它们的业务约束(例如 Office 的「`topic ?? task` 得到非空 prompt」)逐字段的 `required/enum` 表达不了,
+继续由各自既有准入负责(`cloud-core.ts:252-258` 等),本票不动。「哪些 kind 可以不发客户端」因此有了机械判据:**每个字段都是 `type:"string"` 且声明了约束**;
+把一个既有 kind 升到这一档是一次单独的、要核对既有行为的改动,不在本票。
 
-**准入校验**:`cloud-core.ts dispatchJob` 在 `:248`(幂等重放之后、任何副作用之前)加一道**从注册表派生的通用校验**:
-`required` 缺失、`type` 不符、长度越界、值 ∉ `enum` → 400,稳定码 `pipeline_input_invalid`,`details: [{ field, reason }]`;
-未声明键**仍然忽略**(ap#469 裁决不动)。三处手写 zod 保留在后面(它们与注册表共用常量;一条测试断言「注册表派生校验」与三条 zod 在
-`contracts/v1/fixtures/invalid/*` 上判决一致)。`default` 由同一处代入,`officeReportRun :352` 与 `:255` 的 docx 兜底因此变成「缺省」而不是「乱填也放行」——
-这是对 MCP 模型调用方唯一可观察的收紧(非字符串 / 越界 / 枚举外从静默兜底变成 400),可回滚(放宽一行注册表),**本基线自行裁定,不上报**。
+**准入校验(R1 #5 修订)**:`cloud-core.ts dispatchJob` 在 `:248`(幂等重放之后、任何副作用之前)加一道**从注册表派生的通用校验**,
+**只判不改**:对已声明约束的字段判 `required` 缺失、`type` 不符、长度越界、值 ∉ `enum` → 400,稳定码 `pipeline_input_invalid`,`details: [{ field, reason }]`;
+未声明键**仍然忽略**(ap#469 裁决不动);**不代入 `default`、不规范化、不改写信封的任何一个字节**。理由是地面真相:`envelopeJson` 在 `:215` 已生成、
+`:235` 已入请求摘要、`:316` 原样入账本,执行侧 `:500` 从 `row.envelope_json` 重建、`:560` 据此组参数——在 `:248` 改内存里的对象,执行侧拿到的仍是账本快照;
+而把规范化提到 `:215` 之前又会改变请求摘要,破坏跨注册表版本的精确重放。于是冻结两条语义:**请求摘要永远算在原始请求上**;
+**服务端不替任何 kind 代入缺省值**——`default` 只是导出给客户端的「`select` 预选项」。若将来某个 kind 确实需要服务端缺省,它必须在首次准入校验之后
+重新过字节上限(`serializeControlEnvelope`)并把规范化后的信封作为**执行快照**持久化,重放只消费已存快照;本票没有这样的 kind,不建这条通路。
+首批两种 kind 的手写 zod(`:248-251`、`:259-261`)保留在通用校验之后,它们与注册表共用同一组常量;P1 用 `contracts/v1/fixtures/invalid/*` 证明
+通用校验与这两条 zod 在同一输入上同红同绿(**只承诺这两种**,不承诺九种)。对 MCP 模型调用方唯一可观察的变化:`html-generate` / `image-generation`
+的坏输入多一个更具体的 `details`,码仍先出 `pipeline_input_invalid`;可回滚,**本基线自行裁定,不上报**。
 
 **导出产物(冻结面 F2)**:`generate-wire-contracts.ts` 多写一个 `contracts/v1/cloud-pipeline-registry.json`:
 
@@ -241,8 +264,12 @@ behavior = {
 注册表里 `type:"json"` 或要上传的必填字段 = 不可表达)。**不带 `budget`**:信封里 `budget` 可选、服务端缺省 600s(§1.1),
 策略永远 clamp;少一样作者要填、少一处会漂的东西。
 
-**能力 token**:`derivePayloadCapabilitiesV1` 对 cloud 载荷返回 `[]`(没有密钥、没有 OAuth、没有连接);授权确认框里要出现的 `cloud:dispatch`
-是**宿主按子类型派生**的(与 legacy `ext-capability-authorization.ts:33` 同一事实),不是载荷自报。
+**能力 token 与安装授权是两个集合(R1 #4 修订)**:宿主支持 token(`derivePayloadCapabilitiesV1`,`decoder.ts:522-540`)对 cloud 载荷返回 `[]`
+(没有密钥、没有 OAuth、没有连接),语义不变。但 package 路径今天把这个集合**直接**当安装授权能力用(`package-admission.ts:294 / :526 / :906`),
+照搬就会让 cloud 包在确认框、预览与事务里都是「零能力」,`cloud:dispatch` 不会自动出现。因此 C1 在 main 加**一处**派生
+`packageAuthorizationCapabilitiesV1(component)`:档案为 `cloud` ⇒ `["cloud:dispatch"]`(与 legacy `ext-capability-authorization.ts:33` 同一事实),
+其它档案 ⇒ 原样 `component.capabilities`(不改既有行为);`:294`(确认框 diff)、`:526`(预览)、`:906`(事务 common)三处改为消费它,
+一次派生、三处共用,`grants.json` 记的就是这个集合;卸载走 `ext-capability-grants.ts:76` 的幂等移除,**不能只删 receipt**。
 
 ### 2.3 目录侧:作者声明与编译(alpha-web)
 
@@ -255,16 +282,28 @@ behavior = {
   "root": { "component": { "id": "cloud:html", "kind": "cloud", "version": "1.0.0",
     "behavior": { "pipelineKind": "html-generate",
       "fields": { "prompt": { "control": "textarea", "label": "页面要求", "help": "…" } },
-      "fixed": {}, "upstreamData": ["发送你填写的页面要求(prompt)。", "派发信封元数据(预算/约束;denied_paths 缺省注入)"] } } } }
+      "fixed": {}, "upstreamData": ["发送你填写的页面要求(prompt)。", "派发信封元数据:autonomy、kind、constraints.network=restricted;不带 budget"] } } } }
 ```
+
+`upstreamData` 只写**实际发送**的字段。六个 legacy 作者条目里那句「denied_paths 缺省注入」描述的保护已在 `#918` 删除
+(`cloud-envelope-guard.ts:11-21`),新包**不得抄**;legacy 条目的措辞归 alpha-web#266 顺手修,不在本票。
 
 编译器(`extension-package-core.mjs`)对 `kind:"cloud"`:映射到 `cloud@1`(`componentProfile :619-634` 加一支;`PROFILE_REGISTRY :103-134`、
 `generic-profiles.v1.json`、声明 schema `$defs.cloudComponent` 各加一项);`validateBehavior` 按 **vendored** `cloud-pipeline-registry.json` 判:
 `pipelineKind` 存在;`fields ∪ fixed` 的名字 ⊆ 注册表字段;注册表 `required` 字段全被 `fields` 或 `fixed` 覆盖;`fixed` 值满足 enum/长度;
 `type:"json"` 字段不得出现在 `fields`;作者只能**收紧**(required 可由 false 改 true、maxChars 只能更小、options 只能是 enum 子集),不能放宽;
-然后把 `required/minChars/maxChars/options/default/holdUsd` 从注册表**抄进载荷**——客户端因此只依赖签名载荷,不依赖平台契约。
+然后把 `required/minChars/maxChars/options/default/holdUsd` 从注册表**抄进载荷**——客户端因此只依赖签名载荷,不依赖平台契约
+(`default` 在客户端只是 `select` 的预选项,服务端不代入,见 §2.1)。
 ID 文法:`cloud:` 前缀已在 `ENTRY_ID_RE`(`catalog-channels-core.mjs:49`)与 `CURATION_ENTRY_ID_RE`(alpha-code `shared/catalog-curation.ts:39`)里,
 curation 决定按现有 `package.<id>` / `cloud.<id>` 目录名落。
+
+**cloud 组件的 intake(冻结面 F5,R1 #3 修订)**。编译器对每个组件无条件加载四件套并把决定书绑到 intake 清单(§1.2),所以 cloud 组件也必须有
+intake,而它没有上游源码。处置沿用两个既有先例:**输入**照 `skill:alpha-first`——spec 的 `source` 钉 alpha-web 自己的一个提交,intake 目录 =
+`catalog-src/packages/package.cloud-html/1.0.0/`(`alpha-package.json` + `LICENSE.txt`;先把这两个文件单独成一个提交,再用那个 commit 做 `resolved`);
+**资产比对**照 MCP——「审查源文件、不作为运行资产发布」:`assertCapturedAssetsMatchIntake`(`extension-package-core.mjs:2053-2070`)把 `kind === "cloud"`
+加进 `mcp` 那条跳过支,因为 cloud 组件没有发布资产(编译捕获表恒空)而 intake `files` 非空;组件决定书 `approvedManifestSha256` = 该 intake 清单摘要,
+root 决定书 = 规范声明摘要(与 `package:alpha-first` 同)。`expectedCapabilities / expectedNetworkDomains / expectedSecrets` 照 intake facts(声明目录不出网、不要密钥 ⇒ 全空)。
+W1 的文件边界据此补齐(第四节)。
 
 ### 2.4 客户端侧:画表单、组 input、派发(alpha-code 0.1.20)
 
@@ -272,16 +311,21 @@ curation 决定按现有 `package.<id>` / `cloud.<id>` 目录名落。
   由 `evaluatePackageForHost` 在 root 档案为 `cloud` 且判定 compatible 时填(与 `listing` 同纪律:main 解码后的投影过 IPC,raw 载荷不过)。
 - **Hub**:「云能力」分区(`extension-hub.tsx:2926-3037`)在 legacy `byType("cloud")` 之外再列 `installablePackages().filter(v => v.cloud)` 的 PackageCard;
   包详情(`extension-detail.tsx:149-153` 的 `packageDetail` 视图)在 `view().cloud` 存在时挂表单派发框。
-- **表单派发框**(新组件,**不改** `cloud-dispatch-box.tsx` 的 legacy 分支):按 `fields` 顺序渲染 `text`→`<input maxlength>`、`textarea`→`<textarea maxlength>`、
+- **表单派发框**(新组件;R1 #7 修订:`dispatchError` 今天未导出、`beginJob/finish/cancelJob` 是组件内闭包(`cloud-dispatch-box.tsx:28 / :61 / :100 / :125 / :263`),
+  **允许一次机械提取**——把任务生命周期(订阅、终态、落盘、取消三分)与错误映射提到 `cloud-job-lifecycle.ts`,新旧两个表单共用;
+  legacy 四个 kind 分支的**行为**冻结,由回归测试保护(`upload-consent-dialog.test.ts:371-376` 已有挂载 legacy 云条目的夹具,补齐四分支的派发信封断言),
+  **不以文件零 diff 代替兼容性证明**):按 `fields` 顺序渲染 `text`→`<input maxlength>`、`textarea`→`<textarea maxlength>`、
   `select`→`<select>`(default 预选);`required`/`minChars` 不满足即禁用按钮;派发时 `input = { ...Object.fromEntries(fixed), ...Object.fromEntries(fields→value) }`,
   信封 `{ autonomy:"pipeline", kind: cloud.pipelineKind, input, constraints:{ network:"restricted" } }`(无 `budget`),走原 `window.api.cloud.dispatch`、
   原 `beginJob/finish`(产物列表、落盘、取消全复用);显示一行「预留 US$<holdUsd>,按实际用量结算;失败时已产生的费用仍会结算」(措辞照 §2.7);
   `dispatchError` 增两条映射:`pipeline_input_invalid` / `unknown_pipeline_kind` → 「这项云能力的要求已更新,请刷新定制中心或更新 Code Puppy」。
 - **「安装」= 写 receipt**:`ext-package-lifecycle.ts` 表加 `cloud: "cloud"`、`PackageChildKindV1` 加 `"cloud"`;`package-admission.ts :910-912` 的穷举分派加一条腿
   `buildCloudTxItems`(镜像 `ext-install-planner.ts:1726-1760`:只有 receipt,零文件、零引擎 config,`desiredState` 恒 enabled 除非既有记录 disabled);
-  卸载侧的 fail-closed 表同样加 `cloud`(只删 receipt)。与 legacy 一致,**派发不要求已安装**,只看 `cloudReady()`。
-- **legacy 路径零改动**(AC2 的构造性证明):`catalog-types.ts` 的 `CloudPipelineSpec`、`cloud-dispatch-box.tsx` 的四个 kind 分支、
-  `catalog-installable-view.ts` 的 entries 过滤、`ext-install-planner.ts` 的 cloud receipt 都不在本票的 diff 里(子票 AC 里写成「diff 不得触及」)。
+  安装授权能力按 §2.2 一次派生(`["cloud:dispatch"]`)、确认框/预览/事务共用;卸载侧的 fail-closed 表同样加 `cloud`:删 receipt **并**
+  幂等移除 `grants.json`(`ext-capability-grants.ts:76`)。与 legacy 一致,**派发不要求已安装**,只看 `cloudReady()`。
+- **legacy 路径行为冻结**(AC2 的构造性证明,R1 #7 修订):`catalog-types.ts` 的 `CloudPipelineSpec`、`catalog-installable-view.ts` 的 entries 过滤、
+  `ext-install-planner.ts` 的 cloud receipt **不在本票 diff 里**;`cloud-dispatch-box.tsx` 允许上面那一次机械提取,但四个 kind 分支构造的信封、
+  按钮门控、结果落盘**逐项**由回归测试钉住(先在提取前写、提取后原样过)。
 - 版本抬到 `0.1.20`,`CHANGELOG.md` `[Unreleased]` 一条 Added。
 
 ### 2.5 旧客户端兼容 —— 用代码说清 0.1.19 看到新形态会怎样
@@ -294,7 +338,9 @@ curation 决定按现有 `package.<id>` / `cloud.<id>` 目录名落。
    **零次 payload fetch**(判据 `package-installability.test.ts:513-552` 已覆盖 unknown profile 这一行)。
 3. renderer `installableCatalogPackages` 只留 compatible(`catalog-installable-view.ts:23-36`)⇒ 新包**不出现在任何分区**。
 4. legacy 云条目走 `installableCatalogEntries`(`:14-20`),与 packages 无关 ⇒ 三张旧卡(线上目前只有 code-review/research/docs 三张)照常显示、照常派发。
-5. 新目录**不改**任何 legacy 云条目的字节(包变更只抬顶层 `version`,`entries[]` 逐字节不变——`catalog-publish.md:101-108` 已有这条纪律与证明脚本)。
+5. 新目录**不改**任何 legacy 云条目的字节——**比较基准是 alpha-web#266(六个云条目证据 + 发布)与 alpha-web#256(GitHub / DBHub 官方包)完成后
+   发布的那份目录**,不是今天线上的 `2026-08-31.2`(作者源与它已经不同,§1.2 / §1.4);在那份目录之上只追加两个包、只抬顶层 `version`,
+   `entries[]` 逐字节不变(`catalog-publish.md:101-108` 的纪律与字节切片证明脚本照用)。
 
 AC2 的证据是在 0.1.19 打包版上点出上述 3、4 两步,外加一条可重复的命令:在 `74482625a` 的 checkout 里对构建出的新目录跑
 `validateCatalogPackageShape` + `evaluatePackageForHost`(第四节 V1)。
@@ -308,11 +354,13 @@ AC2 的证据是在 0.1.19 打包版上点出上述 3、4 两步,外加一条可
 | 3 | alpha-code | C1 合并(`cloud` 档案 + 投影 + 表单 + receipt);宿主产物 `host-extension-package-artifact.v1.json` 的 `artifactSha256` 随之变化 | 1(只为共用常量口径;技术上可并行) |
 | 4 | alpha-web | W1-b:按 `desktop-extension-package-artifact-bump.md` 把宿主 pin 抬到 C1 的提交(此前 `E_HOST_ARTIFACT_DRIFT` 恒红,是设计状态);编译器认 `kind:"cloud"`;语料加 `input.cloud.valid.json` / `expected.cloud.compiled.json`;`gen-extension-package-artifact.mjs` 重生成 | 3 |
 | 5 | alpha-code | **发 0.1.20**(owner 的动作;合并 ≠ 用户包里有) | 3 |
-| 6 | alpha-web | W1-c:作者两份声明 `package:cloud-html` / `package:cloud-image` + curation 决定 + 运行证据(在 0.1.20 上各真实派发一次完成,`runtime-verification.json` 记 `package-install` pass/pass)→ `build-catalog` → 签名 → `promote --to stable` → 部署网站 → 读线上 `catalog.json` 核对两个包在 | 5 + 第五节第 1 条 |
+| 5′ | alpha-code | E1:**上架前取证**(R1 #2 修订,打破「卡要先发布才能点、点了才能发布」的循环)。入口不是 GUI:`node scripts/package-declaration.mjs preview` 产出编译后的信封 + 载荷字节(确定性,`promote` 时会与 build 的发射字节逐字比对);alpha-code 的 harness 沿 `docs/verification/2026-08-26-req128-163-desktop-live-package/harness/live-desktop-package.ts` 的做法,经 `runCatalogInstallWithPackagePreflight` / 生产 admission coordinator 的 **deps 注入**(`package-installability.ts:390-401`:`loadVerifiedCatalog`、`installability.fetchPayload`)喂入这份候选目录与载荷,在 0.1.20 的树上真实走一遍安装(receipt 落账本)⇒ `install: pass`;再用 `guardCloudEnvelope` 组出**与表单框逐字相同**的信封,持 alpha-platform#528 产出的生产测试账号 key 走 `POST /v1/cloud/jobs` 到完成、取回产物 ⇒ `use: pass`;证据带包 digest(= `catalogRuntimeDigest` 对候选信封)、job id、结算金额、产物 MIME/字节/SHA-256,按 ap#505 共用证据要求落 `runtime-verification.json` | 3、4、ap#528 |
+| 6 | alpha-web | W1-c:作者两份声明 `package:cloud-html` / `package:cloud-image` + 组件 intake 四件套 + curation 决定(root + 组件)+ E1 的证据 → `build-catalog`(整份目录过门)→ 签名 → `promote --to stable` → 部署网站 → 读线上 `catalog.json` 核对两个包在、`entries[]` 相对基准逐字节不变。**外部依赖(R1 #1 修订)**:alpha-web#266(六个 legacy 云条目的真实派发证据 + 发布,进行中)与 alpha-web#256(GitHub / DBHub 官方包证据)**先完成**;本步以它们发布后的目录为基准 | 5′、#266、#256 |
 | 7 | — | V1:0.1.20 打包版(二进制不变)看到卡、派发、取回产物;0.1.19 打包版旧卡照常、新包不现 | 6 |
 
-此后「再加一种能力」= 第 1 步只改注册表一行与执行体(不再需要通用校验/导出改动)+ 第 6 步;**不经 3/4/5**——这就是 AC1 后半句的机械含义,
-而「能否不发客户端」有了判据:该 kind 的必填字段全是 `type:"string"` 且不需上传。
+此后「再加一种能力」= 第 1 步(注册表加一行 + 执行体,通用校验/导出机制已在)→ **第 2 步(alpha-web 重新 vendor 注册表产物并抬 `EXPECTED_COMMIT`;
+R1 #8 修订——不做这一步编译器读的还是旧 JSON,新 `pipelineKind` 会被判不存在)**→ 第 5′ 步取证 → 第 6 步;**不经 3/4/5**——这就是 AC1 后半句的机械含义,
+而「能否不发客户端」有了判据:该 kind 的每个字段都是 `type:"string"` 且声明了约束,且不需上传(§2.1)。
 
 ### 2.7 被否决的替代
 
@@ -342,7 +390,8 @@ AC2 的证据是在 0.1.19 打包版上点出上述 3、4 两步,外加一条可
 | I7 | **价格文字只是显示,钱的权威在服务端** | `holdUsd` 编译期抄自注册表,服务端 preauth 从不读客户端的数字;文案照 §2.7(预留 ≠ 报价;失败时已产生的费用照结算) |
 | I8 | **未知/过期 kind 响亮失败,不静默** | 签名目录可能比注册表旧或新:服务端 400 `unknown_pipeline_kind` / `pipeline_input_invalid` 带 `details`;客户端把码翻成人话,不吞 |
 | I9 | **0.1.19 的整份目录不因新包退化** | `validateCatalogPackageShape` 只看 prelude(§1.2);编译器保证 prelude 文法;V1 在 `74482625a` 上实跑这一步 |
-| I10 | **授权确认框如实列出 `cloud:dispatch`** | 子类型 `cloud` 派生,与 legacy 同源(`ext-capability-authorization.ts:33`);不由载荷自报 |
+| I10 | **授权确认框如实列出 `cloud:dispatch`,预览 / 确认 / 事务 / 卸载看到的是同一个集合** | main 的 `packageAuthorizationCapabilitiesV1` 按已验证档案派生一次(cloud ⇒ `["cloud:dispatch"]`),`package-admission.ts:294 / :526 / :906` 三处消费它;宿主支持 token(`decoder.ts:511-519` 的 `[]`)不被当作授权能力;卸载移除 `grants.json`(`ext-capability-grants.ts:76`)。不由载荷自报 |
+| I11 | **请求摘要算在原始请求上;服务端不改写信封** | 通用校验只判不改(§2.1);`payloadHash`(`cloud-core.ts:235`)与账本 `envelope_json`(`:316`)保持原样,执行侧重建的(`:500`)就是准入校验过的那份;任何将来需要服务端缺省的 kind 必须另存执行快照并重过字节上限,重放只读快照 |
 
 **不在本票承诺的**(与总方案 §5 一致):整任务预算事先保证付得起;运行时密钥对 agent 不可见;ADR-040 不变——cloud 载荷是数据,引擎进程不执行任何来自载荷的代码。
 
@@ -350,42 +399,60 @@ AC2 的证据是在 0.1.19 打包版上点出上述 3、4 两步,外加一条可
 
 | 票 | 仓 | 边界(文件) | 负责 AC | 规模 | 冻结面 | 前后 |
 | --- | --- | --- | --- | --- | --- | --- |
-| **P1** 注册表结构化约束 + 通用准入校验 + 导出 | alpha-platform | `packages/gateway/src/lib/pipeline-registry.ts`(字段结构、九行填满、`hold_usd`);`lib/cloud-core.ts`(`:248` 前加通用校验,稳定码 `pipeline_input_invalid`);`contracts/v1/image-generation.ts`(提常量);`scripts/generate-wire-contracts.ts`(多写 `contracts/v1/cloud-pipeline-registry.json`);测试:新 `registry-input-validation` 单测(每种约束一条反例,先红后绿)+ `contracts/v1/fixtures/invalid/cloud-input-*.json` + 穷举类 295/328/461/469 **只补新成员**(brief-notes 预授权);文档:`docs/contracts/cloud-jobs-v1.md`(每种 kind 的 input 合同改为「注册表派生」+ 新码)、`docs/contracts/public-cloud-mcp.md` §6/§7.3;部署 gateway + cloud worker + 探针 | AC1 服务端半场 | **M**(难度中:一处类型改动牵九行 + 四个穷举测试;model 按难度选) | **F1** 注册表字段结构、**F2** 导出产物 schema `alpha.cloud-pipeline-registry.v1`(W1 消费) | 第一;其它票对着 F2 开工 |
-| **C1** `cloud` 档案 + 安全视图投影 + 表单派发 + receipt | alpha-code | `shared/host-extension-package-contract/{host-extension-package.registry.v1.json, profiles/cloud.v1.schema.json, registry.ts, decoder.ts, generate-artifact.ts, host-extension-package-artifact.v1.json, testvectors/decoder-corpus.v1.json, CONTRACT.md}`;`shared/catalog-package-view.ts`(`cloud?`);`main/package-installability.ts`(投影);`main/ext-package-lifecycle.ts`(表 + 联合);`main/package-admission.ts` + `main/ext-package-tx-builders.ts`(`buildCloudTxItems`)+ 卸载表;`renderer/extensions/{extension-hub.tsx 云分区, extension-detail.tsx 包详情, cloud-form-box.tsx 新}` + i18n + `dispatchError` 两条映射;`docs/contracts/host-extension-package-v1.md`、`CHANGELOG.md`、`packages/ui-mac/package.json` → 0.1.20。**diff 不得触及**:`catalog-types.ts` 的 `CloudPipelineSpec`、`cloud-dispatch-box.tsx`、`catalog-installable-view.ts` 的 entries 路径、`ext-install-planner.ts` 的 cloud 分支 | AC1 客户端半场;AC2(构造性:legacy 零改动) | **L**(难度高:跨合同/解码/事务/IPC/渲染五层,`model: fable`) | **F3** `cloud.v1` 档案 schema、**F4** `CatalogPackageViewV1.cloud` IPC 形状 | 与 W1-a 并行;合并后触发 W1-b 与 0.1.20 发版 |
-| **W1** 目录与编译器 | alpha-web | **a** vendor:`contracts/alpha-platform/v1/cloud-pipeline-registry.json` + `alpha-platform-contract.lock.json` + `scripts/check-alpha-platform-contract.mjs`(`EXPECTED_COMMIT`);**b** 编译器:`scripts/lib/extension-package-core.mjs`(`PROFILE_REGISTRY`、`componentProfile`、`validateBehavior` cloud 支、载荷 builder `:1660` 那道「no payload builder」后面)、`contracts/extension-package/artifact/{alpha-package-declaration-v1.schema.json, generic-profiles.v1.json, host-contract-pin.v1.json, host-extension-package.registry.v1.json, vectors.v1.json, input.cloud.valid.json, expected.cloud.compiled.json}`(现有 `input.cloud-profile.invalid.json` 的期望从 `E_PROFILE_UNSUPPORTED` 改为新的具体错误,例如未知 `pipelineKind`)、`scripts/gen-extension-package-artifact.mjs`、`.github/workflows/channels-ci.yml` 的 `ref:`、`contracts/extension-package/CONTRACT.md`;**c** 内容:`catalog-src/packages/package.cloud-html/1.0.0/alpha-package.json`、`package.cloud-image/…`、`catalog-src/curation/{package.cloud-html, cloud.html, package.cloud-image, cloud.image}/1.0.0.json`、`catalog-src/intake/runtime-verification.json`、`catalog-src/catalog.json` 顶层 `version`;`docs/runbooks/catalog-publish.md` 加「cloud 组件包」一节(无源码组件的 intake 处置,见第六节);build → sign → promote → 部署 → 读线上目录核对 | AC1 目录半场;AC2 第 5 步(entries 逐字节不变)与 I9 | **M** | 消费 F2/F3;自己不冻结新面 | a 在 P1 后;b 在 C1 合并后;c 在 0.1.20 发出后 |
-| **V1** 打包验证记录 | alpha-code(`docs/verification/`) | 0.1.20 打包版(二进制不变)+ 线上目录:两张卡出现 → 各派发一次 → 产物落盘;0.1.19 打包版:三张旧卡照常显示与派发、新包不现;命令级:在 `74482625a` 的 checkout 对线上 `catalog.json` 跑 `validateCatalogPackageShape`(通过)与 `evaluatePackageForHost`(`update-required`、fetch 0 次) | AC1、AC2 的「拿什么证明」 | **S** | — | 最后;桌面点击部分要 owner 动手(本机取证规则),服务端那半我查 |
+| **P1** 注册表结构化约束 + 通用准入校验 + 导出 | alpha-platform | `packages/gateway/src/lib/pipeline-registry.ts`(字段结构;九行填 `type`;**只有 html-generate / image-generation 填约束**;`hold_usd`);`lib/cloud-core.ts`(`:248` 前加**只判不改**的通用校验,稳定码 `pipeline_input_invalid`;不碰 `:215/:235/:316` 的序列化与摘要);`contracts/v1/image-generation.ts`(提常量);`scripts/generate-wire-contracts.ts`(多写 `contracts/v1/cloud-pipeline-registry.json`);测试:新 `registry-input-validation` 单测(每种约束一条反例,先红后绿;另一条断言校验函数**不改变**信封对象与其序列化字节)+ `contracts/v1/fixtures/invalid/cloud-input-*.json`(证明通用校验与 html/image 两条 zod 同红)+ 穷举类 295/328/461/469 **只补新成员**(brief-notes 预授权);文档:`docs/contracts/cloud-jobs-v1.md`(html/image 的 input 合同改为「注册表派生」+ 新码;其它 kind 注明「约束未声明,沿既有准入」)、`docs/contracts/public-cloud-mcp.md` §6/§7.3;部署 gateway + cloud worker + 探针 | AC1 服务端半场 | **M**(难度中;model 按难度选) | **F1** 注册表字段结构(含「约束只声明在可表达 kind 上」「服务端不代入缺省」两条语义)、**F2** 导出产物 schema `alpha.cloud-pipeline-registry.v1`(W1 消费) | 第一;其它票对着 F2 开工 |
+| **C1** `cloud` 档案 + 安全视图投影 + 表单派发 + receipt + 授权派生 | alpha-code | `shared/host-extension-package-contract/{host-extension-package.registry.v1.json, profiles/cloud.v1.schema.json, registry.ts, decoder.ts, generate-artifact.ts, host-extension-package-artifact.v1.json, testvectors/decoder-corpus.v1.json, CONTRACT.md}`;`shared/catalog-package-view.ts`(`cloud?`);`main/package-installability.ts`(投影);`main/ext-package-lifecycle.ts`(表 + 联合);`main/package-admission.ts`(`packageAuthorizationCapabilitiesV1` 一处派生,`:294/:526/:906` 消费)+ `main/ext-package-tx-builders.ts`(`buildCloudTxItems`)+ 卸载表(receipt + `grants.json`);`renderer/extensions/{extension-hub.tsx 云分区, extension-detail.tsx 包详情, cloud-form-box.tsx 新, cloud-job-lifecycle.ts 新(从 cloud-dispatch-box.tsx 机械提取 beginJob/finish/cancelJob/dispatchError)}` + i18n + `dispatchError` 两条映射;`docs/contracts/host-extension-package-v1.md`、`CHANGELOG.md`、`packages/ui-mac/package.json` → 0.1.20。**diff 不得触及**:`catalog-types.ts` 的 `CloudPipelineSpec`、`catalog-installable-view.ts` 的 entries 路径、`ext-install-planner.ts` 的 cloud 分支;**`cloud-dispatch-box.tsx` 只允许上述提取,四个 kind 分支的信封/门控/落盘先写回归测试再动** | AC1 客户端半场;AC2(构造性:legacy 行为冻结 + 回归测试) | **L**(难度高:跨合同/解码/事务/IPC/渲染五层,`model: fable`) | **F3** `cloud.v1` 档案 schema、**F4** `CatalogPackageViewV1.cloud` IPC 形状 | 与 W1-a 并行;合并后触发 W1-b、E1 与 0.1.20 发版 |
+| **E1** 上架前取证 harness | alpha-code(`docs/verification/<date>-req235-cloud-package-evidence/harness/`) | 输入:`package-declaration.mjs preview` 的信封 + 载荷字节;经 `runCatalogInstallWithPackagePreflight` 的 deps 注入(`package-installability.ts:390-401`)在 0.1.20 树上真实安装(receipt 落账本、授权记 `cloud:dispatch`);用 `guardCloudEnvelope` 组与表单框逐字相同的信封,持 ap#528 测试账号 key 走 `POST /v1/cloud/jobs` 到完成、取回产物;§4 负向对照(改一个字节的载荷 → `package-payload-integrity`;空 prompt → 400);输出一条可直接粘进 `runtime-verification.json` 的记录(包 digest / job id / 结算 / 产物 MIME·字节·SHA-256)。**不进闸门**(打真网络),与 aw#163 harness 同一纪律 | AC1 的上架前证据(`package-install` pass/pass) | **S** | — | C1 合并后、ap#528 交付后;产出喂 W1-c |
+| **W1** 目录与编译器 | alpha-web | **a** vendor:`contracts/alpha-platform/v1/cloud-pipeline-registry.json` + `alpha-platform-contract.lock.json` + `scripts/check-alpha-platform-contract.mjs`(`EXPECTED_COMMIT`);**b** 编译器:`scripts/lib/extension-package-core.mjs`(`PROFILE_REGISTRY`、`componentProfile`、`validateBehavior` cloud 支、载荷 builder `:1660` 那道「no payload builder」后面、`assertCapturedAssetsMatchIntake :2055` 的跳过支加 `cloud`)、`contracts/extension-package/artifact/{alpha-package-declaration-v1.schema.json, generic-profiles.v1.json, host-contract-pin.v1.json, host-extension-package.registry.v1.json, vectors.v1.json, input.cloud.valid.json, expected.cloud.compiled.json}`(现有 `input.cloud-profile.invalid.json` 的期望从 `E_PROFILE_UNSUPPORTED` 改为新的具体错误,例如未知 `pipelineKind`)、`scripts/gen-extension-package-artifact.mjs`、`.github/workflows/channels-ci.yml` 的 `ref:`、`contracts/extension-package/CONTRACT.md`;**c** 内容:`catalog-src/packages/package.cloud-html/1.0.0/{alpha-package.json, LICENSE.txt}`、`package.cloud-image/1.0.0/…`、`catalog-src/intake/specs/{cloud.html, cloud.image}/1.0.0.json`(source 钉 alpha-web 自身提交)、`catalog-src/intake/records/{cloud.html, cloud.image}/1.0.0/{intake.json, provenance.json, sbom.cdx.json, curation-facts.json}`、`catalog-src/curation/{package.cloud-html, cloud.html, package.cloud-image, cloud.image}/1.0.0.json`、`catalog-src/intake/runtime-verification.json`(两条 E1 记录)、`catalog-src/catalog.json` 顶层 `version`;`docs/runbooks/catalog-publish.md` 加「cloud 组件包」一节(intake 输入 = 声明目录、资产比对照 MCP);build(整份过门)→ sign → promote → 部署 → 读线上目录核对,并用字节切片脚本证明 `entries[]` 相对基准不变。**外部依赖**:alpha-web#266、alpha-web#256(基准目录)、ap#528(经 E1) | AC1 目录半场;AC2 第 5 步(entries 相对基准逐字节不变)与 I9 | **M** | 消费 F2/F3/F5;自己不冻结新面 | a 在 P1 后;b 在 C1 合并后;c 在 0.1.20 发出、E1 与 #266/#256 完成后 |
+| **V1** 打包验证记录 | alpha-code(`docs/verification/`) | 0.1.20 打包版(二进制不变)+ 线上目录:两张卡出现 → 各派发一次 → 产物落盘;0.1.19 打包版:旧卡照常显示与派发、新包不现;命令级:在 `74482625a` 的 checkout 对线上 `catalog.json` 跑 `validateCatalogPackageShape`(通过)与 `evaluatePackageForHost`(`update-required`、fetch 0 次) | AC1、AC2 的「拿什么证明」 | **S** | — | 最后;桌面点击部分要 owner 动手(本机取证规则),服务端那半我查 |
 
-发布顺序(再钉一次):**P1 部署 → C1 合并 → 0.1.20 发版 → W1 pin 抬 + 上架 → V1**。目录在客户端之前上架 = 0.1.19 看不见、0.1.20 没到的用户也看不见,
-不坏但没意义;顺序反了才危险的是「pin 没抬就编译」——那条由 `E_HOST_ARTIFACT_DRIFT` 结构性拦住。
+发布顺序(再钉一次):**P1 部署 → C1 合并 → 0.1.20 发版 → E1 取证(需 ap#528)→ W1 pin 抬 + 上架(需 #266 / #256 的基准目录)→ V1**。
+目录在客户端之前上架 = 0.1.19 看不见、0.1.20 没到的用户也看不见,不坏但没意义;顺序反了才危险的是「pin 没抬就编译」——那条由 `E_HOST_ARTIFACT_DRIFT` 结构性拦住。
 
 **OPTIONAL(不在本票,不派)**:research / docs / Word / Excel / PPT 五张旧卡另发一份新包(双列)——注册表与编译器做完就能表达
 (`format` 走 `fixed`,`data` 是 `json` 不进表单,`code-review` 因上传不可表达),但约束 4 说旧卡保留到旧客户端退场,何时退场是另一张票的事。
 
 ## 五、待 owner 裁决
 
-只有一件,而且是总方案 §4 已经提过的那一件,这里把后果说具体:
+**没有。** 原先列的那一条(真实派发证据由谁按、钱从哪扣)owner 已于 2026-10-14 裁决:生产测试账号与 API key 由编排器自产,
+机制在 alpha-platform#528(一键建独立测试租户、签发只能用云能力且会过期的 key 到 0600 文件、发明确标为测试赠额的额度、用完退役);
+本票的取证(E1)用它跑,费用计入 alpha-platform#505 已批的 US$15(预留 US$1 + US$0.30,实际更低)。ap#528 因此是 E1 / W1-c 的外部依赖,不再是裁决项。
 
-1. **真实派发的证据由谁按、钱从哪扣。** 上架门要求每个包在 `runtime-verification.json` 里有「安装 pass + 使用 pass」的精确版本记录
-   (`curation-gate.mjs:387-394`,pending 即拒,**没有豁免**)。对 `package:cloud-html` / `package:cloud-image`,「使用 pass」= 在 0.1.20 里各真实派发一次并完成。
-   两条路:①给编排器一个生产测试账号的 API key(网站「密钥」页创建,放本机文件,告诉我路径;我只引用路径),由编排器跑,费用计入
-   alpha-platform#505 已批的 US$15(预留 US$1 + US$0.30,实际更低);②你在 0.1.20 的定制中心里各点一次,我去读生产记录补证据。
-   **不选的代价**:第 6 步永远发不出去,AC1 停在「代码全合、线上没有」——2026-10-13 云 Word/Excel/PPT 就是这个形态。
-   **不可逆的部分**:无;两条路都只花这 ≤US$1.30。
+**要 owner 动手但不是裁决**:0.1.20 发版(第 2.6 节第 5 步)。合并不等于用户包里有。
 
-另有一件**要 owner 动手但不是裁决**:0.1.20 发版(第 2.6 节第 5 步)。合并不等于用户包里有。
-
-以下几项有可回滚默认值,**本基线自行裁定**,列出只为透明:对 MCP 模型调用方的准入收紧(§2.1);载荷不带 `budget`(§2.2);首批只上 HTML 与图片两包(票面原文);
-五张旧卡不在本票双列(第四节 OPTIONAL)。
+以下几项有可回滚默认值,**本基线自行裁定**,列出只为透明:通用校验只覆盖 html/image 两种 kind、只判不改、服务端不代入缺省(§2.1);载荷不带 `budget`(§2.2);
+首批只上 HTML 与图片两包(票面原文);五张旧卡不在本票双列(第四节 OPTIONAL);`cloud-dispatch-box.tsx` 允许一次机械提取(§2.4)。
 
 ## 六、仍是推断、没跑过
 
-1. **包确认框的能力派生点**:`package-admission.ts` 用 `evaluateCapabilityDiff`(`:8`、`:1159`)算授权 diff,但**包组件**的 `MANIFEST_CAPABILITIES`
-   从哪里按子类型派生我没读到那一行;I10「`cloud:dispatch` 出现在确认框」是对 legacy 派生点(`ext-capability-authorization.ts:33`)的类推。C1 开工第一件事是找到它。
-2. **卸载侧**:`ext-package-uninstall.ts` 的 fail-closed 表形状没读,只知道 `ext-package-lifecycle.ts:40-44` 说它 fail-closed。
-3. **无源码组件的 intake**:`catalog-publish.md:79-80` 说「每个包的组件都要四件套 intake 记录」,而 cloud 组件没有上游源码;
-   `requireCuration` 到底要求 intake 记录还是只要求 curation 决定的 `approvedManifestSha256`,没跑 `build-catalog` 验证。W1 先在本地 build 一次再定处置(绑定到编译载荷 SHA 是我的推断)。
-4. **0.1.19 的 UI 行为**(§2.5 第 3、4 步)是照 `74482625a` 的代码推的,没在打包版上点过——这正是 V1 要做的。
-5. **包详情页能挂派发框**:只读了 `extension-detail.tsx:149-153` 与 `:336`,没通读那个组件;挂载点可能需要比「加一个 `Show`」多一点改动。
-6. **平台三条手写 zod 与注册表派生校验「判决一致」**是设计要求,不是已验证事实;P1 要用 `fixtures/invalid` 先证明两者会在同一输入上红。
-7. **alpha-web `E_HOST_ARTIFACT_DRIFT` 的行为**照 runbook 原文引用,没有本地跑 `tests/extension-package-contract.test.mjs` 复现。
-8. **office `data` 字段**在 `pipelines.ts:354` 原样透传、准入 `:256` 按 `z.json()` 判——「`type:"json"` 不可进表单」是从这两行推的,没列举过 Word 实际会收什么样的 `data`。
+R1 用代码核掉了原先的第 1、2、3、5、8 条(派生点不存在而非没找到;卸载 fail-closed 属实;intake 无条件加载;包详情有独立分支;`data` 收任意 JSON),
+第 6 条随 §2.1 收窄而删除。剩下的与新增的:
+
+1. **0.1.19 的 UI 行为**(§2.5 第 3、4 步)是照 `74482625a` 的代码推的,没在打包版上点过——这正是 V1 要做的。
+2. **alpha-web `E_HOST_ARTIFACT_DRIFT` 的行为**照 runbook 原文引用,没有本地跑 `tests/extension-package-contract.test.mjs` 复现(R1 读代码确认 transition 为 null 时门成立)。
+3. **`intake.mjs` 对「只有 `alpha-package.json` + `LICENSE.txt` 的目录」会产出什么**(§2.3 F5):脚本面、许可提取、facts summaries 是否全空,没跑;
+   W1 先对 `package.cloud-html` 目录跑一次 `intake.mjs` 再定决定书的 `expected*`。
+4. **`package-declaration.mjs preview` 的信封字节 = `build-catalog` 发射的信封字节**:runbook 说 promote 会「比较精确发射的包字节」、编译确定性,
+   但我没有并排跑过两条命令比对;E1 的证据 digest 靠这个等式才与上架门的 `catalogRuntimeDigest` 对得上——E1 第一步就是并排比对。
+5. **HTTP `POST /v1/cloud/jobs` 接受 ap#528 签发的 `sk-alpha-*`(scope `cloud`)key**:地面真相 §5 说「API key / 平台 purpose 凭证按 action 准入」,
+   `cloud.dispatch` 是否在 `cloud` scope 内我没读 `lib/action-authorization.ts`;若不接受,E1 的「使用 pass」改走 `/mcp` 的 `cloud_dispatch`(同一 `dispatchJob` 咽喉),证据等价。
+6. **ap#528 的交付时间**:票是 2026-10-14 开的 M 级,E1 与 W1-c 排在它后面;它若迟于 0.1.20 发版,上架就卡在证据这一步(可见性不受影响:目录没发之前谁都看不到)。
+7. **`upload-consent-dialog.test.ts:371-376` 的夹具能覆盖四个 legacy 分支的信封断言**:只看了它挂载 cloud 条目的那几行,没确认它能驱动到 `runInput`/`runLegacyDiff`;
+   不够的话 C1 自己补一个最小夹具,回归测试仍是提取前先写。
+
+## 七、审计 R1 处置(2026-10-14,Codex gpt-6-astra,只读;预算:开发前方案 ≤3 轮)
+
+9 条,编排器逐条过了第零问与三问,全部接受;本节逐条记录改了哪里。每条坐标本基线都在 `origin/*` 上重读过一遍再写(§1.4 新增四行)。
+
+| # | 级别 | 发现 | 处置(本文位置) |
+| --- | --- | --- | --- |
+| 1 | Blocker | W1 缺整份目录的发布前置;作者源与线上 `entries[]` 已不同,「只抬 version 字节不变」对今天的线上不成立 | 实测比较写进 §1.2 / §1.4;§2.5 第 5 步与 §2.6 第 6 步改为**以 alpha-web#266 / #256 完成后发布的目录为基准**;两票列为 W1-c 明确外部依赖,存量证据工作不塞进 W1 |
+| 2 | Major | 上架前取证与客户端可见性循环依赖;API key 直调只能证服务端 | 新增 **E1**(§2.6 第 5′ 步、第四节):`package-declaration.mjs preview` 产物 → 0.1.20 树上经 deps 注入走生产 admission(`package-install` pass)→ `guardCloudEnvelope` 同形信封持测试账号 key 派发到完成(use pass);V1 只做上线后不换二进制的打包验证。生产测试账号由 alpha-platform#528 提供(owner 已裁:编排器自产,计入 ap#505 US$15),第五节「谁按、钱从哪扣」撤回 |
+| 3 | Major | cloud 组件的 intake 不是待跑才知道:四件套无条件加载、决定书绑 intake 清单;`approvedManifestSha256` 填载荷 SHA 不成立 | §1.2 补事实(`extension-package-core.mjs:2120-2138`、`curation-gate.mjs:135-163`、`assertCapturedAssetsMatchIntake :2053-2070`);§2.3 冻结 **F5**:intake 输入 = 声明目录(`alpha-package.json` + `LICENSE.txt`,钉 alpha-web 自身提交,照 `skill:alpha-first`),资产比对照 MCP 跳过支(「审查源文件、不作为运行资产发布」),组件决定书绑 intake 清单摘要;W1 文件边界补齐 specs/records/curation 路径与编译器改点;第六节留一条「intake 对声明目录产出什么」的推断 |
+| 4 | Major | I10 的权限派生不存在:包路径直接消费组件 `capabilities`,cloud 返回 `[]` 就不会出现 `cloud:dispatch` | §1.2 补事实(`package-admission.ts:290-296 / :526 / :902-908`、`decoder.ts:511-519`);§2.2 改为 main 一处派生 `packageAuthorizationCapabilitiesV1`(cloud ⇒ `["cloud:dispatch"]`,其它档案不变),三处共用;卸载移除 `grants.json`;I10 重写;C1 范围补上 |
+| 5 | Major | `default` 插入点(`:248`)晚于 `envelopeJson`(`:215`)/摘要(`:235`)/账本(`:316`),执行侧(`:500/:560`)拿旧快照;提前规范化又破坏精确重放 | §2.1 改为通用校验**只判不改**、服务端不代入缺省、`default` 仅为客户端预选项;冻结「请求摘要算在原始请求上」与「将来需要服务端缺省的 kind 必须另存执行快照并重过字节上限,重放只读快照」(新 **I11**);P1 加一条「校验函数不改变信封对象与序列化字节」的测试 |
+| 6 | Major | F1 表达不了 Office `topic ?? task`;「九种全量校验且与三条 zod 判决一致」不能同时成立 | §2.1 收窄:约束只声明在可表达的 kind(首批 html/image),其它 kind 只填 `type/desc`、沿既有准入;删除「九种判决全等」,只承诺两种;「能否不发客户端」的判据改为「每个字段 string 且已声明约束」;第六节原第 6 条删除 |
+| 7 | Major | 「复用原任务流程」与 C1 禁改 `cloud-dispatch-box.tsx` 冲突(`dispatchError` 未导出、生命周期是闭包) | §2.4 与 C1:允许一次机械提取到 `cloud-job-lifecycle.ts`,新旧表单共用;legacy 四分支行为冻结,由提取前先写的回归测试保护;AC2 不再以文件零 diff 作证明 |
+| 8 | Minor | 新增能力流程漏了重新 vendor 注册表产物 | §2.6 末段改为「第 1 步 → 第 2 步(vendor + `EXPECTED_COMMIT`)→ 5′ → 6」 |
+| 9 | Minor | 示例 `upstreamData` 宣称已删除的 `denied_paths` 缺省注入 | §2.3 示例改为只列实际发送字段;注明 legacy 六条的措辞归 alpha-web#266;§1.4 加一行事实(`cloud-envelope-guard.ts:11-21`) |
+
+R2 若需要,只审上述 9 条的闭合与本次修改的差异(第七节 + §1.2 / §1.4 / §2.1 / §2.2 / §2.3 / §2.4 / §2.5 / §2.6 / §3 / §4 / §5 / §6)。
