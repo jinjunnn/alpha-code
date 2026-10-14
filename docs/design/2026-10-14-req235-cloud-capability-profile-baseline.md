@@ -198,11 +198,11 @@ remote-catalog、catalog-channels、catalog-curation、catalog-package-view 零�
 interface PipelineInputField {
   readonly desc: string                 // 保持:MCP 广播原样用它(cloud-mcp.ts:59-72 行式不变)
   readonly type: "string" | "json"      // json = 任意 JSON 值(files/data/csv 这类);表单只能表达 string
-  readonly required: boolean
+  readonly required?: boolean           // 仅在可表达 kind 上声明;未声明 = 不判(见下文「声明的范围」)
   readonly minChars?: number            // 仅 string;trim 后计
   readonly maxChars?: number            // 仅 string;UTF-16 code units,与现有 zod 同口径
   readonly enum?: readonly string[]     // 仅 string;有则值必须 ∈ enum
-  readonly default?: string             // 仅与 enum 同现;缺省时服务端代入
+  readonly default?: string             // 仅与 enum 同现;**仅客户端 select 预选项**,服务端不代入
 }
 PIPELINE_REGISTRY[kind] = { tier, hold_usd?: number, input: Record<name, PipelineInputField> }
 ```
@@ -354,7 +354,7 @@ AC2 的证据是在 0.1.19 打包版上点出上述 3、4 两步,外加一条可
 | 3 | alpha-code | C1 合并(`cloud` 档案 + 投影 + 表单 + receipt);宿主产物 `host-extension-package-artifact.v1.json` 的 `artifactSha256` 随之变化 | 1(只为共用常量口径;技术上可并行) |
 | 4 | alpha-web | W1-b:按 `desktop-extension-package-artifact-bump.md` 把宿主 pin 抬到 C1 的提交(此前 `E_HOST_ARTIFACT_DRIFT` 恒红,是设计状态);编译器认 `kind:"cloud"`;语料加 `input.cloud.valid.json` / `expected.cloud.compiled.json`;`gen-extension-package-artifact.mjs` 重生成 | 3 |
 | 5 | alpha-code | **发 0.1.20**(owner 的动作;合并 ≠ 用户包里有) | 3 |
-| 5′ | alpha-code | E1:**上架前取证**(R1 #2 修订,打破「卡要先发布才能点、点了才能发布」的循环)。入口不是 GUI:`node scripts/package-declaration.mjs preview` 产出编译后的信封 + 载荷字节(确定性,`promote` 时会与 build 的发射字节逐字比对);alpha-code 的 harness 沿 `docs/verification/2026-08-26-req128-163-desktop-live-package/harness/live-desktop-package.ts` 的做法,经 `runCatalogInstallWithPackagePreflight` / 生产 admission coordinator 的 **deps 注入**(`package-installability.ts:390-401`:`loadVerifiedCatalog`、`installability.fetchPayload`)喂入这份候选目录与载荷,在 0.1.20 的树上真实走一遍安装(receipt 落账本)⇒ `install: pass`;再用 `guardCloudEnvelope` 组出**与表单框逐字相同**的信封,持 alpha-platform#528 产出的生产测试账号 key 走 `POST /v1/cloud/jobs` 到完成、取回产物 ⇒ `use: pass`;证据带包 digest(= `catalogRuntimeDigest` 对候选信封)、job id、结算金额、产物 MIME/字节/SHA-256,按 ap#505 共用证据要求落 `runtime-verification.json` | 3、4、ap#528 |
+| 5′ | alpha-code | E1:**上架前取证**(R1 #2 修订,打破「卡要先发布才能点、点了才能发布」的循环)。入口不是 GUI:`node scripts/package-declaration.mjs preview` 产出编译后的信封 + 载荷字节——这是**唯一**不经 `assertCatalogReady` 就能拿到的候选产物(`build-catalog.mjs:330` 先过门、`:464` 才落字节,没有 E1 证据之前 build 什么都不产出,所以 E1 **不能**也**不需要**拿 build 产物比对;R2 #1 修订);E1 记录候选信封的 `catalogRuntimeDigest` 为证据的 `digest`,随后 W1-c 的 build 走**现有**精确摘要门(`curation-gate.mjs:387-391`:证据 `digest` ≠ 发射信封摘要即拒),发布前再用字节切片比对最终产物与候选摘要——不新增构建旁路、不加豁免;alpha-code 的 harness 沿 `docs/verification/2026-08-26-req128-163-desktop-live-package/harness/live-desktop-package.ts` 的做法,经 `runCatalogInstallWithPackagePreflight` / 生产 admission coordinator 的 **deps 注入**(`package-installability.ts:390-401`:`loadVerifiedCatalog`、`installability.fetchPayload`)喂入这份候选目录与载荷,在 0.1.20 的树上真实走一遍安装(receipt 落账本)⇒ `install: pass`;再用 `guardCloudEnvelope` 组出**与表单框逐字相同**的信封,持 alpha-platform#528 产出的生产测试账号 key 走 `POST /v1/cloud/jobs` 到完成、取回产物 ⇒ `use: pass`;证据带包 digest(= `catalogRuntimeDigest` 对候选信封)、job id、结算金额、产物 MIME/字节/SHA-256,按 ap#505 共用证据要求落 `runtime-verification.json` | 3、4、ap#528 |
 | 6 | alpha-web | W1-c:作者两份声明 `package:cloud-html` / `package:cloud-image` + 组件 intake 四件套 + curation 决定(root + 组件)+ E1 的证据 → `build-catalog`(整份目录过门)→ 签名 → `promote --to stable` → 部署网站 → 读线上 `catalog.json` 核对两个包在、`entries[]` 相对基准逐字节不变。**外部依赖(R1 #1 修订)**:alpha-web#266(六个 legacy 云条目的真实派发证据 + 发布,进行中)与 alpha-web#256(GitHub / DBHub 官方包证据)**先完成**;本步以它们发布后的目录为基准 | 5′、#266、#256 |
 | 7 | — | V1:0.1.20 打包版(二进制不变)看到卡、派发、取回产物;0.1.19 打包版旧卡照常、新包不现 | 6 |
 
@@ -431,8 +431,9 @@ R1 用代码核掉了原先的第 1、2、3、5、8 条(派生点不存在而非
 2. **alpha-web `E_HOST_ARTIFACT_DRIFT` 的行为**照 runbook 原文引用,没有本地跑 `tests/extension-package-contract.test.mjs` 复现(R1 读代码确认 transition 为 null 时门成立)。
 3. **`intake.mjs` 对「只有 `alpha-package.json` + `LICENSE.txt` 的目录」会产出什么**(§2.3 F5):脚本面、许可提取、facts summaries 是否全空,没跑;
    W1 先对 `package.cloud-html` 目录跑一次 `intake.mjs` 再定决定书的 `expected*`。
-4. **`package-declaration.mjs preview` 的信封字节 = `build-catalog` 发射的信封字节**:runbook 说 promote 会「比较精确发射的包字节」、编译确定性,
-   但我没有并排跑过两条命令比对;E1 的证据 digest 靠这个等式才与上架门的 `catalogRuntimeDigest` 对得上——E1 第一步就是并排比对。
+4. **`package-declaration.mjs preview` 的信封字节 = 随后 `build-catalog` 发射的信封字节**:runbook 说编译确定性、promote 会「比较精确发射的包字节」,
+   我没有并排跑过;但这条等式**不由 E1 验证**(build 在 `assertCatalogReady` 之后才产字节,E1 之前拿不到,R2 #1)——它由现有的精确摘要门承担:
+   E1 记候选摘要,W1-c build 时证据 `digest` 与发射信封不等即拒(`curation-gate.mjs:387-391`),发布前再比对一次。等式若不成立,红在那一步,不会静默过。
 5. **HTTP `POST /v1/cloud/jobs` 接受 ap#528 签发的 `sk-alpha-*`(scope `cloud`)key**:地面真相 §5 说「API key / 平台 purpose 凭证按 action 准入」,
    `cloud.dispatch` 是否在 `cloud` scope 内我没读 `lib/action-authorization.ts`;若不接受,E1 的「使用 pass」改走 `/mcp` 的 `cloud_dispatch`(同一 `dispatchJob` 咽喉),证据等价。
 6. **ap#528 的交付时间**:票是 2026-10-14 开的 M 级,E1 与 W1-c 排在它后面;它若迟于 0.1.20 发版,上架就卡在证据这一步(可见性不受影响:目录没发之前谁都看不到)。
@@ -455,4 +456,11 @@ R1 用代码核掉了原先的第 1、2、3、5、8 条(派生点不存在而非
 | 8 | Minor | 新增能力流程漏了重新 vendor 注册表产物 | §2.6 末段改为「第 1 步 → 第 2 步(vendor + `EXPECTED_COMMIT`)→ 5′ → 6」 |
 | 9 | Minor | 示例 `upstreamData` 宣称已删除的 `denied_paths` 缺省注入 | §2.3 示例改为只列实际发送字段;注明 legacy 六条的措辞归 alpha-web#266;§1.4 加一行事实(`cloud-envelope-guard.ts:11-21`) |
 
-R2 若需要,只审上述 9 条的闭合与本次修改的差异(第七节 + §1.2 / §1.4 / §2.1 / §2.2 / §2.3 / §2.4 / §2.5 / §2.6 / §3 / §4 / §5 / §6)。
+**R2(2026-10-14,同审计方,只判闭合)**:8 FIXED / 1 NOT-FIXED(#2 残留)+ 1 Minor。按预算规矩 Major 及以下直接修、不再复审:
+
+| # | 级别 | 发现 | 处置(本文位置) |
+| --- | --- | --- | --- |
+| R2-1 | Major(#2 残留) | E1「第一步并排比对 preview 与 build 产物」做不到:`build-catalog.mjs:330` 先跑 `assertCatalogReady`、`:464` 才落字节,没有 E1 证据就没有 build 产物 | §2.6 第 5′ 步与 §6 第 4 条改为:E1 只用 `preview` 候选产物完成取证并记录候选摘要;随后 W1-c build 走**现有**精确摘要门(`curation-gate.mjs:387-391`),发布前比对最终产物与候选摘要;不新增构建旁路或豁免 |
+| R2-2 | Minor | F1 的 `required: boolean` 与「只在可表达 kind 上声明」矛盾;`default` 注释仍写「服务端代入」 | §2.1 F1:`required?` 改为可选并注明未声明 = 不判;`default` 注释改为「仅客户端 select 预选项,服务端不代入」 |
+
+审计轮数至此用完(方案 ≤3 轮;R1 全量 + R2 闭合,R3 未动用);再审需 owner 批准。
