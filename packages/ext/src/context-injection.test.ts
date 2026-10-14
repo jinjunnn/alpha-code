@@ -389,11 +389,27 @@ function unexplainedTools(tools: ToolMap): string[] {
 }
 
 describe("③c 工具表咽喉:每个 description 都是登记项,登记项也不许有实际没有的工具", () => {
-  test("真 AlphaExt 的四个工具:零无解释;且 TOOL_TEXT 的键集 == 实际工具名", async () => {
+  test("真 AlphaExt 的工具:零无解释;且 TOOL_TEXT 的键集 == 实际工具名", async () => {
     const hooks = await loadHooks()
     const tools = hooks.tool as ToolMap
     expect(Object.keys(tools).sort()).toEqual(Object.keys(TOOL_TEXT).sort())
     expect(unexplainedTools(tools)).toEqual([])
+  })
+  test("REQ-232 AC1 alpha_cloud_access is available without Cloud MCP and returns a login entry", async () => {
+    const hooks = await loadHooks()
+    const access = (hooks.tool as Record<string, { execute: () => Promise<{ output: string }> }>).alpha_cloud_access
+    expect(access).toBeDefined()
+    expect(JSON.parse((await access.execute()).output)).toEqual({
+      logged_in: false, state: "logged-out", cloud_tools_enabled: false,
+      login_hint: "在 CodePuppy 左侧栏账户区点「登录」,或打开定制中心的云端页点登录;登录完成后下一条消息起云端工具可用。",
+    })
+    process.env.ALPHA_BASE_URL = "https://gateway.invalid/v1"
+    const { materializeCloudMcpConfig } = await import("../../ui-mac/src/main/cloud-sidecar-config")
+    // The real desktop producer; an existing directory makes a file-content read throw.
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(materializeCloudMcpConfig("https://cloud.invalid/mcp", `{file:${root}}`))
+    const ready = JSON.parse((await access.execute()).output)
+    expect(ready).toMatchObject({ logged_in: true, state: "ready", cloud_tools_enabled: true })
+    expect(JSON.stringify(ready)).not.toContain(root)
   })
   test("zodDescription 先测出已知的形状:describe 后 default 也取得到", () => {
     const { tool } = require("@opencode-ai/plugin") as typeof import("@opencode-ai/plugin")

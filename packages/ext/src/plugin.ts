@@ -26,6 +26,7 @@ import {
   type McpOwnership,
 } from "./cloud-websearch-kill"
 import { createCloudVisionHooks } from "./cloud-vision-hooks"
+import { cloudAccessState } from "./cloud-access"
 
 /**
  * Code Puppy backend isolation extension.
@@ -355,6 +356,23 @@ export const AlphaExt: Plugin = async (input) => {
             title: "alpha_echo",
             output: `alpha_echo: ${echoed}`,
             metadata: { sessionID: ctx.sessionID, directory: ctx.directory, shout: args.shout },
+          }
+        },
+      }),
+      alpha_cloud_access: tool({
+        description: TOOL_TEXT.alpha_cloud_access.description,
+        args: {},
+        async execute() {
+          const access = cloudAccessState()
+          return {
+            title: "alpha_cloud_access",
+            output: JSON.stringify({
+              logged_in: access.state === "ready",
+              state: access.state,
+              cloud_tools_enabled: access.state === "ready",
+              login_hint: access.loginHint,
+            }),
+            metadata: {},
           }
         },
       }),

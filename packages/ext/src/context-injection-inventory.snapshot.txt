@@ -11,6 +11,7 @@ agent.docs.description                              text      agent-description 
 agent.docs.prompt                                   text      system                  3344    8192   41%
 agent.explore.prompt                                text      system                  1137    8192   14%
 agent.general.prompt                                text      system                  1199    8192   15%
+cloud-access.login-hint                             text      tool-output              145    1024   14%
 command.factory-denied.description                  text      command-description       42    1024    4%
 command.init.description                            text      command-description       22    1024    2%
 command.init.template                               text      command-template        3484    8192   43%
@@ -21,6 +22,7 @@ instruction.alpha-identity                          text      instruction       
 instruction.alpha-identity+cloudDispatch            text      instruction              573    1024   56%
 instruction.alpha-identity+websearch                text      instruction              523    1024   51%
 instruction.alpha-identity+websearch+cloudDispatch  text      instruction              729    1024   71%
+tool.alpha_cloud_access.description                 text      tool-description         205    1024   20%
 tool.alpha_echo.args.shout                          text      tool-arg-description      25    1024    2%
 tool.alpha_echo.args.text                           text      tool-arg-description      21    1024    2%
 tool.alpha_echo.description                         text      tool-description         121    1024   12%
@@ -59,7 +61,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 59; injected bytes: 25055; declared limits total: 118784
+fragments: 61; injected bytes: 25405; declared limits total: 120832
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
