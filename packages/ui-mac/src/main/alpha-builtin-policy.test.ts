@@ -215,7 +215,7 @@ describe("REQ-067 — 出厂默认禁内置化(deny 零明文)", () => {
     applyFactoryDeny(cfg, JSON.stringify(effectiveFactoryDenied(cleaned)))
     expect(Permission.evaluate("skill", "customize-opencode", Permission.fromConfig(cfg.permission)).action).toBe("deny")
     expect(Permission.evaluate("skill", "customize-code-puppy", Permission.fromConfig(cfg.permission)).action).toBe("allow")
-    expect(cfg.command["customize-opencode"].template).toBe("该技能(customize-opencode)已弃用。请使用 /customize-code-puppy。")
+    expect(cfg.command["customize-opencode"].template).toBe("该技能(customize-opencode)已弃用。定制 Code Puppy 请改用 /customize-code-puppy。")
   })
   test("materializeEdits:出厂项零物化 —— 空治理不产生任何 permission/command 叶子", () => {
     const edits = materializeEdits(structuredClone(DEFAULT_BUILTIN_POLICY), [])

@@ -314,7 +314,7 @@ export const TOOL_TEXT = {
 /** REQ-067 被禁技能的占位 command(`factory-deny.ts` 从这里取)。 */
 export const FACTORY_DENY_COMMAND_DESCRIPTION = "(已弃用)请使用 /customize-code-puppy"
 export const FACTORY_DENY_COMMAND_TEMPLATE =
-  "该技能({name})已弃用。请使用 /customize-code-puppy。"
+  "该技能({name})已弃用。定制 Code Puppy 请改用 /customize-code-puppy。"
 
 function toolFragments(): TextFragment[] {
   const out: TextFragment[] = []

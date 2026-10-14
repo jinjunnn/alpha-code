@@ -210,7 +210,7 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
     const { before, after } = await runConfig({})
     const command = (after.command as Record<string, { description: string; template: string }>)["customize-opencode"]
     expect(command.description).toBe("(已弃用)请使用 /customize-code-puppy")
-    expect(command.template).toBe("该技能(customize-opencode)已弃用。请使用 /customize-code-puppy。")
+    expect(command.template).toBe("该技能(customize-opencode)已弃用。定制 Code Puppy 请改用 /customize-code-puppy。")
     const pointers = stringLeaves(after).map((l) => l.pointer)
     expect(pointers).toContain("/command/customize-opencode/template")
     expect(pointers).toContain("/command/customize-opencode/description")
