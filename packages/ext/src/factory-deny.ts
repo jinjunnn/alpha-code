@@ -3,10 +3,10 @@
 // customize-opencode 这类「上游自带、alpha 出厂即禁」的技能,禁用是产品内置行为,不该以
 // `permission.skill.<n>: "deny"` 明文出现在用户配置(`<current-environment-root>/alpha.jsonc`)里 —— 用户配置只放
 // 用户自己的东西。机制与出厂技能路径(factory-paths.ts)同构:main 算好 effective 名单
-// (出厂清单 − 用户在治理面的解禁)→ `ALPHA_FACTORY_DENY_SKILLS`(JSON 数组)→ 本模块在
+// (#1522 customize-opencode 永久禁用)→ `ALPHA_FACTORY_DENY_SKILLS`(JSON 数组)→ 本模块在
 // config hook 里内存注入:
-//   - `permission.skill.<n> = "deny"`(set-if-absent:用户任何层显式配了该键 → 让位);
-//   - 同名占位 command(键入兜底,诚实说明 + 指路 /customize-code-puppy;set-if-absent)。
+//   - `permission.skill.<n> = "deny"`(弃用技能覆盖用户配置,其余 set-if-absent);
+//   - 同名占位 command(弃用技能强制指路 /customize-code-puppy,其余 set-if-absent)。
 // 斜杠菜单的隐藏由 renderer 读 gov-read 的 factoryDenied 完成(REQ-066 过滤同源)。
 //
 // REQ-157 `#1284`:占位 command 的 description / template 是 alpha 的字、会进模型上下文(template 在用户
@@ -41,11 +41,13 @@ export function applyFactoryDeny(cfg: Record<string, unknown>, deniedJson: strin
   const applied: string[] = []
   for (const n of names) {
     if (typeof n !== "string" || !n) continue
+    // #1522:删后追加,确保旧同名 allow 或后置通配 allow 都不能覆盖永久 deny。
+    if (n === "customize-opencode") delete skill[n]
     if (!(n in skill)) {
       skill[n] = "deny"
       applied.push(n)
     }
-    if (!(n in command)) {
+    if (n === "customize-opencode" || !(n in command)) {
       command[n] = {
         description: contextText("command.factory-denied.description"),
         template: renderTemplate("command.factory-denied.template", { name: n }),

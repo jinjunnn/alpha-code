@@ -11,7 +11,7 @@ agent.docs.description                              text      agent-description 
 agent.docs.prompt                                   text      system                  3344    8192   41%
 agent.explore.prompt                                text      system                  1137    8192   14%
 agent.general.prompt                                text      system                  1199    8192   15%
-command.factory-denied.description                  text      command-description       56    1024    5%
+command.factory-denied.description                  text      command-description       42    1024    4%
 command.init.description                            text      command-description       22    1024    2%
 command.init.template                               text      command-template        3484    8192   43%
 command.review.description                          text      command-description       58    1024    6%
@@ -35,7 +35,7 @@ tool.alpha_reload.description                       text      tool-description  
 vision.system-note-offline                          text      system                   251    1024   25%
 vision.tool.input-omitted                           text      vision-block              23    1024    2%
 vision.tool.refused                                 text      vision-block              24    1024    2%
-command.factory-denied.template                     template  command-template         261    1024   25%
+command.factory-denied.template                     template  command-template          63    1024    6%
 vision.failure.credential                           template  vision-block             108    1024   11%
 vision.failure.image-rejected                       template  vision-block              89    1024    9%
 vision.failure.network                              template  vision-block              76    1024    7%
@@ -59,7 +59,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 59; injected bytes: 25249; declared limits total: 118784
+fragments: 59; injected bytes: 25037; declared limits total: 118784
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
