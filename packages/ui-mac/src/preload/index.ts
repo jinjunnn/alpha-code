@@ -281,6 +281,7 @@ const api: ElectronAPI = {
     transactions: (limit) => ipcRenderer.invoke("account-transactions", limit),
   },
   cloud: {
+    openBillingPage: (page) => ipcRenderer.invoke("cloud-open-billing-page", page),
     dispatch: (envelope) => ipcRenderer.invoke("cloud-dispatch", envelope),
     upload: (intent) => ipcRenderer.invoke("cloud-upload", intent),
     confirmUpload: (requestId) => ipcRenderer.invoke("cloud-upload-confirm", requestId),

@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 type SentRecord = { window: string; channel: string; payload: unknown }
 const order: string[] = []
 const sent: SentRecord[] = []
+const opened: string[] = []
 
 function fakeWindow(name: string, destroyed = false) {
   return {
@@ -58,6 +59,7 @@ mock.module("electron", () => ({
     },
   },
   dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
+  shell: { openExternal: async (url: string) => { opened.push(url) } },
 }))
 mock.module("./logging", () => ({
   getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }),
@@ -127,6 +129,19 @@ const { registerCloudIpcHandlers } = await import("./cloud-ipc")
 registerCloudIpcHandlers()
 const saveRun = handlers.get("cloud-save-run")!
 const artifactDownload = handlers.get("cloud-artifact-download")!
+
+test("REQ-232 AC5 billing actions use the resolved web endpoint and frozen portal paths", async () => {
+  const previous = process.env.ALPHA_WEB_URL
+  process.env.ALPHA_WEB_URL = "https://portal.invalid"
+  try {
+    await handlers.get("cloud-open-billing-page")!({}, "recharge")
+    await handlers.get("cloud-open-billing-page")!({}, "overflow")
+    expect(opened).toEqual(["https://portal.invalid/wallet?tab=recharge", "https://portal.invalid/account"])
+  } finally {
+    if (previous === undefined) delete process.env.ALPHA_WEB_URL
+    if (previous !== undefined) process.env.ALPHA_WEB_URL = previous
+  }
+})
 
 beforeEach(() => {
   order.length = 0
