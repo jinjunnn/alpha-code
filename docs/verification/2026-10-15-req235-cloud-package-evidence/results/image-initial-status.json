@@ -1,0 +1,86 @@
+[
+  {
+    "observedAt": "2026-10-15T08:47:04.240Z",
+    "http": 200,
+    "body": {
+      "schema_version": 1,
+      "job_id": "job_ded0591ac3ea",
+      "status": "queued",
+      "autonomy": "pipeline",
+      "kind": "image-generation",
+      "progress": {
+        "phase": "routing"
+      },
+      "artifact_ids": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:47:37.030Z",
+    "http": 200,
+    "body": {
+      "schema_version": 1,
+      "job_id": "job_ded0591ac3ea",
+      "status": "completed",
+      "autonomy": "pipeline",
+      "kind": "image-generation",
+      "progress": {
+        "phase": "completed"
+      },
+      "artifact_ids": [
+        "art_job_ded0591ac3ea_0_12c4e619"
+      ],
+      "artifacts": [
+        {
+          "schemaVersion": 1,
+          "id": "art_job_ded0591ac3ea_0_12c4e619",
+          "source": "cloud",
+          "name": "image.png",
+          "trust": "external",
+          "role": "primary",
+          "contentRef": {
+            "kind": "http-stream",
+            "url": "/v1/cloud/artifacts/art_job_ded0591ac3ea_0_12c4e619/content",
+            "auth": "bearer"
+          },
+          "verification": {
+            "status": "verified",
+            "detector": "alpha-png-header/1",
+            "verifiedAt": "2026-10-15T08:47:20.522Z"
+          },
+          "provenance": {
+            "producer": "pipeline",
+            "jobId": "job_ded0591ac3ea",
+            "kind": "image-generation",
+            "createdAt": "2026-10-15T08:47:20.522Z"
+          },
+          "size": 747895,
+          "claimedMime": "image/png",
+          "detectedMime": "image/png",
+          "sha256": "9ae48408b93d3a05fe8ab6afca49b68fb54d25475225959a536bb94633e9edaf"
+        }
+      ],
+      "result": {
+        "kind": "image-generation",
+        "provider": "openai",
+        "model": "gpt-image-2.5-flare",
+        "width": 1024,
+        "height": 1024,
+        "image_count": 1,
+        "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "input_tokens": 9,
+        "output_tokens": 439,
+        "artifacts": [
+          {
+            "artifact_id": "art_job_ded0591ac3ea_0_12c4e619",
+            "name": "image.png",
+            "mime": "image/png",
+            "size": 747895,
+            "sha256": "9ae48408b93d3a05fe8ab6afca49b68fb54d25475225959a536bb94633e9edaf"
+          }
+        ]
+      },
+      "error": null
+    }
+  }
+]

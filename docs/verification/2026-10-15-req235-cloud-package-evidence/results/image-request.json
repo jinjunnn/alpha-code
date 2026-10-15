@@ -1,0 +1,20 @@
+{
+  "dispatchedAt": "2026-10-15T08:46:59.825Z",
+  "envelope": {
+    "schema_version": 1,
+    "artifact_policy": {
+      "delivery": "descriptor_only"
+    },
+    "idempotency_key": "2690a8d7-c8d7-4b5c-85a6-3036e5fc8df3",
+    "autonomy": "pipeline",
+    "kind": "image-generation",
+    "input": {
+      "prompt": "A blue square"
+    },
+    "constraints": {
+      "network": "restricted"
+    }
+  },
+  "promptSha256": "45fb63209b910f039b3fecb116861db59cf63de6ba2e4e5a63709f1f6094be74",
+  "idempotencyKeySha256": "3ed73e0461fc8f5f427b4953f370fe6f683fc40fa070ad41df094bde1f8987b0"
+}

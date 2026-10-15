@@ -1,0 +1,60 @@
+[
+  {
+    "observedAt": "2026-10-15T08:48:55.723Z",
+    "facts": [
+      {
+        "schema_version": 1,
+        "seq": 1574,
+        "op_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "kind": "reservation_settled",
+        "domain": "wallet",
+        "amount": 0,
+        "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "created_at": 1792054056674
+      },
+      {
+        "schema_version": 1,
+        "seq": 1573,
+        "op_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "kind": "usage_settled",
+        "domain": "wallet",
+        "amount": -20,
+        "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "created_at": 1792054056674
+      },
+      {
+        "schema_version": 1,
+        "seq": 1572,
+        "op_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "kind": "reservation_created",
+        "domain": "allowance",
+        "amount": 0,
+        "action_id": "tool.image_generate",
+        "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "created_at": 1792054048072
+      },
+      {
+        "schema_version": 1,
+        "seq": 1571,
+        "op_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "kind": "reservation_created",
+        "domain": "allowance",
+        "amount": 0,
+        "action_id": "tool.image_generate",
+        "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "created_at": 1792054048072
+      },
+      {
+        "schema_version": 1,
+        "seq": 1570,
+        "op_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "kind": "reservation_created",
+        "domain": "wallet",
+        "amount": 450,
+        "action_id": "tool.image_generate",
+        "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+        "created_at": 1792054048072
+      }
+    ]
+  }
+]

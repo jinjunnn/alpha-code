@@ -1,0 +1,12 @@
+{
+  "observedAt": "2026-10-15T08:49:36.859728+00:00",
+  "decoder": "Pillow 12.2.0",
+  "format": "PNG",
+  "width": 1024,
+  "height": 1024,
+  "mode": "RGB",
+  "fullDecode": "pass",
+  "bytes": 747895,
+  "sha256": "9ae48408b93d3a05fe8ab6afca49b68fb54d25475225959a536bb94633e9edaf",
+  "visualReview": "pass: a blue square centered on a white background, matching the prompt"
+}

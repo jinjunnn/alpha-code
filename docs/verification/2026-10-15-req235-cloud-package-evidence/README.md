@@ -71,22 +71,34 @@ Billing is read from actual `reservation_settled` and wallet debit facts, not fr
 wallet balance difference. The public ledger omits job IDs: correlation requires a single new
 reservation for the matching action after the pre-dispatch cursor, with serial execution. Ambiguous
 reservations stop the harness. Usage/debt amounts are summed as CNY fen, separately from vendor USD.
-The public job/health responses do not promise actual route/model, provider usage or deployment commit;
-this evidence does not substitute source constants or a health success for those observations.
+The image job result also exposes `reservation_id`, which matches its ledger reservation directly.
+It reports provider `openai`, model `gpt-image-2.5-flare`, input/output tokens 9/439; these are
+server-reported observations. HTML exposes no corresponding usage fields. Neither card provides a
+deployment commit or actual vendor USD cost, and this evidence makes no claim about those values.
 
 ## Run discipline and checks
 
-Run from the alpha-code worktree root, with a fresh evidence directory:
+The initial installation was prepared from the alpha-code worktree root:
 
 ```sh
 bun docs/verification/2026-10-15-req235-cloud-package-evidence/harness/prepare.ts /Users/tide/app/alpha-web/.worktrees/270c-cloud-cards
+```
+
+The live harness is manual and **not in any gate**. The committed `live.ts` implements the
+explicitly authorized continuation: GET the existing HTML job, then dispatch image only if it has
+no saved acceptance. It exclusively creates `image-dispatch-started.json` before the paid POST;
+a marker without acceptance stops a rerun. When acceptance exists, it resumes read-only against that
+job and the original ledger cursor. Never remove either dispatch marker. Run with:
+
+```sh
 bun docs/verification/2026-10-15-req235-cloud-package-evidence/harness/live.ts
 ```
 
-These commands are manual and **not in any gate**. `prepare.ts` refuses an existing results directory;
-`live.ts` exclusively creates `live-started.json` before any API call, and refuses a rerun. Do not
-remove that marker to redispatch. Polling reads job state and settlement; it never resubmits a job.
-Any rejection mismatch, failed job, missing artifact or missing settlement stops further paid work.
+Observation uses 30-second waits, at most 15 minutes per card (image deadline remains anchored to
+its original dispatch). HTML settlement still pending after that window does not prevent image.
+A rejected dispatch or failed job stops paid work. Empty-prompt controls reach production and image's
+control runs after artifact retrieval. The original HTML submission implementation remains in
+commit `627399144d561477f24e63fb3ce761d054d6a80e`; it must not be rerun to dispatch HTML.
 
 One local harness defect was observed before any key was read or any API call made: the initial
 implementation treated `KEYFILE=~/…` as a bare path. It failed opening that path. The preserved
@@ -104,43 +116,62 @@ both package digests and payload byte counts/hashes, and the downloaded HTML byt
 `git diff --check` passed. The documentation checker against these two worktrees reported 35 existing
 `layout.role-alias` errors, all under `docs/evidence/2026-10-10-req229-230-visual/`; none concerns this
 change. That protected, out-of-scope evidence was not modified. No alpha-web build was run.
-`gate run` was attempted on the clean committed alpha-code tree and could not start:
-`FileNotFoundError: ./bin/check`; this worktree has neither that file nor a configured gate command.
-No gate pass is claimed and no checker/configuration was added outside the permitted directory.
+The initial `gate run` attempt could not find `./bin/check`. The continuation brief clarified that
+the repository gate is `bash scripts/alpha-check.sh` and explicitly exempts this docs-only branch
+from the full gate. Only `git diff --check` and local Markdown link checks apply to this continuation;
+no full gate pass is claimed.
 
-## Observed outcome: blocked on final settlement
+## Observed outcome: both package-install pass/pass
 
-| Card | Install | Paid dispatch | Terminal / artifact | Actual charged fen |
+| Card | Install / authorization | Paid dispatch | Terminal / artifact | Actual charged fen |
 | --- | --- | --- | --- | --- |
-| HTML | pass, `cloud:dispatch` | exactly one, `job_0493627afea0` | completed; HTML downloaded and opened | **unknown**, settlement not observed |
-| Image | pass, `cloud:dispatch` | **not dispatched** | not run after HTML settlement timeout | no dispatch; no charge attributed |
+| HTML | pass, `cloud:dispatch` | exactly one, `job_0493627afea0` | completed; HTML downloaded and opened | **95** |
+| Image | pass, `cloud:dispatch` | exactly one, `job_ded0591ac3ea` | completed; PNG downloaded and opened | **20** |
 
-HTML was submitted at `2026-10-15T08:28:12.891Z`, and observed completed at
-`2026-10-15T08:29:46.463Z`. Artifact `art_job_0493627afea0_0_5b05bdea` is `text/html`,
-4,566 bytes, SHA-256 `75ec886d8e073607e1caf31f56c84e37d2168c4f1ed390a64be785a24e6fdfa8`.
-The server descriptor has no SHA-256; this is the hash of the authenticated download.
+Total actual settlement: **115 CNY fen**, charged to the approved alpha-platform#505 budget.
+The continuation submitted only the image paid job; HTML was never resubmitted.
 
-At the last ledger observation, `2026-10-15T08:34:39.125810Z`, reservation
-`db89265d-e617-4cc5-ba05-6d7c7f87a406` still had only three `reservation_created` facts
-(seq 1565–1567), including a **1,500-fen wallet hold**, and no settlement/debit facts.
-The hold is not the actual charge. After 30 reads the harness exited 1 with
-`settlement not observed; stop before next card`; [failure.json](results/failure.json)
-records the observed stop. No further live work was performed. This finite observation does **not**
-establish a permanent billing failure: the last read precedes the next nominal five-minute maintenance
-boundary. A later read of the existing job/reservation is needed to determine final charges; do not
-redispatch HTML to obtain them. Actual vendor cost/usage and deployed version were not exposed by the
-captured public responses and are not claimed here.
+HTML: `text/html`, 4,566 bytes, SHA-256
+`75ec886d8e073607e1caf31f56c84e37d2168c4f1ed390a64be785a24e6fdfa8`.
+Its descriptor omits SHA-256; the value is calculated from the authenticated download.
+[Settlement facts](results/html-followup-ledger.json) show wallet `usage_settled=-95` (seq 1568)
+and `reservation_settled` (seq 1569) for `db89265d-e617-4cc5-ba05-6d7c7f87a406`.
+The initial 1,500-fen hold was not the charge. The original finite timeout remains in
+[failure.json](results/failure.json); it was superseded by this authorized read-only follow-up,
+not hidden or treated as a permanent billing failure.
 
-Both package payload negatives returned `package-payload-integrity`. HTML's actual HTTP negative
-returned **400 `pipeline_input_invalid`**, detail `prompt / minChars`; the image HTTP negative was
-not reached. The two negative **classes** are demonstrated; no image HTTP result is fabricated.
+Image: `image/png`, 747,895 bytes, 1024×1024 RGB, SHA-256
+`9ae48408b93d3a05fe8ab6afca49b68fb54d25475225959a536bb94633e9edaf`.
+The download matches the server's byte count and hash. [Full decode](results/image-open-check.json)
+passed; visual inspection of [the PNG](results/image-output.png) shows the requested blue square.
+[Settlement facts](results/image-followup-ledger.json) show wallet `usage_settled=-20` (seq 1573)
+and `reservation_settled` (seq 1574) for `533f70c4-09b7-47fa-99c8-ff9e99996a69`, also
+reported in the job result.
 
-## Runtime verification records (pending, not shelf admission evidence)
+The first image terminal events read threw an exception; arbitrary error details were deliberately
+suppressed to avoid exposing request headers. [Interruption record](results/image-events-interruption.json)
+and [initial statuses](results/image-initial-status.json) preserve the boundary. The harness resumed
+from the saved acceptance with GETs only. Its bounded SSE reader then captured HTTP 200, replayed
+completion events and no read error. Neither job's captured status/events/artifacts includes a final
+charged-fen field; actual charges above come from the billing ledger. Raw views:
+[HTML status](results/html-followup-status.json), [events](results/html-events.json),
+[artifacts](results/html-followup-artifacts.json);
+[image status](results/image-followup-status.json), [events](results/image-events.json),
+[artifacts](results/image-followup-artifacts.json).
 
-The JSON below and [runtime-records.json](results/runtime-records.json) contain the two exact-version
-entries assembled from the saved observations. They may be copied as **pending** records; they are
-**not** the requested `package-install` pass/pass proof, and the existing curation gate must reject
-them. HTML's pending use verdict reflects missing final settlement, not a failed artifact download.
+Both payload negatives returned `package-payload-integrity`. Both production empty-prompt requests
+returned **400 `pipeline_input_invalid`**, detail `prompt / minChars`:
+[HTML](results/html-empty-prompt.json), [image](results/image-empty-prompt.json).
+The image negative ran after download. No frozen interface change was needed.
+
+Continuation checks: `git diff --check` passed; all local Markdown links in this directory resolve
+(0 existing failures, 0 newly introduced failures). No full gate was run, per the continuation brief.
+
+## Runtime verification records (ready to copy)
+
+The following two exact-version entries match [runtime-records.json](results/runtime-records.json)
+and can be pasted into alpha-web's `catalog-src/intake/runtime-verification.json` object. This work
+only supplies evidence; it does not write intake, curate, sign, promote or publish either card.
 
 ```json
 {
@@ -148,7 +179,7 @@ them. HTML's pending use verdict reflects missing final settlement, not a failed
     "version": "1.0.0",
     "digest": "febf20f52e0a06658bd06b18a94f7342597cbaa5ed5634e91889cf8e37bb5b41",
     "install": "pass",
-    "use": "pending",
+    "use": "pass",
     "method": "package-install",
     "recordedAt": "2026-10-15",
     "key_id": "ak_EtFmJbPT",
@@ -160,18 +191,23 @@ them. HTML's pending use verdict reflects missing final settlement, not a failed
     "authorization": [
       "cloud:dispatch"
     ],
-    "pending": "Job completed and artifact downloaded; final settlement not observed. Not package-install pass/pass.",
     "job_id": "job_0493627afea0",
     "status": "completed",
     "dispatchedAt": "2026-10-15T08:28:12.891Z",
     "terminalObservedAt": "2026-10-15T08:29:46.463Z",
     "settlement": {
-      "status": "not-observed",
-      "charged_fen": null,
-      "reserved_fen": 1500,
+      "status": "settled",
+      "charged_fen": 95,
       "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
       "cursor": 1564,
-      "lastObservedAt": "2026-10-15T08:34:39.125810+00:00",
+      "seq": [
+        1569,
+        1568,
+        1567,
+        1566,
+        1565
+      ],
+      "lastObservedAt": "2026-10-15T08:48:51.234Z",
       "correlation": "unique action reservation after pre-dispatch ledger cursor"
     },
     "artifacts": [
@@ -188,13 +224,14 @@ them. HTML's pending use verdict reflects missing final settlement, not a failed
       "payload": "package-payload-integrity",
       "emptyPromptHttp": 400,
       "emptyPromptCode": "pipeline_input_invalid"
-    }
+    },
+    "verifiedAt": "2026-10-15"
   },
   "package:cloud-image": {
     "version": "1.0.0",
     "digest": "55832e8fe38dd63c610822d5b8b18e345ba2de364daf4e74e86b9a8ebad2cf98",
     "install": "pass",
-    "use": "pending",
+    "use": "pass",
     "method": "package-install",
     "recordedAt": "2026-10-15",
     "key_id": "ak_EtFmJbPT",
@@ -206,19 +243,42 @@ them. HTML's pending use verdict reflects missing final settlement, not a failed
     "authorization": [
       "cloud:dispatch"
     ],
-    "pending": "Not dispatched: stopped after HTML settlement was not observed.",
-    "job_id": null,
-    "status": "not-dispatched",
+    "job_id": "job_ded0591ac3ea",
+    "status": "completed",
     "settlement": {
-      "status": "not-dispatched",
-      "charged_fen": null
+      "status": "settled",
+      "charged_fen": 20,
+      "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+      "cursor": 1569,
+      "seq": [
+        1574,
+        1573,
+        1572,
+        1571,
+        1570
+      ],
+      "lastObservedAt": "2026-10-15T08:48:55.723Z",
+      "correlation": "job result reservation_id matches unique action reservation after pre-dispatch ledger cursor",
+      "jobResultReservationId": "533f70c4-09b7-47fa-99c8-ff9e99996a69"
     },
-    "artifacts": [],
+    "artifacts": [
+      {
+        "id": "art_job_ded0591ac3ea_0_12c4e619",
+        "mime": "image/png",
+        "bytes": 747895,
+        "sha256": "9ae48408b93d3a05fe8ab6afca49b68fb54d25475225959a536bb94633e9edaf",
+        "downloadHttp": 200,
+        "openCheck": "Pillow full PNG decode 1024x1024 RGB passed; visual review shows a blue square"
+      }
+    ],
     "negativeControls": {
       "payload": "package-payload-integrity",
-      "emptyPromptHttp": null,
-      "emptyPromptCode": "not-run"
-    }
+      "emptyPromptHttp": 400,
+      "emptyPromptCode": "pipeline_input_invalid"
+    },
+    "dispatchedAt": "2026-10-15T08:46:59.825Z",
+    "terminalObservedAt": "2026-10-15T08:47:37.030Z",
+    "verifiedAt": "2026-10-15"
   }
 }
 ```

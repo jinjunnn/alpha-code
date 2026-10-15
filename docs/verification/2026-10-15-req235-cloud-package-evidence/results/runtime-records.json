@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "digest": "febf20f52e0a06658bd06b18a94f7342597cbaa5ed5634e91889cf8e37bb5b41",
     "install": "pass",
-    "use": "pending",
+    "use": "pass",
     "method": "package-install",
     "recordedAt": "2026-10-15",
     "key_id": "ak_EtFmJbPT",
@@ -15,18 +15,23 @@
     "authorization": [
       "cloud:dispatch"
     ],
-    "pending": "Job completed and artifact downloaded; final settlement not observed. Not package-install pass/pass.",
     "job_id": "job_0493627afea0",
     "status": "completed",
     "dispatchedAt": "2026-10-15T08:28:12.891Z",
     "terminalObservedAt": "2026-10-15T08:29:46.463Z",
     "settlement": {
-      "status": "not-observed",
-      "charged_fen": null,
-      "reserved_fen": 1500,
+      "status": "settled",
+      "charged_fen": 95,
       "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
       "cursor": 1564,
-      "lastObservedAt": "2026-10-15T08:34:39.125810+00:00",
+      "seq": [
+        1569,
+        1568,
+        1567,
+        1566,
+        1565
+      ],
+      "lastObservedAt": "2026-10-15T08:48:51.234Z",
       "correlation": "unique action reservation after pre-dispatch ledger cursor"
     },
     "artifacts": [
@@ -43,13 +48,14 @@
       "payload": "package-payload-integrity",
       "emptyPromptHttp": 400,
       "emptyPromptCode": "pipeline_input_invalid"
-    }
+    },
+    "verifiedAt": "2026-10-15"
   },
   "package:cloud-image": {
     "version": "1.0.0",
     "digest": "55832e8fe38dd63c610822d5b8b18e345ba2de364daf4e74e86b9a8ebad2cf98",
     "install": "pass",
-    "use": "pending",
+    "use": "pass",
     "method": "package-install",
     "recordedAt": "2026-10-15",
     "key_id": "ak_EtFmJbPT",
@@ -61,18 +67,41 @@
     "authorization": [
       "cloud:dispatch"
     ],
-    "pending": "Not dispatched: stopped after HTML settlement was not observed.",
-    "job_id": null,
-    "status": "not-dispatched",
+    "job_id": "job_ded0591ac3ea",
+    "status": "completed",
     "settlement": {
-      "status": "not-dispatched",
-      "charged_fen": null
+      "status": "settled",
+      "charged_fen": 20,
+      "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+      "cursor": 1569,
+      "seq": [
+        1574,
+        1573,
+        1572,
+        1571,
+        1570
+      ],
+      "lastObservedAt": "2026-10-15T08:48:55.723Z",
+      "correlation": "job result reservation_id matches unique action reservation after pre-dispatch ledger cursor",
+      "jobResultReservationId": "533f70c4-09b7-47fa-99c8-ff9e99996a69"
     },
-    "artifacts": [],
+    "artifacts": [
+      {
+        "id": "art_job_ded0591ac3ea_0_12c4e619",
+        "mime": "image/png",
+        "bytes": 747895,
+        "sha256": "9ae48408b93d3a05fe8ab6afca49b68fb54d25475225959a536bb94633e9edaf",
+        "downloadHttp": 200,
+        "openCheck": "Pillow full PNG decode 1024x1024 RGB passed; visual review shows a blue square"
+      }
+    ],
     "negativeControls": {
       "payload": "package-payload-integrity",
-      "emptyPromptHttp": null,
-      "emptyPromptCode": "not-run"
-    }
+      "emptyPromptHttp": 400,
+      "emptyPromptCode": "pipeline_input_invalid"
+    },
+    "dispatchedAt": "2026-10-15T08:46:59.825Z",
+    "terminalObservedAt": "2026-10-15T08:47:37.030Z",
+    "verifiedAt": "2026-10-15"
   }
 }

@@ -1,0 +1,80 @@
+{
+  "startedAt": "2026-10-15T08:48:47.604Z",
+  "finishedAt": "2026-10-15T08:48:51.235Z",
+  "intervalMs": 30000,
+  "maximumMs": 900000,
+  "lastStatus": {
+    "observedAt": "2026-10-15T08:48:50.717Z",
+    "http": 200,
+    "body": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "completed",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "completed"
+      },
+      "artifact_ids": [
+        "art_job_0493627afea0_0_5b05bdea"
+      ],
+      "artifacts": [
+        {
+          "schemaVersion": 1,
+          "id": "art_job_0493627afea0_0_5b05bdea",
+          "source": "cloud",
+          "name": "output.html",
+          "trust": "sandboxed",
+          "role": "primary",
+          "contentRef": {
+            "kind": "http-stream",
+            "url": "/v1/cloud/artifacts/art_job_0493627afea0_0_5b05bdea/content",
+            "auth": "bearer"
+          },
+          "verification": {
+            "status": "unverified"
+          },
+          "provenance": {
+            "producer": "pipeline",
+            "jobId": "job_0493627afea0",
+            "kind": "html-generate",
+            "createdAt": "2026-10-15T08:28:33.601Z"
+          },
+          "size": 4566,
+          "claimedMime": "text/html"
+        }
+      ],
+      "result": {
+        "kind": "html-generate",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "Document generated and validated.",
+        "stderr": "",
+        "artifacts": [
+          {
+            "artifact_id": "art_job_0493627afea0_0_5b05bdea",
+            "name": "output.html",
+            "mime": "text/html",
+            "size": 4566
+          }
+        ]
+      },
+      "error": null
+    }
+  },
+  "settlement": {
+    "status": "settled",
+    "charged_fen": 95,
+    "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+    "cursor": 1564,
+    "seq": [
+      1569,
+      1568,
+      1567,
+      1566,
+      1565
+    ],
+    "lastObservedAt": "2026-10-15T08:48:51.234Z",
+    "correlation": "unique action reservation after pre-dispatch ledger cursor"
+  }
+}
