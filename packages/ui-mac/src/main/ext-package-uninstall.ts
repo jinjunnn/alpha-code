@@ -137,6 +137,15 @@ export function removePackageChildArtifactsV1(
       removed.push(...grants.removed)
       continue
     }
+    if (child.kind === "cloud") {
+      // REQ-235:cloud 是 receipts-only,没有盘上实物、没有 config 叶;record 由调用方那一次 root
+      // mutation 去账。剩下的只有授权账 —— **不能只删 receipt**,否则 `grants.json` 里的
+      // `cloud:dispatch` 会活过卸载、在重装时被当成「已授权基线」而跳过确认。幂等移除。
+      const grants = installers.removeInstallGrants(root, [packageChildTxKeyV1("cloud", child.name)])
+      if (!grants.ok) return { ok: false, reason: `cloud:${child.name}: ${grants.reason}`, removed, warnings }
+      removed.push(...grants.removed)
+      continue
+    }
     if (child.kind === "command") {
       // `#840`:command 的「实物」只有一个 —— `alpha.jsonc` 的 `command.<name>` 叶。
       // update 路径(`skipConfig: true`)上它已由 `buildDepartingChildConfigItemsV1` 的事务

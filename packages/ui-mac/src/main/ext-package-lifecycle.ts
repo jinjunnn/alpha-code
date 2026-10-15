@@ -32,7 +32,7 @@ import {
 import { PROFILE_REGISTRY_V1 } from "../shared/host-extension-package-contract/registry"
 
 /** package 通道装得出来的 child kind —— 恰是下面那张表的值域。 */
-export type PackageChildKindV1 = "skill" | "agent" | "command" | "mcp" | "plugin"
+export type PackageChildKindV1 = "skill" | "agent" | "cloud" | "command" | "mcp" | "plugin"
 
 /**
  * `#809`(REQ-128 Phase 4,基线 §5 第 7 类):**profile → child kind 的唯一一张表。**
@@ -54,6 +54,8 @@ export type PackageChildKindV1 = "skill" | "agent" | "command" | "mcp" | "plugin
  */
 const PACKAGE_CHILD_KIND_BY_PROFILE_V1: Readonly<Record<string, PackageChildKindV1>> = {
   agent: "agent",
+  // REQ-235:receipts-only,与 legacy 云条目同一种账本 kind(零文件、零引擎 config)。
+  cloud: "cloud",
   command: "command",
   "mcp-local": "mcp",
   "mcp-remote": "mcp",
@@ -82,7 +84,7 @@ export function packageChildKindV1(
 }
 
 export function isPackageChildKindV1(kind: string): kind is PackageChildKindV1 {
-  return kind === "skill" || kind === "agent" || kind === "command" || kind === "mcp" || kind === "plugin"
+  return kind === "skill" || kind === "agent" || kind === "cloud" || kind === "command" || kind === "mcp" || kind === "plugin"
 }
 
 /** 本模块自检:注册表长出第六个 profile 而表没跟上 ⇒ 模块装载即抛。测试另有一条独立的
@@ -104,6 +106,10 @@ export function packageChildTxKeyV1(kind: PackageChildKindV1, name: string): str
       return skillGenerationKey(name)
     case "agent":
       return agentInstallKey(name)
+    // 与 legacy 云条目的 receipt item key(`ext-install-planner.ts` 的 `cloud--<name>`)逐字相同:
+    // 同一个 (kind,name) 只有一个授权账位置。
+    case "cloud":
+      return `cloud--${name}`
     case "command":
       return `command--${name}`
     case "mcp":
