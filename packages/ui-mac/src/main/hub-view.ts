@@ -29,7 +29,9 @@ import { isAbsolute, join, relative } from "node:path"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerReadyData } from "../preload/types"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
-import { installableCatalogEntries } from "../renderer/extensions/catalog-installable-view"
+import { installableCatalogEntries, installableCatalogPackages } from "../renderer/extensions/catalog-installable-view"
+import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
+import { readPackageGraphs } from "./ext-receipt-v2"
 import {
   AGENT_NOTE_DENIED,
   AGENT_NOTE_UNVERIFIED,
@@ -58,8 +60,9 @@ import { createToolPolicyClient } from "./tool-policy-client"
 export const CLOUD_DISPATCH_TOOL = "cloud_dispatch"
 
 export type HubViewDeps = {
-  /** 已验 catalog(remote/cache 验签 → 随包快照),与 governance 只读查询同一个 resolve 面(ext-ipc 的 resolveEffectiveCatalog)。 */
-  resolveCatalog(): Promise<InventoryCatalogInput | null>
+  /** 已验 catalog(remote/cache 验签 → 随包快照),与 governance 只读查询同一个 resolve 面(ext-ipc 的 resolveEffectiveCatalog)。
+   *  `packages` = main 评估过的签名包视图(同一次刷新的 packageViews;随包快照没有)。 */
+  resolveCatalog(): Promise<(InventoryCatalogInput & { packages?: CatalogPackageViewV1[] }) | null>
   advisoryBlocked(): ReadonlySet<string>
   seedDir: string | null
   globalRoot(): string
@@ -158,6 +161,46 @@ export function skillActionFor(name: string, agentRules: readonly Rule[], sessio
     (r) => wildcardMatch("skill", r.permission) && wildcardMatch(name, r.pattern),
   )
   return rule?.action ?? "ask"
+}
+
+function packageRowsFor(views: CatalogPackageViewV1[], rows: HubViewRow[], globalRoot: string, warnings: string[]): HubViewRow[] {
+  if (views.length === 0) return []
+  const graphsRead = readPackageGraphs(globalRoot)
+  if (!graphsRead.ok) warnings.push(`package ledger unreadable: ${graphsRead.reason}`)
+  const graphs = graphsRead.ok ? graphsRead.packageGraphs : []
+  return views.map((view): HubViewRow => {
+    const ids = view.prerequisites.items.map((item) => item.prerequisiteId)
+    const base = {
+      id: view.catalogId,
+      name: view.catalogId,
+      kind: "package",
+      displayName: view.presentation.displayName,
+      description: view.presentation.description,
+      authorization: ids.length > 0 ? `secret:${[...ids].sort().join(",")}` : "none",
+    }
+    const graph = graphs.find((item) => item.packageId === view.catalogId)
+    if (!graph) return { ...base, scope: null, installed: false, enabled: false, state: "not-installed" }
+    const components = [graph.root, ...graph.children].map((node) => ({
+      node,
+      row: rows.find((row) => row.scope === "global" && row.kind === node.kind && row.name === node.name),
+    }))
+    const enabled = components.every((component) => component.row?.enabled === true)
+    const blocking = components.find((component) => component.row?.state !== "available")
+    if (!blocking) return { ...base, scope: "global", installed: true, enabled, state: "available" }
+    const label = `${blocking.node.kind} ${blocking.node.name}`
+    if (!blocking.row)
+      return { ...base, scope: "global", installed: true, enabled, state: "installed", stateReason: { code: "not-loaded", detail: `${label}: not in the install ledger` } }
+    const reason = blocking.row.stateReason
+    const state = blocking.row.state === "reload-pending" ? "reload-pending" : "installed"
+    return {
+      ...base,
+      scope: "global",
+      installed: true,
+      enabled,
+      state,
+      ...(reason ? { stateReason: { code: reason.code, ...(reason.code === "not-loaded" ? { detail: `${label}: ${reason.detail ?? "not loaded"}` } : reason.detail ? { detail: reason.detail } : {}) } } : {}),
+    }
+  })
 }
 
 export function createHubViewService(deps: HubViewDeps): HubViewService {
@@ -277,7 +320,7 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
 
   async function compute(directory: string): Promise<{ view: HubView; reads: ReturnType<typeof engineReads> }> {
     const warnings: string[] = []
-    let catalog: InventoryCatalogInput | null = null
+    let catalog: (InventoryCatalogInput & { packages?: CatalogPackageViewV1[] }) | null = null
     try {
       catalog = await deps.resolveCatalog()
     } catch (error) {
@@ -325,7 +368,16 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
           return { ...base, installed: true, enabled: true, state: "reload-pending", stateReason: reason }
         }),
     )
-    return { view: { directory, rows, warnings }, reads }
+    // 审计 R1 Major 2:签名包也是客户端可安装的条目(与定制中心同一个可安装视图 installableCatalogPackages)。
+    // 包只装 global;装上之后的档按它的组件行定(组件行就在上面,同一次即时核验):全部可用 = available,
+    // 否则取第一条没可用的组件的档与原因(带组件名)。
+    const packageRows = packageRowsFor(
+      installableCatalogPackages(catalog?.packages ?? [], entries, deps.advisoryBlocked()),
+      rows,
+      deps.globalRoot(),
+      warnings,
+    )
+    return { view: { directory, rows: [...rows, ...packageRows], warnings }, reads }
   }
 
   return {

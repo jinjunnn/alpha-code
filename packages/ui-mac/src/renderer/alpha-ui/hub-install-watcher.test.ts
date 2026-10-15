@@ -66,6 +66,43 @@ const ENTRIES = [
   },
 ]
 
+// 审计 R1 Major 2:签名包(main 评估过的 CatalogPackageViewV1,随 remoteCatalog 进 renderer 的 catalog().packages)
+const PACKAGE_VIEW = {
+  catalogId: "package:alpha-first",
+  verdict: "compatible",
+  action: { kind: "install", enabled: true, reasonCode: "package-compatible" },
+  components: [{ componentId: "skill:alpha-first", role: "root", required: true, included: true, skipReasonCode: null }],
+  prerequisites: { status: "ready", items: [] },
+  presentation: { displayName: "Code Puppy install check", description: "checks a package install", version: "1.0.0" },
+}
+const PACKAGE_PREVIEW = {
+  attemptId: "admission-attempt-1",
+  binding: { snapshotDigest: "s".repeat(64), envelopeDigest: "e".repeat(64), graphDigest: "g".repeat(64) },
+  plan: {
+    packageId: "package:alpha-first",
+    version: "1.0.0",
+    scope: { scope: "global" },
+    items: [
+      {
+        included: true,
+        componentId: "skill:alpha-first",
+        role: "root",
+        required: true,
+        key: "skill:alpha-first",
+        kind: "skill",
+        name: "alpha-first",
+        manifestDigest: "m",
+        payloadDigest: "p",
+        capabilities: ["fs:read"],
+        prerequisites: [],
+        operations: ["write-generation"],
+      },
+    ],
+  },
+  items: [{ key: "skill:alpha-first", previous: null, requested: ["fs:read"], added: ["fs:read"], removed: [], requiresConfirmation: true }],
+  update: { operation: "install", components: [] },
+}
+
 type InstallScript = Array<Record<string, unknown>>
 /** 阶段完成与真实回复的同一条时间线(runtime.timeline:回复由 surface client 写,阶段由下面的 IPC 桩在**完成时**写)。 */
 const timeline = () => runtime.timeline
@@ -103,7 +140,7 @@ beforeEach(() => {
       runtime.timeline.push(`stage:${input.stage}${input.reason ? `(${input.reason})` : ""}${recorded.ok ? "" : "!refused"}`)
       return recorded
     },
-    remoteCatalog: async () => ({ source: "remote", catalog: { version: "9.9.9", entries: ENTRIES } }),
+    remoteCatalog: async () => ({ source: "remote", catalog: { version: "9.9.9", entries: ENTRIES, packages: [PACKAGE_VIEW] } }),
     advisoryActive: async () => ({ ids: [], fresh: true }),
     checkRuntime: async () => ({ ok: true }),
     installCatalog: async (intent: Record<string, unknown>) => {
@@ -314,6 +351,30 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     await until(() => replies().length > 0, "the reply")
     expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
     expect(stages.get("req_hub_watcher_07")).toMatchObject({ stage: "committed" })
+  })
+
+  // 审计 R1 Major 2:签名包也走定制中心**同一个**确认控制器(package 预览 + 授权 + 前置条件输入),出站是 installCatalogIntent
+  // 那唯一一个出口;两次驱动都带 hubRequestId(首驱只取预览,main 不落定;确认后的那一趟由 main 记 committed)。
+  test("包:agent 请求 package:alpha-first ⇒ 先取预览再弹包确认框 ⇒ 确认 ⇒ 带授权与 hubRequestId 的第二趟 ⇒ once", async () => {
+    installScript = [{ ok: false, stage: "authorize", reason: "authorization required", packageAuthorization: PACKAGE_PREVIEW }, { ok: true, kind: "skill", name: "alpha-first" }]
+    mount()
+    await flush()
+    runtime.ask(hubRequest("package:alpha-first", "req_hub_watcher_08"))
+    await until(() => !!document.querySelector("[data-package-authorization='package:alpha-first']"), "the package confirm box")
+    expect(document.querySelector("[data-plan-component='skill:alpha-first']")).not.toBeNull()
+    expect(intents[0]).toMatchObject({ catalogId: "package:alpha-first", hubRequestId: "req_hub_watcher_08", scope: { scope: "global" } })
+    expect(intents[0]!.authorization).toBeUndefined()
+    expect(replies()).toEqual([])
+    button(zh["alpha.ext.confirmInstall"])!.click()
+    await until(() => replies().length > 0, "the reply")
+    expect(intents[1]).toMatchObject({
+      catalogId: "package:alpha-first",
+      attemptId: "admission-attempt-1",
+      hubRequestId: "req_hub_watcher_08",
+      authorization: { confirmed: { "skill:alpha-first": ["fs:read"] }, binding: PACKAGE_PREVIEW.binding },
+    })
+    expect(timeline()).toEqual(["stage:confirming", "install", "stage:submitted", "install", "reply:once"])
+    expect(stages.get("req_hub_watcher_08")).toMatchObject({ stage: "committed" })
   })
 
   test("对照:不带 alphaHub 的请求照旧是通用五栏审批框,不进守望者", async () => {

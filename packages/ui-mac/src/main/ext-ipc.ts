@@ -70,6 +70,7 @@ import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNEL
 // REQ-234 `#1529`:三档状态的唯一权威 + 重载请求方/记录方 + parentPort `alpha.*` 分发(基线 §2.2 / §2.5 / §2.6)。
 import { createAlphaSidecarHost, createHubRequestStages, createHubViewService, type AlphaSidecarHost } from "./hub-view"
 import { createReloadCoordinator } from "./reload-coordinator"
+import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import { isHubRequestId, parseReloadScope, type ReloadItem } from "./alpha-sidecar-messages"
 import { packageVersionFromRecordsV1 } from "./ext-package-lifecycle"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -864,11 +865,17 @@ export function registerExtIpcHandlers(
   // effective catalog 解析(remote/cache 验签 → bundled 快照兜底)—— 只读 inventory 面专用;
   // 激活面用 plannerDeps 内带 #314/#315 security browse-only 语义的 effectiveCatalog(浏览允许
   // bundled 兜底,激活不允许 —— 两面职责不同,不合流)。#302:channel 必填。
-  const resolveEffectiveCatalog = async (): Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> => {
+  const resolveEffectiveCatalog = async (): Promise<{
+    entries: Catalog["entries"]
+    channel: "remote" | "cache" | "bundled"
+    version: string
+    packages?: CatalogPackageViewV1[]
+  }> => {
     const rc = await refreshRemoteCatalog(userDataPath, registryChannel)
     if (rc.source !== "none") {
       const cat = rc.catalog as Catalog
-      return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
+      // REQ-234 `#1531`(审计 R1 Major 2):同一次刷新里 main 评估过的签名包视图,三档视图据此把包列给 agent。
+      return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version), ...(rc.packageViews ? { packages: rc.packageViews } : {}) }
     }
     const bundled = bundledCatalogJson as unknown as BundledCatalogSnapshotV1
     return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }

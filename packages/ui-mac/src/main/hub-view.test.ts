@@ -10,7 +10,9 @@ import { Wildcard } from "../../../core/src/util/wildcard"
 import { CLOUD_DISPATCH_REMOTE_TOOL } from "../../../ext/src/cloud-contract-hook"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 import { AGENT_NOTE_DENIED, AGENT_NOTE_UNVERIFIED, type AlphaSidecarOutbound, type HubViewRow } from "./alpha-sidecar-messages"
-import { upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
+import { applyPackageMutation, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
+import { bundleOwner, computeInstalledGraphDigest } from "./ext-package-ledger-v3"
+import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import {
   CLOUD_DISPATCH_TOOL,
   createAlphaSidecarHost,
@@ -114,7 +116,7 @@ function engineFetch(engine: Engine, seen: string[]): typeof fetch {
   }) as typeof fetch
 }
 
-function world(name: string) {
+function world(name: string, extra: { packages?: CatalogPackageViewV1[] } = {}) {
   const globalRoot = join(tmp, name, "global")
   const projectDir = join(tmp, name, "project")
   const workspace = join(tmp, name, "workspace")
@@ -150,7 +152,7 @@ function world(name: string) {
   const seen: string[] = []
   const coordinator = createReloadCoordinator({ log: () => {}, onChange: () => {} })
   const deps: HubViewDeps = {
-    resolveCatalog: async () => ({ entries: CATALOG, channel: "cache", version: "1.0.0" }),
+    resolveCatalog: async () => ({ entries: CATALOG, channel: "cache", version: "1.0.0", ...(extra.packages ? { packages: extra.packages } : {}) }),
     advisoryBlocked: () => new Set(),
     seedDir: null,
     globalRoot: () => globalRoot,
@@ -276,6 +278,67 @@ describe("hub-view 三档状态(§2.5)", () => {
       state: "installed",
       stateReason: { code: "not-loaded", detail: 'no verification for kind "plugin"' },
     })
+  })
+
+  // 审计 R1 Major 2:签名包(catalog.packages,main 评估过的 CatalogPackageViewV1)也是「客户端可安装的条目」——
+  // agent 的视图里必须有它(否则 hub_install 对 package:* 答 unknown entry);装上之后按它的组件行定档。
+  test("签名包进视图:可安装 ⇒ not-installed 包行(带前置条件名);装上 ⇒ 按组件行定档(全可用 = available,缺加载 = 待重载 + 组件原因)", async () => {
+    const pkg: CatalogPackageViewV1 = {
+      catalogId: "package:kit",
+      verdict: "compatible",
+      action: { kind: "install", enabled: true, reasonCode: "package-compatible" },
+      components: [{ componentId: "skill:kit-skill", role: "root", required: true, included: true, skipReasonCode: null }],
+      prerequisites: { status: "required-action", items: [{ prerequisiteId: "skill:kit-skill#KIT_TOKEN", label: "Kit token", required: true }] },
+      presentation: { displayName: "Kit", description: "a kit", version: "1.0.0" },
+    }
+    const blocked: CatalogPackageViewV1 = { ...pkg, catalogId: "package:blocked", verdict: "blocked", action: { kind: "none", enabled: false, reasonCode: "package-invalid" } }
+    const w = world("packages", { packages: [pkg, blocked] })
+    const before = await w.service.viewForAgent({ directory: w.projectDir })
+    expect(row(before.rows, "package:kit")).toMatchObject({
+      scope: null,
+      kind: "package",
+      displayName: "Kit",
+      description: "a kit",
+      installed: false,
+      state: "not-installed",
+      authorization: "secret:skill:kit-skill#KIT_TOKEN",
+    })
+    expect(before.rows.some((r) => r.id === "package:blocked")).toBe(false)
+
+    // 生产写器装包:图 + 子记录(组件 skill:kit-skill)
+    const digest = `sha256:${"c".repeat(64)}`
+    const node = { componentId: "skill:kit-skill", kind: "skill" as const, name: "kit-skill", required: true, manifestDigest: digest }
+    const graph = { packageId: "package:kit", envelopeDigest: `sha256:${"d".repeat(64)}`, root: node, children: [] }
+    const applied = applyPackageMutation(w.globalRoot, {
+      transactionId: "tx-kit-1",
+      operation: "install",
+      graphBeforeDigest: null,
+      graphAfter: { ...graph, installedGraphDigest: computeInstalledGraphDigest(graph) },
+      childRecordMutations: [
+        {
+          op: "upsert",
+          input: { id: "skill:kit-skill", name: "kit-skill", kind: "skill", environment: "prod", scope: { kind: "global" }, version: "1.0.0", manifestDigest: digest, desiredState: "enabled", origin: "catalog", installedAt: "2026-10-15T00:00:00.000Z" },
+        },
+      ],
+      claimMutations: [{ op: "acquire", kind: "skill", name: "kit-skill", owner: bundleOwner("package:kit", digest) }],
+    })
+    if (!applied.ok) throw new Error(applied.reason)
+    const kitDir = join(w.globalRoot, "skills", "kit-skill")
+    mkdirSync(kitDir, { recursive: true })
+    writeFileSync(join(kitDir, "SKILL.md"), "---\nname: kit-skill\n---\n")
+    expect(row((await w.service.viewForAgent({ directory: w.projectDir })).rows, "package:kit")).toMatchObject({
+      scope: "global",
+      kind: "package",
+      installed: true,
+      enabled: true,
+      state: "reload-pending",
+      stateReason: { code: "not-loaded", detail: "skill kit-skill: skill not loaded" },
+    })
+    w.engine.skills.push({ name: "kit-skill", location: join(kitDir, "SKILL.md") })
+    const after = await w.service.view(w.projectDir)
+    expect(row(after.rows, "package:kit")).toMatchObject({ scope: "global", installed: true, state: "available" })
+    // 定制中心那一侧读的是同一档(I4)
+    expect(row((await w.service.viewForAgent({ directory: w.projectDir })).rows, "package:kit").state).toBe("available")
   })
 
   test("引擎读不出 ⇒ 不标可用(核不了 = 待重载 + 原因),停用条目照旧只看账本", async () => {

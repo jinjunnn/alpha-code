@@ -22,12 +22,19 @@ import { t } from "../i18n"
 import { Dialog } from "./Dialog"
 import { Button } from "./Button"
 import { catalog, refreshCatalog } from "../extensions/catalog-source"
-import { installableCatalogEntries } from "../extensions/catalog-installable-view"
+import { installableCatalogEntries, installableCatalogPackages } from "../extensions/catalog-installable-view"
 import type { CatalogEntry } from "../extensions/catalog-types"
 import { extIpc } from "../extensions/ext-ipc"
 import { extensionError } from "../extensions/ext-presentation"
 import { createInstallConfirm, InstallConfirmBody, InstallConfirmFooter } from "../extensions/install-confirm"
-import { isAuthzRequired, useExtensions, type ActionResult, type CatalogInstallScopeChoice } from "../extensions/use-extensions"
+import {
+  isAuthzRequired,
+  useExtensions,
+  type ActionResult,
+  type CatalogInstallIntentV1,
+  type CatalogInstallResult,
+  type CatalogInstallScopeChoice,
+} from "../extensions/use-extensions"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 import type { ServerInfo } from "../sidebar/use-projects"
 
@@ -145,7 +152,43 @@ export function HubInstallWatcher(props: {
     return r.ok ? { ok: true } : r
   }
 
-  const confirm = createInstallConfirm({ install, projectDir })
+  /** 包确认屏那一趟(审计 R1 Major 2):与定制中心同一个出口 installCatalogIntent,多带 hubRequestId;确认时才记 submitted。 */
+  const installPackage = async (intent: CatalogInstallIntentV1): Promise<CatalogInstallResult> => {
+    if (flight.stage === "confirming") {
+      if (!(await record({ stage: "submitted" }))) return { ok: false, reason: "the request could not be recorded" }
+      flight.stage = "submitted"
+    }
+    return ext.installCatalogIntent({ ...intent, hubRequestId: props.hub.requestId })
+  }
+
+  const confirm = createInstallConfirm({
+    install,
+    projectDir,
+    installPackage,
+    onPackageSettled: async (pending, result) => {
+      flight.setOutcome(result?.ok ? { kind: "committed" } : { kind: "failed", reason: (result && !result.ok ? result.reason : undefined) ?? "install failed" })
+      return pending.view
+    },
+  })
+
+  /** 签名包:首驱只取预览(带 hubRequestId;main 对授权暂停不落定),拿到预览才弹包确认框。 */
+  const openPackage = async (catalogId: string) => {
+    const advisory = await extIpc.advisoryActive().catch(() => ({ ids: [] as string[] }))
+    const view = installableCatalogPackages(catalog().packages ?? [], catalog().entries, new Set(advisory.ids)).find((item) => item.catalogId === catalogId)
+    if (!view) return false
+    const first = await ext.installCatalogIntent({
+      catalogId,
+      attemptId: `hub-${globalThis.crypto.randomUUID()}`,
+      hubRequestId: props.hub.requestId,
+    })
+    if (!first.ok && "stage" in first && first.stage === "authorize" && "packageAuthorization" in first && first.packageAuthorization) {
+      confirm.openPackage({ view, preview: first.packageAuthorization, finish: () => {} })
+      return true
+    }
+    // 没进授权暂停就是落定了(main 已按 hubRequestId 记 committed / failed)
+    flight.setOutcome(first.ok ? { kind: "committed" } : { kind: "failed", reason: first.reason ?? "install failed" })
+    return true
+  }
 
   onMount(() => {
     void (async () => {
@@ -158,11 +201,10 @@ export function HubInstallWatcher(props: {
       await refreshCatalog()
       const advisory = await extIpc.advisoryActive().catch(() => ({ ids: [] as string[] }))
       const entry = installableCatalogEntries(catalog().entries, new Set(advisory.ids)).find((e) => e.id === props.hub.catalogId)
-      if (!entry) {
-        await record({ stage: "failed", reason: "not in this app's verified catalog" })
-        return finish("reject")
-      }
-      confirm.openInstallConfirmation(entry)
+      if (entry) return confirm.openInstallConfirmation(entry)
+      if (await openPackage(props.hub.catalogId)) return
+      await record({ stage: "failed", reason: "not in this app's verified catalog" })
+      return finish("reject")
     })()
   })
 
@@ -183,10 +225,9 @@ export function HubInstallWatcher(props: {
   // 记 failed 带原因。有结局的关框由上面那一段收尾。
   let opened = false
   createEffect(() => {
-    const open = confirm.confirming()
-    if (open) {
+    if (confirm.open()) {
       opened = true
-      entryName = open.displayName
+      entryName = confirm.packageAuthz()?.view.presentation.displayName ?? confirm.confirming()?.displayName ?? entryName
       return
     }
     if (!opened || flight.finished || flight.outcome() !== undefined) return
@@ -199,7 +240,7 @@ export function HubInstallWatcher(props: {
   return (
     <Dialog
       open={confirm.open() || failure() !== null}
-      onClose={() => (failure() !== null ? void finish("reject").then(() => setFailure(null)) : confirm.closeAuthz())}
+      onClose={() => (failure() !== null ? void finish("reject").then(() => setFailure(null)) : confirm.close())}
       dismissible={!confirm.busy()}
       busy={confirm.busy()}
       size="sm"
