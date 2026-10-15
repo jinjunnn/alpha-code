@@ -19,6 +19,7 @@ import {
   type RetireJournalRequest,
 } from "./ext-journal-retire"
 import type { JournalRetireResult } from "../shared/ext-journal-admin"
+import { parseReloadScope } from "./alpha-sidecar-messages"
 
 export type RootResolution = { ok: true; root: string } | { ok: false; reason: string }
 
@@ -42,6 +43,20 @@ export const GATED_WRITE_CHANNELS = {
   importClaudePluginConfirm: "ext-import-claude-plugin-confirm",
   importSkillFolder: "ext-import-skill-folder",
   importSkillGit: "ext-import-skill-git",
+  /** REQ-234 `#1529`:请 ext 调度器重载(global 或某项目目录;等会话空闲,`force` = 用户「现在重载」)。
+   *  它不写账本与 config,但它改变引擎正在用什么 —— 与安装体同一道恢复准入(半恢复的根上不该重载)。 */
+  reloadRequest: "ext-reload-request",
+} as const
+
+/**
+ * REQ-234 `#1529`:定制中心状态面的两条**表外**通道,与写表**必须互斥**(`ext-write-channels.test.ts` 断言)。
+ *   · `hubView`         —— 纯读:main 对 (id, scope, directory) 即时算出的「已安装 / 待重载 / 可用」(hub-view.ts)。
+ *   · `hubRequestStage` —— 只记 main **内存**里的安装请求阶段(I9),一个字节都不落盘、不碰账本。
+ * 不进写表的理由与 `LOCAL_PACKAGE_READ_CHANNELS` 一致:账本待恢复时用户照样要看得到状态、确认框照样要能记阶段。
+ */
+export const HUB_READ_CHANNELS = {
+  hubView: "ext-hub-view",
+  hubRequestStage: "ext-hub-request-stage",
 } as const
 
 /**
@@ -93,6 +108,8 @@ export type WriteChannelBodies = {
   /** 持久化阶段(srcDir 已由 main 弹窗取得)。 */
   importSkillFolder: (srcDir: string, target?: InstallTarget) => Promise<unknown>
   importSkillGit: (url: unknown, target?: InstallTarget) => Promise<unknown>
+  /** `{ scope, items, reason, force? }`;定根:global → 全局根,{ directory } → 该项目根(fail-closed)。 */
+  reloadRequest: (input: unknown) => Promise<unknown>
 }
 
 export type GatedWriteHandlers = {
@@ -122,6 +139,15 @@ export function buildGatedWriteChannels(deps: { gate: RecoveryGate; roots: Write
     importClaudePluginConfirm: gatedWriteHandler(gate, roots.global, bodies.importClaudePluginConfirm),
     importSkillFolder: gatedWriteHandler(gate, (_srcDir: string, target?: InstallTarget) => roots.importTarget(target), bodies.importSkillFolder),
     importSkillGit: gatedWriteHandler(gate, (_url: unknown, target?: InstallTarget) => roots.importTarget(target), bodies.importSkillGit),
+    reloadRequest: gatedWriteHandler(
+      gate,
+      (input: unknown): RootResolution => {
+        const scope = parseReloadScope((input as { scope?: unknown } | null | undefined)?.scope)
+        if (!scope) return { ok: false, reason: "reload request: scope must be \"global\" or { directory }" }
+        return scope === "global" ? roots.global() : roots.projectDir(scope.directory)
+      },
+      bodies.reloadRequest,
+    ),
   }
 }
 

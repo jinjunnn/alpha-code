@@ -13,9 +13,12 @@
 //   · 另加一条**出站计数相等**:到达 IPC 的 `installCatalog` 次数必须等于经过收口方法的次数,
 //     于是「既走收口方法、又另外直连一次」也红。
 //
+// REQ-234 `#1529` 起「引擎有没有被叫去重扫」的判据换了位置:重扫的执行者是 ext 调度器(等会话空闲),
+// main 安装体提交成功后经 parentPort 发 `alpha.reload.request`。本文件像 server.ts 在 sidecar ready 时那样
+// 接上发送口(`alphaSidecar.attach`),**数到的那一条就是判据**;renderer 自己一次 dispose 都不许做。
+//
 // 被替身的只有进程边界:
-//   · 引擎 HTTP 客户端(`@opencode-ai/sdk/v2/client`)—— `refreshEngine()` 的
-//     `POST /global/dispose` 在无头进程里没有对端。这个 spy 就是「引擎有没有被叫去重扫」的判据。
+//   · 引擎 HTTP 客户端(`@opencode-ai/sdk/v2/client`)—— 没有对端;它的 dispose spy 用来证明 renderer **不再** dispose。
 //   · `globalThis.fetch` —— 签名 package 的 payload/资产取用。admission 自己那条取用/复验
 //     仍是生产实现(不传 `deps.fetchAsset`)。
 // main 侧其余一律真实现:真 `registerExtIpcHandlers`、真 admission、真事务、真 legacy planner。
@@ -43,20 +46,14 @@ import { pinShippedPlatform } from "./pin-shipped-platform"
 // 与两个兄弟 cases 文件同款 opt-in;它自陈本轮平台是模拟,不静默降级。
 pinShippedPlatform()
 
-// ── ① 引擎客户端替身 = 「引擎有没有被叫去重扫」的唯一判据 ──────────────────────────────
+// ── ① 引擎客户端替身(`#1529`:renderer 不再 dispose;重扫判据是 main 发出的重载请求,见 ④)──────
 //     函数值先存 const,再 mock.module。
+/** REQ-234 `#1529`:renderer 不再 dispose —— 恒为 0 是判据的一半(另一半是 main 发出的重载请求)。 */
 let disposeCalls = 0
-/**
- * dispose 的失败形态取 **`"error"`**(SDK 正常 resolve 成 `{error, response}`)——
- * v2 client 默认 `throwOnError: false`,503 / 404 走的就是这条,`try/catch` 一个字都碰不到。
- * 只模拟 throw 的夹具会让「把 HTTP 错误当成功」的实现全绿。
- */
-let disposeFailure: "none" | "error" = "none"
 const engineClient = {
   global: {
     dispose: async () => {
       disposeCalls++
-      if (disposeFailure === "error") return { data: undefined, error: { message: "refused" }, response: { status: 503 } }
       return { data: {} }
     },
     event: async () => ({ stream: (async function* () {})() }),
@@ -107,7 +104,7 @@ mock.module("../src/main/ext-advisory-gate", () => ({
   makeAdvisoryGate: () => () => ({ allowed: true }),
 }))
 mock.module("../src/main/ext-mcp-activation", () => ({
-  reloadInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
+  verifyInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
   probeProjectMcpActivation: async () => "unverifiable" as const,
 }))
 
@@ -282,13 +279,16 @@ initAlphaEnvironment({
   baseRoot: join(tmp, "alpha-code-state"),
   homeDir: join(tmp, "home"),
 })
-registerExtIpcHandlers(
+const { alphaSidecar } = registerExtIpcHandlers(
   userData,
   "dev",
   async () => ({ url: "http://127.0.0.1:39131", username: "opencode", password: "route-password" }),
   join(tmp, "home"),
 )
 const globalRoot = alphaGlobalRoot()
+/** `#1529`:main 发往 ext 调度器的重载请求 —— 「装完有没有让引擎重扫」的判据。 */
+const reloadRequests: Array<{ type?: string; generation?: number; scope?: unknown }> = []
+alphaSidecar.attach((message) => void reloadRequests.push(message as { type?: string; generation?: number; scope?: unknown }))
 
 // ── ⑦ renderer ↔ main 的桥:走生产 handler,不重写任何判定 ───────────────────────────────
 const SENDER: IpcSender = { id: 1, on: () => {}, once: () => {} }
@@ -321,6 +321,10 @@ const extBridge: Record<string, unknown> = {
   browseSeed: async () => ({ entries: [] }),
   builtinRead: async () => ({ ok: false as const, reason: "builtin panel not under test here" }),
   onSessionGrantsEnded: () => () => {},
+  // `#1529`:三档状态与重载请求同样走生产 handler;视图变更推送接 main 的真 onViewChanged。
+  hubView: (directory?: unknown) => call("ext-hub-view", directory),
+  reloadRequest: (input: unknown) => call("ext-reload-request", input),
+  onHubViewChanged: (cb: () => void) => alphaSidecar.onViewChanged(cb),
 }
 
 Object.defineProperty(window, "api", {
@@ -441,14 +445,15 @@ async function installBundleThroughUi(name: string): Promise<void> {
 test("① 入口一 `runPackageAction`:卡片「安装」经收口方法出站,而 authorize 臂**不**重扫", async () => {
   setHubSection("featured")
   await waitFor(() => expect(q(`[data-package-card="${MIXED_BUNDLE_PACKAGE_ID}"]`)).toBeInstanceOf(HTMLElement))
-  const disposeBefore = disposeCalls
+  const reloadsBefore = reloadRequests.length
   click(q(`[data-package-card="${MIXED_BUNDLE_PACKAGE_ID}"] .alpha-ext-add`))
   // 首驱恒落 authorize 臂 ⇒ 授权屏出现。
   await waitFor(() => expect(q("[data-package-authorization]")).toBeInstanceOf(HTMLElement))
 
   expect(centralCalls).toEqual([{ catalogId: MIXED_BUNDLE_PACKAGE_ID, attemptId: expect.any(String), authorized: false }])
-  // 盘上还什么都没发生 ⇒ 一次重扫都不许有。谎报「已生效」与不重扫是同一个缺陷的两面。
-  expect(disposeCalls).toBe(disposeBefore)
+  // 盘上还什么都没发生 ⇒ 一次重扫请求都不许有。谎报「已生效」与不重扫是同一个缺陷的两面。
+  expect(reloadRequests.length).toBe(reloadsBefore)
+  expect(disposeCalls).toBe(0)
 })
 
 test("② 入口二 `confirmPackageAuthz`:确认屏落盘 ⇒ 同一个收口方法 + 引擎当场重扫一次", async () => {
@@ -460,7 +465,7 @@ test("② 入口二 `confirmPackageAuthz`:确认屏落盘 ⇒ 同一个收口方
   input!.value = "req810-secret"
   input!.dispatchEvent(new Event("input", { bubbles: true }))
 
-  const disposeBefore = disposeCalls
+  const reloadsBefore = reloadRequests.length
   clearToasts()
   await waitFor(() => expect(confirmInstallButton()?.hasAttribute("disabled")).toBe(false))
   click(confirmInstallButton())
@@ -474,13 +479,15 @@ test("② 入口二 `confirmPackageAuthz`:确认屏落盘 ⇒ 同一个收口方
   })
   // 首驱与确认屏是**同一次 attempt**:确认屏若自己另铸一个 id,admission 会当场拒。
   expect(centralCalls.at(-1)!.attemptId).toBe(centralCalls[0]!.attemptId)
-  expect(disposeCalls).toBe(disposeBefore + 1)
-  // 重扫成功 ⇒ 不许出现「要重载」。
+  // 落盘 ⇒ main 恰好请求一次重扫(global,交给 ext 调度器);renderer 自己不 dispose。
+  expect(reloadRequests.slice(reloadsBefore)).toEqual([expect.objectContaining({ type: "alpha.reload.request", scope: "global" })])
+  expect(disposeCalls).toBe(0)
+  // 请求已受理 ⇒ 不许出现「要重启」。
   expect(toasts().join("\n")).not.toContain(zh["alpha.ext.addedPendingReload"])
 })
 
 test("③ 入口三 `installBundle`:套件装完同样经收口方法 + 引擎重扫一次", async () => {
-  const disposeBefore = disposeCalls
+  const reloadsBefore = reloadRequests.length
   const centralBefore = centralCalls.length
   clearToasts()
   await installBundleThroughUi(BUNDLE_OK_NAME)
@@ -491,24 +498,36 @@ test("③ 入口三 `installBundle`:套件装完同样经收口方法 + 引擎�
     { catalogId: BUNDLE_OK, attemptId: undefined, authorized: false },
     { catalogId: BUNDLE_OK, attemptId: undefined, authorized: true },
   ])
-  // **只有落盘那一次**重扫:authorize 臂上盘面还没动,重扫它就是谎报。
-  expect(disposeCalls).toBe(disposeBefore + 1)
+  // **只有落盘那一次**请求重扫:authorize 臂上盘面还没动,重扫它就是谎报。
+  expect(reloadRequests.slice(reloadsBefore)).toEqual([expect.objectContaining({ type: "alpha.reload.request", scope: "global" })])
+  expect(disposeCalls).toBe(0)
   expect(toasts().join("\n")).not.toContain(zh["alpha.ext.addedPendingReload"])
 })
 
-test("④ 重扫失败**如实**呈现「要重载」,不谎报「已添加」", async () => {
-  disposeFailure = "error"
-  const disposeBefore = disposeCalls
+test("④ `#1529` AC3:ext 报告重载失败 ⇒ 已安装列表如实「待重载 · 上次重载没有成功」,不谎报可以使用", async () => {
+  const reloadsBefore = reloadRequests.length
   clearToasts()
-  try {
-    await installBundleThroughUi(BUNDLE_PENDING_NAME)
-    await waitFor(() => expect(toasts().join("\n")).toContain(zh["alpha.ext.addedPendingReload"]))
-  } finally {
-    disposeFailure = "none"
-  }
-  // 重扫**被叫到了**(这是「失败」不是「没调」),而用户读到的那句话必须是「要重载」。
-  expect(disposeCalls).toBe(disposeBefore + 1)
-  expect(toasts().join("\n")).not.toContain(zh["alpha.ext.added"])
+  await installBundleThroughUi(BUNDLE_PENDING_NAME)
+  await waitFor(() => expect(reloadRequests.length).toBe(reloadsBefore + 1))
+  // 引擎(ext 调度器)对**所有在途**的重载报失败 —— 它们都覆盖当前目录。
+  for (const request of reloadRequests)
+    alphaSidecar.receive(
+      { type: "alpha.reload.report", generation: request.generation, scope: "global", outcome: "failed", directories: [], error: "dispose refused (fixture)" },
+      () => {},
+    )
+  setHubSection("installed")
+  // 夹具自检:列表上真的有没核验通过的已装行(引擎替身答不出技能 / agent / 命令清单),否则下面那条恒成立。
+  await waitFor(() => expect(qa("[data-hub-state='reload-pending']").length).toBeGreaterThan(0))
+  await waitFor(() => {
+    for (const node of qa("[data-hub-state='reload-pending']")) {
+      expect(node.textContent ?? "").toContain(zh["alpha.ext.hubStatePending"])
+      expect(node.textContent ?? "").toContain(zh["alpha.ext.hubReasonFailed"])
+    }
+  })
+  // 没核验过的东西不许说「可以使用」;待重载的行各有一颗「现在重载」。
+  for (const node of qa("[data-hub-state='reload-pending']")) expect(node.textContent ?? "").not.toContain(zh["alpha.ext.hubStateAvailable"])
+  expect(qa("[data-hub-reload-now]").length).toBe(qa("[data-hub-state='reload-pending']").length)
+  expect(disposeCalls).toBe(0)
 })
 
 test("⑤ 出站计数相等:到达 IPC 的每一次安装都经过了收口方法", () => {

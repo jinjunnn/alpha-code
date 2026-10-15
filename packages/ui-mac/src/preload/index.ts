@@ -275,6 +275,15 @@ const api: ElectronAPI = {
       ipcRenderer.on("ext-session-grants-ended", handler)
       return () => ipcRenderer.removeListener("ext-session-grants-ended", handler)
     },
+    // REQ-234 `#1529`:重载请求(写表通道)+ 三档状态视图 / 安装请求阶段(表外两条)+ 视图变更推送。
+    reloadRequest: (input) => ipcRenderer.invoke("ext-reload-request", input),
+    hubView: (directory) => ipcRenderer.invoke("ext-hub-view", directory),
+    hubRequestStage: (input) => ipcRenderer.invoke("ext-hub-request-stage", input),
+    onHubViewChanged: (cb) => {
+      const handler = () => cb()
+      ipcRenderer.on("ext-hub-view-changed", handler)
+      return () => ipcRenderer.removeListener("ext-hub-view-changed", handler)
+    },
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),

@@ -960,13 +960,17 @@ const main = Effect.gen(function* () {
   // 一次注入,IPC/planner/预热同一份。
   const registryChannel = catalogRegistryChannel()
   // #390:解构出恢复-gate 包装的 global 技能安装器,传给首启 ecosystem gate(不绕恢复准入)。
-  const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller } = registerExtIpcHandlers(
+  const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller, alphaSidecar } = registerExtIpcHandlers(
     app.getPath("userData"),
     registryChannel,
     () => Effect.runPromise(Deferred.await(serverReady)),
     homedir(),
     { stop: () => killSidecar("structural"), refresh: () => requestSidecarRespawn?.("structural") ?? Promise.resolve(false) },
   )
+  // REQ-234 `#1529`:「待重载」原因变了(重载请求 / ext 报告 / sidecar 连上或断开)⇒ 定制中心重读三档视图。
+  alphaSidecar.onViewChanged(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("ext-hub-view-changed")
+  })
   // REQ-135 retirement is a ledger mutation, so it waits for crash recovery and then takes the
   // same global extension lock before touching config/receipts. The result is awaited pre-sidecar.
   const communityExcelRetirement = TEST_ONBOARDING
@@ -1348,6 +1352,7 @@ const main = Effect.gen(function* () {
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => handleSidecarExit(spawnGen, code),
         timelineContext: "boot",
+        alphaSidecar,
       })
       void spawning.then(
         () =>
@@ -1504,6 +1509,7 @@ const main = Effect.gen(function* () {
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => handleSidecarExit(spawnGen, code),
         timelineContext: "respawn",
+        alphaSidecar,
       })
       void spawning.then(
         () =>

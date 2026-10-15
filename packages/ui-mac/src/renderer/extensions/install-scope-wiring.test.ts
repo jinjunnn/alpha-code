@@ -121,12 +121,13 @@ describe("REQ-136 wiring: only catalog MCP may submit Current project", () => {
     expect(source).toContain("projectMcpStatusView(row.receipt.projectMcpState)")
     expect(source).toContain("sdkMcpStatusForReceipt(r, ext.store.mcp)")
     expect(source).toContain("nameOnlyLiveMcpIsUnambiguousGlobal(s.name, ext.store.projectReceipts)")
-    expect(hook).toContain('if (r.mcpActivation?.status === "reload-pending") return { ok: true, reason: "reload-pending" }')
     expect(source).toContain('else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))')
-    expect(hook).toContain("c.instance.dispose({ directory: projectDir })")
-    expect(hook).toContain("c.event.subscribe({ directory: projectDir }, { signal: abort.signal })")
-    expect(hook).toContain('event.type === "server.instance.disposed"')
-    expect(hook).toContain("loadInstalls(target.target.projectDir, refreshed ? undefined : r.name)")
+    // REQ-234 `#1529`:renderer 不再 dispose 任何实例 —— 重载只经 `ext-reload-request` 交给 ext 调度器;
+    // 项目 MCP 装完由 main 安装体请求**只重载该项目目录**,这里只重读该项目的收据与三档状态。
+    expect(hook).not.toContain(".dispose(")
+    expect(hook).toContain("extIpc.reloadRequest({ scope, items, reason")
+    expect(hook).toContain('loadInstalls(target.target.scope === "project" ? target.target.projectDir : undefined)')
+    expect(hook).toContain('if (type === "server.instance.disposed") {')
     const onAdd = source.slice(source.indexOf("const onAdd = async"), source.indexOf("const closeAuthz ="))
     expect(onAdd.indexOf('if (scope === "project" && e.type !== "mcp")')).toBeLessThan(
       onAdd.indexOf('if (e.type === "mcp")'),
@@ -150,7 +151,7 @@ describe("REQ-136 wiring: only catalog MCP may submit Current project", () => {
     )
     const uninstall = functionSlice(hook, "uninstall", "setInstallState")
     expect(uninstall).toContain('receipt.scope === "project"')
-    expect(uninstall).toContain("refreshProjectEngine(selectedProjectDir!)")
+    expect(uninstall).toContain("requestReload({ directory: selectedProjectDir! }")
     expect(uninstall.indexOf('receipt.scope === "project"')).toBeLessThan(
       uninstall.indexOf("client?.mcp.disconnect"),
     )
@@ -172,9 +173,9 @@ describe("REQ-136 wiring: only catalog MCP may submit Current project", () => {
     )
     expect(state).not.toContain("withExtensionsConsent")
     expect(source).toContain("disabledMcpNames.has(receipt.name)")
-    expect(source).toContain('if (decoded.ok && decoded.intent.scope.scope === "project") return result')
-    expect(source.indexOf('decoded.intent.scope.scope === "project"')).toBeLessThan(
-      source.indexOf("if (result.installedDisabled) return result"),
-    )
+    // REQ-234 `#1529`:项目提交只请求重载**该项目目录**,绝不借道 name-only 的 global 重载 / 状态。
+    const reloadAfterInstall = source.slice(source.indexOf("const requestReloadAfterInstall ="), source.indexOf("// REQ-099 #305:未策展自定义 MCP"))
+    expect(reloadAfterInstall).toContain('decoded.intent.scope.scope === "project" ? decoded.intent.scope.projectDir : undefined')
+    expect(reloadAfterInstall).toContain('scope: project ? { directory: project } : "global"')
   })
 })

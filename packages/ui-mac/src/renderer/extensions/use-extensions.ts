@@ -3,9 +3,11 @@
 // SDK (mcp.status) — alpha keeps NO separate persisted install store (ADR-014 §4). The browsable
 // catalog comes from the bundled resources/alpha-catalog.json.
 //
-// Catalog MCP install persists through main, then main reloads the authenticated engine so its
-// `{file:}` references resolve without returning secret plaintext to renderer. The uncatalogued
-// custom-MCP path still uses renderer SDK add/connect with the values the user just entered.
+// Catalog MCP install persists through main; main then asks the ext scheduler to reload the engine
+// (REQ-234 `#1529`: once every session on the instance is idle) so `{file:}` references resolve
+// without returning secret plaintext to renderer. Whether an item is installed / pending reload /
+// available is main's call (`extIpc.hubView`), shown per row — this layer never claims it. The
+// uncatalogued custom-MCP path still uses renderer SDK add/connect with the values the user just entered.
 
 // C14③ 契约锚(sync 时 `grep -n "as any"` 复核本文件):本文件全部 `as any` 都是同一类——
 // SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
@@ -31,6 +33,7 @@ import { isWorkspacePolicyMcp } from "../../shared/office-advisories"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 import type { ProviderAddressRejection } from "../../shared/alpha-model-types"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
+import type { HubViewRow, ReloadItem, ReloadScope } from "../../main/alpha-sidecar-messages"
 import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
 import { extIpc } from "./ext-ipc"
 import { subscribeRuntimeRecovery } from "../runtime-recovery"
@@ -68,6 +71,9 @@ export interface ExtensionsStore {
   sessionGrants: SessionGrantWire[]
   /** #408:逐 (catalogId, directory) 的最近连接结果 —— grant ok ≠ 已连接,连接真伪单独如实呈现。 */
   sessionLink: Record<string, "connected" | "failed">
+  /** REQ-234 `#1529`:main 对当前目录即时算出的「已安装 / 待重载 / 可用」(与 agent 工具同一权威)。
+   *  行身份 (id, scope);读不出时保留上一份(不清空成「全都没装」)。 */
+  hubRows: HubViewRow[]
   ready: boolean
   error: boolean
 }
@@ -227,6 +233,37 @@ export function projectMcpStatusView(state: ProjectMcpState | undefined) {
   }
 }
 
+/** REQ-234 `#1529`:已安装列表上的三档状态呈现。状态与原因都是 main 给的(`extIpc.hubView`),这里只选文案键;
+ *  「现在重载」只给能靠重载修好的行(云条目没有重载环节)。未安装行不在已安装列表上出现 ⇒ undefined。 */
+export type HubStateView = {
+  state: Exclude<HubViewRow["state"], "not-installed">
+  tone: "ok" | "muted" | "warn"
+  textKey: "alpha.ext.hubStateAvailable" | "alpha.ext.hubStateInstalled" | "alpha.ext.hubStatePending"
+  reasonKey?: "alpha.ext.hubReasonWaiting" | "alpha.ext.hubReasonFailed" | "alpha.ext.hubReasonNotLoaded"
+  /** main 给的技术细节,只进 title。 */
+  detail?: string
+  reloadNow: boolean
+}
+export function hubStateView(row: HubViewRow | undefined): HubStateView | undefined {
+  if (!row || row.state === "not-installed") return undefined
+  if (row.state === "available") return { state: row.state, tone: "ok", textKey: "alpha.ext.hubStateAvailable", reloadNow: false }
+  if (row.state === "installed") return { state: row.state, tone: "muted", textKey: "alpha.ext.hubStateInstalled", reloadNow: false }
+  const code = row.stateReason?.code
+  return {
+    state: row.state,
+    tone: "warn",
+    textKey: "alpha.ext.hubStatePending",
+    reasonKey: code === "reload-failed" ? "alpha.ext.hubReasonFailed" : code === "reload-waiting" ? "alpha.ext.hubReasonWaiting" : "alpha.ext.hubReasonNotLoaded",
+    ...(row.stateReason?.detail ? { detail: row.stateReason.detail } : {}),
+    reloadNow: row.kind !== "cloud",
+  }
+}
+
+/** 行身份 (id, scope):同名的 global 与 project 安装是两行,各取各的档。 */
+export function hubRowFor(rows: readonly HubViewRow[], id: string, scope: "global" | "project" | undefined) {
+  return rows.find((row) => row.id === id && row.scope === (scope ?? "global"))
+}
+
 /** Name-only live MCP status is valid only for a global receipt, never for a project receipt. */
 export function sdkMcpStatusForReceipt(
   receipt: Pick<InstallReceipt, "name" | "scope">,
@@ -261,21 +298,6 @@ export function withoutProjectOnlyLiveMcp(
   return Object.fromEntries(
     Object.entries(live).filter(([name]) => !projectOnlyMcpNames.has(name)),
   )
-}
-
-/** A failed D-scoped reload outranks a probe against the stale instance, but never hides consent/off. */
-export function projectMcpStateAfterReload(
-  state: ProjectMcpState | undefined,
-  reloadSucceeded: boolean,
-): ProjectMcpState {
-  if (
-    reloadSucceeded ||
-    state === "awaiting-consent" ||
-    state === "consent-denied" ||
-    state === "disabled"
-  )
-    return state ?? "unverifiable"
-  return "reload-pending"
 }
 
 /** Ignore a late project-ledger response after the route has moved to another directory. */
@@ -351,8 +373,11 @@ export interface ExtensionsApi {
   factorySkills(): string[]
   /** Install a catalog skill entry by writing its SKILL.md. */
   installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
-  /** REQ-018 T4:释放全部引擎实例(POST /global/dispose)→ 下一请求惰性重建重扫,免重启生效。 */
-  refreshEngine(): Promise<boolean>
+  /** REQ-234 `#1529`:「现在重载(会打断正在输出的回答)」—— 唯一的强制入口。缺省 = 全部;给目录 = 只重载那个项目。
+   *  只是请 ext 调度器跳过「等空闲」,结果看 `store.hubRows`。返回 false = 请求本身没被受理。 */
+  refreshEngine(directory?: string): Promise<boolean>
+  /** REQ-234 `#1529`:请 ext 调度器在所有会话空闲时重载全部(内置治理面板、导入 agent 等)。返回 false = 没受理。 */
+  requestEngineReload(reason: string): Promise<boolean>
   /** REQ-018 T7:刷新引擎已知的 agents(内置 + 自建)供 Agent tab 呈现。 */
   reloadAgents(): Promise<void>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
@@ -375,8 +400,8 @@ export interface ExtensionsApi {
    *  **安装已经在跑时它会如实拒绝** —— 调用方必须把那条拒绝呈现成「取消不了」,
    *  绝不许读成「已取消」(那会让用户以为东西没装进去)。 */
   localPluginCancel(previewId: string): Promise<LocalPluginCancelResult>
-  /** `#784` 第 4/9 跳:确认安装。**只送 previewId**;成功后刷新账本并走**既有**
-   *  `refreshEngine()`,dispose 没成功则如实回 `reload-pending`(G20)。 */
+  /** `#784` 第 4/9 跳:确认安装。**只送 previewId**;成功后刷新账本并请 ext 调度器重载,
+   *  请求没被受理则如实回 `reload-pending`(G20)。 */
   localPluginConfirm(previewId: string): Promise<LocalPluginConfirmResult>
   /** `#784` 第 6 跳:本机已装扩展包的只读清单(「读不出」与「没装」不折叠)。 */
   listInstalledPackages(): Promise<InstalledPackagesResultV1>
@@ -399,12 +424,8 @@ export interface ExtensionsApi {
    * 界面说「已安装」,用户下一条消息里什么都没有。Phase 3 在本地导入那条线上修过同一个洞
    * (G20),签名 package 这条线从来没修过。
    *
-   * 修法与 G20 逐字同形:收进这一层,`refreshEngine()` 在这里**接一次**。
-   * 逐调用点补一行的形态在本仓已栽三次(`#765` 的 warning 呈现是同一个故事)——
-   * **枚举对新调用点默认放行**,而第四个安装入口出现时,默认放行的具体后果就是 placebo 安装。
-   *
-   * dispose 没成功 ⇒ 成功臂挂 `reloadPending`,由调用方**如实呈现**「要重载」,
-   * 不谎报「下一条消息里就能用」。
+   * 修法与 G20 逐字同形:收进这一层。REQ-234 `#1529` 起那一次重扫由 main 安装体请求(ext 调度器等会话空闲),
+   * 「下一条消息里能不能用」只看该行的三档状态,这里不再谎报、也不再自己 dispose。
    */
   installCatalogIntent(intent: CatalogInstallIntentV1): Promise<CatalogInstallResult>
   /** REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表;不落文件、不写引擎 config)。
@@ -511,7 +532,7 @@ export function useExtensions(
   /** REQ-099(#307)当前项目目录(hub 从路由解析);在场时 listInstalls 连带读项目账本。 */
   projectDir?: Accessor<string | undefined>,
 ): ExtensionsApi {
-  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], projectReceipts: [], agents: [], sessionGrants: [], sessionLink: {}, ready: false, error: false })
+  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], projectReceipts: [], agents: [], sessionGrants: [], sessionLink: {}, hubRows: [], ready: false, error: false })
 
   let client: Client | undefined
   let generation = 0
@@ -525,27 +546,11 @@ export function useExtensions(
   // Codex r1 B2 + r2 修正:project 部分按发起时的目录判有效(迟到响应不把 A 的行摆进 B 的组头);
   // global 账本与目录无关,任何有效响应都应用 —— 整体丢弃会让"切换后替代请求失败"的场景把 global
   // 面冻在旧值上。切换瞬间的 project 清空由 projectDir effect 负责。
-  async function loadInstalls(
-    requestedProjectDir: string | undefined = projectDir?.(),
-    reloadFailedMcpName?: string,
-  ): Promise<InstallReceipt[]> {
+  async function loadInstalls(requestedProjectDir: string | undefined = projectDir?.()): Promise<InstallReceipt[]> {
     try {
       const view = await extIpc.listInstalls(requestedProjectDir)
       setStore("receipts", view.global)
-      const project = projectReceiptResponseForRoute(
-        requestedProjectDir,
-        projectDir?.(),
-        reloadFailedMcpName
-          ? view.project.map((receipt) =>
-              receipt.type === "mcp" && receipt.name === reloadFailedMcpName
-                ? {
-                    ...receipt,
-                    projectMcpState: projectMcpStateAfterReload(receipt.projectMcpState, false),
-                  }
-                : receipt,
-            )
-          : view.project,
-      )
+      const project = projectReceiptResponseForRoute(requestedProjectDir, projectDir?.(), view.project)
       if (project) {
         setStore("projectReceipts", project)
       }
@@ -568,6 +573,28 @@ export function useExtensions(
       setStore("agents", list)
     } catch {
       /* transient — keep previous */
+    }
+  }
+
+  // REQ-234 `#1529`:三档状态(main 即时计算,零缓存)。迟到的响应不把 A 目录的档摆进 B 目录。
+  async function loadHubView(requestedProjectDir: string | undefined = projectDir?.()): Promise<void> {
+    try {
+      const view = await extIpc.hubView(requestedProjectDir)
+      if ((requestedProjectDir ?? undefined) !== (projectDir?.() ?? undefined)) return
+      setStore("hubRows", Array.isArray(view?.rows) ? view.rows : [])
+    } catch {
+      /* transient — keep previous rows */
+    }
+  }
+
+  /** REQ-234 `#1529`:原 `refreshEngine()` / `refreshProjectEngine()` 的唯一替身 —— 只请 ext 调度器重载,
+   *  不在这里 dispose、不等它发生。返回 false = 请求本身没被受理(这时才如实说「要重启」)。 */
+  async function requestReload(scope: ReloadScope, reason: string, items: ReloadItem[] = [], force = false): Promise<boolean> {
+    try {
+      const r = await extIpc.reloadRequest({ scope, items, reason, ...(force ? { force: true } : {}) })
+      return r?.ok === true
+    } catch {
+      return false
     }
   }
 
@@ -671,30 +698,12 @@ export function useExtensions(
       await Promise.all([loadStatus(), loadInstalls()])
       return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
     }
-    if (target.target.scope === "project") {
-      // Never use reloadInstalledMcp here:its result is keyed only by name and can belong to Global.
-      // Dispose exactly D so the subsequent main-owned probe sees D's rebuilt effective config.
-      const refreshed = r.installedDisabled || (await refreshProjectEngine(target.target.projectDir))
-      const receipts = await loadInstalls(target.target.projectDir, refreshed ? undefined : r.name)
-      return {
-        ok: true,
-        projectMcpState:
-          receipts.find((receipt) => receipt.type === "mcp" && receipt.name === r.name)?.projectMcpState ??
-          (refreshed ? "unverifiable" : "reload-pending"),
-      }
-    }
+    // REQ-234 `#1529`:main 提交后已请 ext 调度器重载(项目 MCP = 只重载该项目目录)。这里不 dispose、不等,
+    // 连没连上由该行的三档状态说(`store.hubRows`)。
+    await Promise.all([loadStatus(), loadInstalls(target.target.scope === "project" ? target.target.projectDir : undefined), loadHubView()])
     // #395(Codex r8 M4):第三方 MCP 默认关。这是成功的「装 ≠ 跑」,不是失败。
-    if (r.installedDisabled) {
-      await Promise.all([loadStatus(), loadInstalls()])
-      return { ok: true, reason: "installed-disabled" }
-    }
-    await Promise.all([loadStatus(), loadInstalls()])
-    if (r.mcpActivation?.status === "connected") return { ok: true }
-    if (r.mcpActivation?.status === "disabled") return { ok: true, reason: "installed-disabled" }
-    if (r.mcpActivation?.status === "reload-pending") return { ok: true, reason: "reload-pending" }
-    // 返回稳定 reason code 而非文案:本 hook 不持有 i18n(全文件零 `t()`),
-    // 文案由 extension-hub 映射,与 installed-disabled / slow / reload-pending 同形态。
-    return { ok: false, reason: "connect-failed" }
+    if (r.installedDisabled) return { ok: true, reason: "installed-disabled" }
+    return { ok: true }
   }
 
   // 未策展自定义连接器的 live 段;catalog 连接器由 main 重载 `{file:}` 引用。
@@ -934,16 +943,17 @@ export function useExtensions(
     if (!built.ok) return { ok: false, reason: built.reason }
     const res = await extIpc.uninstallV2(built.intent)
     if (res.ok && receipt.type === "mcp" && receipt.scope === "project") {
-      const refreshed = await refreshProjectEngine(selectedProjectDir!)
+      const requested = await requestReload({ directory: selectedProjectDir! }, `uninstalled project mcp ${receipt.name}`)
       setStore("mcp", withoutProjectOnlyLiveMcp(store.mcp, [receipt], store.receipts))
-      await Promise.all([loadInstalls(selectedProjectDir), loadStatus()])
-      return refreshed ? res : { ...res, reason: "reload-pending" }
+      await Promise.all([loadInstalls(selectedProjectDir), loadStatus(), loadHubView()])
+      return requested ? res : { ...res, reason: "reload-pending" }
     }
     if (res.ok && receipt.type === "mcp")
       await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
-    // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
-    if (res.ok && receipt.type !== "mcp" && receipt.type !== "cloud") await refreshEngine()
+    // fs/plugin removal needs a rescan(REQ-234 `#1529`:请 ext 调度器重载);cloud 只动账本(引擎无状态)无需重载。
+    if (res.ok && receipt.type !== "mcp" && receipt.type !== "cloud") await requestReload("global", `uninstalled ${receipt.type} ${receipt.name}`)
+    void loadHubView()
     if (receipt.type === "agent") void loadAgents()
     return res
   }
@@ -966,64 +976,21 @@ export function useExtensions(
     })
     if (!res.ok) return res
     await loadInstalls()
-    // Codex r1 Blocker 3:账本已翻(committed),但 fs 类的运行面靠 dispose→惰性重建生效 —— dispose
-    // 失败(无 client/超时/异常)时旧引擎实例仍在跑该扩展,不得谎报已生效。透传 reload-pending,
-    // 调用方据此提示「已记录,待重载」而非直接宣称已启用/禁用。
-    if (receipt.type !== "mcp" && receipt.type !== "cloud" && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    // Codex r1 Blocker 3:账本已翻(committed),但 fs 类的运行面靠重载生效。REQ-234 `#1529`:重载交给 ext 调度器
+    // (等会话空闲);请求没被受理才如实回 reload-pending,其余由该行的三档状态说。
+    const requested =
+      receipt.type === "mcp" || receipt.type === "cloud" || (await requestReload("global", `set ${receipt.type} ${receipt.name} ${state}`, [{ id: receipt.id, scope: "global" }]))
+    void loadHubView()
+    if (!requested) return { ok: true, reason: "reload-pending" }
     if (receipt.type === "agent") void loadAgents()
     return res
   }
 
-  // REQ-018 T4(免重启生效):fs 类安装(skill/agent/plugin)写盘后,引擎按目录缓存的实例不会
-  // 重扫(上游 InstanceState 无文件监听)——不触发重建就是 placebo 安装。S12 spike 实测:
-  // POST /global/dispose 8ms 返回,下一请求 ~100-300ms 惰性重建并重扫,经 symlink 桥的
-  // skill/agent 立即可见;系统提示与工具集每条消息重组 → 当前会话下一条消息即可用。残余风险
-  // (dispose 打断活跃流)在 T8 真机批验证;失败兜底 =「待重载」态(receipts ⨝ SDK,T6)。
-  // `#784` R1 Major:**HTTP 错误不会抛**。SDK v2 client 默认 `throwOnError: false` ——
-  // 503 / 404 会以 `{error, response, …}` **正常 resolve**。此前这里只拒超时与异常,
-  // 于是「引擎拒绝了这次重载」被当成成功:界面宣称已生效 / 已移除,而旧引擎实例继续暴露旧技能。
-  // 判据复用**既有**的 `connectOutcome`(`ext-session-toggle.ts`)—— 同一个问题
-  //(「这次 SDK 调用真的成功了吗」)在本文件里已经有一个答案,不再写第二个。
-  async function refreshEngine(): Promise<boolean> {
-    const c = client
-    if (!c) return false
-    try {
-      const r = await withTimeout((c as any).global.dispose() as Promise<unknown>, 5000)
-      if (r === TIMED_OUT) return false
-      return connectOutcome(r as { error?: unknown } | null | undefined)
-    } catch {
-      return false
-    }
-  }
-
-  /** REQ-136:reload only D's instance before consuming the D-scoped activation probe. */
-  async function refreshProjectEngine(projectDir: string): Promise<boolean> {
-    const c = client
-    if (!c) return false
-    const abort = new AbortController()
-    try {
-      // The dispose HTTP response is emitted before teardown. Subscribe first, then wait for the
-      // D-scoped lifecycle event; only that event proves the cached instance is gone.
-      const subscription = await withTimeout(
-        c.event.subscribe({ directory: projectDir }, { signal: abort.signal }),
-        5000,
-      )
-      if (subscription === TIMED_OUT) return false
-      const disposed = (async () => {
-        for await (const event of subscription.stream) {
-          if (event.type === "server.instance.disposed") return true
-        }
-        return false
-      })()
-      const result = await withTimeout(c.instance.dispose({ directory: projectDir }), 5000)
-      if (result === TIMED_OUT || !connectOutcome(result)) return false
-      const confirmed = await withTimeout(disposed, 5000)
-      return confirmed !== TIMED_OUT && confirmed
-    } catch {
-      return false
-    } finally {
-      abort.abort()
-    }
+  // REQ-018 T4 → REQ-234 `#1529`:fs 类安装写盘后引擎实例不会自己重扫(上游 InstanceState 无文件监听),
+  // 不触发重建就是 placebo 安装。重建的执行者从 renderer 挪到了 ext 调度器:它等同一引擎实例上所有会话空闲
+  // 再 dispose,不打断正在输出的回答。这里只剩用户的显式「现在重载」(force:只跳过等空闲)。
+  async function refreshEngine(directory?: string): Promise<boolean> {
+    return requestReload(directory ? { directory } : "global", "user: reload now", [], true)
   }
 
   async function checkRuntime(tools: string[] | undefined): Promise<RuntimeCheck> {
@@ -1045,10 +1012,16 @@ export function useExtensions(
       for await (const event of stream as AsyncIterable<any>) {
         if (gen !== generation) break
         const type: string = event?.payload?.type ?? ""
-        if (type.startsWith("mcp")) void loadStatus()
+        if (type.startsWith("mcp")) {
+          void loadStatus()
+          void loadHubView()
+        }
         // #408(Codex 裁决):re-assert 消费引擎权威 disposal 信号(覆盖 PATCH /global/config 等一切
         // 内部 dispose 路径,不猜调用点)。事件携带被释放 instance 的 directory。
-        if (type === "server.instance.disposed") void reassertSessionGrants(event?.directory)
+        if (type === "server.instance.disposed") {
+          void reassertSessionGrants(event?.directory)
+          void loadHubView()
+        }
       }
     } catch {
       /* aborted on cleanup / transient; SDK auto-reconnects */
@@ -1071,6 +1044,7 @@ export function useExtensions(
     void loadInstalls()
     void loadAgents()
     void loadSessionGrants()
+    void loadHubView()
     void subscribe()
     // Hub's server is the local sidebarServer. Invalidate status reads without retiring its SSE.
     let recovering = false
@@ -1110,6 +1084,7 @@ export function useExtensions(
     setStore("projectReceipts", [])
     void loadStatus()
     void loadInstalls()
+    void loadHubView(dir)
   })
 
   // #408:会话结束事件(main:sidecar exit/respawn)—— grant 已整体失效,清空本地视图使全部
@@ -1119,6 +1094,16 @@ export function useExtensions(
     extIpc.onSessionGrantsEnded(() => {
       setStore("sessionGrants", [])
       setStore("sessionLink", {})
+    }),
+  )
+
+  // REQ-234 `#1529`:「待重载」的原因变了(重载请求 / ext 报告 / 引擎连上或断开)⇒ 重读三档状态;项目 MCP 的
+  // D-scoped 判据住在项目收据里,一并重读。
+  onCleanup(
+    extIpc.onHubViewChanged(() => {
+      if (!activated) return
+      void loadHubView()
+      void loadInstalls()
     }),
   )
 
@@ -1144,8 +1129,8 @@ export function useExtensions(
       ...(authorization ? { authorization } : {}),
     })
     if (!r.ok) return r
-    await loadInstalls()
-    if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    // REQ-234 `#1529`:重载已由 main 安装体请求(等会话空闲);能不能用看该行的三档状态。
+    await Promise.all([loadInstalls(), loadHubView()])
     return r
   }
 
@@ -1156,10 +1141,8 @@ export function useExtensions(
     // dispose 触发实例重建 → 引擎立刻装载(vendored=本地即读;npm=后台下载);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
     const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
-    if (r.ok) {
-      await loadInstalls()
-      await refreshEngine()
-    }
+    // REQ-234 `#1529`:重载已由 main 安装体请求。
+    if (r.ok) await Promise.all([loadInstalls(), loadHubView()])
     return r
   }
 
@@ -1170,19 +1153,17 @@ export function useExtensions(
     if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
     const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r
-    await loadInstalls()
-    const refreshed = await refreshEngine()
+    // REQ-234 `#1529`:重载已由 main 安装体请求;agent 列表在重载后由 hub-view-changed 推送刷新。
+    await Promise.all([loadInstalls(), loadHubView()])
     void loadAgents()
-    // warning 随两条成功路径透传(#361 review r1:reload-pending 不得把 loud 信号一并吞掉)。
-    if (!refreshed) return { ok: true, reason: "reload-pending", ...(r.warning ? { warning: r.warning } : {}) }
     return r
   }
 
   /**
    * `#810`:签名 package / 套件安装的**唯一**出站点(合同见 `ExtensionsApi.installCatalogIntent`)。
    *
-   * 三件事都只在这里发生一次:package / bundle 的 `scope` 钉死 global、成功后刷新账本、
-   * **成功后让引擎当场重扫**。`refreshEngine()` 在本方法里只有这一处 —— 这就是它的全部意义。
+   * 两件事都只在这里发生一次:package / bundle 的 `scope` 钉死 global、成功后刷新账本与三档状态。
+   * 引擎重扫由 main 安装体请求(REQ-234 `#1529`)。
    *
    * `!r.ok` 原样上抛,一个字不折叠:`stage: "authorize"` 那条臂(package 首驱恒走它)带着
    * 预览与 binding,`package` 那条臂带着最新的安全视图,调用方两者都要读。
@@ -1191,10 +1172,9 @@ export function useExtensions(
   async function installCatalogIntent(intent: CatalogInstallIntentV1): Promise<CatalogInstallResult> {
     const r = await extIpc.installCatalog({ ...intent, scope: { scope: "global" } })
     if (!r.ok) return r
-    await loadInstalls()
-    // G20 同形:fs / config 类安装写盘后不触发实例重建,就是 placebo 安装。
-    // 失败**如实**降级为 reloadPending,由调用方说「要重载」。
-    if (!(await refreshEngine())) return { ...r, reloadPending: true }
+    // G20 同形:写盘后不触发实例重建就是 placebo 安装。REQ-234 `#1529`:那一次重建由 main 安装体请求
+    // (ext 调度器等会话空闲再做);能不能用看三档状态,这里不再自己 dispose。
+    await Promise.all([loadInstalls(), loadHubView()])
     return r
   }
 
@@ -1210,13 +1190,15 @@ export function useExtensions(
     await loadInstalls()
     // #336 r1:warning/projectionLag 端到端透传(此前重建 {ok,name} 把降级信号吞掉)。
     const carry = { ...(r.warning ? { warning: r.warning } : {}), ...(r.projectionLag ? { projectionLag: r.projectionLag } : {}) }
-    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending", ...carry }
+    const requested = await requestReload("global", `imported skill ${r.name}`)
+    void loadHubView()
+    if (!requested) return { ok: true, name: r.name, reason: "reload-pending", ...carry }
     return { ok: true, name: r.name, ...carry }
   }
   // ── REQ-128 Phase 3 `#784`:本地 Claude 插件包的第 3 / 4 / 6 / 7 / 9 跳 ─────────────────────
   //
   // 五个方法全部落在这一层(而不是 hub 里逐处调 `extIpc`),理由只有一条:
-  // **`refreshEngine()` 必须只在这里接一次**。逐调用点接一行的形态在本仓已栽三次
+  // **重载请求必须只在这里接一次**。逐调用点接一行的形态在本仓已栽三次
   // (`#765` 的 warning 呈现是同一个故事)—— 枚举对新调用点默认放行,而「默认放行」在这里
   // 的具体后果是 placebo 安装:账本翻了、盘上有了,引擎实例没重扫,用户下一条消息里什么都没有。
 
@@ -1235,10 +1217,11 @@ export function useExtensions(
     const r = await extIpc.importClaudePluginConfirm(previewId)
     if (!r.ok) return r
     await loadInstalls()
-    // G20:装完必须让引擎当场重扫。`use-extensions.ts` 的 `refreshEngine` 抬头写着
-    //「fs 类安装写盘后不触发重建就是 placebo 安装」—— 本地包是 fs 类的 N 倍。
-    // dispose 没成功 ⇒ **如实**回 reload-pending,不谎报「下一条消息里就能用」。
-    if (!(await refreshEngine())) return { ...r, reason: "reload-pending" }
+    // G20:装完必须让引擎重扫 —— 本地包是 fs 类的 N 倍。REQ-234 `#1529`:请 ext 调度器重载(等会话空闲);
+    // 请求没被受理 ⇒ **如实**回 reload-pending,不谎报「下一条消息里就能用」。
+    const requested = await requestReload("global", `installed local package ${previewId}`)
+    void loadHubView()
+    if (!requested) return { ...r, reason: "reload-pending" }
     return r
   }
 
@@ -1250,10 +1233,11 @@ export function useExtensions(
     const r = await extIpc.uninstallPackage(packageId)
     if (!r.ok) return r
     await loadInstalls()
-    // G20 的第二半:整包移除今天(`extension-detail.tsx` 的 `removePackage`)**只 refetch
-    // 不 refresh** ⇒ 移除之后那些技能仍然被引擎注入着,一直到下次重启。
-    // 这一行就是那条缺的线;失败如实回 reloadPending,由调用方说「待重载」。
-    if (!(await refreshEngine())) return { ...r, reloadPending: true }
+    // G20 的第二半:整包移除之后不重载 ⇒ 那些技能仍然被引擎注入着,一直到下次重启。
+    // REQ-234 `#1529`:请 ext 调度器重载;请求没被受理如实回 reloadPending,由调用方说「待重载」。
+    const requested = await requestReload("global", `uninstalled package ${packageId}`)
+    void loadHubView()
+    if (!requested) return { ...r, reloadPending: true }
     return r
   }
 
@@ -1262,7 +1246,9 @@ export function useExtensions(
     if (!r.ok) return r
     await loadInstalls()
     const carry = { ...(r.warning ? { warning: r.warning } : {}), ...(r.projectionLag ? { projectionLag: r.projectionLag } : {}) }
-    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending", ...carry }
+    const requested = await requestReload("global", `imported skill ${r.name}`)
+    void loadHubView()
+    if (!requested) return { ok: true, name: r.name, reason: "reload-pending", ...carry }
     return { ok: true, name: r.name, ...carry }
   }
   /** REQ-020 T4 / REQ-099 #305:云 pipeline「启用」= receipts-only,切 installCatalog(planner cloud
@@ -1271,7 +1257,7 @@ export function useExtensions(
     if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
     const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r // #348:不折叠 —— stage/authorization 原样透传(cloud 未来入事务时自然接上)
-    await loadInstalls()
+    await Promise.all([loadInstalls(), loadHubView()])
     return { ok: true }
   }
 
@@ -1304,6 +1290,7 @@ export function useExtensions(
     factorySkills: () => factoryIds(),
     installSkill,
     refreshEngine,
+    requestEngineReload: (reason: string) => requestReload("global", reason),
     reloadAgents: loadAgents,
     installPlugin,
     updateEntry,

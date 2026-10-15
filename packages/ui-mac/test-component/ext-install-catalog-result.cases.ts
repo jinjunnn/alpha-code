@@ -29,6 +29,11 @@ const disabledEntry = structuredClone(bundledCatalog.entries.find((item) => item
 disabledEntry.id = "mcp:dbhub-default-off"
 disabledEntry.name = "dbhub-default-off"
 
+// REQ-234 `#1529`:agent 请求的那一次安装(带 hubRequestId),走默认关那条真实分支。
+const agentEntry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:dbhub")!)
+agentEntry.id = "mcp:dbhub-agent"
+agentEntry.name = "dbhub-agent"
+
 mock.module("electron", () => ({
   BrowserWindow: class {
     static fromWebContents() {
@@ -80,7 +85,7 @@ mock.module("../src/main/remote-catalog", () => ({
   },
   refreshRemoteCatalog: async () => ({
     source: "remote",
-    catalog: { version: bundledCatalog.version, entries: [entry, disabledEntry] },
+    catalog: { version: bundledCatalog.version, entries: [entry, disabledEntry, agentEntry] },
     version: bundledCatalog.version,
     fetchedAt: "2026-07-30T00:00:00.000Z",
     via: "channel-dev",
@@ -88,8 +93,9 @@ mock.module("../src/main/remote-catalog", () => ({
   }),
 }))
 
+// `#1529`:安装体不再在当前回答里 dispose + 读 status;MCP 是否连上由 hub-view 按目录核验(这里桩成已连接)。
 mock.module("../src/main/ext-mcp-activation", () => ({
-  reloadInstalledMcp: async (name: string) => ({
+  verifyInstalledMcp: async (name: string) => ({
     reference: name,
     status: "connected",
   }),
@@ -107,7 +113,7 @@ initAlphaEnvironment({
   baseRoot: join(root, "alpha-code-state"),
   homeDir: join(root, "home"),
 })
-registerExtIpcHandlers(
+const { alphaSidecar } = registerExtIpcHandlers(
   join(root, "user-data"),
   "dev",
   async () => ({
@@ -117,6 +123,9 @@ registerExtIpcHandlers(
   }),
   join(root, "home"),
 )
+// `#1529`:像 server.ts 在 sidecar ready 时那样接上发送口 —— 装完之后发往 ext 的东西都落在这里。
+const toSidecar: Array<Record<string, unknown>> = []
+alphaSidecar.attach((message) => void toSidecar.push(message as Record<string, unknown>))
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true })
@@ -159,14 +168,20 @@ test("真实 ext-install-catalog 返回值只含公开状态且不回显 canary"
     ok: true,
     kind: "mcp",
     name: entry.name,
-    mcpActivation: { reference: entry.name, status: "connected" },
   })
-  const allowed = new Set(["ok", "kind", "name", "manifestDigest", "mcpActivation", "warning"])
+  const allowed = new Set(["ok", "kind", "name", "manifestDigest", "warning"])
   expect(
     Object.keys(result).every((key) => allowed.has(key)),
     JSON.stringify(result),
   ).toBe(true)
   expect(JSON.stringify(result)).not.toContain(canary)
+  // `#1529`:提交成功之后是**请 ext 重载**(global,带这一项),而不是在这里 dispose。
+  expect(toSidecar.at(-1)).toMatchObject({
+    type: "alpha.reload.request",
+    scope: "global",
+    items: [{ id: entry.id, scope: "global" }],
+  })
+  expect(JSON.stringify(toSidecar)).not.toContain(canary)
 })
 
 // REQ-128 #702 R1 审计 B1:package 的两条 IPC 生产接线必须真的在 registerExtIpcHandlers 里。
@@ -246,4 +261,70 @@ test("默认关的真实 catalog MCP:提前返回分支同样只含公开状态�
     JSON.stringify(result),
   ).toBe(true)
   expect(JSON.stringify(result)).not.toContain(canary)
+})
+
+// ── REQ-234 `#1529` ─────────────────────────────────────────────────────────────────────────
+// 下面两条走的是**真** registerExtIpcHandlers 交出来的两个入口:定制中心的 `ext-hub-view` IPC 与 parentPort 的
+// `alpha.*` 分发。把其中一个改成自己算一份(或把会话字段带进状态计算),I4 这条就红。
+
+const directory = join(root, "workspace")
+
+test("#1529 I4:同一目录,定制中心(IPC)与 agent(parentPort)读到逐行同档同原因", async () => {
+  const hubView = handlers.get("ext-hub-view")
+  if (!hubView) throw new Error("ext-hub-view handler was not registered")
+  const fromHub = (await hubView({ sender: { id: 1 } }, directory)) as { rows: Array<Record<string, unknown>> }
+  const replies: Array<Record<string, unknown>> = []
+  expect(
+    alphaSidecar.receive(
+      { type: "alpha.hub.view.request", id: 41, directory, sessionID: "ses_x", agent: "build" },
+      (message) => void replies.push(message as Record<string, unknown>),
+    ),
+  ).toBe(true)
+  for (let i = 0; i < 100 && replies.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 20))
+  const reply = replies[0] as { id: number; view?: { rows: Array<Record<string, unknown>> } }
+  expect(reply.id).toBe(41)
+  const strip = (rows: Array<Record<string, unknown>>) => rows.map(({ agentNote: _note, ...rest }) => rest)
+  expect(strip(reply.view!.rows)).toEqual(strip(fromHub.rows))
+  const installed = fromHub.rows.find((row) => row.id === entry.id && row.scope === "global")
+  expect(installed).toMatchObject({ installed: true, enabled: true, state: "available" })
+  expect(fromHub.rows.find((row) => row.id === disabledEntry.id && row.scope === "global")).toMatchObject({
+    installed: true,
+    enabled: false,
+    state: "installed",
+  })
+  expect(JSON.stringify(fromHub)).not.toContain(canary)
+})
+
+test("#1529 I9:确认框记的阶段 + 带 hubRequestId 的安装 ⇒ main 记 committed(带作用域),ext 查得到", async () => {
+  const stage = handlers.get("ext-hub-request-stage")!
+  const install = handlers.get("ext-install-catalog")!
+  const requestId = "req_agent_0001"
+  expect(await stage({ sender: { id: 1 } }, { requestId, stage: "confirming", catalogId: agentEntry.id })).toEqual({ ok: true })
+  expect(await stage({ sender: { id: 1 } }, { requestId, stage: "submitted" })).toEqual({ ok: true })
+  const intent = { catalogId: agentEntry.id, scope: { scope: "global" }, hubRequestId: requestId }
+  const first = (await install({ sender: { id: 1 } }, intent)) as {
+    stage?: string
+    authorization: Array<{ key: string; requested: unknown; requiresConfirmation: boolean }>
+  }
+  // 授权暂停不是落定
+  expect(first.stage).toBe("authorize")
+  const query = (id: number) => {
+    const replies: Array<Record<string, unknown>> = []
+    alphaSidecar.receive({ type: "alpha.hub.request.request", id, requestId }, (m) => void replies.push(m as Record<string, unknown>))
+    return replies[0]
+  }
+  expect(query(51)).toEqual({ type: "alpha.hub.request.reply", id: 51, record: { requestId, catalogId: agentEntry.id, stage: "submitted" } })
+  const confirmed = Object.fromEntries(
+    first.authorization.filter((d) => d.requiresConfirmation).map((d) => [d.key, d.requested]),
+  )
+  const result = (await install({ sender: { id: 1 } }, { ...intent, authorization: { confirmed } })) as { ok?: boolean }
+  expect(result.ok, JSON.stringify(result)).toBe(true)
+  expect(query(52)).toEqual({
+    type: "alpha.hub.request.reply",
+    id: 52,
+    record: { requestId, catalogId: agentEntry.id, stage: "committed", scope: "global" },
+  })
+  // 之后到达的 reject 回执(期限到 / 用户点了取消)记不成「用户拒绝」
+  expect((await stage({ sender: { id: 1 } }, { requestId, stage: "declined" })) as { ok: boolean }).toMatchObject({ ok: false })
+  expect(query(53)).toMatchObject({ record: { stage: "committed" } })
 })

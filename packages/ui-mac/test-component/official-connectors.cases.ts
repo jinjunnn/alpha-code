@@ -724,7 +724,7 @@ test("real IPC previews/cancels without secrets, installs both recipes, stops be
     }),
   }))
   mock.module("../src/main/ext-mcp-activation", () => ({
-    reloadInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
+    verifyInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
     probeProjectMcpActivation: async () => "unverifiable",
   }))
   const { registerExtIpcHandlers } = await import("../src/main/ext-ipc")

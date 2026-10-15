@@ -38,6 +38,8 @@ import {
   sdkMcpStatusForReceipt,
   nameOnlyLiveMcpIsUnambiguousGlobal,
   projectMcpStatusView,
+  hubRowFor,
+  hubStateView,
   useExtensions,
   isAuthzRequired,
   isLocalPluginRoute,
@@ -844,7 +846,7 @@ export function ExtensionHub(props: {
         return
       }
       setAgentPreview(null)
-      await ext.refreshEngine()
+      await ext.requestEngineReload("imported agent")
       void ext.reloadAgents()
       flash(t("alpha.ext.importAgentDone", { name: pv.name }), "success")
     } finally {
@@ -1291,14 +1293,15 @@ export function ExtensionHub(props: {
         setStageFor(e.id, "installing")
         const res = await ext.installSkill(e, authorization)
         if (!res.ok) return failOr(res)
+        // REQ-234 `#1529`:重载交给 ext 调度器(等会话空闲),「可以使用」只在该行显示可用之后才成立 —— 这里只说已添加。
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
-        else addedFlash("alpha.ext.addedLive")
+        else addedFlash("alpha.ext.added")
       } else if (e.type === "agent") {
         setStageFor(e.id, "installing")
         const res = await ext.installAgentEntry(e, authorization)
         if (!res.ok) return failOr(res)
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
-        else addedFlash("alpha.ext.addedLive")
+        else addedFlash("alpha.ext.added")
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e, authorization)
@@ -1983,7 +1986,7 @@ export function ExtensionHub(props: {
   //
   // 每个技能各有自己的开关(装完默认全关,owner 裁决 B),包头挂「移除此扩展包」。
   // 开关走的是**既有** `runStateToggle` —— 与平铺行同一条通道、同一个账本、同一次
-  // `refreshEngine()`。另写一条「包内开关」就是给同一个状态第二个答案。
+  // 重载请求。另写一条「包内开关」就是给同一个状态第二个答案。
   const PackageComponentRow = (cp: {
     packageId: string
     component: { componentId: string; kind: string; name: string; required: boolean; desiredState: "enabled" | "disabled" | null }
@@ -2228,6 +2231,19 @@ export function ExtensionHub(props: {
     }
     const isUpdatable = () =>
       updatable().some((r) => r.id === row.receipt.id && r.name === row.name && r.scope === row.receipt.scope)
+    // REQ-234 `#1529`:三档状态(main 对当前目录即时算出,agent 读同一份)。合成的 live-only 行没有账本身份 ⇒ 不显示。
+    const hubState = createMemo(() => hubStateView(hubRowFor(ext.store.hubRows, row.receipt.id, row.receipt.scope)))
+    const [reloadBusy, setReloadBusy] = createSignal(false)
+    const reloadNow = async () => {
+      if (reloadBusy()) return
+      setReloadBusy(true)
+      try {
+        const ok = await ext.refreshEngine(row.receipt.scope === "project" ? projectDir() : undefined)
+        if (!ok) flash(t("alpha.ext.hubReloadNowRefused"), "error")
+      } finally {
+        setReloadBusy(false)
+      }
+    }
     return (
       <div class="alpha-ext-man" data-clickable={clickable() ? "" : undefined} onClick={() => clickable() && openRow()}>
         <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
@@ -2332,6 +2348,15 @@ export function ExtensionHub(props: {
               )}
             </Show>
           </div>
+          <Show when={hubState()}>
+            {(hs) => (
+              <div class="alpha-ext-man-st" data-hub-state={hs().state} title={hs().detail}>
+                <span class="alpha-ext-man-dot" data-tone={hs().tone} />
+                {t(hs().textKey)}
+                <Show when={hs().reasonKey}>{(key) => <> · {t(key())}</>}</Show>
+              </div>
+            )}
+          </Show>
           {/* `#784` 第 8 跳:单独移除被拒 ⇒ **明确拒绝 + 指向正确动作**,不是静默什么都不做,
               更不是回一句「已移除」而东西还在。注意开关仍然可用:单独**停用**是合法的,
               不能单独**移除**而已。 */}
@@ -2362,6 +2387,21 @@ export function ExtensionHub(props: {
             这颗按钮与状态行那句「需要重新登录」是同一个事实的两半,缺任何一半用户都走不出去。 */}
         <Show when={row.type === "mcp" && row.mcp?.needsAuth}>
           <McpNeedsAuthAction name={row.name} />
+        </Show>
+        {/* REQ-234 `#1529`:待重载的行给一个显式「现在重载」—— 唯一会跳过「等对话空闲」的入口,按钮上说清代价。 */}
+        <Show when={hubState()?.reloadNow}>
+          <button
+            class="alpha-ext-updbtn"
+            data-hub-reload-now=""
+            title={t("alpha.ext.hubReloadNowHint")}
+            disabled={reloadBusy()}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              void reloadNow()
+            }}
+          >
+            {t("alpha.ext.hubReloadNow")}
+          </button>
         </Show>
         {/* REQ-103:审查更新入口(有更新的行内;复用既有 runUpdate —— MCP 走确认框重装,其余原子更新) */}
         <Show when={isUpdatable()}>
@@ -2730,7 +2770,7 @@ export function ExtensionHub(props: {
                     <SecRow label={t("alpha.builtin.builtinSection")} />
                     <BuiltinControlsPanel
                       agents={ext.store.agents}
-                      refreshEngine={ext.refreshEngine}
+                      requestReload={() => ext.requestEngineReload("built-in policy changed")}
                       reloadAgents={ext.reloadAgents}
                       flash={flash}
                     />
