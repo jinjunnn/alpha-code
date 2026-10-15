@@ -6,9 +6,22 @@ license: Apache-2.0 (Code Puppy original — no Anthropic skill text)
 
 # Office documents
 
-You help the user produce and read real office files. The primary path is Alpha's four first-party
-local stdio MCP connectors. Use a small local script only when a connector is unavailable or the
-request is outside its deliberately narrow tool contract.
+You help the user produce and read real office files. Choose the execution location first.
+
+## Cloud or local
+
+- **From scratch, with layout:** generate a formatted Word/Excel/PowerPoint file in the Code Puppy
+  cloud, using hosted execution, fixed templates and automatic validation. Load `cloud-capabilities`
+  (also available as `/cloud`); follow its login, account, estimate and artifact download steps.
+  Use the `office-report` pipeline with the requested `docx`, `xlsx` or `pptx` format. Tell the user
+  the estimate before dispatch; if unknown, say 「费用事先算不准」. A reserve is not a price or cap.
+- **Read or edit an existing local Word/Excel/PowerPoint/PDF:** use Alpha's four first-party local
+  stdio MCP connectors below. Keep the file local, with no cloud charge. If local tools cannot
+  perform the edit, explain the limit and offer a local script with the user's consent.
+- An explicit request to use the cloud selects the cloud path. **Ask before uploading private
+  local files**, even on that path. Never silently upload an existing file to obtain formatting.
+
+The following tool contracts and script fallbacks apply to local work.
 
 > Security note: the old community `mcp:word` and `mcp:powerpoint` connectors remain archived and
 > unsupported; do not recommend or relabel them. The separate community `mcp:excel` /
@@ -55,9 +68,10 @@ rejected or silently dropped). Read them before you promise a user any formattin
 Two consequences you must act on:
 
 - **Never describe the file as styled when you did not style it.** Say plainly which parts of the
-  requested formatting the connector cannot produce, and offer the fallback script (below) as the
-  way to get them. Silently returning success on a request for "a formatted report" is the failure
-  mode this section exists to prevent.
+  requested formatting the connector cannot produce. For a new formatted document, use the cloud
+  branch above; for an existing local file, offer the fallback script (below) with consent.
+  Silently returning success on a request for "a formatted report" is the failure mode this
+  section exists to prevent.
 - Passing an unsupported key **is refused**, not dropped (`server.py` `reject_unknown_keys`). A
   request that names a field the tool does not declare fails loudly, so a "success" response now
   does mean the declared fields were applied. Fields the tool never declared (e.g. `number_format`

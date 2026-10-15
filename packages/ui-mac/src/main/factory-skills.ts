@@ -50,7 +50,7 @@ export const FACTORY_SKILL_IDS = [
   "customize-code-puppy",
   "integrate-project",
   "alpha-workspace",
-  "cloud-dispatch",
+  "cloud-capabilities",
   "office-docs",
 ] as const
 
@@ -74,8 +74,8 @@ export function factorySkillSources(input: {
     "integrate-project": join(root, "factory-skills", "integrate-project"),
     // REQ-071/ADR-025:~/Alpha 目录契约(Journal/Memory/Outputs)的写入约定载体
     "alpha-workspace": join(root, "factory-skills", "alpha-workspace"),
-    // REQ-082:云派发教学(ADR-021 契约模板兑现;工具面/预算帽按 B 侧 cloud-mcp 实况,登出态文案如实)
-    "cloud-dispatch": join(root, "factory-skills", "cloud-dispatch"),
+    // REQ-233:本机/云端选择与派发教学(目录内 cloud 技能提供 /cloud 入口)
+    "cloud-capabilities": join(root, "factory-skills", "cloud-capabilities"),
     // REQ-080:办公文档引导(连接器选型 + xlsx 惯例自写重表达 + PDF 缺口 pypdf/reportlab 补位)
     "office-docs": join(root, "factory-skills", "office-docs"),
   }

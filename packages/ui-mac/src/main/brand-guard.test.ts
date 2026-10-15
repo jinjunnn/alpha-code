@@ -188,7 +188,7 @@ describe("AC3 提示词与技能文案 — 模型上下文里的品牌串", () =
     for (const f of [
       "packages/ui-mac/resources/factory-skills/agent-creator/SKILL.md",
       "packages/ui-mac/resources/factory-skills/alpha-workspace/SKILL.md",
-      "packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md",
+      "packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md",
       "packages/ui-mac/resources/factory-skills/integrate-project/SKILL.md",
       "packages/ui-mac/resources/factory-skills/customize-code-puppy/SKILL.md",
       "packages/ui-mac/resources/factory-skills/office-docs/SKILL.md",
