@@ -14,10 +14,13 @@ type Listeners = {
 }
 
 export const replyCalls: Array<{ requestID: string; command: PermissionV2DecisionCommand }> = []
+/** 审计 R1 Minor 5:阶段**完成**(测试的 IPC 桩写)与**真实**回复(这里写)排进同一条时间线,顺序由事件发生的先后决定。 */
+export const timeline: string[] = []
 let listeners: Listeners | undefined
 
 export function resetHarness() {
   replyCalls.splice(0)
+  timeline.splice(0)
   listeners = undefined
 }
 
@@ -35,6 +38,7 @@ export function Harness() {
         list: () => Promise.resolve([]),
         reply: (requestID, command) => {
           replyCalls.push({ requestID, command })
+          timeline.push(`reply:${command.decision}`)
           return Promise.resolve({
             requestID,
             sessionID: "ses_hub_1",

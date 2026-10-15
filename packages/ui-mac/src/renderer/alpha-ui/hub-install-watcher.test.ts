@@ -66,7 +66,19 @@ const ENTRIES = [
 ]
 
 type InstallScript = Array<Record<string, unknown>>
-let timeline: string[] = []
+/** 阶段完成与真实回复的同一条时间线(runtime.timeline:回复由 surface client 写,阶段由下面的 IPC 桩在**完成时**写)。 */
+const timeline = () => runtime.timeline
+/** 悬置某个阶段的 IPC(审计 R1 Minor 5):在 release 之前,它既不完成、也不该有任何回复。 */
+const held = new Map<string, { promise: Promise<void>; release: () => void }>()
+function hold(stage: string) {
+  let release = () => {}
+  const promise = new Promise<void>((resolve) => (release = resolve))
+  held.set(stage, { promise, release })
+  return () => {
+    held.delete(stage)
+    release()
+  }
+}
 let intents: Array<Record<string, unknown>> = []
 let stageOk = true
 let installScript: InstallScript = []
@@ -74,7 +86,7 @@ const disposers: Array<() => void> = []
 const neverSettle = () => new Promise<never>(() => {})
 
 beforeEach(() => {
-  timeline = []
+  held.clear()
   intents = []
   stageOk = true
   installScript = []
@@ -82,7 +94,8 @@ beforeEach(() => {
   document.body.replaceChildren()
   const ext: Record<string, unknown> = {
     hubRequestStage: async (input: { stage: string; reason?: string }) => {
-      timeline.push(`stage:${input.stage}${input.reason ? `(${input.reason})` : ""}`)
+      await held.get(input.stage)?.promise
+      runtime.timeline.push(`stage:${input.stage}${input.reason ? `(${input.reason})` : ""}`)
       return stageOk ? { ok: true } : { ok: false, reason: "refused" }
     },
     remoteCatalog: async () => ({ source: "remote", catalog: { version: "9.9.9", entries: ENTRIES } }),
@@ -90,7 +103,8 @@ beforeEach(() => {
     checkRuntime: async () => ({ ok: true }),
     installCatalog: async (intent: Record<string, unknown>) => {
       intents.push(intent)
-      timeline.push("install")
+      await held.get("install")?.promise
+      runtime.timeline.push("install")
       return installScript.shift() ?? { ok: false, reason: "unscripted" }
     },
     listInstalls: async () => ({ global: [], project: [] }),
@@ -133,7 +147,7 @@ async function until(check: () => boolean, label: string) {
     if (check()) return
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
-  throw new Error(`timed out waiting for ${label}; timeline=${JSON.stringify(timeline)}`)
+  throw new Error(`timed out waiting for ${label}; timeline=${JSON.stringify(timeline())}`)
 }
 
 function mount() {
@@ -176,9 +190,14 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     input.dispatchEvent(new Event("input", { bubbles: true }))
     button(zh["alpha.ext.confirmInstall"])!.click()
     await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage in the same box")
+    // main 在第二次 install IPC 里记 committed —— 它没回来之前不得回审批
+    const release = hold("install")
     button(zh["alpha.ext.authz.confirmInstall"])!.click()
+    await flush(8)
+    expect(replies()).toEqual([])
+    release()
     await until(() => replies().length > 0, "the reply")
-    expect(timeline.concat(replies().map((d) => `reply:${d}`))).toEqual(["stage:confirming", "stage:submitted", "install", "install", "reply:once"])
+    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "install", "reply:once"])
     expect(intents.map((intent) => intent.hubRequestId)).toEqual(["req_hub_watcher_01", "req_hub_watcher_01"])
     expect(intents.map((intent) => (intent.grants as { secrets?: Record<string, string> })?.secrets?.NOTES_TOKEN)).toEqual([SECRET, SECRET])
     expect(intents[1]!.authorization).toEqual({ confirmed: { "mcp:notes": ["process:spawn"] } })
@@ -191,9 +210,13 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     await flush()
     runtime.ask(hubRequest("skill:writer", "req_hub_watcher_02"))
     await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
+    const release = hold("declined")
     button(zh["alpha.ext.cancel"])!.click()
+    await flush(8)
+    expect(replies()).toEqual([])
+    release()
     await until(() => replies().length > 0, "the reply")
-    expect(timeline.concat(replies().map((d) => `reply:${d}`))).toEqual(["stage:confirming", "stage:declined", "reply:reject"])
+    expect(timeline()).toEqual(["stage:confirming", "stage:declined", "reply:reject"])
     expect(intents).toHaveLength(0)
   })
 
@@ -205,9 +228,13 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
     button(zh["alpha.ext.confirmInstall"])!.click()
     await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage")
+    const release = hold("failed")
     button(zh["alpha.ext.cancel"])!.click()
+    await flush(8)
+    expect(replies()).toEqual([])
+    release()
     await until(() => replies().length > 0, "the reply")
-    expect(timeline.concat(replies().map((d) => `reply:${d}`))).toEqual([
+    expect(timeline()).toEqual([
       "stage:confirming",
       "stage:submitted",
       "install",
@@ -222,9 +249,13 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     await flush()
     runtime.ask(hubRequest("skill:writer", "req_hub_watcher_04"))
     await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
+    const release = hold("failed")
     button(zh["alpha.ext.confirmInstall"])!.click()
+    await flush(8)
+    expect(document.querySelector("[data-hub-agent-failure]")).toBeNull()
+    release()
     await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")
-    expect(timeline).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(connect-failed)"])
+    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(connect-failed)"])
     expect(replies()).toEqual([])
     button(zh["alpha.ext.close"])!.click()
     await until(() => replies().length > 0, "the reply")
@@ -242,14 +273,13 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     expect(intents).toHaveLength(0)
 
     stageOk = true
-    timeline = []
     runtime.resetHarness()
     disposers.splice(0).reverse().forEach((dispose) => dispose())
     mount()
     await flush()
     runtime.ask(hubRequest("skill:not-in-catalog", "req_hub_watcher_06"))
     await until(() => replies().length > 0, "the reply")
-    expect(timeline).toEqual(["stage:confirming", "stage:failed(not in this app's verified catalog)"])
+    expect(timeline()).toEqual(["stage:confirming", "stage:failed(not in this app's verified catalog)", "reply:reject"])
     expect(replies()).toEqual(["reject"])
     expect(button(zh["alpha.ext.confirmInstall"])).toBeUndefined()
   })
@@ -260,6 +290,6 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     runtime.ask({ ...hubRequest("skill:writer"), id: "per_plain", action: "bash", resources: ["ls"], metadata: {} } as PermissionV2Request)
     await until(() => document.querySelectorAll("[data-permission-fact]").length === 5, "the generic dialog")
     expect(document.querySelector("[data-hub-agent-request]")).toBeNull()
-    expect(timeline).toEqual([])
+    expect(timeline()).toEqual([])
   })
 })
