@@ -1,11 +1,9 @@
 // BuiltinControlsPanel — 定制中心「已安装」内的「内置(上游)」治理分组(REQ-037,即 REQ-019 递延的 V2
-// 内置管理位)。列原生 agent / 内置 skill / 内置 command,逐项 隐藏·禁用·重写;保护项灰显并说明
+// 内置管理位)。列原生 agent / 内置 command,逐项 隐藏·禁用·重写;保护项灰显并说明
 // 原因(C28 诚实控件);denylist/allowlist 可切;「重置治理」全量净除。
 //
 // 数据流:extIpc.builtinRead/builtinApply/builtinReset(main 校验+物化 home jsonc 受控叶子)→
 // props.refreshEngine()(POST /global/dispose)→ 下一条消息热生效 → props.reloadAgents() 刷新列表。
-// 泄漏诚实声明:skill deny 后引擎 GET /skill 与斜杠菜单仍会列出该技能(上游行为),但执行被拒 +
-// 斜杠命中的是 alpha 占位模板 —— 面板文案如实说明,不谎称彻底移除。
 
 import { extensionError } from "./ext-presentation"
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
@@ -14,11 +12,8 @@ import type { HubAgent } from "./use-extensions"
 import { t } from "../i18n"
 import { extIpc } from "./ext-ipc"
 
-/** 引擎内置 skill / command(REQ-037 机制核实面;上游冻结,变更随 sync retro 复核)。 */
-const BUILTIN_SKILLS = ["customize-opencode"]
+/** 引擎内置 command(REQ-037 机制核实面;上游冻结,变更随 sync retro 复核)。 */
 const BUILTIN_COMMANDS = ["init", "review"]
-/** REQ-067:出厂默认禁项(与 main alpha-governance.FACTORY_DENIED_SKILLS 同名单;开关走解禁语义)。 */
-const FACTORY_DENIED_SKILLS = ["customize-opencode"]
 
 const DEFAULT_GOV: AlphaBuiltinPolicy = {
   version: 1,
@@ -108,22 +103,6 @@ export function BuiltinControlsPanel(props: {
     const i = g.agents.allow.indexOf(name)
     if (i >= 0) g.agents.allow.splice(i, 1)
     else g.agents.allow.push(name)
-    void apply(g)
-  }
-  const toggleSkillDeny = (name: string) => {
-    const g = structuredClone(gov())
-    // REQ-067:出厂默认禁项的开关操作的是「解禁名单」(allowFactory),不写 deny 明文 ——
-    // 出厂禁是内置行为(env → 引擎内存注入),用户配置里只记录用户的解禁动作。
-    if (FACTORY_DENIED_SKILLS.includes(name)) {
-      g.skills.allowFactory ??= []
-      const i = g.skills.allowFactory.indexOf(name)
-      if (i >= 0) g.skills.allowFactory.splice(i, 1)
-      else g.skills.allowFactory.push(name)
-    } else {
-      const i = g.skills.deny.indexOf(name)
-      if (i >= 0) g.skills.deny.splice(i, 1)
-      else g.skills.deny.push(name)
-    }
     void apply(g)
   }
   const saveCmdOverride = () => {
@@ -243,32 +222,6 @@ export function BuiltinControlsPanel(props: {
                     </button>
                   </span>
                 </Show>
-              </div>
-            )
-          }}
-        </For>
-
-        {/* builtin skills(出厂默认禁项:denied = 未被解禁;REQ-067) */}
-        <For each={BUILTIN_SKILLS}>
-          {(name) => {
-            const denied = () =>
-              FACTORY_DENIED_SKILLS.includes(name)
-                ? !(g().skills.allowFactory ?? []).includes(name)
-                : g().skills.deny.includes(name)
-            return (
-              <div class="alpha-ext-man" data-gov-dim={denied() ? "" : undefined}>
-                <span class="alpha-ext-man-name">
-                  {name}
-                  <span class="alpha-ext-chip">{t("alpha.ext.builtinSkillLabel")}</span>
-                  <Show when={denied()}>
-                    <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateDenied")}</span>
-                  </Show>
-                </span>
-                <span class="alpha-gov-acts">
-                  <button disabled={busy()} onClick={() => toggleSkillDeny(name)} title={t("alpha.builtin.skillLeakNote")}>
-                    {denied() ? t("alpha.builtin.allow") : t("alpha.builtin.deny")}
-                  </button>
-                </span>
               </div>
             )
           }}

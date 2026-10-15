@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { applyFactoryDeny } from "../../../ext/src/factory-deny"
 import { Permission } from "../../../opencode/src/permission/index"
 import {
   DEFAULT_BUILTIN_POLICY,
@@ -188,7 +189,7 @@ describe("normalizeBuiltinPolicy — renderer 原始输入清洗", () => {
 })
 
 describe("REQ-067 — 出厂默认禁内置化(deny 零明文)", () => {
-  test("normalize:出厂项从 deny 收敛剔除(历史数据自愈);allowFactory 只认出厂清单内的名字", () => {
+  test("#1522 AC2:normalize 清洗旧 allowFactory 解禁项,保留其它用户 deny", () => {
     const g = normalizeBuiltinPolicy({
       version: 1,
       mode: "denylist",
@@ -197,12 +198,24 @@ describe("REQ-067 — 出厂默认禁内置化(deny 零明文)", () => {
       commands: { override: {} },
     })
     expect(g.skills.deny).toEqual(["my-own"]) // 出厂项不入用户 deny
-    expect(g.skills.allowFactory).toEqual(["customize-opencode"]) // 清单外的解禁无意义,清洗
+    expect(g.skills.allowFactory).toEqual([])
   })
-  test("effectiveFactoryDenied:默认全禁;用户解禁后移出(env 注入与菜单过滤共用此口径)", () => {
+  test("#1522 AC2:旧 allowFactory 不能恢复技能或同名斜杠命令,保存后清洗", () => {
+    // 旧治理形状来自本文件 REQ-067 解禁用例;权限/command 是现有出厂禁注入的同名键。
+    const legacy = gov({ skills: { deny: [], allowFactory: ["customize-opencode"] } })
     expect(effectiveFactoryDenied(DEFAULT_BUILTIN_POLICY)).toEqual(["customize-opencode"])
-    const g = normalizeBuiltinPolicy({ ...structuredClone(DEFAULT_BUILTIN_POLICY), skills: { deny: [], allowFactory: ["customize-opencode"] } })
-    expect(effectiveFactoryDenied(g)).toEqual([])
+    expect(effectiveFactoryDenied(legacy)).toEqual(["customize-opencode"])
+    const cleaned = normalizeBuiltinPolicy(legacy)
+    expect(applyBuiltinPolicy(cleaned, []).ok).toBe(true)
+    expect(JSON.parse(readFileSync(join(tmp, "alpha-global", "governance.json"), "utf8")).skills.allowFactory).toEqual([])
+    const cfg = {
+      permission: { skill: { "customize-opencode": "allow", "*": "allow" } },
+      command: { "customize-opencode": { template: "user's own" } },
+    }
+    applyFactoryDeny(cfg, JSON.stringify(effectiveFactoryDenied(cleaned)))
+    expect(Permission.evaluate("skill", "customize-opencode", Permission.fromConfig(cfg.permission)).action).toBe("deny")
+    expect(Permission.evaluate("skill", "customize-code-puppy", Permission.fromConfig(cfg.permission)).action).toBe("allow")
+    expect(cfg.command["customize-opencode"].template).toBe("该技能(customize-opencode)已弃用。定制 Code Puppy 请改用 /customize-code-puppy。")
   })
   test("materializeEdits:出厂项零物化 —— 空治理不产生任何 permission/command 叶子", () => {
     const edits = materializeEdits(structuredClone(DEFAULT_BUILTIN_POLICY), [])

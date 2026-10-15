@@ -33,20 +33,19 @@ export interface BuiltinPolicy {
   }
   skills: {
     deny: string[]
-    /** REQ-067:对「出厂默认禁」项的用户解禁名单(出厂禁不入 deny、不落明文,见 FACTORY_DENIED_SKILLS)。 */
+    /** 旧治理字段保留兼容形状;#1522 弃用技能的解禁记录一律清洗。 */
     allowFactory: string[]
   }
   commands: { override: Record<string, { template: string; description?: string }> }
 }
 
 /** REQ-067(用户拍板 2026-07-08):上游自带、alpha 出厂即禁的技能 —— 内置默认,零明文。
- *  禁用经 env → ext config hook 内存注入;用户在治理面解禁 = 记入 skills.allowFactory。 */
+ *  禁用经 env → ext config hook 内存注入;#1522 customize-opencode 永久禁用。 */
 export const FACTORY_DENIED_SKILLS = ["customize-opencode"] as const
 
-/** 出厂禁用的有效名单 = 出厂清单 − 用户解禁(供 env 注入与菜单过滤)。 */
-export function effectiveFactoryDenied(gov: BuiltinPolicy): string[] {
-  const allow = new Set(gov.skills.allowFactory)
-  return FACTORY_DENIED_SKILLS.filter((n) => !allow.has(n))
+/** 永久禁用名单(供 env 注入与菜单过滤),不接受旧治理解禁记录。 */
+export function effectiveFactoryDenied(_gov: BuiltinPolicy): string[] {
+  return [...FACTORY_DENIED_SKILLS]
 }
 
 export const DEFAULT_BUILTIN_POLICY: BuiltinPolicy = {
@@ -85,9 +84,7 @@ export function normalizeBuiltinPolicy(raw: unknown): BuiltinPolicy {
       skills: {
         // REQ-067:出厂默认禁项从 deny 收敛剔除(它们不靠用户治理记录;历史数据自愈)
         deny: asNames(r.skills?.deny).filter((n) => !(FACTORY_DENIED_SKILLS as readonly string[]).includes(n)),
-        allowFactory: asNames((r.skills as { allowFactory?: unknown } | undefined)?.allowFactory).filter((n) =>
-          (FACTORY_DENIED_SKILLS as readonly string[]).includes(n),
-        ),
+        allowFactory: [],
       },
       commands: { override: asCommandOverrides(r.commands?.override) },
     }
