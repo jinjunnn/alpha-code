@@ -34,7 +34,8 @@
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV, mcpEngineToolId, resolveFileRefs } from "./cloud-websearch-kill"
+import { CLOUD_MCP_SERVER_ENV, mcpEngineToolId, resolveFileRefs } from "./cloud-websearch-kill"
+import { cloudMcpAuthorization } from "./cloud-access"
 import {
   contextText,
   renderTemplate,
@@ -90,17 +91,9 @@ export function cloudVisionAccess(
   readFile: (p: string) => string = (p) => readFileSync(p, "utf8"),
 ): CloudVisionAccess {
   const endpoint = cloudVisionEndpoint(env)
-  const raw = env[CLOUD_MCP_DEF_ENV]
-  if (!endpoint || !raw) return { ok: false, reason: "not-logged-in" }
-  let definition: unknown
-  try {
-    definition = JSON.parse(raw)
-  } catch {
-    return { ok: false, reason: "not-logged-in" }
-  }
-  const header = (definition as { headers?: { Authorization?: unknown } } | null)?.headers?.Authorization
+  const header = cloudMcpAuthorization(env)
   // 密钥文件缺席时 ui-mac 给的是不带 headers 的 enabled:false 形状(cloud-sidecar-config.ts 文件头第 3 条)。
-  if (typeof header !== "string" || header.trim() === "") return { ok: false, reason: "not-logged-in" }
+  if (!endpoint || !header) return { ok: false, reason: "not-logged-in" }
   try {
     const authorization = resolveFileRefs(header, readFile)
     if (typeof authorization !== "string" || authorization.trim() === "") return { ok: false, reason: "credential-unreadable" }

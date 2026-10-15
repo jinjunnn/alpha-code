@@ -1184,6 +1184,7 @@ export type ElectronAPI = {
   // reaches the renderer). The MCP facade path (agent-triggered cloud.* tools) is wired separately via
   // sidecar.ts mcp.servers.cloud; this HTTP surface is for app-driven dispatch/status.
   cloud: {
+    openBillingPage: (page: "recharge" | "overflow") => Promise<void>
     /** Grandfathered input.diff/code-review dispatch. Explicit files use upload below. */
     dispatch: (envelope: CloudJobEnvelope) => Promise<CloudResult<CloudDispatchResult>>
     /** Main picks, reads, classifies and freezes explicit files. Sensitive scope returns a preview only. */

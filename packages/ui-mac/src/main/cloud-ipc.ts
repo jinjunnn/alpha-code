@@ -7,7 +7,7 @@
 
 import { finalizeArtifactWithQuota, registerDownloadedArtifact, registeredArtifactNameOwner } from "./artifact-service"
 import { validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron"
+import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -29,6 +29,7 @@ import type { CloudJobEnvelope, CloudUploadIntent } from "../preload/types"
 import { getAccessTokenIdentity } from "./alpha-auth"
 import { requestUploadConsent } from "./alpha-web-upload-consent"
 import { assertSafeUploadResult, createMainUploadService } from "./alpha-upload"
+import { resolveEndpoints } from "./alpha-endpoints"
 
 // REQ-020 T4(ADR-021 §1 diff-only):hub 的 code-review dispatch 入口只送 diff,不送全库。
 // 工作树有变更 → `git diff HEAD`(含 staged);干净 → 回退最近一次 commit 的 diff(e2e 常在干净树上跑)。
@@ -86,6 +87,9 @@ async function pickExplicitUpload(event: IpcMainInvokeEvent) {
 }
 
 export function registerCloudIpcHandlers() {
+  ipcMain.handle("cloud-open-billing-page", (_event, page: "recharge" | "overflow") =>
+    shell.openExternal(new URL(page === "recharge" ? "/wallet?tab=recharge" : "/account", resolveEndpoints().web).href),
+  )
   // The existing input.diff/code-review route is grandfathered and does not mint an upload manifest.
   ipcMain.handle("cloud-dispatch", (_event: IpcMainInvokeEvent, envelope: CloudJobEnvelope) => dispatchCloudJob(envelope))
   ipcMain.handle("cloud-upload", async (event: IpcMainInvokeEvent, intent: CloudUploadIntent) => {

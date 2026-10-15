@@ -6,7 +6,7 @@
 //     `llm/request.ts:64` **整段顶替**底座提示词);
 //   · `prompt-rebrand.ts` 经 `experimental.chat.system.transform` 改写 system 段(`to` 侧是 alpha 的字);
 //   · `factory-deny.ts` 经 config hook 写被禁技能的占位 command(description + 含技能名的 template);
-//   · `plugin.ts` 的四个 `tool()` —— description 与每个参数的 describe() 逐字进每次请求的工具表
+//   · `plugin.ts` 的 `tool()` —— description 与每个参数的 describe() 逐字进每次请求的工具表
 //     (`tool/registry.ts:161`)。
 // 四处都没有长度上限,也没有一处能列全「塞了什么、各多大」。这文件就是那一处。
 //
@@ -85,6 +85,7 @@ export type ContextSink =
   | "command-description" // 斜杠菜单
   | "tool-description" // 每次请求的工具表(tool/registry.ts:161)
   | "tool-arg-description" // 同上,参数 schema 的 description
+  | "tool-output" // 本机只读工具给模型的登录入口文字
   | "instruction" // ui-mac 写进 cfg.instructions 的文件:引擎 session/instruction.ts:135-150 读盘,request.ts:63-70 拼进 system 段
   | "vision-block" // `#1419` 云端识图结果块:用户消息里紧跟图片 part 的 synthetic text part(chat.message)/ Read 工具输出尾部(tool.execute.after)/ 回放历史时 cloud_vision 出错部件的替换文本与被省略的 input.image(messages.transform)
 
@@ -281,6 +282,10 @@ function uiMacAgentFragments(): TextFragment[] {
 
 /** 工具表文字(`plugin.ts` 的 `tool()` 从这里取,不再内联字面量)。 */
 export const TOOL_TEXT = {
+  alpha_cloud_access: {
+    description: "调用任何 cloud_* 工具前,或工具表里没有 cloud_* 时先调它。只读查询本机登录状态与云端工具是否可用,并返回登录入口;不读取登录令牌,不查询额度或余额。",
+    args: {},
+  },
   alpha_reload: {
     description:
       "Schedule a reload of the opencode engine's extension registry (skills / agents / commands / plugins) without restarting the app. Call this after creating or editing a skill or agent on disk. The reload runs right after the current reply finishes (an immediate reload would cut this reply off), so the new skill/agent is available from the NEXT message in this session.",
@@ -310,6 +315,8 @@ export const TOOL_TEXT = {
     args: { note: "Optional note echoed back with the pong" },
   },
 } as const
+
+export const CLOUD_ACCESS_LOGIN_HINT = "在 CodePuppy 左侧栏账户区点「登录」,或打开定制中心的云端页点登录;登录完成后下一条消息起云端工具可用。"
 
 /** REQ-067 被禁技能的占位 command(`factory-deny.ts` 从这里取)。 */
 export const FACTORY_DENY_COMMAND_DESCRIPTION = "(已弃用)请使用 /customize-code-puppy"
@@ -405,6 +412,7 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   defineTemplate({ id: "command.factory-denied.template", sink: "command-template", template: FACTORY_DENY_COMMAND_TEMPLATE, maxBytes: CAP_DESCRIPTION }),
   // ── plugin.ts:工具表 ───────────────────────────────────────────────────────────
   ...toolFragments(),
+  defineText({ id: "cloud-access.login-hint", sink: "tool-output", text: CLOUD_ACCESS_LOGIN_HINT, maxBytes: CAP_DESCRIPTION }),
   // ── prompt-rebrand.ts:system.transform 子串替换 ────────────────────────────────
   ...rebrandFragments(),
   // ── cloud-vision.ts:识图结果块 + 看不了图的模型的系统说明(`#1419`)────────────────

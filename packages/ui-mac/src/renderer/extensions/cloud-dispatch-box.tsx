@@ -14,6 +14,7 @@ import type {
 } from "../../preload/types"
 import type { CloudPipelineSpec } from "./catalog-types"
 import { UploadConsentDialog } from "./upload-consent-dialog"
+import { failureCodeFromEvent, failureCopy } from "./cloud-failure-copy"
 
 type Phase = "idle" | "dispatching" | "running" | "done" | "failed"
 type ConsentState = { requestId: string; preview: UploadPreview }
@@ -26,7 +27,8 @@ type CancelState = "none" | "requesting" | "cancelling" | "rejected"
 // 用户面前的,给出诚实说明而不是把一个裸码贴在错误行里 —— 前者告诉用户「要的限制强制不了」,
 // 后者告诉用户「作业没送出去,因为送出去也是白跑」。其它码只影响显示，保留原始返回值供诊断。
 function dispatchError(code: string, fallback: Parameters<typeof t>[0] = "alpha.ext.cloudUnknownSend"): string {
-  if (code === "not-authenticated" || code === "unauthorized") return t("alpha.ext.cloudErrAuth")
+  const failure = failureCopy(code)
+  if (failure) return failure.text
   if (code === "no-cloud-endpoint") return t("alpha.ext.cloudErrEndpoint")
   if (code === "network") return t("alpha.ext.cloudErrNetwork")
   if (code === "denied_paths_unenforceable_for_execution_form") return t("alpha.ext.cloudErrDeniedPaths")
@@ -62,6 +64,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
   const [state, setState] = createStore<{
     phase: Phase
     err: string
+    errAction: NonNullable<ReturnType<typeof failureCopy>>["action"]
     jobId: string
     step: string
     cancel: CancelState
@@ -76,6 +79,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
   }>({
     phase: "idle",
     err: "",
+    errAction: null,
     jobId: "",
     step: "",
     cancel: "none",
@@ -97,11 +101,11 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
     if (state.consent) void window.api.cloud.cancelUpload(state.consent.requestId)
   })
 
-  const finish = async (directory: string, id: string, terminal: string, contract: CloudJobEnvelope) => {
+  const finish = async (directory: string, id: string, terminal: string, contract: CloudJobEnvelope, code?: string) => {
     if (props.spec.pipelineKind !== "code-review" && terminal === "job.completed") {
       const status = await window.api.cloud.status(id)
       if (!("job_id" in status)) {
-        setState({ phase: "failed", err: dispatchError(status.error) })
+        setState({ phase: "failed", err: dispatchError(status.error), errAction: failureCopy(status.error)?.action ?? null })
         return
       }
       const result = status.result
@@ -110,16 +114,22 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
         : result
       setState("result", typeof text === "string" ? text : "")
     }
+    const reason = terminal === "job.completed"
+      ? undefined
+      : code ?? failureCodeFromEvent({ data: await window.api.cloud.status(id) })
     const saved = await window.api.cloud.saveRun(directory, id, contract)
     if (saved.ok) {
-      setState({ savedDir: saved.dir, phase: terminal === "job.completed" ? "done" : "failed" })
+      setState({ savedDir: saved.dir, phase: terminal === "job.completed" ? "done" : "failed", errAction: null })
       if (props.spec.pipelineKind !== "code-review") {
         setState({ files: saved.files.filter((file) => file.startsWith("artifacts/")), err: saved.warnings.join("\n") })
       }
-      if (terminal !== "job.completed") setState("err", t("alpha.ext.cloudRunFailed"))
+      if (terminal !== "job.completed") {
+        const failure = failureCopy(reason ?? "")
+        setState({ err: failure?.text ?? t("alpha.ext.cloudRunFailed"), errAction: failure?.action ?? null })
+      }
       return
     }
-    setState({ phase: "failed", err: t("alpha.ext.cloudSaveFailed") })
+    setState({ phase: "failed", err: t("alpha.ext.cloudSaveFailed"), errAction: null })
   }
 
   const beginJob = async (
@@ -135,6 +145,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
       cancel: "none",
       transparent,
       err: "",
+      errAction: null,
       savedDir: "",
       consent: null,
       consentBusy: false,
@@ -151,7 +162,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
       const name = payload.event === "message" && typeof messageType === "string" ? messageType : payload.event
       if (name && name !== "job.snapshot") setState("step", name)
       if (["job.completed", "job.failed", "job.cancelled"].includes(name)) {
-        void finish(directory, job.job_id, name, contract)
+        void finish(directory, job.job_id, name, contract, failureCodeFromEvent(payload))
       }
     })
     await window.api.cloud.subscribe(job.job_id)
@@ -163,7 +174,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
       return
     }
     if (result.status === "failed") {
-      setState({ phase: "failed", err: uploadError(result.error), consent: null, consentBusy: false })
+      setState({ phase: "failed", err: uploadError(result.error), errAction: failureCopy(result.error)?.action ?? null, consent: null, consentBusy: false })
       return
     }
     if (result.status === "consent-required") {
@@ -180,7 +191,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
   }
 
   const runUpload = async () => {
-    setState({ phase: "dispatching", err: "", savedDir: "", diffSource: null, transparent: false })
+    setState({ phase: "dispatching", err: "", errAction: null, savedDir: "", diffSource: null, transparent: false })
     await consumeUpload(await window.api.cloud.upload({ kind: "code-review" }))
   }
 
@@ -199,7 +210,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
   }
 
   const runLegacyDiff = async () => {
-    setState({ err: "", savedDir: "", diffSource: null, transparent: false })
+    setState({ err: "", errAction: null, savedDir: "", diffSource: null, transparent: false })
     const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.cloudPickProject") })
     const directory = Array.isArray(picked) ? picked[0] : picked
     if (!directory) return
@@ -219,7 +230,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
     }
     const result = await window.api.cloud.dispatch(envelope)
     if ("error" in result) {
-      setState({ err: dispatchError(result.error), phase: "failed" })
+      setState({ err: dispatchError(result.error), errAction: failureCopy(result.error)?.action ?? null, phase: "failed" })
       return
     }
     await beginJob(directory, result, envelope, false)
@@ -238,7 +249,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
       : props.spec.pipelineKind === "docs"
         ? { code: state.input.trim() }
         : { topic: state.input.trim(), format: format() }
-    setState({ phase: "dispatching", err: "", savedDir: "", result: "", files: [] })
+    setState({ phase: "dispatching", err: "", errAction: null, savedDir: "", result: "", files: [] })
     const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.cloudPickResults") })
     const directory = Array.isArray(picked) ? picked[0] : picked
     if (!directory) {
@@ -254,7 +265,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
     }
     const result = await window.api.cloud.dispatch(envelope)
     if ("error" in result) {
-      setState({ phase: "failed", err: dispatchError(result.error) })
+      setState({ phase: "failed", err: dispatchError(result.error), errAction: failureCopy(result.error)?.action ?? null })
       return
     }
     await beginJob(directory, result, envelope, false)
@@ -265,10 +276,10 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
   // ③传输/契约失败 → 行内错误,取消入口保持可用。任何分支都不把本地状态改成 cancelled。
   const cancelJob = async () => {
     if (!state.jobId || state.cancel === "requesting" || state.cancel === "cancelling") return
-    setState({ cancel: "requesting", err: "" })
+    setState({ cancel: "requesting", err: "", errAction: null })
     const result = await window.api.cloud.cancel(state.jobId)
     if ("error" in result) {
-      setState({ cancel: "none", err: dispatchError(result.error, "alpha.ext.cloudUnknownCancel") })
+      setState({ cancel: "none", err: dispatchError(result.error, "alpha.ext.cloudUnknownCancel"), errAction: failureCopy(result.error)?.action ?? null })
       return
     }
     if (result.accepted || result.status === "cancelling" || result.status === "cancelled") {
@@ -360,6 +371,20 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
       </For>
       <Show when={state.err}>
         <p class="alpha-ext-card-err">{state.err}</p>
+        <Show when={state.errAction}>
+          {(action) => (
+            <button class="alpha-ext-add" data-cloud-error-action="" onClick={() => {
+              const target = action()
+              if (target === "login") {
+                void window.api.auth.start()
+                return
+              }
+              void window.api.cloud.openBillingPage(target)
+            }}>
+              {t(action() === "login" ? "alpha.ext.cloudGoLogin" : action() === "recharge" ? "alpha.ext.cloudGoRecharge" : "alpha.ext.cloudOpenOverflow")}
+            </button>
+          )}
+        </Show>
       </Show>
       <Show when={state.phase === "failed" && state.savedDir}>
         <p class="alpha-ext-dnote">

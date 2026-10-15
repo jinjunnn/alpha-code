@@ -52,6 +52,9 @@ mock.module("electron", () => ({
     },
   },
   dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
+  // REQ-232 AC5:cloud-ipc 静态 import electron.shell(cloud-open-billing-page);本 harness 不调该通道,
+  // 只需让 import 解析。打开账单页的判据在 cloud-ipc.cases.ts。
+  shell: { openExternal: async () => {} },
 }))
 mock.module("./logging", () => ({
   getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }),

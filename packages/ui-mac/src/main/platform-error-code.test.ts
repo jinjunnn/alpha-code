@@ -4,6 +4,14 @@
 import { describe, expect, test } from "bun:test"
 import { httpErrorCode } from "./platform-error-code"
 
+test("REQ-232 AC5 dispatch 402 preserves the account refusal code", async () => {
+  // Frozen dispatch-refusal body: rev2 §2/§5; PR-B has not deployed yet.
+  expect(await httpErrorCode(new Response(JSON.stringify({
+    error: "预授权拒绝", code: "account_wallet_insufficient", required_fen: 100,
+    available_fen: 0, allowance_remaining_credits: 0, wallet_overflow: false,
+  }), { status: 402 }))).toBe("account_wallet_insufficient")
+})
+
 const res = (status: number, body: string) => new Response(body, { status })
 
 describe("httpErrorCode — 平台拒绝的唯一出口", () => {

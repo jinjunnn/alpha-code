@@ -204,6 +204,7 @@ function mountRunningJob(options: { cancel: () => Promise<CancelResult> }) {
         }),
         confirmUpload: async () => ({ status: "cancelled" }),
         cancelUpload: async () => ({ status: "cancelled" }),
+        status: async () => ({ ...statusFixture, status: "cancelled" }),
         cancel: async (jobId: string) => {
           cancelCalls.push(jobId)
           return options.cancel()
