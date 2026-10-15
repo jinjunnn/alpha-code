@@ -1,0 +1,94 @@
+[
+  {
+    "variant": "before",
+    "case": "c15",
+    "repeat": 1,
+    "gatewayInput": 15860,
+    "gatewayOutput": 1024,
+    "source": "read-only engine SQLite, exact prompt matched; no reasoning text exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 1206
+          },
+          {
+            "type": "tool",
+            "characters": 0
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c15",
+    "repeat": 3,
+    "gatewayInput": 15860,
+    "gatewayOutput": 1024,
+    "source": "read-only engine SQLite, exact prompt matched; no reasoning text exported",
+    "assistantMessages": [
+      {
+        "finish": "length",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 3959
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c15",
+    "repeat": 3,
+    "gatewayInput": 15967,
+    "gatewayOutput": 1024,
+    "source": "read-only engine SQLite, exact prompt matched; no reasoning text exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 1330
+          },
+          {
+            "type": "tool",
+            "characters": 0
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "variant": "before",
+    "case": "c08",
+    "repeat": 3,
+    "gatewayInput": 15851,
+    "gatewayOutput": 112,
+    "source": "read-only engine SQLite, matched by Session order and exact user prompt; no reasoning text exported",
+    "assistantMessages": [
+      {
+        "finish": "stop",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 472
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  }
+]

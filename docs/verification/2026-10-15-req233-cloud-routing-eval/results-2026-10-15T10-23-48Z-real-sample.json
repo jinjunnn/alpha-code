@@ -1,0 +1,460 @@
+{
+  "schemaVersion": 3,
+  "execution": {
+    "baseCommit": "0ec47ce05f26cbbd926aa177a2748bb3ade2d58c",
+    "runnerSha256": "75eed3b81da94951dcad3a0dd49ee238a0e68735a1c139ff0abdd2ecc56292f5",
+    "patch": "--- run.ts@0ec47ce05\n+++ real-exec-20261015.ts\n@@ -8,10 +8,10 @@\n import snapshot from \"./tool-snapshot.json\"\n \n type Route = \"local\" | \"cloud\" | \"ask\"\n-type Outcome = Route | \"undecided\"\n+type Outcome = Route | \"undecided\" | \"error\"\n type Case = { id: string; prompt: string; expected: Route; reason: string; counterexample: boolean; rows: string[]; localSearch?: boolean }\n-type Call = { input: number; output: number; usd: number; promptBytes: number; toolBytes: number; responseBytes: number }\n-type Row = Call & { variant: string; case: string; repeat: number; expected: Route; observed: Outcome | null; tool?: string; text?: string; error?: string; limitReached?: boolean; calls: Call[]; instructions: { tool: string; name?: string; path?: string }[] }\n+type Call = { input: number; output: number; usd: number; promptBytes: number; toolBytes: number; responseBytes: number; toolNames?: string[] }\n+type Row = Call & { variant: string; case: string; repeat: number; expected: Route; observed: Outcome | null; tool?: string; text?: string; error?: string; limitReached?: boolean; retries: number; failures: { code: string; attempt: number }[]; calls: Call[]; instructions: { tool: string; name?: string; path?: string }[] }\n const here = import.meta.dir\n const repo = resolve(here, \"../../..\")\n const variants = [{ name: \"before\", ref: \"133f463d9\", skill: \"cloud-dispatch\" }, { name: \"after\", ref: \"026553ad0\", skill: \"cloud-capabilities\" }]\n@@ -33,12 +33,12 @@\n     const selected = rows.filter((row) => row.variant === name)\n     const perCase = cases.map((item) => {\n       const runs = selected.filter((row) => row.case === item.id)\n-      const votes = ([\"local\", \"cloud\", \"ask\", \"undecided\"] as Outcome[]).map((route) => ({ route, count: runs.filter((r) => r.observed === route).length })).sort((a, b) => b.count - a.count)\n-      const complete = runs.length === repeats && runs.every((r) => !r.error && r.observed)\n+      const votes = ([\"local\", \"cloud\", \"ask\", \"undecided\", \"error\"] as Outcome[]).map((route) => ({ route, count: runs.filter((r) => r.observed === route).length })).sort((a, b) => b.count - a.count)\n+      const complete = runs.length === repeats && runs.every((r) => r.observed)\n       const majority = complete && repeats === 3 && votes[0].count >= 2 ? votes[0].route : null\n       return { id: item.id, observed: runs.map((r) => r.observed), majority, majorityCorrect: majority === item.expected, consistency: complete ? votes[0].count / repeats : null, unanimous: complete && votes[0].count === repeats }\n     })\n-    const complete = selected.length === cases.length * repeats && selected.every((r) => !r.error && r.observed)\n+    const complete = selected.length === cases.length * repeats && selected.every((r) => r.observed)\n     const rates = Array.from({ length: repeats }, (_, i) => selected.filter((r) => r.repeat === i + 1 && r.observed === r.expected).length / cases.length)\n     return [name, { runs: selected.length, correct: selected.filter((r) => r.observed === r.expected).length, accuracy: selected.length ? selected.filter((r) => r.observed === r.expected).length / selected.length : null, majorityAccuracy: complete && repeats === 3 ? perCase.filter((r) => r.majorityCorrect).length / cases.length : null, unanimousCases: perCase.filter((r) => r.unanimous).length, repeatAccuracy: complete ? rates : null, noiseRange: complete && repeats === 3 ? Math.max(...rates) - Math.min(...rates) : null, complete, perCase }]\n   }))\n@@ -76,6 +76,10 @@\n const sample = selfTest ? 1 : args.includes(\"--sample\") ? Number(args[args.indexOf(\"--sample\") + 1]) : undefined\n assert(sample === undefined || (Number.isInteger(sample) && sample > 0), \"--sample needs a positive integer\")\n const real = args.includes(\"--real\")\n+const priorUsd = Number(process.env.EVAL_PRIOR_USD ?? 0)\n+const uncertain = { reserveUsd: 0, attempts: 0 }\n+const maxAttemptUsd = (128000 * 0.14 + 1024 * 0.28) / 1_000_000\n+const execution = { baseCommit: \"0ec47ce05f26cbbd926aa177a2748bb3ade2d58c\", runnerSha256: new Bun.CryptoHasher(\"sha256\").update(await Bun.file(import.meta.path).bytes()).digest(\"hex\"), patch: await Bun.file(new URL(\"real-execution.patch.json\", import.meta.url)).json(), priorUsd, retryPolicy: \"network/429/5xx: at most one retry per round; errors count wrong and continue\", errorResponses: \"status only; never persist headers or upstream error bodies\" }\n assert(!selfTest || !real, \"Self-test never uses a real provider\")\n const model = real ? process.env.EVAL_MODEL_ID : \"routing-fake\"\n const upstream = real ? process.env.EVAL_PROVIDER_BASE_URL : undefined\n@@ -151,12 +155,38 @@\n       assert(JSON.stringify(body.messages).includes(\"# Office documents\"), \"Office instruction body missing from continuation\")\n     }\n     const callUsage: Call = { input: 0, output: 0, usd: 0, promptBytes: Buffer.byteLength(JSON.stringify(body.messages)), toolBytes: Buffer.byteLength(JSON.stringify(body.tools)), responseBytes: 0 }\n-    const response = real ? await fetch(`${upstream!.replace(/\\/$/, \"\")}/chat/completions`, {\n-      method: \"POST\", redirect: \"error\", signal: AbortSignal.timeout(120_000),\n-      headers: { \"content-type\": \"application/json\", authorization: `Bearer ${(await Bun.file(keyFile!).text()).trim()}` },\n-      body: JSON.stringify({ ...body, model, stream: true, stream_options: { include_usage: true } }),\n-    }) : undefined\n-    if (response && !response.ok) throw new Error(`Provider HTTP ${response.status}; response body omitted`)\n+    if (priorUsd + usage.usd + uncertain.reserveUsd + maxAttemptUsd > budget) {\n+      state.stop = \"budget_headroom\"; active.resolve(); return new Response(\"EVAL_BUDGET_HEADROOM\", { status: 402 })\n+    }\n+    let response: Response | undefined\n+    let realWire: string | undefined\n+    if (real) {\n+      for (const attempt of [1, 2]) {\n+        if (priorUsd + usage.usd + uncertain.reserveUsd + maxAttemptUsd > budget) { state.stop = \"budget_headroom\"; active.resolve(); return new Response(\"EVAL_BUDGET_HEADROOM\", { status: 402 }) }\n+        response = undefined\n+        try {\n+          response = await fetch(`${upstream!.replace(/\\/$/, \"\")}/chat/completions`, {\n+            method: \"POST\", redirect: \"error\", signal: AbortSignal.timeout(90_000),\n+            headers: { \"content-type\": \"application/json\", authorization: `Bearer ${(await Bun.file(keyFile!).text()).trim()}` },\n+            body: JSON.stringify({ ...body, model, stream: true, stream_options: { include_usage: true } }),\n+          })\n+          if (response.ok) { realWire = await response.text(); break }\n+          const code = `http_${response.status}`\n+          active.row.failures.push({ code, attempt })\n+          const retryable = response.status === 429 || response.status >= 500\n+          if (response.status >= 500) { uncertain.reserveUsd += maxAttemptUsd; uncertain.attempts++ }\n+          await response.body?.cancel()\n+          if (!retryable || active.row.retries || active.requests >= maxCalls) throw new Error(code)\n+        } catch {\n+          if (response && !response.ok) throw new Error(`http_${response.status}`)\n+          active.row.failures.push({ code: \"network_error\", attempt })\n+          uncertain.reserveUsd += maxAttemptUsd; uncertain.attempts++\n+          if (active.row.retries || active.requests >= maxCalls) throw new Error(\"network_error\")\n+        }\n+        active.row.retries++; active.requests++\n+        await Bun.sleep(1000)\n+      }\n+    }\n     const serial = (Number(active.row.case.replace(/\\D/g, \"\")) - 1) * 3 + active.row.repeat - 1\n     const action = serial % 6\n     const decision = action === 0 ? { name: \"alpha_word_read_docx\", arguments: '{\"path\":\"/eval/report.docx\"}' }\n@@ -168,10 +198,11 @@\n     const delta = { role: \"assistant\", ...(tools.length ? { tool_calls: tools.map((fn, index) => ({ index, id: `call-${active.requests}-${index}`, type: \"function\", function: fn })) } : { content: action === 4 ? \"结果是 42。\" : \"请确认是否允许上传？\" }) }\n     const chunk = (delta: unknown, finish_reason: string | null = null, tokens?: unknown) => `data: ${JSON.stringify({ id: \"chatcmpl-eval\", object: \"chat.completion.chunk\", choices: [{ index: 0, delta, finish_reason }], ...(tokens ? { usage: tokens } : {}) })}\\n\\n`\n     // Script independent of expected labels AND variant; exercises wrong answers and repeat noise.\n-    const wire = response ? await response.text() : chunk(delta) + chunk({}, tools.length ? \"tool_calls\" : \"stop\", { prompt_tokens: Math.ceil((callUsage.promptBytes + callUsage.toolBytes) / 3), completion_tokens: Math.ceil(Buffer.byteLength(JSON.stringify([delta, {}])) / 3) }) + \"data: [DONE]\\n\\n\"\n+    const wire = realWire !== undefined ? realWire : chunk(delta) + chunk({}, tools.length ? \"tool_calls\" : \"stop\", { prompt_tokens: Math.ceil((callUsage.promptBytes + callUsage.toolBytes) / 3), completion_tokens: Math.ceil(Buffer.byteLength(JSON.stringify([delta, {}])) / 3) }) + \"data: [DONE]\\n\\n\"\n     const chunks = wire.split(\"\\n\").filter((l) => l.startsWith(\"data: \") && l !== \"data: [DONE]\").map((l) => JSON.parse(l.slice(6)))\n     const tokens = chunks.findLast((c) => c.usage)?.usage\n     assert(tokens && [tokens.prompt_tokens, tokens.completion_tokens].every((n) => Number.isFinite(n) && n >= 0), \"Missing/invalid provider usage; stopped\")\n+    callUsage.toolNames = [...new Set(chunks.flatMap((c) => c.choices.flatMap((v: { delta: { tool_calls?: { function?: { name?: string } }[] } }) => (v.delta.tool_calls ?? []).map((t) => t.function?.name).filter(Boolean))))] as string[]\n     callUsage.input = tokens.prompt_tokens\n     callUsage.output = tokens.completion_tokens\n     callUsage.usd = money(callUsage.input, callUsage.output, prices)\n@@ -180,13 +211,14 @@\n     active.row.input += callUsage.input; active.row.output += callUsage.output; active.row.usd += callUsage.usd\n     active.row.promptBytes += callUsage.promptBytes; active.row.toolBytes += callUsage.toolBytes; active.row.responseBytes += callUsage.responseBytes\n     usage.input += callUsage.input; usage.output += callUsage.output; usage.usd += callUsage.usd; usage.calls++\n-    if (usage.usd > budget) { state.stop = \"budget_exceeded\"; active.resolve(); return new Response(\"EVAL_BUDGET_EXCEEDED\", { status: 402 }) }\n+    if (priorUsd + usage.usd + uncertain.reserveUsd > budget) { state.stop = \"budget_exceeded\"; active.resolve(); return new Response(\"EVAL_BUDGET_EXCEEDED\", { status: 402 }) }\n     return new Response(wire, { headers: { \"content-type\": \"text/event-stream\" } })\n   } catch (error) {\n     if (!real) console.error(error instanceof Error ? error.message : \"Fake provider failure\")\n-    state.stop = \"provider_or_usage_error\"\n+    const code = error instanceof Error && /^http_\\d+$/.test(error.message) ? error.message : \"provider_or_usage_error\"\n+    active.row.error = code; active.row.observed = \"error\"\n     active.resolve()\n-    return new Response(\"EVAL_PROVIDER_ERROR: upstream detail omitted\", { status: 502 })\n+    return new Response(\"EVAL_ROUND_ERROR\", { status: 400 })\n   }\n } })\n \n@@ -198,7 +230,7 @@\n   const pct = (n: number | null) => n === null ? \"—\" : `${(n * 100).toFixed(2)}%`\n   const markdown = `模式：${real ? \"真实 provider\" : \"假 provider（仅链路校验，不能证明 AC3 提升）\"}；${cases.length} 例 × ${repeats} 次。\\n\\n| 变体 | 正确/次数 | 按次正确率 | 多数票正确率 | 三次全一致/例数 | 噪声极差 |\\n|---|---:|---:|---:|---:|---:|\\n${variants.map((v) => { const s = summary[v.name]; return `| ${v.name} | ${s.correct}/${s.runs} | ${pct(s.accuracy)} | ${pct(s.majorityAccuracy)} | ${repeats === 3 ? `${s.unanimousCases}/${cases.length}` : \"—\"} | ${pct(s.noiseRange)} |` }).join(\"\\n\")}\\n\\n改后−改前：${pct(delta)}；噪声带：${pct(noise)}；超出噪声：${comparison.improvedBeyondNoise ?? \"未判定\"}。\\nusage：${usage.input} in / ${usage.output} out；累计 $${usage.usd.toFixed(6)}；停止原因：${state.stop || \"completed\"}。\\n`\n   const projection = real ? null : { ...priceBasis, estimatedUsd: money(usage.input, usage.output, [priceBasis.inputUsdPerMillion, priceBasis.outputUsdPerMillion]), basis: \"UTF-8 JSON bytes / 3; cache-miss model USD rates, not wallet settlement\" }\n-  return Promise.all([Bun.write(out, JSON.stringify({ schemaVersion: 2, maxCalls, mode: real ? \"real\" : \"fake\", createdAt: new Date().toISOString(), identity, model, sample: sample ?? null, caseCount: cases.length, repeats, pricesPerMillion: prices, budgetUsd: Number.isFinite(budget) ? budget : null, stopReason: state.stop || \"completed\", usage, projection, receipt, comparison, summary, rows, markdown }, null, 2) + \"\\n\"), Bun.write(out.replace(/\\.json$/, \"\") + \".md\", markdown)]).then(() => markdown)\n+  return Promise.all([Bun.write(out, JSON.stringify({ schemaVersion: 3, execution, uncertain, maxCalls, mode: real ? \"real\" : \"fake\", createdAt: new Date().toISOString(), identity, model, sample: sample ?? null, caseCount: cases.length, repeats, pricesPerMillion: prices, budgetUsd: Number.isFinite(budget) ? budget : null, stopReason: state.stop || \"completed\", usage, projection, receipt, comparison, summary, rows, markdown }, null, 2) + \"\\n\"), Bun.write(out.replace(/\\.json$/, \"\") + \".md\", markdown)]).then(() => markdown)\n }\n \n try {\n@@ -247,14 +279,14 @@\n       const timer = setTimeout(() => timeout.reject(new Error(\"Engine startup timeout\")), 45_000)\n       const base = await Promise.race([ready, timeout.promise]).finally(() => clearTimeout(timer))\n       const api = async (path: string, body: unknown) => {\n-        const response = await fetch(base + path, { method: \"POST\", headers: { \"content-type\": \"application/json\", \"x-opencode-directory\": join(dir, \"workspace\") }, body: JSON.stringify(body), signal: AbortSignal.timeout(135_000) })\n+        const response = await fetch(base + path, { method: \"POST\", headers: { \"content-type\": \"application/json\", \"x-opencode-directory\": join(dir, \"workspace\") }, body: JSON.stringify(body), signal: AbortSignal.timeout(390_000) })\n         assert(response.ok, `Engine HTTP ${response.status} on ${path}`)\n         return response.json()\n       }\n       for (const item of cases) {\n         for (const repeat of Array.from({ length: repeats }, (_, i) => i + 1)) {\n           if (state.stop) break\n-          const row: Row = { variant: variant.name, case: item.id, repeat, expected: item.expected, observed: null, calls: [], instructions: [], input: 0, output: 0, usd: 0, promptBytes: 0, toolBytes: 0, responseBytes: 0 }\n+          const row: Row = { variant: variant.name, case: item.id, repeat, expected: item.expected, observed: null, retries: 0, failures: [], calls: [], instructions: [], input: 0, output: 0, usd: 0, promptBytes: 0, toolBytes: 0, responseBytes: 0 }\n           rows.push(row)\n           const session = await api(\"/session\", { title: \"routing-eval\" }) as { id: string }\n           const deferred = Promise.withResolvers<void>()\n@@ -267,7 +299,8 @@\n             row.text = (finished.message as { parts: { type: string; text?: string }[] }).parts.filter((p) => p.type === \"text\").map((p) => p.text ?? \"\").join(\"\\n\")\n             row.observed = classify(undefined, row.text)\n           }\n-          if (state.stop || !row.observed || !row.input) { row.error = state.stop || \"engine_or_empty_response\"; state.stop ||= row.error }\n+          if (state.stop) row.error = state.stop\n+          if (!row.observed) { row.observed = \"error\"; row.error = \"engine_or_empty_response\" }\n           await save()\n           console.log(`${row.variant} ${row.case} #${repeat}: ${row.observed ?? row.error} (${row.input}/${row.output})`)\n         }\n@@ -287,7 +320,7 @@\n   console.log(`Result: ${out}`)\n   await rm(temp, { recursive: true, force: true })\n }\n-if (state.stop && state.stop !== \"budget_exceeded\") process.exitCode = 1\n+if (state.stop && ![\"budget_exceeded\", \"budget_headroom\"].includes(state.stop)) process.exitCode = 1\n if (selfTest) {\n   assert.equal(state.stop, \"\")\n   assert.equal(rows.length, 2)\n",
+    "priorUsd": 0,
+    "retryPolicy": "network/429/5xx: at most one retry per round; errors count wrong and continue",
+    "errorResponses": "status only; never persist headers or upstream error bodies"
+  },
+  "uncertain": {
+    "reserveUsd": 0,
+    "attempts": 0
+  },
+  "maxCalls": 4,
+  "mode": "real",
+  "createdAt": "2026-10-15T10:24:49.692Z",
+  "identity": {
+    "engine": "0ec47ce05f26cbbd926aa177a2748bb3ade2d58c",
+    "digests": {
+      "cases.json": "c55e2322d54c66f2f692c7b3a3ddcb5822d1a1256ae60e534cd65281d2e5191c",
+      "tool-snapshot.json": "4f51aa947a5856a7cbeb11621e6de471659a98a1c6847de15bef33af12df4a03",
+      "run.ts": "8e1836f9bf3e195915a97b069c78ca105bf12f60debedf6039de4738c95a1cbd",
+      "plugin.ts": "d2efe2f55106cb7048429e3b7664d4dbc9ca03af62a20668800ad6e7e59eee3b",
+      "mcp.ts": "526e7c4440d4eb5d27394b442c92febc827b59d060ed055c881ef01ea2b1152f"
+    },
+    "variants": [
+      {
+        "name": "before",
+        "commit": "133f463d93664269db0cf91f1c1ff7d7887d6bf9",
+        "tree": "200b11983819a70f72c13bf7280b7d25d15fd949",
+        "skillBytes": 15866
+      },
+      {
+        "name": "after",
+        "commit": "026553ad0bbc52a1faf6a9205fd7a1898e36414c",
+        "tree": "eb94ea21831406e65f1b5491b92ded440dee5c35",
+        "skillBytes": 15439
+      }
+    ]
+  },
+  "model": "deepseek-v4-flash",
+  "sample": 4,
+  "caseCount": 4,
+  "repeats": 1,
+  "pricesPerMillion": [
+    0.14,
+    0.28
+  ],
+  "budgetUsd": 1,
+  "stopReason": "completed",
+  "usage": {
+    "input": 127474,
+    "output": 1096,
+    "usd": 0.01815324,
+    "calls": 8
+  },
+  "projection": null,
+  "receipt": {
+    "loaded": 2,
+    "advertised": [
+      "alpha_cloud_access",
+      "alpha_echo",
+      "alpha_excel_read_xlsx",
+      "alpha_excel_write_xlsx",
+      "alpha_pdf_read_pdf",
+      "alpha_pdf_write_pdf",
+      "alpha_ping",
+      "alpha_powerpoint_read_pptx",
+      "alpha_powerpoint_write_pptx",
+      "alpha_register",
+      "alpha_reload",
+      "alpha_word_read_docx",
+      "alpha_word_write_docx",
+      "bash",
+      "cloud_cloud_account_status",
+      "cloud_cloud_artifacts",
+      "cloud_cloud_await",
+      "cloud_cloud_cancel",
+      "cloud_cloud_decide",
+      "cloud_cloud_dispatch",
+      "cloud_cloud_status",
+      "cloud_cloud_vision",
+      "cloud_cloud_web_fetch",
+      "cloud_cloud_web_search",
+      "edit",
+      "glob",
+      "grep",
+      "question",
+      "read",
+      "skill",
+      "task",
+      "todowrite",
+      "webfetch",
+      "websearch",
+      "write"
+    ],
+    "blockedFollowups": 0
+  },
+  "comparison": {
+    "delta": -0.25,
+    "noiseBand": null,
+    "improvedBeyondNoise": null,
+    "ac3Evidence": false
+  },
+  "summary": {
+    "before": {
+      "runs": 4,
+      "correct": 4,
+      "accuracy": 1,
+      "majorityAccuracy": null,
+      "unanimousCases": 4,
+      "repeatAccuracy": [
+        1
+      ],
+      "noiseRange": null,
+      "complete": true,
+      "perCase": [
+        {
+          "id": "c01",
+          "observed": [
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c02",
+          "observed": [
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c03",
+          "observed": [
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c04",
+          "observed": [
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        }
+      ]
+    },
+    "after": {
+      "runs": 4,
+      "correct": 3,
+      "accuracy": 0.75,
+      "majorityAccuracy": null,
+      "unanimousCases": 4,
+      "repeatAccuracy": [
+        0.75
+      ],
+      "noiseRange": null,
+      "complete": true,
+      "perCase": [
+        {
+          "id": "c01",
+          "observed": [
+            "cloud"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c02",
+          "observed": [
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c03",
+          "observed": [
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c04",
+          "observed": [
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        }
+      ]
+    }
+  },
+  "rows": [
+    {
+      "variant": "before",
+      "case": "c01",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15842,
+          "output": 73,
+          "usd": 0.0022383200000000002,
+          "promptBytes": 13563,
+          "toolBytes": 48353,
+          "responseBytes": 2609,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15842,
+      "output": 73,
+      "usd": 0.0022383200000000002,
+      "promptBytes": 13563,
+      "toolBytes": 48353,
+      "responseBytes": 2609,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c02",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15898,
+          "output": 206,
+          "usd": 0.0022834,
+          "promptBytes": 13589,
+          "toolBytes": 48353,
+          "responseBytes": 7515,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15898,
+      "output": 206,
+      "usd": 0.0022834,
+      "promptBytes": 13589,
+      "toolBytes": 48353,
+      "responseBytes": 7515,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c03",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 93,
+          "usd": 0.0022512,
+          "promptBytes": 13587,
+          "toolBytes": 48353,
+          "responseBytes": 2615,
+          "toolNames": [
+            "alpha_powerpoint_read_pptx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 93,
+      "usd": 0.0022512,
+      "promptBytes": 13587,
+      "toolBytes": 48353,
+      "responseBytes": 2615,
+      "tool": "alpha_powerpoint_read_pptx"
+    },
+    {
+      "variant": "before",
+      "case": "c04",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 242,
+          "usd": 0.0022925000000000003,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 6844,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 242,
+      "usd": 0.0022925000000000003,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 6844,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c01",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15948,
+          "output": 47,
+          "usd": 0.00224588,
+          "promptBytes": 13915,
+          "toolBytes": 48353,
+          "responseBytes": 1171,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15948,
+      "output": 47,
+      "usd": 0.00224588,
+      "promptBytes": 13915,
+      "toolBytes": 48353,
+      "responseBytes": 1171,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c02",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 16004,
+          "output": 143,
+          "usd": 0.0022806000000000002,
+          "promptBytes": 13941,
+          "toolBytes": 48353,
+          "responseBytes": 4705,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16004,
+      "output": 143,
+      "usd": 0.0022806000000000002,
+      "promptBytes": 13941,
+      "toolBytes": 48353,
+      "responseBytes": 4705,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c03",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 16000,
+          "output": 95,
+          "usd": 0.0022666,
+          "promptBytes": 13939,
+          "toolBytes": 48353,
+          "responseBytes": 3169,
+          "toolNames": [
+            "alpha_powerpoint_read_pptx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16000,
+      "output": 95,
+      "usd": 0.0022666,
+      "promptBytes": 13939,
+      "toolBytes": 48353,
+      "responseBytes": 3169,
+      "tool": "alpha_powerpoint_read_pptx"
+    },
+    {
+      "variant": "after",
+      "case": "c04",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15997,
+          "output": 197,
+          "usd": 0.0022947400000000004,
+          "promptBytes": 13922,
+          "toolBytes": 48353,
+          "responseBytes": 6040,
+          "toolNames": [
+            "glob",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15997,
+      "output": 197,
+      "usd": 0.0022947400000000004,
+      "promptBytes": 13922,
+      "toolBytes": 48353,
+      "responseBytes": 6040,
+      "tool": "glob"
+    }
+  ],
+  "markdown": "模式：真实 provider；4 例 × 1 次。\n\n| 变体 | 正确/次数 | 按次正确率 | 多数票正确率 | 三次全一致/例数 | 噪声极差 |\n|---|---:|---:|---:|---:|---:|\n| before | 4/4 | 100.00% | — | — | — |\n| after | 3/4 | 75.00% | — | — | — |\n\n改后−改前：-25.00%；噪声带：—；超出噪声：未判定。\nusage：127474 in / 1096 out；累计 $0.018153；停止原因：completed。\n"
+}

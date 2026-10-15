@@ -1,0 +1,2057 @@
+{
+  "schemaVersion": 3,
+  "execution": {
+    "baseCommit": "0ec47ce05f26cbbd926aa177a2748bb3ade2d58c",
+    "runnerSha256": "75eed3b81da94951dcad3a0dd49ee238a0e68735a1c139ff0abdd2ecc56292f5",
+    "patch": "--- run.ts@0ec47ce05\n+++ real-exec-20261015.ts\n@@ -8,10 +8,10 @@\n import snapshot from \"./tool-snapshot.json\"\n \n type Route = \"local\" | \"cloud\" | \"ask\"\n-type Outcome = Route | \"undecided\"\n+type Outcome = Route | \"undecided\" | \"error\"\n type Case = { id: string; prompt: string; expected: Route; reason: string; counterexample: boolean; rows: string[]; localSearch?: boolean }\n-type Call = { input: number; output: number; usd: number; promptBytes: number; toolBytes: number; responseBytes: number }\n-type Row = Call & { variant: string; case: string; repeat: number; expected: Route; observed: Outcome | null; tool?: string; text?: string; error?: string; limitReached?: boolean; calls: Call[]; instructions: { tool: string; name?: string; path?: string }[] }\n+type Call = { input: number; output: number; usd: number; promptBytes: number; toolBytes: number; responseBytes: number; toolNames?: string[] }\n+type Row = Call & { variant: string; case: string; repeat: number; expected: Route; observed: Outcome | null; tool?: string; text?: string; error?: string; limitReached?: boolean; retries: number; failures: { code: string; attempt: number }[]; calls: Call[]; instructions: { tool: string; name?: string; path?: string }[] }\n const here = import.meta.dir\n const repo = resolve(here, \"../../..\")\n const variants = [{ name: \"before\", ref: \"133f463d9\", skill: \"cloud-dispatch\" }, { name: \"after\", ref: \"026553ad0\", skill: \"cloud-capabilities\" }]\n@@ -33,12 +33,12 @@\n     const selected = rows.filter((row) => row.variant === name)\n     const perCase = cases.map((item) => {\n       const runs = selected.filter((row) => row.case === item.id)\n-      const votes = ([\"local\", \"cloud\", \"ask\", \"undecided\"] as Outcome[]).map((route) => ({ route, count: runs.filter((r) => r.observed === route).length })).sort((a, b) => b.count - a.count)\n-      const complete = runs.length === repeats && runs.every((r) => !r.error && r.observed)\n+      const votes = ([\"local\", \"cloud\", \"ask\", \"undecided\", \"error\"] as Outcome[]).map((route) => ({ route, count: runs.filter((r) => r.observed === route).length })).sort((a, b) => b.count - a.count)\n+      const complete = runs.length === repeats && runs.every((r) => r.observed)\n       const majority = complete && repeats === 3 && votes[0].count >= 2 ? votes[0].route : null\n       return { id: item.id, observed: runs.map((r) => r.observed), majority, majorityCorrect: majority === item.expected, consistency: complete ? votes[0].count / repeats : null, unanimous: complete && votes[0].count === repeats }\n     })\n-    const complete = selected.length === cases.length * repeats && selected.every((r) => !r.error && r.observed)\n+    const complete = selected.length === cases.length * repeats && selected.every((r) => r.observed)\n     const rates = Array.from({ length: repeats }, (_, i) => selected.filter((r) => r.repeat === i + 1 && r.observed === r.expected).length / cases.length)\n     return [name, { runs: selected.length, correct: selected.filter((r) => r.observed === r.expected).length, accuracy: selected.length ? selected.filter((r) => r.observed === r.expected).length / selected.length : null, majorityAccuracy: complete && repeats === 3 ? perCase.filter((r) => r.majorityCorrect).length / cases.length : null, unanimousCases: perCase.filter((r) => r.unanimous).length, repeatAccuracy: complete ? rates : null, noiseRange: complete && repeats === 3 ? Math.max(...rates) - Math.min(...rates) : null, complete, perCase }]\n   }))\n@@ -76,6 +76,10 @@\n const sample = selfTest ? 1 : args.includes(\"--sample\") ? Number(args[args.indexOf(\"--sample\") + 1]) : undefined\n assert(sample === undefined || (Number.isInteger(sample) && sample > 0), \"--sample needs a positive integer\")\n const real = args.includes(\"--real\")\n+const priorUsd = Number(process.env.EVAL_PRIOR_USD ?? 0)\n+const uncertain = { reserveUsd: 0, attempts: 0 }\n+const maxAttemptUsd = (128000 * 0.14 + 1024 * 0.28) / 1_000_000\n+const execution = { baseCommit: \"0ec47ce05f26cbbd926aa177a2748bb3ade2d58c\", runnerSha256: new Bun.CryptoHasher(\"sha256\").update(await Bun.file(import.meta.path).bytes()).digest(\"hex\"), patch: await Bun.file(new URL(\"real-execution.patch.json\", import.meta.url)).json(), priorUsd, retryPolicy: \"network/429/5xx: at most one retry per round; errors count wrong and continue\", errorResponses: \"status only; never persist headers or upstream error bodies\" }\n assert(!selfTest || !real, \"Self-test never uses a real provider\")\n const model = real ? process.env.EVAL_MODEL_ID : \"routing-fake\"\n const upstream = real ? process.env.EVAL_PROVIDER_BASE_URL : undefined\n@@ -151,12 +155,38 @@\n       assert(JSON.stringify(body.messages).includes(\"# Office documents\"), \"Office instruction body missing from continuation\")\n     }\n     const callUsage: Call = { input: 0, output: 0, usd: 0, promptBytes: Buffer.byteLength(JSON.stringify(body.messages)), toolBytes: Buffer.byteLength(JSON.stringify(body.tools)), responseBytes: 0 }\n-    const response = real ? await fetch(`${upstream!.replace(/\\/$/, \"\")}/chat/completions`, {\n-      method: \"POST\", redirect: \"error\", signal: AbortSignal.timeout(120_000),\n-      headers: { \"content-type\": \"application/json\", authorization: `Bearer ${(await Bun.file(keyFile!).text()).trim()}` },\n-      body: JSON.stringify({ ...body, model, stream: true, stream_options: { include_usage: true } }),\n-    }) : undefined\n-    if (response && !response.ok) throw new Error(`Provider HTTP ${response.status}; response body omitted`)\n+    if (priorUsd + usage.usd + uncertain.reserveUsd + maxAttemptUsd > budget) {\n+      state.stop = \"budget_headroom\"; active.resolve(); return new Response(\"EVAL_BUDGET_HEADROOM\", { status: 402 })\n+    }\n+    let response: Response | undefined\n+    let realWire: string | undefined\n+    if (real) {\n+      for (const attempt of [1, 2]) {\n+        if (priorUsd + usage.usd + uncertain.reserveUsd + maxAttemptUsd > budget) { state.stop = \"budget_headroom\"; active.resolve(); return new Response(\"EVAL_BUDGET_HEADROOM\", { status: 402 }) }\n+        response = undefined\n+        try {\n+          response = await fetch(`${upstream!.replace(/\\/$/, \"\")}/chat/completions`, {\n+            method: \"POST\", redirect: \"error\", signal: AbortSignal.timeout(90_000),\n+            headers: { \"content-type\": \"application/json\", authorization: `Bearer ${(await Bun.file(keyFile!).text()).trim()}` },\n+            body: JSON.stringify({ ...body, model, stream: true, stream_options: { include_usage: true } }),\n+          })\n+          if (response.ok) { realWire = await response.text(); break }\n+          const code = `http_${response.status}`\n+          active.row.failures.push({ code, attempt })\n+          const retryable = response.status === 429 || response.status >= 500\n+          if (response.status >= 500) { uncertain.reserveUsd += maxAttemptUsd; uncertain.attempts++ }\n+          await response.body?.cancel()\n+          if (!retryable || active.row.retries || active.requests >= maxCalls) throw new Error(code)\n+        } catch {\n+          if (response && !response.ok) throw new Error(`http_${response.status}`)\n+          active.row.failures.push({ code: \"network_error\", attempt })\n+          uncertain.reserveUsd += maxAttemptUsd; uncertain.attempts++\n+          if (active.row.retries || active.requests >= maxCalls) throw new Error(\"network_error\")\n+        }\n+        active.row.retries++; active.requests++\n+        await Bun.sleep(1000)\n+      }\n+    }\n     const serial = (Number(active.row.case.replace(/\\D/g, \"\")) - 1) * 3 + active.row.repeat - 1\n     const action = serial % 6\n     const decision = action === 0 ? { name: \"alpha_word_read_docx\", arguments: '{\"path\":\"/eval/report.docx\"}' }\n@@ -168,10 +198,11 @@\n     const delta = { role: \"assistant\", ...(tools.length ? { tool_calls: tools.map((fn, index) => ({ index, id: `call-${active.requests}-${index}`, type: \"function\", function: fn })) } : { content: action === 4 ? \"结果是 42。\" : \"请确认是否允许上传？\" }) }\n     const chunk = (delta: unknown, finish_reason: string | null = null, tokens?: unknown) => `data: ${JSON.stringify({ id: \"chatcmpl-eval\", object: \"chat.completion.chunk\", choices: [{ index: 0, delta, finish_reason }], ...(tokens ? { usage: tokens } : {}) })}\\n\\n`\n     // Script independent of expected labels AND variant; exercises wrong answers and repeat noise.\n-    const wire = response ? await response.text() : chunk(delta) + chunk({}, tools.length ? \"tool_calls\" : \"stop\", { prompt_tokens: Math.ceil((callUsage.promptBytes + callUsage.toolBytes) / 3), completion_tokens: Math.ceil(Buffer.byteLength(JSON.stringify([delta, {}])) / 3) }) + \"data: [DONE]\\n\\n\"\n+    const wire = realWire !== undefined ? realWire : chunk(delta) + chunk({}, tools.length ? \"tool_calls\" : \"stop\", { prompt_tokens: Math.ceil((callUsage.promptBytes + callUsage.toolBytes) / 3), completion_tokens: Math.ceil(Buffer.byteLength(JSON.stringify([delta, {}])) / 3) }) + \"data: [DONE]\\n\\n\"\n     const chunks = wire.split(\"\\n\").filter((l) => l.startsWith(\"data: \") && l !== \"data: [DONE]\").map((l) => JSON.parse(l.slice(6)))\n     const tokens = chunks.findLast((c) => c.usage)?.usage\n     assert(tokens && [tokens.prompt_tokens, tokens.completion_tokens].every((n) => Number.isFinite(n) && n >= 0), \"Missing/invalid provider usage; stopped\")\n+    callUsage.toolNames = [...new Set(chunks.flatMap((c) => c.choices.flatMap((v: { delta: { tool_calls?: { function?: { name?: string } }[] } }) => (v.delta.tool_calls ?? []).map((t) => t.function?.name).filter(Boolean))))] as string[]\n     callUsage.input = tokens.prompt_tokens\n     callUsage.output = tokens.completion_tokens\n     callUsage.usd = money(callUsage.input, callUsage.output, prices)\n@@ -180,13 +211,14 @@\n     active.row.input += callUsage.input; active.row.output += callUsage.output; active.row.usd += callUsage.usd\n     active.row.promptBytes += callUsage.promptBytes; active.row.toolBytes += callUsage.toolBytes; active.row.responseBytes += callUsage.responseBytes\n     usage.input += callUsage.input; usage.output += callUsage.output; usage.usd += callUsage.usd; usage.calls++\n-    if (usage.usd > budget) { state.stop = \"budget_exceeded\"; active.resolve(); return new Response(\"EVAL_BUDGET_EXCEEDED\", { status: 402 }) }\n+    if (priorUsd + usage.usd + uncertain.reserveUsd > budget) { state.stop = \"budget_exceeded\"; active.resolve(); return new Response(\"EVAL_BUDGET_EXCEEDED\", { status: 402 }) }\n     return new Response(wire, { headers: { \"content-type\": \"text/event-stream\" } })\n   } catch (error) {\n     if (!real) console.error(error instanceof Error ? error.message : \"Fake provider failure\")\n-    state.stop = \"provider_or_usage_error\"\n+    const code = error instanceof Error && /^http_\\d+$/.test(error.message) ? error.message : \"provider_or_usage_error\"\n+    active.row.error = code; active.row.observed = \"error\"\n     active.resolve()\n-    return new Response(\"EVAL_PROVIDER_ERROR: upstream detail omitted\", { status: 502 })\n+    return new Response(\"EVAL_ROUND_ERROR\", { status: 400 })\n   }\n } })\n \n@@ -198,7 +230,7 @@\n   const pct = (n: number | null) => n === null ? \"—\" : `${(n * 100).toFixed(2)}%`\n   const markdown = `模式：${real ? \"真实 provider\" : \"假 provider（仅链路校验，不能证明 AC3 提升）\"}；${cases.length} 例 × ${repeats} 次。\\n\\n| 变体 | 正确/次数 | 按次正确率 | 多数票正确率 | 三次全一致/例数 | 噪声极差 |\\n|---|---:|---:|---:|---:|---:|\\n${variants.map((v) => { const s = summary[v.name]; return `| ${v.name} | ${s.correct}/${s.runs} | ${pct(s.accuracy)} | ${pct(s.majorityAccuracy)} | ${repeats === 3 ? `${s.unanimousCases}/${cases.length}` : \"—\"} | ${pct(s.noiseRange)} |` }).join(\"\\n\")}\\n\\n改后−改前：${pct(delta)}；噪声带：${pct(noise)}；超出噪声：${comparison.improvedBeyondNoise ?? \"未判定\"}。\\nusage：${usage.input} in / ${usage.output} out；累计 $${usage.usd.toFixed(6)}；停止原因：${state.stop || \"completed\"}。\\n`\n   const projection = real ? null : { ...priceBasis, estimatedUsd: money(usage.input, usage.output, [priceBasis.inputUsdPerMillion, priceBasis.outputUsdPerMillion]), basis: \"UTF-8 JSON bytes / 3; cache-miss model USD rates, not wallet settlement\" }\n-  return Promise.all([Bun.write(out, JSON.stringify({ schemaVersion: 2, maxCalls, mode: real ? \"real\" : \"fake\", createdAt: new Date().toISOString(), identity, model, sample: sample ?? null, caseCount: cases.length, repeats, pricesPerMillion: prices, budgetUsd: Number.isFinite(budget) ? budget : null, stopReason: state.stop || \"completed\", usage, projection, receipt, comparison, summary, rows, markdown }, null, 2) + \"\\n\"), Bun.write(out.replace(/\\.json$/, \"\") + \".md\", markdown)]).then(() => markdown)\n+  return Promise.all([Bun.write(out, JSON.stringify({ schemaVersion: 3, execution, uncertain, maxCalls, mode: real ? \"real\" : \"fake\", createdAt: new Date().toISOString(), identity, model, sample: sample ?? null, caseCount: cases.length, repeats, pricesPerMillion: prices, budgetUsd: Number.isFinite(budget) ? budget : null, stopReason: state.stop || \"completed\", usage, projection, receipt, comparison, summary, rows, markdown }, null, 2) + \"\\n\"), Bun.write(out.replace(/\\.json$/, \"\") + \".md\", markdown)]).then(() => markdown)\n }\n \n try {\n@@ -247,14 +279,14 @@\n       const timer = setTimeout(() => timeout.reject(new Error(\"Engine startup timeout\")), 45_000)\n       const base = await Promise.race([ready, timeout.promise]).finally(() => clearTimeout(timer))\n       const api = async (path: string, body: unknown) => {\n-        const response = await fetch(base + path, { method: \"POST\", headers: { \"content-type\": \"application/json\", \"x-opencode-directory\": join(dir, \"workspace\") }, body: JSON.stringify(body), signal: AbortSignal.timeout(135_000) })\n+        const response = await fetch(base + path, { method: \"POST\", headers: { \"content-type\": \"application/json\", \"x-opencode-directory\": join(dir, \"workspace\") }, body: JSON.stringify(body), signal: AbortSignal.timeout(390_000) })\n         assert(response.ok, `Engine HTTP ${response.status} on ${path}`)\n         return response.json()\n       }\n       for (const item of cases) {\n         for (const repeat of Array.from({ length: repeats }, (_, i) => i + 1)) {\n           if (state.stop) break\n-          const row: Row = { variant: variant.name, case: item.id, repeat, expected: item.expected, observed: null, calls: [], instructions: [], input: 0, output: 0, usd: 0, promptBytes: 0, toolBytes: 0, responseBytes: 0 }\n+          const row: Row = { variant: variant.name, case: item.id, repeat, expected: item.expected, observed: null, retries: 0, failures: [], calls: [], instructions: [], input: 0, output: 0, usd: 0, promptBytes: 0, toolBytes: 0, responseBytes: 0 }\n           rows.push(row)\n           const session = await api(\"/session\", { title: \"routing-eval\" }) as { id: string }\n           const deferred = Promise.withResolvers<void>()\n@@ -267,7 +299,8 @@\n             row.text = (finished.message as { parts: { type: string; text?: string }[] }).parts.filter((p) => p.type === \"text\").map((p) => p.text ?? \"\").join(\"\\n\")\n             row.observed = classify(undefined, row.text)\n           }\n-          if (state.stop || !row.observed || !row.input) { row.error = state.stop || \"engine_or_empty_response\"; state.stop ||= row.error }\n+          if (state.stop) row.error = state.stop\n+          if (!row.observed) { row.observed = \"error\"; row.error = \"engine_or_empty_response\" }\n           await save()\n           console.log(`${row.variant} ${row.case} #${repeat}: ${row.observed ?? row.error} (${row.input}/${row.output})`)\n         }\n@@ -287,7 +320,7 @@\n   console.log(`Result: ${out}`)\n   await rm(temp, { recursive: true, force: true })\n }\n-if (state.stop && state.stop !== \"budget_exceeded\") process.exitCode = 1\n+if (state.stop && ![\"budget_exceeded\", \"budget_headroom\"].includes(state.stop)) process.exitCode = 1\n if (selfTest) {\n   assert.equal(state.stop, \"\")\n   assert.equal(rows.length, 2)\n",
+    "priorUsd": 0.01815324,
+    "retryPolicy": "network/429/5xx: at most one retry per round; errors count wrong and continue",
+    "errorResponses": "status only; never persist headers or upstream error bodies"
+  },
+  "uncertain": {
+    "reserveUsd": 0.036413440000000005,
+    "attempts": 2
+  },
+  "maxCalls": 4,
+  "mode": "real",
+  "createdAt": "2026-10-15T10:37:51.681Z",
+  "identity": {
+    "engine": "0ec47ce05f26cbbd926aa177a2748bb3ade2d58c",
+    "digests": {
+      "cases.json": "c55e2322d54c66f2f692c7b3a3ddcb5822d1a1256ae60e534cd65281d2e5191c",
+      "tool-snapshot.json": "4f51aa947a5856a7cbeb11621e6de471659a98a1c6847de15bef33af12df4a03",
+      "run.ts": "8e1836f9bf3e195915a97b069c78ca105bf12f60debedf6039de4738c95a1cbd",
+      "plugin.ts": "d2efe2f55106cb7048429e3b7664d4dbc9ca03af62a20668800ad6e7e59eee3b",
+      "mcp.ts": "526e7c4440d4eb5d27394b442c92febc827b59d060ed055c881ef01ea2b1152f"
+    },
+    "variants": [
+      {
+        "name": "before",
+        "commit": "133f463d93664269db0cf91f1c1ff7d7887d6bf9",
+        "tree": "200b11983819a70f72c13bf7280b7d25d15fd949",
+        "skillBytes": 15866
+      }
+    ]
+  },
+  "model": "deepseek-v4-flash",
+  "sample": null,
+  "caseCount": 28,
+  "repeats": 3,
+  "pricesPerMillion": [
+    0.14,
+    0.28
+  ],
+  "budgetUsd": 10,
+  "stopReason": "harness_error",
+  "usage": {
+    "input": 772109,
+    "output": 7986,
+    "usd": 0.11033134000000003,
+    "calls": 48
+  },
+  "projection": null,
+  "receipt": {
+    "loaded": 1,
+    "advertised": [
+      "alpha_cloud_access",
+      "alpha_echo",
+      "alpha_excel_read_xlsx",
+      "alpha_excel_write_xlsx",
+      "alpha_pdf_read_pdf",
+      "alpha_pdf_write_pdf",
+      "alpha_ping",
+      "alpha_powerpoint_read_pptx",
+      "alpha_powerpoint_write_pptx",
+      "alpha_register",
+      "alpha_reload",
+      "alpha_word_read_docx",
+      "alpha_word_write_docx",
+      "bash",
+      "cloud_cloud_account_status",
+      "cloud_cloud_artifacts",
+      "cloud_cloud_await",
+      "cloud_cloud_cancel",
+      "cloud_cloud_decide",
+      "cloud_cloud_dispatch",
+      "cloud_cloud_status",
+      "cloud_cloud_vision",
+      "cloud_cloud_web_fetch",
+      "cloud_cloud_web_search",
+      "edit",
+      "glob",
+      "grep",
+      "question",
+      "read",
+      "skill",
+      "task",
+      "todowrite",
+      "webfetch",
+      "websearch",
+      "write"
+    ],
+    "blockedFollowups": 5
+  },
+  "comparison": {
+    "delta": null,
+    "noiseBand": null,
+    "improvedBeyondNoise": null,
+    "ac3Evidence": false
+  },
+  "summary": {
+    "before": {
+      "runs": 47,
+      "correct": 41,
+      "accuracy": 0.8723404255319149,
+      "majorityAccuracy": null,
+      "unanimousCases": 13,
+      "repeatAccuracy": null,
+      "noiseRange": null,
+      "complete": false,
+      "perCase": [
+        {
+          "id": "c01",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c02",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c03",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c04",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c05",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c06",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c07",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c08",
+          "observed": [
+            "local",
+            "local",
+            "error"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c09",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c10",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c11",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c12",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c13",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c14",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c15",
+          "observed": [
+            "local",
+            "undecided",
+            "error"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 0.3333333333333333,
+          "unanimous": false
+        },
+        {
+          "id": "c16",
+          "observed": [
+            "error",
+            null
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c17",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c18",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c19",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c20",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c21",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c22",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c23",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c24",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c25",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c26",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c27",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c28",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        }
+      ]
+    },
+    "after": {
+      "runs": 0,
+      "correct": 0,
+      "accuracy": null,
+      "majorityAccuracy": null,
+      "unanimousCases": 0,
+      "repeatAccuracy": null,
+      "noiseRange": null,
+      "complete": false,
+      "perCase": [
+        {
+          "id": "c01",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c02",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c03",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c04",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c05",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c06",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c07",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c08",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c09",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c10",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c11",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c12",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c13",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c14",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c15",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c16",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c17",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c18",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c19",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c20",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c21",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c22",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c23",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c24",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c25",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c26",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c27",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        },
+        {
+          "id": "c28",
+          "observed": [],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": null,
+          "unanimous": false
+        }
+      ]
+    }
+  },
+  "rows": [
+    {
+      "variant": "before",
+      "case": "c01",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15842,
+          "output": 55,
+          "usd": 0.0022332800000000002,
+          "promptBytes": 13563,
+          "toolBytes": 48353,
+          "responseBytes": 1204,
+          "toolNames": [
+            "alpha_word_read_docx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15842,
+      "output": 55,
+      "usd": 0.0022332800000000002,
+      "promptBytes": 13563,
+      "toolBytes": 48353,
+      "responseBytes": 1204,
+      "tool": "alpha_word_read_docx"
+    },
+    {
+      "variant": "before",
+      "case": "c01",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15842,
+          "output": 83,
+          "usd": 0.00224112,
+          "promptBytes": 13563,
+          "toolBytes": 48353,
+          "responseBytes": 3351,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15842,
+      "output": 83,
+      "usd": 0.00224112,
+      "promptBytes": 13563,
+      "toolBytes": 48353,
+      "responseBytes": 3351,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c01",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15842,
+          "output": 50,
+          "usd": 0.0022318800000000003,
+          "promptBytes": 13563,
+          "toolBytes": 48353,
+          "responseBytes": 1189,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15842,
+      "output": 50,
+      "usd": 0.0022318800000000003,
+      "promptBytes": 13563,
+      "toolBytes": 48353,
+      "responseBytes": 1189,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c02",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15898,
+          "output": 164,
+          "usd": 0.00227164,
+          "promptBytes": 13589,
+          "toolBytes": 48353,
+          "responseBytes": 5571,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15898,
+      "output": 164,
+      "usd": 0.00227164,
+      "promptBytes": 13589,
+      "toolBytes": 48353,
+      "responseBytes": 5571,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c02",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15898,
+          "output": 184,
+          "usd": 0.0022772400000000003,
+          "promptBytes": 13589,
+          "toolBytes": 48353,
+          "responseBytes": 6328,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15898,
+      "output": 184,
+      "usd": 0.0022772400000000003,
+      "promptBytes": 13589,
+      "toolBytes": 48353,
+      "responseBytes": 6328,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c02",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15898,
+          "output": 165,
+          "usd": 0.00227192,
+          "promptBytes": 13589,
+          "toolBytes": 48353,
+          "responseBytes": 5387,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15898,
+      "output": 165,
+      "usd": 0.00227192,
+      "promptBytes": 13589,
+      "toolBytes": 48353,
+      "responseBytes": 5387,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c03",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 210,
+          "usd": 0.0022839600000000007,
+          "promptBytes": 13587,
+          "toolBytes": 48353,
+          "responseBytes": 6077,
+          "toolNames": [
+            "alpha_powerpoint_read_pptx",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 210,
+      "usd": 0.0022839600000000007,
+      "promptBytes": 13587,
+      "toolBytes": 48353,
+      "responseBytes": 6077,
+      "tool": "alpha_powerpoint_read_pptx"
+    },
+    {
+      "variant": "before",
+      "case": "c03",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 112,
+          "usd": 0.0022565200000000006,
+          "promptBytes": 13587,
+          "toolBytes": 48353,
+          "responseBytes": 3396,
+          "toolNames": [
+            "glob",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 112,
+      "usd": 0.0022565200000000006,
+      "promptBytes": 13587,
+      "toolBytes": 48353,
+      "responseBytes": 3396,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c03",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 138,
+          "usd": 0.0022638000000000003,
+          "promptBytes": 13587,
+          "toolBytes": 48353,
+          "responseBytes": 5079,
+          "toolNames": [
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 138,
+      "usd": 0.0022638000000000003,
+      "promptBytes": 13587,
+      "toolBytes": 48353,
+      "responseBytes": 5079,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c04",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 178,
+          "usd": 0.0022745800000000004,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 5953,
+          "toolNames": [
+            "alpha_pdf_read_pdf"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 178,
+      "usd": 0.0022745800000000004,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 5953,
+      "tool": "alpha_pdf_read_pdf"
+    },
+    {
+      "variant": "before",
+      "case": "c04",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 231,
+          "usd": 0.00228942,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 7719,
+          "toolNames": [
+            "glob",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 231,
+      "usd": 0.00228942,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 7719,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c04",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 225,
+          "usd": 0.0022877400000000003,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 7891,
+          "toolNames": [
+            "alpha_pdf_read_pdf"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 225,
+      "usd": 0.0022877400000000003,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 7891,
+      "tool": "alpha_pdf_read_pdf"
+    },
+    {
+      "variant": "before",
+      "case": "c05",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15919,
+          "output": 27,
+          "usd": 0.00223622,
+          "promptBytes": 13556,
+          "toolBytes": 48353,
+          "responseBytes": 1196,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15919,
+      "output": 27,
+      "usd": 0.00223622,
+      "promptBytes": 13556,
+      "toolBytes": 48353,
+      "responseBytes": 1196,
+      "text": "cloudflare.com"
+    },
+    {
+      "variant": "before",
+      "case": "c05",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15919,
+          "output": 51,
+          "usd": 0.0022429400000000006,
+          "promptBytes": 13556,
+          "toolBytes": 48353,
+          "responseBytes": 2778,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15919,
+      "output": 51,
+      "usd": 0.0022429400000000006,
+      "promptBytes": 13556,
+      "toolBytes": 48353,
+      "responseBytes": 2778,
+      "text": "cloudflare.com"
+    },
+    {
+      "variant": "before",
+      "case": "c05",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15919,
+          "output": 71,
+          "usd": 0.0022485400000000003,
+          "promptBytes": 13556,
+          "toolBytes": 48353,
+          "responseBytes": 1838,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15919,
+      "output": 71,
+      "usd": 0.0022485400000000003,
+      "promptBytes": 13556,
+      "toolBytes": 48353,
+      "responseBytes": 1838,
+      "tool": "websearch"
+    },
+    {
+      "variant": "before",
+      "case": "c06",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15841,
+          "output": 87,
+          "usd": 0.0022421000000000003,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 2260,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15841,
+      "output": 87,
+      "usd": 0.0022421000000000003,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 2260,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "before",
+      "case": "c06",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15841,
+          "output": 95,
+          "usd": 0.00224434,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 2732,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15841,
+      "output": 95,
+      "usd": 0.00224434,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 2732,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "before",
+      "case": "c06",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15841,
+          "output": 95,
+          "usd": 0.00224434,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 2736,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15841,
+      "output": 95,
+      "usd": 0.00224434,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 2736,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "before",
+      "case": "c07",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15847,
+          "output": 89,
+          "usd": 0.0022435000000000003,
+          "promptBytes": 13579,
+          "toolBytes": 48353,
+          "responseBytes": 4473,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15847,
+      "output": 89,
+      "usd": 0.0022435000000000003,
+      "promptBytes": 13579,
+      "toolBytes": 48353,
+      "responseBytes": 4473,
+      "text": "函数名是 `add` 但实现是减法 (`a - b`)，应该是 `return a + b`。"
+    },
+    {
+      "variant": "before",
+      "case": "c07",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15847,
+          "output": 53,
+          "usd": 0.0022334200000000007,
+          "promptBytes": 13579,
+          "toolBytes": 48353,
+          "responseBytes": 2581,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15847,
+      "output": 53,
+      "usd": 0.0022334200000000007,
+      "promptBytes": 13579,
+      "toolBytes": 48353,
+      "responseBytes": 2581,
+      "text": "问题很明显：函数名 `add` 暗示做加法，但实际实现 `a - b` 是做减法——这会导致逻辑错误。"
+    },
+    {
+      "variant": "before",
+      "case": "c07",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15847,
+          "output": 69,
+          "usd": 0.0022379000000000006,
+          "promptBytes": 13579,
+          "toolBytes": 48353,
+          "responseBytes": 3323,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15847,
+      "output": 69,
+      "usd": 0.0022379000000000006,
+      "promptBytes": 13579,
+      "toolBytes": 48353,
+      "responseBytes": 3323,
+      "text": "Bug: `add` function subtracts instead of adding. The `-` on line 1 should be `+`."
+    },
+    {
+      "variant": "before",
+      "case": "c08",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 212,
+          "usd": 0.0022785000000000006,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 12293,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 212,
+      "usd": 0.0022785000000000006,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 12293,
+      "tool": "grep"
+    },
+    {
+      "variant": "before",
+      "case": "c08",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 135,
+          "usd": 0.0022569400000000007,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 5799,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 135,
+      "usd": 0.0022569400000000007,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 5799,
+      "tool": "grep"
+    },
+    {
+      "variant": "before",
+      "case": "c08",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "error",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 112,
+          "usd": 0.0022505000000000003,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 7846,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 112,
+      "usd": 0.0022505000000000003,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 7846,
+      "text": "",
+      "error": "engine_or_empty_response"
+    },
+    {
+      "variant": "before",
+      "case": "c09",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15845,
+          "output": 133,
+          "usd": 0.00225554,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 4161,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15845,
+      "output": 133,
+      "usd": 0.00225554,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 4161,
+      "text": "**IaaS** (Infrastructure as a Service) 提供的是基础的云基础设施——虚拟机、存储、网络，你可以在上面自由安装操作系统和软件，就像租了一台远程电脑。\n\n**SaaS** (Software as a Service) 提供的是完整的、可直接使用的软件应用，你打开浏览器就能用（比如 Gmail、钉钉），无需管理底层任何东西。\n\n简单说：IaaS 给你\"机房\"，你自己搭；SaaS 给你\"成品软件\"，直接用。"
+    },
+    {
+      "variant": "before",
+      "case": "c09",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15845,
+          "output": 89,
+          "usd": 0.00224322,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 3408,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15845,
+      "output": 89,
+      "usd": 0.00224322,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 3408,
+      "text": "IaaS（基础设施即服务）提供虚拟机、存储、网络等底层资源，用户自己管理 OS、中间件和应用。SaaS（软件即服务）直接提供完整可用的软件应用，用户只需使用，无需管理底层任何东西。"
+    },
+    {
+      "variant": "before",
+      "case": "c09",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15845,
+          "output": 100,
+          "usd": 0.0022463,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 2967,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15845,
+      "output": 100,
+      "usd": 0.0022463,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 2967,
+      "text": "**IaaS** (基础设施即服务) 提供虚拟机、存储、网络等底层资源，用户自己管理 OS、中间件和应用，类似租用\"毛坯房\"。\n\n**SaaS** (软件即服务) 提供可直接使用的完整软件（如 Gmail、飞书），用户只管用，不用管底层任何东西，类似住\"酒店\"。"
+    },
+    {
+      "variant": "before",
+      "case": "c10",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 33,
+          "usd": 0.00223398,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 1568,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 33,
+      "usd": 0.00223398,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 1568,
+      "text": "你好,欢迎加入我们!很高兴见到你,期待与你一起开启接下来的旅程。"
+    },
+    {
+      "variant": "before",
+      "case": "c10",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 111,
+          "usd": 0.00225582,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 4385,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 111,
+      "usd": 0.00225582,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 4385,
+      "text": "欢迎加入我们！很高兴能有你这位新伙伴，接下来的每一段旅程，我们都期待与你一起并肩前行。"
+    },
+    {
+      "variant": "before",
+      "case": "c10",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 52,
+          "usd": 0.0022393,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 2089,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 52,
+      "usd": 0.0022393,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 2089,
+      "text": "欢迎加入 [公司/产品名]，很高兴在这里和你相遇——希望接下来的每一天，都能带给你新的价值与惊喜。"
+    },
+    {
+      "variant": "before",
+      "case": "c11",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15932,
+          "output": 91,
+          "usd": 0.00225596,
+          "promptBytes": 13583,
+          "toolBytes": 48353,
+          "responseBytes": 2235,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15932,
+      "output": 91,
+      "usd": 0.00225596,
+      "promptBytes": 13583,
+      "toolBytes": 48353,
+      "responseBytes": 2235,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c11",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15932,
+          "output": 98,
+          "usd": 0.00225792,
+          "promptBytes": 13583,
+          "toolBytes": 48353,
+          "responseBytes": 2888,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15932,
+      "output": 98,
+      "usd": 0.00225792,
+      "promptBytes": 13583,
+      "toolBytes": 48353,
+      "responseBytes": 2888,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c11",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15932,
+          "output": 97,
+          "usd": 0.00225764,
+          "promptBytes": 13583,
+          "toolBytes": 48353,
+          "responseBytes": 2374,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15932,
+      "output": 97,
+      "usd": 0.00225764,
+      "promptBytes": 13583,
+      "toolBytes": 48353,
+      "responseBytes": 2374,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c12",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15930,
+          "output": 150,
+          "usd": 0.0022722000000000003,
+          "promptBytes": 13595,
+          "toolBytes": 48353,
+          "responseBytes": 5256,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15930,
+      "output": 150,
+      "usd": 0.0022722000000000003,
+      "promptBytes": 13595,
+      "toolBytes": 48353,
+      "responseBytes": 5256,
+      "text": "可读性尚可，但有改进空间：\n\n- `x` 是无意义变量名，应改为 `ids` 或 `itemIds`\n- `i` 是单字母参数，可改为 `item` 以提高清晰度\n\n建议改写为：`const ids = items.map(item => item.id)`"
+    },
+    {
+      "variant": "before",
+      "case": "c12",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15930,
+          "output": 173,
+          "usd": 0.00227864,
+          "promptBytes": 13595,
+          "toolBytes": 48353,
+          "responseBytes": 6504,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15930,
+      "output": 173,
+      "usd": 0.00227864,
+      "promptBytes": 13595,
+      "toolBytes": 48353,
+      "responseBytes": 6504,
+      "text": "`x` 和 `i` 是缩写,不够自描述。`items.map(item => item.id)` 或 `const ids = items.map(item => item.id)` 更直观。作为一行简单映射,逻辑本身可读性没问题。"
+    },
+    {
+      "variant": "before",
+      "case": "c12",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15930,
+          "output": 187,
+          "usd": 0.0022825600000000003,
+          "promptBytes": 13595,
+          "toolBytes": 48353,
+          "responseBytes": 7760,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15930,
+      "output": 187,
+      "usd": 0.0022825600000000003,
+      "promptBytes": 13595,
+      "toolBytes": 48353,
+      "responseBytes": 7760,
+      "text": "Readability: low. `x` doesn't describe what the result is, and `i` as a callback parameter is vague. Better: `const ids = items.map(item => item.id)`."
+    },
+    {
+      "variant": "before",
+      "case": "c13",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15890,
+          "output": 122,
+          "usd": 0.0022587600000000003,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 4427,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15890,
+      "output": 122,
+      "usd": 0.0022587600000000003,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 4427,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c13",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15890,
+          "output": 123,
+          "usd": 0.0022590400000000004,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 4899,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15890,
+      "output": 123,
+      "usd": 0.0022590400000000004,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 4899,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c13",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15890,
+          "output": 86,
+          "usd": 0.0022486800000000003,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 3290,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15890,
+      "output": 86,
+      "usd": 0.0022486800000000003,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 3290,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c14",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15889,
+          "output": 210,
+          "usd": 0.00228326,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 8673,
+          "toolNames": [
+            "alpha_cloud_access",
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-dispatch",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-NaTgQB/before/packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md"
+        }
+      ],
+      "input": 15889,
+      "output": 210,
+      "usd": 0.00228326,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 8673,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c14",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15889,
+          "output": 202,
+          "usd": 0.00228102,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 7693,
+          "toolNames": [
+            "skill",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-dispatch",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-NaTgQB/before/packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md"
+        }
+      ],
+      "input": 15889,
+      "output": 202,
+      "usd": 0.00228102,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 7693,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c14",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15889,
+          "output": 92,
+          "usd": 0.0022502200000000003,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 3425,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15889,
+      "output": 92,
+      "usd": 0.0022502200000000003,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 3425,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c15",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "calls": [
+        {
+          "input": 15853,
+          "output": 146,
+          "usd": 0.0022603000000000002,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 5802,
+          "toolNames": [
+            "read"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15853,
+      "output": 146,
+      "usd": 0.0022603000000000002,
+      "promptBytes": 13622,
+      "toolBytes": 48353,
+      "responseBytes": 5802,
+      "tool": "read"
+    },
+    {
+      "variant": "before",
+      "case": "c15",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "undecided",
+      "retries": 1,
+      "failures": [
+        {
+          "code": "network_error",
+          "attempt": 1
+        }
+      ],
+      "calls": [
+        {
+          "input": 15853,
+          "output": 1024,
+          "usd": 0.0025061400000000005,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 45393,
+          "toolNames": [
+            "alpha_word_write_docx"
+          ]
+        },
+        {
+          "input": 16722,
+          "output": 1024,
+          "usd": 0.0026278,
+          "promptBytes": 19527,
+          "toolBytes": 48353,
+          "responseBytes": 35310,
+          "toolNames": [
+            "alpha_word_write_docx"
+          ]
+        },
+        {
+          "input": 17898,
+          "output": 174,
+          "usd": 0.0025544400000000003,
+          "promptBytes": 26135,
+          "toolBytes": 48353,
+          "responseBytes": 9009,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 50473,
+      "output": 2222,
+      "usd": 0.00768838,
+      "promptBytes": 59284,
+      "toolBytes": 145059,
+      "responseBytes": 89712,
+      "tool": "invalid",
+      "limitReached": true
+    },
+    {
+      "variant": "before",
+      "case": "c15",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "error",
+      "retries": 0,
+      "failures": [
+        {
+          "code": "network_error",
+          "attempt": 1
+        }
+      ],
+      "calls": [
+        {
+          "input": 18014,
+          "output": 317,
+          "usd": 0.0026107200000000004,
+          "promptBytes": 26981,
+          "toolBytes": 48353,
+          "responseBytes": 21817,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 20689,
+          "output": 261,
+          "usd": 0.0029695400000000005,
+          "promptBytes": 39107,
+          "toolBytes": 48353,
+          "responseBytes": 13988,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 38703,
+      "output": 578,
+      "usd": 0.005580260000000001,
+      "promptBytes": 66088,
+      "toolBytes": 96706,
+      "responseBytes": 35805,
+      "error": "provider_or_usage_error"
+    },
+    {
+      "variant": "before",
+      "case": "c16",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "error",
+      "retries": 0,
+      "failures": [],
+      "calls": [],
+      "instructions": [],
+      "input": 0,
+      "output": 0,
+      "usd": 0,
+      "promptBytes": 0,
+      "toolBytes": 0,
+      "responseBytes": 0,
+      "error": "engine_or_empty_response"
+    },
+    {
+      "variant": "before",
+      "case": "c16",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": null,
+      "retries": 0,
+      "failures": [],
+      "calls": [],
+      "instructions": [],
+      "input": 0,
+      "output": 0,
+      "usd": 0,
+      "promptBytes": 0,
+      "toolBytes": 0,
+      "responseBytes": 0
+    }
+  ],
+  "markdown": "模式：真实 provider；28 例 × 3 次。\n\n| 变体 | 正确/次数 | 按次正确率 | 多数票正确率 | 三次全一致/例数 | 噪声极差 |\n|---|---:|---:|---:|---:|---:|\n| before | 41/47 | 87.23% | — | 13/28 | — |\n| after | 0/0 | — | — | 0/28 | — |\n\n改后−改前：—；噪声带：—；超出噪声：未判定。\nusage：772109 in / 7986 out；累计 $0.110331；停止原因：harness_error。\n"
+}
