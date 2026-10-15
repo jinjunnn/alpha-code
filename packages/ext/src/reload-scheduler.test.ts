@@ -187,4 +187,26 @@ describe("reload-scheduler(I5 规则)", () => {
     await s.settled()
     expect(fresh.state.disposes).toBe(1)
   })
+
+  // 审计 R1 Major 4:global 在等(B 一直忙)时,目录请求不得被饿死 —— 目录组独立判定;global 之后成功再把它覆盖到的目录一并出队。
+  test("global 在等时目录请求照常判定:B 忙 ⇒ global 零 dispose;A 空闲的目录请求(含 force)⇒ A 恰好一次 dispose、报 reloaded", async () => {
+    const { s, reports } = scheduler()
+    const a = fakeClient()
+    const b = fakeClient({ ses_b: { type: "busy" } })
+    s.register("/a", a.client)
+    s.register("/b", b.client)
+    s.request({ generation: 1, scope: "global", reason: "installed skill writer" })
+    s.request({ generation: 2, scope: { directory: "/a" }, reason: "project mcp" })
+    s.request({ generation: 3, scope: { directory: "/a" }, reason: "user: reload now", force: true })
+    await s.settled()
+    expect([a.state.disposes, b.state.disposes]).toEqual([1, 0])
+    expect(reports.filter((r) => r.outcome === "reloaded").map((r) => r.generation)).toEqual([2, 3])
+    expect(reports.find((r) => r.generation === 1)).toMatchObject({ outcome: "waiting", error: "1 session(s) busy" })
+    // B 空闲 ⇒ global 执行(两个实例各一次),只报 global 自己那一代
+    b.state.status = {}
+    s.poke()
+    await s.settled()
+    expect([a.state.disposes, b.state.disposes]).toEqual([2, 1])
+    expect(reports.filter((r) => r.outcome === "reloaded").map((r) => r.generation)).toEqual([2, 3, 1])
+  })
 })

@@ -211,9 +211,12 @@ export function createReloadScheduler(deps: {
 
   async function runOnce() {
     // global 先判:它成功时一次 dispose 覆盖全部已登记实例,同轮里已被它重载过的目录组随之结束。
+    // global 没结束(某个实例在忙 / 查不到 / dispose 失败)**不挡**目录组(审计 R1 Major 4):每个目录组照常独立判定 ——
+    // 否则一个一直忙的项目会让别的项目的重载(含用户点的「现在重载」)永远排不上。
     const groups = new Map<string, Queued[]>()
     for (const item of queue) groups.set(keyOf(item.scope), [...(groups.get(keyOf(item.scope)) ?? []), item])
     const global = groups.get("global")
+    groups.delete("global")
     if (global) {
       const covered = [...instances.keys()]
       await runGroup(global)
@@ -222,9 +225,11 @@ export function createReloadScheduler(deps: {
         reportAll(swept, "reloaded", covered)
         settle(swept)
       }
-      return
     }
-    for (const members of groups.values()) await runGroup(members)
+    for (const members of groups.values()) {
+      const pending = members.filter((member) => queue.includes(member))
+      if (pending.length > 0) await runGroup(pending)
+    }
   }
 
   function tick() {
