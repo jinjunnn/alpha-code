@@ -132,6 +132,14 @@ only; its authorization set is `["cloud:dispatch"]`, derived once in main from
 the verified profile (`packageAuthorizationCapabilitiesV1`) and used by the
 confirmation diff, plan preview, binding, transaction and uninstall alike.
 
+`fixed[].value` is published as `maxLength: 4096`, but that schema bound counts
+characters while the host also applies its `maxStringBytes` bound of **4096
+UTF-8 bytes** to every payload string
+(`packages/ui-mac/src/shared/host-extension-package-contract/decoder.ts:1755`).
+The byte bound is the binding one: a value of 4096 characters that are not all
+ASCII passes the schema and is still refused by the host, so producers must
+measure a fixed value in UTF-8 bytes, not characters.
+
 ## Beyond the first install
 
 Update, uninstall, shared-child claims and the planning-time exact-digest
