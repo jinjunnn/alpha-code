@@ -42,6 +42,7 @@ import { planProcessFence } from "./process-fence-plan"
 // api() 超时时把「哪条调用、等了多久、代理记录、引擎日志尾」一起抛出 —— 一句裸 TimeoutError 会让下一个人再去查一遍不存在的缺陷。
 import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 import { sidecarEgressProxyEnv } from "./sidecar-env"
+import { buildReloadRequest } from "./alpha-sidecar-messages"
 
 const describeDarwin = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") ? describe : describe.skip
 const repoRoot = resolve(import.meta.dir, "../../../..")
@@ -139,7 +140,8 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
     } catch {}
   })
 
-  async function bootEngine(arm: Arm): Promise<Engine> {
+  /** `#1531`:额外的 preload(在围栏 preload 之后)与 node IPC(经它接成引擎的 process.parentPort)。 */
+  async function bootEngine(arm: Arm, extra: { preloads?: string[]; ipc?: boolean } = {}): Promise<Engine> {
     const port = 43000 + Math.floor(Math.random() * 2000)
     const configPath = join(iso, `config-${arm}.json`)
     writeFileSync(configPath, JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: [extBundle] }))
@@ -165,10 +167,11 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
       ...(arm === "fenced" ? { ALPHA1321_FENCE_ADDON: addon, ALPHA1321_FENCE_PROFILE: profileFile } : {}),
     }
     // flag 必须在 `run` 之后 —— `bun --preload X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(仓内 CLAUDE.md 记的坑,本文件第一版就踩了)。
-    const args = ["run", ...(arm === "fenced" ? ["--preload", join(fixtures, "engine-fence-preload.ts")] : []), engineEntry, "serve", "--port", String(port), "--hostname", "127.0.0.1"]
+    const preloads = [...(arm === "fenced" ? [join(fixtures, "engine-fence-preload.ts")] : []), ...(extra.preloads ?? [])]
+    const args = ["run", ...preloads.flatMap((p) => ["--preload", p]), engineEntry, "serve", "--port", String(port), "--hostname", "127.0.0.1"]
     const { spawn } = await import("node:child_process")
     const log: string[] = []
-    const proc = spawn(process.execPath, args, { cwd: join(userData, "engine-scratch-cwd"), env, stdio: ["ignore", "pipe", "pipe"] })
+    const proc = spawn(process.execPath, args, { cwd: join(userData, "engine-scratch-cwd"), env, stdio: extra.ipc ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"] })
     proc.stdout?.on("data", (c: Buffer) => log.push(c.toString("utf8")))
     proc.stderr?.on("data", (c: Buffer) => log.push(c.toString("utf8")))
     const engine = { proc, port, log, bootedAt: 0 }
@@ -302,4 +305,49 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
     for (const d of [join(home, ".local", "share", "opencode"), join(home, ".cache", "opencode"), join(home, ".config", "opencode"), join(home, ".npm")])
       expect(existsSync(d), d).toBe(true)
   })
+
+  // ── REQ-234 `#1531`(审计 R1 Major 1):ext 重载调度器在**围栏 + 引擎已监听**下能不能问到引擎 ───────────────────────────
+  // 引擎一监听,递给插件的 input.client 就改走 TCP 连 Server.url;围栏的网络行只放行出网代理端口(N4)。两臂同一条驱动:
+  // 经 node IPC 接成的 parentPort 发一条 main 形状的 alpha.reload.request(与出货 sidecar 收到的同一族消息),读 ext 回的 report。
+  //   对照臂:没有进程内交接 ⇒ 调度器只能用 input.client(TCP)⇒ 围栏拒掉 ⇒ 查不到 ⇒ 零 dispose、报 waiting —— 先证明这条红真的存在;
+  //   被测臂:按出货 sidecar 的做法挂上进程内 app.fetch(in-process-engine.ts 交接点)⇒ 调度器问得到 ⇒ dispose ⇒ 报 reloaded。
+  async function reloadViaParentPort(engine: Engine, generation: number) {
+    const project = await api(engine, "GET", "/project/current")
+    expect(project.status, `project/current ${JSON.stringify(project.json).slice(0, 300)}`).toBe(200)
+    const reports: Array<{ generation?: number; outcome?: string; error?: string; directories?: string[] }> = []
+    engine.proc.on("message", (message) => {
+      if ((message as { type?: string }).type === "alpha.reload.report") reports.push(message as (typeof reports)[number])
+    })
+    engine.proc.send!(buildReloadRequest({ generation, scope: "global", items: [], reason: "#1531 fenced reload probe" }))
+    const deadline = Date.now() + 30_000
+    while (Date.now() < deadline && !reports.some((r) => r.generation === generation)) await new Promise((r) => setTimeout(r, 100))
+    return reports.filter((r) => r.generation === generation)
+  }
+
+  test("#1531 正样本臂:不套围栏 + 已监听 + 没有进程内交接 ⇒ input.client(TCP)问得到 ⇒ reloaded —— 下一臂的红只能归因于围栏", async () => {
+    const engine = await bootEngine("bare", { preloads: [join(fixtures, "engine-parent-port-preload.ts")], ipc: true })
+    const reports = await reloadViaParentPort(engine, 3)
+    expect(reports[0], engine.log.join("").slice(-2000)).toMatchObject({ outcome: "reloaded", directories: [ws] })
+    engine.proc.kill("SIGTERM")
+  }, 180_000)
+
+  test("#1531 对照臂:围栏 + 已监听 + 没有进程内交接 ⇒ ext 调度器经 input.client(TCP)问不到引擎 ⇒ 零 dispose、报 waiting", async () => {
+    const engine = await bootEngine("fenced", { preloads: [join(fixtures, "engine-parent-port-preload.ts")], ipc: true })
+    expect(engine.log.join("")).toContain("engine-fence-preload: fence applied")
+    const reports = await reloadViaParentPort(engine, 1)
+    expect(reports[0], engine.log.join("").slice(-2000)).toMatchObject({ outcome: "waiting", error: "engine status unavailable — restart the app if this persists" })
+    expect(engine.log.join("")).toContain(`session status of ${ws} unknown`)
+    engine.proc.kill("SIGTERM")
+  }, 180_000)
+
+  test("#1531 被测臂:围栏 + 已监听 + 出货的进程内交接 ⇒ ext 调度器问得到引擎 ⇒ dispose ⇒ 报 reloaded", async () => {
+    const engine = await bootEngine("fenced", {
+      preloads: [join(fixtures, "engine-parent-port-preload.ts"), join(fixtures, "engine-in-process-preload.ts")],
+      ipc: true,
+    })
+    expect(engine.log.join("")).toContain("engine-fence-preload: fence applied")
+    const reports = await reloadViaParentPort(engine, 2)
+    expect(reports[0], engine.log.join("").slice(-2000)).toEqual({ type: "alpha.reload.report", generation: 2, scope: "global", outcome: "reloaded", directories: [ws] })
+    engine.proc.kill("SIGTERM")
+  }, 180_000)
 })

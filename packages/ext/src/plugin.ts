@@ -29,7 +29,8 @@ import { createCloudVisionHooks } from "./cloud-vision-hooks"
 import { cloudAccessState } from "./cloud-access"
 import { createHubBridge, processParentPort } from "./hub-bridge"
 import { createHubTools, pinHubInstallPermission } from "./hub-tools"
-import { createReloadScheduler } from "./reload-scheduler"
+import { createReloadScheduler, inProcessReloadClient } from "./reload-scheduler"
+import { inProcessEngine } from "../../ui-mac/src/main/in-process-engine"
 
 // REQ-234 `#1531`:一个引擎进程一份(插件模块被 import 缓存)—— 定制中心的 parentPort 桥与重载调度器(唯一执行者)。
 // 桥的 parentPort 监听在**这里、模块装载时**挂上:main 只在 sidecar ready 那一刻重发排队的重载代际(基线 §2.6)。
@@ -59,7 +60,11 @@ export const AlphaExt: Plugin = async (input) => {
   // REQ-036 生效闭环(S18 X9 实测):/instance/dispose 会**打断进行中的流式回复**。REQ-234 `#1531` 起不再由本实例
   // 自己按「登记会话 idle」去 dispose,而是登记进进程级调度器(reload-scheduler.ts):等**同一实例上所有会话**空闲、
   // 查询失败不动手,只因本插件的 dispose 钩子注销。
-  reloads.register(input.directory, input.client)
+  // 审计 R1 Major 1:调度器问引擎走**进程内**(sidecar 交来的 app.fetch);围栏下 input.client 的 TCP 连不上自己。
+  // 没有交接(CLI / 测试宿主,不在围栏里)才退回 input.client。注销按同一个对象,所以登记时就定下来。
+  const engine = inProcessEngine()
+  const reloadClient = engine ? inProcessReloadClient(engine, input.directory) : input.client
+  reloads.register(input.directory, reloadClient)
   // REQ-062 T1:转写残留 warning 去重(每进程每签名一次)
   const rebrandWarned = new Set<string>()
   // REQ-157 `#1284`:装载回执 —— 登记簿在 import 时已按上限校验过;这里只在 VERBOSE 下把库存打出来。
@@ -409,7 +414,7 @@ export const AlphaExt: Plugin = async (input) => {
     },
     // REQ-234 `#1531`:实例销毁(dispose / global dispose / 重建)时引擎逐插件调用 —— 调度器只在这里注销本实例。
     async dispose() {
-      reloads.unregister(input.directory, input.client)
+      reloads.unregister(input.directory, reloadClient)
     },
   }
 

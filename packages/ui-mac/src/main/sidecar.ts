@@ -20,6 +20,7 @@ import {
 } from "./sidecar-stop"
 import type { ChannelName } from "./catalog-channels"
 import { prewarmInitialLocation } from "./sidecar-location-prewarm"
+import { publishInProcessEngine } from "./in-process-engine"
 // REQ-159 `#1321`:进程围栏。本进程在 import 引擎之前把自己关进 seatbelt,之后派生的一切继承。
 // profile 由 main 渲染 + 试编译(process-fence-plan.ts),这里原样 apply;装不上 = 本进程不起
 // (fail-closed,原因经 error IPC 报给 main)。判据在 process-fence-apply.test.ts(真 .node / 真 seatbelt /
@@ -145,6 +146,10 @@ async function start(command: StartCommand) {
     useSystemCertificates()
     useEnvProxy()
     const { Server } = await import("virtual:opencode-server")
+    // REQ-234 `#1531`(审计 R1 Major 1):把引擎**进程内**的 app.fetch 交给 ext(与下面 prewarm 同一调用方式,不经 TCP)。
+    // 围栏只放行出网代理端口,ext 拿到的 input.client 在引擎监听后走 TCP 连自己 —— 出货形态下被拒,重载调度器就永远查不到
+    // 会话状态、零 dispose。交接点与判据见 in-process-engine.ts / process-fence-engine.test.ts 的 #1531 三臂。
+    publishInProcessEngine((request) => Server.Default().app.fetch(request))
     // REQ-234 `#1531`:@alpha-code/ext 在**模块装载时**挂 parentPort 监听(定制中心桥 + 重载调度器),而 main 只在 ready
     // 那一刻重发排队的重载代际。引擎要等第一个 v1 实例初始化插件才 import 它 —— 常常晚于 ready,那一批就丢了。这里先 import
     // 引擎稍后要 import 的**同一个 URL**(引擎解析路径插件 = pathToFileURL(path).href;ESM 按 URL 缓存 ⇒ 同一个模块记录、

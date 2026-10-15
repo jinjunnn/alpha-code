@@ -24,11 +24,33 @@
 // 细节进本进程日志。
 
 import type { ReloadOutcome, ReloadScope } from "../../ui-mac/src/main/alpha-sidecar-messages"
+import type { EngineFetch } from "../../ui-mac/src/main/in-process-engine"
 
 /** 引擎递给插件的 v1 SDK client 里本模块用到的两样(与 `input.client` 同形)。 */
 export type ReloadClient = {
   session: { status(): Promise<unknown> }
   instance: { dispose(): Promise<unknown> }
+}
+
+/**
+ * 审计 R1 Major 1:**进程内**问引擎的 client(GET /session/status、POST /instance/dispose)。引擎一监听,插件拿到的 input.client
+ * 就走 TCP 连自己的端口,而出货围栏只放行出网代理端口 ⇒ 那条连接被拒(process-fence-engine.test.ts 的 #1531 三臂实测)。
+ * 这里经 sidecar 交来的 app.fetch 直接进引擎(与 sidecar 的 prewarm 同一调用方式),目录与凭据和 v1 SDK 同形
+ * (`?directory=` + `x-opencode-directory`;Basic = OPENCODE_SERVER_USERNAME / PASSWORD,引擎自己的 ServerAuth 读的就是它们)。
+ */
+export function inProcessReloadClient(engineFetch: EngineFetch, directory: string, env: NodeJS.ProcessEnv = process.env): ReloadClient {
+  const password = env.OPENCODE_SERVER_PASSWORD
+  const authorization = password ? `Basic ${Buffer.from(`${env.OPENCODE_SERVER_USERNAME ?? "opencode"}:${password}`).toString("base64")}` : undefined
+  const call = async (method: "GET" | "POST", path: string) => {
+    const url = new URL(path, "http://alpha-engine.invalid")
+    url.searchParams.set("directory", directory)
+    const response = await engineFetch(
+      new Request(url, { method, headers: { "x-opencode-directory": encodeURIComponent(directory), ...(authorization ? { authorization } : {}) } }),
+    )
+    if (!response.ok) return { error: { status: response.status } }
+    return { data: await response.json() }
+  }
+  return { session: { status: () => call("GET", "/session/status") }, instance: { dispose: () => call("POST", "/instance/dispose") } }
 }
 
 export type ReloadRequestInput = {
