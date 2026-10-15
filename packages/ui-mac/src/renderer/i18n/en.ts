@@ -346,6 +346,7 @@ export const dict = {
   "alpha.ext.migrated": "Migrated {{count}} item(s)",
   "alpha.ext.enabled": "Enabled",
   "alpha.ext.disabled": "Disabled",
+  "alpha.ext.hubAgentRequested": "The assistant in your conversation asked to install this. Check what it adds before you agree.",
   "alpha.ext.close": "Close",
   "alpha.ext.noResults": "No matching extensions found. Try another search term.",
   "alpha.ext.empty": "You have not installed any extensions yet",

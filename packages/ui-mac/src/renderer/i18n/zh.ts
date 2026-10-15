@@ -335,6 +335,7 @@ export const dict = {
   "alpha.ext.migrated": "已迁移 {{count}} 项",
   "alpha.ext.enabled": "已启用",
   "alpha.ext.disabled": "已停用",
+  "alpha.ext.hubAgentRequested": "这是对话里的助手请你安装的。同意前请看清楚它要装什么。",
   "alpha.ext.close": "关闭",
   "alpha.ext.noResults": "没有找到匹配的扩展，请换个关键词试试。",
   "alpha.ext.empty": "你还没有安装扩展",

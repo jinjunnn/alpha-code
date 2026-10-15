@@ -5,3 +5,9 @@
 export function useNavigate() {
   return (..._args: unknown[]) => {}
 }
+
+// REQ-234 `#1531`:审批面现在会挂定制中心安装确认框的守望者(只对 metadata.alphaHub 请求渲染),它读当前路由的项目目录;
+// 闸门场景不发这类请求,给一个无项目的路由即可。
+export function useLocation() {
+  return { pathname: "/" }
+}

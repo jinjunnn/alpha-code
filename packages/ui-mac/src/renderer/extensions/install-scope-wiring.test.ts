@@ -86,25 +86,32 @@ describe("REQ-136 wiring: only catalog MCP may submit Current project", () => {
     expect(withCalls.sort()).toEqual(["extensions/use-extensions.ts"])
   })
 
+  // REQ-234 `#1531`:确认框与授权两阶段控制器抽到 install-confirm.tsx(定制中心与 agent 安装守望者共用同一份),
+  // 下面两条锚随之读那份文件 —— 守的东西不变:作用域只能是路由给的 D、没有安装时的目录选择器、授权重驱带着选定的作用域。
   test("MCP confirmation uses route-gated native radios and no install-time directory picker", () => {
-    const source = read("extension-hub.tsx")
+    const source = read("install-confirm.tsx")
+    const hub = read("extension-hub.tsx")
     const start = source.indexOf('<fieldset class="alpha-ext-install-scope" data-install-scope="mcp">')
     const scope = source.slice(start, source.indexOf("</fieldset>", start))
-    const confirmation = source.slice(source.indexOf("{/* Install confirmation"))
+    const confirmation = `${source}${hub.slice(hub.indexOf("{/* Install confirmation"))}`
+    expect(hub.indexOf("{/* Install confirmation")).toBeGreaterThan(0)
     expect(start).toBeGreaterThan(0)
     expect(scope).toContain('type="radio"')
     expect(scope).toContain('value="global"')
-    expect(scope).toContain('checked={installScope() === "global"}')
-    expect(scope).toContain('<Show when={projectDir()}>')
+    expect(scope).toContain('checked={c.installScope() === "global"}')
+    expect(scope).toContain('<Show when={c.projectDir()}>')
     expect(scope).toContain('value="project"')
     expect(scope).not.toMatch(/openFilePicker|showOpenDialog|workspaceDefaultDir|workspaceEnsureDefault|type="file"/)
     expect(confirmation).not.toMatch(/openFilePicker|showOpenDialog|workspaceDefaultDir|workspaceEnsureDefault|type="file"/)
     expect(source).toContain('const [installScope, setInstallScope] = createSignal<CatalogInstallScopeChoice>(DEFAULT_CATALOG_INSTALL_SCOPE)')
     const open = source.slice(source.indexOf("const openInstallConfirmation ="), source.indexOf("// T5:", source.indexOf("const openInstallConfirmation =")))
+    expect(open.indexOf("setInstallScope(DEFAULT_CATALOG_INSTALL_SCOPE)")).toBeGreaterThanOrEqual(0)
     expect(open.indexOf("setInstallScope(DEFAULT_CATALOG_INSTALL_SCOPE)")).toBeLessThan(
       open.indexOf("setConfirming(entry)"),
     )
     expect(source.match(/setConfirming\((?!null\))/g)).toHaveLength(1)
+    // 只有一份控制器:定制中心自己不再持有确认框状态
+    expect(hub.match(/setConfirming\(|createSignal<CatalogInstallScopeChoice>/g)).toBeNull()
     expect(source.slice(source.lastIndexOf("<Show", start), start)).toContain(
       '<Show when={entry().type === "mcp"}>',
     )
@@ -112,11 +119,14 @@ describe("REQ-136 wiring: only catalog MCP may submit Current project", () => {
 
   test("authorization redrive keeps the chosen scope and project rows consume main's safe state", () => {
     const source = read("extension-hub.tsx")
+    const confirm = read("install-confirm.tsx")
     const hook = read("use-extensions.ts")
-    expect(source).toContain("projectDir: selectedProjectDir")
-    expect(source).toContain("onAdd(e, secretsArg, undefined, scope, selectedProjectDir)")
-    expect(source).toContain("onAdd(a.entry, a.secrets, decision, a.scope, a.projectDir)")
-    expect(source).toContain('const selectedProjectDir = scope === "project" ? projectDir() : undefined')
+    expect(confirm).toContain("projectDir: selectedProjectDir")
+    expect(confirm).toContain("deps.install(e, secretsArg, undefined, scope, selectedProjectDir)")
+    expect(confirm).toContain("deps.install(a.entry, a.secrets, decision, a.scope, a.projectDir)")
+    expect(confirm).toContain('const selectedProjectDir = scope === "project" ? deps.projectDir() : undefined')
+    // 定制中心那一个实例:确认之后装的那一下就是 onAdd(作用域与项目目录原样透传)
+    expect(source).toContain("install: (entry, secrets, authorization, scope, selectedProjectDir) => onAdd(entry, secrets, authorization, scope, selectedProjectDir)")
     expect(source).toContain("addMcpEntry(e, secrets, true, authorization, scope, selectedProjectDir)")
     expect(source).toContain("projectMcpStatusView(row.receipt.projectMcpState)")
     expect(source).toContain("sdkMcpStatusForReceipt(r, ext.store.mcp)")
@@ -128,7 +138,7 @@ describe("REQ-136 wiring: only catalog MCP may submit Current project", () => {
     expect(hook).toContain("extIpc.reloadRequest({ scope, items, reason")
     expect(hook).toContain('loadInstalls(target.target.scope === "project" ? target.target.projectDir : undefined)')
     expect(hook).toContain('if (type === "server.instance.disposed") {')
-    const onAdd = source.slice(source.indexOf("const onAdd = async"), source.indexOf("const closeAuthz ="))
+    const onAdd = source.slice(source.indexOf("const onAdd = async"), source.indexOf("const closePackageAuthz ="))
     expect(onAdd.indexOf('if (scope === "project" && e.type !== "mcp")')).toBeLessThan(
       onAdd.indexOf('if (e.type === "mcp")'),
     )

@@ -166,3 +166,8 @@ export function useServerSync() {
 export function useParams() {
   return { id: HARNESS.sessionID }
 }
+
+/** REQ-234 `#1531`:审批面挂的定制中心安装守望者读当前路由的项目目录;本闸门不发 alphaHub 请求,给无项目路由。 */
+export function useLocation() {
+  return { pathname: "/" }
+}

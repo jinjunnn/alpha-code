@@ -57,6 +57,33 @@ describe("Alpha Permission unique-mount ratchet", () => {
     })
   })
 
+  // REQ-234 `#1531`:审批面的第二个消费者 —— agent 的定制中心安装请求(metadata.alphaHub)。它只能挂在**这一个**呈现面里、
+  // 在通用对话框之前分流(否则同一个请求弹两个框),并且只经 PermissionWatcher 交给它的 reply 回审批(不自建 client、
+  // 不订全局事件)。运行时行为在 hub-install-watcher.test.ts 与 permission-single-surface.test.ts 的 #1531 场景。
+  test("#1531 hub install watcher is a consumer inside the one Permission surface, routed before the generic dialog", async () => {
+    const hubWatcher = await Bun.file(resolve(root, "packages/ui-mac/src/renderer/alpha-ui/hub-install-watcher.tsx")).text()
+    const routed = watcher.indexOf("const hub = alphaHubRequestOf(raw)")
+    expect(routed).toBeGreaterThan(0)
+    expect(routed).toBeLessThan(watcher.indexOf("<PermissionDialog"))
+    expect(watcher.indexOf("<HubInstallWatcher")).toBeGreaterThan(routed)
+    expect(watcher).toContain("reply={(decision) => feed.reply(raw.id, createPermissionDecisionCommand(raw, decision))}")
+    expect(renderer).not.toContain("<HubInstallWatcher")
+    expect(hubWatcher).not.toContain("createOpencodeClient")
+    expect(hubWatcher).not.toContain("global.event")
+    expect(hubWatcher).toContain("await props.reply(decision)")
+    const mounts: string[] = []
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name)
+        if (entry.isDirectory()) walk(p)
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.|-test-runtime\.|-stub\./.test(entry.name) && readFileSync(p, "utf8").includes("<HubInstallWatcher"))
+          mounts.push(relative(root, p))
+      }
+    }
+    walk(resolve(root, "packages/ui-mac/src"))
+    expect(mounts).toEqual(["packages/ui-mac/src/renderer/alpha-ui/permission-watcher.tsx"])
+  })
+
   test("uses the Session Permission contract without sharing REQ-212 domain enums", () => {
     expect(permissionDialog).toContain("PermissionV2DecisionCommand")
     expect(permissionDialog).not.toContain("ext-capability-authorization")

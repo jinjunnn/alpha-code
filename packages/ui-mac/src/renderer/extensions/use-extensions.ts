@@ -339,6 +339,8 @@ export interface ExtensionsApi {
     authorization?: AuthorizationConfirmationWire,
     scope?: CatalogInstallScopeChoice,
     selectedProjectDir?: string,
+    /** REQ-234 `#1531`:agent 经确认框发起的这一次安装的请求号(main 只用它记阶段);缺席 = 定制中心自己的安装。 */
+    hubRequestId?: string,
   ): Promise<ActionResult>
   /** REQ-033:catalog 外任意 MCP(local command / remote url + env/密钥);白名单校验在 main 不放宽。 */
   addCustomMcp(
@@ -381,7 +383,7 @@ export interface ExtensionsApi {
    *  条目呈现为「出厂内置」而非可安装(S18 X1)。创建类操作已技能化,不再有表单写入方法。 */
   factorySkills(): string[]
   /** Install a catalog skill entry by writing its SKILL.md. */
-  installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
+  installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult>
   /** REQ-234 `#1529`:「现在重载(会打断正在输出的回答)」—— 唯一的强制入口。缺省 = 全部;给目录 = 只重载那个项目。
    *  只是请 ext 调度器跳过「等空闲」,结果看 `store.hubRows`。返回 false = 请求本身没被受理。 */
   refreshEngine(directory?: string): Promise<boolean>
@@ -390,7 +392,7 @@ export interface ExtensionsApi {
   /** REQ-018 T7:刷新引擎已知的 agents(内置 + 自建)供 Agent tab 呈现。 */
   reloadAgents(): Promise<void>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
-  installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
+  installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult>
   /**
    * REQ-019 T5:按 catalog 当前钉版更新已装条目。skill = 覆盖重装(同名 dest,receipt 版本翻新);
    * plugin = 卸旧配置项再写新钉版(persistPlugin 只会追加,直接重装会留旧版残留)。
@@ -423,7 +425,7 @@ export interface ExtensionsApi {
   importSkillGit(url: string): Promise<ActionResult & { name?: string }>
   /** REQ-019 T6:npm 插件导入 = 复用 persistPlugin 通道(主进程包名白名单)。 */
   /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线)。 */
-  installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
+  installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult>
   /**
    * REQ-128 Phase 4 `#810`:**签名 package 与套件安装的唯一出站点**。
    *
@@ -439,7 +441,7 @@ export interface ExtensionsApi {
   installCatalogIntent(intent: CatalogInstallIntentV1): Promise<CatalogInstallResult>
   /** REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表;不落文件、不写引擎 config)。
    *  停用走 uninstall(cloud receipt → 去账)。 */
-  enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
+  enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult>
 }
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
@@ -679,6 +681,7 @@ export function useExtensions(
     authorization?: AuthorizationConfirmationWire,
     scope: CatalogInstallScopeChoice = DEFAULT_CATALOG_INSTALL_SCOPE,
     selectedProjectDir?: string,
+    hubRequestId?: string,
   ): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
@@ -701,6 +704,7 @@ export function useExtensions(
       scope: target.target,
       ...(Object.keys(grants).length ? { grants } : {}),
       ...(authorization ? { authorization } : {}),
+      ...(hubRequestId ? { hubRequestId } : {}),
     })
     if (!r.ok) return r
     if (r.kind !== "mcp") {
@@ -1123,7 +1127,7 @@ export function useExtensions(
     .then((ids) => setFactoryIds(Array.isArray(ids) ? ids : []))
     .catch(() => {})
 
-  async function installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
+  async function installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult> {
     const spec = entry.installSpec
     if (spec?.kind !== "skill") return { ok: false, reason: "not a skill entry" }
     // REQ-100 #313(补 #310):单装与 bundle 同入口 —— main-owned installCatalog。renderer 仍只传
@@ -1136,6 +1140,7 @@ export function useExtensions(
       catalogId: entry.id,
       scope: { scope: "global" },
       ...(authorization ? { authorization } : {}),
+      ...(hubRequestId ? { hubRequestId } : {}),
     })
     if (!r.ok) return r
     // REQ-234 `#1529`:重载已由 main 安装体请求(等会话空闲);能不能用看该行的三档状态。
@@ -1143,13 +1148,13 @@ export function useExtensions(
     return r
   }
 
-  async function installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
+  async function installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "plugin") return { ok: false, reason: "not a plugin entry" }
     // REQ-099 #305:catalog 插件切 installCatalog(vendored/npm 分支由 planner 从已验签条目裁决)。
     // dispose 触发实例重建 → 引擎立刻装载(vendored=本地即读;npm=后台下载);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
-    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
+    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}), ...(hubRequestId ? { hubRequestId } : {}) })
     // REQ-234 `#1529`:重载已由 main 安装体请求。
     if (r.ok) await Promise.all([loadInstalls(), loadHubView()])
     return r
@@ -1157,10 +1162,10 @@ export function useExtensions(
 
   /** 安装 catalog 官方 agent(REQ-099 #305:切 installCatalog —— remote/builtin 分支与「内容未打包」
    *  诚实失败均由 planner 从已验签条目裁决;写盘/桥/账本走 writeAgent 同管线)。 */
-  async function installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
+  async function installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
-    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
+    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}), ...(hubRequestId ? { hubRequestId } : {}) })
     if (!r.ok) return r
     // REQ-234 `#1529`:重载已由 main 安装体请求;agent 列表在重载后由 hub-view-changed 推送刷新。
     await Promise.all([loadInstalls(), loadHubView()])
@@ -1262,9 +1267,9 @@ export function useExtensions(
   }
   /** REQ-020 T4 / REQ-099 #305:云 pipeline「启用」= receipts-only,切 installCatalog(planner cloud
    *  分支同语义:不触达引擎/文件系统,只落账)。 */
-  async function enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
+  async function enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire, hubRequestId?: string): Promise<ActionResult> {
     if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
-    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
+    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}), ...(hubRequestId ? { hubRequestId } : {}) })
     if (!r.ok) return r // #348:不折叠 —— stage/authorization 原样透传(cloud 未来入事务时自然接上)
     await Promise.all([loadInstalls(), loadHubView()])
     return { ok: true }
