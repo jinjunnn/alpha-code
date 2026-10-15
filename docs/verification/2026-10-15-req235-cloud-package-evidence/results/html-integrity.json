@@ -1,0 +1,36 @@
+{
+  "changedByte": 689,
+  "before": 10,
+  "after": 11,
+  "outcome": {
+    "ok": false,
+    "reason": "package-payload-integrity",
+    "package": {
+      "catalogId": "package:cloud-html",
+      "verdict": "blocked",
+      "action": {
+        "kind": "none",
+        "enabled": false,
+        "reasonCode": "package-payload-integrity"
+      },
+      "components": [
+        {
+          "componentId": "cloud:html",
+          "role": "root",
+          "required": true,
+          "included": true,
+          "skipReasonCode": null
+        }
+      ],
+      "prerequisites": {
+        "status": "ready",
+        "items": []
+      },
+      "presentation": {
+        "displayName": "云端网页生成",
+        "description": "描述页面内容与样式，云端生成可下载的 HTML 网页。",
+        "version": "1.0.0"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "http": 400,
+  "body": {
+    "error": "invalid pipeline input",
+    "code": "pipeline_input_invalid",
+    "details": [
+      {
+        "field": "prompt",
+        "reason": "minChars"
+      }
+    ]
+  }
+}

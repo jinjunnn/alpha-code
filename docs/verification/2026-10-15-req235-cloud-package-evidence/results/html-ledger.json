@@ -1,0 +1,35 @@
+[
+  {
+    "schema_version": 1,
+    "seq": 1567,
+    "op_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+    "kind": "reservation_created",
+    "domain": "allowance",
+    "amount": 0,
+    "action_id": "tool.document_generate",
+    "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+    "created_at": 1792052922782
+  },
+  {
+    "schema_version": 1,
+    "seq": 1566,
+    "op_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+    "kind": "reservation_created",
+    "domain": "allowance",
+    "amount": 0,
+    "action_id": "tool.document_generate",
+    "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+    "created_at": 1792052922782
+  },
+  {
+    "schema_version": 1,
+    "seq": 1565,
+    "op_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+    "kind": "reservation_created",
+    "domain": "wallet",
+    "amount": 1500,
+    "action_id": "tool.document_generate",
+    "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+    "created_at": 1792052922782
+  }
+]

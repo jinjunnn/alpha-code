@@ -1,0 +1,15 @@
+{
+  "http": 202,
+  "body": {
+    "schema_version": 1,
+    "job_id": "job_0493627afea0",
+    "status": "queued",
+    "autonomy": "pipeline",
+    "kind": "html-generate",
+    "urls": {
+      "status": "https://alpha-cloud.tidelabs.click/v1/cloud/jobs/job_0493627afea0",
+      "events": "https://alpha-cloud.tidelabs.click/v1/cloud/jobs/job_0493627afea0/events",
+      "result": "https://alpha-cloud.tidelabs.click/v1/cloud/jobs/job_0493627afea0/artifacts"
+    }
+  }
+}

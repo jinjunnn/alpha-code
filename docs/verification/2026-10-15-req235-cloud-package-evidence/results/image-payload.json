@@ -1,0 +1,24 @@
+{
+  "behavior": {
+    "fields": [
+      {
+        "control": "textarea",
+        "help": "说明画面主体、构图、颜色和风格。",
+        "label": "图片要求",
+        "maxChars": 4000,
+        "minChars": 1,
+        "name": "prompt",
+        "required": true
+      }
+    ],
+    "fixed": [],
+    "holdUsd": 0.3,
+    "pipelineKind": "image-generation",
+    "upstreamData": [
+      "发送你填写的图片要求（prompt）。",
+      "派发信封包含 autonomy、kind、input 与 constraints.network=restricted；不带 budget。",
+      "主进程补入 schema_version、artifact_policy 与幂等键。"
+    ]
+  },
+  "schema": "alpha.host-extension-package.payload.cloud.v1"
+}

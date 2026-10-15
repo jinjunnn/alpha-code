@@ -1,0 +1,187 @@
+[
+  {
+    "observedAt": "2026-10-15T08:28:16.189Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "queued",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "routing"
+      },
+      "artifact_ids": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:28:27.079Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "running",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "pipeline.running"
+      },
+      "artifact_ids": [],
+      "artifacts": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:28:37.528Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "running",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "pipeline.running"
+      },
+      "artifact_ids": [],
+      "artifacts": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:28:48.831Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "running",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "pipeline.running"
+      },
+      "artifact_ids": [],
+      "artifacts": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:28:59.262Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "running",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "pipeline.running"
+      },
+      "artifact_ids": [],
+      "artifacts": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:29:09.717Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "running",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "pipeline.running"
+      },
+      "artifact_ids": [],
+      "artifacts": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:29:20.326Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "running",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "pipeline.running"
+      },
+      "artifact_ids": [],
+      "artifacts": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:29:31.542Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "running",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "pipeline.running"
+      },
+      "artifact_ids": [],
+      "artifacts": [],
+      "error": null
+    }
+  },
+  {
+    "observedAt": "2026-10-15T08:29:46.463Z",
+    "status": {
+      "schema_version": 1,
+      "job_id": "job_0493627afea0",
+      "status": "completed",
+      "autonomy": "pipeline",
+      "kind": "html-generate",
+      "progress": {
+        "phase": "completed"
+      },
+      "artifact_ids": [
+        "art_job_0493627afea0_0_5b05bdea"
+      ],
+      "artifacts": [
+        {
+          "schemaVersion": 1,
+          "id": "art_job_0493627afea0_0_5b05bdea",
+          "source": "cloud",
+          "name": "output.html",
+          "trust": "sandboxed",
+          "role": "primary",
+          "contentRef": {
+            "kind": "http-stream",
+            "url": "/v1/cloud/artifacts/art_job_0493627afea0_0_5b05bdea/content",
+            "auth": "bearer"
+          },
+          "verification": {
+            "status": "unverified"
+          },
+          "provenance": {
+            "producer": "pipeline",
+            "jobId": "job_0493627afea0",
+            "kind": "html-generate",
+            "createdAt": "2026-10-15T08:28:33.601Z"
+          },
+          "size": 4566,
+          "claimedMime": "text/html"
+        }
+      ],
+      "result": {
+        "kind": "html-generate",
+        "ok": true,
+        "exitCode": 0,
+        "stdout": "Document generated and validated.",
+        "stderr": "",
+        "artifacts": [
+          {
+            "artifact_id": "art_job_0493627afea0_0_5b05bdea",
+            "name": "output.html",
+            "mime": "text/html",
+            "size": 4566
+          }
+        ]
+      },
+      "error": null
+    }
+  }
+]

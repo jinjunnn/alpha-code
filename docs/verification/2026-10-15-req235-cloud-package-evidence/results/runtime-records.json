@@ -1,0 +1,78 @@
+{
+  "package:cloud-html": {
+    "version": "1.0.0",
+    "digest": "febf20f52e0a06658bd06b18a94f7342597cbaa5ed5634e91889cf8e37bb5b41",
+    "install": "pass",
+    "use": "pending",
+    "method": "package-install",
+    "recordedAt": "2026-10-15",
+    "key_id": "ak_EtFmJbPT",
+    "receipt": {
+      "id": "cloud:html",
+      "transaction": "tx-mv99xr3f-ca9169ed",
+      "desiredState": "enabled"
+    },
+    "authorization": [
+      "cloud:dispatch"
+    ],
+    "pending": "Job completed and artifact downloaded; final settlement not observed. Not package-install pass/pass.",
+    "job_id": "job_0493627afea0",
+    "status": "completed",
+    "dispatchedAt": "2026-10-15T08:28:12.891Z",
+    "terminalObservedAt": "2026-10-15T08:29:46.463Z",
+    "settlement": {
+      "status": "not-observed",
+      "charged_fen": null,
+      "reserved_fen": 1500,
+      "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+      "cursor": 1564,
+      "lastObservedAt": "2026-10-15T08:34:39.125810+00:00",
+      "correlation": "unique action reservation after pre-dispatch ledger cursor"
+    },
+    "artifacts": [
+      {
+        "id": "art_job_0493627afea0_0_5b05bdea",
+        "mime": "text/html",
+        "bytes": 4566,
+        "sha256": "75ec886d8e073607e1caf31f56c84e37d2168c4f1ed390a64be785a24e6fdfa8",
+        "downloadHttp": 200,
+        "openCheck": "Chromium offline render and content check passed"
+      }
+    ],
+    "negativeControls": {
+      "payload": "package-payload-integrity",
+      "emptyPromptHttp": 400,
+      "emptyPromptCode": "pipeline_input_invalid"
+    }
+  },
+  "package:cloud-image": {
+    "version": "1.0.0",
+    "digest": "55832e8fe38dd63c610822d5b8b18e345ba2de364daf4e74e86b9a8ebad2cf98",
+    "install": "pass",
+    "use": "pending",
+    "method": "package-install",
+    "recordedAt": "2026-10-15",
+    "key_id": "ak_EtFmJbPT",
+    "receipt": {
+      "id": "cloud:image",
+      "transaction": "tx-mv99xr5f-49dd3129",
+      "desiredState": "enabled"
+    },
+    "authorization": [
+      "cloud:dispatch"
+    ],
+    "pending": "Not dispatched: stopped after HTML settlement was not observed.",
+    "job_id": null,
+    "status": "not-dispatched",
+    "settlement": {
+      "status": "not-dispatched",
+      "charged_fen": null
+    },
+    "artifacts": [],
+    "negativeControls": {
+      "payload": "package-payload-integrity",
+      "emptyPromptHttp": null,
+      "emptyPromptCode": "not-run"
+    }
+  }
+}

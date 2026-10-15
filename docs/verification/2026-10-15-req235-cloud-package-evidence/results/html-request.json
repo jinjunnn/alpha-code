@@ -1,0 +1,20 @@
+{
+  "dispatchedAt": "2026-10-15T08:28:12.891Z",
+  "envelope": {
+    "schema_version": 1,
+    "artifact_policy": {
+      "delivery": "descriptor_only"
+    },
+    "idempotency_key": "c8e584f2-ce9c-4887-a1c6-504e6c887f29",
+    "autonomy": "pipeline",
+    "kind": "html-generate",
+    "input": {
+      "prompt": "松间咖啡虚构产品介绍页。秋日桂花燕麦拿铁，桂花香、燕麦口感、轻烘焙咖啡；只作概念展示，不售卖。"
+    },
+    "constraints": {
+      "network": "restricted"
+    }
+  },
+  "promptSha256": "286a0d964d2e4688d94eae295b0903d9e2c68350df5a51c1645d8a9af1df167a",
+  "idempotencyKeySha256": "abc964fcc03a66ab74d8526163706984354b1d917e588beb78d4ca50a49161b6"
+}
