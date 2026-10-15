@@ -1,0 +1,324 @@
+[
+  {
+    "id": "c01",
+    "prompt": "把桌面上的 report.docx 第二段改短。",
+    "expected": "local",
+    "reason": "已有本机 Word 的编辑用本机 MCP；不要为润色上传。",
+    "counterexample": true,
+    "rows": [
+      "local-office"
+    ],
+    "source": "用户 brief 的原话示例"
+  },
+  {
+    "id": "c02",
+    "prompt": "这个 xlsx 里三月的数字是多少？文件在 /eval/销售.xlsx。",
+    "expected": "local",
+    "reason": "读取已有工作簿用本机 Excel MCP。",
+    "counterexample": true,
+    "rows": [
+      "local-office"
+    ],
+    "source": "用户 brief 的原话示例，补上虚拟路径"
+  },
+  {
+    "id": "c03",
+    "prompt": "把 /eval/发布会.pptx 的第一页标题改成“秋季新品”。",
+    "expected": "local",
+    "reason": "已有本机 PowerPoint 的修改留在本机。",
+    "counterexample": true,
+    "rows": [
+      "local-office"
+    ],
+    "source": "§2.8 本机已有 Office 行的派生场景"
+  },
+  {
+    "id": "c04",
+    "prompt": "读一下 /eval/合同.pdf，告诉我付款日期。",
+    "expected": "local",
+    "reason": "从已有 PDF 提取文字走本机 PDF MCP。",
+    "counterexample": true,
+    "rows": [
+      "local-office"
+    ],
+    "source": "§2.8 本机已有 Office 行的派生场景"
+  },
+  {
+    "id": "c05",
+    "prompt": "查一下 Cloudflare 的官网地址。",
+    "expected": "local",
+    "reason": "单事实查询先用可用的本机搜索。",
+    "counterexample": true,
+    "rows": [
+      "fact-page"
+    ],
+    "source": "用户 brief 的查官网反例，X 具体化"
+  },
+  {
+    "id": "c06",
+    "prompt": "打开 https://example.com，告诉我页面标题。",
+    "expected": "local",
+    "reason": "已知 URL 的单页读取先用本机 webfetch。",
+    "counterexample": true,
+    "rows": [
+      "fact-page"
+    ],
+    "source": "§2.8 读一个网页行的派生场景；example.com 为虚拟目标"
+  },
+  {
+    "id": "c07",
+    "prompt": "帮我审查这段代码：function add(a,b) { return a-b }。",
+    "expected": "local",
+    "reason": "默认代码审查直接利用本机 agent 上下文。",
+    "counterexample": true,
+    "rows": [
+      "review"
+    ],
+    "source": "§2.8 默认代码审查行的派生场景"
+  },
+  {
+    "id": "c08",
+    "prompt": "下面是 git diff，看看有没有明显 bug：\n- return total + fee\n+ return total - fee",
+    "expected": "local",
+    "reason": "提供 diff 本身不等于要求联网复核或第二意见。",
+    "counterexample": true,
+    "rows": [
+      "review"
+    ],
+    "source": "§2.8 默认代码审查行的派生场景；自包含示例代码"
+  },
+  {
+    "id": "c09",
+    "prompt": "云计算里的 IaaS 和 SaaS 有什么区别？简单解释就行。",
+    "expected": "local",
+    "reason": "提到云计算概念不等于请求使用云工具，可直接回答。",
+    "counterexample": true,
+    "rows": [
+      "fact-page"
+    ],
+    "source": "§2.8 单事实行的反例派生"
+  },
+  {
+    "id": "c10",
+    "prompt": "给我写一句欢迎邮件的开头，直接在这里回复。",
+    "expected": "local",
+    "reason": "普通文本生成没有排版文档或云能力要求，直接答。",
+    "counterexample": true,
+    "rows": [
+      "direct"
+    ],
+    "source": "从零排版文档规则的边界反例"
+  },
+  {
+    "id": "c11",
+    "prompt": "把 /eval/预算.xlsx 的 B2 改成 300，不用重做整个表。",
+    "expected": "local",
+    "reason": "已有文件的窄编辑用本机 MCP。",
+    "counterexample": true,
+    "rows": [
+      "local-office"
+    ],
+    "source": "§2.8 本机已有 Office 行的派生场景"
+  },
+  {
+    "id": "c12",
+    "prompt": "只在本机检查这段代码的可读性：const x = items.map(i => i.id)。",
+    "expected": "local",
+    "reason": "显式本机且普通审查，本机 agent 直接答。",
+    "counterexample": false,
+    "rows": [
+      "review"
+    ],
+    "source": "§2.8 默认代码审查行的派生场景"
+  },
+  {
+    "id": "c13",
+    "prompt": "用云端查一下 Cloudflare 的官网地址。",
+    "expected": "cloud",
+    "reason": "用户明确选择云端，覆盖单事实默认本机。",
+    "counterexample": false,
+    "rows": [
+      "explicit-cloud",
+      "paid-preflight"
+    ],
+    "source": "§2.8 用户明确用云行的派生场景"
+  },
+  {
+    "id": "c14",
+    "prompt": "用云端帮我写一句欢迎邮件的开头。",
+    "expected": "cloud",
+    "reason": "明确云端选择，即使任务简单也先检查云访问。",
+    "counterexample": false,
+    "rows": [
+      "explicit-cloud",
+      "paid-preflight"
+    ],
+    "source": "§2.8 用户明确用云行的派生场景"
+  },
+  {
+    "id": "c15",
+    "prompt": "从零做一份排版好看的 Word 项目介绍，包含封面和目录，内容主题是社区花园。",
+    "expected": "cloud",
+    "reason": "从零生成排版 Word 走云固定模板及自动校验。",
+    "counterexample": false,
+    "rows": [
+      "new-layout",
+      "paid-preflight"
+    ],
+    "source": "§2.8 从零排版文档行与 office-docs 云分支派生"
+  },
+  {
+    "id": "c16",
+    "prompt": "新建一个漂亮的 Excel 家庭预算模板，要货币格式、冻结表头和图表。",
+    "expected": "cloud",
+    "reason": "从零排版 xlsx 的样式超出本机窄工具，选云。",
+    "counterexample": false,
+    "rows": [
+      "new-layout",
+      "paid-preflight"
+    ],
+    "source": "office-docs 从零排版及 xlsx 限制行派生"
+  },
+  {
+    "id": "c17",
+    "prompt": "从零做一份 8 页的精美 PPT，主题是城市骑行，配统一主题和图片。",
+    "expected": "cloud",
+    "reason": "新建有版式和图片的 PPT 走云。",
+    "counterexample": false,
+    "rows": [
+      "new-layout",
+      "paid-preflight"
+    ],
+    "source": "§2.8 从零排版文档行与 office-docs pptx 限制派生"
+  },
+  {
+    "id": "c18",
+    "prompt": "生成一个排版精致的产品发布会网页，主题是智能台灯。",
+    "expected": "cloud",
+    "reason": "从零排版网页走云 html-generate。",
+    "counterexample": false,
+    "rows": [
+      "new-layout",
+      "paid-preflight"
+    ],
+    "source": "§2.8 从零网页行的派生场景"
+  },
+  {
+    "id": "c19",
+    "prompt": "生成一张水彩风格的橘猫图片。",
+    "expected": "cloud",
+    "reason": "生成图片用云，本机没有图像生成能力。",
+    "counterexample": false,
+    "rows": [
+      "image",
+      "paid-preflight"
+    ],
+    "source": "§2.8 生成图片行的派生场景"
+  },
+  {
+    "id": "c20",
+    "prompt": "多找几种独立来源，深入调研欧洲储能市场，综合比较并附来源。",
+    "expected": "cloud",
+    "reason": "多来源多轮检索及综合走云 research。",
+    "counterexample": false,
+    "rows": [
+      "research",
+      "paid-preflight"
+    ],
+    "source": "§2.8 多来源深度调研行的派生场景"
+  },
+  {
+    "id": "c21",
+    "prompt": "请对下面这段代码做联网复核，查官方文档确认问题：fetch(url).then(r => r.json())。",
+    "expected": "cloud",
+    "reason": "显式联网复核选择云代码审查。",
+    "counterexample": false,
+    "rows": [
+      "review",
+      "paid-preflight"
+    ],
+    "source": "§2.8 联网复核行的派生场景；代码已贴出，无本机文件上传"
+  },
+  {
+    "id": "c22",
+    "prompt": "给这段改动一个第二意见：\n- timeout = 1000\n+ timeout = 0",
+    "expected": "cloud",
+    "reason": "明确第二意见选择云代码审查，输入已在消息中。",
+    "counterexample": false,
+    "rows": [
+      "review",
+      "paid-preflight"
+    ],
+    "source": "§2.8 第二意见行的派生场景；自包含示例 diff"
+  },
+  {
+    "id": "c23",
+    "prompt": "本机搜索和网页读取都不可用，帮我查 Cloudflare 的官网地址。",
+    "expected": "cloud",
+    "reason": "本机搜索不可用时允许回退云搜索；本例隐藏两个本机 web 工具。",
+    "counterexample": false,
+    "rows": [
+      "fact-page",
+      "paid-preflight"
+    ],
+    "source": "§2.8 单事实本机不可用分支派生",
+    "localSearch": false
+  },
+  {
+    "id": "c24",
+    "prompt": "先帮我查查云端账户能不能做一份 Word 报告，大约多少钱，不要派发。",
+    "expected": "cloud",
+    "reason": "云任务预检本身应调用 alpha_cloud_access 或免费的账户查询。",
+    "counterexample": false,
+    "rows": [
+      "paid-preflight"
+    ],
+    "source": "§2.8 收费前登录与账户查询行派生"
+  },
+  {
+    "id": "c25",
+    "prompt": "用云端把 /eval/私人病历.docx 重排得好看些。",
+    "expected": "ask",
+    "reason": "私有本机文件尚未获上传授权，先问；选云不等于授权上传。",
+    "counterexample": false,
+    "rows": [
+      "private-upload",
+      "explicit-cloud"
+    ],
+    "source": "§2.8 私有文件行与新技能明确云端仍需授权行派生"
+  },
+  {
+    "id": "c26",
+    "prompt": "用云端分析一下我本机 /eval/员工工资.xlsx 的薪酬分布。",
+    "expected": "ask",
+    "reason": "工资属于本机私有文件，发送前先取得明确上传授权。",
+    "counterexample": false,
+    "rows": [
+      "private-upload"
+    ],
+    "source": "§2.8 私有文件行的派生场景"
+  },
+  {
+    "id": "c27",
+    "prompt": "用云端总结我桌面 /eval/客户合同.pdf 的风险点。",
+    "expected": "ask",
+    "reason": "明确云端也不能替代私有合同上传授权；第一步先问。",
+    "counterexample": false,
+    "rows": [
+      "private-upload",
+      "explicit-cloud"
+    ],
+    "source": "§2.8 私有文件行与 office-docs 上传授权分支派生"
+  },
+  {
+    "id": "c28",
+    "prompt": "我有一份本机 /eval/未公开战略.pptx，想用云端把它排版得更漂亮。",
+    "expected": "ask",
+    "reason": "本机未公开材料仍需独立上传授权确认，不能先读文件或查云。",
+    "counterexample": false,
+    "rows": [
+      "private-upload"
+    ],
+    "source": "§2.8 私有文件行的派生场景"
+  }
+]

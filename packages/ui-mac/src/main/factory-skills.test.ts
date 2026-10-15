@@ -251,6 +251,14 @@ describe("REQ-233 cloud skill instructions", () => {
     ]) expect(cloud.content).toMatch(rule)
   })
 
+  test("AC3 formatted creation and explicit review requests select their cloud pipelines first", () => {
+    expect(cloud.content).toContain("必须选云端 `office-report`")
+    expect(cloud.content).toContain("不要先用本机 `alpha_word_write_docx`、`alpha_excel_write_xlsx`")
+    expect(cloud.content).toContain("选择云端 `code-review`")
+    expect(cloud.content).toContain("不先改成本机搜索或本机代码审查")
+    expect(office.content.replace(/\s+/g, " ")).toContain("choose cloud `office-report` first")
+  })
+
   test("AC1 checks local login before paid cloud, separates estimates from reserves, and explains refusals without retrying", () => {
     for (const instruction of [
       "先调用本机工具 `alpha_cloud_access`",

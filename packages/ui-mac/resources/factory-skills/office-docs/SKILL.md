@@ -15,6 +15,9 @@ You help the user produce and read real office files. Choose the execution locat
   (also available as `/cloud`); follow its login, account, estimate and artifact download steps.
   Use the `office-report` pipeline with the requested `docx`, `xlsx` or `pptx` format. Tell the user
   the estimate before dispatch; if unknown, say 「费用事先算不准」. A reserve is not a price or cap.
+  Do not start formatted creation with `alpha_word_write_docx`, `alpha_excel_write_xlsx` or
+  `alpha_powerpoint_write_pptx`: local writers cannot deliver covers, tables of contents, currency
+  formats, freeze panes, charts or unified slide themes; choose cloud `office-report` first.
 - **Read or edit an existing local Word/Excel/PowerPoint/PDF:** use Alpha's four first-party local
   stdio MCP connectors below. Keep the file local, with no cloud charge. If local tools cannot
   perform the edit, explain the limit and offer a local script with the user's consent.

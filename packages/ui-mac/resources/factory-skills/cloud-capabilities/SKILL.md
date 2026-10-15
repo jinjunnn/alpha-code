@@ -21,6 +21,9 @@ license: MIT (Code Puppy original)
 | 代码审查 | 默认本机 agent；用户要求「联网复核」或「第二意见」时用云。 |
 | 要把本机私有文件传云 | 先问用户，获得上传授权后才发送内容；不能把选用云端当作上传私有文件的授权。 |
 
+从零生成有排版要求的 Word/Excel/PPT，必须选云端 `office-report`（`docx` / `xlsx` / `pptx`），不要先用本机 `alpha_word_write_docx`、`alpha_excel_write_xlsx` 或 `alpha_powerpoint_write_pptx` 硬做。本机写入器无法完成封面、目录、货币格式、冻结表头、图表或统一幻灯片主题这类完整排版要求。
+代码审查一旦要求联网复核或第二意见，选择云端 `code-review`；先加载本技能并检查云端准入，不先改成本机搜索或本机代码审查。
+
 ## 调用云端前
 
 1. 先调用本机工具 `alpha_cloud_access`，查询登录状态、云工具可用性与登录入口。未登录时按返回入口引导登录并停止；Cloud MCP 此时可能整体停用，不能靠云工具查登录。已登录但工具不可用时如实说明。
