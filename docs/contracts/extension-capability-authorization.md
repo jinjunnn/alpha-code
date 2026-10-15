@@ -188,12 +188,13 @@ snapshot 两条入口执行 package preview、四组 binding、main 重取重验
   可读;仅在被当前 leaf 不再引用且过宽限后被 GC。未策展通道(`ext-persist-mcp`)与 catalog
   事务共用同一版本化原语,skip 语义(已有引用/空值)保持未策展既有 posture。
 - catalog MCP 提交成功后不再从 `ext-install-planner`/preload 回传可执行 config 或 secret
-  真值。`ext-ipc` 复用 main 已有的 authenticated v2 client(`serverReady` 的
-  `url/username/password`)，先 `POST /global/dispose`，再 `GET /mcp` 触发实例按 durable
-  config 重建；`ConfigVariable` 在 engine 装载期解析 `{file:}`。preload result 只携带
-  MCP reference 与 `connected/disabled/failed/reload-pending` status。正常路径仍立即可用；
-  `awaitServer`/dispose 受 5 秒上界、冷启 status 受 10 秒上界；route 不可用或任一上界
-  到期时显式返回 `reload-pending`，不谎称已热连，也不无限占住串行写窗口。
+  真值。`#1529`(REQ-234 C1)起,`ext-ipc` 安装体提交成功后**不在当前回答里重载**:它经
+  `reload-coordinator` 记一笔重载请求并经 sidecar parentPort 发 `alpha.reload.request`,由 ext
+  调度器在同一引擎实例上所有会话空闲时重建实例(`ConfigVariable` 照旧在 engine 装载期解析
+  `{file:}`);preload result 不再携带任何连接状态(只剩 `ok/kind/name/manifestDigest` 等公开
+  字段)。装上没有、能不能用,由 main 的三档视图(`ext-hub-view`,`hub-view.ts`)按
+  `(id, scope, directory)` 即时核验:MCP 读该目录 `GET /mcp` 的 connected,只读、从不 dispose;
+  读不出即不标「可用」。
 - main/IPC 入口当前有效的 package 安装行为：package secret prerequisite 只消费 host-owned
   `AlphaPackageEnvelopeV1` 与严格 payload decoder 的产物，不 decode web Declaration；
   稳定 prerequisite ID、MCP environment/header target 与 store reference 均从 signed
