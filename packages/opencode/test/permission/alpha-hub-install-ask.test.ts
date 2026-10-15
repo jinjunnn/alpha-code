@@ -8,7 +8,7 @@
 //   · 引擎真 Plugin 服务装载**真 @alpha-code/ext**(源码入口)并跑它的 config 钩子(与 bootstrap.ts 同序:先 init 插件再读 agent);
 //   · 真 `Permission.Service.ask`(与工具拿到的 `ctx.ask` 同一个服务),`ALPHA_PERMISSION_ASK_TIMEOUT_MS=300` 让「真的在等人批」
 //     以具名 UnansweredError 落地。
-// Npm 换成 noop(同 agent/plugin-agent-regression.test.ts):装载插件时引擎会为每个配置目录跑一次后台 npm 安装并让第一次
+// Npm 换成 noop(引擎侧既有的插件装载测试同样这么做):装载插件时引擎会为每个配置目录跑一次后台 npm 安装并让第一次
 // 插件初始化等它 —— 那是网络,不是本判据(process-fence-engine.test.ts 的 60 秒假红就是它)。
 //
 // 每条判据先证明手段测得出已知的坏:

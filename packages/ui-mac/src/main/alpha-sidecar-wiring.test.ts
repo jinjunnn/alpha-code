@@ -156,16 +156,16 @@ test("真 host + 真协调器:阶段查询经子进程往返;退出 ⇒ pendingF
 // `#1531`:ext 的 parentPort 监听必须在 ready **之前**挂上(main 只在 ready 那一刻重发在途代际)。sidecar.ts 顶层的 registerHooks /
 // getParentPort() 让它不能被 import,接线只能锚源码:ext 预载在引擎 import 之后开始、在 ready 上报之前 await 完;
 // 预载的 URL 形状与引擎解析路径插件的形状逐字相同(上游 plugin/shared.ts 的 resolvePathPluginTarget),否则会装出第二份模块。
-test("sidecar.ts:ready 之前预载 ext 的同一个 URL", async () => {
+test("ANCHOR (not a gate): sidecar.ts 在 ready 之前预载 ext 的同一个 URL", async () => {
   const source = await Bun.file(join(import.meta.dir, "sidecar.ts")).text()
   const engine = source.indexOf('const { Server } = await import("virtual:opencode-server")')
   const preload = source.indexOf("import(pathToFileURL(command.extPluginPath).href)")
-  const awaited = source.indexOf("await extPreload")
+  const joined = source.indexOf("await extPreload")
   const ready = source.indexOf("parentPort.postMessage(buildReadyMessage(injection, prewarmResult))")
   expect(engine).toBeGreaterThan(0)
   expect(preload).toBeGreaterThan(engine)
-  expect(awaited).toBeGreaterThan(preload)
-  expect(ready).toBeGreaterThan(awaited)
+  expect(joined).toBeGreaterThan(preload)
+  expect(ready).toBeGreaterThan(joined)
   const shared = await Bun.file(join(import.meta.dir, "../../../opencode/src/plugin/shared.ts")).text()
   const resolver = shared.slice(shared.indexOf("export async function resolvePathPluginTarget"), shared.indexOf("export async function checkPluginCompatibility"))
   expect(resolver).toContain("return pathToFileURL(file).href")

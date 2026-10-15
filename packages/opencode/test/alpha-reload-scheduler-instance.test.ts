@@ -1,7 +1,7 @@
 // REQ-234 `#1531` I5 —— ext 重载调度器对**真实例**的判定(alpha 自有测试;north-star:alpha-owned)。
 //
 // 被测是 @alpha-code/ext 的生产调度器(packages/ext/src/reload-scheduler.ts),喂给它的是引擎递给插件的同一种 client:
-// v1 SDK 经引擎**真 HTTP 应用**(Server.Default().app.fetch,与 server/sdk-v1-smoke.test.ts 同形)按目录打到真实例。
+// v1 SDK 经引擎**真 HTTP 应用**(Server.Default().app.fetch,与引擎自己的 v1 SDK 冒烟测试同形)按目录打到真实例。
 //   · busy 会话 = 引擎自己的 SessionStatus 服务在该实例里置 busy —— 调度器经 `GET /session/status` 读到它(先证明这条读得到);
 //   · 「查询超时」的实例替身**只替换 HTTP 层**:该 client 的 fetch 对 `/session/status` 永不返回,其余照常进引擎;
 //   · dispose 计数在 HTTP 层观察(`POST /instance/dispose` 真的发出去几次),不桩调度器的任何部分。

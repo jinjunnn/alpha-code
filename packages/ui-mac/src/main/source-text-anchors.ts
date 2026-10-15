@@ -99,6 +99,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     evidence: "#613",
     lines: 1,
   },
+  "packages/ui-mac/src/main/alpha-sidecar-wiring.test.ts": {
+    why: "`#1531` 那一条锚 sidecar.ts 里「引擎 import → ext 预载开始 → await 预载 → ready 上报」的下标先后,外加上游 plugin/shared.ts 解析路径插件的 URL 形状(pathToFileURL(file).href)—— 两边同一个 URL 才是同一个模块记录。两个不会让它变红的变异:①把预载的 import 换成另一个指向同一文件但带查询串的 URL(文本里那一段仍在,模块却装出第二份,监听挂在没人用的那份上);②在 await extPreload 之前加一条早退 return。sidecar.ts 顶层有副作用,import 不得;同文件另两条(真 spawnLocalServer + 假子进程)是行为判据。",
+    evidence: "#1531",
+    lines: 2,
+  },
   "packages/ui-mac/src/main/alpha-contract-health.test.ts": {
     why: "锚的是 renderer 三个文件里「那几个标识符在不在」。它证不了 banner 真的渲染、也证不了 role=alert 真的可达。两个不会让它变红的变异:①把 <ContractFailureBanner /> 挪进一个恒假分支;②把 providers 里的订阅回调改成不更新状态。真判据要走组件测试道(本文件今天没有)。",
     evidence: "#224",
