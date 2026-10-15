@@ -18,9 +18,9 @@
 //                            | 不再记阶段;不回                      |                              |                                            |
 //   authorizing(等用户授权, | 重开条目确认框的授权第二阶段,同一份  | —                            | —                                          | 记 failed(authorization canceled)
 //    main 已 submitted)      | diffs / 密钥 / 作用域;不回           |                              |                                            | ⇒ decided(reject)⇒ 回 reject
-//   executing(安装执行中)   | 不显示框,只等结局;不回              | —                            | committed ⇒ decided(once)⇒ 回 once;       | —(框 busy,不可关)
-//                            |                                      |                              | failed ⇒ 记 failed ⇒ failed(显示原因);   |
-//                            |                                      |                              | 又要授权 ⇒ authorizing(显示授权框)        |
+//   executing(安装执行中,  | 不显示框,只等结局;不回              | —                            | committed ⇒ decided(once)⇒ 回 once;       | 原挂载里框 busy、取消不可点;重挂载后
+//    确认那一下就进,先于    |                                      |                              | failed ⇒ 记 failed ⇒ failed(显示原因);   | 没有框 ⇒ 无可取消,不记、不回;结局照常
+//    submitted IPC)         |                                      |                              | 又要授权 ⇒ authorizing(显示授权框)        | (once / 显示原因 / 授权框,这时才可取消)
 //   failed(框里显示原因)    | 重新显示原因,不再记;不回            | —                            | —                                          | 用户关框 ⇒ decided(reject)⇒ 回 reject
 //   decided(已决定待回)     | 不显示框;经**当前** feed 回(先等    | 留在 decided,不显示;下一次  | —                                          | —
 //                            | 那一笔阶段记完)                     | 挂载再经当前 feed 重试       |                                            |
@@ -146,11 +146,13 @@ export function HubInstallWatcher(props: {
     scope: CatalogInstallScopeChoice | undefined,
     selectedProjectDir: string | undefined,
   ): Promise<CapabilityDiffWire[] | null> => {
-    if (flight.phase()?.kind === "confirming" && !(await record({ stage: "submitted" }))) {
+    // 确认的那一下就进 executing,先于 submitted IPC(审计 R3):在途期间重挂载只等结局,恢复不出可操作的确认框
+    const fromConfirming = flight.phase()?.kind === "confirming"
+    flight.setPhase({ kind: "executing", name: entry.displayName })
+    if (fromConfirming && !(await record({ stage: "submitted" }))) {
       void fail(entry.displayName, "the request could not be recorded")
       return null
     }
-    flight.setPhase({ kind: "executing", name: entry.displayName })
     const res = await dispatch(entry, secrets, authorization, scope, selectedProjectDir)
     if (isAuthzRequired(res)) {
       flight.setPhase({ kind: "authorizing", entry, diffs: res.authorization, secrets, scope, projectDir: selectedProjectDir })
@@ -186,8 +188,8 @@ export function HubInstallWatcher(props: {
   const installPackage = async (intent: CatalogInstallIntentV1): Promise<CatalogInstallResult> => {
     const phase = flight.phase()
     const name = phase?.kind === "confirming" && phase.target.kind === "package" ? phase.target.view.presentation.displayName : intent.catalogId
-    if (phase?.kind === "confirming" && !(await record({ stage: "submitted" }))) return { ok: false, reason: "the request could not be recorded" }
     flight.setPhase({ kind: "executing", name })
+    if (phase?.kind === "confirming" && !(await record({ stage: "submitted" }))) return { ok: false, reason: "the request could not be recorded" }
     return ext.installCatalogIntent({ ...intent, hubRequestId: props.hub.requestId })
   }
 

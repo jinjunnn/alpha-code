@@ -456,6 +456,54 @@ const CELLS: Cell[] = [
   },
   {
     phase: "executing",
+    event: "用户取消(条目:确认后 submitted 还没记完就重连)",
+    run: async () => {
+      // 审计 R3:确认那一下就进 executing(先于 submitted IPC)⇒ 重挂载只等结局,恢复不出一个可操作的确认框;
+      // 没有框就没有取消 —— 结局照常走完(这里 install 又要授权 ⇒ 授权框,用户这时才有得选)。
+      installScript = [{ ok: false, stage: "authorize", authorization: [diff] }, { ok: true, kind: "skill", name: "writer" }]
+      await openBox("skill:writer", "req_cell_executing_cancel_entry")
+      const release = hold("submitted")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await flush(4)
+      expect(button(zh["alpha.ext.cancel"])?.disabled).toBe(true)
+      await remount()
+      expect(boxShown()).toBe(false)
+      expect(button(zh["alpha.ext.cancel"])).toBeUndefined()
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+      await flush(4)
+      release()
+      await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage once the install asks for it")
+      expect(replies()).toEqual([])
+      button(zh["alpha.ext.authz.confirmInstall"])!.click()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "install", "reply:once"])
+      expect(intents).toHaveLength(2)
+    },
+  },
+  {
+    phase: "executing",
+    event: "用户取消(包:确认后 submitted 还没记完就重连)",
+    run: async () => {
+      installScript = [
+        { ok: false, stage: "authorize", reason: "authorization required", packageAuthorization: PACKAGE_PREVIEW },
+        { ok: true, kind: "skill", name: "alpha-first" },
+      ]
+      await openBox("package:alpha-first", "req_cell_executing_cancel_package")
+      const release = hold("submitted")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await flush(4)
+      await remount()
+      expect(boxShown()).toBe(false)
+      expect(button(zh["alpha.ext.cancel"])).toBeUndefined()
+      release()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "install", "stage:submitted", "install", "reply:once"])
+      expect(intents).toHaveLength(2)
+      expect(stages.get("req_cell_executing_cancel_package")).toMatchObject({ stage: "committed" })
+    },
+  },
+  {
+    phase: "executing",
     event: "安装落定 committed",
     run: async () => {
       installScript = [{ ok: true, kind: "skill", name: "writer" }]
