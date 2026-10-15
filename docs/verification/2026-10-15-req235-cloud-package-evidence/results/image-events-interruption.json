@@ -1,0 +1,8 @@
+{
+  "stage": "terminal events read before ledger/artifact download",
+  "reason": "fetch/read exception; original catch deliberately suppressed arbitrary exception details",
+  "paidPosts": 1,
+  "job_id": "job_ded0591ac3ea",
+  "resume": "read accepted job only; never repeat POST",
+  "observedAtApproximate": "2026-10-15T08:48:00Z"
+}

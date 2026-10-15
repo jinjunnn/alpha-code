@@ -1,0 +1,26 @@
+{
+  "http": 200,
+  "body": {
+    "schema_version": 1,
+    "ok": true,
+    "service": "alpha-cloud (ADR-016: cloud jobs API + MCP facade)",
+    "sandbox_policy_ready": true,
+    "readiness": {
+      "ready": true,
+      "state": "ready",
+      "production": true,
+      "missing": [],
+      "half_open": [],
+      "carrier": "ok"
+    },
+    "routes": [
+      "POST /v1/cloud/jobs",
+      "GET /v1/cloud/jobs/:id",
+      "GET /v1/cloud/jobs/:id/events (SSE)",
+      "GET /v1/cloud/jobs/:id/artifacts",
+      "CRUD /v1/cloud/schedules (PA-28)",
+      "GET /v1/cloud/jobs?since=&origin=schedule",
+      "ALL /mcp"
+    ]
+  }
+}

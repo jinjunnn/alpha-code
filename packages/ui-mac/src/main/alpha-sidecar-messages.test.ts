@@ -179,4 +179,13 @@ describe("alpha-sidecar-messages — ext 侧 build/parse(#1531)", () => {
     ]
     for (const message of rejectedRecords) expect(parseHubRequestReply(message)).toBeUndefined()
   })
+
+  test("#1533:可选 priceNote 逐字保留;缺席不造字段;非字符串拒绝整条应答", () => {
+    for (const priceNote of ["预留 US$1.00,按实际用量结算", "", undefined]) {
+      const priced = { ...view, rows: [{ ...view.rows[0]!, ...(priceNote === undefined ? {} : { priceNote }) }] }
+      expect(parseHubViewReply(buildHubViewReply(1, { view: priced }))).toEqual(buildHubViewReply(1, { view: priced }))
+    }
+    for (const priceNote of [null, 1, {}, []])
+      expect(parseHubViewReply({ type: "alpha.hub.view.reply", id: 1, view: { ...view, rows: [{ ...view.rows[0], priceNote }] } })).toBeUndefined()
+  })
 })

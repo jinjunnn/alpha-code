@@ -1,0 +1,107 @@
+{
+  "package:cloud-html": {
+    "version": "1.0.0",
+    "digest": "febf20f52e0a06658bd06b18a94f7342597cbaa5ed5634e91889cf8e37bb5b41",
+    "install": "pass",
+    "use": "pass",
+    "method": "package-install",
+    "recordedAt": "2026-10-15",
+    "key_id": "ak_EtFmJbPT",
+    "receipt": {
+      "id": "cloud:html",
+      "transaction": "tx-mv99xr3f-ca9169ed",
+      "desiredState": "enabled"
+    },
+    "authorization": [
+      "cloud:dispatch"
+    ],
+    "job_id": "job_0493627afea0",
+    "status": "completed",
+    "dispatchedAt": "2026-10-15T08:28:12.891Z",
+    "terminalObservedAt": "2026-10-15T08:29:46.463Z",
+    "settlement": {
+      "status": "settled",
+      "charged_fen": 95,
+      "reservation_id": "db89265d-e617-4cc5-ba05-6d7c7f87a406",
+      "cursor": 1564,
+      "seq": [
+        1569,
+        1568,
+        1567,
+        1566,
+        1565
+      ],
+      "lastObservedAt": "2026-10-15T08:48:51.234Z",
+      "correlation": "unique action reservation after pre-dispatch ledger cursor"
+    },
+    "artifacts": [
+      {
+        "id": "art_job_0493627afea0_0_5b05bdea",
+        "mime": "text/html",
+        "bytes": 4566,
+        "sha256": "75ec886d8e073607e1caf31f56c84e37d2168c4f1ed390a64be785a24e6fdfa8",
+        "downloadHttp": 200,
+        "openCheck": "Chromium offline render and content check passed"
+      }
+    ],
+    "negativeControls": {
+      "payload": "package-payload-integrity",
+      "emptyPromptHttp": 400,
+      "emptyPromptCode": "pipeline_input_invalid"
+    },
+    "verifiedAt": "2026-10-15"
+  },
+  "package:cloud-image": {
+    "version": "1.0.0",
+    "digest": "55832e8fe38dd63c610822d5b8b18e345ba2de364daf4e74e86b9a8ebad2cf98",
+    "install": "pass",
+    "use": "pass",
+    "method": "package-install",
+    "recordedAt": "2026-10-15",
+    "key_id": "ak_EtFmJbPT",
+    "receipt": {
+      "id": "cloud:image",
+      "transaction": "tx-mv99xr5f-49dd3129",
+      "desiredState": "enabled"
+    },
+    "authorization": [
+      "cloud:dispatch"
+    ],
+    "job_id": "job_ded0591ac3ea",
+    "status": "completed",
+    "settlement": {
+      "status": "settled",
+      "charged_fen": 20,
+      "reservation_id": "533f70c4-09b7-47fa-99c8-ff9e99996a69",
+      "cursor": 1569,
+      "seq": [
+        1574,
+        1573,
+        1572,
+        1571,
+        1570
+      ],
+      "lastObservedAt": "2026-10-15T08:48:55.723Z",
+      "correlation": "job result reservation_id matches unique action reservation after pre-dispatch ledger cursor",
+      "jobResultReservationId": "533f70c4-09b7-47fa-99c8-ff9e99996a69"
+    },
+    "artifacts": [
+      {
+        "id": "art_job_ded0591ac3ea_0_12c4e619",
+        "mime": "image/png",
+        "bytes": 747895,
+        "sha256": "9ae48408b93d3a05fe8ab6afca49b68fb54d25475225959a536bb94633e9edaf",
+        "downloadHttp": 200,
+        "openCheck": "Pillow full PNG decode 1024x1024 RGB passed; visual review shows a blue square"
+      }
+    ],
+    "negativeControls": {
+      "payload": "package-payload-integrity",
+      "emptyPromptHttp": 400,
+      "emptyPromptCode": "pipeline_input_invalid"
+    },
+    "dispatchedAt": "2026-10-15T08:46:59.825Z",
+    "terminalObservedAt": "2026-10-15T08:47:37.030Z",
+    "verifiedAt": "2026-10-15"
+  }
+}

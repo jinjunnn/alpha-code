@@ -1,6 +1,6 @@
 ---
 name: customize-code-puppy
-description: Configure and customize Code Puppy — global/project engine config (alpha.jsonc), connectors (MCP), skills, agents, commands, plugins, governance of built-ins, and hot reload. Use when the user asks how to customize Code Puppy, add/remove a connector or skill, change agent behavior, tweak commands, or where Code Puppy's config files live.
+description: Customize Code Puppy — find capabilities in the Customization Center, request installation with the user's confirmation, check availability, create project skills/agents/commands/connectors, and explain project plugin trust. Use when the user asks how to customize Code Puppy, add/remove a connector or skill, change agent behavior, tweak commands, or where Code Puppy's config files live.
 license: MIT (Code Puppy original)
 ---
 
@@ -24,20 +24,29 @@ the app and never appears in `.code-puppy`.
 
 ## How to make changes
 
-1. **Project-scoped extensions (preferred in a session)** — use the `alpha_register` tool:
+1. **Missing a capability? Search first with `hub_search`.** The Customization Center (定制中心)
+   offers skills, agents, commands, connectors (MCP), bundles, and cloud capabilities. Read its
+   installed/enabled state, required authorization, and any price explanation before proposing an install.
+2. **Explain what to install and why, then call `hub_install`.** Ask the user to approve in the
+   app's confirmation box (软件弹出的确认框). If a key is needed, the user enters it in that box.
+   Never ask for or accept keys in chat; never invent or guess keys for the user.
+   This is the primary managed installation path; do not edit global config to install capabilities.
+3. **Check `hub_status` before use.** For `submitted; result pending` or `reload-pending`, check
+   `hub_status` instead of repeating the installation. Tools return immediately; do not wait inside
+   the current reply for reload. Report installed, reload-pending, and available as distinct states.
+   Tell the user: 显示可用以后,下一条消息就能用;不用重启。
+   Only promise use from the next message after the state is `available`.
+4. **Creating project-scoped extensions** — use the `alpha_register` tool only for project scope:
    - `type=agent|command` with the entry JSON (`{"description":"...","prompt":"..."}` / `{"template":"..."}`)
    - `type=mcp` with the connector config — executable connectors additionally need the user's
      per-project consent dialog before they load
    - `type=skill` (no entry) after writing `<project>/.code-puppy/skills/<name>/SKILL.md`
-   Changes are validated, written atomically, and hot-reloaded after the current reply — available
-   from the NEXT message. No app restart.
-2. **Global changes** — edit `$ALPHA_GLOBAL_DIR/alpha.jsonc` directly (same keys as project), then
-   call `alpha_reload`. The desktop process supplies `ALPHA_GLOBAL_DIR` as an absolute, canonical
-   current-environment root; never synthesize, replace, or redirect it, and never fall back to the
-   retired `$HOME/.alpha` root. For connectors/skills/agents/plugins prefer the **Extension Hub**
-   (定制中心) in the sidebar: browse, one-click install, update, uninstall — it keeps the install
-   ledger accurate.
-3. **Creating new skills/agents** — delegate to the factory skills `skill-creator` / `agent-creator`
+   Changes are validated, written atomically, and scheduled for reload after sessions become idle.
+   Executable connectors stay gated until the user trusts the project; do not promise immediate use.
+5. **Global installs** — use the Customization Center tools above. The desktop process supplies
+   `ALPHA_GLOBAL_DIR` as an absolute, canonical current-environment root; never synthesize, replace,
+   or redirect it, and never fall back to the retired `$HOME/.alpha` root.
+6. **Creating new skills/agents** — delegate to the factory skills `skill-creator` / `agent-creator`
    (they interview, generate, write to the right place, and hot-reload).
 
 ## Connectors (MCP) and bundles
@@ -53,7 +62,7 @@ the app and never appears in `.code-puppy`.
   from PyPI/npm and can be slow or blocked on restricted networks. A just-installed connector may
   show "connecting" for a while — that is honest state, not an error.
 - **Bundles (套件)** are alpha's install manifests: one click fans out into several atomic installs
-  (MCP + skills + plugins), each with its own receipt and uninstall. A bundle is not an engine
+  (skills + agents + commands + connectors), each with its own receipt and uninstall. A bundle is not an engine
   plugin (插件 = JS module with hooks; it cannot contain skills/agents).
 - The Hub's install ledger (receipts) is what makes 「已安装」 accurate — installs done by editing
   config by hand won't show there; prefer the Hub or `alpha_register` so state stays visible.
@@ -68,7 +77,9 @@ agents) because disabling them breaks the engine or alpha features — the panel
 ## Honest boundaries
 
 - Plugins must be self-contained ESM `.js` (raw TypeScript is rejected by the desktop runtime).
-- Executable content (connectors, plugins) inside a project only loads after the user grants the
-  project trust dialog.
-- If a change does not take effect, call `alpha_reload` once; if it still doesn't, say so honestly
-  and suggest an app restart rather than pretending it worked.
+- Project `.code-puppy/plugins/*.js` files are loaded and executed with the same permissions as
+  the engine after the user trusts the project. Trust is granted once for the whole project,
+  not per file or per execution. Explain this boundary before asking the user to trust a project.
+- Executable plugins from the catalog are refused (ADR-040).
+- If an install is not available yet, use `hub_status` and report its reason honestly. Use
+  `alpha_reload` for an explicit reload request; it waits for sessions to become idle.

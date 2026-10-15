@@ -13,6 +13,7 @@ import { AGENT_NOTE_DENIED, AGENT_NOTE_UNVERIFIED, type AlphaSidecarOutbound, ty
 import { applyPackageMutation, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { bundleOwner, computeInstalledGraphDigest } from "./ext-package-ledger-v3"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
+import { decodePackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
 import {
   CLOUD_DISPATCH_TOOL,
   createAlphaSidecarHost,
@@ -278,6 +279,30 @@ describe("hub-view 三档状态(§2.5)", () => {
       state: "installed",
       stateReason: { code: "not-loaded", detail: 'no verification for kind "plugin"' },
     })
+  })
+
+  test("#1533:真实 cloud@1 载荷的预留说明进包行与云组件行;旧云条目缺席 priceNote", async () => {
+    // 来源:2ddd2fb0cfb79d6af64fcb91569c27202c579772 的
+    // docs/verification/2026-10-15-req235-cloud-package-evidence/results/html-preview.json → payloads["cloud:html"]。
+    const decoded = decodePackageProfilePayloadV1("cloud", new Uint8Array(await Bun.file(join(import.meta.dir, "fixtures/hub-cloud-payload.json")).arrayBuffer()), [])
+    expect(decoded.ok).toBe(true)
+    if (!decoded.ok || decoded.payload.schema !== "alpha.host-extension-package.payload.cloud.v1") throw new Error("cloud fixture invalid")
+    const pkg: CatalogPackageViewV1 = {
+      catalogId: "package:cloud-html",
+      verdict: "compatible",
+      action: { kind: "install", enabled: true, reasonCode: "package-compatible" },
+      components: [{ componentId: "cloud:html", role: "root", required: true, included: true, skipReasonCode: null }],
+      prerequisites: { status: "ready", items: [] },
+      presentation: { displayName: "云端网页生成", description: "描述页面内容与样式，云端生成可下载的 HTML 网页。", version: "1.0.0" },
+      cloud: decoded.payload.behavior,
+    }
+    const w = world("prices", { packages: [pkg] })
+    record(w.globalRoot, { id: "cloud:html", kind: "cloud", name: "html" })
+    for (const view of [await w.service.view(w.projectDir), await w.service.viewForAgent({ directory: w.projectDir })]) {
+      for (const id of ["package:cloud-html", "cloud:html"])
+        expect(row(view.rows, id).priceNote).toBe("预留 US$1.00,按实际用量结算;失败时已产生的费用仍会结算。")
+      expect(row(view.rows, "cloud:docs")).not.toHaveProperty("priceNote")
+    }
   })
 
   // 审计 R1 Major 2:签名包(catalog.packages,main 评估过的 CatalogPackageViewV1)也是「客户端可安装的条目」——

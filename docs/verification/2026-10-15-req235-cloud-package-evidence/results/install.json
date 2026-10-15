@@ -1,0 +1,448 @@
+{
+  "verifiedAt": "2026-10-15T08:25:49.495Z",
+  "hostVersion": "0.1.20",
+  "localRoot": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req235-install-GB1d1M",
+  "hostCommit": "026553ad0bbc52a1faf6a9205fd7a1898e36414c",
+  "declarationCommit": "8458c4920bf53964d1e6d3fbcd68301c05793969",
+  "ledger": {
+    "v": 3,
+    "receipts": [
+      {
+        "id": "cloud:html",
+        "name": "html",
+        "type": "cloud",
+        "scope": "global",
+        "version": "1.0.0",
+        "payloadDigest": "sha256:05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+        "installedAt": "2026-10-15T08:25:49.418Z",
+        "origin": "catalog"
+      },
+      {
+        "id": "cloud:image",
+        "name": "image",
+        "type": "cloud",
+        "scope": "global",
+        "version": "1.0.0",
+        "payloadDigest": "sha256:622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+        "installedAt": "2026-10-15T08:25:49.490Z",
+        "origin": "catalog"
+      }
+    ],
+    "records": [
+      {
+        "schemaVersion": 2,
+        "id": "cloud:html",
+        "name": "html",
+        "kind": "cloud",
+        "environment": "dev",
+        "scope": {
+          "kind": "global"
+        },
+        "version": "1.0.0",
+        "manifestDigest": "sha256:a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743",
+        "payloadDigest": "sha256:05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+        "grantDigest": "sha256:e63ffda29c91acbee6af26541abd8752aafed9091e115c03dd563e14695d6fa9",
+        "desiredState": "enabled",
+        "generation": 1,
+        "origin": "catalog",
+        "transaction": {
+          "id": "tx-mv99xr3f-ca9169ed",
+          "state": "committed"
+        },
+        "installedAt": "2026-10-15T08:25:49.418Z"
+      },
+      {
+        "schemaVersion": 2,
+        "id": "cloud:image",
+        "name": "image",
+        "kind": "cloud",
+        "environment": "dev",
+        "scope": {
+          "kind": "global"
+        },
+        "version": "1.0.0",
+        "manifestDigest": "sha256:6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d",
+        "payloadDigest": "sha256:622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+        "grantDigest": "sha256:e63ffda29c91acbee6af26541abd8752aafed9091e115c03dd563e14695d6fa9",
+        "desiredState": "enabled",
+        "generation": 1,
+        "origin": "catalog",
+        "transaction": {
+          "id": "tx-mv99xr5f-49dd3129",
+          "state": "committed"
+        },
+        "installedAt": "2026-10-15T08:25:49.490Z"
+      }
+    ],
+    "packageGraphs": [
+      {
+        "packageId": "package:cloud-html",
+        "envelopeDigest": "sha256:d6c6de122e46f7898389f2082180379026f720220719301339c0b9dcac81a8c7",
+        "installedGraphDigest": "sha256:70f1c2911669428f527c025e78aefc48069536fb5a9097cb64bec98d94b97bbd",
+        "root": {
+          "componentId": "cloud:html",
+          "kind": "cloud",
+          "name": "html",
+          "required": true,
+          "manifestDigest": "sha256:a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743"
+        },
+        "children": []
+      },
+      {
+        "packageId": "package:cloud-image",
+        "envelopeDigest": "sha256:f5c625a8762f694c1d18de2969120827f9a82ee8690b1facda7a2beb037a3ecc",
+        "installedGraphDigest": "sha256:c2d06191e085fdd01ddfbe29962a35426dc1b20991b31f3ddbfb10c889eb460f",
+        "root": {
+          "componentId": "cloud:image",
+          "kind": "cloud",
+          "name": "image",
+          "required": true,
+          "manifestDigest": "sha256:6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d"
+        },
+        "children": []
+      }
+    ],
+    "claims": [
+      {
+        "kind": "cloud",
+        "name": "html",
+        "owners": [
+          "bundle:package:cloud-html@sha256:a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743"
+        ]
+      },
+      {
+        "kind": "cloud",
+        "name": "image",
+        "owners": [
+          "bundle:package:cloud-image@sha256:6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d"
+        ]
+      }
+    ]
+  },
+  "candidates": [
+    {
+      "name": "html",
+      "packageId": "package:cloud-html",
+      "version": "1.0.0",
+      "digest": "febf20f52e0a06658bd06b18a94f7342597cbaa5ed5634e91889cf8e37bb5b41",
+      "payloadSha256": "05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+      "payloadBytes": 690,
+      "cloud": {
+        "pipelineKind": "html-generate",
+        "fields": [
+          {
+            "name": "prompt",
+            "required": true,
+            "label": "页面要求",
+            "help": "说明页面主题、需要的文字和布局。",
+            "control": "textarea",
+            "minChars": 1,
+            "maxChars": 4000
+          }
+        ],
+        "fixed": [],
+        "holdUsd": 1,
+        "upstreamData": [
+          "发送你填写的页面要求（prompt）。",
+          "派发信封包含 autonomy、kind、input 与 constraints.network=restricted；不带 budget。",
+          "主进程补入 schema_version、artifact_policy 与幂等键。"
+        ]
+      },
+      "installed": {
+        "ok": true,
+        "kind": "cloud",
+        "name": "html",
+        "manifestDigest": "sha256:a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743",
+        "installed": [
+          "cloud:html"
+        ],
+        "skipped": [],
+        "activateMcp": []
+      },
+      "receipt": {
+        "schemaVersion": 2,
+        "id": "cloud:html",
+        "name": "html",
+        "kind": "cloud",
+        "environment": "dev",
+        "scope": {
+          "kind": "global"
+        },
+        "version": "1.0.0",
+        "manifestDigest": "sha256:a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743",
+        "payloadDigest": "sha256:05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+        "grantDigest": "sha256:e63ffda29c91acbee6af26541abd8752aafed9091e115c03dd563e14695d6fa9",
+        "desiredState": "enabled",
+        "generation": 1,
+        "origin": "catalog",
+        "transaction": {
+          "id": "tx-mv99xr3f-ca9169ed",
+          "state": "committed"
+        },
+        "installedAt": "2026-10-15T08:25:49.418Z"
+      },
+      "grant": {
+        "v": 1,
+        "key": "cloud--html",
+        "capabilities": [
+          "cloud:dispatch"
+        ],
+        "manifestDigest": "sha256:a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743",
+        "txId": "tx-mv99xr3f-ca9169ed",
+        "grantedAt": "2026-10-15T08:25:49.423Z"
+      },
+      "authorization": {
+        "attemptId": "req235-html",
+        "binding": {
+          "snapshotDigest": "ad0a3e2c63fa23476550d651132bcb2514e7e10bbd4339f77e57648c94fcc5ce",
+          "envelopeDigest": "d6c6de122e46f7898389f2082180379026f720220719301339c0b9dcac81a8c7",
+          "graphDigest": "009c0f5046862880907d1ea01d27e056d588183101884757ccd84318171809ba",
+          "itemDigests": {
+            "cloud:html": "a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743"
+          },
+          "capabilityDigest": "d2e497361ef483cbf779406e62b0bb1f132d33d3ad5c2bc5c672342dce7c9857"
+        },
+        "plan": {
+          "packageId": "package:cloud-html",
+          "version": "1.0.0",
+          "scope": {
+            "scope": "global"
+          },
+          "items": [
+            {
+              "included": true,
+              "componentId": "cloud:html",
+              "role": "root",
+              "required": true,
+              "key": "cloud--html",
+              "kind": "cloud",
+              "name": "html",
+              "manifestDigest": "sha256:a79bf5220e643ca9671b9add07e071bd3db1f0032d2a974b1707677757133743",
+              "payloadDigest": "sha256:05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+              "capabilities": [
+                "cloud:dispatch"
+              ],
+              "prerequisites": [],
+              "operations": [
+                "write-install-record",
+                "write-capability-grant"
+              ]
+            }
+          ]
+        },
+        "items": [
+          {
+            "key": "cloud--html",
+            "previous": null,
+            "requested": [
+              "cloud:dispatch"
+            ],
+            "added": [
+              "cloud:dispatch"
+            ],
+            "removed": [],
+            "requiresConfirmation": true
+          }
+        ],
+        "update": {
+          "operation": "install",
+          "packageId": "package:cloud-html",
+          "versionBefore": null,
+          "versionAfter": "1.0.0",
+          "graphBeforeDigest": null,
+          "graphAfterDigest": "sha256:70f1c2911669428f527c025e78aefc48069536fb5a9097cb64bec98d94b97bbd",
+          "ownerChanged": false,
+          "components": [
+            {
+              "componentId": "cloud:html",
+              "kind": "cloud",
+              "name": "html",
+              "key": "cloud--html",
+              "change": "added",
+              "requiredBefore": null,
+              "requiredAfter": true,
+              "prerequisiteIds": [],
+              "capabilities": {
+                "key": "cloud--html",
+                "previous": null,
+                "requested": [
+                  "cloud:dispatch"
+                ],
+                "added": [
+                  "cloud:dispatch"
+                ],
+                "removed": [],
+                "requiresConfirmation": true
+              }
+            }
+          ],
+          "claims": [],
+          "capabilityExpansion": true
+        }
+      },
+      "integrityCode": "package-payload-integrity"
+    },
+    {
+      "name": "image",
+      "packageId": "package:cloud-image",
+      "version": "1.0.0",
+      "digest": "55832e8fe38dd63c610822d5b8b18e345ba2de364daf4e74e86b9a8ebad2cf98",
+      "payloadSha256": "622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+      "payloadBytes": 695,
+      "cloud": {
+        "pipelineKind": "image-generation",
+        "fields": [
+          {
+            "name": "prompt",
+            "required": true,
+            "label": "图片要求",
+            "help": "说明画面主体、构图、颜色和风格。",
+            "control": "textarea",
+            "minChars": 1,
+            "maxChars": 4000
+          }
+        ],
+        "fixed": [],
+        "holdUsd": 0.3,
+        "upstreamData": [
+          "发送你填写的图片要求（prompt）。",
+          "派发信封包含 autonomy、kind、input 与 constraints.network=restricted；不带 budget。",
+          "主进程补入 schema_version、artifact_policy 与幂等键。"
+        ]
+      },
+      "installed": {
+        "ok": true,
+        "kind": "cloud",
+        "name": "image",
+        "manifestDigest": "sha256:6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d",
+        "installed": [
+          "cloud:image"
+        ],
+        "skipped": [],
+        "activateMcp": []
+      },
+      "receipt": {
+        "schemaVersion": 2,
+        "id": "cloud:image",
+        "name": "image",
+        "kind": "cloud",
+        "environment": "dev",
+        "scope": {
+          "kind": "global"
+        },
+        "version": "1.0.0",
+        "manifestDigest": "sha256:6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d",
+        "payloadDigest": "sha256:622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+        "grantDigest": "sha256:e63ffda29c91acbee6af26541abd8752aafed9091e115c03dd563e14695d6fa9",
+        "desiredState": "enabled",
+        "generation": 1,
+        "origin": "catalog",
+        "transaction": {
+          "id": "tx-mv99xr5f-49dd3129",
+          "state": "committed"
+        },
+        "installedAt": "2026-10-15T08:25:49.490Z"
+      },
+      "grant": {
+        "v": 1,
+        "key": "cloud--image",
+        "capabilities": [
+          "cloud:dispatch"
+        ],
+        "manifestDigest": "sha256:6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d",
+        "txId": "tx-mv99xr5f-49dd3129",
+        "grantedAt": "2026-10-15T08:25:49.493Z"
+      },
+      "authorization": {
+        "attemptId": "req235-image",
+        "binding": {
+          "snapshotDigest": "58521a8578ca5207b59e63d8ac4323ddc3adffcc80b29b4ce4f91871d997b9a9",
+          "envelopeDigest": "f5c625a8762f694c1d18de2969120827f9a82ee8690b1facda7a2beb037a3ecc",
+          "graphDigest": "efabe1b8ce21d225adcb6d9e4e5360663dd115f116574cd1f6385485c6eb4887",
+          "itemDigests": {
+            "cloud:image": "6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d"
+          },
+          "capabilityDigest": "b2ef58c815294c40ac37d7d6d46e135dbc0f2fe3124d7a3300a36e9d726f54bf"
+        },
+        "plan": {
+          "packageId": "package:cloud-image",
+          "version": "1.0.0",
+          "scope": {
+            "scope": "global"
+          },
+          "items": [
+            {
+              "included": true,
+              "componentId": "cloud:image",
+              "role": "root",
+              "required": true,
+              "key": "cloud--image",
+              "kind": "cloud",
+              "name": "image",
+              "manifestDigest": "sha256:6dde780d3bd035d83361d3c75a227c3270dfacc8edc01b6ae288ab23859f9b0d",
+              "payloadDigest": "sha256:622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+              "capabilities": [
+                "cloud:dispatch"
+              ],
+              "prerequisites": [],
+              "operations": [
+                "write-install-record",
+                "write-capability-grant"
+              ]
+            }
+          ]
+        },
+        "items": [
+          {
+            "key": "cloud--image",
+            "previous": null,
+            "requested": [
+              "cloud:dispatch"
+            ],
+            "added": [
+              "cloud:dispatch"
+            ],
+            "removed": [],
+            "requiresConfirmation": true
+          }
+        ],
+        "update": {
+          "operation": "install",
+          "packageId": "package:cloud-image",
+          "versionBefore": null,
+          "versionAfter": "1.0.0",
+          "graphBeforeDigest": null,
+          "graphAfterDigest": "sha256:c2d06191e085fdd01ddfbe29962a35426dc1b20991b31f3ddbfb10c889eb460f",
+          "ownerChanged": false,
+          "components": [
+            {
+              "componentId": "cloud:image",
+              "kind": "cloud",
+              "name": "image",
+              "key": "cloud--image",
+              "change": "added",
+              "requiredBefore": null,
+              "requiredAfter": true,
+              "prerequisiteIds": [],
+              "capabilities": {
+                "key": "cloud--image",
+                "previous": null,
+                "requested": [
+                  "cloud:dispatch"
+                ],
+                "added": [
+                  "cloud:dispatch"
+                ],
+                "removed": [],
+                "requiresConfirmation": true
+              }
+            }
+          ],
+          "claims": [],
+          "capabilityExpansion": true
+        }
+      },
+      "integrityCode": "package-payload-integrity"
+    }
+  ]
+}

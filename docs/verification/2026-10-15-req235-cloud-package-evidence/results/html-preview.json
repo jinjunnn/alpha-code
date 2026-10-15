@@ -1,0 +1,119 @@
+{
+  "compatibilityReport": {
+    "findings": [
+      {
+        "code": "alpha.profile.cloud.v1.mapped",
+        "disposition": "mapped",
+        "path": "$.root.component"
+      }
+    ],
+    "hostContract": {
+      "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
+      "artifactSha256": "485f1de9f56b866431f87ce4b7956b73fb65d650c3b8abddd7dd4279c91326ab",
+      "commit": "133f463d93664269db0cf91f1c1ff7d7887d6bf9",
+      "repo": "jinjunnn/alpha-code"
+    },
+    "inputSha256": "d4e96a9176dd229586d93b2e8401f93f54f20143d3ec8655412b859621359dae",
+    "packageId": "package:cloud-html",
+    "schema": "alpha.package-compatibility-report.v1",
+    "verdict": "compatible",
+    "version": "1.0.0"
+  },
+  "envelope": {
+    "capabilities": [],
+    "components": [
+      {
+        "capabilities": [],
+        "dependencies": [],
+        "id": "cloud:html",
+        "payloadRef": {
+          "bytes": 690,
+          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+          "sha256": "05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda.json"
+        },
+        "profileId": "cloud",
+        "profileVersion": 1,
+        "required": true
+      }
+    ],
+    "prelude": {
+      "packageId": "package:cloud-html",
+      "version": "1.0.0"
+    },
+    "presentation": {
+      "description": "描述页面内容与样式，云端生成可下载的 HTML 网页。",
+      "displayName": "云端网页生成"
+    },
+    "root": "cloud:html",
+    "schema": "alpha.host-extension-package.v1"
+  },
+  "normalizedRecord": {
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/cloud.html/1.0.0",
+        "assetManifestSha256": null,
+        "capabilities": [],
+        "dependencies": [],
+        "id": "cloud:html",
+        "payloadRef": {
+          "bytes": 690,
+          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+          "sha256": "05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda.json"
+        },
+        "profileId": "cloud",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      }
+    ],
+    "root": {
+      "compatibility": {
+        "reportSha256": "5a49e1e001df889087dfaa163c5d0ed566bfa1fa1b3dbb26d99b38ef11c80fce",
+        "verdict": "compatible"
+      },
+      "componentId": "cloud:html",
+      "declarationSha256": "d4e96a9176dd229586d93b2e8401f93f54f20143d3ec8655412b859621359dae",
+      "packageId": "package:cloud-html",
+      "presentation": {
+        "description": "描述页面内容与样式，云端生成可下载的 HTML 网页。",
+        "displayName": "云端网页生成"
+      },
+      "source": {
+        "kind": "alpha-native",
+        "publisher": "alpha",
+        "redistributable": true
+      },
+      "version": "1.0.0"
+    },
+    "schema": "alpha.normalized-package-build-record.v1"
+  },
+  "payloads": {
+    "cloud:html": {
+      "behavior": {
+        "fields": [
+          {
+            "control": "textarea",
+            "help": "说明页面主题、需要的文字和布局。",
+            "label": "页面要求",
+            "maxChars": 4000,
+            "minChars": 1,
+            "name": "prompt",
+            "required": true
+          }
+        ],
+        "fixed": [],
+        "holdUsd": 1,
+        "pipelineKind": "html-generate",
+        "upstreamData": [
+          "发送你填写的页面要求（prompt）。",
+          "派发信封包含 autonomy、kind、input 与 constraints.network=restricted；不带 budget。",
+          "主进程补入 schema_version、artifact_policy 与幂等键。"
+        ]
+      },
+      "schema": "alpha.host-extension-package.payload.cloud.v1"
+    }
+  },
+  "schema": "alpha.package-declaration.preview.v1"
+}

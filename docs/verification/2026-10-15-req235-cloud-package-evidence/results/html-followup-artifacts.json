@@ -1,0 +1,53 @@
+{
+  "observedAt": "2026-10-15T08:48:50.717Z",
+  "http": 200,
+  "body": {
+    "schema_version": 1,
+    "job_id": "job_0493627afea0",
+    "status": "completed",
+    "artifacts": [
+      {
+        "schemaVersion": 1,
+        "id": "art_job_0493627afea0_0_5b05bdea",
+        "source": "cloud",
+        "name": "output.html",
+        "trust": "sandboxed",
+        "role": "primary",
+        "contentRef": {
+          "kind": "http-stream",
+          "url": "/v1/cloud/artifacts/art_job_0493627afea0_0_5b05bdea/content",
+          "auth": "bearer"
+        },
+        "verification": {
+          "status": "unverified"
+        },
+        "provenance": {
+          "producer": "pipeline",
+          "jobId": "job_0493627afea0",
+          "kind": "html-generate",
+          "createdAt": "2026-10-15T08:28:33.601Z"
+        },
+        "size": 4566,
+        "claimedMime": "text/html"
+      }
+    ],
+    "artifact_ids": [
+      "art_job_0493627afea0_0_5b05bdea"
+    ],
+    "result": {
+      "kind": "html-generate",
+      "ok": true,
+      "exitCode": 0,
+      "stdout": "Document generated and validated.",
+      "stderr": "",
+      "artifacts": [
+        {
+          "artifact_id": "art_job_0493627afea0_0_5b05bdea",
+          "name": "output.html",
+          "mime": "text/html",
+          "size": 4566
+        }
+      ]
+    }
+  }
+}

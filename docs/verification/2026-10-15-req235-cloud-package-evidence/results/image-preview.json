@@ -1,0 +1,119 @@
+{
+  "compatibilityReport": {
+    "findings": [
+      {
+        "code": "alpha.profile.cloud.v1.mapped",
+        "disposition": "mapped",
+        "path": "$.root.component"
+      }
+    ],
+    "hostContract": {
+      "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
+      "artifactSha256": "485f1de9f56b866431f87ce4b7956b73fb65d650c3b8abddd7dd4279c91326ab",
+      "commit": "133f463d93664269db0cf91f1c1ff7d7887d6bf9",
+      "repo": "jinjunnn/alpha-code"
+    },
+    "inputSha256": "7b2957537f6282fbe604e15848cbc858c271877f6dec8940aa40d7241f12b7ae",
+    "packageId": "package:cloud-image",
+    "schema": "alpha.package-compatibility-report.v1",
+    "verdict": "compatible",
+    "version": "1.0.0"
+  },
+  "envelope": {
+    "capabilities": [],
+    "components": [
+      {
+        "capabilities": [],
+        "dependencies": [],
+        "id": "cloud:image",
+        "payloadRef": {
+          "bytes": 695,
+          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+          "sha256": "622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.image/1.0.0/alpha-package/622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143.json"
+        },
+        "profileId": "cloud",
+        "profileVersion": 1,
+        "required": true
+      }
+    ],
+    "prelude": {
+      "packageId": "package:cloud-image",
+      "version": "1.0.0"
+    },
+    "presentation": {
+      "description": "描述画面内容与风格，云端生成可下载的 PNG 图片。",
+      "displayName": "云端图片生成"
+    },
+    "root": "cloud:image",
+    "schema": "alpha.host-extension-package.v1"
+  },
+  "normalizedRecord": {
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/cloud.image/1.0.0",
+        "assetManifestSha256": null,
+        "capabilities": [],
+        "dependencies": [],
+        "id": "cloud:image",
+        "payloadRef": {
+          "bytes": 695,
+          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+          "sha256": "622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.image/1.0.0/alpha-package/622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143.json"
+        },
+        "profileId": "cloud",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      }
+    ],
+    "root": {
+      "compatibility": {
+        "reportSha256": "a1ffbf2f90f9263359d955eda10210b9b254e7342f44f4482fba2dc1151c5462",
+        "verdict": "compatible"
+      },
+      "componentId": "cloud:image",
+      "declarationSha256": "7b2957537f6282fbe604e15848cbc858c271877f6dec8940aa40d7241f12b7ae",
+      "packageId": "package:cloud-image",
+      "presentation": {
+        "description": "描述画面内容与风格，云端生成可下载的 PNG 图片。",
+        "displayName": "云端图片生成"
+      },
+      "source": {
+        "kind": "alpha-native",
+        "publisher": "alpha",
+        "redistributable": true
+      },
+      "version": "1.0.0"
+    },
+    "schema": "alpha.normalized-package-build-record.v1"
+  },
+  "payloads": {
+    "cloud:image": {
+      "behavior": {
+        "fields": [
+          {
+            "control": "textarea",
+            "help": "说明画面主体、构图、颜色和风格。",
+            "label": "图片要求",
+            "maxChars": 4000,
+            "minChars": 1,
+            "name": "prompt",
+            "required": true
+          }
+        ],
+        "fixed": [],
+        "holdUsd": 0.3,
+        "pipelineKind": "image-generation",
+        "upstreamData": [
+          "发送你填写的图片要求（prompt）。",
+          "派发信封包含 autonomy、kind、input 与 constraints.network=restricted；不带 budget。",
+          "主进程补入 schema_version、artifact_policy 与幂等键。"
+        ]
+      },
+      "schema": "alpha.host-extension-package.payload.cloud.v1"
+    }
+  },
+  "schema": "alpha.package-declaration.preview.v1"
+}

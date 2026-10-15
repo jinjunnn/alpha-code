@@ -319,6 +319,7 @@ export const TOOL_TEXT = {
     description:
       "Search the Code Puppy Customization Center (skills, agents, commands, connectors, cloud capabilities) as seen from this workspace: " +
       "what exists, whether it is installed and enabled, its state (not-installed / installed / reload-pending / available) and what authorization it needs. " +
+      "Cloud capabilities include priceNote when the catalog provides pricing information; otherwise the output ends with an explicit missing-price notice. " +
       "Use it before telling the user a capability is missing. An empty query lists everything.",
     args: { query: "Keywords or purpose matched against id, name and description; empty string lists all entries" },
   },

@@ -1,0 +1,11 @@
+{
+  "observedAt": "2026-10-15T08:35:24Z",
+  "reason": "settlement not observed; stop before next card",
+  "lastLedgerObservedAt": "2026-10-15T08:34:39.125810+00:00",
+  "exitCode": 1,
+  "paidPosts": {
+    "html": 1,
+    "image": 0
+  },
+  "charged_fen": null
+}

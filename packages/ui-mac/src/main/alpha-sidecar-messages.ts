@@ -48,6 +48,8 @@ export type HubViewRow = {
   stateReason?: HubStateReason
   /** `none` / `secret:<VAR,…>` / `platform-login`。只含变量名,从不含值。 */
   authorization: string
+  /** 目录提供的云能力价格说明;缺席时不推测费用。 */
+  priceNote?: string
   /** 只出现在 ext 侧的应答里,且只对技能行;不改 `state`(I4)。 */
   agentNote?: string
 }
@@ -307,6 +309,7 @@ function parseHubViewRow(value: unknown): HubViewRow | undefined {
   const reason = parseStateReason(value.stateReason)
   if (reason === null) return
   if (value.agentNote !== undefined && typeof value.agentNote !== "string") return
+  if (value.priceNote !== undefined && typeof value.priceNote !== "string") return
   return {
     id: value.id as string,
     scope: value.scope,
@@ -319,6 +322,7 @@ function parseHubViewRow(value: unknown): HubViewRow | undefined {
     state: value.state as HubStateWord,
     ...(reason ? { stateReason: reason } : {}),
     authorization: value.authorization as string,
+    ...(typeof value.priceNote === "string" ? { priceNote: value.priceNote } : {}),
     ...(typeof value.agentNote === "string" ? { agentNote: value.agentNote } : {}),
   }
 }
