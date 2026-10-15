@@ -220,8 +220,16 @@ CAS GC(只删内容不改账本)。直接调用账本写原语的文件:`alpha-i
 只对 `instructions` 取并集(`config.ts:46-52`)。对 `mcp.<name>` 这一叶意味着:后来的来源**只覆盖它写了的键**
 (例如 `command[]` 整体换掉),没写的键保留 —— 名字仍是原来的名字,定义已经不是。
 **服务层顺序**:MCP 服务的层依赖是 `CrossSpawnSpawner / McpAuth / EventV2Bridge / Config / McpBrowser`,**不含** Plugin
-(`mcp/index.ts:1071`);Agent 服务依赖 Plugin 与 Skill(`agent.ts:450`)。「插件 `config` 钩子先于 MCP 服务读配置」在层图上
-没有被钉住;今天它成立的证据是生产行为 —— 云 MCP 定义只由 ext 钩子放进 `cfg.mcp`(`plugin.ts:150-160`,#223 R5)而云 MCP 能连上。
+(`mcp/index.ts:1071`);但实例引导(`instance-store.ts:61` → `bootstrap.ts:36-38`)写死了顺序:先 `config.get()`,再
+`plugin.init()`(注释原话「Plugin can mutate config so it has to be initialized before anything else」),之后才并发初始化
+其它服务 —— 所以「插件 `config` 钩子先于 MCP 服务读配置」是**被钉住的事实**,不只是生产经验。
+**配置里的变量替换发生在加载时**:`loadConfig` 先对文本做 `{env:VAR}` / `{file:path}` 替换再解析(`config.ts:237-243`;
+`variable.ts:33-61`),`{file:}` 相对路径按**该配置文件所在目录**解析、`~/` 展开,缺文件默认是错误;所以引擎最终拿到的
+`mcp.<name>` 叶里 `{file:}` 已经是文件内容,不是引用字符串。
+**每个配置目录都会自动加载 JS 插件**:目录循环对每个 dir 跑 `ConfigPlugin.load(dir)` = `Glob.scan("{plugin,plugins}/*.{ts,js}")`
+(`config.ts:481-484`;`config/plugin.ts:19-29`),目录包括 XDG 全局目录、`~/.opencode`、`<userData>/alpha-engine-config` ——
+三个都在围栏可写集里(W6 / W16 / W3),加载到的插件以引擎同等权限运行,可以 `POST /mcp` 现场加本机 MCP;这是 ADR-040 后果 4
+登记的「引擎目录自动发现」的全集坐标,此前只点名了项目目录。
 
 ### 1.8 当前目录 MCP 工具的真实读取通路
 
@@ -297,7 +305,7 @@ parentPort 请求/应答,由 main **即时**回答(不再有任何引擎可写�
 
 | 方向 | type | 载荷 | 处理 |
 | --- | --- | --- | --- |
-| ext → main | `alpha.hub.view.request` | `{ id, directory, sessionID, agent, query? }`(`sessionID` / `agent` 取自 `ToolContext`,是 2.5 技能权限核验的输入;缺任一 ⇒ 技能行一律 `unverifiable`) | main 即时算视图(下文),回 `alpha.hub.view.reply { id, view | error }` |
+| ext → main | `alpha.hub.view.request` | `{ id, directory, sessionID, agent, query? }`(`sessionID` / `agent` 取自 `ToolContext`,**只**用于 2.5 的 agent 侧附加说明 `agentNote`;共享状态词按 `(id, scope, directory)` 计算,与会话无关;缺任一 ⇒ `agentNote` 为「本会话权限未核验」,状态词不变) | main 即时算视图(下文),回 `alpha.hub.view.reply { id, view | error }` |
 | ext → main | `alpha.hub.request.request` | `{ id, requestId }` | main 回该次安装请求的阶段(2.3) |
 | ext → main | `alpha.reload.report` | `{ generation, scope, outcome, directories, error? }` | main 记录并核验(2.5、2.6) |
 | main → ext | `alpha.reload.request` | `{ generation, scope: "global" | { directory }, items, reason, force? }` | ext 调度器入队(2.6) |
@@ -386,8 +394,8 @@ hub_install(catalogId)
 | --- | --- |
 | MCP(global) | `mcp.status({directory})[name].status === "connected"` |
 | MCP(project) | 复用 `probeProjectMcpActivation(name, directory)` = `"active"`(耐久叶 + 未被全局遮蔽 + 有效配置逐字相等 + 该目录 connected) |
-| cloud | **接口缺口 G1 补上之前一律 `unverifiable`**(1.8:没有任何通路能按目录列出 MCP 工具名,「云 MCP 已连接」证明不了 `cloud_dispatch` 在工具表里)。`stateReason` 固定为「云 MCP 在本目录已连接 / 未连接;对应工具是否在你的工具表里,以你当前的工具表为准 —— 主进程无法替你核验(接口缺口 G1)」,其中连接事实来自收据 ∧ `platformPays` ∧ `mcp.status({directory}).cloud === "connected"`。G1 的最小补法 = 给引擎加一条目录作用域的「MCP 工具名清单」路由(`UPSTREAM_PATHS` 改动,按 ADR-029 另立票),补上后此行改为「连接 ∧ 该路由列出对应工具 id」 |
-| skill | `GET /skill?directory` 列出同名且 **`location` 落在 main 为它安装的 generation 目录之下**(身份,不只名字)∧ **用引擎自己的求值规则判权限**:输入 = `GET /agent?directory` 里 `name === <agent>` 那一项的运行时 `permission`(已含 defaults 与 agent 自身规则,1.9;按运行时形状校验,不信旧 SDK 类型)与 `GET /session/<sessionID>` 的 `permission ?? []`,按 `tools.ts:156` 的次序扁平拼接,再按 `permission/index.ts:105-114` 的 `findLast` 规则求 `("skill", name)`,匹配用上游导出的 `Wildcard.match`(`@opencode-ai/core/util/wildcard`,**复用、不手写**);`action !== "deny"` ⇒ 权限不拒(与 `Skill.available` 同一判据)。agent 在清单里找不到 / 会话读不到 / 运行时形状不合 ⇒ `unverifiable`。求值落在 main 还是 ext 由 C3 按「谁能引用 `Wildcard`」决定,规则不变 |
+| cloud | 云条目**没有重载环节**:状态词最高到 **`installed`**(收据在),`stateReason` 固定为「云 MCP 在本目录已连接 / 未连接;对应工具是否在你的工具表里,以你当前的工具表为准 —— 主进程无法替你核验(接口缺口 G1,`alpha-code#1524`)」,连接事实来自收据 ∧ `platformPays` ∧ `mcp.status({directory}).cloud === "connected"`;**不出重载入口、不发重载请求**。G1 是独立依赖(`#1524`,DECIDE,含「接受云条目最终状态为已安装」这一可选结论);它裁决前云条目不判 `available`,AC4 的云条目部分不判 PASS |
+| skill | **共享状态**(与会话无关):`GET /skill?directory` 列出同名且 **`location` 落在 main 为它安装的 generation 目录之下**(身份,不只名字)⇒ `available`。**agent 侧附加说明 `agentNote`**(不改状态词):main 用引擎自己的求值规则判本会话能不能调它 —— 输入 = `GET /agent?directory` 里 `name === <agent>` 那一项的运行时 `permission`(已含 defaults 与 agent 自身规则,1.9;按运行时形状校验,不信旧 SDK 类型)与 `GET /session/<sessionID>` 的 `permission ?? []`,按 `tools.ts:156` 的次序扁平拼接,再按 `permission/index.ts:105-114` 的 `findLast` 规则求 `("skill", name)`,匹配用上游导出的 `Wildcard.match`(`@opencode-ai/core/util/wildcard`,**复用、不手写**);`action === "deny"` ⇒ `agentNote` = 「本会话的 agent 规则拒绝该技能,调用会被拒」;agent 找不到 / 会话读不到 / 形状不合 ⇒ `agentNote` = 「本会话权限未核验」。**求值定在 main**(C3);定制中心不显示 `agentNote`(它没有会话) |
 | agent | `GET /agent?directory` 列出同名且 `disable !== true` |
 | command | `GET /command?directory` 列出同名 |
 
@@ -405,8 +413,11 @@ hub_install(catalogId)
 「请 ext 重载」。
 
 - **实例登记**:每次 `AlphaExt(input)` 初始化登记 `{ directory, client }`;重建覆盖同目录旧项;
-  **只有明确的生命周期结束才移除**:本实例 `event` 钩子收到 `server.instance.disposed`(`server/event.ts:6-10`,
-  钩子按 directory 过滤,`plugin/index.ts:263`)⇒ 移除该目录;`global.dispose()` 的 report 之后清空全表,等各实例重建时重新登记。
+  **只有明确的生命周期结束才移除,信号是插件自己的 `dispose` 钩子**:实例销毁时引擎逐插件调用 `hook.dispose()`
+  (`plugin/src/index.ts:223`;`plugin/index.ts:272-285` 的 finalizer),ext 在这里注销该目录。**不能用**
+  `server.instance.disposed`:它只经 `GlobalBus.emit` 发给 HTTP 事件流(`instance-store.ts:79-91`),插件的 `event` 钩子
+  听的是 `EventV2Bridge` 的事件(`plugin/index.ts:262-269`),收不到它。`global.dispose()` 对每个实例各触发一次 `dispose`
+  钩子,表自然清空,各实例重建时重新登记。
   **`session.status()` 调不通(超时 / 错误 / 形状不对)⇒ 该实例记为 `unknown`,不移除、不猜**。
 - **入队**:`request({ scope, items, reason, generation, force? })`,来源三种 —— ① `alpha_reload` / `alpha_register`
   (进程内);② main 经 `alpha.reload.request`(定制中心按钮、安装体、信任门/外部导入、`refreshProjectEngine`
@@ -416,7 +427,8 @@ hub_install(catalogId)
   (global:全部已登记实例;directory:该实例)。**任一相关实例为 `unknown` ⇒ 本轮零 dispose**,记一行原因
   (`waiting: status of <dir> unknown`),下一次事件再试;全部明确空闲 ⇒ **再查一次**(把「查到 dispose」的窗口压到
   同进程一次 HTTP 往返;这一次也不许有 `unknown`)⇒ `global.dispose()` 或 `instance.dispose({directory})` 一次 ⇒
-  `alpha.reload.report`。`force:true` 是用户的显式选择,**只跳过「空闲」这一条**,不跳过 `unknown` 以外的任何校验。
+  `alpha.reload.report`。`force:true` 是用户的显式选择,**只跳过「空闲」这一条**;`force` 也不绕过 `unknown` —— 查询失败时
+  连强制重载也零 dispose,界面告诉用户「引擎状态查不到,请重启应用」。
 - **失败**:dispose 失败 ⇒ 保留队列、report 失败、下一次 idle 事件再试,连败 3 次停止自动重试(状态不变,
   原因「需要重启应用」);**绝不**降级成「可用」。
 - **一直忙**(> 5 min 仍有会话 busy):只记日志、继续等;不强行打断(约束 4);用户要立刻生效走 `force`。
@@ -472,7 +484,7 @@ hub_install(catalogId)
 
 | # | 旁路 / 边界 | 今天 | 本方案后 | 处置 |
 | --- | --- | --- | --- | --- |
-| S1 | agent 写全局 `alpha.jsonc` 的 `mcp.<name>`(本地 type)再触发重载 ⇒ 引擎起一个持久的、**定制中心看不见**的可执行连接器(F1–F4) | 成立 | ① `alpha.jsonc` 从围栏可写集里收紧出去(W2 之内对该文件单独 `deny file-write*`,只收紧不放宽);② ext 的 `config` 钩子在每次实例重建时**整体重构 `cfg.mcp`**,不是按名字放行:从受保护来源**重新构造每个受管 MCP 的完整定义**并**整条替换**同名的合并值 —— 来源只有四种:`alpha.jsonc` 的 `mcp.<name>` 叶(收紧后只有 main 与用户的编辑器写得了;ext 自己读该文件,与引擎同一 jsonc 语义)、远程真源记录(`{type:"remote", url, headers}` + 今天 fork 时那份 `enabled` 投影)、云 MCP 定义(env)、它自己经信任门合并的项目 `.code-puppy/alpha.jsonc` 条目;**不在这四种来源里的名字一律整条替换为 `{enabled:false}`** + 一行原因。1.7 已证明 mergeDeep 让后合并者能只改 `command[]` 而名字不变,所以「名字在集合里」证明不了「定义来自受管文件」 | C2(D1 已采 A) |
+| S1 | agent 写全局 `alpha.jsonc` 的 `mcp.<name>`(本地 type)再触发重载 ⇒ 引擎起一个持久的、**定制中心看不见**的可执行连接器(F1–F4) | 成立 | ① `alpha.jsonc` 从围栏可写集里收紧出去(W2 之内对该文件单独 `deny file-write*`,只收紧不放宽);② ext 的 `config` 钩子在每次实例重建时**整体重构 `cfg.mcp`**,不是按名字放行:从受保护来源**重新构造每个受管 MCP 的完整定义**并**整条替换**同名的合并值 —— 来源只有四种:`alpha.jsonc` 的 `mcp.<name>` 叶(收紧后只有 main 与用户的编辑器写得了;ext 自己读该文件,与引擎同一 jsonc 语义)、远程真源记录(`{type:"remote", url, headers}` + 今天 fork 时那份 `enabled` 投影)、云 MCP 定义(env)、它自己经信任门合并的项目 `.code-puppy/alpha.jsonc` 条目;**不在这四种来源里的名字一律整条替换为 `{enabled:false}`** + 一行原因。三条实现约束:**(a) 重构出的叶必须等于引擎自己加载该叶会得到的值**——先按 1.7 的规则做 `{env:}` / `{file:}` 替换(`{file:}` 相对 `alpha.jsonc` 所在目录、`~/` 展开、缺文件语义与引擎一致),优先复用上游 `ConfigVariable.substitute`(`config/variable.ts:33-61`),引用不到就按同一规则实现并用上游函数做对照测试;**(b) 重构放在 `config` 钩子的 `finally` 里,与 `computeMcpOwnership` 同位**(`plugin.ts:218-226`)——项目配置分支的任何 early return / 抛错都不能跳过它,项目来源合并失败按空集处理;**(c) 重构之后再叠加账本禁用与 session-grant 强制禁用的覆盖**(今天由 `ext-disabled-injection.ts:43-58` 在 fork 时注入的 `enabled:false`),顺序不能反,否则重构会把禁用复活。1.7 已证明 mergeDeep 让后合并者能只改 `command[]` 而名字不变,所以「名字在集合里」证明不了「定义来自受管文件」 | C2(D1 已采 A) |
 | **S1′** | 同上但写 `~/.opencode/opencode.json(c)`(W16,引擎写得了,被引擎无条件合并,默认拒绝名单不枚举它;F6′)—— 包括**只覆盖一个已受管名字的 `command` / `environment` / `url`**,名字照旧 | **成立,此前未被点名** | 被 S1 的 ② 整条重构覆盖:受管名字的定义被重新构造,非受管名字被替换为 `{enabled:false}` | C2 |
 | **S1″** | 写 `<userData>/alpha-engine-config/opencode.json`(W3;它是 main 在 fork 时写的 `alpha.jsonc` 去 provider 拷贝,在目录循环**末尾**合并,1.7 序 5④)或项目 `.opencode/opencode.json(c)`(S5 的 MCP 部分)来覆盖同名定义 | 成立 | 同上 | C2 |
 | S2 | 写 `alpha.jsonc` 的 `mcp.<name>`(remote) | 已堵(`#1381`) | 不变;且 ② 使它在重建时也生效(不只 fork 时) | C2 |
@@ -489,6 +501,7 @@ hub_install(catalogId)
 | S13 | 伪造目录缓存 | — | 缓存读回重验(F10) | — |
 | S14 | 运行时密钥对 agent 可见(F9) | 可见 | 可见 | **不承诺**(约束 2) |
 | S15 | 伪造 `ext-store/skill--*/current.json` 让引擎加载一份引擎自己写的技能(W2) | 成立 | 不变 | 提示注入面、不是可执行面;本票只堵可执行安装旁路,如实登记 |
+| **S16** | 往 `~/.opencode/plugin(s)/`、`<XDG>/opencode/plugin(s)/`、`<userData>/alpha-engine-config/plugin(s)/` 放一个 `.js`(三个目录都在可写集 W16 / W6 / W3),或在这些目录的 `opencode.json(c)` 写 `plugin[]`:引擎每次重建自动加载(1.7 末段),插件以引擎同等权限运行、可 `POST /mcp` 现场加本机 MCP,**绕过 ② 的整条重构**(② 管的是配置,不是运行时 API) | **成立,R3 范围外观察,编排器 2026-10-14 裁采 (a)** | 这三个 `plugin(s)` 子目录并入 C2 **同一条**围栏 deny(与 `alpha.jsonc` 共用 seatbelt 前置验证;只收紧);配置文件里的 `plugin[]` 由上游加载器消费、我们改不了语义,但目录本身写不进去就加载不到我们没放的东西。与 ADR-040「不装引擎 JS 插件」同向,可回滚(去掉那几行 deny)。项目目录的 `.opencode/plugin(s)/` 仍是 ADR-040 后果 4 登记的上游边界,不在本条 | C2 |
 
 ### 3.2 实现必须守住的不变量(咽喉点形态;每条由子票各自落判据)
 
@@ -499,20 +512,26 @@ hub_install(catalogId)
   ① 围栏内对 `alpha.jsonc` 写 ⇒ EPERM(真 `sandbox-exec`,同 `process-fence-apply.test.ts` 形制;**只属于主方案**,
   回退方案的 ① 见 §4 C2);
   ② 围栏内往 `~/.opencode/opencode.jsonc` 写一条**新名字**的 MCP 并 dispose ⇒ `mcp.status` 里它不是 connected、日志有那一行;
-  ③ **同进程启动后**经定制中心装一条本地 MCP 并 dispose ⇒ connected;④ 启动后新增的名字(非受保护来源)⇒ 替换为 `{enabled:false}`;
+  ③ **同进程启动后**经定制中心装一条本地 MCP(夹具的 `environment` 带一个 `{file:}` 引用)并 dispose ⇒ connected,且 MCP 服务
+  拿到的 `environment` 值是**文件内容**、不是 `{file:…}` 字符串(S1 ② (a));
+  ④ 启动后新增的名字(非受保护来源)⇒ 替换为 `{enabled:false}`;
   ⑤ **同名覆盖反例(N1)**:围栏内往 `~/.opencode/opencode.jsonc` 写 `mcp.<已受管名>.command = ["<别的程序>"]` 并 dispose ⇒
-  MCP 服务拿到的该名定义与 `alpha.jsonc` 叶**逐字相等**(`command` 未被换掉),且该服务器仍以原命令连接;
-  把 ② 的整条重构退化成「按名放行」(变异)⇒ ⑤ 红。
+  MCP 服务拿到的该名定义与「引擎按 1.7 规则加载 `alpha.jsonc` 该叶得到的值」**逐字相等**(含 `{file:}` 已解析;`command` 未被换掉),
+  且该服务器仍以原命令连接;把 ② 的整条重构退化成「按名放行」(变异)⇒ ⑤ 红;
+  ⑥ **项目配置读失败时 ② 仍生效**:让项目 `.code-puppy/alpha.jsonc` 身份漂移 / 不可读(钩子走 early return)⇒ ④⑤ 照样成立
+  (S1 ② (b));把重构从 `finally` 挪回 try 体(变异)⇒ ⑥ 红;
+  ⑦ **插件目录(S16)**:围栏内往 `~/.opencode/plugins/x.js` 写文件 ⇒ EPERM(真 `sandbox-exec`,与 ① 同一前置验证)。
 - **I2 密钥零进入引擎**:三个工具的参数 schema 键集合精确为 `{catalogId}` / `{query}`;审批应答命令无自由
   载荷;parentPort 应答与视图不含密钥值(金丝雀测试,2.4)。
 - **I3 确认框不可被规则放行替代**:安装只能由 renderer 守望者在呈现确认框并被用户点击后发起;
   把 ext 的 `hub_install: ask` 钉子拿掉(变异)⇒ `ctx.ask` 直接返回 ⇒ 账本零变化、工具输出为
   `not installed: no confirmation box ran`。
-- **I4 三档状态唯一权威**:定制中心与 ext 读 main 对同一 `(id, scope, directory)` 的同一档;同一夹具两侧同档;
-  核验失败两侧都是 `reload-pending` 与同一原因。
+- **I4 三档状态唯一权威**:状态词**只**由 `(id, scope, directory)` 算出,与会话无关;定制中心与 ext 读 main 对同一三元组
+  的同一档;同一夹具两侧同档;核验失败两侧都是 `reload-pending` 与同一原因。会话 / agent 的权限拒绝只进 ext 侧的
+  `agentNote`,不改状态词;**判据的夹具不得含任何 renderer 从不发送的会话字段**(定制中心那一侧没有 `sessionID` / `agent`)。
 - **I5 重载不打断(有登记的窗口)**:任一相关实例 `session.status()` 非空 ⇒ 零 dispose;**任一相关实例查询失败
-  (`unknown`)⇒ 零 dispose,且日志点名该目录(N4 / R1 第 4 条)**;全部明确空闲 ⇒ 对 N 个排队项恰好一次 dispose;
-  实例只因 `server.instance.disposed` 被移除,查询失败不移除;判据用**真实例**的 `session.status`(造一个 busy 会话;
+  (`unknown`)⇒ 零 dispose(含 `force`),且日志点名该目录(N4 / R1 第 4 条)**;全部明确空闲 ⇒ 对 N 个排队项恰好一次 dispose;
+  **实例只因插件 `dispose` 钩子被移除**,查询失败不移除;判据用**真实例**的 `session.status`(造一个 busy 会话;
   再造一个「查询超时」的实例替身只替换 HTTP 层,不替换引擎),不用假事件流;「查到 dispose 之间的准入」是登记在案的
   接口缺口(2.6),不在本判据里假装覆盖。
 - **I6 parentPort 消息族封闭**:main 对 `alpha.*` 的处理只有只读查询与重载请求;未知 type、形状不对 ⇒ 丢弃 + log;
@@ -529,17 +548,19 @@ hub_install(catalogId)
 | 子票 | 边界(具体文件) | 负责 AC | 不做 | 退出条件 | 规模 |
 | --- | --- | --- | --- | --- | --- |
 | **C1 `[CODE]` 重载请求面 + 三档状态 + 视图计算**(main 为主) | 新 `packages/ui-mac/src/main/hub-view.ts`(按 2.5 即时算 `(id, scope, directory)` 的档与原因,复用 `ext-inventory`、`probeProjectMcpActivation`、引擎目录作用域清单接口)与 `reload-coordinator.ts`(generation 记录、sidecar ready 时重发);新 `alpha-sidecar-messages.ts`(2.2 消息合同,两侧共用,形制同 `workspace-write-probe.ts`);`server.ts`(`child.on("message")` 旁挂 `alpha.*` 分发);`ext-ipc.ts`(新 IPC `ext-reload-request`、`ext-hub-view`、`ext-hub-request-stage`;安装体成功后发重载请求而不是 dispose);`ext-mcp-activation.ts`(`reloadInstalledMcp` 只保留核验);`ext-write-channels.ts`(`ext-reload-request` 登记;两条只读/记阶段通道仿 `LOCAL_PACKAGE_READ_CHANNELS` 登记为表外只读并在测试里断言互斥);renderer `use-extensions.ts`(22 处 `refreshEngine()` 与 `refreshProjectEngine` 改走 IPC,`refreshEngine` 只剩「现在重载」)、`ext-trust-watcher.tsx:49-61`(改走 IPC)、`extension-hub.tsx` / `extension-detail.tsx`(已安装列表显示四态 + 原因 + 「现在重载」);`index.ts`(`ext-hub-view-changed` 推送);登记 `scripts/gate-files.tsv`、`scripts/process-fence-write-sites.tsv` | AC3;AC4 的前提 | ext 侧调度器(C3)、工具、技能、围栏收紧 | I4、I6、I9(main 半边)判据绿;与 C3 联调后 I5 绿 | L |
-| **C2 `[CODE]` 堵 S1 整类:`alpha.jsonc` 收紧出可写集 + ext 重建时整条重构 `cfg.mcp`** | **第一步(前置验证,结论写进票面)**:用真 `sandbox-exec` 证明在现有 profile 的 allow 块之后追加 `(deny file-write* (literal "<alphaGlobalRoot>/alpha.jsonc"))` 能拒掉该文件、不影响同目录其它路径。**证伪 ⇒ C2 阻塞**,不自动切换:先把回退方案(2.8 I)的合同补齐、过一轮方案审计,再实施。回退方案必须补齐的四件事:① **提交**——事务新增 `truth` action(target 固定为 `<casBaseRoot>/mcp-local-servers/<env>.json`,整文件 image,与 `ext-config-tx.ts` 的 pre/next image 同形),`ext-transaction.ts:673-678` 的圈禁只放行**这一个**绝对路径(白名单一条,不是放宽根),与 `alpha.jsonc` 的 config action 同一 journal、同一 apply/rollback(planner `:951 / :1270-1278`、`tx-builders :352-364`、卸载 `ext-package-uninstall` / `removeMcp`、`set-state`、`persistMcp` 本地臂全部改产这一 action);② **恢复**——`isFlipped / reconstruct / restore` 对 truth 文件按 before/after digest 判向,与 config image 同一规则,boot reconcile 同步;③ **存量**——旧 `alpha.jsonc` 的本地 `mcp.*` 条目**一律不采信**(`#1383` I3 原文),升级后不加载、只记一行日志,用户在定制中心重装;④ **读取**——ext 重建时只从 truth 文件 + 远程真源 + 云定义 + 项目合并重构 `cfg.mcp`,`alpha.jsonc` 的 `mcp.*` 不再是来源;其判据不是 EPERM,而是「**围栏内写 `alpha.jsonc` / `~/.opencode` 的任何 `mcp.*` 都不能改变运行中的 MCP 表**」(I1 的 ②④⑤ 不变,① 改为这一条)。**主体(主方案)**:`process-fence-profile.ts`(一条 deny 行 + 逐行断言)、`alpha-config-injection.ts:85-92` 的 `{$schema}` seed 迁到 main fork 前(`server.ts`)、`process-fence-write-sites.tsv` 第 11/18 行;`mcp-default-deny.ts` 与 `mcp-server-truth.ts`(读端)**迁入** `packages/ext/src/`,ext `config` 钩子在每次重建时执行 3.1 S1 ② 的整条重构(远程真源路径与 `alpha.jsonc` 路径经 fork 时 env 交给 ext;`alpha.jsonc` 的解析与引擎同 jsonc 语义),main 的 fork 时注入不再碰用户 MCP(云 MCP 定义与账本禁用覆盖照旧);旧 `alpha.jsonc` 内容**原样保留**(它一直是 main 信任的文件;收紧的是以后谁能写它) | AC2 的「唯一通路」半边(I1、I10) | 项目作用域、密钥存储、S5 的插件/agent 部分、G1 | I1 五条端到端判据绿(含同名覆盖反例);真机:围栏内 `echo >> alpha.jsonc` 得 EPERM;定制中心重装一次本地 MCP 后行为与改前一致;**C2 还要钉住 1.7 末段那条今天只靠生产行为成立的顺序**:dispose 后 ext 钩子的重构先于 MCP 服务读配置(用真实例断言 MCP 服务拿到的是重构后的表) | **L**(主体 M;前置验证证伪 ⇒ 阻塞、重新定方案) |
+| **C2 `[CODE]` 堵 S1 / S16 整类:`alpha.jsonc` 与三个自动加载的 `plugin(s)` 目录收紧出可写集 + ext 重建时整条重构 `cfg.mcp`** | **第一步(前置验证,结论写进票面)**:用真 `sandbox-exec` 证明在现有 profile 的 allow 块之后追加 `(deny file-write* (literal "<alphaGlobalRoot>/alpha.jsonc"))` 与 `(deny file-write* (subpath "~/.opencode/plugin") (subpath "~/.opencode/plugins") (subpath "<XDG>/opencode/plugin") (subpath "<XDG>/opencode/plugins") (subpath "<userData>/alpha-engine-config/plugin") (subpath "<userData>/alpha-engine-config/plugins"))` 能拒掉这些路径、不影响同目录其它路径(S16,与 ADR-040 同向,可回滚)。**证伪 ⇒ C2 阻塞**,不自动切换:回退方案(2.8 I)的合同补齐后,**额外的方案审计轮需 owner 批准**(本票预算 ≤3 轮已用尽),批准前不实施。回退方案必须补齐的四件事:① **提交**——事务新增 `truth` action(target 固定为 `<casBaseRoot>/mcp-local-servers/<env>.json`,整文件 image,与 `ext-config-tx.ts` 的 pre/next image 同形),`ext-transaction.ts:673-678` 的圈禁只放行**这一个**绝对路径(白名单一条,不是放宽根),与 `alpha.jsonc` 的 config action 同一 journal、同一 apply/rollback(planner `:951 / :1270-1278`、`tx-builders :352-364`、卸载 `ext-package-uninstall` / `removeMcp`、`set-state`、`persistMcp` 本地臂全部改产这一 action);② **恢复**——`isFlipped / reconstruct / restore` 对 truth 文件按 before/after digest 判向,与 config image 同一规则,boot reconcile 同步;③ **存量**——旧 `alpha.jsonc` 的本地 `mcp.*` 条目**一律不采信**(`#1383` I3 原文),升级后不加载、只记一行日志,用户在定制中心重装;④ **读取**——ext 重建时只从 truth 文件 + 远程真源 + 云定义 + 项目合并重构 `cfg.mcp`,`alpha.jsonc` 的 `mcp.*` 不再是来源;其判据不是 EPERM,而是「**围栏内写 `alpha.jsonc` / `~/.opencode` 的任何 `mcp.*` 都不能改变运行中的 MCP 表**」(I1 的 ②④⑤ 不变,① 改为这一条)。**主体(主方案)**:`process-fence-profile.ts`(一条 deny 行 + 逐行断言)、`alpha-config-injection.ts:85-92` 的 `{$schema}` seed 迁到 main fork 前(`server.ts`)、`process-fence-write-sites.tsv` 第 11/18 行;`mcp-default-deny.ts` 与 `mcp-server-truth.ts`(读端)**迁入** `packages/ext/src/`,ext `config` 钩子在每次重建时执行 3.1 S1 ② 的整条重构(远程真源路径与 `alpha.jsonc` 路径经 fork 时 env 交给 ext;`alpha.jsonc` 的解析与引擎同 jsonc 语义),main 的 fork 时注入不再碰用户 MCP(云 MCP 定义与账本禁用覆盖照旧);旧 `alpha.jsonc` 内容**原样保留**(它一直是 main 信任的文件;收紧的是以后谁能写它) | AC2 的「唯一通路」半边(I1、I10) | 项目作用域、密钥存储、S5 的插件/agent 部分、G1 | I1 五条端到端判据绿(含同名覆盖反例);真机:围栏内 `echo >> alpha.jsonc` 得 EPERM;定制中心重装一次本地 MCP 后行为与改前一致;**C2 还要钉住 1.7 末段那条今天只靠生产行为成立的顺序**:dispose 后 ext 钩子的重构先于 MCP 服务读配置(用真实例断言 MCP 服务拿到的是重构后的表) | **L**(主体 M;前置验证证伪 ⇒ 阻塞、重新定方案) |
 | **C3 `[CODE]` 三个 agent 工具 + 确认框接线 + ext 调度器** | `packages/ext/src/plugin.ts`(3 个 tool;`hub_install: ask` 钉子;`alpha_reload` / idle 钩子并入调度器)、新 `reload-scheduler.ts`(2.6)、新 `hub-bridge.ts`(parentPort 请求簿记,ext 侧)、`context-injection.ts`(`TOOL_TEXT` + 快照重生);renderer 新 `alpha-ui/hub-install-watcher.tsx`;从 `extension-hub.tsx` 抽出安装确认 + authz 两阶段控制器为可复用模块(Hub 与守望者共用**同一份**);`permission-watcher.tsx` 按 `metadata.alphaHub` 分流;`permission-mount-ratchet.test.ts`、`permission-single-surface.test.ts` 登记新消费者 | AC1(价格部分除外,见 C5);AC2 的确认框与密钥半边(I2、I3、I7、I8、I9);AC3 的 agent 侧;AC4 | 新 IPC 写通道(复用既有 `installCatalog`);任何网络通道 | I2、I3、I5、I7、I9 判据绿;2.4 的金丝雀 e2e 绿且对照组红;默认配置下真 `Permission.ask` 发布请求(同 `alpha-composer-tiers.test.ts` 形制) | L |
 | **C4 `[CODE]` `customize-code-puppy` 改写 + 内容测试** | `packages/ui-mac/resources/factory-skills/customize-code-puppy/SKILL.md`;`factory-skills.test.ts`(新增 2.7 的正反断言);涉及文案则 `visible-brand-copy.test.ts` | AC5(`customize-opencode` 部分引用 `#1522`) | 技能之外的任何代码 | 内容测试绿;反向:删掉任一必含句或加回任一禁句即红 | S |
 | **C5 `[CODE]` `hub_search` 透传价格说明** —— **依赖 REQ-235(`alpha-work#114`)交付 `cloud` 档案的价格说明字段** | `hub-view.ts`(字段透传)、`context-injection.ts`(工具描述提及)、测试:带价格说明的夹具条目 ⇒ 输出含它;不带 ⇒ 没有该字段且末尾固定缺项句 | **AC1 的价格部分**;AC1 整体只能在 C5 之后判 PASS | 定义价格字段本身(归 REQ-235) | 对线上目录里**至少一条**真实带价格说明的云条目实测透传 | S |
-| **V1 `[VERIFY]` 打包 RC 对话记录** | 打包 RC;owner 本机;记录:`hub_search` → `hub_install` → 确认框(含一次密钥输入)→ 「可用」→ 下一条消息调用成功;2.4 的 grep 正反两组;**重载进行中发一条消息**,记录 2.6 登记的窗口的实际表现 | AC2 e2e、AC4 | — | 记录进 `docs/verification/` | S(需要 owner 动手) |
+| **V1 `[VERIFY]` 打包 RC 对话记录** | 打包 RC;owner 本机;记录:`hub_search` → `hub_install` → 确认框(含一次密钥输入)→ 「可用」→ 下一条消息调用成功;2.4 的 grep 正反两组;**重载进行中发一条消息**,记录 2.6 登记的窗口的实际表现 | AC2 e2e、AC4(非云条目) | — | 记录进 `docs/verification/` | S(需要 owner 动手) |
+| **G1 `[DECIDE]` `alpha-code#1524`:按目录列出 MCP 工具名的通路** —— 独立依赖,不是本票子票 | 由编排器开票;可选结论含「接受云条目最终状态为已安装」 | **AC4 的云条目部分**:`#1524` 裁决前不判 PASS;裁成「加路由」⇒ 2.5 云行改为「连接 ∧ 路由列出对应工具 id」;裁成「接受已安装为终态」⇒ 2.5 云行保持 `installed` + 固定原因、AC4 对云条目不作承诺 | — | `#1524` 关闭 | — |
 
-**先后与冻结面**:C1 → (C2 ∥ C3) → C4 → C5(等 REQ-235)→ V1。C1 合并后冻结:2.2 的消息族与载荷、
-四态状态词、`requestId` 的形状与阶段词(`confirming / submitted / committed / failed / declined`)、
-`ext-reload-request` 的 IPC 形状(含 `sessionID` / `agent` 字段);C3 不得新增写通道。C2 与 C3 互不依赖,但**对外说
-「确认框是唯一安装通路」必须等 C2 合并**;C2 第一步证伪 ⇒ C2 阻塞、回退方案另过一轮方案审计,期间 C3 的工具描述与
-技能文案先按「主要通路」措辞。云条目在 G1 补上之前恒 `unverifiable`,AC4 对云条目的证据只能是 V1 的真实调用记录。
+**先后与冻结面**:C1 → (C2 ∥ C3) → C4 → C5(等 REQ-235)→ V1;G1(`#1524`)与它们并行,只影响 AC4 的云条目部分。
+C1 合并后冻结:2.2 的消息族与载荷(`alpha.hub.view.request` 含 `sessionID` / `agent`)、状态词(`not-installed / installed /
+reload-pending / available`)与 `agentNote`、`requestId` 的形状与阶段词(`confirming / submitted / committed / failed / declined`)、
+`ext-reload-request` 的 IPC 形状;C3 不得新增写通道。C2 与 C3 互不依赖,但**对外说「确认框是唯一安装通路」必须等 C2 合并**;
+C2 第一步证伪 ⇒ C2 阻塞,额外审计轮需 owner 批准,期间 C3 的工具描述与技能文案先按「主要通路」措辞。
+**AC4 的云条目部分依赖 G1(`#1524`),G1 裁决之前不判 PASS**;非云条目的 AC4 证据是 V1 的真实调用记录。
 AC1 的验收顺序:C3 合并 ⇒ AC1 除价格外的部分;C5 合并且线上目录有带价格说明的云条目 ⇒ AC1 整体。
 
 ## 五、D1 的裁决与代价(已裁决)
@@ -550,7 +571,8 @@ AC1 的验收顺序:C3 合并 ⇒ AC1 除价格外的部分;C5 合并且线上�
 
 | 代价 | 内容 |
 | --- | --- |
-| 行为变化 | 升级后,围栏内的任何进程(引擎、bash、MCP 子进程、项目插件)写全局 `alpha.jsonc` 得 EPERM;`~/.opencode` / XDG / 项目 `.opencode` 里的 MCP 条目在每次实例重建时被压成 `enabled:false` 并记一行原因(XDG 那一类今天已如此) |
+| 行为变化 | 升级后,围栏内的任何进程(引擎、bash、MCP 子进程、项目插件)写全局 `alpha.jsonc` 得 EPERM;`~/.opencode` / XDG / 项目 `.opencode` / **项目根层 `<project>/opencode.json(c)`**(1.7 序 4)/ `alpha-engine-config` 拷贝里的 MCP 条目,凡不是四种受保护来源的,在每次实例重建时被整条替换为 `enabled:false` 并记一行原因(XDG 那一类今天已如此);同名覆盖受保护条目的键被重构掉 |
+| 插件目录 | `~/.opencode/plugin(s)/`、`<XDG>/opencode/plugin(s)/`、`<userData>/alpha-engine-config/plugin(s)/` 对围栏内进程变为不可写(S16);用户用自己的编辑器往里放文件仍然会被引擎加载 —— 这与 ADR-040 的边界一致(封死的是引擎树自己放进去的,不是用户放的) |
 | 对现有文件 | `alpha.jsonc` 现有内容**原样保留**(不迁移、不清洗):它一直是 main 信任的文件,收紧的是以后谁能写它;用户用自己的编辑器改它仍然可以(编辑器不在围栏内) |
 | 对出厂技能 | `customize-code-puppy` 里「直接编辑全局 `alpha.jsonc`」的教学必须删(C4);其它出厂技能只教写项目 `alpha.jsonc` 与 `$ALPHA_GLOBAL_DIR/skills/`(F11),不受影响 |
 | 不可逆性 | 可逆:去掉那一条 deny 行即回到今天 |
@@ -569,13 +591,12 @@ AC1 的验收顺序:C3 合并 ⇒ AC1 除价格外的部分;C5 合并且线上�
 6. 一条经 `persistMcp` 加进真源的远程 MCP,在同一次 fork 内经历任何一次 `global.dispose` 后会从运行配置里消失、直到下次 fork(由 1.1 与 1.7 的事实推出:真源只在 fork 时进 `OPENCODE_CONFIG_CONTENT`、该 env 不变、live `mcp.add` 是 `InstanceState`;未真机复现)。C2 的 ext 重建时重构顺带修它。
 7. 从 `extension-hub.tsx` 抽出确认框控制器后,Hub 自己的安装流程行为不变(纯重构,靠既有 Hub 测试兜底;文件 3000+ 行,抽取面要在 C3 方案里先画)。
 8. 价格说明:目录与服务端今天都没有该字段(实测);REQ-235 交付前 AC1 的价格部分无法满足,C5 与验收顺序据此排。
-9. **插件 `config` 钩子先于 MCP 服务读配置**:层图没钉这个顺序(1.7 末段),今天成立的证据只是生产行为(云 MCP 由钩子注入且能连上);C2 的退出条件要求用真实例把它钉成判据。
-10. `global.dispose()` 时每个实例各发一条 `server.instance.disposed`(2.6 的实例登记据此清表;`disposeAllInstancesAndEmitGlobalDisposed` 走 `store.disposeAll()`,`global-lifecycle.ts:16-24`,逐实例是否发事件没实测)。
-11. `<userData>/alpha-engine-config/opencode.json` 是 fork 时的 `alpha.jsonc` 拷贝、在目录循环末尾合并(1.7 序 5④):一个 MCP 在 fork 后被定制中心**重新启用**(叶里的 `enabled:false` 被去掉)时,这份陈旧拷贝里的 `enabled:false` 会后合并而赢,直到下次 fork —— 今天就存在的潜在缺陷,由 C2 的整条重构顺带修掉;未真机复现。
-12. `GET /agent` 的运行时 JSON 里 `permission` 是合成后的 ruleset 数组(`agent.ts:35-56` 的 `Info`,handler 直接返回 `agent.list()`),旧 SDK 类型写成对象形只是类型陈旧,不是 wire 形状变了(没有抓过真实响应核对)。
-13. `@opencode-ai/core/util/wildcard` 可被 ui-mac main 或 ext 经 workspace 依赖引用而不把上游大块代码带进 bundle(`packages/app` 今天引用 `@opencode-ai/core/util/encode` 是同类先例;ext 侧没试过)。
+9. `<userData>/alpha-engine-config/opencode.json` 是 fork 时的 `alpha.jsonc` 拷贝、在目录循环末尾合并(1.7 序 5④):一个 MCP 在 fork 后被定制中心**重新启用**(叶里的 `enabled:false` 被去掉)时,这份陈旧拷贝里的 `enabled:false` 会后合并而赢,直到下次 fork —— 今天就存在的潜在缺陷,由 C2 的整条重构顺带修掉;未真机复现。
+10. `GET /agent` 的运行时 JSON 里 `permission` 是合成后的 ruleset 数组(`agent.ts:35-56` 的 `Info`,handler 直接返回 `agent.list()`),旧 SDK 类型写成对象形只是类型陈旧,不是 wire 形状变了(没有抓过真实响应核对)。
+11. `@opencode-ai/core/util/wildcard` 与 `ConfigVariable.substitute` 可被 ui-mac main / ext 经 workspace 依赖引用而不把上游大块代码带进 bundle(`packages/app` 今天引用 `@opencode-ai/core/util/encode` 是同类先例;ext 侧没试过;引用不到时 S1 ② (a) 退为「同规则实现 + 上游函数对照测试」)。
+12. 插件 `dispose` 钩子在 `global.dispose()` 时对每个实例各被调用一次(`plugin/index.ts:272-285` 是每实例 `InstanceState` 的 finalizer,`store.disposeAll()` 逐实例跑 disposers,`instance-store.ts:93-97`;没有实测过多实例同时销毁时每个都到达)。
 
-已被 1.7–1.9 证实、从本节移除的原推断:「`session.permission` 能读到」(`session.ts:242`)、「`/experimental/tool/ids` 列出 MCP 工具」(**证伪**,改为接口缺口 G1)。
+已被 1.7–1.9 证实、从本节移除的原推断:「`session.permission` 能读到」(`session.ts:242`);「`/experimental/tool/ids` 列出 MCP 工具」(**证伪**,改为接口缺口 G1);「插件 `config` 钩子先于 MCP 服务读配置」(**证实**,`bootstrap.ts:36-38` 钉死);「`global.dispose()` 逐实例发 `server.instance.disposed`」(**作废**:该事件插件本来就收不到,实例登记改用 `dispose` 钩子,2.6)。
 
 ## 七、开发前对抗审计 R1 处置(2026-10-14,Codex gpt-6-astra,只读;预算:方案 ≤3 轮)
 
@@ -609,5 +630,20 @@ R1 判定 8 FIXED / 2 NOT-FIXED(第 4、7 条)+ 新发现 N1 [Blocker]、N2–N5
 | N4 / #4 | [Major] 状态查询失败被当成实例不存在 | 接受。2.6 实例登记只因 `server.instance.disposed` 移除;查询失败记 `unknown` 并**阻止相关自动重载**;`force` 也不绕过 `unknown`;I5 增「查询失败零 dispose」判据 |
 | N5 | [Major] seatbelt 证伪后的备用分支没有完整合同,且退出条件自相矛盾 | 接受。C2:证伪 ⇒ **阻塞**、不自动切换;回退方案补齐提交(新 `truth` action、圈禁只放行一个绝对路径、同 journal 同回滚)/ 恢复(digest 判向)/ 存量(旧条目不采信)/ 读取(`alpha.jsonc` 的 `mcp.*` 不再是来源)四件事,判据改为「写旧配置不能改变运行中的 MCP 表」,不再要求 EPERM |
 
-同时由地面真相带出、R2 没点名但一并改正的:1.7 末段「插件钩子先于 MCP 服务读配置」只有生产证据、无层图保证 ⇒ 进 §6 并列为 C2 退出条件;
-§6 新增第 11 条(陈旧拷贝让「重新启用」失效的潜在缺陷)。本轮是预算内最后一轮(R3 若仍有 Blocker,由编排器请示 owner)。
+同时由地面真相带出、R2 没点名但一并改正的:1.7 末段「插件钩子先于 MCP 服务读配置」当时只有生产证据 ⇒ 进 §6(R3 已改为事实);
+§6 新增「陈旧拷贝让『重新启用』失效」的潜在缺陷。
+
+### R3(2026-10-14,Claude opus 审计,只读;预算 ≤3 轮**已用尽 —— 本轮处置直接修、不再复审**)
+
+R2 的 7 条全部 FIXED;修订 diff 内新出 5 条 Major、若干 Minor、1 条范围外 Blocker 级观察。编排器全部接受并裁决:
+
+| # | 发现 | 处置 |
+| --- | --- | --- |
+| A | [Major] `server.instance.disposed` 只经 GlobalBus,插件收不到 | 接受。2.6 实例注销改在插件自己的 `dispose` 钩子(`plugin/src/index.ts:223`;`plugin/index.ts:272-285`),写明为何不能用该事件;I5 改「只因 dispose 钩子移除」;§6 原第 10 条作废 |
+| B | [Major] 整条重构必须等于引擎加载该叶得到的值(`{env:}` / `{file:}` 先替换) | 接受。1.7 补替换规则坐标(`config.ts:237-243`、`variable.ts:33-61`);S1 ② 增约束 (a):优先复用上游 `ConfigVariable.substitute`,否则同规则实现 + 对照测试;I1 ③⑤ 改为带 `{file:}` 的夹具并断言解析后值 |
+| C | [Major] 重构要放在 `config` 钩子的 `finally`,项目来源合并失败按空集 | 接受。S1 ② 增约束 (b),与 `computeMcpOwnership` 同位;I1 增 ⑥「项目配置读失败时 ② 仍生效」并以「挪回 try 体」做变异 |
+| D | [Major] 云条目 `unverifiable` 的表达与重载入口 | 接受。2.5 云行改为最高 `installed` + 固定 G1 原因,不出重载入口、不发重载请求;AC4 云条目部分依赖 G1 = `alpha-code#1524`(DECIDE,含「接受云条目终态为已安装」可选结论),裁决前不判 PASS;§4 增 G1 独立依赖行 |
+| E | [Major] 共享状态不得依赖会话 | 接受。2.2 / 2.5 / I4:状态词只按 `(id, scope, directory)`,会话 / agent 的权限拒绝只作 ext 侧 `agentNote`;判据夹具不得含 renderer 从不发送的会话字段 |
+| Minor | 钩子先于 MCP 的顺序其实被 `bootstrap.ts:36-38` 钉住;`force` 措辞;冻结面挂到 `alpha.hub.view.request`;技能求值定在 main;重构后再叠加账本 / session-grant 禁用覆盖(`ext-disabled-injection.ts:43-58`);§5 代价表补项目根层 `opencode.json(c)` | 接受,逐处改:1.7 末段改为事实并从 §6 移除;2.6 写明「`force` 也不绕过 `unknown`」;§4 冻结面;2.5 求值定在 main;S1 ② 增约束 (c);§5 代价表 |
+| 范围外 | [Blocker 级观察] `~/.opencode/plugin(s)/`、`<XDG>/opencode/plugin(s)/`、`alpha-engine-config/plugin(s)/` 三个引擎可写目录自动加载 JS 插件(1.7 末段,`config/plugin.ts:19-29`),插件可 `POST /mcp` 现场加本机 MCP,绕过 ② | 编排器裁采 (a):三个 `plugin(s)` 子目录并入 C2 同一条围栏 deny,共用 seatbelt 前置验证;新增 S16;I1 增 ⑦;§5 代价表补「插件目录」;与 ADR-040 同向,可回滚 |
+| 治理 | C2 证伪后的回退方案不能自动开新审计轮 | 接受。C2 与 §4 冻结面改为「额外的方案审计轮需 owner 批准」 |
