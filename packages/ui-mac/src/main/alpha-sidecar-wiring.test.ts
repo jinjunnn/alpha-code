@@ -113,3 +113,60 @@ test("alpha.* 进 alphaSidecar、应答回同一子进程;ready 之后才 attach
   await result.listener.stop()
   expect(events).toEqual(["attach after start=true", "detach: sidecar exited with code 0"])
 })
+
+// `#1531`(#1529 审计 Minor ④):同一条接线,接上**生产** host + 重载协调器(不是假 alphaSidecar)——
+// 子进程发来的阶段查询经 hub-view 的分发得到应答;子进程退出之后,在途重载的原因如实变成「sidecar 退出了」。
+test("真 host + 真协调器:阶段查询经子进程往返;退出 ⇒ pendingFor 的原因是 sidecar exited", async () => {
+  const { createAlphaSidecarHost, createHubRequestStages } = await import("./hub-view")
+  const { createReloadCoordinator } = await import("./reload-coordinator")
+  const child = new RecordingChild()
+  const reloads = createReloadCoordinator({ log: () => {}, onChange: () => {} })
+  const requests = createHubRequestStages({ log: () => {} })
+  expect(requests.record({ requestId: "req_abcdef12", stage: "confirming", catalogId: "mcp:github" })).toEqual({ ok: true })
+  const host = createAlphaSidecarHost({
+    view: { view: async () => ({ directory: "/w", rows: [], warnings: [] }), viewForAgent: async () => ({ directory: "/w", rows: [], warnings: [] }) },
+    requests,
+    reloads,
+    log: () => {},
+  })
+  reloads.request({ scope: "global", items: [], reason: "installed skill writer" })
+  creditDanglingSweepForSpawn()
+  const result = await spawnLocalServer("127.0.0.1", 4392, "password", {
+    userDataPath,
+    healthCheck: async () => true,
+    fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
+    egressProxy: async () => ({ port: 4433 }),
+    planFence: () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" }),
+    alphaSidecar: host,
+  })
+  await result.health.wait
+  // ready 时在途的那一代被重发给子进程
+  expect(child.wire.at(-1)).toMatchObject({ type: "alpha.reload.request", generation: 1, scope: "global" })
+  child.emit("message", { type: "alpha.hub.request.request", id: 5, requestId: "req_abcdef12" })
+  expect(child.wire.at(-1)).toEqual({
+    type: "alpha.hub.request.reply",
+    id: 5,
+    record: { requestId: "req_abcdef12", catalogId: "mcp:github", stage: "confirming" },
+  })
+  expect(reloads.pendingFor("/w")).toEqual({ code: "reload-waiting", detail: "queued" })
+  await result.listener.stop()
+  expect(reloads.pendingFor("/w")).toEqual({ code: "reload-waiting", detail: "sidecar exited with code 0" })
+})
+
+// `#1531`:ext 的 parentPort 监听必须在 ready **之前**挂上(main 只在 ready 那一刻重发在途代际)。sidecar.ts 顶层的 registerHooks /
+// getParentPort() 让它不能被 import,接线只能锚源码:ext 预载在引擎 import 之后开始、在 ready 上报之前 await 完;
+// 预载的 URL 形状与引擎解析路径插件的形状逐字相同(上游 plugin/shared.ts 的 resolvePathPluginTarget),否则会装出第二份模块。
+test("sidecar.ts:ready 之前预载 ext 的同一个 URL", async () => {
+  const source = await Bun.file(join(import.meta.dir, "sidecar.ts")).text()
+  const engine = source.indexOf('const { Server } = await import("virtual:opencode-server")')
+  const preload = source.indexOf("import(pathToFileURL(command.extPluginPath).href)")
+  const awaited = source.indexOf("await extPreload")
+  const ready = source.indexOf("parentPort.postMessage(buildReadyMessage(injection, prewarmResult))")
+  expect(engine).toBeGreaterThan(0)
+  expect(preload).toBeGreaterThan(engine)
+  expect(awaited).toBeGreaterThan(preload)
+  expect(ready).toBeGreaterThan(awaited)
+  const shared = await Bun.file(join(import.meta.dir, "../../../opencode/src/plugin/shared.ts")).text()
+  const resolver = shared.slice(shared.indexOf("export async function resolvePathPluginTarget"), shared.indexOf("export async function checkPluginCompatibility"))
+  expect(resolver).toContain("return pathToFileURL(file).href")
+})

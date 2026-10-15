@@ -19,7 +19,8 @@
 //                否则账本根下的 skills/<name>)—— 身份,不只名字
 //   agent        GET /agent?directory 有同名且 disable !== true
 //   command      GET /command?directory 有同名
-//   其它种类      核不了
+//   其它种类      核不了 —— 落 installed + 原因(重载修不好「没有判据」),不出重载入口(`#1531`)
+//   MCP 要授权    needs_auth / needs_client_registration 同上:installed + 原状态词,不出重载入口(`#1531`)
 //
 // 状态词与会话无关(I4)。会话 / agent 的权限只进 ext 侧应答的 agentNote,且只对技能行。
 
@@ -84,7 +85,8 @@ export type HubViewService = {
   viewForAgent(request: HubAgentViewRequest): Promise<HubView>
 }
 
-type Verdict = { ok: true } | { ok: false; detail: string }
+/** `reloadable: false` = 核验没过,但重载修不好它(要授权 / 没有核验判据):落 installed + 原因,不出重载入口(`#1531`)。 */
+type Verdict = { ok: true } | { ok: false; detail: string; reloadable?: false }
 type Read = { ok: true; items: Record<string, unknown>[] } | { ok: false; detail: string }
 
 const DEFAULT_TIMEOUT_MS = 5_000
@@ -226,7 +228,10 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
         return state === "active" ? { ok: true } : { ok: false, detail: `project MCP ${state}` }
       }
       const status = await verifyInstalledMcp(row.name, directory, deps.awaitServer, fetchImpl, { awaitServer: timeoutMs, status: timeoutMs })
-      return status.status === "connected" ? { ok: true } : { ok: false, detail: `MCP ${status.status}` }
+      if (status.status === "connected") return { ok: true }
+      if (status.status === "needs_auth" || status.status === "needs_client_registration")
+        return { ok: false, detail: `MCP ${status.status}`, reloadable: false }
+      return { ok: false, detail: `MCP ${status.status}` }
     }
     if (row.kind === "cloud") {
       const status = await verifyInstalledMcp(CLOUD_MCP_SERVER_NAME, directory, deps.awaitServer, fetchImpl, { awaitServer: timeoutMs, status: timeoutMs })
@@ -267,7 +272,7 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
         ? { ok: true }
         : { ok: false, detail: "command not loaded" }
     }
-    return { ok: false, detail: `no verification for kind "${row.kind}"` }
+    return { ok: false, detail: `no verification for kind "${row.kind}"`, reloadable: false }
   }
 
   async function compute(directory: string): Promise<{ view: HubView; reads: ReturnType<typeof engineReads> }> {
@@ -312,8 +317,9 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
             return { ...base, installed: true, enabled: false, state: "installed", stateReason: { code: "disabled" } }
           const verdict = await verify(row, directory, project, reads)
           if (verdict.ok) return { ...base, installed: true, enabled: true, state: "available" }
-          // 云条目没有重载环节(基线 §2.5 云行):最高 installed,原因说清缺的是连接还是工具。
-          if (row.kind === "cloud")
+          // 云条目没有重载环节(基线 §2.5 云行):最高 installed,原因说清缺的是连接还是工具。重载修不好的(要授权 / 没有
+          // 核验判据,`#1531`)同样落 installed + 原因 —— 给它一个「现在重载」只会打断会话而改不了状态。
+          if (row.kind === "cloud" || verdict.reloadable === false)
             return { ...base, installed: true, enabled: true, state: "installed", stateReason: { code: "not-loaded", detail: verdict.detail } }
           const reason: HubStateReason = pending ?? { code: "not-loaded", detail: verdict.detail }
           return { ...base, installed: true, enabled: true, state: "reload-pending", stateReason: reason }

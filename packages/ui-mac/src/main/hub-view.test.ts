@@ -247,11 +247,35 @@ describe("hub-view 三档状态(§2.5)", () => {
     w.engine.mcp.cloud = { status: "needs_auth" }
     expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
       state: "installed",
-      stateReason: { code: "not-loaded", detail: "cloud MCP failed" },
+      stateReason: { code: "not-loaded", detail: "cloud MCP needs_auth" },
     })
     w.engine.mcp.cloud = { status: "connected" }
     expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs").state).toBe("available")
     expect(CLOUD_DISPATCH_TOOL).toBe(CLOUD_DISPATCH_REMOTE_TOOL)
+  })
+
+  // `#1531`(#1529 审计 Minor ①②):重载修不好的不给重载 —— MCP 要授权(原状态词透传)、没有核验判据的种类(存量 plugin)
+  // 落 installed + 原因,即使有在途重载也不说「等重载」(那会让定制中心出一个只会打断会话的「现在重载」)。
+  test("要授权的 MCP / 没有核验判据的种类 ⇒ installed + not-loaded 原因,不取在途重载的原因", async () => {
+    const w = world("not-reloadable")
+    record(w.globalRoot, { id: "plugin:legacy", name: "legacy", kind: "plugin" })
+    w.coordinator.request({ scope: "global", items: [], reason: "x" })
+    for (const status of ["needs_auth", "needs_client_registration"]) {
+      w.engine.mcp.files = { status }
+      expect(row((await w.service.view(w.projectDir)).rows, "mcp:files")).toMatchObject({
+        installed: true,
+        enabled: true,
+        state: "installed",
+        stateReason: { code: "not-loaded", detail: `MCP ${status}` },
+      })
+    }
+    // 对照:普通失败仍是待重载、取在途重载的原因
+    w.engine.mcp.files = { status: "failed" }
+    expect(row((await w.service.view(w.projectDir)).rows, "mcp:files")).toMatchObject({ state: "reload-pending", stateReason: { code: "reload-waiting" } })
+    expect(row((await w.service.view(w.projectDir)).rows, "plugin:legacy")).toMatchObject({
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: 'no verification for kind "plugin"' },
+    })
   })
 
   test("引擎读不出 ⇒ 不标可用(核不了 = 待重载 + 原因),停用条目照旧只看账本", async () => {

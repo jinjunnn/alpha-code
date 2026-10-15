@@ -303,6 +303,9 @@ describe("package secret prerequisite", () => {
     ["connected", "connected"],
     ["disabled", "disabled"],
     ["failed", "failed"],
+    // `#1531`:要授权的两种原样透传(重载修不好它们,呈现面据此不出「现在重载」)
+    ["needs_auth", "needs_auth"],
+    ["needs_client_registration", "needs_client_registration"],
     ["error", "unverifiable"],
   ] as const)(
     "main verification maps engine status %s to %s, never disposes, and returns status only",

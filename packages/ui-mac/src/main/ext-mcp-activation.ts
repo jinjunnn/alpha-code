@@ -179,7 +179,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export type McpVerification = {
   reference: string
-  status: "connected" | "disabled" | "failed" | "unverifiable"
+  /** `needs_auth` / `needs_client_registration` 原样透传(`#1531`):重载修不好它们,呈现面据此不出「现在重载」。 */
+  status: "connected" | "disabled" | "failed" | "needs_auth" | "needs_client_registration" | "unverifiable"
 }
 
 export async function verifyInstalledMcp(
@@ -216,6 +217,7 @@ export async function verifyInstalledMcp(
     const state = (status as { data?: Record<string, { status?: unknown }> }).data?.[name]?.status
     if (state === "connected") return { reference: name, status: "connected" }
     if (state === "disabled") return { reference: name, status: "disabled" }
+    if (state === "needs_auth" || state === "needs_client_registration") return { reference: name, status: state }
     return { reference: name, status: "failed" }
   } catch {
     return { reference: name, status: "unverifiable" }

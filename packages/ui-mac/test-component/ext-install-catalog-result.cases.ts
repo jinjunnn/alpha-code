@@ -1,5 +1,5 @@
 import { afterAll, expect, mock, test } from "bun:test"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -33,6 +33,20 @@ disabledEntry.name = "dbhub-default-off"
 const agentEntry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:dbhub")!)
 agentEntry.id = "mcp:dbhub-agent"
 agentEntry.name = "dbhub-agent"
+
+// REQ-234 `#1531`:项目作用域安装(只重载该项目目录)与 agent 经确认框的金丝雀端到端,各一条目。
+const projectEntry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:dbhub")!)
+projectEntry.id = "mcp:dbhub-project"
+projectEntry.name = "dbhub-project"
+// 项目 MCP 不收密钥(main 拒绝 requiredEnvVars 非空的项目安装)
+delete (projectEntry.installSpec as { requiredEnvVars?: string[] }).requiredEnvVars
+const canaryEntry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:dbhub")!)
+canaryEntry.id = "mcp:dbhub-canary"
+canaryEntry.name = "dbhub-canary"
+canaryEntry.source = "alpha"
+delete canaryEntry.curation
+// 随包 dbhub 带「待核实」声明 ⇒ 不在可安装视图里(agent 看不见、hub_install 答 unknown entry);金丝雀条目去掉它
+delete (canaryEntry.installSpec as { _verify?: string })._verify
 
 mock.module("electron", () => ({
   BrowserWindow: class {
@@ -85,7 +99,7 @@ mock.module("../src/main/remote-catalog", () => ({
   },
   refreshRemoteCatalog: async () => ({
     source: "remote",
-    catalog: { version: bundledCatalog.version, entries: [entry, disabledEntry, agentEntry] },
+    catalog: { version: bundledCatalog.version, entries: [entry, disabledEntry, agentEntry, projectEntry, canaryEntry] },
     version: bundledCatalog.version,
     fetchedAt: "2026-07-30T00:00:00.000Z",
     via: "channel-dev",
@@ -327,4 +341,94 @@ test("#1529 I9:确认框记的阶段 + 带 hubRequestId 的安装 ⇒ main 记 c
   // 之后到达的 reject 回执(期限到 / 用户点了取消)记不成「用户拒绝」
   expect((await stage({ sender: { id: 1 } }, { requestId, stage: "declined" })) as { ok: boolean }).toMatchObject({ ok: false })
   expect(query(53)).toMatchObject({ record: { stage: "committed" } })
+})
+
+// ── REQ-234 `#1531` ─────────────────────────────────────────────────────────────────────────
+
+/** 两段式安装(授权暂停 → 带全部需确认项重驱),与 Hub / 确认框守望者同一出站形状。 */
+async function installTwice(intent: Record<string, unknown>) {
+  const install = handlers.get("ext-install-catalog")!
+  const first = (await install({ sender: { id: 1 } }, intent)) as {
+    stage?: string
+    authorization: Array<{ key: string; requested: unknown; requiresConfirmation: boolean }>
+  }
+  if (first?.stage !== "authorize") throw new Error(`expected authorization pause, got ${JSON.stringify(first)}`)
+  const confirmed = Object.fromEntries(first.authorization.filter((d) => d.requiresConfirmation).map((d) => [d.key, d.requested]))
+  return (await install({ sender: { id: 1 } }, { ...intent, authorization: { confirmed } })) as Record<string, unknown>
+}
+
+// #1529 审计 Minor ③:项目作用域提交成功 ⇒ 只请 ext 重载**该项目目录**(items 带 project 作用域),不是 global。
+test("#1531:项目作用域安装 ⇒ 发往 ext 的是 { scope:{ directory }, items:[{ scope:'project' }] }", async () => {
+  const projectDir = join(root, "project-a")
+  mkdirSync(join(projectDir, ".code-puppy"), { recursive: true })
+  const result = await installTwice({ catalogId: projectEntry.id, scope: { scope: "project", projectDir } })
+  expect(result.ok, JSON.stringify(result)).toBe(true)
+  expect(toSidecar.at(-1)).toMatchObject({
+    type: "alpha.reload.request",
+    scope: { directory: projectDir },
+    items: [{ id: projectEntry.id, scope: "project" }],
+  })
+})
+
+// 基线 §2.4 的金丝雀端到端(I2):agent 的 hub_install(**生产** ext 工具)经 parentPort 形状的消息接到**真** main 分发;
+// 确认框那一环由守望者的出站动作代演(记 confirming / submitted → 带 hubRequestId 与金丝雀密钥两段式安装 → 回 once)。
+// 金丝雀值在工具参数、工具输出与 metadata、审批请求载荷、parentPort 双向全部消息、发往 ext 的重载请求里 **零命中**;
+// 对照组:同一个值在 main 落盘的密钥文件里**必须命中**(证明这把 grep 看得见它)。
+test("#1531 金丝雀:agent 安装的密钥只落在 main 的密钥文件里,工具 / 审批 / parentPort 一个字节都没有", async () => {
+  const { createHubBridge } = await import("../../ext/src/hub-bridge")
+  const { createHubTools } = await import("../../ext/src/hub-tools")
+  const stage = handlers.get("ext-hub-request-stage")!
+  const value = "REQ234_AGENT_CANARY_7b31e0d4"
+  const wire: unknown[] = []
+  const listeners: Array<(event: { data: unknown }) => void> = []
+  const bridge = createHubBridge(
+    {
+      postMessage: (message) => {
+        wire.push(message)
+        alphaSidecar.receive(message, (reply) => {
+          wire.push(reply)
+          for (const listener of listeners) listener({ data: reply })
+        })
+      },
+      on: (_event, listener) => void listeners.push(listener),
+    },
+    { log: () => {} },
+  )
+  const asks: unknown[] = []
+  const ctx = {
+    sessionID: "ses_canary",
+    messageID: "msg_canary",
+    agent: "build",
+    directory: join(root, "workspace"),
+    worktree: join(root, "workspace"),
+    abort: new AbortController().signal,
+    metadata: () => {},
+    // 守望者:先记阶段再出站,框里填的密钥只进 install 意图的 grants。
+    ask: async (input: { metadata: { alphaHub: { catalogId: string; requestId: string } } }) => {
+      asks.push(input)
+      const { catalogId, requestId } = input.metadata.alphaHub
+      expect(await stage({ sender: { id: 1 } }, { requestId, stage: "confirming", catalogId })).toEqual({ ok: true })
+      expect(await stage({ sender: { id: 1 } }, { requestId, stage: "submitted" })).toEqual({ ok: true })
+      const result = await installTwice({ catalogId, scope: { scope: "global" }, grants: { secrets: { DSN: value } }, hubRequestId: requestId })
+      expect(result.ok, JSON.stringify(result)).toBe(true)
+    },
+  }
+  const args = { catalogId: canaryEntry.id }
+  const result = (await createHubTools(bridge).hub_install.execute(args, ctx as never)) as { output: string; metadata: unknown }
+  expect(result.output.split("\n")[0]).toBe("installed; available")
+  for (const surface of [args, result, asks, wire, toSidecar]) expect(JSON.stringify(surface)).not.toContain(value)
+  expect(wire.some((m) => (m as { type?: string }).type === "alpha.hub.request.reply")).toBe(true)
+
+  // 对照组:main 落盘的密钥文件里看得见它
+  const hits: string[] = []
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, e.name)
+      if (e.isDirectory()) walk(abs)
+      else if (readFileSync(abs).includes(value)) hits.push(abs)
+    }
+  }
+  walk(root)
+  expect(hits.length).toBeGreaterThan(0)
+  expect(hits.every((path) => /secret/i.test(path)), JSON.stringify(hits)).toBe(true)
 })
