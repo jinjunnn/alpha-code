@@ -226,6 +226,96 @@
     {
       "components": [
         {
+          "id": "cloud:cloud-v1",
+          "payload": {
+            "behavior": {
+              "fields": [
+                {
+                  "control": "textarea",
+                  "help": "What to generate.",
+                  "label": "Request",
+                  "maxChars": 4000,
+                  "minChars": 1,
+                  "name": "prompt",
+                  "required": true
+                },
+                {
+                  "control": "text",
+                  "label": "Title",
+                  "maxChars": 120,
+                  "name": "title",
+                  "required": false
+                },
+                {
+                  "control": "select",
+                  "default": "plain",
+                  "label": "Style",
+                  "name": "style",
+                  "options": [
+                    {
+                      "label": "Plain",
+                      "value": "plain"
+                    },
+                    {
+                      "label": "Rich",
+                      "value": "rich"
+                    }
+                  ],
+                  "required": true
+                }
+              ],
+              "fixed": [
+                {
+                  "name": "format",
+                  "value": "html"
+                }
+              ],
+              "holdUsd": 1,
+              "pipelineKind": "example-generate",
+              "upstreamData": [
+                "Sends the request, title and style you enter."
+              ]
+            },
+            "schema": "alpha.host-extension-package.payload.cloud.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "cloud:cloud-v1",
+            "payloadRef": {
+              "bytes": 1041,
+              "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+              "sha256": "f3fe8e0dbb9ffddfea427697f4a3e5b7003d8111daa3650b6d05747aacf9998f",
+              "url": "https://example.invalid/packages/cloud/cloud-v1.json"
+            },
+            "profileId": "cloud",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:cloud-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic cloud-v1 decoder case",
+          "displayName": "cloud-v1"
+        },
+        "root": "cloud:cloud-v1",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "cloud-v1",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
           "id": "skill:bundle-command-root",
           "payload": {
             "behavior": {

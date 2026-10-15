@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-09-09
+last_reviewed: 2026-10-15
 review_after: 2027-01-26
 ---
 
@@ -119,8 +119,8 @@ orphan and is refused, even though every other property holds.
 
 `host-extension-package.registry.v1.json` is the static registry: profiles,
 capability vocabulary, and every numeric limit the decoder enforces. The v1
-profiles are exactly `agent`, `command`, `mcp-local`, `mcp-remote`, and
-`skill`, all at profile version 1. Each registry entry binds a profile/version
+profiles are exactly `agent`, `cloud`, `command`, `mcp-local`, `mcp-remote`,
+and `skill`, all at profile version 1. Each registry entry binds a profile/version
 pair to one strict payload schema and one media type.
 
 ADR-040 forbids any profile whose payload is code the engine evaluates in
@@ -165,6 +165,47 @@ fetches and double-checks the template bytes exactly like the agent asset and
 composes the engine leaf at transaction-planning time. `variant` is
 deliberately not part of the v1 payload (owner ruling R3-1, 2026-08-05);
 adding it later is an additive profile revision.
+
+## Cloud payloads describe a closed form (REQ-235)
+
+`profiles/cloud.v1.schema.json` publishes
+`behavior.{pipelineKind, fields, fixed, holdUsd, upstreamData}`: one cloud
+capability the desktop can render as a form and dispatch through its existing
+cloud job channel, without a client release. The field contract's single
+authority is the alpha-platform pipeline registry
+(`contracts/v1/cloud-pipeline-registry.json`); the producer copies the
+registry's constraints into the payload at compile time, so the host depends
+only on signed payload bytes, never on the platform contract.
+
+- `pipelineKind` is the registry key and becomes the dispatch envelope `kind`
+  verbatim.
+- `fields` (0..16) are rendered in order. The control set is closed:
+  `text` / `textarea` carry `required`, optional `minChars`, and `maxChars`;
+  `select` carries `required`, 1..32 `options` and an optional `default`.
+  There is no file control: uploads are a host-native consent flow, and a
+  capability that needs one still ships with the client.
+- `fixed` (0..16) values are merged into the dispatch `input` from the signed
+  payload; the form never renders them, so the user cannot change them. The
+  server validates them like any other input.
+- `holdUsd` is display-only. The money authority is the server.
+- `upstreamData` (1..16) states, in the author's words, what leaves the
+  machine.
+
+Labels, help, `holdUsd` and `upstreamData` never enter the dispatch envelope:
+its `input` key set is exactly the `fields` and `fixed` names. There is no
+`budget`; the envelope's budget is optional and the server defaults and clamps
+it.
+
+Three invariants the schema cannot express are enforced by the decoder and
+refuse the whole payload (`package-payload-invalid`), never half a form:
+`fields` and `fixed` names are unique across both lists, select option values
+are unique and `default` is one of them, and `minChars` does not exceed
+`maxChars`. Every payload string is additionally bound by `maxStringBytes`
+(4096 UTF-8 bytes) and refuses control characters, as for every profile.
+
+A cloud payload derives no host capability token. Installation still
+authorizes `cloud:dispatch`: the desktop derives that authorization set from
+the verified profile, not from the payload.
 
 ## Skill payloads are a bounded file list
 

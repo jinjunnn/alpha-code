@@ -749,6 +749,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       "skill-multifile-v1",
       "agent-v1",
       "command-v1",
+      "cloud-v1",
       "bundle-skill-with-command",
       "mcp-local-v1",
       "mcp-remote-v1",
@@ -1337,7 +1338,7 @@ describe("AlphaPackageEnvelopeV1 listing section", () => {
     const withListing = corpus.cases.filter((item) => "listing" in item.envelope)
     expect(withListing.map((item) => item.name)).toEqual(["listing-full-v1"])
     // 下界式的 `> 0` 会在有人把语料删剩一条时仍然绿。数出真实条数。
-    expect(withoutListing.length).toBe(17)
+    expect(withoutListing.length).toBe(18)
 
     for (const item of withoutListing) {
       const decoded = decodePackageEnvelopeHeaderV1(jsonBytes(item.envelope))
