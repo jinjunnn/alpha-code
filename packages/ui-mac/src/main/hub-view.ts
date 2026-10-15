@@ -8,11 +8,13 @@
 //   desiredState = disabled           ⇒ installed(原因 disabled;不承诺可用)
 //   本目录即时核验通过                ⇒ available
 //   否则                              ⇒ reload-pending,原因按序:在途重载(reload-coordinator)⇒ 即时核验没过的细节
+//                                        (云条目除外,见下)
 // 核验按种类(全部带 directory,全部可失败;**核不了 = 不标 available**):
 //   mcp(global)  该目录 mcp.status[name] = connected(verifyInstalledMcp)
 //   mcp(project) 既有 D-scoped 判据 = active(信任门 + probeProjectMcpActivation)
 //   cloud        云 MCP 在该目录 connected ∧ tool-policy inventory 里云服务的 cloud_dispatch 在列且 enabled
-//                (DECIDE `#1524` 结论;没有重载入口,所以不取在途重载的原因)
+//                (DECIDE `#1524` 结论,基线 §2.5 云行)。没有重载环节:核验不过时**最高 installed**,原因写明缺的是
+//                连接还是工具,不出重载入口、不取在途重载的原因
 //   skill        GET /skill?directory 有同名,且 location 落在 main 为它安装的目录里(generation live 目录,
 //                否则账本根下的 skills/<name>)—— 身份,不只名字
 //   agent        GET /agent?directory 有同名且 disable !== true
@@ -310,8 +312,10 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
             return { ...base, installed: true, enabled: false, state: "installed", stateReason: { code: "disabled" } }
           const verdict = await verify(row, directory, project, reads)
           if (verdict.ok) return { ...base, installed: true, enabled: true, state: "available" }
-          const reason: HubStateReason =
-            (row.kind !== "cloud" ? pending : undefined) ?? { code: "not-loaded", detail: verdict.detail }
+          // 云条目没有重载环节(基线 §2.5 云行):最高 installed,原因说清缺的是连接还是工具。
+          if (row.kind === "cloud")
+            return { ...base, installed: true, enabled: true, state: "installed", stateReason: { code: "not-loaded", detail: verdict.detail } }
+          const reason: HubStateReason = pending ?? { code: "not-loaded", detail: verdict.detail }
           return { ...base, installed: true, enabled: true, state: "reload-pending", stateReason: reason }
         }),
     )

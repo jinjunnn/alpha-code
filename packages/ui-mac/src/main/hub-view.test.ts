@@ -228,22 +228,29 @@ describe("hub-view 三档状态(§2.5)", () => {
     expect(row(view.rows, "skill:writer").state).toBe("available")
   })
 
-  test("云条目(DECIDE #1524):连接 ∧ cloud_dispatch 在列且 enabled 才可用;没有重载环节,不取在途重载的原因", async () => {
+  test("云条目(基线 §2.5 云行 / DECIDE #1524):连接 ∧ cloud_dispatch 在列且 enabled 才可用;否则最高 installed + 缺什么,不取在途重载的原因", async () => {
     const w = world("cloud")
     w.coordinator.request({ scope: "global", items: [], reason: "x" })
     w.engine.cloudDispatch = "ask"
     expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
-      state: "reload-pending",
+      installed: true,
+      enabled: true,
+      state: "installed",
       stateReason: { code: "not-loaded", detail: "cloud_dispatch is ask by tool policy" },
     })
     w.engine.cloudDispatch = undefined
-    expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs").stateReason).toEqual({
-      code: "not-loaded",
-      detail: "cloud_dispatch is not in this directory's tool list",
+    expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: "cloud_dispatch is not in this directory's tool list" },
     })
     w.engine.cloudDispatch = "enabled"
     w.engine.mcp.cloud = { status: "needs_auth" }
-    expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs").stateReason).toEqual({ code: "not-loaded", detail: "cloud MCP failed" })
+    expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: "cloud MCP failed" },
+    })
+    w.engine.mcp.cloud = { status: "connected" }
+    expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs").state).toBe("available")
     expect(CLOUD_DISPATCH_TOOL).toBe(CLOUD_DISPATCH_REMOTE_TOOL)
   })
 
@@ -264,8 +271,9 @@ describe("hub-view 三档状态(§2.5)", () => {
     })
     const view = await service.view()
     expect(view.directory).toBe(w.workspace)
-    for (const id of ["skill:writer", "mcp:files", "agent:planner", "cloud:docs"])
+    for (const id of ["skill:writer", "mcp:files", "agent:planner"])
       expect(row(view.rows, id)).toMatchObject({ state: "reload-pending", stateReason: { code: "not-loaded" } })
+    expect(row(view.rows, "cloud:docs")).toMatchObject({ state: "installed", stateReason: { code: "not-loaded" } })
     expect(row(view.rows, "mcp:off").state).toBe("installed")
   })
 })

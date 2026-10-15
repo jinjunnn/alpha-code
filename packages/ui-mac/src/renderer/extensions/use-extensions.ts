@@ -247,7 +247,16 @@ export type HubStateView = {
 export function hubStateView(row: HubViewRow | undefined): HubStateView | undefined {
   if (!row || row.state === "not-installed") return undefined
   if (row.state === "available") return { state: row.state, tone: "ok", textKey: "alpha.ext.hubStateAvailable", reloadNow: false }
-  if (row.state === "installed") return { state: row.state, tone: "muted", textKey: "alpha.ext.hubStateInstalled", reloadNow: false }
+  // 已安装但没核验通过(云条目:缺连接或缺工具,基线 §2.5 云行)⇒ 说出原因;停用的行原因已由「未启用」徽标说了。
+  if (row.state === "installed")
+    return {
+      state: row.state,
+      tone: "muted",
+      textKey: "alpha.ext.hubStateInstalled",
+      ...(row.stateReason?.code === "not-loaded" ? { reasonKey: "alpha.ext.hubReasonNotLoaded" as const } : {}),
+      ...(row.stateReason?.detail ? { detail: row.stateReason.detail } : {}),
+      reloadNow: false,
+    }
   const code = row.stateReason?.code
   return {
     state: row.state,
