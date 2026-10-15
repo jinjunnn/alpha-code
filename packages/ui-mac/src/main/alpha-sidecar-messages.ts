@@ -246,3 +246,118 @@ export function buildHubRequestReply(
     ? { type: "alpha.hub.request.reply", id, record: result.record }
     : { type: "alpha.hub.request.reply", id, error: result.error }
 }
+
+// ── ext 侧(`#1531`):建 ext → main 的三种、解析 main → ext 的两种应答 ──────────────────────────────
+//
+// 线形不变(仍是上面冻结的那几种);这里只补 ext 那一侧的 build/parse,与 main 侧 parseAlphaSidecarInbound 同一纪律:
+// 应答形状不对 ⇒ undefined,由 ext 当「无法判断」处理,不带着半个视图去回答 agent。
+
+export function buildHubViewRequest(input: {
+  id: number
+  directory: string
+  sessionID?: string
+  agent?: string
+  query?: string
+}): HubViewRequestMessage {
+  return {
+    type: "alpha.hub.view.request",
+    id: input.id,
+    directory: input.directory,
+    ...(input.sessionID ? { sessionID: input.sessionID } : {}),
+    ...(input.agent ? { agent: input.agent } : {}),
+    ...(input.query !== undefined ? { query: input.query } : {}),
+  }
+}
+
+export function buildHubRequestQuery(id: number, requestId: string): HubRequestQueryMessage {
+  return { type: "alpha.hub.request.request", id, requestId }
+}
+
+export function buildReloadReport(input: {
+  generation: number
+  scope: ReloadScope
+  outcome: ReloadOutcome
+  directories: string[]
+  error?: string
+}): ReloadReportMessage {
+  return {
+    type: "alpha.reload.report",
+    generation: input.generation,
+    scope: input.scope === "global" ? "global" : { directory: input.scope.directory },
+    outcome: input.outcome,
+    directories: [...input.directories],
+    ...(input.error ? { error: input.error } : {}),
+  }
+}
+
+function parseStateReason(value: unknown): HubStateReason | undefined | null {
+  if (value === undefined) return undefined
+  if (!isRecord(value) || typeof value.code !== "string" || !(HUB_REASON_CODES as readonly string[]).includes(value.code)) return null
+  if (value.detail !== undefined && typeof value.detail !== "string") return null
+  return { code: value.code as HubReasonCode, ...(typeof value.detail === "string" ? { detail: value.detail } : {}) }
+}
+
+function parseHubViewRow(value: unknown): HubViewRow | undefined {
+  if (!isRecord(value)) return
+  const text = ["id", "name", "kind", "displayName", "description", "authorization"] as const
+  if (!text.every((key) => typeof value[key] === "string")) return
+  if (value.scope !== null && value.scope !== "global" && value.scope !== "project") return
+  if (typeof value.installed !== "boolean" || typeof value.enabled !== "boolean") return
+  if (typeof value.state !== "string" || !(HUB_STATE_WORDS as readonly string[]).includes(value.state)) return
+  const reason = parseStateReason(value.stateReason)
+  if (reason === null) return
+  if (value.agentNote !== undefined && typeof value.agentNote !== "string") return
+  return {
+    id: value.id as string,
+    scope: value.scope,
+    name: value.name as string,
+    kind: value.kind as string,
+    displayName: value.displayName as string,
+    description: value.description as string,
+    installed: value.installed,
+    enabled: value.enabled,
+    state: value.state as HubStateWord,
+    ...(reason ? { stateReason: reason } : {}),
+    authorization: value.authorization as string,
+    ...(typeof value.agentNote === "string" ? { agentNote: value.agentNote } : {}),
+  }
+}
+
+/** ext 侧:main 对视图请求的应答。行里任何一条形状不对 ⇒ 整条应答作废(不呈现半个视图)。 */
+export function parseHubViewReply(value: unknown): HubViewReplyMessage | undefined {
+  if (!isRecord(value) || value.type !== "alpha.hub.view.reply" || !isId(value.id)) return
+  if (typeof value.error === "string") return { type: "alpha.hub.view.reply", id: value.id, error: value.error }
+  const view = value.view
+  if (!isRecord(view) || typeof view.directory !== "string" || !Array.isArray(view.rows) || !Array.isArray(view.warnings)) return
+  if (!view.warnings.every((warning) => typeof warning === "string")) return
+  const rows = view.rows.map(parseHubViewRow)
+  if (rows.some((row) => row === undefined)) return
+  return {
+    type: "alpha.hub.view.reply",
+    id: value.id,
+    view: { directory: view.directory, rows: rows as HubViewRow[], warnings: view.warnings as string[] },
+  }
+}
+
+/** ext 侧:main 对阶段查询的应答。`record: null` = main 没有这次请求的记录(合法应答,不是错误)。 */
+export function parseHubRequestReply(value: unknown): HubRequestReplyMessage | undefined {
+  if (!isRecord(value) || value.type !== "alpha.hub.request.reply" || !isId(value.id)) return
+  if (typeof value.error === "string") return { type: "alpha.hub.request.reply", id: value.id, error: value.error }
+  if (value.record === null) return { type: "alpha.hub.request.reply", id: value.id, record: null }
+  const record = value.record
+  if (!isRecord(record) || !isHubRequestId(record.requestId) || !isText(record.catalogId, 256)) return
+  if (typeof record.stage !== "string" || !(HUB_REQUEST_STAGES as readonly string[]).includes(record.stage)) return
+  if (record.scope !== undefined && record.scope !== "global" && record.scope !== "project") return
+  if (record.reason !== undefined && typeof record.reason !== "string") return
+  return {
+    type: "alpha.hub.request.reply",
+    id: value.id,
+    record: {
+      requestId: record.requestId,
+      catalogId: record.catalogId,
+      stage: record.stage as HubRequestStage,
+      ...(record.scope ? { scope: record.scope } : {}),
+      ...(typeof record.reason === "string" ? { reason: record.reason } : {}),
+    },
+  }
+}

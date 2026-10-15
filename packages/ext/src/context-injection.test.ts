@@ -265,6 +265,15 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
   })
 })
 
+describe("③a′ `#1531`:hub_install 动词的两条引用", () => {
+  test("全局与每个 agent 末位的 hub_install 解释得通;单段通配只吃恰好一段,不放行同 agent 的别的键、多一段或空段", () => {
+    for (const p of ["/permission/hub_install", "/agent/build/permission/hub_install", "/agent/alpha-automation/permission/hub_install"])
+      expect(explainConfigReference(p).ok, p).toBe(true)
+    for (const p of ["/agent/build/permission/bash", "/agent/build/prompt", "/agent/permission/hub_install", "/agent//permission/hub_install", "/agent/a/b/permission/hub_install", "/permission/hub_installer"])
+      expect(explainConfigReference(p).ok, p).toBe(false)
+  })
+})
+
 // ── ③b system.transform 咽喉 ────────────────────────────────────────────────────
 
 type SystemHook = (input: { sessionID?: string; model: unknown }, output: { system: string[] }) => Promise<void>
