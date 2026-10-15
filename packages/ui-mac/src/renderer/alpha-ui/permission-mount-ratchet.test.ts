@@ -70,7 +70,7 @@ describe("Alpha Permission unique-mount ratchet", () => {
     expect(renderer).not.toContain("<HubInstallWatcher")
     expect(hubWatcher).not.toContain("createOpencodeClient")
     expect(hubWatcher).not.toContain("global.event")
-    expect(hubWatcher).toContain("await props.reply(decision)")
+    expect(hubWatcher).toContain("await props.reply(phase.decision)")
     const mounts: string[] = []
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {

@@ -252,64 +252,6 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     expect(JSON.stringify(runtime.replyCalls)).not.toContain(SECRET)
   })
 
-  test("取消:还在确认阶段 ⇒ declined → reject;零出站", async () => {
-    mount()
-    await flush()
-    runtime.ask(hubRequest("skill:writer", "req_hub_watcher_02"))
-    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
-    const release = hold("declined")
-    button(zh["alpha.ext.cancel"])!.click()
-    await flush(8)
-    expect(replies()).toEqual([])
-    release()
-    await until(() => replies().length > 0, "the reply")
-    expect(timeline()).toEqual(["stage:confirming", "stage:declined", "reply:reject"])
-    expect(intents).toHaveLength(0)
-  })
-
-  test("授权第二阶段才取消(已 submitted)⇒ 记 failed(authorization canceled)→ reject,不是 declined", async () => {
-    installScript = [{ ok: false, stage: "authorize", authorization: [diff] }]
-    mount()
-    await flush()
-    runtime.ask(hubRequest("skill:writer", "req_hub_watcher_03"))
-    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
-    button(zh["alpha.ext.confirmInstall"])!.click()
-    await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage")
-    const release = hold("failed")
-    button(zh["alpha.ext.cancel"])!.click()
-    await flush(8)
-    expect(replies()).toEqual([])
-    release()
-    await until(() => replies().length > 0, "the reply")
-    expect(timeline()).toEqual([
-      "stage:confirming",
-      "stage:submitted",
-      "install",
-      "stage:failed(authorization canceled)",
-      "reply:reject",
-    ])
-  })
-
-  test("提交失败:install 返回 !ok 之后才记 failed;框里显示原因;用户关框才 reject", async () => {
-    installScript = [{ ok: false, reason: "connect-failed" }]
-    mount()
-    await flush()
-    runtime.ask(hubRequest("skill:writer", "req_hub_watcher_04"))
-    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
-    const release = hold("failed")
-    button(zh["alpha.ext.confirmInstall"])!.click()
-    await flush(8)
-    expect(document.querySelector("[data-hub-agent-failure]")).toBeNull()
-    release()
-    await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")
-    // main 在 install IPC 里已记 failed(终态),守望者随后那一笔被拒 —— 无害,也证明它记在 IPC 返回之后
-    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(connect-failed)!refused"])
-    expect(replies()).toEqual([])
-    button(zh["alpha.ext.close"])!.click()
-    await until(() => replies().length > 0, "the reply")
-    expect(replies()).toEqual(["reject"])
-  })
-
   test("记不上 confirming ⇒ 不弹框、reject;目录里没有这一条 ⇒ 记 failed、不出确认按钮、reject", async () => {
     stageOk = false
     mount()
@@ -331,26 +273,6 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     expect(stages.get("req_hub_watcher_06")).toMatchObject({ stage: "failed" })
     expect(replies()).toEqual(["reject"])
     expect(button(zh["alpha.ext.confirmInstall"])).toBeUndefined()
-  })
-
-  // 审计 R1 Major 3:确认框开着时 SSE 重连 ⇒ feed 不就绪(审批面卸载)⇒ 读回同一个请求再挂载。不得因为 main 拒绝
-  // confirming → confirming 就替用户回 reject;同一个 requestId 接着上一次的阶段走,框还在,确认之后照常装、照常回 once。
-  test("确认框开着时 SSE 重连(卸载再挂载):零 reject、confirming 只记一次、框还在;之后确认照常装完回 once", async () => {
-    installScript = [{ ok: true, kind: "skill", name: "writer" }]
-    mount()
-    await flush()
-    runtime.ask(hubRequest("skill:writer", "req_hub_watcher_07"))
-    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
-    runtime.reconnect()
-    await until(() => !button(zh["alpha.ext.confirmInstall"]), "the surface to unmount while the feed reloads")
-    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box after the remount")
-    await flush(8)
-    expect(replies()).toEqual([])
-    expect(timeline()).toEqual(["stage:confirming"])
-    button(zh["alpha.ext.confirmInstall"])!.click()
-    await until(() => replies().length > 0, "the reply")
-    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
-    expect(stages.get("req_hub_watcher_07")).toMatchObject({ stage: "committed" })
   })
 
   // 审计 R1 Major 2:签名包也走定制中心**同一个**确认控制器(package 预览 + 授权 + 前置条件输入),出站是 installCatalogIntent
@@ -386,3 +308,294 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     expect(timeline()).toEqual([])
   })
 })
+
+// ── 状态表(审计 R2:阶段 × 事件,与 hub-install-watcher.tsx 头注那张表一格对一格)────────────────────────────────────
+// 每一格:生产组件(PermissionWatcher → HubInstallWatcher → install-confirm → use-extensions)+ main 的生产阶段簿
+// (createHubRequestStages);「重挂载」= 生产 feed 收到 connected 后重读快照(期间不就绪、审批面卸载,读回同一请求再挂载)。
+// 表里写「—」的格到不了(该阶段没有那个事件),不在这里。
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/** 重挂载:SSE 重连 ⇒ feed 不就绪(卸载)⇒ 读回同一个请求(再挂载)。 */
+async function remount() {
+  runtime.reconnect()
+  await sleep(80)
+  await flush(4)
+}
+async function openBox(catalogId: string, requestId: string) {
+  mount()
+  await flush()
+  runtime.ask(hubRequest(catalogId, requestId))
+  await until(() => !!button(zh["alpha.ext.confirmInstall"]) || !!document.querySelector("[data-package-authorization]"), "the confirm box")
+}
+const boxShown = () => !!document.querySelector("[data-hub-agent-request]")
+
+type Cell = { phase: string; event: string; run: () => Promise<void> }
+const CELLS: Cell[] = [
+  {
+    phase: "starting",
+    event: "重挂载",
+    run: async () => {
+      mount()
+      await flush()
+      const release = hold("confirming")
+      runtime.ask(hubRequest("skill:writer", "req_cell_starting_remount"))
+      await flush(4)
+      await remount()
+      expect(boxShown()).toBe(false)
+      release()
+      await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box once confirming is recorded")
+      await flush(8)
+      expect(timeline()).toEqual(["stage:confirming"])
+      expect(replies()).toEqual([])
+    },
+  },
+  {
+    phase: "starting",
+    event: "安装落定(包的取预览首驱直接落定)",
+    run: async () => {
+      installScript = [{ ok: true, kind: "skill", name: "alpha-first" }]
+      mount()
+      await flush()
+      runtime.ask(hubRequest("package:alpha-first", "req_cell_starting_settled"))
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "install", "reply:once"])
+      expect(stages.get("req_cell_starting_settled")).toMatchObject({ stage: "committed" })
+    },
+  },
+  {
+    phase: "confirming",
+    event: "重挂载",
+    run: async () => {
+      installScript = [{ ok: true, kind: "skill", name: "writer" }]
+      await openBox("skill:writer", "req_cell_confirming_remount")
+      runtime.reconnect()
+      await until(() => !button(zh["alpha.ext.confirmInstall"]), "the surface to unmount while the feed reloads")
+      await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box after the remount")
+      await flush(8)
+      expect(replies()).toEqual([])
+      expect(timeline()).toEqual(["stage:confirming"])
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
+    },
+  },
+  {
+    phase: "confirming",
+    event: "用户取消",
+    run: async () => {
+      await openBox("skill:writer", "req_cell_confirming_cancel")
+      const release = hold("declined")
+      button(zh["alpha.ext.cancel"])!.click()
+      await flush(8)
+      expect(replies()).toEqual([])
+      release()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:declined", "reply:reject"])
+      expect(intents).toHaveLength(0)
+    },
+  },
+  {
+    phase: "authorizing",
+    event: "重挂载",
+    run: async () => {
+      installScript = [{ ok: false, stage: "authorize", authorization: [diff] }, { ok: true, kind: "mcp", name: "notes" }]
+      await openBox("mcp:notes", "req_cell_authorizing_remount")
+      const input = document.querySelector<HTMLInputElement>(".alpha-ext-key-input")!
+      input.value = SECRET
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage")
+      runtime.reconnect()
+      await until(() => !button(zh["alpha.ext.authz.confirmInstall"]), "the surface to unmount")
+      await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage after the remount")
+      expect(replies()).toEqual([])
+      button(zh["alpha.ext.authz.confirmInstall"])!.click()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "install", "reply:once"])
+      expect(intents[1]).toMatchObject({
+        hubRequestId: "req_cell_authorizing_remount",
+        grants: { secrets: { NOTES_TOKEN: SECRET } },
+        authorization: { confirmed: { "mcp:notes": ["process:spawn"] } },
+      })
+    },
+  },
+  {
+    phase: "authorizing",
+    event: "用户取消",
+    run: async () => {
+      installScript = [{ ok: false, stage: "authorize", authorization: [diff] }]
+      await openBox("skill:writer", "req_cell_authorizing_cancel")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage")
+      const release = hold("failed")
+      button(zh["alpha.ext.cancel"])!.click()
+      await flush(8)
+      expect(replies()).toEqual([])
+      release()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(authorization canceled)", "reply:reject"])
+    },
+  },
+  {
+    phase: "executing",
+    event: "重挂载",
+    run: async () => {
+      installScript = [{ ok: true, kind: "skill", name: "writer" }]
+      await openBox("skill:writer", "req_cell_executing_remount")
+      const release = hold("install")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await flush(4)
+      await remount()
+      expect(boxShown()).toBe(false)
+      expect(replies()).toEqual([])
+      release()
+      await until(() => replies().length > 0, "the reply from the remounted surface")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
+      expect(stages.get("req_cell_executing_remount")).toMatchObject({ stage: "committed" })
+    },
+  },
+  {
+    phase: "executing",
+    event: "安装落定 committed",
+    run: async () => {
+      installScript = [{ ok: true, kind: "skill", name: "writer" }]
+      await openBox("skill:writer", "req_cell_executing_committed")
+      const release = hold("install")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await flush(8)
+      expect(replies()).toEqual([])
+      release()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
+    },
+  },
+  {
+    phase: "executing",
+    event: "安装落定 failed",
+    run: async () => {
+      installScript = [{ ok: false, reason: "connect-failed" }]
+      await openBox("skill:writer", "req_cell_executing_failed")
+      const release = hold("failed")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await flush(8)
+      expect(document.querySelector("[data-hub-agent-failure]")).toBeNull()
+      release()
+      await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")
+      // main 在 install IPC 里已记 failed(终态),守望者随后那一笔被拒 —— 无害,也证明它记在 IPC 返回之后
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(connect-failed)!refused"])
+      expect(replies()).toEqual([])
+    },
+  },
+  {
+    phase: "executing",
+    event: "安装落定 又要授权",
+    run: async () => {
+      installScript = [{ ok: false, stage: "authorize", authorization: [diff] }, { ok: true, kind: "skill", name: "writer" }]
+      await openBox("skill:writer", "req_cell_executing_authorize")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage in the same box")
+      expect(replies()).toEqual([])
+      expect(stages.get("req_cell_executing_authorize")).toMatchObject({ stage: "submitted" })
+      // 落定成「又要授权」= 进度真的转进 authorizing(不只是这一次挂载的框里换了视图):重挂载后授权框还在
+      await remount()
+      await until(() => !!button(zh["alpha.ext.authz.confirmInstall"]), "the authorization stage after a remount")
+      button(zh["alpha.ext.authz.confirmInstall"])!.click()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "install", "reply:once"])
+    },
+  },
+  {
+    phase: "failed",
+    event: "重挂载",
+    run: async () => {
+      installScript = [{ ok: false, reason: "connect-failed" }]
+      await openBox("skill:writer", "req_cell_failed_remount")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")
+      runtime.reconnect()
+      await until(() => !document.querySelector("[data-hub-agent-failure]"), "the surface to unmount")
+      await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown again after the remount")
+      await flush(8)
+      expect(timeline().filter((line) => line.startsWith("stage:failed"))).toHaveLength(1)
+      expect(replies()).toEqual([])
+      button(zh["alpha.ext.close"])!.click()
+      await until(() => replies().length > 0, "the reply")
+      expect(replies()).toEqual(["reject"])
+    },
+  },
+  {
+    phase: "failed",
+    event: "用户关框",
+    run: async () => {
+      installScript = [{ ok: false, reason: "connect-failed" }]
+      await openBox("skill:writer", "req_cell_failed_close")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")
+      await flush(8)
+      expect(replies()).toEqual([])
+      button(zh["alpha.ext.close"])!.click()
+      await until(() => replies().length > 0, "the reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(connect-failed)!refused", "reply:reject"])
+    },
+  },
+  {
+    phase: "decided",
+    event: "重挂载",
+    run: async () => {
+      // 审计 R2 #2:决定已做(取消)、declined 还没记完时重连 ⇒ 旧 feed 不就绪拒绝回复;重挂载必须经当前 feed 补回。
+      await openBox("skill:writer", "req_cell_decided_remount")
+      const releaseStage = hold("declined")
+      button(zh["alpha.ext.cancel"])!.click()
+      await flush(4)
+      const releaseList = runtime.holdList()
+      runtime.reconnect()
+      await flush(4)
+      releaseStage()
+      await flush(8)
+      expect(replies()).toEqual([])
+      releaseList()
+      await until(() => replies().length > 0, "the reply through the reloaded feed")
+      expect(timeline()).toEqual(["stage:confirming", "stage:declined", "reply:reject"])
+    },
+  },
+  {
+    phase: "decided",
+    event: "回复失败",
+    run: async () => {
+      await openBox("skill:writer", "req_cell_decided_reply_fails")
+      runtime.setReplyFails(true)
+      button(zh["alpha.ext.cancel"])!.click()
+      await until(() => timeline().includes("reply-failed:reject"), "the refused reply")
+      await flush(8)
+      expect(boxShown()).toBe(false)
+      expect(replies()).toEqual([])
+      runtime.setReplyFails(false)
+      await remount()
+      await until(() => replies().length > 0, "the retried reply")
+      expect(timeline()).toEqual(["stage:confirming", "stage:declined", "reply-failed:reject", "reply:reject"])
+    },
+  },
+  {
+    phase: "replied",
+    event: "重挂载",
+    run: async () => {
+      installScript = [{ ok: true, kind: "skill", name: "writer" }]
+      await openBox("skill:writer", "req_cell_replied_remount")
+      button(zh["alpha.ext.confirmInstall"])!.click()
+      await until(() => replies().length > 0, "the reply")
+      // 另一个审批面(换了路由、新的 feed)又收到同一个请求的迟到事件 ⇒ 同一 requestId 已回过:不显示、不再回
+      mount()
+      await flush()
+      runtime.ask(hubRequest("skill:writer", "req_cell_replied_remount"))
+      await flush(8)
+      await sleep(40)
+      expect(boxShown()).toBe(false)
+      expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
+    },
+  },
+]
+
+describe("HubInstallWatcher 状态表(阶段 × 事件,审计 R2)", () => {
+  for (const cell of CELLS) test(`${cell.phase} × ${cell.event}`, cell.run)
+})
+

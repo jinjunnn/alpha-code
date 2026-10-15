@@ -1,20 +1,36 @@
-// HubInstallWatcher — REQ-234 `#1531`(基线 §2.3,不变量 I2 / I3 / I9):agent 请求安装定制中心条目时,弹的是**定制中心
-// 自己的安装确认框**(extensions/install-confirm.tsx,与定制中心共用同一份),用户在框里点同意、在框里填密钥。
+// HubInstallWatcher — REQ-234 `#1531`(基线 §2.3,不变量 I2 / I3 / I9):agent 请求安装定制中心条目或签名包时,弹的是**定制中心
+// 自己的安装确认框**(extensions/install-confirm.tsx,与定制中心共用同一份控制器),用户在框里点同意、在框里填密钥。
 //
 // 运输:agent 的 hub_install 工具经引擎审批请求(`ctx.ask`,metadata.alphaHub = { catalogId, requestId })到这里;
 // PermissionWatcher 按 metadata.alphaHub 把这类请求交给本组件,通用审批框不呈现它(同一个请求不会弹两个框)。
-//
-// 顺序(I9:**先记阶段、再回审批**,结局以 main 记的阶段为准,审批应答只负责唤醒工具):
-//   ① 记 confirming(记不上 ⇒ 不弹框、回 reject —— 没有框就没有安装)
-//   ② 按 catalogId 在本机已验目录的可安装视图里找到条目(找不到 ⇒ 记 failed、回 reject)→ 弹框
-//   ③ 用户确认 ⇒ 记 submitted ⇒ 既有出站(use-extensions,带 hubRequestId)⇒ main 提交成功时**自己**记 committed、请 ext 重载
-//        ├─ 提交成功 ⇒ 回 once
-//        └─ main 拒绝 / 失败(install IPC 已返回 !ok 之后)⇒ 记 failed(带原因)⇒ 框里显示原因 ⇒ 用户关框 ⇒ 回 reject
-//   ④ 用户取消 / 关框 ⇒ 还在 confirming 记 declined;授权第二阶段才取消(已 submitted)记 failed「授权已取消」⇒ 回 reject
-//   ⑤ 300 s 无人应答:引擎自己广播 reject 回执,请求从列表里消失,本组件随之卸载 —— 不记 declined(已记的阶段保持)。
 // 应答命令没有自由载荷,结构上不可能把框里填的密钥带回工具;密钥只经 install 意图的 grants 进 main(与定制中心同一路)。
+//
+// ── 一次请求的进度 = 模块级状态机(审计 R1 Major 3 / R2 #1 #2)────────────────────────────────────────────────────
+// 审批面会在 SSE 重连时卸载再挂载(feed 重读快照期间不就绪),组件状态随之丢失;而 main 的阶段只前进、终态后拒。
+// 所以进度按 requestId 记在本模块,任何一次挂载都从这里恢复,组件只是它的呈现。I9:**先记阶段、再回审批**,
+// 结局以 main 记的阶段为准,审批应答只负责唤醒工具;「回复」只在回执成功之后才算完成。
+//
+//   阶段                     | 重挂载                               | 回复失败                     | 安装落定                                   | 用户取消 / 关框
+//   ─────────────────────────┼──────────────────────────────────────┼──────────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────
+//   starting(记 confirming、 | 不显示框,等它进 confirming;不回     | —(此阶段不回复)             | —(包的取预览首驱若直接落定,同「安装落定」) | —(还没有框)
+//    找条目/取包预览)        |                                      |                              |                                            |
+//   confirming(等用户确认)  | 重开同一个确认框(条目 / 包预览),    | —                            | —(没有在途安装)                           | 记 declined ⇒ decided(reject)⇒ 回 reject
+//                            | 不再记阶段;不回                      |                              |                                            |
+//   authorizing(等用户授权, | 重开条目确认框的授权第二阶段,同一份  | —                            | —                                          | 记 failed(authorization canceled)
+//    main 已 submitted)      | diffs / 密钥 / 作用域;不回           |                              |                                            | ⇒ decided(reject)⇒ 回 reject
+//   executing(安装执行中)   | 不显示框,只等结局;不回              | —                            | committed ⇒ decided(once)⇒ 回 once;       | —(框 busy,不可关)
+//                            |                                      |                              | failed ⇒ 记 failed ⇒ failed(显示原因);   |
+//                            |                                      |                              | 又要授权 ⇒ authorizing(显示授权框)        |
+//   failed(框里显示原因)    | 重新显示原因,不再记;不回            | —                            | —                                          | 用户关框 ⇒ decided(reject)⇒ 回 reject
+//   decided(已决定待回)     | 不显示框;经**当前** feed 回(先等    | 留在 decided,不显示;下一次  | —                                          | —
+//                            | 那一笔阶段记完)                     | 挂载再经当前 feed 重试       |                                            |
+//   replied(已回,回执成功) | 不显示,不回                         | —                            | —                                          | —
+//
+// 记不上 confirming ⇒ decided(reject),不弹框(没有框就没有安装);目录里找不到 ⇒ 记 failed ⇒ decided(reject)。
+// 300 s 无人应答:引擎自己广播 reject 回执,请求从列表里消失、本组件不再挂载 —— 不记 declined(已记的阶段保持)。
+// 判据:hub-install-watcher.test.ts 的「状态表」—— 每一格一条,生产组件 + main 的生产阶段簿。
 
-import { createEffect, createSignal, onMount, Show, type Accessor } from "solid-js"
+import { createEffect, createSignal, onMount, Show, untrack, type Accessor } from "solid-js"
 import { useLocation } from "@solidjs/router"
 import type { PermissionV2Request } from "@opencode-ai/sdk/v2/client"
 import { parseRoute } from "../../shared/route-manifest"
@@ -36,6 +52,8 @@ import {
   type CatalogInstallScopeChoice,
 } from "../extensions/use-extensions"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
+import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
+import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
 import type { ServerInfo } from "../sidebar/use-projects"
 
 export type AlphaHubRequest = { catalogId: string; requestId: string }
@@ -49,22 +67,31 @@ export function alphaHubRequestOf(request: PermissionV2Request): AlphaHubRequest
   return { catalogId, requestId }
 }
 
-type Outcome = { kind: "committed" } | { kind: "failed"; reason: string }
+type Target =
+  | { kind: "entry"; entry: CatalogEntry }
+  | { kind: "package"; view: CatalogPackageViewV1; preview: PackageAdmissionPreviewV1 }
 
-/**
- * 一次 agent 安装请求的进度,按 requestId 记在**模块**里(审计 R1 Major 3)。审批面在 SSE 重连时会卸载再挂载
- * (feed 重读快照期间不就绪)—— 组件状态随之丢失,而 main 的阶段只前进:重挂载的组件若再记一次 confirming,
- * main 拒绝,守望者就替用户回了 reject。同一个 requestId 的任何一次挂载都接着这里的阶段走:
- *   none → 记 confirming;confirming → 不再记,重新弹框;submitted → 不弹框,等那一次安装的结局;
- *   结局(outcome)是 signal —— 安装在旧组件里落定、而回审批的是新挂载的那一个,也照样收得到。
- */
+type Phase =
+  | { kind: "starting" }
+  | { kind: "confirming"; target: Target }
+  | {
+      kind: "authorizing"
+      entry: CatalogEntry
+      diffs: CapabilityDiffWire[]
+      secrets: Record<string, string> | undefined
+      scope: CatalogInstallScopeChoice | undefined
+      projectDir: string | undefined
+    }
+  | { kind: "executing"; name: string }
+  | { kind: "failed"; name: string; reason: string; recorded: Promise<unknown> }
+  | { kind: "decided"; decision: "once" | "reject"; recorded: Promise<unknown> }
+  | { kind: "replied" }
+
 type Flight = {
-  stage: "none" | "confirming" | "submitted"
-  outcome: Accessor<Outcome | undefined>
-  setOutcome: (outcome: Outcome) => void
-  /** main 已记过 failed(守望者这一侧),重挂载时只重新显示原因、不再记。 */
-  failureRecorded: boolean
-  finished: boolean
+  phase: Accessor<Phase | undefined>
+  setPhase: (phase: Phase) => void
+  /** 在途的那一次回复(两次挂载不并发回同一个决定)。 */
+  delivering?: Promise<boolean>
 }
 const flights = new Map<string, Flight>()
 const MAX_FLIGHTS = 64
@@ -72,8 +99,8 @@ const MAX_FLIGHTS = 64
 function flightFor(requestId: string): Flight {
   const known = flights.get(requestId)
   if (known) return known
-  const [outcome, setOutcome] = createSignal<Outcome | undefined>(undefined)
-  const flight: Flight = { stage: "none", outcome, setOutcome: (next) => void setOutcome(next), failureRecorded: false, finished: false }
+  const [phase, setPhase] = createSignal<Phase | undefined>(undefined)
+  const flight: Flight = { phase, setPhase: (next) => void setPhase(() => next) }
   flights.set(requestId, flight)
   while (flights.size > MAX_FLIGHTS) flights.delete(flights.keys().next().value!)
   return flight
@@ -82,7 +109,7 @@ function flightFor(requestId: string): Flight {
 export function HubInstallWatcher(props: {
   hub: AlphaHubRequest
   server: Accessor<ServerInfo | undefined>
-  /** 回审批(once / reject);由 PermissionWatcher 按请求 ID 绑定。 */
+  /** 回审批(once / reject);由 PermissionWatcher 按请求 ID 绑定到**当前** feed。 */
   reply: (decision: "once" | "reject") => Promise<unknown>
 }) {
   const loc = useLocation()
@@ -92,9 +119,6 @@ export function HubInstallWatcher(props: {
   }
   const ext = useExtensions(props.server, () => true, projectDir)
   const flight = flightFor(props.hub.requestId)
-  /** 提交失败之后框不立刻关:显示原因,用户关框才回 reject(基线 §2.3「框里显示原因」)。 */
-  const [failure, setFailure] = createSignal<{ name: string; reason: string } | null>(null)
-  let entryName = props.hub.catalogId
 
   const record = async (input: { stage: "confirming" | "submitted" | "declined" | "failed"; catalogId?: string; reason?: string }) => {
     try {
@@ -103,13 +127,18 @@ export function HubInstallWatcher(props: {
       return false
     }
   }
-  const finish = async (decision: "once" | "reject") => {
-    if (flight.finished) return
-    flight.finished = true
-    await props.reply(decision).catch(() => undefined)
+  /** 决定:先把阶段记完(recorded),回复由挂着的那一次挂载经它的 feed 发。 */
+  const decide = (decision: "once" | "reject", recorded: Promise<unknown> = Promise.resolve()) =>
+    flight.setPhase({ kind: "decided", decision, recorded })
+  /** install IPC 返回 !ok 之后才记 failed;记完才在框里显示原因,用户关框才决定 reject。 */
+  const fail = async (name: string, reason: string) => {
+    const recorded = record({ stage: "failed", reason })
+    await recorded
+    flight.setPhase({ kind: "failed", name, reason, recorded })
   }
+  const settle = (name: string, ok: boolean, reason?: string) => (ok ? decide("once") : void fail(name, reason ?? "install failed"))
 
-  /** 确认之后装的那一下:与定制中心同一组出站,多带 hubRequestId。 */
+  /** 确认(或授权)之后装的那一下:与定制中心同一组出站,多带 hubRequestId。 */
   const install = async (
     entry: CatalogEntry,
     secrets: Record<string, string> | undefined,
@@ -117,16 +146,17 @@ export function HubInstallWatcher(props: {
     scope: CatalogInstallScopeChoice | undefined,
     selectedProjectDir: string | undefined,
   ): Promise<CapabilityDiffWire[] | null> => {
-    if (flight.stage === "confirming") {
-      if (!(await record({ stage: "submitted" }))) {
-        flight.setOutcome({ kind: "failed", reason: "the request could not be recorded" })
-        return null
-      }
-      flight.stage = "submitted"
+    if (flight.phase()?.kind === "confirming" && !(await record({ stage: "submitted" }))) {
+      void fail(entry.displayName, "the request could not be recorded")
+      return null
     }
+    flight.setPhase({ kind: "executing", name: entry.displayName })
     const res = await dispatch(entry, secrets, authorization, scope, selectedProjectDir)
-    if (isAuthzRequired(res)) return res.authorization
-    flight.setOutcome(res.ok ? { kind: "committed" } : { kind: "failed", reason: res.reason ?? "install failed" })
+    if (isAuthzRequired(res)) {
+      flight.setPhase({ kind: "authorizing", entry, diffs: res.authorization, secrets, scope, projectDir: selectedProjectDir })
+      return res.authorization
+    }
+    settle(entry.displayName, res.ok, res.reason)
     return null
   }
   const dispatch = async (
@@ -154,10 +184,10 @@ export function HubInstallWatcher(props: {
 
   /** 包确认屏那一趟(审计 R1 Major 2):与定制中心同一个出口 installCatalogIntent,多带 hubRequestId;确认时才记 submitted。 */
   const installPackage = async (intent: CatalogInstallIntentV1): Promise<CatalogInstallResult> => {
-    if (flight.stage === "confirming") {
-      if (!(await record({ stage: "submitted" }))) return { ok: false, reason: "the request could not be recorded" }
-      flight.stage = "submitted"
-    }
+    const phase = flight.phase()
+    const name = phase?.kind === "confirming" && phase.target.kind === "package" ? phase.target.view.presentation.displayName : intent.catalogId
+    if (phase?.kind === "confirming" && !(await record({ stage: "submitted" }))) return { ok: false, reason: "the request could not be recorded" }
+    flight.setPhase({ kind: "executing", name })
     return ext.installCatalogIntent({ ...intent, hubRequestId: props.hub.requestId })
   }
 
@@ -166,88 +196,109 @@ export function HubInstallWatcher(props: {
     projectDir,
     installPackage,
     onPackageSettled: async (pending, result) => {
-      flight.setOutcome(result?.ok ? { kind: "committed" } : { kind: "failed", reason: (result && !result.ok ? result.reason : undefined) ?? "install failed" })
+      settle(pending.view.presentation.displayName, result?.ok === true, result && !result.ok ? result.reason : undefined)
       return pending.view
     },
   })
 
-  /** 签名包:首驱只取预览(带 hubRequestId;main 对授权暂停不落定),拿到预览才弹包确认框。 */
-  const openPackage = async (catalogId: string) => {
+  /** starting:记 confirming → 目录条目,否则签名包(首驱只取预览,带 hubRequestId;main 对授权暂停不落定)。 */
+  const start = async () => {
+    flight.setPhase({ kind: "starting" })
+    if (!(await record({ stage: "confirming", catalogId: props.hub.catalogId }))) return decide("reject")
+    await refreshCatalog()
     const advisory = await extIpc.advisoryActive().catch(() => ({ ids: [] as string[] }))
-    const view = installableCatalogPackages(catalog().packages ?? [], catalog().entries, new Set(advisory.ids)).find((item) => item.catalogId === catalogId)
-    if (!view) return false
-    const first = await ext.installCatalogIntent({
-      catalogId,
-      attemptId: `hub-${globalThis.crypto.randomUUID()}`,
-      hubRequestId: props.hub.requestId,
-    })
-    if (!first.ok && "stage" in first && first.stage === "authorize" && "packageAuthorization" in first && first.packageAuthorization) {
-      confirm.openPackage({ view, preview: first.packageAuthorization, finish: () => {} })
-      return true
-    }
+    const blocked = new Set(advisory.ids)
+    const entry = installableCatalogEntries(catalog().entries, blocked).find((e) => e.id === props.hub.catalogId)
+    if (entry) return flight.setPhase({ kind: "confirming", target: { kind: "entry", entry } })
+    const view = installableCatalogPackages(catalog().packages ?? [], catalog().entries, blocked).find((item) => item.catalogId === props.hub.catalogId)
+    if (!view) return decide("reject", record({ stage: "failed", reason: "not in this app's verified catalog" }))
+    const first = await ext.installCatalogIntent({ catalogId: view.catalogId, attemptId: `hub-${globalThis.crypto.randomUUID()}`, hubRequestId: props.hub.requestId })
+    if (!first.ok && "stage" in first && first.stage === "authorize" && "packageAuthorization" in first && first.packageAuthorization)
+      return flight.setPhase({ kind: "confirming", target: { kind: "package", view, preview: first.packageAuthorization } })
     // 没进授权暂停就是落定了(main 已按 hubRequestId 记 committed / failed)
-    flight.setOutcome(first.ok ? { kind: "committed" } : { kind: "failed", reason: first.reason ?? "install failed" })
-    return true
+    settle(view.presentation.displayName, first.ok, first.ok ? undefined : first.reason)
   }
 
+  // 挂载之后的下一拍才开框:重挂载时阶段早已在,同一拍里把 open 与 title 一起翻真,Dialog 的焦点 effect 会跑在它的
+  // Portal 面板挂上之前(实测 `panel.ownerDocument` 为 undefined)。首次挂载的开框本来就在几次 IPC 之后。
+  const [mounted, setMounted] = createSignal(false)
   onMount(() => {
+    queueMicrotask(() => setMounted(true))
+    if (flight.phase() === undefined) void start()
+  })
+
+  // 呈现跟着阶段走(本次挂载与重挂载同一条路):框没开着而阶段要框 ⇒ 按阶段里存的东西重开。
+  createEffect(() => {
+    const phase = flight.phase()
+    if (!mounted() || untrack(confirm.open)) return
+    if (phase?.kind === "confirming" && phase.target.kind === "entry") confirm.openInstallConfirmation(phase.target.entry)
+    if (phase?.kind === "confirming" && phase.target.kind === "package")
+      confirm.openPackage({ view: phase.target.view, preview: phase.target.preview, finish: () => {} })
+    if (phase?.kind === "authorizing") {
+      confirm.openInstallConfirmation(phase.entry)
+      confirm.setAuthz({ entry: phase.entry, mode: "install", host: "confirm", secrets: phase.secrets, scope: phase.scope, projectDir: phase.projectDir, diffs: phase.diffs })
+    }
+  })
+
+  // 框在「等用户」的阶段里被关 = 用户取消。有结局的关框(executing 之后)不在这两格里,不算取消。
+  let wasOpen = false
+  createEffect(() => {
+    if (confirm.open()) {
+      wasOpen = true
+      return
+    }
+    if (!wasOpen) return
+    wasOpen = false
+    const phase = untrack(flight.phase)
+    if (phase?.kind === "confirming") decide("reject", record({ stage: "declined" }))
+    if (phase?.kind === "authorizing") decide("reject", record({ stage: "failed", reason: "authorization canceled" }))
+  })
+
+  // decided ⇒ 经本次挂载的 feed 回;回执成功才 replied。别的挂载正在回同一个决定 ⇒ 等它,它失败了本次再试一次。
+  let attempted: Phase | undefined
+  createEffect(() => {
+    const phase = flight.phase()
+    if (phase?.kind !== "decided" || attempted === phase) return
+    attempted = phase
     void (async () => {
-      // 已在途(重挂载):submitted ⇒ 不弹框,等结局;confirming ⇒ 不再记,直接重新弹框。
-      if (flight.finished || flight.stage === "submitted") return
-      if (flight.stage === "none") {
-        if (!(await record({ stage: "confirming", catalogId: props.hub.catalogId }))) return finish("reject")
-        flight.stage = "confirming"
-      }
-      await refreshCatalog()
-      const advisory = await extIpc.advisoryActive().catch(() => ({ ids: [] as string[] }))
-      const entry = installableCatalogEntries(catalog().entries, new Set(advisory.ids)).find((e) => e.id === props.hub.catalogId)
-      if (entry) return confirm.openInstallConfirmation(entry)
-      if (await openPackage(props.hub.catalogId)) return
-      await record({ stage: "failed", reason: "not in this app's verified catalog" })
-      return finish("reject")
+      if (flight.delivering && (await flight.delivering)) return
+      if (flight.phase() !== phase) return
+      flight.delivering = (async () => {
+        await phase.recorded
+        try {
+          await props.reply(phase.decision)
+          flight.setPhase({ kind: "replied" })
+          return true
+        } catch {
+          return false
+        }
+      })()
+      const delivered = await flight.delivering
+      flight.delivering = undefined
+      return delivered
     })()
   })
 
-  // 结局(不论落定在哪一次挂载里)⇒ 收尾:committed 回 once;failed 先记(只记一次)再在框里显示原因,用户关框才 reject。
-  createEffect(() => {
-    const outcome = flight.outcome()
-    if (!outcome || flight.finished || failure() !== null) return
-    if (outcome.kind === "committed") return void finish("once")
-    void (async () => {
-      if (!flight.failureRecorded) {
-        flight.failureRecorded = true
-        await record({ stage: "failed", reason: outcome.reason })
-      }
-      setFailure({ name: entryName, reason: outcome.reason })
-    })()
-  })
-  // 控制器在**没有结局**时关框 = 用户取消:还在 confirming ⇒ declined;已进授权第二阶段(submitted)⇒ declined 记不上,
-  // 记 failed 带原因。有结局的关框由上面那一段收尾。
-  let opened = false
-  createEffect(() => {
-    if (confirm.open()) {
-      opened = true
-      entryName = confirm.packageAuthz()?.view.presentation.displayName ?? confirm.confirming()?.displayName ?? entryName
-      return
-    }
-    if (!opened || flight.finished || flight.outcome() !== undefined) return
-    void (async () => {
-      await record(flight.stage === "submitted" ? { stage: "failed", reason: "authorization canceled" } : { stage: "declined" })
-      return finish("reject")
-    })()
-  })
+  const failed = () => {
+    const phase = flight.phase()
+    return phase?.kind === "failed" ? phase : undefined
+  }
+  const closeFailure = () => {
+    const phase = failed()
+    if (phase) decide("reject", phase.recorded)
+  }
 
   return (
     <Dialog
-      open={confirm.open() || failure() !== null}
-      onClose={() => (failure() !== null ? void finish("reject").then(() => setFailure(null)) : confirm.close())}
+      open={confirm.open() || failed() !== undefined}
+      onClose={() => (failed() ? closeFailure() : confirm.close())}
       dismissible={!confirm.busy()}
       busy={confirm.busy()}
       size="sm"
-      title={failure() ? t("alpha.ext.confirmTitle", { name: failure()!.name }) : confirm.title()}
+      title={failed() ? t("alpha.ext.confirmTitle", { name: failed()!.name }) : confirm.title()}
       footer={
-        <Show when={failure() !== null} fallback={<InstallConfirmFooter confirm={confirm} />}>
-          <Button variant="primary" autofocus onClick={() => void finish("reject").then(() => setFailure(null))}>
+        <Show when={failed()} fallback={<InstallConfirmFooter confirm={confirm} />}>
+          <Button variant="primary" autofocus onClick={closeFailure}>
             {t("alpha.ext.close")}
           </Button>
         </Show>
@@ -256,10 +307,10 @@ export function HubInstallWatcher(props: {
       <p class="alpha-ext-confirm-line" data-hub-agent-request={props.hub.requestId}>
         {t("alpha.ext.hubAgentRequested")}
       </p>
-      <Show when={failure()} fallback={<InstallConfirmBody confirm={confirm} />}>
-        {(failed) => (
+      <Show when={failed()} fallback={<InstallConfirmBody confirm={confirm} />}>
+        {(phase) => (
           <p class="alpha-ext-key-hint" role="alert" data-hub-agent-failure="">
-            {extensionError(failed().reason, "alpha.ext.error.install")}
+            {extensionError(phase().reason, "alpha.ext.error.install")}
           </p>
         )}
       </Show>
