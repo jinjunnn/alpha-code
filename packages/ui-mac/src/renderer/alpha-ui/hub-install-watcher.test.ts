@@ -18,6 +18,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { build } from "vite"
 import { dict as zh } from "../i18n/zh"
+import { createHubRequestStages, type HubRequestStages } from "../../main/hub-view"
 import type * as RuntimeModule from "./hub-install-watcher-test-runtime"
 
 const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-hub-install-watcher-"))
@@ -80,6 +81,8 @@ function hold(stage: string) {
   }
 }
 let intents: Array<Record<string, unknown>> = []
+/** main 的**生产**阶段簿(只前进、终态后一律拒)—— 桩只替换 IPC 运输,不替身阶段规则。 */
+let stages: HubRequestStages
 let stageOk = true
 let installScript: InstallScript = []
 const disposers: Array<() => void> = []
@@ -87,6 +90,7 @@ const neverSettle = () => new Promise<never>(() => {})
 
 beforeEach(() => {
   held.clear()
+  stages = createHubRequestStages({ log: () => {} })
   intents = []
   stageOk = true
   installScript = []
@@ -95,8 +99,9 @@ beforeEach(() => {
   const ext: Record<string, unknown> = {
     hubRequestStage: async (input: { stage: string; reason?: string }) => {
       await held.get(input.stage)?.promise
-      runtime.timeline.push(`stage:${input.stage}${input.reason ? `(${input.reason})` : ""}`)
-      return stageOk ? { ok: true } : { ok: false, reason: "refused" }
+      const recorded = stageOk ? stages.record(input) : { ok: false as const, reason: "refused by the test" }
+      runtime.timeline.push(`stage:${input.stage}${input.reason ? `(${input.reason})` : ""}${recorded.ok ? "" : "!refused"}`)
+      return recorded
     },
     remoteCatalog: async () => ({ source: "remote", catalog: { version: "9.9.9", entries: ENTRIES } }),
     advisoryActive: async () => ({ ids: [], fresh: true }),
@@ -105,7 +110,12 @@ beforeEach(() => {
       intents.push(intent)
       await held.get("install")?.promise
       runtime.timeline.push("install")
-      return installScript.shift() ?? { ok: false, reason: "unscripted" }
+      const result = (installScript.shift() ?? { ok: false, reason: "unscripted" }) as { ok?: boolean; stage?: string; reason?: string }
+      // 与 main 的 ext-install-catalog 外层同形:带 hubRequestId 的一次安装落定 ⇒ main 自己记 committed / failed(授权暂停不算落定)
+      const id = intent.hubRequestId
+      if (typeof id === "string" && result.ok) stages.settleInstall(id, { ok: true, catalogId: String(intent.catalogId), scope: "global" })
+      else if (typeof id === "string" && result.stage !== "authorize") stages.settleInstall(id, { ok: false, reason: result.reason ?? "install failed" })
+      return result
     },
     listInstalls: async () => ({ global: [], project: [] }),
     hubView: async () => ({ directory: "/", rows: [], warnings: [] }),
@@ -255,7 +265,8 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     expect(document.querySelector("[data-hub-agent-failure]")).toBeNull()
     release()
     await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")
-    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(connect-failed)"])
+    // main 在 install IPC 里已记 failed(终态),守望者随后那一笔被拒 —— 无害,也证明它记在 IPC 返回之后
+    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "stage:failed(connect-failed)!refused"])
     expect(replies()).toEqual([])
     button(zh["alpha.ext.close"])!.click()
     await until(() => replies().length > 0, "the reply")
@@ -280,8 +291,29 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     runtime.ask(hubRequest("skill:not-in-catalog", "req_hub_watcher_06"))
     await until(() => replies().length > 0, "the reply")
     expect(timeline()).toEqual(["stage:confirming", "stage:failed(not in this app's verified catalog)", "reply:reject"])
+    expect(stages.get("req_hub_watcher_06")).toMatchObject({ stage: "failed" })
     expect(replies()).toEqual(["reject"])
     expect(button(zh["alpha.ext.confirmInstall"])).toBeUndefined()
+  })
+
+  // 审计 R1 Major 3:确认框开着时 SSE 重连 ⇒ feed 不就绪(审批面卸载)⇒ 读回同一个请求再挂载。不得因为 main 拒绝
+  // confirming → confirming 就替用户回 reject;同一个 requestId 接着上一次的阶段走,框还在,确认之后照常装、照常回 once。
+  test("确认框开着时 SSE 重连(卸载再挂载):零 reject、confirming 只记一次、框还在;之后确认照常装完回 once", async () => {
+    installScript = [{ ok: true, kind: "skill", name: "writer" }]
+    mount()
+    await flush()
+    runtime.ask(hubRequest("skill:writer", "req_hub_watcher_07"))
+    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
+    runtime.reconnect()
+    await until(() => !button(zh["alpha.ext.confirmInstall"]), "the surface to unmount while the feed reloads")
+    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box after the remount")
+    await flush(8)
+    expect(replies()).toEqual([])
+    expect(timeline()).toEqual(["stage:confirming"])
+    button(zh["alpha.ext.confirmInstall"])!.click()
+    await until(() => replies().length > 0, "the reply")
+    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
+    expect(stages.get("req_hub_watcher_07")).toMatchObject({ stage: "committed" })
   })
 
   test("对照:不带 alphaHub 的请求照旧是通用五栏审批框,不进守望者", async () => {

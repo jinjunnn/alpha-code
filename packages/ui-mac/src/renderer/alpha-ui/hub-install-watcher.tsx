@@ -44,6 +44,34 @@ export function alphaHubRequestOf(request: PermissionV2Request): AlphaHubRequest
 
 type Outcome = { kind: "committed" } | { kind: "failed"; reason: string }
 
+/**
+ * 一次 agent 安装请求的进度,按 requestId 记在**模块**里(审计 R1 Major 3)。审批面在 SSE 重连时会卸载再挂载
+ * (feed 重读快照期间不就绪)—— 组件状态随之丢失,而 main 的阶段只前进:重挂载的组件若再记一次 confirming,
+ * main 拒绝,守望者就替用户回了 reject。同一个 requestId 的任何一次挂载都接着这里的阶段走:
+ *   none → 记 confirming;confirming → 不再记,重新弹框;submitted → 不弹框,等那一次安装的结局;
+ *   结局(outcome)是 signal —— 安装在旧组件里落定、而回审批的是新挂载的那一个,也照样收得到。
+ */
+type Flight = {
+  stage: "none" | "confirming" | "submitted"
+  outcome: Accessor<Outcome | undefined>
+  setOutcome: (outcome: Outcome) => void
+  /** main 已记过 failed(守望者这一侧),重挂载时只重新显示原因、不再记。 */
+  failureRecorded: boolean
+  finished: boolean
+}
+const flights = new Map<string, Flight>()
+const MAX_FLIGHTS = 64
+
+function flightFor(requestId: string): Flight {
+  const known = flights.get(requestId)
+  if (known) return known
+  const [outcome, setOutcome] = createSignal<Outcome | undefined>(undefined)
+  const flight: Flight = { stage: "none", outcome, setOutcome: (next) => void setOutcome(next), failureRecorded: false, finished: false }
+  flights.set(requestId, flight)
+  while (flights.size > MAX_FLIGHTS) flights.delete(flights.keys().next().value!)
+  return flight
+}
+
 export function HubInstallWatcher(props: {
   hub: AlphaHubRequest
   server: Accessor<ServerInfo | undefined>
@@ -56,9 +84,7 @@ export function HubInstallWatcher(props: {
     return r.kind === "session" || r.kind === "directory" ? r.directory : undefined
   }
   const ext = useExtensions(props.server, () => true, projectDir)
-  let stage: "none" | "confirming" | "submitted" = "none"
-  let outcome: Outcome | undefined
-  let finished = false
+  const flight = flightFor(props.hub.requestId)
   /** 提交失败之后框不立刻关:显示原因,用户关框才回 reject(基线 §2.3「框里显示原因」)。 */
   const [failure, setFailure] = createSignal<{ name: string; reason: string } | null>(null)
   let entryName = props.hub.catalogId
@@ -71,8 +97,8 @@ export function HubInstallWatcher(props: {
     }
   }
   const finish = async (decision: "once" | "reject") => {
-    if (finished) return
-    finished = true
+    if (flight.finished) return
+    flight.finished = true
     await props.reply(decision).catch(() => undefined)
   }
 
@@ -84,16 +110,16 @@ export function HubInstallWatcher(props: {
     scope: CatalogInstallScopeChoice | undefined,
     selectedProjectDir: string | undefined,
   ): Promise<CapabilityDiffWire[] | null> => {
-    if (stage === "confirming") {
+    if (flight.stage === "confirming") {
       if (!(await record({ stage: "submitted" }))) {
-        outcome = { kind: "failed", reason: "the request could not be recorded" }
+        flight.setOutcome({ kind: "failed", reason: "the request could not be recorded" })
         return null
       }
-      stage = "submitted"
+      flight.stage = "submitted"
     }
     const res = await dispatch(entry, secrets, authorization, scope, selectedProjectDir)
     if (isAuthzRequired(res)) return res.authorization
-    outcome = res.ok ? { kind: "committed" } : { kind: "failed", reason: res.reason ?? "install failed" }
+    flight.setOutcome(res.ok ? { kind: "committed" } : { kind: "failed", reason: res.reason ?? "install failed" })
     return null
   }
   const dispatch = async (
@@ -123,8 +149,12 @@ export function HubInstallWatcher(props: {
 
   onMount(() => {
     void (async () => {
-      if (!(await record({ stage: "confirming", catalogId: props.hub.catalogId }))) return finish("reject")
-      stage = "confirming"
+      // 已在途(重挂载):submitted ⇒ 不弹框,等结局;confirming ⇒ 不再记,直接重新弹框。
+      if (flight.finished || flight.stage === "submitted") return
+      if (flight.stage === "none") {
+        if (!(await record({ stage: "confirming", catalogId: props.hub.catalogId }))) return finish("reject")
+        flight.stage = "confirming"
+      }
       await refreshCatalog()
       const advisory = await extIpc.advisoryActive().catch(() => ({ ids: [] as string[] }))
       const entry = installableCatalogEntries(catalog().entries, new Set(advisory.ids)).find((e) => e.id === props.hub.catalogId)
@@ -136,7 +166,21 @@ export function HubInstallWatcher(props: {
     })()
   })
 
-  // 控制器关框(成功 / 失败 / 取消)⇒ 按这一次的结局收尾。
+  // 结局(不论落定在哪一次挂载里)⇒ 收尾:committed 回 once;failed 先记(只记一次)再在框里显示原因,用户关框才 reject。
+  createEffect(() => {
+    const outcome = flight.outcome()
+    if (!outcome || flight.finished || failure() !== null) return
+    if (outcome.kind === "committed") return void finish("once")
+    void (async () => {
+      if (!flight.failureRecorded) {
+        flight.failureRecorded = true
+        await record({ stage: "failed", reason: outcome.reason })
+      }
+      setFailure({ name: entryName, reason: outcome.reason })
+    })()
+  })
+  // 控制器在**没有结局**时关框 = 用户取消:还在 confirming ⇒ declined;已进授权第二阶段(submitted)⇒ declined 记不上,
+  // 记 failed 带原因。有结局的关框由上面那一段收尾。
   let opened = false
   createEffect(() => {
     const open = confirm.confirming()
@@ -145,16 +189,9 @@ export function HubInstallWatcher(props: {
       entryName = open.displayName
       return
     }
-    if (!opened || finished || failure() !== null) return
+    if (!opened || flight.finished || flight.outcome() !== undefined) return
     void (async () => {
-      if (outcome?.kind === "committed") return finish("once")
-      if (outcome?.kind === "failed") {
-        await record({ stage: "failed", reason: outcome.reason })
-        setFailure({ name: entryName, reason: outcome.reason })
-        return
-      }
-      // 用户取消:还在 confirming ⇒ declined;已进授权第二阶段(submitted)⇒ declined 记不上,记 failed 带原因。
-      await record(stage === "submitted" ? { stage: "failed", reason: "authorization canceled" } : { stage: "declined" })
+      await record(flight.stage === "submitted" ? { stage: "failed", reason: "authorization canceled" } : { stage: "declined" })
       return finish("reject")
     })()
   })

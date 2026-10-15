@@ -17,15 +17,24 @@ export const replyCalls: Array<{ requestID: string; command: PermissionV2Decisio
 /** 审计 R1 Minor 5:阶段**完成**(测试的 IPC 桩写)与**真实**回复(这里写)排进同一条时间线,顺序由事件发生的先后决定。 */
 export const timeline: string[] = []
 let listeners: Listeners | undefined
+/** 引擎那边还挂着的请求(快照 list 读它;回复后移除)—— SSE 重连时 feed 重读快照,读到的就是这些。 */
+const pending = new Map<string, PermissionV2Request>()
 
 export function resetHarness() {
   replyCalls.splice(0)
   timeline.splice(0)
+  pending.clear()
   listeners = undefined
 }
 
 export function ask(request: PermissionV2Request) {
+  pending.set(request.id, request)
   listeners?.asked(request)
+}
+
+/** 审计 R1 Major 3:SSE 重连 —— 生产 feed 收到 connected 就重读快照,期间不就绪(审批面卸载),读回来同一个请求再挂载。 */
+export function reconnect() {
+  listeners?.connected()
 }
 
 export function Harness() {
@@ -35,8 +44,9 @@ export function Harness() {
       projectID="prj_alpha"
       server={() => ({ baseUrl: "http://127.0.0.1:1", name: "sidecar" }) as never}
       client={{
-        list: () => Promise.resolve([]),
+        list: () => new Promise((resolve) => setTimeout(() => resolve([...pending.values()]), 10)),
         reply: (requestID, command) => {
+          pending.delete(requestID)
           replyCalls.push({ requestID, command })
           timeline.push(`reply:${command.decision}`)
           return Promise.resolve({
