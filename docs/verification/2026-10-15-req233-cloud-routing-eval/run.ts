@@ -8,13 +8,13 @@ import { CLOUD_MCP_TOOLS } from "../../../packages/ui-mac/src/main/fixtures/clou
 import snapshot from "./tool-snapshot.json"
 
 type Route = "local" | "cloud" | "ask"
-type Outcome = Route | "undecided"
+type Outcome = Route | "undecided" | "error"
 type Case = { id: string; prompt: string; expected: Route; reason: string; counterexample: boolean; rows: string[]; localSearch?: boolean }
-type Call = { input: number; output: number; usd: number; promptBytes: number; toolBytes: number; responseBytes: number }
-type Row = Call & { variant: string; case: string; repeat: number; expected: Route; observed: Outcome | null; tool?: string; text?: string; error?: string; limitReached?: boolean; calls: Call[]; instructions: { tool: string; name?: string; path?: string }[] }
+type Call = { input: number; output: number; usd: number; promptBytes: number; toolBytes: number; responseBytes: number; toolNames?: string[] }
+type Row = Call & { variant: string; case: string; repeat: number; expected: Route; observed: Outcome | null; tool?: string; text?: string; error?: string; limitReached?: boolean; retries: number; failures: { code: string; attempt: number }[]; preflights: { tool: string; args: Record<string, unknown> }[]; calls: Call[]; instructions: { tool: string; name?: string; path?: string }[] }
 const here = import.meta.dir
 const repo = resolve(here, "../../..")
-const variants = [{ name: "before", ref: "133f463d9", skill: "cloud-dispatch" }, { name: "after", ref: "026553ad0", skill: "cloud-capabilities" }]
+const variants = [{ name: "before", ref: "133f463d9", skill: "cloud-dispatch" }, { name: "after", ref: "HEAD", skill: "cloud-capabilities" }]
 const priceBasis = { model: "deepseek-v4-flash", inputUsdPerMillion: 0.14, outputUsdPerMillion: 0.28, source: "https://github.com/jinjunnn/alpha-platform/blob/d4a4b75755a07dcc583e1ba925579f0c01221997/packages/gateway/src/models.config.json#L13" }
 const maxCalls = 4
 const selfTest = process.argv.includes("--self-test")
@@ -28,17 +28,23 @@ function classify(tool?: string, text = ""): Route | null {
   return /[?？]|请(?:确认|问|提供|选择|告知)|是否(?:允许|同意|授权)/u.test(text) ? "ask" : "local"
 }
 
+function freePreflight(tool: string, args: Record<string, unknown>) {
+  if (tool === "alpha_cloud_access") return Object.keys(args).length === 0
+  if (!["cloud_account_status", "cloud_cloud_account_status"].includes(tool)) return false
+  return Object.entries(args).every(([key, value]) => key === "format" ? ["docx", "xlsx", "pptx"].includes(String(value)) : key === "task" && ["image-generation", "research", "code-review", "docs", "office-report", "html-generate", "data-analysis", "bugfix", "migration", "bounded-agent:openai_agents", "bounded-agent:claude_code"].includes(String(value)))
+}
+
 function score(rows: Row[], cases: Case[], repeats: number) {
   return Object.fromEntries(variants.map(({ name }) => {
     const selected = rows.filter((row) => row.variant === name)
     const perCase = cases.map((item) => {
       const runs = selected.filter((row) => row.case === item.id)
-      const votes = (["local", "cloud", "ask", "undecided"] as Outcome[]).map((route) => ({ route, count: runs.filter((r) => r.observed === route).length })).sort((a, b) => b.count - a.count)
-      const complete = runs.length === repeats && runs.every((r) => !r.error && r.observed)
+      const votes = (["local", "cloud", "ask", "undecided", "error"] as Outcome[]).map((route) => ({ route, count: runs.filter((r) => r.observed === route).length })).sort((a, b) => b.count - a.count)
+      const complete = runs.length === repeats && runs.every((r) => r.observed)
       const majority = complete && repeats === 3 && votes[0].count >= 2 ? votes[0].route : null
       return { id: item.id, observed: runs.map((r) => r.observed), majority, majorityCorrect: majority === item.expected, consistency: complete ? votes[0].count / repeats : null, unanimous: complete && votes[0].count === repeats }
     })
-    const complete = selected.length === cases.length * repeats && selected.every((r) => !r.error && r.observed)
+    const complete = selected.length === cases.length * repeats && selected.every((r) => r.observed)
     const rates = Array.from({ length: repeats }, (_, i) => selected.filter((r) => r.repeat === i + 1 && r.observed === r.expected).length / cases.length)
     return [name, { runs: selected.length, correct: selected.filter((r) => r.observed === r.expected).length, accuracy: selected.length ? selected.filter((r) => r.observed === r.expected).length / selected.length : null, majorityAccuracy: complete && repeats === 3 ? perCase.filter((r) => r.majorityCorrect).length / cases.length : null, unanimousCases: perCase.filter((r) => r.unanimous).length, repeatAccuracy: complete ? rates : null, noiseRange: complete && repeats === 3 ? Math.max(...rates) - Math.min(...rates) : null, complete, perCase }]
   }))
@@ -49,6 +55,11 @@ function money(input: number, output: number, prices: number[]) {
 }
 
 if (selfTest) {
+  assert(freePreflight("alpha_cloud_access", {}))
+  assert(freePreflight("cloud_cloud_account_status", { task: "office-report", format: "docx" }))
+  assert(!freePreflight("alpha_cloud_access", { path: "/eval/private.docx" }))
+  assert(!freePreflight("cloud_cloud_account_status", { task: "/eval/private.docx" }))
+  assert(!freePreflight("cloud_cloud_dispatch", { input: { data: "private" } }))
   assert.equal(classify("cloud_cloud_dispatch"), "cloud")
   assert.equal(classify("alpha_cloud_access"), "cloud")
   assert.equal(classify("alpha_word_read_docx"), "local")
@@ -76,16 +87,24 @@ assert(args.every((v, i) => ["--real", "--sample", "--out"].includes(v) || ["--s
 const sample = selfTest ? 1 : args.includes("--sample") ? Number(args[args.indexOf("--sample") + 1]) : undefined
 assert(sample === undefined || (Number.isInteger(sample) && sample > 0), "--sample needs a positive integer")
 const real = args.includes("--real")
+const priorUsd = Number(process.env.EVAL_PRIOR_USD ?? 0)
+const priorUnknownUsd = Number(process.env.EVAL_PRIOR_RESERVE_USD ?? 0)
+const uncertain = { reserveUsd: 0, attempts: 0 }
+const execution = { protocol: "round2-private-upload-v1", priorUsd, priorUnknownUsd, retryPolicy: "network/429/5xx: one retry per round; error counts wrong and continues", expiresAt: "2026-10-15T16:19:34Z" }
 assert(!selfTest || !real, "Self-test never uses a real provider")
 const model = real ? process.env.EVAL_MODEL_ID : "routing-fake"
 const upstream = real ? process.env.EVAL_PROVIDER_BASE_URL : undefined
 const keyFile = real ? process.env.EVAL_PROVIDER_KEY_FILE : undefined
 const prices = ["EVAL_INPUT_USD_PER_MILLION", "EVAL_OUTPUT_USD_PER_MILLION"].map((name) => Number(process.env[name] ?? (real ? NaN : 0)))
 const budget = Number(process.env.EVAL_BUDGET_USD ?? (real ? NaN : Infinity))
+const maxAttemptUsd = money(128000, 1024, prices)
+const overBudget = () => usage.usd + uncertain.reserveUsd + maxAttemptUsd > budget || priorUsd + priorUnknownUsd + usage.usd + uncertain.reserveUsd + maxAttemptUsd > 10
+assert([priorUsd, priorUnknownUsd].every((n) => Number.isFinite(n) && n >= 0), "Invalid prior cost")
 assert(prices.every((p) => Number.isFinite(p) && p >= 0), "Explicit nonnegative token prices required")
 assert(budget > 0 && (!real || Number.isFinite(budget)), "Positive EVAL_BUDGET_USD required")
 if (real) {
   assert(model && upstream && keyFile, "--real requires EVAL_MODEL_ID, EVAL_PROVIDER_BASE_URL, EVAL_PROVIDER_KEY_FILE")
+  assert.equal(Bun.spawnSync(["git", "status", "--porcelain"], { cwd: repo }).stdout.toString().trim(), "", "Commit criteria and skills before paid execution")
   const url = new URL(upstream)
   assert(["https:", "http:"].includes(url.protocol) && !url.username && !url.password && !url.search, "Invalid provider base URL")
 }
@@ -101,9 +120,9 @@ const out = resolve(args.includes("--out") ? args[args.indexOf("--out") + 1] : j
 const temp = await realpath(await mkdtemp(join(tmpdir(), "cloud-routing-eval-")))
 const rows: Row[] = []
 const usage = { input: 0, output: 0, usd: 0, calls: 0 }
-const receipt = { loaded: 0, advertised: [] as string[], blockedFollowups: 0 }
-const digests = Object.fromEntries(await Promise.all(["cases.json", "tool-snapshot.json", "run.ts", "plugin.ts", "mcp.ts"].map(async (file) => [file, new Bun.CryptoHasher("sha256").update(await Bun.file(join(here, file)).bytes()).digest("hex")])))
-const identity = { engine: Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: repo }).stdout.toString().trim(), digests, variants: [] as { name: string; commit: string; tree: string; skillBytes: number }[] }
+const receipt = { loaded: 0, advertised: [] as string[], blockedFollowups: 0, rejectedForeignSessions: 0 }
+const digests = Object.fromEntries(await Promise.all(["cases.json", "tool-snapshot.json", "run.ts", "plugin.ts", "mcp.ts", "preflight-fixtures.json", "README.md"].map(async (file) => [file, new Bun.CryptoHasher("sha256").update(await Bun.file(join(here, file)).bytes()).digest("hex")])))
+const identity = { criteria: "round2-private-upload-v1", engine: Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: repo }).stdout.toString().trim(), digests, variants: [] as { name: string; commit: string; tree: string; skillBytes: number }[] }
 const state = { stop: "", active: undefined as undefined | { row: Row; decision: Promise<void>; resolve: () => void; requests: number; sessionID: string; localSearch: boolean; skills: string } }
 
 // Loopback model proxy: collect complete usage BEFORE replaying the response to the engine.
@@ -120,21 +139,26 @@ const control = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request)
     return new Response("OK")
   }
   if (path === "/decision") {
-    const value = await request.json() as { tool: string; sessionID: string }
+    const value = await request.json() as { tool: string; sessionID: string; args: Record<string, unknown>; phase: string }
     if (value.sessionID !== active.sessionID) return new Response("Wrong session", { status: 409 })
+    if (active.row.expected === "ask" && freePreflight(value.tool, value.args)) {
+      if (value.phase === "execute") active.row.preflights.push({ tool: value.tool, args: value.args })
+      return new Response("CONTINUE")
+    }
     if (!active.row.tool) {
       active.row.tool = value.tool
       active.row.observed = classify(value.tool)
       active.resolve()
     }
-    return new Response("EVAL_STUB")
+    return new Response("STOP")
   }
   if (path !== "/v1/chat/completions") return new Response("Unexpected endpoint", { status: 404 })
-  if (active.row.observed || state.stop) { receipt.blockedFollowups++; return new Response("EVAL_STOP", { status: 429 }) }
+  if (request.headers.get("x-opencode-session-id") !== active.sessionID) { receipt.rejectedForeignSessions++; return new Response("EVAL_STALE_SESSION", { status: 400 }) }
+  if (active.row.observed || state.stop) { receipt.blockedFollowups++; return new Response("EVAL_STOP", { status: 400 }) }
   if (active.requests >= maxCalls) {
     receipt.blockedFollowups++
     active.row.observed = "undecided"; active.row.limitReached = true; active.resolve()
-    return new Response("EVAL_MODEL_CALL_LIMIT", { status: 429 })
+    return new Response("EVAL_MODEL_CALL_LIMIT", { status: 400 })
   }
   active.requests++
   try {
@@ -151,12 +175,39 @@ const control = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request)
       assert(JSON.stringify(body.messages).includes("# Office documents"), "Office instruction body missing from continuation")
     }
     const callUsage: Call = { input: 0, output: 0, usd: 0, promptBytes: Buffer.byteLength(JSON.stringify(body.messages)), toolBytes: Buffer.byteLength(JSON.stringify(body.tools)), responseBytes: 0 }
-    const response = real ? await fetch(`${upstream!.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST", redirect: "error", signal: AbortSignal.timeout(120_000),
-      headers: { "content-type": "application/json", authorization: `Bearer ${(await Bun.file(keyFile!).text()).trim()}` },
-      body: JSON.stringify({ ...body, model, stream: true, stream_options: { include_usage: true } }),
-    }) : undefined
-    if (response && !response.ok) throw new Error(`Provider HTTP ${response.status}; response body omitted`)
+    if (overBudget()) {
+      state.stop = "budget_headroom"; active.resolve(); return new Response("EVAL_BUDGET_HEADROOM", { status: 402 })
+    }
+    let response: Response | undefined
+    let realWire: string | undefined
+    if (real) {
+      for (const attempt of [1, 2]) {
+        if (overBudget()) { state.stop = "budget_headroom"; active.resolve(); return new Response("EVAL_BUDGET_HEADROOM", { status: 402 }) }
+        response = undefined
+        try {
+          if (Date.now() >= Date.parse(execution.expiresAt)) { state.stop = "key_expired"; active.resolve(); return new Response("EVAL_KEY_EXPIRED", { status: 400 }) }
+          response = await fetch(`${upstream!.replace(/\/$/, "")}/chat/completions`, {
+            method: "POST", redirect: "error", signal: AbortSignal.timeout(90_000),
+            headers: { "content-type": "application/json", authorization: `Bearer ${(await Bun.file(keyFile!).text()).trim()}` },
+            body: JSON.stringify({ ...body, model, stream: true, stream_options: { include_usage: true } }),
+          })
+          if (response.ok) { realWire = await response.text(); break }
+          const code = `http_${response.status}`
+          active.row.failures.push({ code, attempt })
+          const retryable = response.status === 429 || response.status >= 500
+          if (response.status >= 500) { uncertain.reserveUsd += maxAttemptUsd; uncertain.attempts++ }
+          await response.body?.cancel()
+          if (!retryable || active.row.retries || active.requests >= maxCalls) throw new Error(code)
+        } catch {
+          if (response && !response.ok) throw new Error(`http_${response.status}`)
+          active.row.failures.push({ code: "network_error", attempt })
+          uncertain.reserveUsd += maxAttemptUsd; uncertain.attempts++
+          if (active.row.retries || active.requests >= maxCalls) throw new Error("network_error")
+        }
+        active.row.retries++; active.requests++
+        await Bun.sleep(1000)
+      }
+    }
     const serial = (Number(active.row.case.replace(/\D/g, "")) - 1) * 3 + active.row.repeat - 1
     const action = serial % 6
     const decision = action === 0 ? { name: "alpha_word_read_docx", arguments: '{"path":"/eval/report.docx"}' }
@@ -164,14 +215,19 @@ const control = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request)
       : action === 2 ? { name: "question", arguments: '{"questions":[{"question":"是否允许上传？","header":"授权","options":[{"label":"允许","description":"上传"},{"label":"拒绝","description":"保持本机"}]}]}' }
       : action === 3 ? { name: "websearch", arguments: '{"query":"example"}' } : undefined
     const loads = [{ name: "skill", arguments: JSON.stringify({ name: active.row.variant === "before" ? "cloud-dispatch" : "cloud-capabilities" }) }, serial % 2 ? { name: "read", arguments: JSON.stringify({ filePath: join(active.skills, "office-docs/SKILL.md") }) } : { name: "skill", arguments: '{"name":"office-docs"}' }]
-    const tools = selfTest || active.requests === 1 ? loads : decision ? [decision] : []
+    const privacySteps = active.row.case >= "c25" && action === 1
+    const next = active.row.case >= "c25" && action === 3 ? { name: "cloud_cloud_dispatch", arguments: '{"schema_version":1,"idempotency_key":"eval-stub-dispatch","autonomy":"pipeline","kind":"office-report","input":{"topic":"/eval/private.docx","format":"docx"}}' }
+      : privacySteps && active.requests === 3 ? { name: "cloud_cloud_account_status", arguments: '{"task":"office-report","format":"docx"}' }
+      : privacySteps && active.requests === 4 ? { name: "question", arguments: '{"questions":[{"question":"是否允许上传私有文件？","header":"授权","options":[{"label":"允许","description":"上传"},{"label":"拒绝","description":"保持本机"}]}]}' } : decision
+    const tools = selfTest || active.requests === 1 ? loads : next ? [next] : []
     const delta = { role: "assistant", ...(tools.length ? { tool_calls: tools.map((fn, index) => ({ index, id: `call-${active.requests}-${index}`, type: "function", function: fn })) } : { content: action === 4 ? "结果是 42。" : "请确认是否允许上传？" }) }
     const chunk = (delta: unknown, finish_reason: string | null = null, tokens?: unknown) => `data: ${JSON.stringify({ id: "chatcmpl-eval", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason }], ...(tokens ? { usage: tokens } : {}) })}\n\n`
     // Script independent of expected labels AND variant; exercises wrong answers and repeat noise.
-    const wire = response ? await response.text() : chunk(delta) + chunk({}, tools.length ? "tool_calls" : "stop", { prompt_tokens: Math.ceil((callUsage.promptBytes + callUsage.toolBytes) / 3), completion_tokens: Math.ceil(Buffer.byteLength(JSON.stringify([delta, {}])) / 3) }) + "data: [DONE]\n\n"
+    const wire = realWire !== undefined ? realWire : chunk(delta) + chunk({}, tools.length ? "tool_calls" : "stop", { prompt_tokens: Math.ceil((callUsage.promptBytes + callUsage.toolBytes) / 3), completion_tokens: Math.ceil(Buffer.byteLength(JSON.stringify([delta, {}])) / 3) }) + "data: [DONE]\n\n"
     const chunks = wire.split("\n").filter((l) => l.startsWith("data: ") && l !== "data: [DONE]").map((l) => JSON.parse(l.slice(6)))
     const tokens = chunks.findLast((c) => c.usage)?.usage
     assert(tokens && [tokens.prompt_tokens, tokens.completion_tokens].every((n) => Number.isFinite(n) && n >= 0), "Missing/invalid provider usage; stopped")
+    callUsage.toolNames = [...new Set(chunks.flatMap((c) => c.choices.flatMap((v: { delta: { tool_calls?: { function?: { name?: string } }[] } }) => (v.delta.tool_calls ?? []).map((t) => t.function?.name).filter(Boolean))))] as string[]
     callUsage.input = tokens.prompt_tokens
     callUsage.output = tokens.completion_tokens
     callUsage.usd = money(callUsage.input, callUsage.output, prices)
@@ -180,13 +236,15 @@ const control = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request)
     active.row.input += callUsage.input; active.row.output += callUsage.output; active.row.usd += callUsage.usd
     active.row.promptBytes += callUsage.promptBytes; active.row.toolBytes += callUsage.toolBytes; active.row.responseBytes += callUsage.responseBytes
     usage.input += callUsage.input; usage.output += callUsage.output; usage.usd += callUsage.usd; usage.calls++
-    if (usage.usd > budget) { state.stop = "budget_exceeded"; active.resolve(); return new Response("EVAL_BUDGET_EXCEEDED", { status: 402 }) }
+    await save()
+    if (usage.usd + uncertain.reserveUsd > budget || priorUsd + priorUnknownUsd + usage.usd + uncertain.reserveUsd > 10) { state.stop = "budget_exceeded"; active.resolve(); return new Response("EVAL_BUDGET_EXCEEDED", { status: 402 }) }
     return new Response(wire, { headers: { "content-type": "text/event-stream" } })
   } catch (error) {
     if (!real) console.error(error instanceof Error ? error.message : "Fake provider failure")
-    state.stop = "provider_or_usage_error"
+    const code = error instanceof Error && /^http_\d+$/.test(error.message) ? error.message : "provider_or_usage_error"
+    active.row.error = code; active.row.observed = "error"
     active.resolve()
-    return new Response("EVAL_PROVIDER_ERROR: upstream detail omitted", { status: 502 })
+    return new Response("EVAL_ROUND_ERROR", { status: 400 })
   }
 } })
 
@@ -198,7 +256,7 @@ function save() {
   const pct = (n: number | null) => n === null ? "—" : `${(n * 100).toFixed(2)}%`
   const markdown = `模式：${real ? "真实 provider" : "假 provider（仅链路校验，不能证明 AC3 提升）"}；${cases.length} 例 × ${repeats} 次。\n\n| 变体 | 正确/次数 | 按次正确率 | 多数票正确率 | 三次全一致/例数 | 噪声极差 |\n|---|---:|---:|---:|---:|---:|\n${variants.map((v) => { const s = summary[v.name]; return `| ${v.name} | ${s.correct}/${s.runs} | ${pct(s.accuracy)} | ${pct(s.majorityAccuracy)} | ${repeats === 3 ? `${s.unanimousCases}/${cases.length}` : "—"} | ${pct(s.noiseRange)} |` }).join("\n")}\n\n改后−改前：${pct(delta)}；噪声带：${pct(noise)}；超出噪声：${comparison.improvedBeyondNoise ?? "未判定"}。\nusage：${usage.input} in / ${usage.output} out；累计 $${usage.usd.toFixed(6)}；停止原因：${state.stop || "completed"}。\n`
   const projection = real ? null : { ...priceBasis, estimatedUsd: money(usage.input, usage.output, [priceBasis.inputUsdPerMillion, priceBasis.outputUsdPerMillion]), basis: "UTF-8 JSON bytes / 3; cache-miss model USD rates, not wallet settlement" }
-  return Promise.all([Bun.write(out, JSON.stringify({ schemaVersion: 2, maxCalls, mode: real ? "real" : "fake", createdAt: new Date().toISOString(), identity, model, sample: sample ?? null, caseCount: cases.length, repeats, pricesPerMillion: prices, budgetUsd: Number.isFinite(budget) ? budget : null, stopReason: state.stop || "completed", usage, projection, receipt, comparison, summary, rows, markdown }, null, 2) + "\n"), Bun.write(out.replace(/\.json$/, "") + ".md", markdown)]).then(() => markdown)
+  return Promise.all([Bun.write(out, JSON.stringify({ schemaVersion: 4, execution, uncertain, maxCalls, mode: real ? "real" : "fake", createdAt: new Date().toISOString(), identity, model, sample: sample ?? null, caseCount: cases.length, repeats, pricesPerMillion: prices, budgetUsd: Number.isFinite(budget) ? budget : null, stopReason: state.stop || "completed", usage, projection, receipt, comparison, summary, rows, markdown }, null, 2) + "\n"), Bun.write(out.replace(/\.json$/, "") + ".md", markdown)]).then(() => markdown)
 }
 
 try {
@@ -247,14 +305,14 @@ try {
       const timer = setTimeout(() => timeout.reject(new Error("Engine startup timeout")), 45_000)
       const base = await Promise.race([ready, timeout.promise]).finally(() => clearTimeout(timer))
       const api = async (path: string, body: unknown) => {
-        const response = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": join(dir, "workspace") }, body: JSON.stringify(body), signal: AbortSignal.timeout(135_000) })
+        const response = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": join(dir, "workspace") }, body: JSON.stringify(body), signal: AbortSignal.timeout(390_000) })
         assert(response.ok, `Engine HTTP ${response.status} on ${path}`)
         return response.json()
       }
       for (const item of cases) {
         for (const repeat of Array.from({ length: repeats }, (_, i) => i + 1)) {
           if (state.stop) break
-          const row: Row = { variant: variant.name, case: item.id, repeat, expected: item.expected, observed: null, calls: [], instructions: [], input: 0, output: 0, usd: 0, promptBytes: 0, toolBytes: 0, responseBytes: 0 }
+          const row: Row = { variant: variant.name, case: item.id, repeat, expected: item.expected, observed: null, retries: 0, failures: [], preflights: [], calls: [], instructions: [], input: 0, output: 0, usd: 0, promptBytes: 0, toolBytes: 0, responseBytes: 0 }
           rows.push(row)
           const session = await api("/session", { title: "routing-eval" }) as { id: string }
           const deferred = Promise.withResolvers<void>()
@@ -263,11 +321,14 @@ try {
           const finished = await Promise.race([pending, deferred.promise.then(() => ({ message: null }))])
           if (row.observed || state.stop) await api(`/session/${session.id}/abort`, {}).catch(() => undefined)
           await pending
+          const permits = await fetch(base + "/permission", { headers: { "x-opencode-directory": join(dir, "workspace") }, signal: AbortSignal.timeout(10_000) }).then((r) => r.json()) as { id: string }[]
+          for (const permit of permits) await api(`/permission/${permit.id}/reply`, { reply: "reject" }).catch(() => undefined)
           if (!row.observed && finished.message) {
             row.text = (finished.message as { parts: { type: string; text?: string }[] }).parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join("\n")
             row.observed = classify(undefined, row.text)
           }
-          if (state.stop || !row.observed || !row.input) { row.error = state.stop || "engine_or_empty_response"; state.stop ||= row.error }
+          if (state.stop) row.error = state.stop
+          if (!row.observed) { row.observed = "error"; row.error = "engine_or_empty_response" }
           await save()
           console.log(`${row.variant} ${row.case} #${repeat}: ${row.observed ?? row.error} (${row.input}/${row.output})`)
         }
@@ -287,7 +348,7 @@ try {
   console.log(`Result: ${out}`)
   await rm(temp, { recursive: true, force: true })
 }
-if (state.stop && state.stop !== "budget_exceeded") process.exitCode = 1
+if (state.stop && !["budget_exceeded", "budget_headroom"].includes(state.stop)) process.exitCode = 1
 if (selfTest) {
   assert.equal(state.stop, "")
   assert.equal(rows.length, 2)

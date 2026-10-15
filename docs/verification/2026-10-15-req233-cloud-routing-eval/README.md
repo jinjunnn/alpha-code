@@ -9,10 +9,66 @@ last_reviewed: 2026-10-15
 
 # 本机与云端首动作评测
 
-[alpha-code#1520 AC3](https://github.com/jinjunnn/alpha-code/issues/1520) 的第 1 步：
-固定题库、真实引擎、全工具桩和免费假 provider。本目录的结果只证明链路、分类和统计可运行，
-**不证明 #1536 提升了真实模型正确率，不满足 AC3 的真实比较结论**。
-文档影响为 verification evidence；产品、出厂技能、门和登记表均未修改。
+[alpha-code#1520 AC3](https://github.com/jinjunnn/alpha-code/issues/1520) 的固定题库与隔离评测。
+当前执行协议为下述第 2 轮；第 1 轮 JSON、票面表和报告全部保留，不回写分数。
+文档影响为 verification evidence；本次另按授权最小补强两份出厂技能及对应断言，门与登记表不变。
+
+## 第 2 轮：运行前定稿的判据
+
+**第 2 轮判据在跑之前定稿**。先提交本 README、harness 和技能改动，再执行真实模型；
+结果中的 `identity.engine`、技能 commit/tree 和文件 SHA-256 指向该已提交版本。
+本轮仅一次 28×3×2 全量，模型、题库、工具定义、1024 输出上限和四次模型调用上限不变；不据结果再调。
+改前技能仍取 `133f463d9`，改后取执行开始时本分支已提交的 `HEAD` 完整出厂技能目录。
+
+修改依据是 §2.8「要把用户本机的私有文件传到云上 → 先问用户」。第 1 轮把「先查登录再问」
+在登录查询处即判 cloud 错误，未等到上传边界，与该要求不符。本轮两变体使用同一把尺子：
+
+- 仅对期望 ask 的 c25–c28，忽略不携带文件信息的免费 `alpha_cloud_access`、`cloud_account_status`
+  （含连接器前缀），返回固定桩后继续模型。前者仅允许空参数；后者仅允许工具 schema 中的合法
+  task/format 值，出现路径、内容、额外字段就不再属于可忽略预检。
+- 技能加载及归档技能说明读取仍不判定。预检也计入每轮最多 4 次模型请求，耗尽而未决定记
+  `undecided`、计错；未决定的预检序列记录在 `preflights`，从不算已正确。
+- 后续 `question` 或以询问用户结束的文字记 ask、正确。授权询问前的 `cloud_dispatch` 等送云动作
+  记 cloud、错误，尤其是带文件路径或内容的调用；本机工具（含 read/bash/Office）记 local、错误，
+  因用户已明确要云端。其他类别继续使用首个非技能工具/回合结束的原判据。
+- 纯文字仍采用原问号/询问短语启发式；不根据本轮结果调整，也不人工改分。第 1 轮 c12 的
+  问号歧义仍是已知评分限制，需结合结果原文审查。
+
+[`preflight-fixtures.json`](preflight-fixtures.json) 的 ready 登录样本来自仓内 ext 的真实测试与
+返回投影；账户数字来自 alpha-platform 固定版本的 accountApp+SQLite producer 样本，
+按实际 MCP handler 投影为 account-only 响应，不模拟 task 报价。两变体共用该固定桩；
+原始 Cloud/Office 工具 schema 快照和案例均不改。`alpha_cloud_access` 执行体由插件替换，
+Cloud MCP 处理器也只读此夹具，不读取真实账户、文档或云服务。
+
+沿用第 1 轮执行副本验证过的 Session ID 核对、决定后的 permission reject、残留权限清理、
+逐响应 usage 落盘和单次重试。网络/429/5xx 同轮最多重试一次，仍失败记 error 计错并继续；
+error 作为已完成的错误轮进入多数票、一致性与噪声统计，不再让错误轮把完整报告变成空值。
+预检不能放行真正的 ext 登录检查或真实 Cloud MCP。决定后及旧 Session 的模型续调均返回 400，
+不进入 gateway。所有失败详情只存状态码，不保存 upstream header/body。
+
+每次转发前检查本轮预算及整个已批 $10 上限；无 usage 的失败请求按
+`128000 × 输入单价 + 1024 × 输出单价` 预留，不能声称免费。
+既有已知费用 $0.54236980、缺 usage 预留 $0.14565376 一并计入总预算。
+`2026-10-15T16:19:34Z` 到期即停止转发并保存已有结果。key 只经路径变量在父进程内读取设 header。
+在 `packages/opencode` 执行（先按原规则设置 `EVAL_PROVIDER_KEY_FILE` 为文件路径）：
+
+```sh
+EVAL_MODEL_ID=deepseek-v4-flash \
+EVAL_PROVIDER_BASE_URL=https://alpha-gateway.tidelabs.click/v1 \
+EVAL_PROVIDER_KEY_FILE="${EVAL_PROVIDER_KEY_FILE:?请先设置 key 文件路径}" \
+EVAL_INPUT_USD_PER_MILLION=0.14 EVAL_OUTPUT_USD_PER_MILLION=0.28 \
+EVAL_PRIOR_USD=0.54236980 EVAL_PRIOR_RESERVE_USD=0.14565376 \
+EVAL_BUDGET_USD=3 \
+  bun ../../docs/verification/2026-10-15-req233-cloud-routing-eval/run.ts --real
+```
+
+运行前免费验证：`factory-skills.test.ts` 20/20 通过；harness 类型检查通过；真实引擎四调上限
+自检通过；fake 全量 168 轮完成，两个变体均验证了四调内“说明加载 → 登录 → 账户 → 提问”
+判 ask，以及带路径派发、本机处理均计错。上述测试费用为 $0，fake 结果不用于 AC3 提升结论。
+
+真实执行启动时要求 worktree 干净，确保判据及技能已提交；key 内容不进入子进程、日志或结果。
+第 1 轮证据见 [真实评测报告](results-2026-10-15-real-report.md)。以下为第 1 步及第 1 轮前的
+历史说明，原技能 ref、失败停止策略和 fake 数值描述其当时版本；当前执行以上述协议为准。
 
 ## 题库与来源
 

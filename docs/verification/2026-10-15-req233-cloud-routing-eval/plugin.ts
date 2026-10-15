@@ -1,8 +1,9 @@
 import { AlphaExt } from "../../../packages/ext/src/plugin"
 import type { Plugin } from "../../../packages/plugin/src"
-import type { PermissionV1 } from "../../../packages/core/src/v1/permission"
+import { PermissionV1 } from "../../../packages/core/src/v1/permission"
 import { realpath } from "node:fs/promises"
 import { relative, resolve, sep } from "node:path"
+import fixture from "./preflight-fixtures.json"
 
 // Load the real ext; replace its execution boundary before it can inspect tool arguments/files.
 export default (async (input) => {
@@ -23,6 +24,7 @@ export default (async (input) => {
   await fetch(`${process.env.EVAL_CONTROL_URL}/loaded`, { method: "POST" })
   return {
     ...hooks,
+    tool: { ...hooks.tool, alpha_cloud_access: { ...hooks.tool!.alpha_cloud_access, execute: async () => ({ title: "alpha_cloud_access", output: JSON.stringify(fixture.access), metadata: {} }) } },
     event: async (info) => {
       // The V1 plugin SDK's event union predates this engine event; use the engine's request type.
       const event: { type: string; properties: unknown } = info.event
@@ -34,12 +36,13 @@ export default (async (input) => {
         await fetch(new URL(`/permission/${request.id}/reply`, input.serverUrl), { method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": input.directory }, body: JSON.stringify({ reply: "once" }) })
         return
       }
-      // Identity permission can precede tool.execute.before. Record the chosen tool, then abort;
-      // Non-instruction permissions are never approved or allowed to reach a tool body.
-      await fetch(`${process.env.EVAL_CONTROL_URL}/decision`, {
+      // Identity permission can precede tool.execute.before; only instructions and
+      // controller-approved fixed preflight stubs receive a one-time approval.
+      const decision = await fetch(`${process.env.EVAL_CONTROL_URL}/decision`, {
         method: "POST",
-        body: JSON.stringify({ tool: identity.source === "mcp" ? `${identity.origin}_${identity.name}` : identity.name, sessionID: request.sessionID }),
+        body: JSON.stringify({ tool: identity.source === "mcp" ? `${identity.origin}_${identity.name}` : identity.name, sessionID: request.sessionID, args: request.metadata.args ?? {}, phase: "permission" }),
       })
+      await fetch(new URL(`/permission/${request.id}/reply`, input.serverUrl), { method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": input.directory }, body: JSON.stringify({ reply: await decision.text() === "CONTINUE" ? "once" : "reject" }) })
     },
     "tool.execute.before": async (info, output) => {
       const loading = await instruction(info.tool, output.args)
@@ -48,12 +51,13 @@ export default (async (input) => {
         if (!loading.path) throw new Error("EVAL_STUB: skill not in archived factory directory")
         return
       }
-      await fetch(`${process.env.EVAL_CONTROL_URL}/decision`, {
+      const decision = await fetch(`${process.env.EVAL_CONTROL_URL}/decision`, {
         method: "POST",
-        body: JSON.stringify({ tool: info.tool, sessionID: info.sessionID }),
+        body: JSON.stringify({ tool: info.tool, sessionID: info.sessionID, args: output.args, phase: "execute" }),
       })
-      // Every non-instruction tool still returns a fixed result without executing its body.
-      throw new Error("EVAL_STUB: first action recorded; no tool side effects")
+      if (await decision.text() === "CONTINUE") return
+      // Only approved instruction reads and fixed preflight stubs may execute.
+      throw new PermissionV1.RejectedError({})
     },
   }
 }) satisfies Plugin

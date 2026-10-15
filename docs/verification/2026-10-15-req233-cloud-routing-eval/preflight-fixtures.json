@@ -1,0 +1,40 @@
+{
+  "source": {
+    "access": "alpha-code@0823548a5 packages/ext/src/context-injection.test.ts ready assertion; plugin.ts return projection and CLOUD_ACCESS_LOGIN_HINT",
+    "account": "alpha-platform@60ad2df511d813bf9dda948365601470e06d5a89 contracts/v1/fixtures/producer/preauth-check-result.json value.account; cloud-mcp.ts account-only response projection"
+  },
+  "access": {
+    "logged_in": true,
+    "state": "ready",
+    "cloud_tools_enabled": true,
+    "login_hint": "在 CodePuppy 左侧栏账户区点「登录」,或打开定制中心的云端页点登录;登录完成后下一条消息起云端工具可用。"
+  },
+  "accountStatus": {
+    "schema_version": 1,
+    "account": {
+      "suspended": false,
+      "plan": {
+        "status": "active",
+        "tier": "pro",
+        "window5h": {
+          "remaining_credits": 2000,
+          "limit_credits": 2000,
+          "resets_in_min": 300
+        },
+        "window7d": {
+          "remaining_credits": 16000,
+          "limit_credits": 16000,
+          "resets_in_min": 10080
+        }
+      },
+      "wallet": {
+        "balance_fen": 100000,
+        "available_fen": 100000
+      },
+      "wallet_overflow": false,
+      "admission": {
+        "ok": true
+      }
+    }
+  }
+}
