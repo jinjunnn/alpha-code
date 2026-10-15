@@ -54,7 +54,7 @@ test.each([{ allowFactory: [] }, { allowFactory: ["customize-opencode"] }])("#15
   document.body.append(host)
   const dispose = runtime.render(() => runtime.createComponent(runtime.BuiltinControlsPanel, {
     agents: [{ name: "build", mode: "primary", native: true }],
-    refreshEngine: async () => true,
+    requestReload: async () => true,
     reloadAgents: async () => {},
     flash: () => {},
   }), host)

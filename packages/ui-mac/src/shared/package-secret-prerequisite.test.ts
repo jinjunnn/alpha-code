@@ -9,7 +9,7 @@ import {
   removeMcpServerSecretsStrict,
   writeMcpSecretVersioned,
 } from "../main/alpha-mcp-secrets"
-import { reloadInstalledMcp } from "../main/ext-mcp-activation"
+import { verifyInstalledMcp } from "../main/ext-mcp-activation"
 import {
   decodePackageEnvelopeHeaderV1,
   decodePackageProfilePayloadV1,
@@ -298,13 +298,17 @@ describe("package secret prerequisite", () => {
     expect(existsSync(resolve(userData, "alpha-mcp-secrets", profile.server, nextVersion, "API_TOKEN"))).toBe(false)
   })
 
+  // `#1529`:安装体不再 dispose;main 只剩**核验**那一半(按目录读一次 status)。重载归 ext 调度器。
   test.each([
     ["connected", "connected"],
     ["disabled", "disabled"],
     ["failed", "failed"],
-    ["error", "reload-pending"],
+    // `#1531`:要授权的两种原样透传(重载修不好它们,呈现面据此不出「现在重载」)
+    ["needs_auth", "needs_auth"],
+    ["needs_client_registration", "needs_client_registration"],
+    ["error", "unverifiable"],
   ] as const)(
-    "main reload maps engine status %s to %s and returns status only",
+    "main verification maps engine status %s to %s, never disposes, and returns status only",
     async (engineStatus, expectedStatus) => {
       const requests: Array<{ path: string; method: string; authorization: string | null }> = []
       const fetchImpl = (async (request: RequestInfo | URL, init?: RequestInit) => {
@@ -315,15 +319,15 @@ describe("package secret prerequisite", () => {
           method: normalized.method,
           authorization: normalized.headers.get("authorization"),
         })
-        if (url.pathname === "/global/dispose") return Response.json(true)
         if (url.pathname === "/mcp")
           return engineStatus === "error"
             ? Response.json({ message: "cold start failed" }, { status: 500 })
             : Response.json({ demo: { status: engineStatus } })
         return new Response("not found", { status: 404 })
       }) as typeof fetch
-      const result = await reloadInstalledMcp(
+      const result = await verifyInstalledMcp(
         "demo",
+        "/work/project",
         async () => ({
           url: "http://127.0.0.1:39117",
           username: "opencode",
@@ -333,10 +337,7 @@ describe("package secret prerequisite", () => {
       )
       expect(result).toEqual({ reference: "demo", status: expectedStatus })
       expect(JSON.stringify(result)).not.toContain(secretValue)
-      expect(requests.map(({ path, method }) => ({ path, method }))).toEqual([
-        { path: "/global/dispose", method: "POST" },
-        { path: "/mcp", method: "GET" },
-      ])
+      expect(requests.map(({ path, method }) => ({ path, method }))).toEqual([{ path: "/mcp", method: "GET" }])
       expect(
         requests.every(
           (request) => request.authorization === `Basic ${Buffer.from("opencode:route-password").toString("base64")}`,
@@ -345,14 +346,14 @@ describe("package secret prerequisite", () => {
     },
   )
 
-  test("awaitServer, dispose, and status timeouts all return reload-pending", async () => {
+  test("awaitServer and status timeouts both return unverifiable", async () => {
     const never = () => new Promise<never>(() => {})
     const ready = async () => ({
       url: "http://127.0.0.1:39117",
       username: "opencode",
       password: "route-password",
     })
-    const timeouts = { awaitServer: 5, dispose: 5, status: 5 }
+    const timeouts = { awaitServer: 5, status: 5 }
     const cases = [
       {
         awaitServer: never,
@@ -362,18 +363,11 @@ describe("package secret prerequisite", () => {
         awaitServer: ready,
         fetchImpl: (async () => never()) as typeof fetch,
       },
-      {
-        awaitServer: ready,
-        fetchImpl: (async (request: RequestInfo | URL, init?: RequestInit) =>
-          new URL(new Request(request, init).url).pathname === "/global/dispose"
-            ? Response.json(true)
-            : never()) as typeof fetch,
-      },
     ]
     for (const item of cases)
-      expect(await reloadInstalledMcp("demo", item.awaitServer, item.fetchImpl, timeouts)).toEqual({
+      expect(await verifyInstalledMcp("demo", "/work/project", item.awaitServer, item.fetchImpl, timeouts)).toEqual({
         reference: "demo",
-        status: "reload-pending",
+        status: "unverifiable",
       })
   })
 
@@ -391,9 +385,9 @@ describe("package secret prerequisite", () => {
     const sources = (await Promise.all(paths.map((path) => Bun.file(path).text()))).join("\n")
     expect(sources).not.toContain(secretValue)
     expect(sources).not.toContain("live" + "Mcp")
-    expect(
-      sources.includes("mcpActivation") &&
-        sources.includes('status: "connected" | "disabled" | "failed" | "reload-pending"'),
-    ).toBe(true)
+    // `#1529`:安装结果里那份「当前回答里等重载」的连接快照整个退场 —— 结果面只剩公开状态,没有任何
+    // activation / status 回显;连没连上由 main 的三档视图按目录给。
+    expect(sources).not.toContain("mcpActivation")
+    expect(sources).toContain("verifyInstalledMcp")
   })
 })

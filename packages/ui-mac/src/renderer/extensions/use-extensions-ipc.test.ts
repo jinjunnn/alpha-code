@@ -43,7 +43,6 @@ import {
   DEFAULT_CATALOG_INSTALL_SCOPE,
   sdkMcpStatusForReceipt,
   nameOnlyLiveMcpIsUnambiguousGlobal,
-  projectMcpStateAfterReload,
   projectMcpStatusView,
   projectReceiptResponseForRoute,
   uninstallIntentFor,
@@ -199,15 +198,6 @@ describe("REQ-136 project MCP activation projection", () => {
     expect(new Set(views.map((view) => view.textKey)).size).toBe(states.length)
     expect(projectMcpStatusView("active").connected).toBe(true)
     expect(projectMcpStatusView(undefined).state).toBe("unverifiable")
-  })
-
-  test("failed D-scoped reload is honest without hiding consent or disabled states", () => {
-    expect(projectMcpStateAfterReload("active", false)).toBe("reload-pending")
-    expect(projectMcpStateAfterReload("shadowed", false)).toBe("reload-pending")
-    expect(projectMcpStateAfterReload("awaiting-consent", false)).toBe("awaiting-consent")
-    expect(projectMcpStateAfterReload("consent-denied", false)).toBe("consent-denied")
-    expect(projectMcpStateAfterReload("disabled", false)).toBe("disabled")
-    expect(projectMcpStateAfterReload("shadowed", true)).toBe("shadowed")
   })
 
   test("late or absent route D cannot expose that project's receipt", () => {

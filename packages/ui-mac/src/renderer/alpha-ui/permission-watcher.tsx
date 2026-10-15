@@ -5,14 +5,20 @@
 // Codex 审计 Blocker-2 的 fail-closed 标准不变:list 失败或拉取在途 = 不呈现、不放行
 // (不保留旧请求呈现,SSE 增量在 not-ready 期只并入本地列表,不单独成为可信来源);
 // 回复绑 request ID,stale/在途期回复在客户端即被拒绝。
+//
+// REQ-234 `#1531`:按 `metadata.alphaHub` 分流 —— agent 经 hub_install 发来的安装请求由 HubInstallWatcher 接手,弹定制中心
+// **自己的**安装确认框(确认之后由那个框发起安装);通用 PermissionDialog 不呈现它,于是同一个请求只有一个框。
+// 两条分支都经**同一个** feed.reply 回审批(提交入口不变,仍只有这一处)。
 
-import { onCleanup, Show } from "solid-js"
+import { onCleanup, Show, type Accessor } from "solid-js"
 import { unwrap } from "solid-js/store"
 import type { PermissionSurfaceProps } from "./providers"
-import { PermissionDialog } from "./PermissionDialog"
+import { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
+import { alphaHubRequestOf, HubInstallWatcher } from "./hub-install-watcher"
 import { createPermissionV2Feed } from "./session-workspace/session-permission-feed"
+import type { ServerInfo } from "../sidebar/use-projects"
 
-export function PermissionWatcher(props: PermissionSurfaceProps) {
+export function PermissionWatcher(props: PermissionSurfaceProps & { server?: Accessor<ServerInfo | undefined> }) {
   const feed = createPermissionV2Feed({
     list: () => props.client.list(),
     reply: (requestID, command) => props.client.reply(requestID, command),
@@ -37,6 +43,15 @@ export function PermissionWatcher(props: PermissionSurfaceProps) {
         // 经代理读过 .subject/.scope,污染就永久刻在共享对象上,unwrap 当场失效且不报错。
         // 保留它的另一个理由:避免对话框对 store 建立反应性订阅。
         const raw = unwrap(request)
+        const hub = alphaHubRequestOf(raw)
+        if (hub)
+          return (
+            <HubInstallWatcher
+              hub={hub}
+              server={props.server ?? (() => undefined)}
+              reply={(decision) => feed.reply(raw.id, createPermissionDecisionCommand(raw, decision))}
+            />
+          )
         return (
           <PermissionDialog
             request={raw}

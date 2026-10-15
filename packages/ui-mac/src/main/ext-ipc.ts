@@ -23,8 +23,8 @@ import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, t
 import { assertProjectMcpTransactionRootIdentity, assertProjectRecoveryJournalAlgebra, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
-import { probeProjectMcpActivation, reloadInstalledMcp } from "./ext-mcp-activation"
-import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
+import { probeProjectMcpActivation } from "./ext-mcp-activation"
+import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, removeFsInstallFilesOnly, resourcesRoot } from "./ext-fs-installer"
 import { intakeImportDir, type LocalPackagePreviewV1 } from "./claude-plugin-intake"
 import { collectRetainedPayloads, localPackagePreviews, previewWireV1 } from "./local-package-preview"
@@ -66,7 +66,12 @@ import { makeRecoveryGate, runVerifiedMutation } from "./ext-recovery-gate"
 // #408:session-grant 会话级启用(main 内存登记 + 栅栏;生命周期接线在 index.ts)。
 import { grantSessionGrant, revokeSessionGrant, sessionGrantRegistry } from "./ext-session-grants"
 import { adoptProjectLedger } from "./ext-project-adopt"
-import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS, LOCAL_PACKAGE_READ_CHANNELS } from "./ext-write-channels"
+import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, HUB_READ_CHANNELS, JOURNAL_ADMIN_CHANNELS, LOCAL_PACKAGE_READ_CHANNELS } from "./ext-write-channels"
+// REQ-234 `#1529`:三档状态的唯一权威 + 重载请求方/记录方 + parentPort `alpha.*` 分发(基线 §2.2 / §2.5 / §2.6)。
+import { createAlphaSidecarHost, createHubRequestStages, createHubViewService, type AlphaSidecarHost } from "./hub-view"
+import { createReloadCoordinator } from "./reload-coordinator"
+import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
+import { isHubRequestId, parseReloadScope, type ReloadItem } from "./alpha-sidecar-messages"
 import { packageVersionFromRecordsV1 } from "./ext-package-lifecycle"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, readPackageLedgerStateV1, removeRecordV2 } from "./ext-receipt-v2"
@@ -112,6 +117,37 @@ export function registerExtIpcHandlers(
     if (!extensionsGranted(prefs)) return "consent-denied"
     if (disabled) return "disabled"
     return probeProjectMcpActivation(name, projectDir, awaitServer)
+  }
+  // ── REQ-234 `#1529`:重载的**请求方与记录方**(执行者是 ext 调度器,C3)。任何会改变「待重载」原因的事件
+  // ⇒ 通知 renderer 重读视图(index.ts 把它接到 `ext-hub-view-changed`)。
+  const hubViewChangedListeners = new Set<() => void>()
+  const reloads = createReloadCoordinator({
+    log: (line) => getLogger()?.log(line),
+    onChange: () => {
+      for (const listener of hubViewChangedListeners) {
+        try {
+          listener()
+        } catch (error) {
+          getLogger()?.warn(`ext-hub-view-changed listener failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+    },
+  })
+  const hubRequests = createHubRequestStages({ log: (line) => getLogger()?.warn(line) })
+  /** 安装体提交成功之后:请 ext 重载,不再 dispose(基线 §2.6)。cloud 只动账本、没有重载环节。
+   *  作用域:项目 MCP = 该项目目录;其余(含 package / seed / bundle)= global。 */
+  const requestReloadAfterInstall = (intent: unknown, result: { kind: string; name: string }) => {
+    if (result.kind === "cloud") return
+    const raw = (intent && typeof intent === "object" ? intent : {}) as { catalogId?: unknown; assetId?: unknown }
+    const id = typeof raw.catalogId === "string" ? raw.catalogId : typeof raw.assetId === "string" ? raw.assetId : `${result.kind}:${result.name}`
+    const decoded = decodeCatalogInstallIntent(intent)
+    const project = decoded.ok && decoded.intent.scope.scope === "project" ? decoded.intent.scope.projectDir : undefined
+    const items: ReloadItem[] = [{ id, scope: project ? "project" : "global" }]
+    reloads.request({
+      scope: project ? { directory: project } : "global",
+      items,
+      reason: `installed ${result.kind} ${result.name}`,
+    })
   }
   // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog)与未策展 npm
   // plugin 导入的 body —— #336(残留4)抽至 electron-free 的 ext-uncurated-bodies(账本写失败的
@@ -829,11 +865,17 @@ export function registerExtIpcHandlers(
   // effective catalog 解析(remote/cache 验签 → bundled 快照兜底)—— 只读 inventory 面专用;
   // 激活面用 plannerDeps 内带 #314/#315 security browse-only 语义的 effectiveCatalog(浏览允许
   // bundled 兜底,激活不允许 —— 两面职责不同,不合流)。#302:channel 必填。
-  const resolveEffectiveCatalog = async (): Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> => {
+  const resolveEffectiveCatalog = async (): Promise<{
+    entries: Catalog["entries"]
+    channel: "remote" | "cache" | "bundled"
+    version: string
+    packages?: CatalogPackageViewV1[]
+  }> => {
     const rc = await refreshRemoteCatalog(userDataPath, registryChannel)
     if (rc.source !== "none") {
       const cat = rc.catalog as Catalog
-      return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
+      // REQ-234 `#1531`(审计 R1 Major 2):同一次刷新里 main 评估过的签名包视图,三档视图据此把包列给 agent。
+      return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version), ...(rc.packageViews ? { packages: rc.packageViews } : {}) }
     }
     const bundled = bundledCatalogJson as unknown as BundledCatalogSnapshotV1
     return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
@@ -1203,31 +1245,16 @@ export function registerExtIpcHandlers(
               return { ok: false, reason: "official-connector-needs-reentry: runtime refresh failed" }
           }
           if (!result.ok) return result
-          // legacy planner(catalog entry 意图):一次只装一个 live MCP,判据与 `#697` 之前逐字相同。
-          if (!("activateMcp" in result)) {
-            if (result.kind !== "mcp") return result
-            // REQ-136 C4/C5:the existing reload helper is name-only and global. A project commit
-            // instead lets the project-aware installed read below return the consent-gated D-scoped
-            // projection; it must not reload or report a same-name global server here.
-            const decoded = decodeCatalogInstallIntent(intent)
-            if (decoded.ok && decoded.intent.scope.scope === "project") return result
-            if (result.installedDisabled) return result
-            return { ...result, mcpActivation: await reloadInstalledMcp(result.name, awaitServer) }
+          // REQ-234 `#1529`:提交成功 ⇒ 请 ext 调度器重载(等同一引擎实例上所有会话空闲),**不再**在这里
+          // dispose + 读一次 status。连接 / 加载是否成功由 hub-view 按目录即时核验,经 `ext-hub-view` 呈现;
+          // 这里的返回值因此不再带连接快照(那是一次在当前回答里等重载的结果,约束 5 不允许)。
+          requestReloadAfterInstall(intent, result)
+          // `activateMcp` 是 main 内部指令(package 图里落了 enabled 的 MCP 组件),不是 renderer 事实:剥掉再过线。
+          if ("activateMcp" in result) {
+            const { activateMcp: _activateMcp, ...wire } = result
+            return wire
           }
-          // `#697` package 图:一个 Bundle 可以带**多个** MCP 组件,而 live 重载的对象是组件不是包。
-          // admission 报的是「哪些 MCP 组件落了 enabled」(已去重排序),这里逐个重载**一次**;
-          // 按 root 的 kind/name 判会让叶 MCP 永远不被重载,并把根组件的名字当成整包的名字。
-          // 单组件 package 的 `activateMcp` 恰是 `[name]` 或 `[]`,行为逐字不变。
-          //
-          // `activateMcp` 是 main 内部的重载指令,不是 renderer 事实:剥掉再过线,免得一个内部
-          // 指令变成半个公开契约。
-          const { activateMcp, ...wire } = result
-          if (activateMcp.length === 0) return wire
-          const activations = await Promise.all(activateMcp.map((name) => reloadInstalledMcp(name, awaitServer)))
-          // 渲染层的连接状态面是 root-scoped(`r.kind !== "mcp"` 就不看它),所以 `mcpActivation`
-          // 仍然只报 root 那一条;叶子的重载是副作用,不改这个契约。
-          const rootActivation = activations.find((entry) => entry.reference === result.name)
-          return rootActivation ? { ...wire, mcpActivation: rootActivation } : wire
+          return result
         } finally {
           if (official && !restarted) await officialRuntime!.refresh()
         }
@@ -1273,6 +1300,30 @@ export function registerExtIpcHandlers(
           cloned.cleanup()
         }
       },
+      // REQ-234 `#1529`:renderer 的重载入口(原 22 处 `refreshEngine()` / `refreshProjectEngine`、信任门、
+      // 「现在重载」)。只记一笔并转给 ext 调度器,立即返回 generation —— 不在这里等重载。
+      reloadRequest: async (input) => {
+        const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>
+        for (const key of Object.keys(raw))
+          if (key !== "scope" && key !== "items" && key !== "reason" && key !== "force")
+            return { ok: false, reason: `reload request: unknown key "${key}"` }
+        const scope = parseReloadScope(raw.scope)
+        if (!scope) return { ok: false, reason: "reload request: scope must be \"global\" or { directory }" }
+        const items: ReloadItem[] = []
+        if (raw.items !== undefined) {
+          if (!Array.isArray(raw.items) || raw.items.length > 256) return { ok: false, reason: "reload request: items must be an array" }
+          for (const item of raw.items) {
+            const it = (item && typeof item === "object" ? item : {}) as Record<string, unknown>
+            if (typeof it.id !== "string" || !it.id || it.id.length > 256 || (it.scope !== "global" && it.scope !== "project"))
+              return { ok: false, reason: "reload request: item must be { id, scope }" }
+            items.push({ id: it.id, scope: it.scope })
+          }
+        }
+        if (typeof raw.reason !== "string" || !raw.reason || raw.reason.length > 200)
+          return { ok: false, reason: "reload request: reason required" }
+        if (raw.force !== undefined && typeof raw.force !== "boolean") return { ok: false, reason: "reload request: force must be a boolean" }
+        return { ok: true, ...reloads.request({ scope, items, reason: raw.reason, force: raw.force === true }) }
+      },
     },
   })
   const barrier = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) =>
@@ -1280,7 +1331,28 @@ export function registerExtIpcHandlers(
       await ledgerReady // #309:账本写方等 recovery+迁移收敛
       return fn(...a)
     }
-  ipcMain.handle(GATED_WRITE_CHANNELS.installCatalog, barrier(gatedWrite.installCatalog))
+  // REQ-234 `#1529`(I9 的 main 半边):agent 请求的安装带 `hubRequestId`(确认框守望者转交)。它只用于记阶段,
+  // 在这里剥掉再进表通道 —— 下游意图解码器照旧拒任何未知键。提交成功 ⇒ committed(带作用域);授权暂停不是落定;
+  // 其它失败 ⇒ failed。
+  ipcMain.handle(
+    GATED_WRITE_CHANNELS.installCatalog,
+    barrier(async (raw: unknown) => {
+      if (!raw || typeof raw !== "object" || !("hubRequestId" in raw)) return gatedWrite.installCatalog(raw)
+      const { hubRequestId, ...intent } = raw as Record<string, unknown>
+      if (!isHubRequestId(hubRequestId)) return { ok: false, reason: "intent.hubRequestId: malformed" }
+      const result = (await gatedWrite.installCatalog(intent)) as { ok?: unknown; stage?: unknown; reason?: unknown }
+      if (result?.ok === true) {
+        const decoded = decodeCatalogInstallIntent(intent)
+        hubRequests.settleInstall(hubRequestId, {
+          ok: true,
+          catalogId: typeof intent.catalogId === "string" ? intent.catalogId : String(intent.assetId ?? ""),
+          scope: decoded.ok && decoded.intent.scope.scope === "project" ? "project" : "global",
+        })
+      } else if (result?.stage !== "authorize")
+        hubRequests.settleInstall(hubRequestId, { ok: false, reason: typeof result?.reason === "string" ? result.reason : "install failed" })
+      return result
+    }),
+  )
   ipcMain.handle(GATED_WRITE_CHANNELS.uninstallV2, barrier(gatedWrite.uninstallV2))
   ipcMain.handle(GATED_WRITE_CHANNELS.uninstallPackage, barrier(gatedWrite.uninstallPackage))
   ipcMain.handle(GATED_WRITE_CHANNELS.rollback, barrier(gatedWrite.rollback))
@@ -1346,6 +1418,7 @@ export function registerExtIpcHandlers(
     return gatedWrite.importSkillFolder(picked.srcDir, target)
   })
   ipcMain.handle(GATED_WRITE_CHANNELS.importSkillGit, barrier(gatedWrite.importSkillGit))
+  ipcMain.handle(GATED_WRITE_CHANNELS.reloadRequest, barrier(gatedWrite.reloadRequest))
   // REQ-103 slice 2a(#195):governance 只读查询 —— 逐扩展五维所有权 + 三态(slice 1 聚合面)。
   // 唯一的 governance 通道,零写面:核心是 electron-free 的 createInventoryQuery(纯读契约与
   // 负向面在 ext-inventory(-boundaries).test 钉死);catalog 输入复用上面的已验 resolve 面。
@@ -1355,6 +1428,36 @@ export function registerExtIpcHandlers(
     seedDir: fs.existsSync(inventorySeedDir) ? inventorySeedDir : null,
     globalRoot: alphaGlobalRoot,
   })
+  // ── REQ-234 `#1529`:三档状态面。定制中心(本 IPC)与 agent 工具(parentPort,下面的 alphaSidecar)读同一个服务。
+  const hubView = createHubViewService({
+    resolveCatalog: resolveEffectiveCatalog,
+    advisoryBlocked: () => new Set(listAdvisoryBlockedFacts(userDataPath).ids),
+    seedDir: fs.existsSync(inventorySeedDir) ? inventorySeedDir : null,
+    globalRoot: alphaGlobalRoot,
+    projectEntry: (directory) => resolveProjectEntry(directory),
+    defaultDirectory: alphaUserWorkspaceDir,
+    projectMcpState: (name, projectDir) => projectMcpState(name, projectDir, false),
+    awaitServer,
+    pendingFor: (directory) => reloads.pendingFor(directory),
+  })
+  ipcMain.handle(HUB_READ_CHANNELS.hubView, (_event: IpcMainInvokeEvent, directory?: unknown) =>
+    hubView.view(typeof directory === "string" ? directory : undefined),
+  )
+  ipcMain.handle(HUB_READ_CHANNELS.hubRequestStage, (_event: IpcMainInvokeEvent, input: unknown) => hubRequests.record(input))
+  const alphaSidecarHost: AlphaSidecarHost = createAlphaSidecarHost({
+    view: hubView,
+    requests: hubRequests,
+    reloads,
+    log: (line) => getLogger()?.warn(line),
+  })
+  const alphaSidecar = {
+    ...alphaSidecarHost,
+    /** 「待重载」原因变了(请求 / 报告 / sidecar 连上或断开)。返回退订函数。 */
+    onViewChanged(listener: () => void): () => void {
+      hubViewChangedListeners.add(listener)
+      return () => hubViewChangedListeners.delete(listener)
+    },
+  }
   ipcMain.handle("ext-inventory-view", async (_event: IpcMainInvokeEvent, projectDir?: unknown) => {
     if (projectDir === undefined) return inventoryQuery()
     const resolved = resolveProjectEntry(projectDir)
@@ -1365,5 +1468,7 @@ export function registerExtIpcHandlers(
   })
   // #309:启动期账本消费方(index.ts 的 global ecosystem gate)await 此 barrier 后再写账本。
   // #390:同时交出恢复-gate 包装的 global 技能安装器,供 ecosystem gate 走事务安装(不绕恢复准入)。
-  return { ledgerReady, ecosystemGlobalSkillInstaller }
+  // REQ-234 `#1529`:alphaSidecar 交给 composition root —— spawnLocalServer 在 `child.on("message")` 旁挂它的 receive,
+  // ready 时 attach;onViewChanged 接 `ext-hub-view-changed` 推送。
+  return { ledgerReady, ecosystemGlobalSkillInstaller, alphaSidecar }
 }

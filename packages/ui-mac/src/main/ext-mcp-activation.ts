@@ -8,7 +8,7 @@ import { assertProjectAlphaRootIdentity, resolveProjectAlphaRoot } from "./alpha
 import { listConfiguredMcpServerNamesStrict } from "./ext-config"
 // 刻意不从 `packages/opencode/src/util/timeout` import:那是 UPSTREAM_PATHS 下持续滚动重钉的
 // vendored 上游,深 import 它的内部模块路径 = 下次 pin bump 上游改名就打断主进程构建。
-// 语义与上游那份一致(超时 reject,由本文件末尾的 catch 归一为 reload-pending),ui-mac 侧
+// 语义与上游那份一致(超时 reject,由本文件末尾的 catch 归一为 unverifiable),ui-mac 侧
 // 另有两份同形态的本地实现(use-extensions.ts:225、wsl/runtime.ts:395)。
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>
@@ -20,11 +20,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ])
 }
 import type { ServerReadyData } from "../preload/types"
-
-export type McpActivationReference = {
-  reference: string
-  status: "connected" | "disabled" | "failed" | "reload-pending"
-}
 
 export type ProjectMcpActivationVerdict = "active" | "shadowed" | "unverifiable"
 
@@ -178,20 +173,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Reload the engine from durable config after an MCP install. This keeps `{file:...}` resolution
- * inside ConfigVariable at config-load time and returns no config or secret bytes to the renderer.
+ * `#1529`(基线 §2.5 / §2.6):只剩**核验**那一半 —— 读某目录引擎实例里这个 MCP 的连接状态。
+ * 重载不再在这里做:安装体改为经 reload-coordinator 请 ext 调度器重载(等会话空闲)。
+ * 只返回状态,不返回任何配置或密钥字节。读不出(超时 / HTTP 错误 / 形状不对)= `unverifiable`。
  */
-export async function reloadInstalledMcp(
+export type McpVerification = {
+  reference: string
+  /** `needs_auth` / `needs_client_registration` 原样透传(`#1531`):重载修不好它们,呈现面据此不出「现在重载」。 */
+  status: "connected" | "disabled" | "failed" | "needs_auth" | "needs_client_registration" | "unverifiable"
+}
+
+export async function verifyInstalledMcp(
   name: string,
+  directory: string,
   awaitServer: () => Promise<ServerReadyData>,
   fetchImpl: typeof fetch = fetch,
-  timeoutMs = { awaitServer: 5_000, dispose: 5_000, status: 10_000 },
-): Promise<McpActivationReference> {
+  timeoutMs = { awaitServer: 5_000, status: 10_000 },
+): Promise<McpVerification> {
   try {
     const server = await withTimeout(
       awaitServer(),
       timeoutMs.awaitServer,
-      "timed out waiting for the engine before MCP reload",
+      "timed out waiting for the engine before MCP verification",
     )
     const client = createOpencodeClient({
       baseUrl: server.url,
@@ -205,24 +208,18 @@ export async function reloadInstalledMcp(
             }
           : undefined,
     })
-    const disposed = await withTimeout(
-      client.global.dispose(),
-      timeoutMs.dispose,
-      "timed out disposing the engine before MCP reload",
-    )
-    if ((disposed as { error?: unknown }).error) return { reference: name, status: "reload-pending" }
-
     const status = await withTimeout(
-      client.mcp.status(),
+      client.mcp.status({ directory }),
       timeoutMs.status,
-      "timed out reading MCP status after engine reload",
+      "timed out reading directory-scoped MCP status",
     )
-    if ((status as { error?: unknown }).error) return { reference: name, status: "reload-pending" }
+    if ((status as { error?: unknown }).error) return { reference: name, status: "unverifiable" }
     const state = (status as { data?: Record<string, { status?: unknown }> }).data?.[name]?.status
     if (state === "connected") return { reference: name, status: "connected" }
     if (state === "disabled") return { reference: name, status: "disabled" }
+    if (state === "needs_auth" || state === "needs_client_registration") return { reference: name, status: state }
     return { reference: name, status: "failed" }
   } catch {
-    return { reference: name, status: "reload-pending" }
+    return { reference: name, status: "unverifiable" }
   }
 }

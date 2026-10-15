@@ -109,7 +109,7 @@ mock.module("../src/main/remote-catalog", () => ({
 }))
 
 mock.module("../src/main/ext-mcp-activation", () => ({
-  reloadInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
+  verifyInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
   probeProjectMcpActivation: async () => "unverifiable" as const,
 }))
 

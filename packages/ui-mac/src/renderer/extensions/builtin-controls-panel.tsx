@@ -3,7 +3,7 @@
 // 原因(C28 诚实控件);denylist/allowlist 可切;「重置治理」全量净除。
 //
 // 数据流:extIpc.builtinRead/builtinApply/builtinReset(main 校验+物化 home jsonc 受控叶子)→
-// props.refreshEngine()(POST /global/dispose)→ 下一条消息热生效 → props.reloadAgents() 刷新列表。
+// props.requestReload()(REQ-234 `#1529`:请 ext 调度器在会话空闲时重载)→ 重载之后的下一条消息生效 → props.reloadAgents() 刷新列表。
 
 import { extensionError } from "./ext-presentation"
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
@@ -25,7 +25,8 @@ const DEFAULT_GOV: AlphaBuiltinPolicy = {
 
 export function BuiltinControlsPanel(props: {
   agents: HubAgent[]
-  refreshEngine: () => Promise<boolean>
+  /** 请 ext 调度器重载(等会话空闲);false = 请求没被受理。 */
+  requestReload: () => Promise<boolean>
   reloadAgents: () => Promise<void>
   flash: (msg: string, kind?: "success" | "error") => void
 }) {
@@ -75,7 +76,7 @@ export function BuiltinControlsPanel(props: {
         return
       }
       setGov(next)
-      const refreshed = await props.refreshEngine()
+      const refreshed = await props.requestReload()
       void props.reloadAgents()
       props.flash(refreshed ? t("alpha.builtin.applied") : t("alpha.builtin.appliedPendingReload"), "success")
     } catch {
@@ -145,7 +146,7 @@ export function BuiltinControlsPanel(props: {
         return
       }
       setGov(structuredClone(DEFAULT_GOV))
-      await props.refreshEngine()
+      await props.requestReload()
       void props.reloadAgents()
       props.flash(t("alpha.builtin.resetDone"), "success")
     } finally {

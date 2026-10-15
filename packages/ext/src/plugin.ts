@@ -27,6 +27,22 @@ import {
 } from "./cloud-websearch-kill"
 import { createCloudVisionHooks } from "./cloud-vision-hooks"
 import { cloudAccessState } from "./cloud-access"
+import { createHubBridge, processParentPort } from "./hub-bridge"
+import { createHubTools, pinHubInstallPermission } from "./hub-tools"
+import { createReloadScheduler, inProcessReloadClient } from "./reload-scheduler"
+import { inProcessEngine } from "../../ui-mac/src/main/in-process-engine"
+
+// REQ-234 `#1531`:一个引擎进程一份(插件模块被 import 缓存)—— 定制中心的 parentPort 桥与重载调度器(唯一执行者)。
+// 桥的 parentPort 监听在**这里、模块装载时**挂上:main 只在 sidecar ready 那一刻重发排队的重载代际(基线 §2.6)。
+const hubBridge = createHubBridge(processParentPort())
+const reloads = createReloadScheduler({
+  report: (report) => hubBridge.report(report),
+  log: (line) => console.log(line),
+  error: (line) => console.error(line),
+})
+hubBridge.onReloadRequest((message) =>
+  reloads.request({ generation: message.generation, scope: message.scope, reason: message.reason, force: message.force === true }),
+)
 
 /**
  * Code Puppy backend isolation extension.
@@ -41,18 +57,14 @@ import { cloudAccessState } from "./cloud-access"
  *   Plugin = (input: PluginInput, options?) => Promise<Hooks>
  */
 export const AlphaExt: Plugin = async (input) => {
-  // REQ-036 生效闭环,两段式(S18 X9 实测拍板):/instance/dispose 会**打断进行中的流式回复**
-  // (实测:流中 dispose → assistant 消息 err 终止、0 字)。因此 alpha_reload 不立即 dispose,
-  // 而是登记「待重载」,由 event 钩子在**登记会话 session.idle(回复完成)后**执行 —— 新建的
-  // skill/agent/command 从下一条消息起可用,且不牺牲当前这条回复。
-  //
-  // codex 审计修复:① per-session Map(并发会话各自的承诺不被覆盖;任一登记会话 idle 即全局
-  // dispose 一次、清空全表 —— dispose 本就是全局重扫);② 陈旧兜底:登记超 5 分钟后,任何会话的
-  // idle 都可触发(登记会话 error/中断后承诺仍能兑现);③ dispose 失败保留待重试(下一次 idle),
-  // 连败 3 次 loud 放弃(server log)。
-  const pendingReloads = new Map<string, { reason: string; at: number }>()
-  let reloadAttempts = 0
-  const STALE_MS = 5 * 60 * 1000
+  // REQ-036 生效闭环(S18 X9 实测):/instance/dispose 会**打断进行中的流式回复**。REQ-234 `#1531` 起不再由本实例
+  // 自己按「登记会话 idle」去 dispose,而是登记进进程级调度器(reload-scheduler.ts):等**同一实例上所有会话**空闲、
+  // 查询失败不动手,只因本插件的 dispose 钩子注销。
+  // 审计 R1 Major 1:调度器问引擎走**进程内**(sidecar 交来的 app.fetch);围栏下 input.client 的 TCP 连不上自己。
+  // 没有交接(CLI / 测试宿主,不在围栏里)才退回 input.client。注销按同一个对象,所以登记时就定下来。
+  const engine = inProcessEngine()
+  const reloadClient = engine ? inProcessReloadClient(engine, input.directory) : input.client
+  reloads.register(input.directory, reloadClient)
   // REQ-062 T1:转写残留 warning 去重(每进程每签名一次)
   const rebrandWarned = new Set<string>()
   // REQ-157 `#1284`:装载回执 —— 登记簿在 import 时已按上限校验过;这里只在 VERBOSE 下把库存打出来。
@@ -226,6 +238,8 @@ export const AlphaExt: Plugin = async (input) => {
         // 不是模块级变量,否则并存的另一个项目实例会覆盖它。核不上(或这一句没跑到)就没有任何
         // server 拿得到豁免 —— fail-closed。
         mcpOwnership = merged ? computeMcpOwnership(cfg) : UNVERIFIED_MCP_OWNERSHIP
+        // REQ-234 `#1531` I3:确认框一定会出现 —— 放在 finally:项目配置分支的 early return / 抛错都不许跳过它。
+        pinHubInstallPermission(cfg as Record<string, unknown>)
         if (process.env.ALPHA_EXT_VERBOSE)
           console.log(`[@alpha-code/ext] MCP ownership (${input.directory}): ${JSON.stringify(mcpOwnership)}`)
       }
@@ -262,11 +276,11 @@ export const AlphaExt: Plugin = async (input) => {
           reason: tool.schema.string().describe(TOOL_TEXT.alpha_reload.args.reason).default(""),
         },
         async execute(args, ctx) {
-          pendingReloads.set(ctx.sessionID ?? "", { reason: args.reason, at: Date.now() })
+          reloads.request({ scope: { directory: input.directory }, reason: args.reason ? `alpha_reload: ${args.reason}` : "alpha_reload" })
           return {
             title: "alpha_reload",
             output:
-              "reload scheduled — it runs as soon as this reply completes; newly created skills/agents/commands are available from the NEXT message in this session." +
+              "reload scheduled — it runs as soon as no reply is in progress in this workspace (this one included); newly created skills/agents/commands are available from the NEXT message in this session." +
               (args.reason ? `\nreason: ${args.reason}` : ""),
             metadata: { ok: true, scheduled: true, directory: ctx.directory, sessionID: ctx.sessionID },
           }
@@ -332,7 +346,7 @@ export const AlphaExt: Plugin = async (input) => {
               metadata: { ok: false },
             }
           }
-          pendingReloads.set(ctx.sessionID ?? "", { reason: `alpha_register ${args.type} ${args.name}`.trim(), at: Date.now() })
+          reloads.request({ scope: { directory: input.directory }, reason: `alpha_register ${args.type} ${args.name}`.trim() })
           const consentNote =
             args.type === "mcp" && !trusted
               ? "\nnote: this project has not yet been granted permission to load executable extensions — the connector stays gated until the user confirms the trust dialog (it appears when the project session is opened)."
@@ -344,6 +358,7 @@ export const AlphaExt: Plugin = async (input) => {
           }
         },
       }),
+      ...createHubTools(hubBridge),
       alpha_echo: tool({
         description: TOOL_TEXT.alpha_echo.description,
         args: {
@@ -391,35 +406,15 @@ export const AlphaExt: Plugin = async (input) => {
         },
       }),
     },
-    // event hook: ① alpha_reload 两段式的执行端 —— 登记会话 idle(或存在陈旧登记时任意 idle)才
-    // dispose,防止打断进行中的流(X9);② liveness proof(ALPHA_EXT_VERBOSE 时打印事件)。
+    // event hook: ① 会话状态变了 ⇒ 请调度器重判(它自己查每个相关实例的 session.status,不信事件里的快照);
+    // ② liveness proof(ALPHA_EXT_VERBOSE 时打印事件)。
     async event({ event }) {
       if (process.env.ALPHA_EXT_VERBOSE) console.log(`[@alpha-code/ext] event: ${event.type}`)
-      if (pendingReloads.size === 0 || event.type !== "session.idle") return
-      const sid = (event as { properties?: { sessionID?: string } }).properties?.sessionID
-      const now = Date.now()
-      const hasStale = [...pendingReloads.values()].some((p) => now - p.at > STALE_MS)
-      // 触发条件:idle 的正是某个登记会话(其回复已完成,dispose 不再伤及它),或存在陈旧登记
-      // (登记会话可能已 error/被弃,由任意会话的安全 idle 点兜底兑现)。
-      if (!(sid && pendingReloads.has(sid)) && !hasStale) return
-      const reasons = [...pendingReloads.values()].map((p) => p.reason).filter(Boolean)
-      try {
-        await input.client.instance.dispose()
-        pendingReloads.clear()
-        reloadAttempts = 0
-        console.log(`[@alpha-code/ext] alpha_reload executed after idle${reasons.length ? ` (${reasons.join("; ")})` : ""}`)
-      } catch (error) {
-        // 保留登记,下一次 idle 重试;连败 3 次 loud 放弃(诚实降级:重启后生效)。
-        reloadAttempts += 1
-        const msg = error instanceof Error ? error.message : String(error)
-        if (reloadAttempts >= 3) {
-          pendingReloads.clear()
-          reloadAttempts = 0
-          console.error(`[@alpha-code/ext] alpha_reload dispose FAILED 3x — giving up; new skills/agents appear after app restart: ${msg}`)
-        } else {
-          console.error(`[@alpha-code/ext] alpha_reload dispose failed (attempt ${reloadAttempts}/3, will retry on next idle): ${msg}`)
-        }
-      }
+      if (event.type === "session.status" || event.type === "session.idle") reloads.poke()
+    },
+    // REQ-234 `#1531`:实例销毁(dispose / global dispose / 重建)时引擎逐插件调用 —— 调度器只在这里注销本实例。
+    async dispose() {
+      reloads.unregister(input.directory, reloadClient)
     },
   }
 

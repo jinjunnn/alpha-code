@@ -39,22 +39,12 @@ import { join, resolve } from "node:path"
 
 // ── ① 引擎客户端替身(G20 的断言对象)────────────────────────────────────────────────────
 //     函数值先存 const,再 mock.module。
+/** REQ-234 `#1529`:renderer 不再 dispose —— 这个计数恒为 0 是判据的一半(另一半是 main 发出的重载请求)。 */
 let disposeCalls = 0
-/**
- * dispose 的失败形态。**两种,不是一种**(R1 Major):
- *   · `"throw"` —— 传输层炸了(旧夹具只有这一种);
- *   · `"error"` —— **SDK 正常 resolve 成 `{error, response}`**。v2 client 默认
- *     `throwOnError: false`,503 / 404 走的就是这条,`try/catch` 一个字都碰不到。
- * 只模拟 throw 的夹具会让「把 HTTP 错误当成功」这个实现全绿 —— 而用户那一刻看到的是
- *「已生效 / 已移除」,旧引擎实例还在暴露旧技能。
- */
-let disposeFailure: "none" | "throw" | "error" = "none"
 const engineClient = {
   global: {
     dispose: async () => {
       disposeCalls++
-      if (disposeFailure === "throw") throw new Error("engine dispose refused (fixture)")
-      if (disposeFailure === "error") return { data: undefined, error: { message: "refused" }, response: { status: 503 } }
       return { data: {} }
     },
     event: async () => ({ stream: (async function* () {})() }),
@@ -192,12 +182,20 @@ initAlphaEnvironment({
   baseRoot: join(tmp, "alpha-code-state"),
   homeDir: join(tmp, "home"),
 })
-registerExtIpcHandlers(
+const { alphaSidecar } = registerExtIpcHandlers(
   userData,
   "dev",
   async () => ({ url: "http://127.0.0.1:39117", username: "opencode", password: "route-password" }),
   join(tmp, "home"),
 )
+/**
+ * REQ-234 `#1529`:G20 的判据换了位置 —— 「引擎被要求重扫」= main 经 parentPort 发出一条 `alpha.reload.request`
+ * (执行者是 ext 调度器,等会话空闲)。像 server.ts 在 sidecar ready 时那样接上发送口,数到的就是判据。
+ */
+const reloadRequests: Array<{ type?: string; scope?: unknown }> = []
+alphaSidecar.attach((message) => void reloadRequests.push(message as { type?: string; scope?: unknown }))
+/** true ⇒ renderer 的重载请求被拒(撑开「请求没被受理必须如实说待重载」)。 */
+let reloadRefused = false
 const globalRoot = alphaGlobalRoot()
 /** `AlphaExt` 需要一个真实存在的项目目录。 */
 const engineProject = join(tmp, "engine-project")
@@ -268,6 +266,11 @@ const extBridge: Record<string, unknown> = {
   browseSeed: async () => ({ entries: [] }),
   builtinRead: async () => ({ ok: false as const, reason: "builtin panel not under test here" }),
   onSessionGrantsEnded: () => () => {},
+  // `#1529`:重载请求走生产写表通道;三档状态与视图推送同样走生产 handler / main 的 onViewChanged。
+  reloadRequest: async (input: unknown) =>
+    reloadRefused ? { ok: false as const, reason: "reload request refused (fixture)" } : call(GATED_WRITE_CHANNELS.reloadRequest, input),
+  hubView: (directory?: unknown) => call("ext-hub-view", directory),
+  onHubViewChanged: (cb: () => void) => alphaSidecar.onViewChanged(cb),
 }
 
 Object.defineProperty(window, "api", {
@@ -629,7 +632,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
 
   test("第 4→6 跳:确认 ⇒ 一次事务装进去 ⇒ 已安装页当场出现扩展包卡,技能**全部未启用**", async () => {
     clearToasts()
-    disposeCalls = 0
+    reloadRequests.length = 0
     await openImportFolder(tidePlugin)
     await waitFor(() => expect(previewDialog()).toBeInstanceOf(HTMLElement))
     click(q(".a-dialog-footer .a-btn:last-child"))
@@ -664,14 +667,15 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // 版本如实取自 manifest;`v0.1.0` 而不是造一个。
     expect(card.textContent).toContain("v0.1.0")
 
-    // G20 前半:confirm 成功 ⇒ 引擎被要求当场重扫。
-    expect(disposeCalls).toBeGreaterThan(0)
+    // G20 前半:confirm 成功 ⇒ 引擎被要求重扫(`#1529`:一条发往 ext 调度器的重载请求;renderer 自己不 dispose)。
+    expect(reloadRequests.filter((m) => m.type === "alpha.reload.request").length).toBeGreaterThan(0)
+    expect(disposeCalls).toBe(0)
     // 用户读得到的提示里必须说清「都还没启用」。
     expect(toasts().join("\n")).toContain(zh["alpha.ext.localPackageInstalled"].replace("{{count}}", "2"))
   })
 
   test("第 9 跳:显示未启用 → 用户拨开关 → **引擎允许集里当场出现它** → 引擎重载", async () => {
-    disposeCalls = 0
+    reloadRequests.length = 0
     expect(await engineInjectedSkillPaths()).toEqual([])
     click(q('[data-package-switch="local:tide/premarket-briefing"]'))
 
@@ -687,8 +691,8 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // 另一个仍然是关的 —— 界面**没有**「贴心地」替用户多打开一个。
     expect(injectedSkillNames(injected)).not.toContain("postmarket-review")
     expect(engineAllowSet()).toEqual(["skill--premarket-briefing"])
-    // 拨开关同时让引擎重载(`use-extensions.setInstallState` 的既有路径)。
-    expect(disposeCalls).toBeGreaterThan(0)
+    // 拨开关同时请引擎重载(`use-extensions.setInstallState` → `ext-reload-request`)。
+    await waitFor(() => expect(reloadRequests.filter((m) => m.type === "alpha.reload.request").length).toBeGreaterThan(0))
 
     // 卡上「全部未启用」的引导条随之消失,开关翻成 on。
     await waitFor(() =>
@@ -741,7 +745,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
 
   test("第 7 跳(+ G20 后半):整包移除 ⇒ 卡消失、账本清零、**引擎允许集清空**、引擎重载", async () => {
     clearToasts()
-    disposeCalls = 0
+    reloadRequests.length = 0
     expect(injectedSkillNames(await engineInjectedSkillPaths())).toEqual(["premarket-briefing"])
     click(q('[data-package-remove="local:tide"]'))
 
@@ -751,13 +755,13 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // 卸完之后引擎**当场**不再暴露它 —— 在这一行之前,整包移除只刷新列表、不重载引擎,
     // 于是技能一直能用到下次重启。这就是 G20 钉的那条接线。
     expect(await engineInjectedSkillPaths()).toEqual([])
-    expect(disposeCalls).toBeGreaterThan(0)
+    expect(reloadRequests.filter((m) => m.type === "alpha.reload.request").length).toBeGreaterThan(0)
     expect(toasts().join("\n")).toContain(zh["alpha.ext.packageRemoved"])
   })
 
-  test("引擎这次没重载成功 ⇒ 如实说「待重载」,不谎报已生效", async () => {
+  test("重载请求这次没被受理 ⇒ 如实说「待重载」,不谎报已生效", async () => {
     clearToasts()
-    disposeFailure = "error"
+    reloadRefused = true
     try {
       await openImportFolder(soloPlugin)
       await waitFor(() => expect(previewDialog()).toBeInstanceOf(HTMLElement))
@@ -768,7 +772,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
       expect(toasts().join("\n")).toContain(zh["alpha.ext.localPackageInstalledPendingReload"].replace("{{count}}", "1"))
       expect(toasts().join("\n")).not.toContain(zh["alpha.ext.localPackageInstalled"].replace("{{count}}", "1"))
     } finally {
-      disposeFailure = "none"
+      reloadRefused = false
     }
   })
 

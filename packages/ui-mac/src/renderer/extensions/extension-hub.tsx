@@ -33,11 +33,12 @@ import { pushToast } from "../alpha-ui/Toast"
 import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
 import {
-  catalogInstallTargetFor,
   DEFAULT_CATALOG_INSTALL_SCOPE,
   sdkMcpStatusForReceipt,
   nameOnlyLiveMcpIsUnambiguousGlobal,
   projectMcpStatusView,
+  hubRowFor,
+  hubStateView,
   useExtensions,
   isAuthzRequired,
   isLocalPluginRoute,
@@ -46,7 +47,8 @@ import {
   type HubAgent,
   type LocalPackagePreviewV1,
 } from "./use-extensions"
-import { ExtAuthzView, ExtStandaloneAuthzDialog, buildAuthzConfirmation, authzIsEscalation } from "./ext-authz"
+import { ExtStandaloneAuthzDialog } from "./ext-authz"
+import { createInstallConfirm, InstallConfirmBody, InstallConfirmFooter } from "./install-confirm"
 import type { ProviderAddressRejection } from "../../shared/alpha-model-types"
 
 /** `#1381`:远程连接器地址被拒的类别 → 文案键(类别本身来自 main,与出网围栏同一个函数)。 */
@@ -84,8 +86,7 @@ import {
 import { findSessionGrant, sessionGrantKeyOf, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
 import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
-import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
-import { packagePresentation, packageRetainedReasonKey, packageSkipReasonKey } from "./ext-package-presentation"
+import { packagePresentation, packageRetainedReasonKey } from "./ext-package-presentation"
 import { packageListingTextV1 } from "../../shared/host-extension-package-contract/decoder"
 import { extIpc } from "./ext-ipc"
 import "./extension-hub.css"
@@ -185,16 +186,6 @@ function metaPills(e: CatalogEntry, curation?: Curation | null): { text: string;
     if (e.installSpec?.kind === "cloud") out.push({ text: e.installSpec.tier })
   }
   return out
-}
-
-// Pre-install disclosure for the confirm dialog.
-function runtimeDeps(e: CatalogEntry): string {
-  const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
-  return (spec?.runtimeDep ?? []).join(", ")
-}
-function requiredEnvVarList(e: CatalogEntry): string[] {
-  const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
-  return spec?.requiredEnvVars ?? []
 }
 
 export function ExtensionHub(props: {
@@ -459,61 +450,34 @@ export function ExtensionHub(props: {
   }
   // REQ-019 T2:详情页目标(catalog 条目或引擎 agent)。非空 = 当前 tab 内下钻显示详情页。
   const [detail, setDetail] = createSignal<DetailTarget | null>(null)
-  // The entry awaiting install confirmation (MCP/bundle/plugin 档). Skill never lands here —
-  // it installs directly (Q1). Plugin reaches here only from its detail page (Q2).
-  const [confirming, setConfirming] = createSignal<CatalogEntry | null>(null)
-  // REQ-136:Hub scope is a UX choice, not a path picker. Every fresh confirmation resets Global;
-  // project submission resolves the route's current D again inside useExtensions before IPC.
-  const [installScope, setInstallScope] = createSignal<CatalogInstallScopeChoice>(DEFAULT_CATALOG_INSTALL_SCOPE)
-  const openInstallConfirmation = (entry: CatalogEntry) => {
-    setInstallScope(DEFAULT_CATALOG_INSTALL_SCOPE)
-    setConfirming(entry)
-  }
-  // T5:确认弹窗采集的 requiredEnvVars 密钥值(仅内存;安装后清空)。经 addMcp → 主进程 {file:}
-  // 通道落盘,绝不明文进 opencode.jsonc。切换/关闭弹窗即重置。
-  const [envValues, setEnvValues] = createSignal<Record<string, string>>({})
-  // #348:capability 授权两阶段状态机(设计稿 D1 + Codex 裁决 D2)。
-  //   idle → confirming-install(既有确认框)→ driving(confirmBusy)→ authorizing(authz 非空)
-  //        → redriving(authzBusy)→ success | failure | canceled
-  //   host="confirm" = 既有确认框原地切第二阶段(MCP/plugin/bundle);host="standalone" = skill
-  //   直装/更新扩权时独立弹出。busy(driving/redriving)期间 Dialog dismissible=false ——
-  //   IPC 无取消能力,放任关闭 = 「用户以为取消,main 已提交」竞态。
-  type AuthzState = {
-    entry: CatalogEntry
-    mode: "install" | "update"
-    host: "standalone" | "confirm"
-    secrets?: Record<string, string>
-    scope?: CatalogInstallScopeChoice
-    projectDir?: string
-    diffs: CapabilityDiffWire[]
-  }
-  const [authz, setAuthz] = createSignal<AuthzState | null>(null)
-  type PackageAuthzState = {
-    view: CatalogPackageViewV1
-    preview: PackageAdmissionPreviewV1
-    finish: (view: CatalogPackageViewV1) => void
-  }
-  const [packageAuthz, setPackageAuthz] = createSignal<PackageAuthzState | null>(null)
-  const packagePrerequisites = createMemo(() => {
-    const preview = packageAuthz()?.preview
-    if (!preview) return []
-    return Array.from(
-      new Map(
-        preview.plan.items
-          .flatMap((item) => (item.included ? item.prerequisites : []))
-          .map((item) => [item.prerequisiteId, item]),
-      ).values(),
-    )
+  // 安装确认框 + #348 capability 授权两阶段状态机 —— REQ-234 `#1531` 起住在 install-confirm.tsx,与 agent 安装守望者共用
+  // 同一份(这里是定制中心那一个实例)。Skill 在这里直装(Q1),plugin 只从详情页进确认框(Q2)。
+  // 解构只为让本文件的既有调用点一字不动(这些名字从前就是本组件的局部 signal)。
+  const confirm = createInstallConfirm({
+    install: (entry, secrets, authorization, scope, selectedProjectDir) => onAdd(entry, secrets, authorization, scope, selectedProjectDir),
+    update: (entry, authorization) => runUpdateRedrive(entry, authorization),
+    projectDir,
+    // `#810`:包确认屏那一趟经数据层出站(引擎重扫与账本刷新在那一层);落定之后的呈现留在定制中心。
+    installPackage: (intent) => ext.installCatalogIntent(intent),
+    onPackageSettled: async (pending, result) => {
+      if (!result) {
+        setErrFor(pending.view.catalogId, t("alpha.ext.error.installUnknown"))
+        return pending.view
+      }
+      if (!result.ok) {
+        if ("package" in result) rememberPackageView(result.package)
+        setErrFor(pending.view.catalogId, extensionError(result.reason, "alpha.ext.error.confirmPackage"))
+        return "package" in result ? result.package : pending.view
+      }
+      // `#698` 在这里手写过一行 warning 呈现 —— `#765` 之后它归 `extIpc`(IPC 包装层),对任何具名 warning 默认生效。
+      // `#810`:引擎重扫失败是**另一件事**,`extIpc` 不知道它 —— 如实说「要重载」。
+      if (result.reloadPending) flash(t("alpha.ext.addedPendingReload"))
+      const latest = await extIpc.packageDetail(pending.view.catalogId)
+      if (latest) rememberPackageView(latest)
+      return latest ?? pending.view
+    },
   })
-  /** 确认屏上「会装什么」与「不会装什么」两段 —— 同一个 items[],由 `included` 分开。 */
-  const packagePlanIncluded = () =>
-    packageAuthz()?.preview.plan.items.flatMap((item) => (item.included ? [item] : [])) ?? []
-  const packagePlanSkipped = () =>
-    packageAuthz()?.preview.plan.items.flatMap((item) => (item.included ? [] : [item])) ?? []
-  const packageSecretsComplete = () =>
-    packagePrerequisites().every((item) => (envValues()[item.prerequisiteId] ?? "").trim().length > 0)
-  const [confirmBusy, setConfirmBusy] = createSignal(false)
-  const [authzBusy, setAuthzBusy] = createSignal(false)
+  const { confirming, openInstallConfirmation, authz, setAuthz, confirmBusy, authzBusy, cancelAuthz, confirmAuthz, openPackage, closePackageAuthz } = confirm
   // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原表单 state 随之下线。
   // T3:存量迁移候选(旧 XDG 根里、名字匹配 catalog 的 alpha 安装物)。仅当主进程门控开启
   // (ALPHA_MIGRATE_ENABLE=1,A6 真机验证后)且有候选时显示迁移条。
@@ -737,10 +701,7 @@ export function ExtensionHub(props: {
         result.packageAuthorization
       ) {
         const preview = result.packageAuthorization
-        setEnvValues({})
-        return await new Promise<CatalogPackageViewV1>((finish) =>
-          setPackageAuthz({ view, preview, finish }),
-        )
+        return await new Promise<CatalogPackageViewV1>((finish) => openPackage({ view, preview, finish }))
       }
       if (!result.ok) setErrFor(view.catalogId, extensionError(result.reason, "alpha.ext.error.installPackage"))
       // `#810`:引擎重扫失败 ⇒ 如实说「要重载」。今天 admission 的首驱恒走 authorize 臂,
@@ -767,12 +728,7 @@ export function ExtensionHub(props: {
   // 关闭时重置,重开回到当前分区的列表(review 发现:详情页上点 ✕ 关闭再开会残留 stale 详情)。
   createEffect(() => {
     if (!props.open()) {
-      const pending = packageAuthz()
-      if (pending && !authzBusy()) {
-        pending.finish(pending.view)
-        setPackageAuthz(null)
-        setEnvValues({})
-      }
+      closePackageAuthz()
       setDetail(null)
       setQuery("")
     } else {
@@ -844,7 +800,7 @@ export function ExtensionHub(props: {
         return
       }
       setAgentPreview(null)
-      await ext.refreshEngine()
+      await ext.requestEngineReload("imported agent")
       void ext.reloadAgents()
       flash(t("alpha.ext.importAgentDone", { name: pv.name }), "success")
     } finally {
@@ -1291,14 +1247,15 @@ export function ExtensionHub(props: {
         setStageFor(e.id, "installing")
         const res = await ext.installSkill(e, authorization)
         if (!res.ok) return failOr(res)
+        // REQ-234 `#1529`:重载交给 ext 调度器(等会话空闲),「可以使用」只在该行显示可用之后才成立 —— 这里只说已添加。
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
-        else addedFlash("alpha.ext.addedLive")
+        else addedFlash("alpha.ext.added")
       } else if (e.type === "agent") {
         setStageFor(e.id, "installing")
         const res = await ext.installAgentEntry(e, authorization)
         if (!res.ok) return failOr(res)
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
-        else addedFlash("alpha.ext.addedLive")
+        else addedFlash("alpha.ext.added")
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e, authorization)
@@ -1322,115 +1279,12 @@ export function ExtensionHub(props: {
     }
   }
 
-  // #348:授权框动作(两宿主共用)。取消 = 零权威副作用、静默(B11:取消非失败,不 toast 不行内)。
-  const closeAuthz = () => {
-    setAuthz(null)
-    setConfirming(null)
-    setEnvValues({})
-    setInstallScope(DEFAULT_CATALOG_INSTALL_SCOPE)
-  }
-  const closePackageAuthz = () => {
-    const pending = packageAuthz()
-    if (!pending || authzBusy()) return
-    pending.finish(pending.view)
-    setPackageAuthz(null)
-    setEnvValues({})
-  }
-  const confirmPackageAuthz = async () => {
-    const pending = packageAuthz()
-    if (!pending || authzBusy() || !packageSecretsComplete()) return
-    // prerequisiteId 是 main 校验的身份；required=false 的签名前置条件也必须完整提交。
-    const secrets = Object.fromEntries(
-      packagePrerequisites().map((item) => [item.prerequisiteId, envValues()[item.prerequisiteId]!]),
-    )
-    setAuthzBusy(true)
-    try {
-      // `#810`:确认屏这一趟才是**真正落盘**的那一趟 —— 它经数据层出站,于是引擎重扫
-      // 与账本刷新都在那一层发生一次(此前这里直连 `extIpc`,一次都没有)。
-      const result = await ext.installCatalogIntent({
-        catalogId: pending.view.catalogId,
-        attemptId: pending.preview.attemptId,
-        ...(packagePrerequisites().length > 0 ? { grants: { secrets } } : {}),
-        authorization: {
-          // package confirmation 精确覆盖 preview 全部 diff key，不能沿用 legacy 的需确认项过滤。
-          confirmed: Object.fromEntries(pending.preview.items.map((item) => [item.key, item.requested])),
-          binding: pending.preview.binding,
-        },
-      })
-      if (!result.ok) {
-        const latest = "package" in result ? result.package : pending.view
-        if ("package" in result) rememberPackageView(result.package)
-        setErrFor(pending.view.catalogId, extensionError(result.reason, "alpha.ext.error.confirmPackage"))
-        pending.finish(latest)
-        setPackageAuthz(null)
-        setEnvValues({})
-        return
-      }
-      // `#698` 在这里手写过一行 warning 呈现 —— 这条路径(确认屏 → 二次 installCatalog)是
-      // package 更新真正走的那条,而它当时**连成功 toast 都没有**。`#765` 之后这行没了:
-      // 上面那次 `extIpc.installCatalog` 自己就把 warning 呈现掉了,不靠人记得写。
-      // `#810`:引擎重扫失败是**另一件事**,`extIpc` 不知道它 —— 如实说「要重载」。
-      if (result.reloadPending) flash(t("alpha.ext.addedPendingReload"))
-      const latest = await extIpc.packageDetail(pending.view.catalogId)
-      if (latest) rememberPackageView(latest)
-      pending.finish(latest ?? pending.view)
-      setPackageAuthz(null)
-      setEnvValues({})
-    } catch (error) {
-      setErrFor(pending.view.catalogId, t("alpha.ext.error.installUnknown"))
-      pending.finish(pending.view)
-      setPackageAuthz(null)
-      setEnvValues({})
-    } finally {
-      setAuthzBusy(false)
-    }
-  }
-  const cancelAuthz = () => {
-    if (authzBusy() || confirmBusy()) return
-    closeAuthz()
-  }
-  const confirmAuthz = async () => {
-    const a = authz()
-    if (!a || authzBusy()) return
-    const decision = buildAuthzConfirmation(a.diffs)
-    setAuthzBusy(true)
-    try {
-      const next =
-        a.mode === "update"
-          ? await runUpdateRedrive(a.entry, decision)
-          : await onAdd(a.entry, a.secrets, decision, a.scope, a.projectDir)
-      // 重驱再遇 authorize(授权与重驱之间 grants/catalog 变化)→ 最新 diff 原地替换,不只拦第一次。
-      if (next) {
-        setAuthz({ ...a, diffs: next })
-        return
-      }
-      closeAuthz()
-    } finally {
-      setAuthzBusy(false)
-    }
-  }
+  // #348:授权框动作与包确认屏(closeAuthz / cancelAuthz / confirmAuthz / closePackageAuthz / confirmPackageAuthz)在 install-confirm.tsx。
   /** skill 直装(无确认框)路径:authorize → 独立授权框。 */
   const addDirect = async (e: CatalogEntry) => {
     const diffs = await onAdd(e)
     if (diffs) setAuthz({ entry: e, mode: "install", host: "standalone", diffs })
   }
-  // 标题/footer 两宿主共用(Q1 场景化:首装「授权能力/授权并安装」,扩权「能力变更需确认/授权并更新」)。
-  const authzTitle = () => {
-    const a = authz()
-    if (!a) return ""
-    return authzIsEscalation(a.diffs) ? t("alpha.ext.authz.titleEscalation") : t("alpha.ext.authz.titleFirst")
-  }
-  const authzFooter = () => (
-    <>
-      <Button variant="ghost" autofocus disabled={authzBusy()} onClick={cancelAuthz}>
-        {t("alpha.ext.cancel")}
-      </Button>
-      <Button variant="primary" loading={authzBusy()} onClick={() => void confirmAuthz()}>
-        {authz()?.mode === "update" ? t("alpha.ext.authz.confirmUpdate") : t("alpha.ext.authz.confirmInstall")}
-      </Button>
-    </>
-  )
-
   // 「添加」三档分流(2026-07-04 拍板,Q1/Q2):
   //   skill  → 直装(零配置零密钥,免确认框);
   //   plugin → 详情页先行(风险最高:运行于引擎进程 + npm 下载),页内安装再过风险确认框;
@@ -1566,19 +1420,6 @@ export function ExtensionHub(props: {
     } finally {
       setMigrating(false)
     }
-  }
-
-  // Items the confirm dialog lists: a bundle fans out to its referenced entries; everything else is
-  // just itself.
-  const confirmItems = (e: CatalogEntry): { entry: CatalogEntry; optional: boolean }[] => {
-    if (e.type === "bundle") {
-      return (e.bundleItems ?? [])
-        .slice()
-        .sort((a, b) => a.installOrder - b.installOrder)
-        .map((it) => ({ entry: byId(it.catalogEntryId), optional: it.optional }))
-        .filter((x): x is { entry: CatalogEntry; optional: boolean } => !!x.entry)
-    }
-    return [{ entry: e, optional: false }]
   }
 
   // ── reusable pieces ─────────────────────────────────────────────────────────────────────────
@@ -1983,7 +1824,7 @@ export function ExtensionHub(props: {
   //
   // 每个技能各有自己的开关(装完默认全关,owner 裁决 B),包头挂「移除此扩展包」。
   // 开关走的是**既有** `runStateToggle` —— 与平铺行同一条通道、同一个账本、同一次
-  // `refreshEngine()`。另写一条「包内开关」就是给同一个状态第二个答案。
+  // 重载请求。另写一条「包内开关」就是给同一个状态第二个答案。
   const PackageComponentRow = (cp: {
     packageId: string
     component: { componentId: string; kind: string; name: string; required: boolean; desiredState: "enabled" | "disabled" | null }
@@ -2228,6 +2069,19 @@ export function ExtensionHub(props: {
     }
     const isUpdatable = () =>
       updatable().some((r) => r.id === row.receipt.id && r.name === row.name && r.scope === row.receipt.scope)
+    // REQ-234 `#1529`:三档状态(main 对当前目录即时算出,agent 读同一份)。合成的 live-only 行没有账本身份 ⇒ 不显示。
+    const hubState = createMemo(() => hubStateView(hubRowFor(ext.store.hubRows, row.receipt.id, row.receipt.scope)))
+    const [reloadBusy, setReloadBusy] = createSignal(false)
+    const reloadNow = async () => {
+      if (reloadBusy()) return
+      setReloadBusy(true)
+      try {
+        const ok = await ext.refreshEngine(row.receipt.scope === "project" ? projectDir() : undefined)
+        if (!ok) flash(t("alpha.ext.hubReloadNowRefused"), "error")
+      } finally {
+        setReloadBusy(false)
+      }
+    }
     return (
       <div class="alpha-ext-man" data-clickable={clickable() ? "" : undefined} onClick={() => clickable() && openRow()}>
         <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
@@ -2332,6 +2186,15 @@ export function ExtensionHub(props: {
               )}
             </Show>
           </div>
+          <Show when={hubState()}>
+            {(hs) => (
+              <div class="alpha-ext-man-st" data-hub-state={hs().state} title={hs().detail}>
+                <span class="alpha-ext-man-dot" data-tone={hs().tone} />
+                {t(hs().textKey)}
+                <Show when={hs().reasonKey}>{(key) => <> · {t(key())}</>}</Show>
+              </div>
+            )}
+          </Show>
           {/* `#784` 第 8 跳:单独移除被拒 ⇒ **明确拒绝 + 指向正确动作**,不是静默什么都不做,
               更不是回一句「已移除」而东西还在。注意开关仍然可用:单独**停用**是合法的,
               不能单独**移除**而已。 */}
@@ -2362,6 +2225,21 @@ export function ExtensionHub(props: {
             这颗按钮与状态行那句「需要重新登录」是同一个事实的两半,缺任何一半用户都走不出去。 */}
         <Show when={row.type === "mcp" && row.mcp?.needsAuth}>
           <McpNeedsAuthAction name={row.name} />
+        </Show>
+        {/* REQ-234 `#1529`:待重载的行给一个显式「现在重载」—— 唯一会跳过「等对话空闲」的入口,按钮上说清代价。 */}
+        <Show when={hubState()?.reloadNow}>
+          <button
+            class="alpha-ext-updbtn"
+            data-hub-reload-now=""
+            title={t("alpha.ext.hubReloadNowHint")}
+            disabled={reloadBusy()}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              void reloadNow()
+            }}
+          >
+            {t("alpha.ext.hubReloadNow")}
+          </button>
         </Show>
         {/* REQ-103:审查更新入口(有更新的行内;复用既有 runUpdate —— MCP 走确认框重装,其余原子更新) */}
         <Show when={isUpdatable()}>
@@ -2730,7 +2608,7 @@ export function ExtensionHub(props: {
                     <SecRow label={t("alpha.builtin.builtinSection")} />
                     <BuiltinControlsPanel
                       agents={ext.store.agents}
-                      refreshEngine={ext.refreshEngine}
+                      requestReload={() => ext.requestEngineReload("built-in policy changed")}
                       reloadAgents={ext.reloadAgents}
                       flash={flash}
                     />
@@ -3072,288 +2950,17 @@ export function ExtensionHub(props: {
           }
         />
         <Dialog
-          open={!!confirming() || !!packageAuthz()}
-          onClose={() => packageAuthz() ? closePackageAuthz() : closeAuthz()}
+          open={confirm.open()}
+          onClose={confirm.close}
           dismissible={!confirmBusy() && !authzBusy()}
           busy={confirmBusy() || authzBusy()}
           besideSidebar
           size="sm"
-          title={
-            packageAuthz()
-              ? t("alpha.ext.confirmTitle", { name: packageAuthz()!.view.presentation.displayName })
-              : authz()?.host === "confirm"
-                ? authzTitle()
-                : confirming()
-                  ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName })
-                  : ""
-          }
+          title={confirm.title()}
           restoreFocus={() => hubCloseButton}
-          footer={
-            packageAuthz() ? (
-              <>
-                <Button variant="ghost" autofocus disabled={authzBusy()} onClick={closePackageAuthz}>
-                  {t("alpha.ext.cancel")}
-                </Button>
-                <Button
-                  variant="primary"
-                  loading={authzBusy()}
-                  disabled={!packageSecretsComplete()}
-                  onClick={() => void confirmPackageAuthz()}
-                >
-                  {t("alpha.ext.confirmInstall")}
-                </Button>
-              </>
-            ) : authz()?.host === "confirm" ? (
-              authzFooter()
-            ) : (
-              <>
-                <Button variant="ghost" autofocus disabled={confirmBusy()} onClick={closeAuthz}>
-                  {t("alpha.ext.cancel")}
-                </Button>
-                <Button
-                  variant="primary"
-                  loading={confirmBusy()}
-                  onClick={() => {
-                    const e = confirming()
-                    if (!e || confirmBusy()) return
-                    const raw = envValues()
-                    const secretsArg = Object.keys(raw).length ? raw : undefined
-                    // #348 两阶段(设计稿 D1):主按钮 await 首驱 —— stage="authorize" 时同框原地
-                    // 切第二阶段(标题/body/footer 换为授权视图),成功或普通失败才关框;不再点击即关。
-                    void (async () => {
-                      setConfirmBusy(true)
-                      try {
-                        const scope = installScope()
-                        const selectedProjectDir = scope === "project" ? projectDir() : undefined
-                        const diffs = await onAdd(e, secretsArg, undefined, scope, selectedProjectDir)
-                        if (diffs) {
-                          setAuthz({
-                            entry: e,
-                            mode: "install",
-                            host: "confirm",
-                            secrets: secretsArg,
-                            scope,
-                            projectDir: selectedProjectDir,
-                            diffs,
-                          })
-                          return
-                        }
-                        closeAuthz()
-                      } finally {
-                        setConfirmBusy(false)
-                      }
-                    })()
-                  }}
-                >
-                  {t("alpha.ext.confirmInstall")}
-                </Button>
-              </>
-            )
-          }
+          footer={<InstallConfirmFooter confirm={confirm} />}
         >
-          <Show when={packageAuthz()}>
-            {(state) => (
-              <div class="alpha-ext-confirm" data-package-authorization={state().view.catalogId}>
-                <p class="alpha-ext-confirm-desc">{state().view.presentation.description}</p>
-                <div class="alpha-ext-install-box">
-                  <For each={packagePlanIncluded()}>
-                    {(item) => (
-                      <div class="alpha-ext-install-row" data-plan-component={item.componentId} data-included="true">
-                        <span class="alpha-ext-install-nm">{item.name}</span>
-                        <span class="alpha-ext-install-k">{typeLabel(item.kind)}</span>
-                      </div>
-                    )}
-                  </For>
-                </div>
-                {/* 确认屏也是一个 preview:被跳过的组件必须在**用户按下确认之前**就说清楚,
-                    并且用与详情页、收据逐字相同的原因 token。 */}
-                <Show when={packagePlanSkipped().length > 0}>
-                  <div class="alpha-ext-install-box" data-plan-skipped="true">
-                    <div class="alpha-ext-confirm-line">{t("alpha.ext.packageComponentSkipped")}</div>
-                    <For each={packagePlanSkipped()}>
-                      {(item) => (
-                        <div
-                          class="alpha-ext-install-row"
-                          data-plan-component={item.componentId}
-                          data-included="false"
-                          data-skip-reason={item.included ? undefined : item.skipReasonCode}
-                        >
-                          <span class="alpha-ext-install-nm">{item.componentId}</span>
-                          <span class="alpha-ext-install-k">
-                            {item.included ? "" : t(packageSkipReasonKey(item.skipReasonCode) as never)}
-                          </span>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <ExtAuthzView
-                  name={state().view.presentation.displayName}
-                  isBundle={packagePlanIncluded().length > 1}
-                  mode="install"
-                  diffs={state().preview.items}
-                />
-                <Show when={packagePrerequisites().length > 0}>
-                  <div class="alpha-ext-confirm-keys">
-                    <div class="alpha-ext-confirm-line">{t("alpha.ext.packageConfirmEnv")}</div>
-                    <For each={packagePrerequisites()}>
-                      {(item) => (
-                        <label class="alpha-ext-key-field">
-                          <span class="alpha-ext-key-name">{item.prerequisiteId === "mcp:github-official#GITHUB_PERSONAL_ACCESS_TOKEN" ? t("alpha.ext.officialGithubPat") : item.prerequisiteId === "mcp:dbhub-readonly#DSN" ? t("alpha.ext.officialSqliteDsn") : item.label}</span>
-                          <input
-                            class="alpha-ext-key-input"
-                            type="password"
-                            autocomplete="off"
-                            spellcheck={false}
-                            required
-                            placeholder={t(item.prerequisiteId === "mcp:github-official#GITHUB_PERSONAL_ACCESS_TOKEN" ? "alpha.ext.officialGithubPat" : item.prerequisiteId === "mcp:dbhub-readonly#DSN" ? "alpha.ext.officialSqliteDsn" : "alpha.ext.packageKeyPlaceholder")}
-                            value={envValues()[item.prerequisiteId] ?? ""}
-                            onInput={(event) =>
-                              setEnvValues((current) => ({
-                                ...current,
-                                [item.prerequisiteId]: event.currentTarget.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      )}
-                    </For>
-                    <Show when={!packageSecretsComplete()}>
-                      <p class="alpha-ext-key-hint" role="status">{t("alpha.ext.packageKeysRequired")}</p>
-                    </Show>
-                    <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
-                  </div>
-                </Show>
-                <p class="alpha-ext-confirm-note">{t("alpha.ext.confirmNote")}</p>
-              </div>
-            )}
-          </Show>
-          <Show when={authz()?.host === "confirm"}>
-            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} mode={authz()!.mode} diffs={authz()!.diffs} />
-          </Show>
-          <Show when={!packageAuthz() && authz()?.host !== "confirm" && confirming()}>
-            {(entry) => (
-              <div class="alpha-ext-confirm">
-                <div class="alpha-ext-confirm-meta">
-                  <span class="alpha-ext-chip" data-source={entry().source}>
-                    {sourceLabel(entry().source)}
-                  </span>
-                  <span class="alpha-ext-confirm-type">{typeLabel(entry().type)}</span>
-                </div>
-                <p class="alpha-ext-confirm-desc">{catalogDescription(entry())}</p>
-                <div class="alpha-ext-install-box">
-                  <For each={confirmItems(entry())}>
-                    {(it) => {
-                      const ic = iconFor(it.entry)
-                      return (
-                        <div class="alpha-ext-install-row">
-                          <span class="alpha-ext-install-ic" style={{ background: ic.color }}>
-                            {ic.glyph}
-                          </span>
-                          <span class="alpha-ext-install-nm">{it.entry.displayName}</span>
-                          <Show when={it.optional}>
-                            <span class="alpha-ext-install-opt">{t("alpha.ext.optional")}</span>
-                          </Show>
-                          <span class="alpha-ext-install-k">{typeLabel(it.entry.type)}</span>
-                        </div>
-                      )
-                    }}
-                  </For>
-                </div>
-                <Show when={entry().type === "mcp"}>
-                  <fieldset class="alpha-ext-install-scope" data-install-scope="mcp">
-                    <legend>{t("alpha.ext.installScopeTitle")}</legend>
-                    <div class="alpha-ext-install-scope-options">
-                      <label
-                        class="alpha-ext-install-scope-option"
-                        data-selected={installScope() === "global" ? "" : undefined}
-                      >
-                        <input
-                          type="radio"
-                          name="alpha-ext-install-scope"
-                          value="global"
-                          checked={installScope() === "global"}
-                          onChange={() => setInstallScope("global")}
-                        />
-                        <span>
-                          <b>{t("alpha.ext.installScopeGlobal")}</b>
-                          <small>{t("alpha.ext.installScopeGlobalHint")}</small>
-                        </span>
-                      </label>
-                      <Show when={projectDir()}>
-                        {(dir) => {
-                          const projectTarget = () => catalogInstallTargetFor(entry(), "project", dir())
-                          return (
-                            <label
-                              class="alpha-ext-install-scope-option"
-                              data-selected={installScope() === "project" ? "" : undefined}
-                              data-disabled={!projectTarget().ok ? "" : undefined}
-                            >
-                              <input
-                                type="radio"
-                                name="alpha-ext-install-scope"
-                                value="project"
-                                checked={installScope() === "project"}
-                                disabled={!projectTarget().ok}
-                                onChange={() => setInstallScope("project")}
-                              />
-                              <span>
-                                <b>{t("alpha.ext.installScopeProject")}</b>
-                                <small>
-                                  {projectTarget().ok
-                                    ? t("alpha.ext.installScopeProjectHint", { project: projectLabel(dir()) })
-                                    : t("alpha.ext.installScopeProjectUnavailable")}
-                                </small>
-                              </span>
-                            </label>
-                          )
-                        }}
-                      </Show>
-                    </div>
-                  </fieldset>
-                </Show>
-                <Show when={entry().type === "plugin"}>
-                  <p class="alpha-ext-confirm-risk">⚠ {t("alpha.ext.pluginRisk")}</p>
-                </Show>
-                <Show when={runtimeDeps(entry())}>
-                  <div class="alpha-ext-confirm-line">
-                    {t("alpha.ext.confirmRuntime")}: <code>{runtimeDeps(entry())}</code>
-                  </div>
-                </Show>
-                <Show when={requiredEnvVarList(entry()).length}>
-                  <div class="alpha-ext-confirm-keys">
-                    <div class="alpha-ext-confirm-line">{t("alpha.ext.confirmEnv")}</div>
-                    <For each={requiredEnvVarList(entry())}>
-                      {(varName) => (
-                        <label class="alpha-ext-key-field">
-                          <span class="alpha-ext-key-name">{varName}</span>
-                          <input
-                            class="alpha-ext-key-input"
-                            type="password"
-                            autocomplete="off"
-                            spellcheck={false}
-                            placeholder={t("alpha.ext.keyPlaceholder")}
-                            value={envValues()[varName] ?? ""}
-                            onInput={(ev) => setEnvValues((prev) => ({ ...prev, [varName]: ev.currentTarget.value }))}
-                          />
-                        </label>
-                      )}
-                    </For>
-                    <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
-                  </div>
-                </Show>
-                <p class="alpha-ext-confirm-note">
-                  {entry().type === "mcp"
-                    ? t(
-                        installScope() === "project"
-                          ? "alpha.ext.confirmNoteProjectMcp"
-                          : "alpha.ext.confirmNoteGlobalMcp",
-                      )
-                    : t("alpha.ext.confirmNote")}
-                </p>
-              </div>
-            )}
-          </Show>
+          <InstallConfirmBody confirm={confirm} />
         </Dialog>
 
         {/* #348:独立授权框 —— skill 直装 / 更新扩权(无前置确认框的宿主)。busy 期间不可关

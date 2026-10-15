@@ -537,6 +537,7 @@ export type {
 // REQ-103(#195):governance 只读视图形状(真源 main/ext-inventory.ts;shared/ext-ownership +
 // ext-states 的五维/三态纯值)。
 import type { ExtInventory } from "../main/ext-inventory"
+import type { HubRequestStage, HubView, ReloadItem } from "../main/alpha-sidecar-messages"
 export type { InventoryRow, ExtInventory } from "../main/ext-inventory"
 
 // REQ-128 Phase 3(`#780`/`#782`/`#784`):本地 Claude 插件包导入的 wire 形状。
@@ -931,7 +932,8 @@ export type ElectronAPI = {
       | { ok: false; reason: string }
     >
     /** REQ-100 #311 / REQ-099 #305:main-owned catalog 安装唯一入口(mcp/plugin/skill/agent/cloud/bundle)。
-     *  MCP durable commit 后由 main 让 engine 重载 `{file:}` 引用；result 只带 reference + status。 */
+     *  REQ-234 `#1529`:提交成功后由 main 请 ext 调度器重载(等会话空闲),不在当前回答里等;
+     *  装上没有、能不能用,看 `hubView` 的三档状态。 */
     installCatalog: (
       intent:
         | {
@@ -945,6 +947,9 @@ export type ElectronAPI = {
             }
             /** REQ-128 package admission attempt identity; package intents require it. */
             attemptId?: string
+            /** REQ-234 `#1529`:agent 经确认框发起的这一次安装的请求号。main 在进表通道前剥掉它,只用于记
+             *  committed / failed 阶段(I9);缺席 = 定制中心自己的安装。 */
+            hubRequestId?: string
             /** package 重驱还必须原样带回四组 digest binding；legacy 仍只交 confirmed。 */
             authorization?: AuthorizationConfirmationWire | PackageAdmissionAuthorizationV1
           }
@@ -963,10 +968,6 @@ export type ElectronAPI = {
           kind: string
           name: string
           manifestDigest?: string
-          mcpActivation?: {
-            reference: string
-            status: "connected" | "disabled" | "failed" | "reload-pending"
-          }
           installedDisabled?: true
           /** `#704`:已安装,但可选的 Alpha Connection 未建立 —— 与「装完默认关」是两回事。 */
           connectionUnavailable?: true
@@ -1173,6 +1174,26 @@ export type ElectronAPI = {
     /** #408:会话结束事件(蓄意停止 = sidecar-stop / 崩溃 = sidecar-exit)—— 收到即把全部会话
      *  开关归位;respawn 后的 renderer reload 重查空集 = 双保险。返回退订函数。 */
     onSessionGrantsEnded: (cb: (e: SessionGrantsEndedEventWire) => void) => () => void
+    /** REQ-234 `#1529`:请 ext 调度器重载 —— global 或某项目目录;等同一引擎实例上所有会话空闲再动手,
+     *  `force` = 用户点了「现在重载(会打断正在输出的回答)」。只记一笔、立即返回 generation,不等重载。 */
+    reloadRequest: (input: {
+      scope: "global" | { directory: string }
+      items?: ReloadItem[]
+      reason: string
+      force?: boolean
+    }) => Promise<{ ok: true; generation: number } | { ok: false; reason: string }>
+    /** REQ-234 `#1529`:「已安装 / 待重载 / 可用」—— main 对 (id, scope, directory) 即时算出的唯一权威,
+     *  agent 工具读的是同一份。directory 缺省 = 引擎初始工作区。纯读。 */
+    hubView: (directory?: string) => Promise<HubView>
+    /** REQ-234 `#1529`:确认框守望者记 agent 安装请求的阶段(只记 main 内存;committed 只由安装体写)。 */
+    hubRequestStage: (input: {
+      requestId: string
+      stage: Exclude<HubRequestStage, "committed">
+      catalogId?: string
+      reason?: string
+    }) => Promise<{ ok: true } | { ok: false; reason: string }>
+    /** REQ-234 `#1529`:「待重载」的原因变了(重载请求 / ext 报告 / 引擎连上或断开)—— 重读 `hubView`。返回退订函数。 */
+    onHubViewChanged: (cb: () => void) => () => void
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

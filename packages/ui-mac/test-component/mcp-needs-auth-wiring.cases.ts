@@ -144,13 +144,13 @@ Object.defineProperty(window, "api", {
       installCatalog: async (intent: unknown) => {
         installCatalogCalls.push(intent)
         engineStatus = { ...engineStatus, filesystem: { status: "connected" } }
-        return {
-          ok: true as const,
-          kind: "mcp",
-          name: "filesystem",
-          mcpActivation: { reference: "filesystem", status: "connected" as const },
-        }
+        // `#1529`:安装结果不再带 mcpActivation(main 只请求重载;连没连上看三档状态 / 引擎 status)。
+        return { ok: true as const, kind: "mcp", name: "filesystem" }
       },
+      // `#1529`:三档状态面 —— 本文件不验它,给一份空视图;推送不触发。
+      hubView: async () => ({ directory: "/", rows: [], warnings: [] }),
+      reloadRequest: async () => ({ ok: true as const, generation: 1 }),
+      onHubViewChanged: () => () => {},
       builtinRead: async () => ({ tools: [], agents: [], protection: { hard: [], alphaInjected: [] } }),
       curationBlob: async () => undefined,
       migrateVerify: async () => ({ ok: true as const }),

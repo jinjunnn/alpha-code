@@ -31,9 +31,15 @@ tool.alpha_ping.description                         text      tool-description  
 tool.alpha_register.args.entry                      text      tool-arg-description      98    1024   10%
 tool.alpha_register.args.name                       text      tool-arg-description      70    1024    7%
 tool.alpha_register.args.type                       text      tool-arg-description      26    1024    3%
-tool.alpha_register.description                     text      tool-description         776    1024   76%
+tool.alpha_register.description                     text      tool-description         797    1024   78%
 tool.alpha_reload.args.reason                       text      tool-arg-description      43    1024    4%
-tool.alpha_reload.description                       text      tool-description         368    1024   36%
+tool.alpha_reload.description                       text      tool-description         373    1024   36%
+tool.hub_install.args.catalogId                     text      tool-arg-description      59    1024    6%
+tool.hub_install.description                        text      tool-description         465    1024   45%
+tool.hub_search.args.query                          text      tool-arg-description      92    1024    9%
+tool.hub_search.description                         text      tool-description         369    1024   36%
+tool.hub_status.args.catalogId                      text      tool-arg-description      59    1024    6%
+tool.hub_status.description                         text      tool-description         245    1024   24%
 vision.system-note-offline                          text      system                   251    1024   25%
 vision.tool.input-omitted                           text      vision-block              23    1024    2%
 vision.tool.refused                                 text      vision-block              24    1024    2%
@@ -61,10 +67,12 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 61; injected bytes: 25405; declared limits total: 120832
+fragments: 67; injected bytes: 26720; declared limits total: 126976
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
+  ref.permission.hub_install /permission/hub_install REQ-234 #1531 定制中心安装确认框的 "ask" 动词
+  ref.agent.permission.hub_install /agent/*/permission/hub_install REQ-234 #1531 每个 agent 末位的 "ask"(无人值守的 alpha-automation* 为 "deny")
   ref.mcp                /mcp               云 MCP server 定义(type / url / enabled / oauth / headers.Authorization = {file:} 引用):ext 经 env 装(cloud-websearch-kill.ts),ui-mac 主进程直写并对用户全局 MCP 钉 enabled:false(alpha-config-injection.ts / cloud-sidecar-config.ts / mcp-default-deny.ts / ext-disabled-injection.ts);工具表是远端 server 的字
   ref.schema             /$schema           ui-mac 无继承 config 时种下的 JSON Schema URL(alpha-config-injection.ts:91)
   ref.plugin             /plugin            @alpha-code/ext 自包含 bundle 的绝对路径(alpha-config-injection.ts:105-109);bundle 里 alpha 的字各自登记在本簿

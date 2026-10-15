@@ -124,12 +124,10 @@ mock.module("../src/main/remote-catalog", () => ({
     } as never),
 }))
 
-const reloadedMcp: string[] = []
+/** `#1529`:main 发往 ext 的重载请求(像 server.ts 在 sidecar ready 时那样接上发送口)。 */
+const reloadRequests: Array<Record<string, unknown>> = []
 mock.module("../src/main/ext-mcp-activation", () => ({
-  reloadInstalledMcp: async (name: string) => {
-    reloadedMcp.push(name)
-    return { reference: name, status: "connected" }
-  },
+  verifyInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
   probeProjectMcpActivation: async () => "unverifiable" as const,
 }))
 
@@ -220,12 +218,13 @@ initAlphaEnvironment({
   baseRoot: join(tmp, "alpha-code-state"),
   homeDir: join(tmp, "home"),
 })
-registerExtIpcHandlers(
+const { alphaSidecar } = registerExtIpcHandlers(
   userData,
   "dev",
   async () => ({ url: "http://127.0.0.1:39121", username: "opencode", password: "route-password" }),
   join(tmp, "home"),
 )
+alphaSidecar.attach((message) => void reloadRequests.push(message as Record<string, unknown>))
 
 afterAll(() => {
   globalThis.fetch = originalFetch
@@ -248,7 +247,7 @@ function resetDisk() {
   payloadFetches = 0
   assetFetches = 0
   fetchedUrls.length = 0
-  reloadedMcp.length = 0
+  reloadRequests.length = 0
   logLines.length = 0
 }
 
@@ -501,8 +500,10 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
   expect(outcome.skipped).toEqual([{ id: LEAF_UNSUPPORTED_ID, reason: EXPECTED_SKIP_REASON }])
   // main 内部的重载指令不过线。
   expect(Object.keys(result as object)).not.toContain("activateMcp")
-  // 全新安装的 catalog MCP 默认关 ⇒ 一次 live 重载都不该发生(「无 double load」的下界)。
-  expect(reloadedMcp).toEqual([])
+  // `#1529`:整包一次提交 ⇒ 恰好一次重载请求(global,交给 ext 调度器等会话空闲),不按组件各来一次
+  // (「无 double load」的下界);main 自己一次 dispose 都不做。
+  expect(reloadRequests.filter((m) => m.type === "alpha.reload.request")).toHaveLength(1)
+  expect(reloadRequests[0]).toMatchObject({ type: "alpha.reload.request", scope: "global" })
 
   // ── 一次事务、一份 mutation。
   const journals = readdirSync(join(root(), "ext-tx", "journal"))

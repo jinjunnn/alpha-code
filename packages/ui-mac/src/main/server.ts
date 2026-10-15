@@ -35,6 +35,7 @@ import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 import { markStartupTimeline } from "./startup-timeline"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 import { buildSidecarStopCommand, type SidecarStopMode } from "./sidecar-stop"
+import type { AlphaSidecarOutbound } from "./alpha-sidecar-messages"
 import { consumeDanglingSweepCredit } from "./dangling-sweep-latch"
 // REQ-159 `#1321`:进程围栏计划 —— fork 之前渲染 + 试编译可写集、解析原生模块路径,经 StartCommand 交给
 // sidecar 在 import 引擎之前 apply。计划做不出来 = 拒绝 fork(fail-closed,原因可读),不静默无围栏。
@@ -125,6 +126,14 @@ type SpawnLocalServerOptions = {
    * 没有强制层的平台不装策略层(如实:那里的引擎本来就没有围栏,不假装有一半)。
    */
   egressProxy?: () => Promise<{ port: number }>
+  /**
+   * REQ-234 `#1529`:parentPort 上 `alpha.*` 窄消息的 main 侧接收者(hub-view.ts 的 createAlphaSidecarHost)。
+   * `receive` 与 writeProbes 并列挂在 `child.on("message")` 上;ready 之后 `attach`,子进程退出时调它返回的断开函数。
+   */
+  alphaSidecar?: {
+    receive(message: unknown, post: (message: AlphaSidecarOutbound) => void): boolean
+    attach(post: (message: AlphaSidecarOutbound) => void): (reason: string) => void
+  }
 }
 
 // ── REQ-137:策略代理单例(main 进程内,围栏外)──────────────────────────────────────────
@@ -582,12 +591,19 @@ export async function spawnLocalServer(
   // REQ-159 `#1322`:探针请求簿。sidecar 收到 write-probe 命令即同步回一条 write-probe-result;这里按 id 对号。
   // 子进程退出 ⇒ 在途请求全部答 unknown(不是「拒绝」,也不是「可写」)。
   const writeProbes = createWriteProbeRequester((command) => child.postMessage(command))
-  child.on("message", (message: unknown) => void writeProbes.receive(message))
+  // REQ-234 `#1529`:`alpha.*` 分发与探针应答并列;不是本族的消息原样交还(返回 false)。
+  const postAlpha = (message: AlphaSidecarOutbound) => child.postMessage(message)
+  child.on("message", (message: unknown) => {
+    if (writeProbes.receive(message)) return
+    options.alphaSidecar?.receive(message, postAlpha)
+  })
+  let detachAlpha: ((reason: string) => void) | undefined
   child.once("exit", (code) => {
     clearOfficialConnectorRuntimeOnExit(runtimeGeneration)
     exited = true
     electronNs.app.off("child-process-gone", onProcessGone)
     writeProbes.close(`sidecar exited with code ${code}`)
+    detachAlpha?.(`sidecar exited with code ${code}`)
     options.onExit?.(code)
     exit.resolve(code)
   })
@@ -675,6 +691,8 @@ export async function spawnLocalServer(
     if (!exited) child.kill()
     throw error
   })
+  // REQ-234 `#1529`:ready 之后接上重载请求的发送口(重发 main 记录里仍在途的 generation)。
+  if (!exited) detachAlpha = options.alphaSidecar?.attach(postAlpha)
 
   const wait = (async () => {
     const url = `http://${hostname}:${port}`

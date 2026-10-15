@@ -521,7 +521,7 @@ render(() => {
     const surfaceComponents = createMemo<AppSurfaces>(() => ({
       permission: (props) => (
         <AlphaBoundary name="PermissionWatcher">
-          <PermissionWatcher {...props} />
+          <PermissionWatcher {...props} server={sidebarServer} />
         </AlphaBoundary>
       ),
       [productionRoutes.home.surface]: productionRoutes.home.mount(alphaProjects, projectsServerKey),

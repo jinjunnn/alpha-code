@@ -9,7 +9,7 @@ import * as path from "node:path"
 
 import { makeRecoveryGate, type RecoveryGate } from "./ext-recovery-gate"
 import { probeTransactionJournals } from "./ext-transaction"
-import { buildGatedWriteChannels, GATED_WRITE_CHANNELS, LOCAL_PACKAGE_READ_CHANNELS, type WriteChannelBodies, type WriteChannelRoots } from "./ext-write-channels"
+import { buildGatedWriteChannels, GATED_WRITE_CHANNELS, HUB_READ_CHANNELS, LOCAL_PACKAGE_READ_CHANNELS, type WriteChannelBodies, type WriteChannelRoots } from "./ext-write-channels"
 
 const GLOBAL = "/roots/global"
 const PROJECT = "/roots/project"
@@ -79,6 +79,8 @@ function makeHarness(admit: boolean) {
     importClaudePluginConfirm: body("importClaudePluginConfirm"),
     importSkillFolder: body("importSkillFolder"),
     importSkillGit: body("importSkillGit"),
+    // `#1529`:同上 —— 显式列出,漏掉时 body 是 undefined 而「键集一一对应」仍绿。
+    reloadRequest: body("reloadRequest"),
   }
   return { gate, roots, bodies, gateLog, bodyLog }
 }
@@ -111,6 +113,7 @@ describe("GATED_WRITE_CHANNELS — 表完整性", () => {
       "ext-import-claude-plugin-confirm",
       "ext-import-skill-folder",
       "ext-import-skill-git",
+      "ext-reload-request",
     ])
     // 两段式的既有先例:agent 的 preview 不在表内、confirm 在表内。本地插件包逐字同款。
     const write = new Set<string>(Object.values(GATED_WRITE_CHANNELS))
@@ -136,10 +139,23 @@ describe("GATED_WRITE_CHANNELS — 表完整性", () => {
     expect(new Set(names).size).toBe(names.length)
     for (const n of names) expect(n.startsWith("ext-")).toBe(true)
   })
+
+  // `#1529`:三档状态的读面与「记阶段」面是表外通道 —— 账本待恢复时状态照样要看得到、确认框照样要能记阶段。
+  // 把它们挪进写表(或反过来把重载请求挪出写表),这条立刻红。
+  test("定制中心状态面两条表外通道:内容逐名钉死,与写表、纯读表都**互斥**", () => {
+    expect(Object.values(HUB_READ_CHANNELS)).toEqual(["ext-hub-view", "ext-hub-request-stage"])
+    const write = new Set<string>(Object.values(GATED_WRITE_CHANNELS))
+    const localRead = new Set<string>(Object.values(LOCAL_PACKAGE_READ_CHANNELS))
+    for (const name of Object.values(HUB_READ_CHANNELS)) {
+      expect(write.has(name)).toBe(false)
+      expect(localRead.has(name)).toBe(false)
+    }
+    expect(write.has("ext-reload-request")).toBe(true)
+  })
 })
 
 describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", () => {
-  test("放行:全部 12 通道 body 收到原实参,gate 收到该通道的解析 root", async () => {
+  test("放行:全部 13 通道 body 收到原实参,gate 收到该通道的解析 root", async () => {
     const h = makeHarness(true)
     const w = buildGatedWriteChannels(h)
     await w.installCatalog({ catalogId: "mcp:demo", scope: { scope: "project", projectDir: "/p" } })
@@ -154,6 +170,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
     await w.importClaudePluginConfirm("local-preview-1")
     await w.importSkillFolder("/picked/dir", { scope: "project", projectDir: "/p" })
     await w.importSkillGit("https://x.git", undefined)
+    await w.reloadRequest({ scope: "global", items: [], reason: "x" })
     expect(h.bodyLog.map((b) => b.key)).toEqual([
       "installCatalog",
       "uninstallV2",
@@ -167,9 +184,10 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
       "importClaudePluginConfirm",
       "importSkillFolder",
       "importSkillGit",
+      "reloadRequest",
     ])
     // root 断言:global 面 / intent 定根 / 项目面 / 导入 target 定根
-    expect(h.gateLog).toEqual([PROJECT, PROJECT, GLOBAL, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL])
+    expect(h.gateLog).toEqual([PROJECT, PROJECT, GLOBAL, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL, GLOBAL])
     // 实参透传抽查
     expect(h.bodyLog[7]?.args).toEqual(["m", { type: "local" }, ["K"]])
     expect(h.bodyLog[3]?.args).toEqual([{ type: "skill" }, "gen-000001-abcdef12"])
@@ -180,7 +198,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
     expect(h.bodyLog[9]?.args).toEqual(["local-preview-1"])
   })
 
-  test("gate 拒绝:全部 12 通道 body 零调用,拒因原样返回", async () => {
+  test("gate 拒绝:全部 13 通道 body 零调用,拒因原样返回", async () => {
     const h = makeHarness(false)
     const w = buildGatedWriteChannels(h)
     const results = await Promise.all([
@@ -196,9 +214,10 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
       w.importClaudePluginConfirm("id"),
       w.importSkillFolder("/d", undefined),
       w.importSkillGit("u", undefined),
+      w.reloadRequest({ scope: { directory: "/p" }, items: [], reason: "x" }),
     ])
     expect(h.bodyLog).toEqual([])
-    expect(h.gateLog).toHaveLength(12)
+    expect(h.gateLog).toHaveLength(13)
     for (const r of results) expect(r).toEqual({ ok: false, reason: "gate refused" })
   })
 
@@ -209,6 +228,21 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
     expect(r).toEqual({ ok: false, reason: "bad uninstall intent" })
     expect(h.gateLog).toEqual([])
     expect(h.bodyLog).toEqual([])
+  })
+
+  // `#1529`:重载请求按作用域定根 —— global → 全局根;{ directory } → 只交项目 resolver;畸形 scope 不进 gate。
+  test("reload 定根:global / 项目目录各走各的根,畸形 scope 不进 gate", async () => {
+    const h = makeHarness(true)
+    const w = buildGatedWriteChannels(h)
+    await w.reloadRequest({ scope: "global", items: [], reason: "a" })
+    await w.reloadRequest({ scope: { directory: "/p" }, items: [], reason: "b" })
+    expect(h.gateLog).toEqual([GLOBAL, PROJECT])
+    for (const bad of [{ scope: "everything" }, { scope: { directory: "" } }, { scope: { directory: "/p", extra: 1 } }, null, undefined]) {
+      const r = (await w.reloadRequest(bad)) as { ok?: unknown }
+      expect(r.ok).toBe(false)
+    }
+    expect(h.gateLog).toEqual([GLOBAL, PROJECT])
+    expect(h.bodyLog.map((b) => b.key)).toEqual(["reloadRequest", "reloadRequest"])
   })
 
   test("catalog scope 定根严格:畸形 scope 不进 gate，project 只交 project resolver", async () => {
@@ -379,7 +413,9 @@ test("真实 catalog MCP 写通道结果只公开状态且不回显提交的 sec
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
   // 用词边界而非 toContain:`"11 pass"` 含 `"1 pass"`、`"10 fail"` 含 `"0 fail"`,
-  // 子串匹配会在用例数增减时假绿。五条子用例:enabled / installedDisabled 两条返回分支,加 #702 的 detail 通道注册、package 预检接线、browse 数据源。
-  expect(output).toMatch(/\b5 pass\b/)
+  // 子串匹配会在用例数增减时假绿。七条子用例:enabled / installedDisabled 两条返回分支,加 #702 的 detail 通道注册、package 预检接线、browse 数据源,
+  // 加 `#1529` 的 I4(IPC 与 parentPort 同档)与 I9(hubRequestId ⇒ committed),
+  // 加 `#1531` 的项目作用域重载请求与 agent 安装金丝雀端到端(生产 ext hub_install × 真 main 分发)。
+  expect(output).toMatch(/\b9 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
 }, 120_000)

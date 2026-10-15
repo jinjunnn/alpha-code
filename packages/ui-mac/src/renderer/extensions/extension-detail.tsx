@@ -9,7 +9,7 @@ import { createMemo, createResource, createSignal, For, Show, type Accessor, typ
 import { t } from "../i18n"
 import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec, SkillInstallSpec } from "./catalog-types"
 import type { InstallReceipt, ExtInventory } from "../../preload/types"
-import type { ExtensionsApi, HubAgent } from "./use-extensions"
+import { hubRowFor, hubStateView, type ExtensionsApi, type HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
 import { CloudFormBox } from "./cloud-form-box"
 import { extensionError, catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
@@ -176,7 +176,7 @@ export function ExtensionDetail(props: {
       setReloadPending(false)
       try {
         // `#784` G20:走 `ext.uninstallPackage` 而不是 `extIpc.uninstallPackage` ——
-        // 那一层在成功之后会 `refreshEngine()`。此前这里直连 IPC 并且**只 refetch 不 refresh**,
+        // 那一层在成功之后会请引擎重载。此前这里直连 IPC 并且**只 refetch 不 refresh**,
         // 后果是「移除成功」之后那些技能仍然被引擎实例注入着,一直到用户下次重启 App。
         const result = await props.ext.uninstallPackage(view().catalogId)
         if (!result.ok) {
@@ -505,6 +505,13 @@ export function ExtensionDetail(props: {
     const e = entry()
     return e?.type === "mcp" ? props.ext.store.mcp[e.name] : undefined
   }
+  // REQ-234 `#1529`:与已安装列表同一份三档状态(详情页只呈现 global 安装,与上面 receipt 的口径一致)。
+  const hubState = createMemo(() => {
+    const r = receipt()
+    return r && r.installedAt !== "" ? hubStateView(hubRowFor(props.ext.store.hubRows, r.id, r.scope)) : undefined
+  })
+  const [reloadBusy, setReloadBusy] = createSignal(false)
+  const [reloadRefused, setReloadRefused] = createSignal(false)
 
   // REQ-019 T3:技能详情渲染 SKILL.md 全文。只有 builtin 资产可读(主进程只读 IPC,键校验 +
   // 256KB 帽);未打包的诚实显示原因,不占位。
@@ -773,6 +780,14 @@ export function ExtensionDetail(props: {
             <Show when={installed()}>
               <span class="alpha-ext-dhead-installed">✓ {t("alpha.ext.installed")}</span>
             </Show>
+            <Show when={hubState()}>
+              {(hs) => (
+                <span data-hub-state={hs().state} title={hs().detail}>
+                  {t(hs().textKey)}
+                  <Show when={hs().reasonKey}>{(key) => <> · {t(key())}</>}</Show>
+                </span>
+              )}
+            </Show>
           </div>
         </div>
         {/* 主操作在头部右侧(2026-07-04 定稿,参照 ChatGPT 插件详情页模式);
@@ -863,6 +878,25 @@ export function ExtensionDetail(props: {
               </>
             )}
           </Show>
+          <Show when={hubState()?.reloadNow}>
+            <button
+              class="alpha-ext-add"
+              data-hub-reload-now=""
+              title={t("alpha.ext.hubReloadNowHint")}
+              disabled={reloadBusy()}
+              onClick={async () => {
+                setReloadBusy(true)
+                try {
+                  // global 安装 ⇒ 重载全部(详情页只呈现 global 收据)
+                  if (!(await props.ext.refreshEngine())) setReloadRefused(true)
+                } finally {
+                  setReloadBusy(false)
+                }
+              }}
+            >
+              {t("alpha.ext.hubReloadNow")}
+            </button>
+          </Show>
           <Show when={installed() && receipt()}>
             <button class="alpha-ext-add" data-variant="danger" onClick={() => props.onUninstall(receipt()!)}>
               {t("alpha.ext.remove")}
@@ -870,6 +904,9 @@ export function ExtensionDetail(props: {
           </Show>
         </div>
       </header>
+      <Show when={reloadRefused()}>
+        <p class="alpha-ext-card-err" role="alert">{t("alpha.ext.hubReloadNowRefused")}</p>
+      </Show>
 
       {/* B11:安装失败行内(与卡片错误同源),不裸 toast */}
       <Show when={entry() && props.errorFor?.(entry()!.id)}>

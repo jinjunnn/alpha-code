@@ -288,7 +288,7 @@ export const TOOL_TEXT = {
   },
   alpha_reload: {
     description:
-      "Schedule a reload of the opencode engine's extension registry (skills / agents / commands / plugins) without restarting the app. Call this after creating or editing a skill or agent on disk. The reload runs right after the current reply finishes (an immediate reload would cut this reply off), so the new skill/agent is available from the NEXT message in this session.",
+      "Schedule a reload of the opencode engine's extension registry (skills / agents / commands / plugins) without restarting the app. Call this after creating or editing a skill or agent on disk. The reload runs once no reply is in progress in this workspace (an immediate reload would cut replies off), so the new skill/agent is available from the NEXT message in this session.",
     args: { reason: "What was created/changed (for the tool log)" },
   },
   alpha_register: {
@@ -298,7 +298,7 @@ export const TOOL_TEXT = {
       "type=mcp with the connector config (loading executable connectors additionally requires the user's per-project consent dialog); " +
       "type=skill takes no entry — it registers the ./.code-puppy/skills path; write the skill itself to .code-puppy/skills/<name>/SKILL.md. " +
       "Plugins are NOT registered here: drop a self-contained ESM .js into .code-puppy/plugins/ (raw TypeScript is rejected). " +
-      "The change is validated, written atomically, and auto-reloaded after this reply finishes (available from the NEXT message).",
+      "The change is validated, written atomically, and auto-reloaded once no reply is in progress in this workspace (available from the NEXT message).",
     args: {
       type: "Extension kind to register",
       name: "Entry name (letters/digits/._- , max 64 chars); ignored for type=skill",
@@ -313,6 +313,27 @@ export const TOOL_TEXT = {
   alpha_ping: {
     description: "Health-check tool: returns 'pong' plus the session directory. Proof that the Code Puppy extension is loaded.",
     args: { note: "Optional note echoed back with the pong" },
+  },
+  // REQ-234 `#1531`:定制中心三工具(hub-tools.ts)。措辞按「主要通路」,不宣称确认框是唯一安装通路(基线 §4 冻结面)。
+  hub_search: {
+    description:
+      "Search the Code Puppy Customization Center (skills, agents, commands, connectors, cloud capabilities) as seen from this workspace: " +
+      "what exists, whether it is installed and enabled, its state (not-installed / installed / reload-pending / available) and what authorization it needs. " +
+      "Use it before telling the user a capability is missing. An empty query lists everything.",
+    args: { query: "Keywords or purpose matched against id, name and description; empty string lists all entries" },
+  },
+  hub_install: {
+    description:
+      "Ask the user to install a Customization Center entry (id from hub_search). The app shows its own confirmation box; the user approves there and types any required key there. " +
+      "Never ask for, accept or invent keys or tokens in chat. Returns at once with the outcome; nothing installed takes effect inside the current reply — " +
+      "once hub_status shows available, it can be used from the next message. If the result is pending, check hub_status instead of installing again.",
+    args: { catalogId: "Entry id exactly as returned by hub_search, e.g. mcp:github" },
+  },
+  hub_status: {
+    description:
+      "Check one Customization Center entry in this workspace: installed or not, enabled, its state (installed / reload-pending / available) " +
+      "and, when it is not available yet, why (sessions still busy, last reload failed, not loaded in this directory).",
+    args: { catalogId: "Entry id exactly as returned by hub_search, e.g. mcp:github" },
   },
 } as const
 
@@ -430,6 +451,10 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   // 引擎进程本身,ext 不再写 cfg.shell):
   defineReference({ id: "ref.skills.paths", pointer: "/skills/paths", note: "出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字" }),
   defineReference({ id: "ref.permission.skill", pointer: "/permission/skill", note: "REQ-067 出厂禁项的 \"deny\" 动词(factory-deny.ts)" }),
+  // REQ-234 `#1531` I3:`hub_install` 的 ask / deny 动词钉在全局与每个 agent 的末位(hub-tools.ts pinHubInstallPermission)。
+  // agent 名是用户 / 出厂配置的键,所以第二条用单段通配 `*`(只匹配恰好一段,见 explainConfigReference)。
+  defineReference({ id: "ref.permission.hub_install", pointer: "/permission/hub_install", note: "REQ-234 #1531 定制中心安装确认框的 \"ask\" 动词" }),
+  defineReference({ id: "ref.agent.permission.hub_install", pointer: "/agent/*/permission/hub_install", note: "REQ-234 #1531 每个 agent 末位的 \"ask\"(无人值守的 alpha-automation* 为 \"deny\")" }),
   // ext 与 ui-mac 主进程都写的一类:
   defineReference({
     id: "ref.mcp",
@@ -522,8 +547,16 @@ export function explainConfigString(pointer: string, value: string): Explanation
  */
 export function explainConfigReference(pointer: string): Explanation {
   for (const f of CONTEXT_INJECTIONS)
-    if (f.kind === "reference" && (pointer === f.pointer || pointer.startsWith(f.pointer + "/"))) return { ok: true, id: f.id, kind: f.kind }
+    if (f.kind === "reference" && referenceCovers(f.pointer, pointer)) return { ok: true, id: f.id, kind: f.kind }
   return { ok: false }
+}
+
+/** 引用子树判定:段对段逐个相等;引用里的 `*` 段匹配**恰好一段**(`#1531`,agent 名这类用户键)。 */
+function referenceCovers(reference: string, pointer: string): boolean {
+  if (!reference.includes("*")) return pointer === reference || pointer.startsWith(reference + "/")
+  const want = reference.split("/")
+  const got = pointer.split("/")
+  return got.length >= want.length && want.every((segment, index) => segment === "*" ? got[index] !== "" : segment === got[index])
 }
 
 /**
