@@ -180,13 +180,17 @@ describe("REQ-235 cloud form rendered from the catalog description", () => {
     cloud.fields[2] = { name: "style", control: "select", required: true, options: [{ value: "plain", label: "Plain" }], label: "Style" }
     mount({ cloud })
     expect(submit().disabled).toBe(true)
+    // 必填 select 没有预选项:留空选项,先选上,让下面每一步只剩一个变量。
+    expect(control<HTMLSelectElement>("style", "select")!.value).toBe("")
+    choose("style", "plain")
+    expect(submit().disabled).toBe(true)
     fill("prompt", "  ab  ")
     expect(submit().disabled).toBe(true)
     fill("prompt", " abc ")
-    expect(submit().disabled).toBe(true)
-    expect(control<HTMLSelectElement>("style", "select")!.value).toBe("")
-    choose("style", "plain")
     expect(submit().disabled).toBe(false)
+    choose("style", "")
+    expect(submit().disabled).toBe(true)
+    choose("style", "plain")
     fill("title", "   ")
     expect(submit().disabled).toBe(false)
 
