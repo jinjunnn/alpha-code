@@ -79,7 +79,7 @@ function mountDetail(receipts: Array<Record<string, unknown>>, installed: boolea
   const host = document.createElement("div")
   document.body.append(host)
   const ext = {
-    store: { mcp: {}, receipts, projectReceipts: [], agents: [], sessionGrants: [], sessionLink: {}, ready: true, error: false },
+    store: { mcp: {}, receipts, projectReceipts: [], agents: [], sessionGrants: [], sessionLink: {}, hubRows: [], ready: true, error: false },
     factorySkills: () => [],
     isInstalled: () => installed,
     refresh: async () => {},

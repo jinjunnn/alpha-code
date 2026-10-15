@@ -80,6 +80,8 @@ const extensions = {
     agents: [],
     sessionGrants: [],
     sessionLink: {},
+    // `#1529`:三档状态行(生产 store 恒有这一键;替身缺它,详情页读不到就当没有)。
+    hubRows: [],
     ready: true,
     error: false,
   },
@@ -87,6 +89,7 @@ const extensions = {
   isInstalled: () => false,
   refresh: async () => {},
   refreshEngine: async () => true,
+  requestEngineReload: async () => true,
   listInstalledPackages: async () => ({ ok: true as const, packages: [] }),
   uninstallPackage: async (packageId: string) => {
     dataLayerPackageUninstalls.push(packageId)

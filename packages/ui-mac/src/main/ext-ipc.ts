@@ -1240,7 +1240,7 @@ export function registerExtIpcHandlers(
           if (!result.ok) return result
           // REQ-234 `#1529`:提交成功 ⇒ 请 ext 调度器重载(等同一引擎实例上所有会话空闲),**不再**在这里
           // dispose + 读一次 status。连接 / 加载是否成功由 hub-view 按目录即时核验,经 `ext-hub-view` 呈现;
-          // 这里的返回值因此不再带 `mcpActivation`(那是一次在当前回答里等重载的快照,约束 5 不允许)。
+          // 这里的返回值因此不再带连接快照(那是一次在当前回答里等重载的结果,约束 5 不允许)。
           requestReloadAfterInstall(intent, result)
           // `activateMcp` 是 main 内部指令(package 图里落了 enabled 的 MCP 组件),不是 renderer 事实:剥掉再过线。
           if ("activateMcp" in result) {

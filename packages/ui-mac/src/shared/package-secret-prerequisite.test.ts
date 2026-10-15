@@ -382,9 +382,9 @@ describe("package secret prerequisite", () => {
     const sources = (await Promise.all(paths.map((path) => Bun.file(path).text()))).join("\n")
     expect(sources).not.toContain(secretValue)
     expect(sources).not.toContain("live" + "Mcp")
-    expect(
-      sources.includes("mcpActivation") &&
-        sources.includes('status: "connected" | "disabled" | "failed" | "reload-pending"'),
-    ).toBe(true)
+    // `#1529`:安装结果里那份「当前回答里等重载」的连接快照整个退场 —— 结果面只剩公开状态,没有任何
+    // activation / status 回显;连没连上由 main 的三档视图按目录给。
+    expect(sources).not.toContain("mcpActivation")
+    expect(sources).toContain("verifyInstalledMcp")
   })
 })

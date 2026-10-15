@@ -143,6 +143,9 @@ beforeAll(async () => {
       listInstalls: async () => ({ global: [], project: [] }),
       sessionGrants: async () => ({ grants: [] }),
       onSessionGrantsEnded: () => () => {}, factorySkillIds: async () => [],
+      // `#1529`:三档状态面 —— 本文件不验它;空视图、推送不触发。
+      hubView: async () => ({ directory: "/", rows: [], warnings: [] }),
+      onHubViewChanged: () => () => {},
     },
   } })
   runtime = await import(pathToFileURL(join(root, "bundle/runtime.js")).href)
