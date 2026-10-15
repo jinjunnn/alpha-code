@@ -23,4 +23,8 @@ while IFS= read -r name; do
 done <<< "$repository_local_git_env"
 unset repository_local_git_env
 
+cd "$repository_root" || exit 1
+if command -v gate >/dev/null 2>&1; then
+  exec gate pre-push "$@"
+fi
 exec bash "$repository_root/scripts/alpha-check.sh"

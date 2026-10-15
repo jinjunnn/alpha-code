@@ -5,8 +5,10 @@
 
 ## 0. TL;DR — push 前一条命令
 
+先提交再运行 `gate run`(经 `bin/check` 转调全量检查);pre-push 使用 `gate pre-push` 复用已通过的代码树并签 `check`,机器上没有 `gate` 时回落到直接运行 `scripts/alpha-check.sh`。
+
 ```bash
-bash scripts/alpha-check.sh
+gate run
 ```
 
 绿了再 push。它跑的是 `alpha-ci` 的**全部 21 个代码步**,并在末尾打印一张逐步对照表

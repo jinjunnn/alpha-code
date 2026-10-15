@@ -28,6 +28,9 @@ const makeHarness = (hook: string) => {
   mkdirSync(main)
   mkdirSync(join(main, ".githooks"))
   mkdirSync(join(main, "scripts"))
+  mkdirSync(join(main, "bin"))
+  writeFileSync(join(main, "bin/check"), readFileSync(join(repositoryRoot, "bin/check")))
+  chmodSync(join(main, "bin/check"), 0o755)
   writeFileSync(join(main, ".githooks/pre-push"), hook)
   chmodSync(join(main, ".githooks/pre-push"), 0o755)
   writeFileSync(
@@ -43,6 +46,10 @@ if [ "\${EXPECT_CLEAN_GIT_ENV:-0}" = "1" ]; then
     fi
   done < <(git rev-parse --local-env-vars)
 fi
+if [ -n "\${CHECK_LOG:-}" ]; then
+  echo check >> "$CHECK_LOG"
+  exit "\${CHECK_EXIT:-0}"
+fi
 fixture="$(mktemp -d)"
 git init -q "$fixture"
 git -C "$fixture" config user.email test@opencode.test
@@ -53,7 +60,7 @@ git -C "$fixture" -c commit.gpgsign=false commit --allow-empty -qm "root commit 
   chmodSync(join(main, "scripts/alpha-check.sh"), 0o755)
   Bun.spawnSync(["git", "init", "-q", "-b", "main", main], { env: crossRepoGitEnv() })
   writeFileSync(join(main, "tracked.txt"), "before\n")
-  runGit(main, "add", ".githooks/pre-push", "scripts/alpha-check.sh", "tracked.txt")
+  runGit(main, "add", ".githooks/pre-push", "scripts/alpha-check.sh", "bin/check", "tracked.txt")
   runGit(main, "-c", "user.email=owner@example.invalid", "-c", "user.name=Owner", "commit", "-qm", "before")
   runGit(main, "config", "core.hooksPath", ".githooks")
   runGit(main, "worktree", "add", "-q", "-b", "push-test", root)
@@ -70,9 +77,9 @@ git -C "$fixture" -c commit.gpgsign=false commit --allow-empty -qm "root commit 
   }
 }
 
-const runPush = (root: string, expectClean: boolean) =>
+const runPush = (root: string, expectClean: boolean, env: Record<string, string> = {}) =>
   Bun.spawnSync(["git", "-C", root, "push", "origin", "push-test"], {
-    env: { ...crossRepoGitEnv(), EXPECT_CLEAN_GIT_ENV: expectClean ? "1" : "0" },
+    env: { ...crossRepoGitEnv(), PATH: "/usr/bin:/bin", EXPECT_CLEAN_GIT_ENV: expectClean ? "1" : "0", ...env },
   })
 
 const runCheck = (root: string, disabled = false) =>
@@ -128,6 +135,52 @@ describe("#815 · pre-push scrubs the repository-local Git environment before ru
       const after = statSync(harness.configPath, { bigint: true })
       expect(after.ino).toBe(harness.configStat.ino)
       expect(after.mtimeNs).toBe(harness.configStat.mtimeNs)
+    }
+    rmSync(harness.container, { recursive: true, force: true })
+  })
+})
+
+describe("#1537 · pre-push gate delegation and fallback", () => {
+  test("gate receives remote arguments and real Git stdin unchanged; its success/failure is final, without a second alpha-check", () => {
+    const harness = makeHarness(shippedHook)
+    mkdirSync(join(harness.container, "tools"))
+    // 只替代命令边界,不重写 gate 的缓存/签名协议。缓存与落盘另用本机真实 gate 取证。
+    writeFileSync(join(harness.container, "tools/gate"), `#!/usr/bin/env bash
+set -eu
+printf '%s\\n' "$@" > "$GATE_ARGS"
+cat > "$GATE_INPUT"
+pwd > "$GATE_CWD"
+while IFS= read -r name; do
+  if [ -n "$name" ] && [ "\${!name+x}" = x ]; then exit 91; fi
+done < <(git rev-parse --local-env-vars)
+exit "$GATE_EXIT"
+`)
+    chmodSync(join(harness.container, "tools/gate"), 0o755)
+    const env = {
+      PATH: `${harness.container}/tools:/usr/bin:/bin`,
+      GATE_ARGS: join(harness.container, "args"),
+      GATE_INPUT: join(harness.container, "input"),
+      GATE_CWD: join(harness.container, "cwd"),
+      CHECK_LOG: join(harness.container, "checks"),
+    }
+    for (const code of [42, 0]) {
+      expect(runPush(harness.root, true, { ...env, GATE_EXIT: String(code) }).exitCode === 0).toBe(code === 0)
+      expect(readFileSync(env.GATE_ARGS, "utf8").trim().split("\n")).toEqual(["pre-push", "origin", join(harness.container, "remote.git")])
+      expect(readFileSync(env.GATE_INPUT, "utf8").split(" ").slice(0, 2)).toEqual(["refs/heads/push-test", harness.head])
+      expect(readFileSync(env.GATE_CWD, "utf8").trim()).toBe(harness.root)
+      expect(Bun.file(env.CHECK_LOG).size).toBe(0)
+    }
+    rmSync(harness.container, { recursive: true, force: true })
+  })
+
+  test("no gate: alpha-check runs exactly once, rejects failure and accepts success; bin/check forwards the same exit code", () => {
+    const harness = makeHarness(shippedHook)
+    const log = join(harness.container, "checks")
+    for (const code of [42, 0]) {
+      const env = { CHECK_LOG: log, CHECK_EXIT: String(code) }
+      expect(runPush(harness.root, true, env).exitCode === 0).toBe(code === 0)
+      expect(readFileSync(log, "utf8").trim().split("\n")).toHaveLength(code === 42 ? 1 : 3)
+      expect(Bun.spawnSync(["./bin/check"], { cwd: harness.root, env: { ...crossRepoGitEnv(), ...env } }).exitCode).toBe(code)
     }
     rmSync(harness.container, { recursive: true, force: true })
   })
