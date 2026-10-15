@@ -118,7 +118,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "b22a43472487eed2036cd0a6b296ada8a236638a",
+    commit: "b02fc0fd8b71f9b17d621bceb3de9fb9698aa425",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -126,7 +126,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "914e610dabd7197c87467d6fc610e2f11a0f5ecf1579f083ab273934adbb1b94",
+    artifactSha256: "95da7a8b872bc59615f6b80a0327643371159cef803b96532178e10329308e2c",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
@@ -159,6 +159,14 @@ const UPSTREAMS = [
     // 的宿主副本 host-extension-package-artifact.v1.json 追平本仓 live(253aa607…)。本跳同样只做
     // 机械 re-vendor。顺带吞下 alpha-web 在 3ebca3c 之后从未被 re-vendor 的两次产物变更
     // (alpha-web#148 关窗 re-pin、#166 品牌域名切换)。
+    //
+    // `#1527` / alpha-web#270:宿主 registry 新增 `cloud@1`,发布端按本分支 checkpoint 1167048b
+    // 升 pin(带过渡对,与 alpha-web#256 同形)并重生 artifact,语料 40 → 40:没有新增或撤掉文件;
+    // 宿主副本 host-extension-package-artifact.v1.json / registry 追平本仓 live(485f1de9…)。
+    // 编译器尚不发 cloud(仍在 excluded 里),本跳只做机械 re-vendor;顺带吞下 alpha-web#265 之后
+    // 从未被 re-vendor 的 declaration schema 变更(两条 `officialRecipe` const)。alpha-web 那一侧 squash
+    // 合并后,这里的 commit(连同 lock 与 artifact.test.ts 里的同一个 sha)要换成 squash 提交 ——
+    // 字节与 artifactSha256 不变(producer 不嵌入自己的 commit)。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",

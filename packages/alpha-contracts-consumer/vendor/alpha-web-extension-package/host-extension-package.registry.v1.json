@@ -8,6 +8,12 @@
       "schemaPath": "profiles/agent.v1.schema.json"
     },
     {
+      "profileId": "cloud",
+      "profileVersion": 1,
+      "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+      "schemaPath": "profiles/cloud.v1.schema.json"
+    },
+    {
       "profileId": "command",
       "profileVersion": 1,
       "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
