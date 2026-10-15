@@ -309,6 +309,36 @@ export function buildCommandTxItems(input: CommandTxBuildInputV1): PackageTxBuil
   }
 }
 
+/**
+ * REQ-235 cloud:**只有 receipt** —— 零文件、零引擎 config、零密钥,镜像 legacy 云条目的
+ * receipts-only 安装(`ext-install-planner.ts` 的 cloud 分支):同一种 receipt item、同一个 key。
+ * desiredState 由 admission 的 `nextDesiredState` 给出(cloud 首装恒 enabled,既有记录 disabled
+ * 则继承),锁内只复核账本可写 —— 与其余四条 package builder 同一纪律。派发不要求已安装;
+ * 这条 receipt 让它进可用列表,并让授权账记下 `cloud:dispatch`。
+ */
+export function buildCloudTxItems(input: CommonInput): PackageTxBuildResultV1 {
+  const receipt = input.receipt
+  const items: TxPlanItem[] = [
+    {
+      key: input.key,
+      action: "receipt",
+      manifestDigest: input.manifestDigest,
+      capabilities: input.capabilities,
+      receipt,
+    },
+  ]
+  return {
+    ok: true,
+    build: {
+      items,
+      receipt,
+      populate: () => {},
+      precondition: () => probeLedgerForWrite(input.root),
+      probe: extensionHealthProbeRouter(input.root),
+    },
+  }
+}
+
 /** mcp:单 config item + 版本化密钥 prepared resource;live 叶未在册即拒(不认领、不覆盖)。 */
 export function buildMcpTxItems(input: McpTxBuildInputV1): PackageTxBuildResultV1 {
   const receipt = input.receipt

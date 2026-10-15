@@ -10,7 +10,7 @@ import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { promotePayloadToCas } from "./ext-install-planner"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
-import { buildAgentTxItems, buildCommandTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
+import { buildAgentTxItems, buildCloudTxItems, buildCommandTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import {
@@ -53,7 +53,7 @@ import {
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import { isLocalPackageId, LOCAL_PACKAGE_ID_PREFIX } from "../shared/local-package-namespace"
 import { isRetiredOfficeMcp, retiredCommunityOfficeFor } from "../shared/office-advisories"
-import type { MarkdownAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
+import type { MarkdownAssetRefV1, PackageSupportedComponentV1 } from "../shared/host-extension-package-contract/decoder"
 import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
 import type {
   PackageAdmissionAuthorizationV1,
@@ -244,6 +244,20 @@ const byComponentId = <T extends { id: string }>(left: T, right: T) =>
   left.id < right.id ? -1 : left.id > right.id ? 1 : 0
 
 /**
+ * REQ-235 I10:**安装授权能力**的唯一派生点。宿主支持 token(`derivePayloadCapabilitiesV1`,组件的
+ * `capabilities`)回答「这台宿主认不认识它要的东西」;授权能力回答「装上之后用户放行了它做什么」——
+ * 两个集合。cloud 载荷没有密钥、没有连接,支持 token 恒为空集,照搬就会让确认框、预览与事务都是
+ * 「零能力」;所以按**已验证的档案**派生 `cloud:dispatch`(与 legacy `capabilitiesForCatalogEntry`
+ * 对云条目是同一事实),不由载荷自报。其它档案原样返回,既有行为一字不变。
+ *
+ * 确认框 diff、预览行、binding 的 capabilityDigest、事务 item(→ `grants.json`)四处都只消费它,
+ * 于是用户确认的、事务写下的、卸载要清的是同一个集合。
+ */
+export function packageAuthorizationCapabilitiesV1(component: PackageSupportedComponentV1): string[] {
+  return component.profileId === "cloud" ? ["cloud:dispatch"] : component.capabilities
+}
+
+/**
  * The transaction key a skipped component gets inside the journal / authorization receipt. The
  * engine's `skippedOptional.key` must be fs-safe (`SAFE_KEY`) and component ids carry a colon, so
  * identity travels as a digest of the id rather than as a hand-rolled re-spelling of it. The
@@ -291,7 +305,7 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
         deps.root(),
         resolved.prepared.components.map((component) => ({
           key: component.key,
-          capabilities: component.accepted.component.capabilities,
+          capabilities: packageAuthorizationCapabilitiesV1(component.accepted.component),
         })),
       ).items
       attempts.set(intent.attemptId, {
@@ -492,6 +506,9 @@ function componentOperations(component: PreparedComponent) {
       return ["write-generation", "write-install-record", "write-capability-grant"] as const
     case "agent":
       return ["write-file", "update-config", "write-install-record", "write-capability-grant"] as const
+    // REQ-235 cloud:receipts-only —— 只有账本记录与授权账。
+    case "cloud":
+      return ["write-install-record", "write-capability-grant"] as const
     // `#840` command:纯 config 叶,无盘上文件、无密钥 —— 与无密钥 MCP 同一组操作种类。
     case "command":
       return ["update-config", "write-install-record", "write-capability-grant"] as const
@@ -523,7 +540,7 @@ function packagePlanPreview(prepared: PreparedPackage): PackageAdmissionPreviewV
     name: component.name,
     manifestDigest: `sha256:${component.itemDigest}`,
     payloadDigest: `sha256:${component.accepted.component.payloadRef.sha256}`,
-    capabilities: [...component.accepted.component.capabilities].sort(),
+    capabilities: [...packageAuthorizationCapabilitiesV1(component.accepted.component)].sort(),
     prerequisites: component.accepted.prerequisite.items.map((item) => ({
       prerequisiteId: item.prerequisiteId,
       label: item.label,
@@ -824,7 +841,7 @@ async function resolvePreparedPackage(
         capabilityDigest: sha256Hex(
           canonicalJson(
             Object.fromEntries(
-              components.map((component) => [component.key, component.accepted.component.capabilities]),
+              components.map((component) => [component.key, packageAuthorizationCapabilitiesV1(component.accepted.component)]),
             ),
           ),
         ),
@@ -903,7 +920,7 @@ async function executePreparedPackage(
       root,
       key: component.key,
       name: component.name,
-      capabilities: component.accepted.component.capabilities,
+      capabilities: packageAuthorizationCapabilitiesV1(component.accepted.component),
       manifestDigest,
       receipt,
     }
@@ -923,6 +940,8 @@ async function executePreparedPackage(
             ...(component.asset ? { asset: component.asset } : {}),
             ...(component.agentEntry ? { agentEntry: component.agentEntry } : {}),
           })
+        case "cloud":
+          return buildCloudTxItems(common)
         case "command":
           // `#840`:单 config item;R4-1 的 disabled 拒绝在 builder 首段(connection.unavailable
           // 压制的 receipt 会在那里让整包 fail-closed,而不是装出「账本关、命令活」的假态)。

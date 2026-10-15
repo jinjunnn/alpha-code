@@ -45,9 +45,9 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "b22a43472487eed2036cd0a6b296ada8a236638a",
+      commit: "b87abdfe5fdbf3d925e05610283dbe63464b0f03",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "914e610dabd7197c87467d6fc610e2f11a0f5ecf1579f083ab273934adbb1b94",
+      artifactSha256: "95da7a8b872bc59615f6b80a0327643371159cef803b96532178e10329308e2c",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
@@ -56,6 +56,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     // 第二个常数,而由下一条 `toEqual` 把 manifest 清单 ∪ {manifest 自己} 与 lock 清单对死。
     // `#853` / alpha-web#98:36 → 40,增补的是 command 资产、Claude 发布端规则与两份负例。
     // `#1287` / alpha-web#194:40 → 40,只换 hostContract 自述与 republish 的宿主副本,不增不撤。
+    // `#1527` / alpha-web#270:40 → 40,同上(宿主 registry 多了 cloud@1,producer 语料不增不撤)。
     expect(lock.files.length).toBe(40)
     expect(lock.files.map((file) => file.path).sort()).toEqual(
       [...manifest.files.map((file) => file.path), "extension-package-producer-artifact.v1.json"].sort(),
@@ -153,8 +154,12 @@ describe("alpha-web extension package producer artifact pin", () => {
     const registry = await json("host-extension-package.registry.v1.json")
     const profiles = await json("generic-profiles.v1.json")
     const rules = await json("generic-rules.v1.json")
+    // 宿主 registry 是本仓自己的合同(`#1527` 起含 cloud@1),发布端只是逐字节 republish;
+    // 「still excludes cloud」说的是**发布端**:下面的 mappings 仍是五个、cloud 仍在 excluded 里,
+    // 直到 alpha-web#270 的编译器半场把它转正。
     expect(registry.profiles.map((profile: { profileId: string }) => profile.profileId).sort()).toEqual([
       "agent",
+      "cloud",
       "command",
       "mcp-local",
       "mcp-remote",

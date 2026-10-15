@@ -9,7 +9,9 @@ import { build } from "vite"
 import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { CloudDispatchBox } from "./cloud-dispatch-box"
-import type { CloudJobEvent } from "../../preload/types"
+import type { CloudJobEnvelope, CloudJobEvent } from "../../preload/types"
+import type { CloudPipelineSpec } from "./catalog-types"
+import bundledCatalog from "./alpha-catalog.json"
 import { dict as zh } from "../i18n/zh"
 
 const directory = mkdtempSync(join(tmpdir(), "alpha-cloud-failure-render-"))
@@ -182,5 +184,275 @@ describe("REQ-232 AC5 cloud refusal reasons and actions", () => {
     await flush()
     expect(text()).toBe(zh["alpha.ext.cloudRunFailed"])
     expect(harness.statusCalls).toEqual([accepted.job_id])
+  })
+})
+
+// REQ-235 AC2(基线 §2.4 / §7 R1-7):legacy 四个 kind 分支的**行为冻结**。
+// 写在把任务生命周期提到 cloud-job-lifecycle.ts **之前**,提取后必须原样通过 —— 兼容性证明
+// 不靠「文件零 diff」,靠这些断言:逐字信封、按钮门控、落盘调用、结果/产物呈现。
+// Spec 取自随包目录(真实条目),office-report 无随包条目 → 照 #1509 用例同法以 docs 条目改 kind。
+const legacySpecOf = (id: string) => {
+  const entry = bundledCatalog.entries.find((candidate) => candidate.id === id)!
+  return entry.installSpec as CloudPipelineSpec
+}
+const legacyDiff = (await Bun.file(join(producer, "cloud-job-request.json")).json()).value.input.diff as string
+
+function mountLegacy(options: {
+  spec: CloudPipelineSpec
+  entryId?: string
+  ready?: boolean
+  recovering?: boolean
+  picked?: string[]
+  result?: unknown
+  savedFiles?: string[]
+  gitDiff?: { ok: true; diff: string; source: "worktree" | "last-commit" } | { ok: false; reason: string }
+  upload?: unknown
+  confirm?: unknown
+}) {
+  const envelopes: CloudJobEnvelope[] = []
+  const saves: unknown[][] = []
+  const statusCalls: string[] = []
+  const pickerCalls: unknown[] = []
+  const uploads: unknown[] = []
+  let event: ((payload: { jobId: string } & CloudJobEvent) => void) | undefined
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    value: {
+      openDirectoryPicker: async (input: unknown) => {
+        pickerCalls.push(input)
+        return options.picked ?? ["/synthetic/results"]
+      },
+      openPath: async () => {},
+      auth: { start: async () => {} },
+      cloud: {
+        dispatch: async (envelope: CloudJobEnvelope) => {
+          envelopes.push(envelope)
+          return accepted
+        },
+        gitDiff: async () => options.gitDiff ?? { ok: true, diff: legacyDiff, source: "worktree" },
+        upload: async (input: unknown) => {
+          uploads.push(input)
+          return options.upload
+        },
+        confirmUpload: async () => options.confirm,
+        cancelUpload: async () => ({ status: "cancelled" }),
+        status: async (id: string) => {
+          statusCalls.push(id)
+          return { ...status, status: "completed", result: options.result ?? {} }
+        },
+        saveRun: async (...args: unknown[]) => {
+          saves.push(args)
+          return { ok: true, dir: "/synthetic/results/run", files: options.savedFiles ?? [], warnings: [] }
+        },
+        subscribe: async () => ({ ok: true }),
+        unsubscribe: async () => ({ ok: true }),
+        onEvent: (handler: typeof event) => {
+          event = handler
+          return () => {}
+        },
+        openBillingPage: async () => {},
+      },
+    },
+  })
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(
+    runtime.render(
+      () =>
+        runtime.createComponent(runtime.CloudDispatchBox, {
+          ...(options.entryId ? { entryId: options.entryId } : {}),
+          spec: options.spec,
+          ready: options.ready ?? true,
+          ...(options.recovering ? { recovering: true } : {}),
+        }),
+      host,
+    ),
+  )
+  return {
+    envelopes,
+    saves,
+    statusCalls,
+    pickerCalls,
+    uploads,
+    send: (name: string, jobId = accepted.job_id) => event?.({ jobId, event: name, data: {}, id: "9" }),
+  }
+}
+const inputButton = () => document.querySelector<HTMLButtonElement>("[data-cloud-input]")
+const typeInto = (value: string) => {
+  const input = document.querySelector<HTMLTextAreaElement>("textarea")!
+  input.value = value
+  input.dispatchEvent(new Event("input", { bubbles: true }))
+}
+const buttonByText = (label: string) =>
+  Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent === label)
+
+describe("REQ-235 AC2 legacy cloud branches are frozen before the lifecycle extraction", () => {
+  test.each([
+    ["research", "cloud:research", "research", { question: "Synthetic input" }, { finalAnswer: "Research answer" }, "Research answer"],
+    ["docs", "cloud:docs", "docs", { code: "Synthetic input" }, { docs: "# Docs answer" }, "# Docs answer"],
+    ["word", "cloud:word", "office-report", { topic: "Synthetic input", format: "docx" }, {}, ""],
+    ["excel", "cloud:excel", "office-report", { topic: "Synthetic input", format: "xlsx" }, {}, ""],
+    ["powerpoint", "cloud:powerpoint", "office-report", { topic: "Synthetic input", format: "pptx" }, {}, ""],
+  ] as const)("%s: exact envelope, input gating, one save, result and artifacts", async (_name, entryId, kind, input, result, text) => {
+    const spec = { ...legacySpecOf(kind === "office-report" ? "cloud:docs" : entryId), pipelineKind: kind } as CloudPipelineSpec
+    const harness = mountLegacy({ spec, entryId, result, savedFiles: ["artifacts/output.bin", "contract.json"] })
+    expect(inputButton()!.disabled).toBe(true)
+    typeInto("   ")
+    expect(inputButton()!.disabled).toBe(true)
+    typeInto("  Synthetic input  ")
+    expect(inputButton()!.disabled).toBe(false)
+    inputButton()!.click()
+    await flush()
+    await flush()
+    expect(harness.pickerCalls).toEqual([{ title: zh["alpha.ext.cloudPickResults"] }])
+    expect(harness.envelopes).toEqual([
+      { autonomy: "pipeline", kind, input, budget: spec.budgetDefaults, constraints: { network: "restricted" } },
+    ])
+    expect(inputButton()!.disabled).toBe(true)
+    harness.send("job.completed")
+    await flush()
+    await flush()
+    expect(harness.statusCalls).toEqual([accepted.job_id])
+    expect(harness.saves).toEqual([["/synthetic/results", accepted.job_id, harness.envelopes[0]]])
+    expect(document.querySelector("[data-cloud-result]")?.textContent ?? "").toBe(text)
+    expect(Array.from(document.querySelectorAll("[data-cloud-file]")).map((node) => node.textContent)).toEqual(["artifacts/output.bin"])
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudDone"])
+  })
+
+  test("office-report without one of the three Office identities stays disabled", async () => {
+    const spec = { ...legacySpecOf("cloud:docs"), pipelineKind: "office-report" } as CloudPipelineSpec
+    const harness = mountLegacy({ spec, entryId: "cloud:office-unknown" })
+    typeInto("Quarterly report")
+    expect(inputButton()!.disabled).toBe(true)
+    inputButton()!.click()
+    await flush()
+    expect(harness.envelopes).toEqual([])
+  })
+
+  test("a cancelled results-folder pick sends nothing and returns to idle", async () => {
+    const harness = mountLegacy({ spec: legacySpecOf("cloud:research"), entryId: "cloud:research", picked: [] })
+    typeInto("Synthetic input")
+    inputButton()!.click()
+    await flush()
+    expect(harness.envelopes).toEqual([])
+    expect(inputButton()!.disabled).toBe(false)
+    expect(inputButton()!.textContent).toBe(zh["alpha.ext.cloudStart"])
+  })
+
+  test("a failed terminal still saves the run and points at the saved folder", async () => {
+    const harness = mountLegacy({ spec: legacySpecOf("cloud:research"), entryId: "cloud:research" })
+    typeInto("Synthetic input")
+    inputButton()!.click()
+    await flush()
+    await flush()
+    harness.send("job.failed")
+    await flush()
+    await flush()
+    expect(harness.saves).toEqual([["/synthetic/results", accepted.job_id, harness.envelopes[0]]])
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudSaved"])
+    expect(document.querySelector(".alpha-ext-card-err")?.textContent).toBe(zh["alpha.ext.cloudRunFailed"])
+  })
+
+  test("events for another job id are ignored", async () => {
+    const harness = mountLegacy({ spec: legacySpecOf("cloud:research"), entryId: "cloud:research" })
+    typeInto("Synthetic input")
+    inputButton()!.click()
+    await flush()
+    await flush()
+    harness.send("job.completed", "job_someone_else")
+    await flush()
+    expect(harness.saves).toEqual([])
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudRunning"])
+  })
+
+  test("code-review legacy diff: exact envelope, no result read, no artifact list", async () => {
+    const spec = legacySpecOf("cloud:code-review")
+    const harness = mountLegacy({ spec, entryId: "cloud:code-review", savedFiles: ["artifacts/review.md"] })
+    expect(document.querySelector("textarea")).toBeNull()
+    buttonByText(zh["alpha.cloud.consent.legacyDiff"])!.click()
+    await flush()
+    await flush()
+    expect(harness.envelopes).toEqual([
+      {
+        autonomy: "pipeline",
+        kind: "code-review",
+        input: { diff: legacyDiff },
+        budget: spec.budgetDefaults,
+        constraints: { network: "restricted" },
+      },
+    ])
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudDiffWorktree"])
+    harness.send("job.completed")
+    await flush()
+    await flush()
+    expect(harness.statusCalls).toEqual([])
+    expect(harness.saves).toEqual([["/synthetic/results", accepted.job_id, harness.envelopes[0]]])
+    expect(document.querySelectorAll("[data-cloud-file]").length).toBe(0)
+    expect(document.querySelector("[data-cloud-result]")).toBeNull()
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudDone"])
+  })
+
+  test("code-review legacy diff with no changes sends nothing", async () => {
+    const harness = mountLegacy({
+      spec: legacySpecOf("cloud:code-review"),
+      entryId: "cloud:code-review",
+      gitDiff: { ok: false, reason: "no-diff" },
+    })
+    buttonByText(zh["alpha.cloud.consent.legacyDiff"])!.click()
+    await flush()
+    await flush()
+    expect(harness.envelopes).toEqual([])
+    expect(document.querySelector(".alpha-ext-card-err")?.textContent).toBe(zh["alpha.ext.cloudNoDiff"])
+  })
+
+  test("code-review upload: confirmed send closes the dialog and saves under the upload contract", async () => {
+    const harness = mountLegacy({
+      spec: legacySpecOf("cloud:code-review"),
+      entryId: "cloud:code-review",
+      upload: {
+        status: "consent-required",
+        requestId: "request-legacy",
+        preview: {
+          pipeline: "code-review",
+          fileCount: 1,
+          totalBytes: 10,
+          files: [{ path: "src/a.ts", sizeBytes: 10, sensitive: true }],
+          findings: [{ kind: "contact", fileCount: 1 }],
+          purpose: "artifact.upload",
+          retentionClass: "standard",
+        },
+      },
+      confirm: { status: "sent", privacy: "sensitive", directory: "/project", job: accepted },
+    })
+    buttonByText(zh["alpha.cloud.consent.uploadPick"])!.click()
+    await flush()
+    expect(harness.uploads).toEqual([{ kind: "code-review" }])
+    expect(document.querySelector("[role=dialog]")).not.toBeNull()
+    const confirm = Array.from(document.querySelectorAll<HTMLButtonElement>("[role=dialog] button")).at(-1)!
+    confirm.click()
+    await flush()
+    await flush()
+    expect(document.querySelector("[role=dialog]")).toBeNull()
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudRunning"])
+    expect(document.body.textContent).not.toContain(zh["alpha.cloud.consent.silentPass"])
+    harness.send("job.completed")
+    await flush()
+    await flush()
+    expect(harness.saves).toEqual([["/project", accepted.job_id, { autonomy: "pipeline", kind: "code-review", input: {} }]])
+    expect(harness.envelopes).toEqual([])
+  })
+
+  test.each([
+    [false, "alpha.ext.cloudNeedPlatformNote"],
+    [true, "alpha.ext.cloudRecoveringNote"],
+  ] as const)("not ready (recovering=%s) disables every dispatch control and says why", (recovering, note) => {
+    mountLegacy({ spec: legacySpecOf("cloud:code-review"), entryId: "cloud:code-review", ready: false, recovering })
+    expect(buttonByText(zh["alpha.cloud.consent.uploadPick"])!.disabled).toBe(true)
+    expect(buttonByText(zh["alpha.cloud.consent.legacyDiff"])!.disabled).toBe(true)
+    expect(document.body.textContent).toContain(zh[note])
+    document.body.replaceChildren()
+    mountLegacy({ spec: legacySpecOf("cloud:research"), entryId: "cloud:research", ready: false, recovering })
+    typeInto("Synthetic input")
+    expect(inputButton()!.disabled).toBe(true)
   })
 })

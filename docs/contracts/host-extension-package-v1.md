@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-08-03
+last_reviewed: 2026-10-15
 review_after: 2027-01-26
 ---
 
@@ -25,9 +25,11 @@ compares it against
 `#807` — the whole time, every gate was green. Re-read it from the manifest
 rather than trusting it.
 
-The v1 host profiles are `agent`, `command`, `mcp-local`, `mcp-remote`, and `skill`; the
-capability vocabulary is `alpha.connection.v1`, `alpha.mcp-oauth.v1`, and
-`alpha.secret-prerequisite.v1`. `#807` briefly registered a fifth profile
+The v1 host profiles are `agent`, `cloud`, `command`, `mcp-local`, `mcp-remote`, and `skill`; the
+capability vocabulary is `alpha.connection.v1`, `alpha.mcp-oauth.v1`,
+`alpha.official-connectors.v1`, and `alpha.secret-prerequisite.v1`. `cloud@1`
+(REQ-235) describes one cloud capability as a closed form; its shape and the
+host-only invariants are in `CONTRACT.md` § Cloud payloads. `#807` briefly registered a fifth profile
 (`opencode-plugin`) with two more capabilities (`engine:config`,
 `engine:plugin`); ADR-040 rejected it and `#830` withdrew all three.
 
@@ -69,6 +71,17 @@ re-vendors those exact bytes. Until both hops land, the consumer's byte-identity
 check against the live host artifact is expected to fail. That red gate is the
 cross-repository pin doing its job; it must not be weakened or skipped.
 
+⚠️ **REQ-235 (`alpha-code#1527`) repeats that hop for `cloud@1`.** The host
+registry now registers `cloud`, so the live host artifact moved, while the
+vendored producer artifact still republishes the pre-cloud host copy and
+lists `cloud` among its exclusions. Until alpha-web pins a checkpoint of this
+change, republishes, and this repository re-vendors those bytes
+(`bun run --cwd packages/alpha-contracts-consumer vendor`, as `#1312` did for
+the listing section), the consumer's byte-identity check against the live
+host artifact is expected to fail, and the closure test's five-profile and
+`cloud`-excluded expectations change with the re-vendor. Same rule: do not
+weaken or skip it.
+
 The **runtime host decoder** judgement is not in the consumer package — it cannot
 import across packages. It is delegated to `packages/ui-mac/src/main/package-installability.test.ts`
 (evaluator behaviour) and `packages/ui-mac/src/shared/host-extension-package-contract/package-envelope-v1.test.ts`
@@ -109,6 +122,23 @@ summaries; and bounded presentation. Raw envelopes, payload references, URLs,
 commands, header templates, secret values, and secret injection targets do
 not cross the IPC boundary. Phase 1 has one required component, so the wire
 does not reserve optional-child or Alpha Connection states.
+
+REQ-235 adds one optional field. When the root profile is `cloud@1` and the
+verdict is `compatible`, the view carries `cloud: { pipelineKind, fields,
+fixed, holdUsd, upstreamData }` — the payload main already decoded, never the
+raw bytes. The renderer draws the form from it and dispatches through the
+existing `cloud-dispatch` IPC. Installing a cloud package writes a receipt
+only; its authorization set is `["cloud:dispatch"]`, derived once in main from
+the verified profile (`packageAuthorizationCapabilitiesV1`) and used by the
+confirmation diff, plan preview, binding, transaction and uninstall alike.
+
+`fixed[].value` is published as `maxLength: 4096`, but that schema bound counts
+characters while the host also applies its `maxStringBytes` bound of **4096
+UTF-8 bytes** to every payload string
+(`packages/ui-mac/src/shared/host-extension-package-contract/decoder.ts:1755`).
+The byte bound is the binding one: a value of 4096 characters that are not all
+ASCII passes the schema and is still refused by the host, so producers must
+measure a fixed value in UTF-8 bytes, not characters.
 
 ## Beyond the first install
 

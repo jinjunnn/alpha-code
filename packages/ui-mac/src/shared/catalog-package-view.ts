@@ -1,4 +1,5 @@
 import type {
+  CloudBehaviorV1,
   PackageComponentSkipReasonV1,
   PackageListingV1,
 } from "./host-extension-package-contract/decoder"
@@ -63,4 +64,10 @@ export type CatalogPackageViewV1 = {
    * 缺席是常态(已发布的条目一个都没有),消费端必须当可选处理。
    */
   listing?: PackageListingV1
+  /**
+   * REQ-235(冻结面 F4):root 档案为 `cloud@1` 且判定 compatible 时,main 解码过的表单描述
+   * (`pipelineKind / fields / fixed / holdUsd / upstreamData`)。renderer 只按它画表单、组 input,
+   * 走既有 `cloud-dispatch` IPC;其它包恒缺席。
+   */
+  cloud?: CloudBehaviorV1
 }

@@ -132,6 +132,9 @@
               },
               "type": "object"
             },
+            "officialRecipe": {
+              "const": "dbhub-readonly-v1"
+            },
             "requiredSecrets": {
               "items": {
                 "maxLength": 128,
@@ -194,6 +197,9 @@
                 "pattern": "^[A-Za-z0-9-]{1,128}$"
               },
               "type": "object"
+            },
+            "officialRecipe": {
+              "const": "github-remote-v1"
             },
             "requiredSecrets": {
               "items": {

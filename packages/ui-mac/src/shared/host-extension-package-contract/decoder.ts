@@ -314,9 +314,56 @@ export type McpRemotePayloadV1 = {
   behavior: McpRemoteBehaviorV1
 }
 
+/**
+ * REQ-235 `cloud@1`(冻结面 F3):一项云能力的表单描述。客户端按 `fields` 顺序画表单、把 `fixed`
+ * 从签名载荷并进 `input`、经既有 `cloud-dispatch` IPC 派发 `pipelineKind`;字段合同的唯一权威是
+ * alpha-platform 的 pipeline 注册表,发布端编译期把约束抄进这里,宿主不依赖平台契约。
+ *
+ * 类型集**封闭**:三种 control,别无其它 —— 文件上传是宿主原生的主进程同意流程,不在合同里,
+ * 需要它的能力仍然随客户端发布。`label` / `help` / `upstreamData` / `holdUsd` 只用于呈现,结构上
+ * 不进派发信封;`holdUsd` 只是显示,钱的权威在服务端。没有 `budget`:信封里可选、服务端缺省并 clamp。
+ */
+export type CloudTextFieldV1 = {
+  name: string
+  control: "text" | "textarea"
+  required: boolean
+  minChars?: number
+  maxChars: number
+  label: string
+  help?: string
+}
+
+export type CloudSelectFieldV1 = {
+  name: string
+  control: "select"
+  required: boolean
+  options: Array<{ value: string; label: string }>
+  /** 只是客户端 select 的预选项;服务端不代入缺省值。 */
+  default?: string
+  label: string
+  help?: string
+}
+
+export type CloudFieldV1 = CloudTextFieldV1 | CloudSelectFieldV1
+
+export type CloudBehaviorV1 = {
+  pipelineKind: string
+  fields: CloudFieldV1[]
+  /** 用户看不见也改不了;服务端把它当普通 input 校验,不存在「这是固定值」的旁路。 */
+  fixed: Array<{ name: string; value: string }>
+  holdUsd: number
+  upstreamData: string[]
+}
+
+export type CloudPayloadV1 = {
+  schema: "alpha.host-extension-package.payload.cloud.v1"
+  behavior: CloudBehaviorV1
+}
+
 export type PackageProfilePayloadV1 =
   | SkillPayloadV1
   | AgentPayloadV1
+  | CloudPayloadV1
   | CommandPayloadV1
   | McpLocalPayloadV1
   | McpRemotePayloadV1
@@ -402,6 +449,12 @@ const COMMAND_BEHAVIOR_KEYS = new Set(["template", "description", "agent", "mode
 const SKILL_BEHAVIOR_KEYS = new Set(["targetDir", "files"])
 const SKILL_ASSET_FILE_KEYS = new Set(["path", "sha256", "bytes", "url"])
 const MCP_LOCAL_BEHAVIOR_KEYS = new Set(["command", "environment", "requiredSecrets", "officialRecipe"])
+/** REQ-235 `cloud@1`:各层恰是 `profiles/cloud.v1.schema.json` 的 properties,一个不多。 */
+const CLOUD_BEHAVIOR_KEYS = new Set(["pipelineKind", "fields", "fixed", "holdUsd", "upstreamData"])
+const CLOUD_TEXT_FIELD_KEYS = new Set(["name", "control", "required", "minChars", "maxChars", "label", "help"])
+const CLOUD_SELECT_FIELD_KEYS = new Set(["name", "control", "required", "options", "default", "label", "help"])
+const CLOUD_OPTION_KEYS = new Set(["value", "label"])
+const CLOUD_FIXED_KEYS = new Set(["name", "value"])
 const MCP_REMOTE_BEHAVIOR_KEYS = new Set(["url", "headersTemplate", "requiredSecrets", "auth", "officialRecipe"])
 const MCP_REMOTE_AUTH_KINDS = ["alpha-connection", "mcp-oauth"] as const
 const MCP_OAUTH_AUTH_KEYS = new Set(["kind", "prerequisiteId", "required", "label"])
@@ -442,6 +495,10 @@ const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,127}$/
 const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,128}$/
 const PREREQUISITE_ID_RE = /^[a-z][a-z0-9-]{0,63}$/
 const CONNECTION_HANDLER_RE = /^[a-z][a-z0-9-]{0,63}$/
+/** 平台注册表键,原样进信封 `kind`。 */
+const CLOUD_PIPELINE_KIND_RE = /^[a-z][a-z0-9-]{0,63}$/
+/** 平台注册表字段名,原样作 `input` 的键。 */
+const CLOUD_INPUT_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\x00-\x1f\x7f]/
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"])
@@ -502,7 +559,9 @@ export function decodePackageProfilePayloadV1(
       ? decodeSkillPayload(parsed.value)
       : profileId === "agent"
         ? decodeAgentPayload(parsed.value)
-        : profileId === "command"
+        : profileId === "cloud"
+          ? decodeCloudPayload(parsed.value)
+          : profileId === "command"
           ? decodeCommandPayload(parsed.value)
           : profileId === "mcp-local"
             ? decodeMcpLocalPayload(parsed.value)
@@ -1182,6 +1241,113 @@ function decodeCommandPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   }
 }
 
+/**
+ * REQ-235 `cloud@1` 载荷解码。schema 能表达的界逐条在这里;另外三条 schema 表达不了、只由宿主判的:
+ * `fields ∪ fixed` 的 name 两两不重(否则谁覆盖谁取决于并入顺序)、select 的 option value 不重且
+ * `default` 必须是其中之一、`minChars ≤ maxChars`(否则表单永远无法提交)。任何一条不满足 ⇒
+ * 整个载荷拒(`package-payload-invalid`),绝不渲染半张表单。
+ */
+function decodeCloudPayload(value: unknown): PackageProfilePayloadDecodeV1 {
+  const errors: string[] = []
+  const behavior = decodePayloadRoot(
+    value,
+    "alpha.host-extension-package.payload.cloud.v1",
+    CLOUD_BEHAVIOR_KEYS,
+    errors,
+  )
+  if (!behavior) return { ok: false, errors }
+  const pipelineKind = decodeString(behavior.pipelineKind, "payload.behavior.pipelineKind", errors, {
+    pattern: CLOUD_PIPELINE_KIND_RE,
+  })
+  const fields = decodeBoundedArray(behavior.fields, "payload.behavior.fields", errors, 0, 16, decodeCloudField)
+  const fixed = decodeBoundedArray(behavior.fixed, "payload.behavior.fixed", errors, 0, 16, decodeCloudFixedInput)
+  const holdUsd =
+    typeof behavior.holdUsd === "number" && Number.isFinite(behavior.holdUsd) && behavior.holdUsd >= 0
+      ? behavior.holdUsd
+      : undefined
+  if (holdUsd === undefined) errors.push("payload.behavior.holdUsd: required finite number >= 0")
+  const upstreamData = decodeStringArray(behavior.upstreamData, "payload.behavior.upstreamData", errors, {
+    min: 1,
+    max: 16,
+    itemMax: 500,
+  })
+  const names = [...(fields ?? []), ...(fixed ?? [])].map((entry) => entry.name)
+  names
+    .filter((name, index) => names.indexOf(name) !== index)
+    .forEach((name) => errors.push(`payload.behavior: input name "${name}" appears more than once across fields and fixed`))
+  if (errors.length || !pipelineKind || !fields || !fixed || holdUsd === undefined) return { ok: false, errors }
+  return {
+    ok: true,
+    payload: {
+      schema: "alpha.host-extension-package.payload.cloud.v1",
+      behavior: { pipelineKind, fields, fixed, holdUsd, upstreamData },
+    },
+  }
+}
+
+function decodeCloudField(value: unknown, at: string, errors: string[]): CloudFieldV1 | undefined {
+  if (!isObject(value)) {
+    errors.push(`${at}: required object`)
+    return
+  }
+  const control = value.control
+  if (control !== "text" && control !== "textarea" && control !== "select") {
+    errors.push(`${at}.control: expected one of [text, textarea, select]`)
+    return
+  }
+  const before = errors.length
+  rejectUnknownKeys(value, control === "select" ? CLOUD_SELECT_FIELD_KEYS : CLOUD_TEXT_FIELD_KEYS, at, errors)
+  const name = decodeString(value.name, `${at}.name`, errors, { pattern: CLOUD_INPUT_NAME_RE })
+  if (typeof value.required !== "boolean") errors.push(`${at}.required: required boolean`)
+  const label = decodeString(value.label, `${at}.label`, errors, { max: 80 })
+  const help = Object.hasOwn(value, "help") ? decodeString(value.help, `${at}.help`, errors, { max: 500 }) : undefined
+  const common = { name: name!, required: value.required === true, label: label!, ...(help ? { help } : {}) }
+  if (control === "select") {
+    const options = decodeBoundedArray(value.options, `${at}.options`, errors, 1, 32, decodeCloudOption)
+    const values = (options ?? []).map((option) => option.value)
+    if (new Set(values).size !== values.length) errors.push(`${at}.options: option values must be unique`)
+    const fallback = Object.hasOwn(value, "default")
+      ? decodeString(value.default, `${at}.default`, errors, { max: 256 })
+      : undefined
+    if (fallback !== undefined && !values.includes(fallback))
+      errors.push(`${at}.default: must be one of the option values`)
+    if (errors.length > before || !options) return
+    return { ...common, control, options, ...(fallback !== undefined ? { default: fallback } : {}) }
+  }
+  const maxChars = decodeInteger(value.maxChars, `${at}.maxChars`, errors, 1, 65536)
+  const minChars = Object.hasOwn(value, "minChars")
+    ? decodeInteger(value.minChars, `${at}.minChars`, errors, 0, 65536)
+    : undefined
+  if (minChars !== undefined && maxChars !== undefined && minChars > maxChars)
+    errors.push(`${at}.minChars: must not exceed maxChars`)
+  if (errors.length > before || maxChars === undefined) return
+  return { ...common, control, ...(minChars !== undefined ? { minChars } : {}), maxChars }
+}
+
+function decodeCloudOption(value: unknown, at: string, errors: string[]): { value: string; label: string } | undefined {
+  if (!isObject(value)) {
+    errors.push(`${at}: required object`)
+    return
+  }
+  rejectUnknownKeys(value, CLOUD_OPTION_KEYS, at, errors)
+  const optionValue = decodeString(value.value, `${at}.value`, errors, { max: 256 })
+  const label = decodeString(value.label, `${at}.label`, errors, { max: 80 })
+  if (optionValue === undefined || label === undefined) return
+  return { value: optionValue, label }
+}
+
+function decodeCloudFixedInput(value: unknown, at: string, errors: string[]): { name: string; value: string } | undefined {
+  if (!isObject(value)) {
+    errors.push(`${at}: required object`)
+    return
+  }
+  rejectUnknownKeys(value, CLOUD_FIXED_KEYS, at, errors)
+  const name = decodeString(value.name, `${at}.name`, errors, { pattern: CLOUD_INPUT_NAME_RE })
+  const fixedValue = decodeString(value.value, `${at}.value`, errors, { max: 4096 })
+  if (name === undefined || fixedValue === undefined) return
+  return { name, value: fixedValue }
+}
+
 function decodeMcpLocalPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
@@ -1419,6 +1585,34 @@ function decodeStringArray(
     const decoded = decodeString(item, `${at}[${index}]`, errors, { max: options.itemMax })
     return decoded ? [decoded] : []
   })
+}
+
+/** 有界数组 + 逐项解码。任一项失败 ⇒ 整个数组 undefined(错误已记),绝不交出半个列表。 */
+function decodeBoundedArray<T>(
+  value: unknown,
+  at: string,
+  errors: string[],
+  min: number,
+  max: number,
+  item: (entry: unknown, at: string, errors: string[]) => T | undefined,
+): T[] | undefined {
+  if (!Array.isArray(value)) {
+    errors.push(`${at}: required array`)
+    return
+  }
+  if (value.length < min || value.length > max) {
+    errors.push(`${at}: requires ${min}..${max} items`)
+    return
+  }
+  const decoded = value.map((entry, index) => item(entry, `${at}[${index}]`, errors))
+  if (decoded.some((entry) => entry === undefined)) return
+  return decoded as T[]
+}
+
+function decodeInteger(value: unknown, at: string, errors: string[], min: number, max: number): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value >= min && value <= max) return value
+  errors.push(`${at}: required integer in ${min}..${max}`)
+  return
 }
 
 function decodeSortedStringArray(

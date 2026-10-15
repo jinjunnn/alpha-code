@@ -2,6 +2,8 @@ export const dict = {
   "alpha.ext.cloudErrAllowance": "會員額度已用完。預設不會自動扣錢包餘額,儲值也不能恢復;可以等額度視窗重設,或到網站帳戶頁開啟「額度用完後用餘額付」。",
   "alpha.ext.cloudErrWallet": "錢包餘額不夠這次任務要預留的金額。請先儲值,或等進行中的任務結算後再試。",
   "alpha.ext.cloudErrSuspended": "帳戶已被停用,請聯絡我們。",
+  "alpha.ext.cloudErrRequirementsChanged": "這項雲端能力的要求已更新,請重新整理定製中心或更新 Code Puppy。",
+  "alpha.ext.cloudHold": "預留 US${{usd}},按實際用量結算;失敗時已產生的費用仍會結算。",
   "alpha.ext.cloudGoLogin": "去登入",
   "alpha.ext.cloudGoRecharge": "去儲值",
   "alpha.ext.cloudOpenOverflow": "開啟餘額支付",

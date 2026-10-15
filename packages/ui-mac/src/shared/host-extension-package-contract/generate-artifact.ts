@@ -18,6 +18,7 @@ export const HOST_EXTENSION_PACKAGE_ARTIFACT_FILES = [
   "generate-artifact.ts",
   "host-extension-package.registry.v1.json",
   "profiles/agent.v1.schema.json",
+  "profiles/cloud.v1.schema.json",
   "profiles/command.v1.schema.json",
   "profiles/mcp-local.v1.schema.json",
   "profiles/mcp-remote.v1.schema.json",
@@ -143,6 +144,36 @@ const commandPayload = (slug: string) => ({
   },
 })
 
+/**
+ * REQ-235 `cloud@1`:三种 control 各出现一次、带一个 fixed —— 消费方(发布端编译器)据此看到
+ * 完整形状。字段名与值是合成的;形状照 alpha-platform `contracts/v1/cloud-pipeline-registry.json`
+ * 的 string 字段(`prompt` trim 后 1–4000)与一个 enum 字段的投影。
+ */
+const cloudPayload = () => ({
+  schema: "alpha.host-extension-package.payload.cloud.v1",
+  behavior: {
+    pipelineKind: "example-generate",
+    fields: [
+      { name: "prompt", control: "textarea", required: true, minChars: 1, maxChars: 4000, label: "Request", help: "What to generate." },
+      { name: "title", control: "text", required: false, maxChars: 120, label: "Title" },
+      {
+        name: "style",
+        control: "select",
+        required: true,
+        options: [
+          { value: "plain", label: "Plain" },
+          { value: "rich", label: "Rich" },
+        ],
+        default: "plain",
+        label: "Style",
+      },
+    ],
+    fixed: [{ name: "format", value: "html" }],
+    holdUsd: 1,
+    upstreamData: ["Sends the request, title and style you enter."],
+  },
+})
+
 const mcpLocalPayload = () => ({
   schema: "alpha.host-extension-package.payload.mcp-local.v1",
   behavior: {
@@ -177,6 +208,8 @@ export function decoderCorpusBytesV1(): Uint8Array {
     // 都有 accepted 载荷);再加一条「skill root + command leaf」的 bundle 正向,钉住
     // command 作为图成员的形态 —— 真实插件正是「skills + commands 同包」。
     single("command-v1", "command", [], commandPayload("command")),
+    // REQ-235:第六个 profile 的一等正向语料(artifact 测试要求每个已注册 profile 都有 accepted 载荷)。
+    single("cloud-v1", "cloud", [], cloudPayload()),
     bundle(
       "bundle-skill-with-command",
       "skill:bundle-command-root",

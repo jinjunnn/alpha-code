@@ -607,6 +607,8 @@ export const dict = {
   "alpha.ext.cloudErrAllowance": "Your membership allowance is used up. Wallet payments are off by default, and recharging will not restore the allowance. Wait for the allowance window to reset, or enable “Pay with wallet after allowance runs out” on the website account page.",
   "alpha.ext.cloudErrWallet": "Your wallet balance is below the amount this task needs to reserve. Recharge first, or retry after ongoing tasks settle.",
   "alpha.ext.cloudErrSuspended": "Your account has been suspended. Please contact us.",
+  "alpha.ext.cloudErrRequirementsChanged": "This cloud capability's requirements have changed. Refresh the customization center or update Code Puppy.",
+  "alpha.ext.cloudHold": "Reserves US${{usd}}; you are charged for actual usage. Costs already incurred are still charged if the task fails.",
   "alpha.ext.cloudGoLogin": "Sign in",
   "alpha.ext.cloudGoRecharge": "Recharge",
   "alpha.ext.cloudOpenOverflow": "Enable wallet payments",

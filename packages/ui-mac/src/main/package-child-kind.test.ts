@@ -51,6 +51,8 @@ describe("package child kind 路由表 (#809 · 基线 §5 第 7 类)", () => {
     expect(routed).toEqual({
       skill: "skill",
       agent: "agent",
+      // REQ-235:receipts-only 的云能力,与 legacy 云条目同一种账本 kind。
+      cloud: "cloud",
       command: "command",
       "mcp-local": "mcp",
       "mcp-remote": "mcp",
@@ -60,18 +62,20 @@ describe("package child kind 路由表 (#809 · 基线 §5 第 7 类)", () => {
     expect(Object.values(routed)).not.toContain("plugin")
   })
 
-  test("五个 kind 各自派生出互不相同的事务 key 前缀(一个 kind 一个授权账/journal 位置)", () => {
-    const keys = (["skill", "agent", "command", "mcp", "plugin"] as const).map((kind) => packageChildTxKeyV1(kind, "x"))
-    expect(new Set(keys).size).toBe(5)
+  test("六个 kind 各自派生出互不相同的事务 key 前缀(一个 kind 一个授权账/journal 位置)", () => {
+    const keys = (["skill", "agent", "cloud", "command", "mcp", "plugin"] as const).map((kind) => packageChildTxKeyV1(kind, "x"))
+    expect(new Set(keys).size).toBe(6)
     // plugin 的 key 与 seed 通道的逻辑主 item key 逐字相同 —— 两条通道清的是同一个授权账。
     expect(packageChildTxKeyV1("plugin", "opencode-notify")).toBe("plugin--opencode-notify")
+    // REQ-235:cloud 与 legacy 云条目的 receipt item key(`cloud--<name>`)逐字相同。
+    expect(packageChildTxKeyV1("cloud", "research")).toBe("cloud--research")
   })
 
   // ── B:未登记即拒 ────────────────────────────────────────────────────────────
   test("未登记的第五个 profile 被具名拒绝,而不是静默变成 mcp", () => {
     // `opencode-plugin` 排第一位:ADR-040(`#830`)把它撤出注册表之后,它就是一个**未登记**的
     // profile,必须走具名拒绝那一支。把它悄悄加回表里,这一条红。
-    for (const unknown of ["opencode-plugin", "opencode-tui-plugin", "cloud", "bundle", "", "MCP-LOCAL"]) {
+    for (const unknown of ["opencode-plugin", "opencode-tui-plugin", "cloud-v2", "bundle", "", "MCP-LOCAL"]) {
       const outcome = packageChildKindV1(unknown)
       expect(outcome.ok, unknown).toBe(false)
       if (!outcome.ok) {
@@ -92,17 +96,17 @@ describe("package child kind 路由表 (#809 · 基线 §5 第 7 类)", () => {
   test("账本图里出现 package 通道装不出来的 kind ⇒ 预览 key 不得与任何真实 tx key 相撞", () => {
     // 此前这里是 `packageChildTxKeyV1(node.kind as "skill"|"agent"|"mcp", …)`:当时还不是
     // child kind 的 `command:foo` 会被强转成 `mcp--foo`,与一个**真实 MCP child** 的授权账
-    // key 逐字相同 ⇒ 预览行上显示的是别人的 capability。`#840` 后 command 成为真实 kind,
-    // 负例由 bundle/cloud 承担(它们仍不在表里)。
+    // key 逐字相同 ⇒ 预览行上显示的是别人的 capability。`#840` 后 command、REQ-235 后 cloud 成为
+    // 真实 kind,负例由 bundle 承担(它仍不在表里)。
     expect(packageChildPreviewKeyV1("bundle", "foo")).not.toBe(packageChildTxKeyV1("mcp", "foo"))
-    expect(packageChildPreviewKeyV1("cloud", "foo")).not.toBe(packageChildTxKeyV1("mcp", "foo"))
-    // 五个真实 kind 仍然逐字走同一个派生 —— 预览与事务/授权账必须是同一个 key。
-    for (const kind of ["skill", "agent", "command", "mcp", "plugin"] as const)
+    expect(packageChildPreviewKeyV1("bundle", "foo")).not.toBe(packageChildTxKeyV1("cloud", "foo"))
+    // 六个真实 kind 仍然逐字走同一个派生 —— 预览与事务/授权账必须是同一个 key。
+    for (const kind of ["skill", "agent", "cloud", "command", "mcp", "plugin"] as const)
       expect(packageChildPreviewKeyV1(kind, "foo")).toBe(packageChildTxKeyV1(kind, "foo"))
   })
 
-  test("isPackageChildKindV1 恰认这五个", () => {
-    for (const kind of ["skill", "agent", "command", "mcp", "plugin"]) expect(isPackageChildKindV1(kind)).toBe(true)
-    for (const kind of ["bundle", "cloud", "", "Plugin", "Command"]) expect(isPackageChildKindV1(kind)).toBe(false)
+  test("isPackageChildKindV1 恰认这六个", () => {
+    for (const kind of ["skill", "agent", "cloud", "command", "mcp", "plugin"]) expect(isPackageChildKindV1(kind)).toBe(true)
+    for (const kind of ["bundle", "Cloud", "", "Plugin", "Command"]) expect(isPackageChildKindV1(kind)).toBe(false)
   })
 })

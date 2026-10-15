@@ -289,10 +289,12 @@ export async function evaluatePackageForHost(
   for (const entry of supported) {
     const name = entry.component.id.slice(entry.component.id.indexOf(":") + 1)
     // `#840`:command 同闸 —— 名字进 `ext-store/command--<name>/grants.json` 路径与引擎
-    // config record 键,必须 fs-safe。
+    // config record 键,必须 fs-safe。REQ-235 cloud 同理(`ext-store/cloud--<name>/grants.json`,
+    // 且账本图节点名本来就要过 isExtensionName —— 在这里拒,比写盘时被账本拒早一整个事务)。
     if (
       (entry.component.profileId === "skill" ||
         entry.component.profileId === "agent" ||
+        entry.component.profileId === "cloud" ||
         entry.component.profileId === "command") &&
       !isExtensionName(name)
     )
@@ -512,6 +514,10 @@ function compatibleView(
     })),
   )
   const reason = items.length > 0 ? "package-prerequisite-required" : "package-compatible"
+  // REQ-235(冻结面 F4):root 档案是 cloud ⇒ 把**已解码**的表单描述投影给 renderer,与 `listing`
+  // 同纪律 —— main 解码过的值过 IPC,raw 载荷不过。只在 compatible 这一处填:update-required /
+  // blocked 的包没有可用的表单。
+  const root = accepted.find((entry) => entry.role === "root")?.payload
   return {
     catalogId: envelope.prelude.packageId,
     verdict: "compatible",
@@ -529,6 +535,7 @@ function compatibleView(
     // `#1287`:逐字转发 decoder 已经判过的那一段。这里**不**补默认值、不拼接、不改写 ——
     // 它是发布者签名过的事实,宿主只负责不让它决定 verdict/action。
     ...(envelope.listing ? { listing: envelope.listing } : {}),
+    ...(root?.schema === "alpha.host-extension-package.payload.cloud.v1" ? { cloud: root.behavior } : {}),
   }
 }
 
