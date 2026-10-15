@@ -7,6 +7,8 @@
 //   · dispose 计数在 HTTP 层观察(`POST /instance/dispose` 真的发出去几次),不桩调度器的任何部分。
 // 「两次查空闲到 dispose 之间的准入」是登记在案的接口缺口(基线 §2.6),本判据不假装覆盖。
 import { afterEach, describe, expect, test } from "bun:test"
+import { mkdir, writeFile } from "node:fs/promises"
+import path from "node:path"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { Effect } from "effect"
 import { createReloadScheduler, type ReloadReport } from "../../ext/src/reload-scheduler"
@@ -105,5 +107,40 @@ describe("I5:ext 调度器 × 真实例的 session.status", () => {
     expect(a.disposes).toEqual([idle.path])
     expect(b.disposes).toEqual([stuck.path])
     expect(reports.at(-1)).toMatchObject({ generation: 2, outcome: "reloaded" })
+  }, 60_000)
+
+  // 「装完下一条消息可用」在引擎这一端的那一半:实例建好之后才落盘的技能,实例在重载之前看不见(引擎侧无文件监听);
+  // 调度器等会话空闲、恰好一次 dispose 之后,下一次读(= 下一条消息)就看得见。前一半(安装体落盘 + 请 ext 重载)是
+  // ui-mac test-component/ext-install-catalog-result.cases.ts 的项目作用域与金丝雀两条;中间那一跳(parentPort → 调度器)是
+  // packages/ext/src/plugin-reload-wiring.cases.ts。
+  test("实例建好后才落盘的技能:重载前看不见;会话忙 ⇒ 仍看不见(零 dispose);空闲 ⇒ dispose 之后下一次读就看见了", async () => {
+    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    const a = engineClient(tmp.path)
+    // GET /skill(v1 SDK 没生成这条;经同一个引擎 HTTP 应用、按目录读)
+    const skillNames = async () => {
+      const response = await Server.Default().app.fetch(new Request(`http://test/skill?directory=${encodeURIComponent(tmp.path)}`))
+      expect(response.status).toBe(200)
+      return ((await response.json()) as Array<{ name: string }>).map((skill) => skill.name)
+    }
+    expect(await skillNames()).not.toContain("alpha-1531-writer")
+    const dir = path.join(tmp.path, ".agents", "skills", "alpha-1531-writer")
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, "SKILL.md"), "---\nname: alpha-1531-writer\ndescription: writes things for the #1531 closure test\n---\n\nWrite.\n")
+    expect(await skillNames()).not.toContain("alpha-1531-writer")
+
+    await setStatus(tmp.path, "ses_1531_reply", "busy")
+    const { s, reports } = scheduler()
+    s.register(tmp.path, a.client)
+    s.request({ generation: 3, scope: "global", reason: "installed skill alpha-1531-writer" })
+    await s.settled()
+    expect(a.disposes).toHaveLength(0)
+    expect(await skillNames()).not.toContain("alpha-1531-writer")
+
+    await setStatus(tmp.path, "ses_1531_reply", "idle")
+    s.poke()
+    await s.settled()
+    expect(a.disposes).toEqual([tmp.path])
+    expect(reports.at(-1)).toEqual({ generation: 3, scope: "global", outcome: "reloaded", directories: [tmp.path] })
+    expect(await skillNames()).toContain("alpha-1531-writer")
   }, 60_000)
 })
