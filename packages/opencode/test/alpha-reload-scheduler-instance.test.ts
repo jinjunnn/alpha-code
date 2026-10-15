@@ -1,0 +1,109 @@
+// REQ-234 `#1531` I5 —— ext 重载调度器对**真实例**的判定(alpha 自有测试;north-star:alpha-owned)。
+//
+// 被测是 @alpha-code/ext 的生产调度器(packages/ext/src/reload-scheduler.ts),喂给它的是引擎递给插件的同一种 client:
+// v1 SDK 经引擎**真 HTTP 应用**(Server.Default().app.fetch,与 server/sdk-v1-smoke.test.ts 同形)按目录打到真实例。
+//   · busy 会话 = 引擎自己的 SessionStatus 服务在该实例里置 busy —— 调度器经 `GET /session/status` 读到它(先证明这条读得到);
+//   · 「查询超时」的实例替身**只替换 HTTP 层**:该 client 的 fetch 对 `/session/status` 永不返回,其余照常进引擎;
+//   · dispose 计数在 HTTP 层观察(`POST /instance/dispose` 真的发出去几次),不桩调度器的任何部分。
+// 「两次查空闲到 dispose 之间的准入」是登记在案的接口缺口(基线 §2.6),本判据不假装覆盖。
+import { afterEach, describe, expect, test } from "bun:test"
+import { createOpencodeClient } from "@opencode-ai/sdk"
+import { Effect } from "effect"
+import { createReloadScheduler, type ReloadReport } from "../../ext/src/reload-scheduler"
+import { AppRuntime } from "../src/effect/app-runtime"
+import { InstanceRef } from "../src/effect/instance-ref"
+import { InstanceRuntime } from "../src/project/instance-runtime"
+import { SessionID } from "../src/session/schema"
+import { SessionStatus } from "../src/session/status"
+import { Server } from "../src/server/server"
+import { resetDatabase } from "./fixture/db"
+import { disposeAllInstances, tmpdir } from "./fixture/fixture"
+
+afterEach(async () => {
+  await disposeAllInstances()
+  await resetDatabase()
+})
+
+/** 引擎递给插件的同款 v1 client;fetch 先过一层记录(可选地对 /session/status 永不返回)。 */
+function engineClient(directory: string, opts: { hangStatus?: () => boolean } = {}) {
+  const disposes: string[] = []
+  const client = createOpencodeClient({
+    baseUrl: "http://test",
+    directory,
+    fetch: (async (req: Request) => {
+      const url = new URL(req.url)
+      if (req.method === "POST" && url.pathname === "/instance/dispose") disposes.push(directory)
+      if (url.pathname === "/session/status" && opts.hangStatus?.()) return new Promise<Response>(() => {})
+      return Server.Default().app.fetch(req)
+    }) as unknown as typeof fetch,
+  })
+  return { client, disposes }
+}
+
+async function setStatus(directory: string, sessionID: string, type: "busy" | "idle") {
+  const ctx = await InstanceRuntime.load({ directory })
+  await AppRuntime.runPromise(
+    SessionStatus.Service.use((status) => status.set(SessionID.make(sessionID), { type })).pipe(Effect.provideService(InstanceRef, ctx)),
+  )
+}
+
+function scheduler() {
+  const reports: ReloadReport[] = []
+  const errors: string[] = []
+  const s = createReloadScheduler({
+    report: (report) => void reports.push(report),
+    log: () => {},
+    error: (line) => void errors.push(line),
+    statusTimeoutMs: 300,
+  })
+  return { s, reports, errors }
+}
+
+describe("I5:ext 调度器 × 真实例的 session.status", () => {
+  test("真实例里有 busy 会话 ⇒ 零 dispose、报 waiting;它转 idle ⇒ 恰好一次 POST /instance/dispose、报 reloaded", async () => {
+    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    const a = engineClient(tmp.path)
+    await setStatus(tmp.path, "ses_1531_busy", "busy")
+    // 先证明手段:引擎的 /session/status 真的报出这个 busy 会话
+    const seen = (await a.client.session.status()) as { data?: Record<string, { type: string }> }
+    expect(seen.data?.ses_1531_busy?.type).toBe("busy")
+
+    const { s, reports } = scheduler()
+    s.register(tmp.path, a.client)
+    s.request({ generation: 1, scope: "global", reason: "installed skill writer" })
+    await s.settled()
+    expect(a.disposes).toHaveLength(0)
+    expect(reports).toEqual([{ generation: 1, scope: "global", outcome: "waiting", directories: [tmp.path], error: "1 session(s) busy" }])
+
+    await setStatus(tmp.path, "ses_1531_busy", "idle")
+    s.poke()
+    await s.settled()
+    expect(a.disposes).toEqual([tmp.path])
+    expect(reports.at(-1)).toEqual({ generation: 1, scope: "global", outcome: "reloaded", directories: [tmp.path] })
+  }, 60_000)
+
+  test("一个实例的状态查询超时(只换 HTTP 层)⇒ 零 dispose,force 也不例外;日志点名该目录;它没被注销,查询恢复后照常参与", async () => {
+    await using idle = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using stuck = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    let hang = true
+    const a = engineClient(idle.path)
+    const b = engineClient(stuck.path, { hangStatus: () => hang })
+    const { s, reports, errors } = scheduler()
+    s.register(idle.path, a.client)
+    s.register(stuck.path, b.client)
+    s.request({ generation: 2, scope: "global", reason: "user: reload now", force: true })
+    await s.settled()
+    expect([...a.disposes, ...b.disposes]).toHaveLength(0)
+    expect(reports).toEqual([
+      { generation: 2, scope: "global", outcome: "waiting", directories: [idle.path, stuck.path], error: "engine status unavailable — restart the app if this persists" },
+    ])
+    expect(errors.some((line) => line.includes(stuck.path))).toBe(true)
+
+    hang = false
+    s.poke()
+    await s.settled()
+    expect(a.disposes).toEqual([idle.path])
+    expect(b.disposes).toEqual([stuck.path])
+    expect(reports.at(-1)).toMatchObject({ generation: 2, outcome: "reloaded" })
+  }, 60_000)
+})
