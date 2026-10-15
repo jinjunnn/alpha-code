@@ -45,7 +45,7 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "b02fc0fd8b71f9b17d621bceb3de9fb9698aa425",
+      commit: "b87abdfe5fdbf3d925e05610283dbe63464b0f03",
       artifactPath: "contracts/extension-package/artifact",
       artifactSha256: "95da7a8b872bc59615f6b80a0327643371159cef803b96532178e10329308e2c",
     })
