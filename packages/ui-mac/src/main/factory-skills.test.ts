@@ -45,6 +45,42 @@ const truthPath = (name: string) => join(home, ".alpha", "skills", name)
 const legacyPath = (name: string) => join(home, ".opencode", "skill", name)
 
 describe("factorySkillSources", () => {
+  test("#1532 AC5: customization teaches search, confirmation, availability and project trust", () => {
+    const text = readFileSync(join(import.meta.dir, "../../resources/factory-skills/customize-code-puppy/SKILL.md"), "utf8")
+    for (const sentence of [
+      "Search first with `hub_search`",
+      "offers skills, agents, commands, connectors (MCP), bundles, and cloud capabilities",
+      "Explain what to install and why, then call `hub_install`",
+      "app's confirmation box (软件弹出的确认框)",
+      "If a key is needed, the user enters it in that box",
+      "Never ask for or accept keys in chat; never invent or guess keys for the user",
+      "Check `hub_status` before use",
+      "For `submitted; result pending` or `reload-pending`, check\n   `hub_status` instead of repeating the installation",
+      "do not wait inside\n   the current reply for reload",
+      "显示可用以后,下一条消息就能用;不用重启",
+      "Only promise use from the next message after the state is `available`",
+      "`alpha_register` tool only for project scope",
+      "Executable connectors stay gated until the user trusts the project",
+      "(skills + agents + commands + connectors)",
+      "Project `.code-puppy/plugins/*.js` files are loaded and executed with the same permissions as\n  the engine after the user trusts the project",
+      "Trust is granted once for the whole project,\n  not per file or per execution",
+      "Executable plugins from the catalog are refused (ADR-040)",
+    ]) expect(text).toContain(sentence)
+  })
+
+  test("#1532 AC5: customization never teaches global config installation or catalog plugins", () => {
+    const text = readFileSync(join(import.meta.dir, "../../resources/factory-skills/customize-code-puppy/SKILL.md"), "utf8")
+    for (const forbidden of [
+      /edit `\$ALPHA_GLOBAL_DIR\/alpha\.jsonc` directly/i,
+      /直接编辑[^\n]*alpha\.jsonc/,
+      /MCP \+ skills \+ plugins/i,
+      /\([^\n)]*\+ plugins\)/i,
+      /从目录装插件/,
+      /(?:install|installing) (?:executable )?plugins from (?:the )?catalog/i,
+      /For connectors\/skills\/agents\/plugins prefer/,
+    ]) expect(text).not.toMatch(forbidden)
+  })
+
   test("#1513: shipped customization skill registers only customize-code-puppy", () => {
     const dev = factorySkillSources({ packaged: false, resourcesPath: "/ignored", moduleDir: import.meta.dir })
     expect(FACTORY_SKILL_IDS).toContain("customize-code-puppy")
