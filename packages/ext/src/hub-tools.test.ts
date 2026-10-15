@@ -229,6 +229,25 @@ describe("I9:结局以 main 的阶段记录为准", () => {
 })
 
 describe("hub_search / hub_status", () => {
+  test("#1533:价格说明逐字输出;缺说明才给末尾缺项句(混合列表与 warnings 同样成立)", async () => {
+    const priced = row({ id: "cloud:html", kind: "cloud", priceNote: "预留 US$1.00,按实际用量结算;失败时已产生的费用仍会结算" })
+    const missing = row({ id: "cloud:docs", kind: "cloud" })
+    for (const rows of [[priced], [missing], [priced, missing]]) {
+      const input = { ...view(rows), warnings: ["unreadable ledger"] }
+      const tools = createHubTools(bridgeWith({ views: [input] }).bridge)
+      const { ctx } = ctxWith(async () => {})
+      const out = outputOf(await tools.hub_search.execute({ query: "" }, ctx))
+      for (const [index, item] of rows.entries()) {
+        const parsed = JSON.parse(out.split("\n")[index]!)
+        if (item.priceNote !== undefined) expect(parsed.priceNote).toBe(item.priceNote)
+        else expect(parsed).not.toHaveProperty("priceNote")
+      }
+      expect(out.includes(HUB_PRICE_NOTE_MISSING)).toBe(rows.includes(missing))
+      if (rows.includes(missing)) expect(out.split("\n").at(-1)).toBe("本目录尚未提供价格说明;费用以服务端为准")
+      expect(outputOf(await tools.hub_status.execute({ catalogId: rows[0]!.id }, ctx)).includes(HUB_PRICE_NOTE_MISSING)).toBe(rows[0] === missing)
+    }
+  })
+
   test("search:按会话目录问、带 sessionID / agent;每行只含视图字段;云条目在场时末尾固定缺项句;main 的 warnings 不原样外发", async () => {
     const rows = [
       row({ scope: "global", installed: true, enabled: true, state: "reload-pending", stateReason: { code: "reload-failed", detail: "reload failed 3 times — restart the app to apply" } }),

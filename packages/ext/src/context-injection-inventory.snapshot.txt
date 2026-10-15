@@ -37,7 +37,7 @@ tool.alpha_reload.description                       text      tool-description  
 tool.hub_install.args.catalogId                     text      tool-arg-description      59    1024    6%
 tool.hub_install.description                        text      tool-description         465    1024   45%
 tool.hub_search.args.query                          text      tool-arg-description      92    1024    9%
-tool.hub_search.description                         text      tool-description         369    1024   36%
+tool.hub_search.description                         text      tool-description         518    1024   51%
 tool.hub_status.args.catalogId                      text      tool-arg-description      59    1024    6%
 tool.hub_status.description                         text      tool-description         245    1024   24%
 vision.system-note-offline                          text      system                   251    1024   25%
@@ -67,7 +67,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 67; injected bytes: 26720; declared limits total: 126976
+fragments: 67; injected bytes: 26869; declared limits total: 126976
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)

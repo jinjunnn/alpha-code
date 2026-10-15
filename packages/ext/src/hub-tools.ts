@@ -36,7 +36,7 @@ export const HUB_INSTALL_OUTCOME = {
 export const HUB_NEXT_MESSAGE_HINT =
   "Once it shows available, it can be used from the next message; it does not take effect within this reply."
 /** 云条目在场而目录没有价格说明字段时的固定一句(如实报告缺项;不算 AC1 的价格部分已满足,见基线 §4 C5)。 */
-export const HUB_PRICE_NOTE_MISSING = "This catalog does not provide price notes yet; charges are determined by the service."
+export const HUB_PRICE_NOTE_MISSING = "本目录尚未提供价格说明;费用以服务端为准"
 export const HUB_UNAVAILABLE = "The Customization Center is not available in this engine host."
 
 const AGENT_AUTOMATION_PREFIX = "alpha-automation"
@@ -169,7 +169,7 @@ function reasonText(row: HubViewRow): string {
   }
 }
 
-/** 一行一条 JSON(只含视图字段);云条目在场时末尾固定缺项句;main 的 warnings 不原样外发(可能带内部细节),只说视图可能不全。 */
+/** 一行一条 JSON(只含视图字段);云条目缺价格说明时末尾固定缺项句;main 的 warnings 不原样外发(可能带内部细节),只说视图可能不全。 */
 function renderRows(view: HubView, rows: HubViewRow[]): string {
   if (rows.length === 0) return "No matching entries."
   const lines = rows.map((row) =>
@@ -184,10 +184,11 @@ function renderRows(view: HubView, rows: HubViewRow[]): string {
       state: row.state,
       ...(row.stateReason ? { reason: reasonText(row) } : {}),
       authorization: row.authorization,
+      ...(row.priceNote !== undefined ? { priceNote: row.priceNote } : {}),
       ...(row.agentNote ? { agentNote: row.agentNote } : {}),
     }),
   )
-  if (rows.some((row) => row.kind === "cloud")) lines.push(HUB_PRICE_NOTE_MISSING)
   if (view.warnings.length > 0) lines.push("Note: some installed items could not be read; this list may be incomplete.")
+  if (rows.some((row) => row.kind === "cloud" && row.priceNote === undefined)) lines.push(HUB_PRICE_NOTE_MISSING)
   return lines.join("\n")
 }

@@ -177,6 +177,7 @@ function packageRowsFor(views: CatalogPackageViewV1[], rows: HubViewRow[], globa
       displayName: view.presentation.displayName,
       description: view.presentation.description,
       authorization: ids.length > 0 ? `secret:${[...ids].sort().join(",")}` : "none",
+      ...(view.cloud ? { priceNote: priceNoteFor(view) } : {}),
     }
     const graph = graphs.find((item) => item.packageId === view.catalogId)
     if (!graph) return { ...base, scope: null, installed: false, enabled: false, state: "not-installed" }
@@ -201,6 +202,13 @@ function packageRowsFor(views: CatalogPackageViewV1[], rows: HubViewRow[], globa
       ...(reason ? { stateReason: { code: reason.code, ...(reason.code === "not-loaded" ? { detail: `${label}: ${reason.detail ?? "not loaded"}` } : reason.detail ? { detail: reason.detail } : {}) } } : {}),
     }
   })
+}
+
+/** REQ-235 的目录预留金额只作说明,沿用云表单文案;不是最终报价。 */
+function priceNoteFor(view: CatalogPackageViewV1 | undefined) {
+  return view?.cloud
+    ? `预留 US$${view.cloud.holdUsd.toFixed(2)},按实际用量结算;失败时已产生的费用仍会结算。`
+    : undefined
 }
 
 export function createHubViewService(deps: HubViewDeps): HubViewService {
@@ -346,6 +354,9 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
         .filter((row) => row.scope !== null || installable.has(row.id))
         .map(async (row): Promise<HubViewRow> => {
           const entry = byId.get(row.id)
+          const priceNote = row.kind === "cloud"
+            ? priceNoteFor(catalog?.packages?.find((view) => view.components.some((component) => component.included && component.componentId === row.id)))
+            : undefined
           const base = {
             id: row.id,
             scope: row.scope,
@@ -354,6 +365,7 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
             displayName: entry?.displayName ?? row.name,
             description: entry?.description ?? "",
             authorization: authorizationOf(entry, byId),
+            ...(priceNote !== undefined ? { priceNote } : {}),
           }
           if (row.scope === null) return { ...base, installed: false, enabled: false, state: "not-installed" }
           if (row.activation === "disabled")
