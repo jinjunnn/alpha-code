@@ -596,6 +596,8 @@ export const dict = {
   "alpha.ext.cloudErrAllowance": "会员额度已用完。默认不会自动扣钱包余额,充值也不能恢复;可以等额度窗口重置,或到网站账户页打开「额度用完后用余额付」。",
   "alpha.ext.cloudErrWallet": "钱包余额不够这次任务要预留的金额。请先充值,或等在途任务结算后再试。",
   "alpha.ext.cloudErrSuspended": "账户已被停用,请联系我们。",
+  "alpha.ext.cloudErrRequirementsChanged": "这项云能力的要求已更新,请刷新定制中心或更新 Code Puppy。",
+  "alpha.ext.cloudHold": "预留 US${{usd}},按实际用量结算;失败时已产生的费用仍会结算。",
   "alpha.ext.cloudGoLogin": "去登录",
   "alpha.ext.cloudGoRecharge": "去充值",
   "alpha.ext.cloudOpenOverflow": "打开余额支付",

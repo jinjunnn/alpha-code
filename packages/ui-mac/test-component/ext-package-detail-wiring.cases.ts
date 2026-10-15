@@ -31,6 +31,10 @@ import {
 } from "../src/main/remote-catalog"
 import { dict as zh } from "../src/renderer/i18n/zh"
 import {
+  canonicalArtifactJsonBytesV1,
+  HOST_EXTENSION_PACKAGE_CORPUS,
+} from "../src/shared/host-extension-package-contract/generate-artifact"
+import {
   EXPECTED_SKIP_REASON,
   LEAF_COMMAND_ID,
   LEAF_MCP_ID,
@@ -192,7 +196,19 @@ const bindPayload = (envelope: AlphaPackageEnvelopeV1, payload: PackageProfilePa
   return bytes
 }
 
-const packageFixture = async () => {
+/** REQ-235:宿主发布的 decoder 语料 `cloud-v1`(信封 + 载荷字节就是 artifact 里那一份)。 */
+const CLOUD_PACKAGE_ID = "package:cloud-v1"
+const cloudCorpusCase = async () => {
+  const corpus = (await Bun.file(
+    resolve(import.meta.dir, "../src/shared/host-extension-package-contract", HOST_EXTENSION_PACKAGE_CORPUS),
+  ).json()) as {
+    cases: Array<{ name: string; envelope: AlphaPackageEnvelopeV1; components: Array<{ payload: unknown }> }>
+  }
+  const item = corpus.cases.find((entry) => entry.name === "cloud-v1")!
+  return { envelope: item.envelope, bytes: canonicalArtifactJsonBytesV1(item.components[0]!.payload) }
+}
+
+const packageFixture = async (options?: { withCloud?: boolean }) => {
   const ready = await producerCorpus()
   ready.envelope.prelude.packageId = "package:renderer-ready"
   if (ready.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
@@ -246,6 +262,8 @@ const packageFixture = async () => {
     [prerequisite.envelope.components[0].payloadRef.sha256, prerequisiteBytes],
   ])
   for (const [digest, bytes] of bundle.payloadByDigest) payloadsByDigest.set(digest, bytes)
+  const cloud = options?.withCloud ? await cloudCorpusCase() : undefined
+  if (cloud) payloads.set(CLOUD_PACKAGE_ID, cloud.bytes)
   const envelopes = [
     ready.envelope,
     prerequisite.envelope,
@@ -254,6 +272,7 @@ const packageFixture = async () => {
     payloadBlocked.envelope,
     // 违规/异常项放**最后**:只看第一个元素的实现要能被抓住。
     bundle.envelope,
+    ...(cloud ? [cloud.envelope] : []),
   ]
   const raw: RemoteCatalogResult = {
     source: "remote",
@@ -344,8 +363,10 @@ async function mountHarness(options?: {
   failConfirmationOnce?: boolean
   failPreviewOnce?: boolean
   rejectPreviewOnce?: boolean
+  /** REQ-235:追加一个 root 档案为 cloud@1 的签名包(其余夹具与断言不变)。 */
+  withCloud?: boolean
 }) {
-  const fixture = await packageFixture()
+  const fixture = await packageFixture({ withCloud: options?.withCloud })
   const tmp = mkdtempSync(join(tmpdir(), "package-renderer-wiring-"))
   const globalRoot = join(tmp, "root")
   const userData = join(tmp, "user-data")
@@ -562,7 +583,7 @@ async function mountHarness(options?: {
   })
   await waitFor(() => {
     expect(browseResults.length).toBeGreaterThan(0)
-    expectInstallablePackageCards()
+    expectInstallablePackageCards(options?.withCloud ? [CLOUD_PACKAGE_ID] : [])
   })
   return {
     browseResults,
@@ -614,13 +635,13 @@ const unavailablePackageIds = [
 ]
 
 // https://github.com/jinjunnn/alpha-web/issues/255 裁决第 1 条取代「分类里可看不可装」旧契约。
-function expectInstallablePackageCards() {
+function expectInstallablePackageCards(extra: string[] = []) {
   const ids = Array.from(
     document.querySelectorAll("[data-package-card]"),
     (card) => card.getAttribute("data-package-card"),
   )
-  expect(ids).toHaveLength(3)
-  expect(ids).toEqual(["package:renderer-ready", "package:renderer-prerequisite", MIXED_BUNDLE_PACKAGE_ID])
+  expect(ids).toHaveLength(3 + extra.length)
+  expect(ids).toEqual(["package:renderer-ready", "package:renderer-prerequisite", MIXED_BUNDLE_PACKAGE_ID, ...extra])
   for (const id of unavailablePackageIds) {
     expect(document.querySelector(`[data-package-card='${id}']`)).toBeNull()
     expect(document.querySelector(`[data-package-detail='${id}']`)).toBeNull()
@@ -1482,6 +1503,43 @@ describe("package detail production renderer path", () => {
     expect(harness.detailResults).toEqual([])
     expect(harness.installIntents).toEqual([])
     expect(harness.updateChecks()).toBe(0)
+  })
+
+  // REQ-235 AC1 客户端半场:一个 cloud@1 签名包在「云能力」分区与 legacy 云条目并列出现,点开后
+  // 详情页按 main 投影的描述画表单。走的是真 hub 卡片 → 真 detail IPC → 生产 evaluator。
+  test("a cloud capability package is listed in the cloud section beside legacy entries and its detail renders the described form", async () => {
+    const harness = await mountHarness({ withCloud: true })
+    const legacyCloud = bundledCatalog.entries.filter((entry) => entry.type === "cloud")
+    expect(legacyCloud.length).toBeGreaterThan(0)
+    setHubSection("cloud")
+    await waitFor(() => expect(document.querySelector(`[data-package-card="${CLOUD_PACKAGE_ID}"]`)).toBeInstanceOf(HTMLElement))
+    // 云能力分区里只有 cloud 包,不是把所有可装包都倒进来。
+    expect(Array.from(document.querySelectorAll("[data-package-card]"), (card) => card.getAttribute("data-package-card"))).toEqual([
+      CLOUD_PACKAGE_ID,
+    ])
+    for (const entry of legacyCloud)
+      expect(document.querySelector(`.alpha-ext-card-name b[title='${entry.name}']`), entry.id).toBeInstanceOf(HTMLElement)
+
+    click(packageCard(CLOUD_PACKAGE_ID))
+    await waitFor(() => expect(document.querySelector(`[data-package-detail="${CLOUD_PACKAGE_ID}"] [data-cloud-form]`)).toBeInstanceOf(HTMLElement))
+    const form = document.querySelector<HTMLElement>("[data-cloud-form]")!
+    expect(form.getAttribute("data-cloud-form")).toBe("example-generate")
+    expect(Array.from(form.querySelectorAll("[data-cloud-field]"), (node) => node.getAttribute("data-cloud-field"))).toEqual([
+      "prompt",
+      "title",
+      "style",
+    ])
+    expect(form.querySelector('[data-cloud-field="format"]')).toBeNull()
+    // 夹具未登录 ⇒ cloudReady 为假 ⇒ 表单可看不可发,与 legacy 云条目同一条门控。
+    expect(form.querySelector<HTMLButtonElement>("[data-cloud-form-submit]")!.disabled).toBe(true)
+    expect(form.textContent).toContain(zh["alpha.ext.cloudNeedPlatformNote"])
+    // F4:真注册的 detail IPC 返回的就是解码后的描述,逐字(raw 载荷不过 IPC,过的是这一份投影)。
+    await waitFor(() => expect(harness.detailResults.length).toBeGreaterThan(0))
+    const detail = harness.detailResults.at(-1) as CatalogPackageViewV1
+    expect(detail).toMatchObject({ catalogId: CLOUD_PACKAGE_ID, verdict: "compatible" })
+    const signed = JSON.parse(new TextDecoder().decode((await cloudCorpusCase()).bytes)) as { behavior: unknown }
+    expect(detail.cloud).toEqual(signed.behavior as never)
+    expect(harness.installIntents).toEqual([])
   })
 
   test("legacy MCP keeps optional-key copy and allows confirmation with an empty value", async () => {

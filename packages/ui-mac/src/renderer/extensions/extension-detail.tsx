@@ -11,6 +11,7 @@ import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec
 import type { InstallReceipt, ExtInventory } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
+import { CloudFormBox } from "./cloud-form-box"
 import { extensionError, catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
 import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
@@ -338,6 +339,20 @@ export function ExtensionDetail(props: {
             </span>
           </FactRow>
         </Section>
+
+        {/* REQ-235:root 档案为 cloud@1 ⇒ 按 main 解码过的描述画表单。与 legacy 云条目同一条门控:
+            派发不要求已安装,只看 cloudReady(恢复中同样禁用,只是理由不同)。 */}
+        <Show when={view().cloud}>
+          {(cloud) => (
+            <Section title={t("alpha.ext.cloudPipelines")}>
+              <CloudFormBox
+                cloud={cloud()}
+                ready={props.cloudReady?.() ?? false}
+                recovering={props.cloudRecovering?.() ?? false}
+              />
+            </Section>
+          )}
+        </Show>
 
         <Section title={t("alpha.ext.packageComponentsTitle")}>
           {/* `#697` 第 5 跳:逐组件一行(root + 各 leaf),被跳过的组件带**具名原因**。

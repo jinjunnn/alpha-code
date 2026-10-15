@@ -915,6 +915,8 @@ export function ExtensionHub(props: {
   const installablePackages = createMemo(() =>
     installableCatalogPackages(catalog().packages ?? [], catalog().entries, advisoryBlocked()),
   )
+  // REQ-235:root 档案为 cloud@1 的签名包(main 投影了表单描述)与 legacy 云条目同列在「云能力」分区。
+  const cloudPackages = createMemo(() => installablePackages().filter((view) => view.cloud))
   const byType = (type: CatalogEntry["type"]) => installableEntries().filter((e) => e.type === type)
   // 浏览区/搜索共用的筛选视图(T7/E11:来源+许可证)。
   const byTypeF = (type: CatalogEntry["type"]) => byType(type).filter(filterMatch)
@@ -3032,9 +3034,12 @@ export function ExtensionHub(props: {
                     </div>
 
                     {/* 云 pipeline 条目(灰显 ≠ 隐藏:BYOK/未登录可浏览,启用/派发被门控) */}
-                    <SecRow label={t("alpha.ext.cloudPipelines")} count={byType("cloud").length} />
+                    <SecRow label={t("alpha.ext.cloudPipelines")} count={byType("cloud").length + cloudPackages().length} />
                     <div data-dim={cloudReady() ? undefined : ""}>
                       <Grid items={byType("cloud")} />
+                      <Show when={cloudPackages().length > 0}>
+                        <PackageGrid items={cloudPackages()} />
+                      </Show>
                     </div>
                   </Show>
                 </Show>

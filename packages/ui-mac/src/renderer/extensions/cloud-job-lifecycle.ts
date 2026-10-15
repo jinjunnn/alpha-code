@@ -30,6 +30,8 @@ export type CloudJobState = {
 // [#918] 云端拒收带分类码(main 的 alpha-cloud-jobs 只透传 `code` 槽)。两条会真实发生在
 // 用户面前的,给出诚实说明而不是把一个裸码贴在错误行里 —— 前者告诉用户「要的限制强制不了」,
 // 后者告诉用户「作业没送出去,因为送出去也是白跑」。其它码只影响显示，保留原始返回值供诊断。
+// REQ-235:目录描述的能力与平台注册表不同步时(签名目录比注册表新或旧),平台拒收为
+// `unknown_pipeline_kind` / `pipeline_input_invalid` —— 用户能做的只有刷新或更新,照实说。
 export function dispatchError(code: string, fallback: Parameters<typeof t>[0] = "alpha.ext.cloudUnknownSend"): string {
   const failure = failureCopy(code)
   if (failure) return failure.text
@@ -37,6 +39,7 @@ export function dispatchError(code: string, fallback: Parameters<typeof t>[0] = 
   if (code === "network") return t("alpha.ext.cloudErrNetwork")
   if (code === "denied_paths_unenforceable_for_execution_form") return t("alpha.ext.cloudErrDeniedPaths")
   if (code === "tools-not-declared") return t("alpha.ext.cloudErrToolsUndeclared")
+  if (code === "pipeline_input_invalid" || code === "unknown_pipeline_kind") return t("alpha.ext.cloudErrRequirementsChanged")
   if (code.startsWith("envelope-too-large:")) return t("alpha.ext.cloudEnvelopeLarge")
   if (code.startsWith("secrets-detected:")) return t("alpha.ext.cloudSecretsDetected", { fields: code.slice("secrets-detected: ".length).split(" —— ")[0] })
   return t(fallback)
