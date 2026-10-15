@@ -1,0 +1,6601 @@
+{
+  "schemaVersion": 4,
+  "execution": {
+    "protocol": "round2-private-upload-v1",
+    "priorUsd": 0.5423698,
+    "priorUnknownUsd": 0.14565376,
+    "retryPolicy": "network/429/5xx: one retry per round; error counts wrong and continues",
+    "expiresAt": "2026-10-15T16:19:34Z"
+  },
+  "uncertain": {
+    "reserveUsd": 0.10924032000000003,
+    "attempts": 6
+  },
+  "maxCalls": 4,
+  "mode": "real",
+  "createdAt": "2026-10-15T12:36:13.900Z",
+  "identity": {
+    "criteria": "round2-private-upload-v1",
+    "engine": "d74e5b37dc19842e7eb57dfcbaac5337d946a5ea",
+    "digests": {
+      "cases.json": "c55e2322d54c66f2f692c7b3a3ddcb5822d1a1256ae60e534cd65281d2e5191c",
+      "tool-snapshot.json": "4f51aa947a5856a7cbeb11621e6de471659a98a1c6847de15bef33af12df4a03",
+      "run.ts": "15a3a3a92c944d13752d865667e9d6c79718e90295b9a9c197936022801c0b62",
+      "plugin.ts": "ff57e0fb03787c6930c59fa28acad2a550047adfe441b5db4b38cf828c0310ca",
+      "mcp.ts": "84881a2a44bab06a894c8722a07941e369afe3e07b968a1597de0a80b23aa484",
+      "preflight-fixtures.json": "e26ba8eb23aa629ab5d2a58ab4010e381f537573fb0d1dddfa824ab14e4591d7",
+      "README.md": "d6500a5210c6cb21ab99158f72efe6e8ab1c3182d2734d82bb6cc019c1f79682"
+    },
+    "variants": [
+      {
+        "name": "before",
+        "commit": "133f463d93664269db0cf91f1c1ff7d7887d6bf9",
+        "tree": "200b11983819a70f72c13bf7280b7d25d15fd949",
+        "skillBytes": 15866
+      },
+      {
+        "name": "after",
+        "commit": "d74e5b37dc19842e7eb57dfcbaac5337d946a5ea",
+        "tree": "a1f2b4adb5105544634e0eb6d2462df4da6068a4",
+        "skillBytes": 16256
+      }
+    ]
+  },
+  "model": "deepseek-v4-flash",
+  "sample": null,
+  "caseCount": 28,
+  "repeats": 3,
+  "pricesPerMillion": [
+    0.14,
+    0.28
+  ],
+  "budgetUsd": 3,
+  "stopReason": "completed",
+  "usage": {
+    "input": 2987233,
+    "output": 37724,
+    "usd": 0.42877534000000006,
+    "calls": 186
+  },
+  "projection": null,
+  "receipt": {
+    "loaded": 2,
+    "advertised": [
+      "alpha_cloud_access",
+      "alpha_echo",
+      "alpha_excel_read_xlsx",
+      "alpha_excel_write_xlsx",
+      "alpha_pdf_read_pdf",
+      "alpha_pdf_write_pdf",
+      "alpha_ping",
+      "alpha_powerpoint_read_pptx",
+      "alpha_powerpoint_write_pptx",
+      "alpha_register",
+      "alpha_reload",
+      "alpha_word_read_docx",
+      "alpha_word_write_docx",
+      "bash",
+      "cloud_cloud_account_status",
+      "cloud_cloud_artifacts",
+      "cloud_cloud_await",
+      "cloud_cloud_cancel",
+      "cloud_cloud_decide",
+      "cloud_cloud_dispatch",
+      "cloud_cloud_status",
+      "cloud_cloud_vision",
+      "cloud_cloud_web_fetch",
+      "cloud_cloud_web_search",
+      "edit",
+      "glob",
+      "grep",
+      "question",
+      "read",
+      "skill",
+      "task",
+      "todowrite",
+      "webfetch",
+      "websearch",
+      "write"
+    ],
+    "blockedFollowups": 0,
+    "rejectedForeignSessions": 0
+  },
+  "comparison": {
+    "delta": 0.07142857142857142,
+    "noiseBand": 0.07142857142857142,
+    "improvedBeyondNoise": false,
+    "ac3Evidence": false
+  },
+  "summary": {
+    "before": {
+      "runs": 84,
+      "correct": 56,
+      "accuracy": 0.6666666666666666,
+      "majorityAccuracy": 0.6785714285714286,
+      "unanimousCases": 21,
+      "repeatAccuracy": [
+        0.7142857142857143,
+        0.6428571428571429,
+        0.6428571428571429
+      ],
+      "noiseRange": 0.0714285714285714,
+      "complete": true,
+      "perCase": [
+        {
+          "id": "c01",
+          "observed": [
+            "local",
+            "local",
+            "cloud"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c02",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c03",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c04",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c05",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c06",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c07",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c08",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c09",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c10",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c11",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c12",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c13",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c14",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c15",
+          "observed": [
+            "local",
+            "error",
+            "error"
+          ],
+          "majority": "error",
+          "majorityCorrect": false,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c16",
+          "observed": [
+            "local",
+            "local",
+            "cloud"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c17",
+          "observed": [
+            "cloud",
+            "error",
+            "local"
+          ],
+          "majority": null,
+          "majorityCorrect": false,
+          "consistency": 0.3333333333333333,
+          "unanimous": false
+        },
+        {
+          "id": "c18",
+          "observed": [
+            "cloud",
+            "local",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c19",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c20",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c21",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c22",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c23",
+          "observed": [
+            "cloud",
+            "cloud",
+            "local"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c24",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c25",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c26",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c27",
+          "observed": [
+            "local",
+            "error",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c28",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        }
+      ]
+    },
+    "after": {
+      "runs": 84,
+      "correct": 62,
+      "accuracy": 0.7380952380952381,
+      "majorityAccuracy": 0.7857142857142857,
+      "unanimousCases": 24,
+      "repeatAccuracy": [
+        0.75,
+        0.7142857142857143,
+        0.75
+      ],
+      "noiseRange": 0.0357142857142857,
+      "complete": true,
+      "perCase": [
+        {
+          "id": "c01",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c02",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c03",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c04",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c05",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c06",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c07",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c08",
+          "observed": [
+            "local",
+            "local",
+            "ask"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c09",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c10",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c11",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c12",
+          "observed": [
+            "ask",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c13",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c14",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c15",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c16",
+          "observed": [
+            "cloud",
+            "local",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c17",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c18",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c19",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c20",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c21",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c22",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c23",
+          "observed": [
+            "cloud",
+            "local",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 0.6666666666666666,
+          "unanimous": false
+        },
+        {
+          "id": "c24",
+          "observed": [
+            "cloud",
+            "cloud",
+            "cloud"
+          ],
+          "majority": "cloud",
+          "majorityCorrect": true,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c25",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c26",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c27",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        },
+        {
+          "id": "c28",
+          "observed": [
+            "local",
+            "local",
+            "local"
+          ],
+          "majority": "local",
+          "majorityCorrect": false,
+          "consistency": 1,
+          "unanimous": true
+        }
+      ]
+    }
+  },
+  "rows": [
+    {
+      "variant": "before",
+      "case": "c01",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15842,
+          "output": 73,
+          "usd": 0.0022383200000000002,
+          "promptBytes": 13563,
+          "toolBytes": 48353,
+          "responseBytes": 2120,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15842,
+      "output": 73,
+      "usd": 0.0022383200000000002,
+      "promptBytes": 13563,
+      "toolBytes": 48353,
+      "responseBytes": 2120,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c01",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15811,
+          "output": 97,
+          "usd": 0.0022407000000000004,
+          "promptBytes": 13563,
+          "toolBytes": 48353,
+          "responseBytes": 3971,
+          "toolNames": [
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15811,
+      "output": 97,
+      "usd": 0.0022407000000000004,
+      "promptBytes": 13563,
+      "toolBytes": 48353,
+      "responseBytes": 3971,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c01",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15842,
+          "output": 135,
+          "usd": 0.0022556800000000004,
+          "promptBytes": 13563,
+          "toolBytes": 48353,
+          "responseBytes": 11262,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15842,
+      "output": 135,
+      "usd": 0.0022556800000000004,
+      "promptBytes": 13563,
+      "toolBytes": 48353,
+      "responseBytes": 11262,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c02",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15898,
+          "output": 130,
+          "usd": 0.0022621200000000003,
+          "promptBytes": 13589,
+          "toolBytes": 48353,
+          "responseBytes": 3888,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15898,
+      "output": 130,
+      "usd": 0.0022621200000000003,
+      "promptBytes": 13589,
+      "toolBytes": 48353,
+      "responseBytes": 3888,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c02",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15898,
+          "output": 109,
+          "usd": 0.00225624,
+          "promptBytes": 13589,
+          "toolBytes": 48353,
+          "responseBytes": 3525,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15898,
+      "output": 109,
+      "usd": 0.00225624,
+      "promptBytes": 13589,
+      "toolBytes": 48353,
+      "responseBytes": 3525,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c02",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15898,
+          "output": 69,
+          "usd": 0.0022450400000000002,
+          "promptBytes": 13589,
+          "toolBytes": 48353,
+          "responseBytes": 1841,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15898,
+      "output": 69,
+      "usd": 0.0022450400000000002,
+      "promptBytes": 13589,
+      "toolBytes": 48353,
+      "responseBytes": 1841,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c03",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 77,
+          "usd": 0.0022467200000000002,
+          "promptBytes": 13587,
+          "toolBytes": 48353,
+          "responseBytes": 2217,
+          "toolNames": [
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 77,
+      "usd": 0.0022467200000000002,
+      "promptBytes": 13587,
+      "toolBytes": 48353,
+      "responseBytes": 2217,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c03",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 107,
+          "usd": 0.00225512,
+          "promptBytes": 13587,
+          "toolBytes": 48353,
+          "responseBytes": 2656,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 107,
+      "usd": 0.00225512,
+      "promptBytes": 13587,
+      "toolBytes": 48353,
+      "responseBytes": 2656,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c03",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 132,
+          "usd": 0.0022621200000000003,
+          "promptBytes": 13587,
+          "toolBytes": 48353,
+          "responseBytes": 4406,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 132,
+      "usd": 0.0022621200000000003,
+      "promptBytes": 13587,
+      "toolBytes": 48353,
+      "responseBytes": 4406,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c04",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 258,
+          "usd": 0.0022969800000000005,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 8977,
+          "toolNames": [
+            "glob",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 258,
+      "usd": 0.0022969800000000005,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 8977,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c04",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 167,
+          "usd": 0.0022715000000000005,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 5915,
+          "toolNames": [
+            "alpha_pdf_read_pdf"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 167,
+      "usd": 0.0022715000000000005,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 5915,
+      "tool": "alpha_pdf_read_pdf"
+    },
+    {
+      "variant": "before",
+      "case": "c04",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 287,
+          "usd": 0.0023051000000000005,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 10427,
+          "toolNames": [
+            "glob",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 287,
+      "usd": 0.0023051000000000005,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 10427,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c05",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15919,
+          "output": 31,
+          "usd": 0.00223734,
+          "promptBytes": 13556,
+          "toolBytes": 48353,
+          "responseBytes": 1382,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15919,
+      "output": 31,
+      "usd": 0.00223734,
+      "promptBytes": 13556,
+      "toolBytes": 48353,
+      "responseBytes": 1382,
+      "text": "[cloudflare.com](https://cloudflare.com)"
+    },
+    {
+      "variant": "before",
+      "case": "c05",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15919,
+          "output": 17,
+          "usd": 0.0022334200000000007,
+          "promptBytes": 13556,
+          "toolBytes": 48353,
+          "responseBytes": 692,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15919,
+      "output": 17,
+      "usd": 0.0022334200000000007,
+      "promptBytes": 13556,
+      "toolBytes": 48353,
+      "responseBytes": 692,
+      "text": "cloudflare.com"
+    },
+    {
+      "variant": "before",
+      "case": "c05",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15919,
+          "output": 78,
+          "usd": 0.0022505000000000003,
+          "promptBytes": 13556,
+          "toolBytes": 48353,
+          "responseBytes": 2143,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15919,
+      "output": 78,
+      "usd": 0.0022505000000000003,
+      "promptBytes": 13556,
+      "toolBytes": 48353,
+      "responseBytes": 2143,
+      "tool": "websearch"
+    },
+    {
+      "variant": "before",
+      "case": "c06",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15841,
+          "output": 82,
+          "usd": 0.0022407000000000004,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 1954,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15841,
+      "output": 82,
+      "usd": 0.0022407000000000004,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 1954,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "before",
+      "case": "c06",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15841,
+          "output": 95,
+          "usd": 0.00224434,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 2736,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15841,
+      "output": 95,
+      "usd": 0.00224434,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 2736,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "before",
+      "case": "c06",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15841,
+          "output": 79,
+          "usd": 0.00223986,
+          "promptBytes": 13570,
+          "toolBytes": 48353,
+          "responseBytes": 2528,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15841,
+      "output": 79,
+      "usd": 0.00223986,
+      "promptBytes": 13570,
+      "toolBytes": 48353,
+      "responseBytes": 2528,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "before",
+      "case": "c07",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15847,
+          "output": 79,
+          "usd": 0.0022407000000000004,
+          "promptBytes": 13579,
+          "toolBytes": 48353,
+          "responseBytes": 3975,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15847,
+      "output": 79,
+      "usd": 0.0022407000000000004,
+      "promptBytes": 13579,
+      "toolBytes": 48353,
+      "responseBytes": 3975,
+      "text": "**Bug**: `add` subtracts (`a - b`) instead of adding (`a + b`). Line 1."
+    },
+    {
+      "variant": "before",
+      "case": "c07",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15847,
+          "output": 89,
+          "usd": 0.0022435000000000003,
+          "promptBytes": 13579,
+          "toolBytes": 48353,
+          "responseBytes": 4333,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15847,
+      "output": 89,
+      "usd": 0.0022435000000000003,
+      "promptBytes": 13579,
+      "toolBytes": 48353,
+      "responseBytes": 4333,
+      "text": "函数名是 `add`，但实现却是减法（`a-b`），应该是 `return a + b`。"
+    },
+    {
+      "variant": "before",
+      "case": "c07",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15847,
+          "output": 71,
+          "usd": 0.0022384600000000003,
+          "promptBytes": 13579,
+          "toolBytes": 48353,
+          "responseBytes": 3313,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15847,
+      "output": 71,
+      "usd": 0.0022384600000000003,
+      "promptBytes": 13579,
+      "toolBytes": 48353,
+      "responseBytes": 3313,
+      "text": "函数名 `add` 意图是加法，但实际执行的是减法 (`a - b`)，应为 `a + b`。"
+    },
+    {
+      "variant": "before",
+      "case": "c08",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 245,
+          "usd": 0.0022877400000000003,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 11230,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 245,
+      "usd": 0.0022877400000000003,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 11230,
+      "tool": "grep"
+    },
+    {
+      "variant": "before",
+      "case": "c08",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 91,
+          "usd": 0.0022446200000000006,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 3742,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 91,
+      "usd": 0.0022446200000000006,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 3742,
+      "tool": "grep"
+    },
+    {
+      "variant": "before",
+      "case": "c08",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 240,
+          "usd": 0.00228634,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 10319,
+          "toolNames": [
+            "bash",
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 240,
+      "usd": 0.00228634,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 10319,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c09",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15845,
+          "output": 110,
+          "usd": 0.0022491000000000004,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 3804,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15845,
+      "output": 110,
+      "usd": 0.0022491000000000004,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 3804,
+      "text": "**IaaS** (Infrastructure as a Service) 提供虚拟化的计算资源（云服务器、存储、网络），用户自己管理 OS、中间件和应用，类似租用一台远程电脑。\n\n**SaaS** (Software as a Service) 提供完整可用的软件应用，用户直接通过浏览器使用，无需管理底层任何东西，类似直接用 Gmail 或飞书。"
+    },
+    {
+      "variant": "before",
+      "case": "c09",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15845,
+          "output": 128,
+          "usd": 0.0022541400000000004,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 4152,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15845,
+      "output": 128,
+      "usd": 0.0022541400000000004,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 4152,
+      "text": "**IaaS** (Infrastructure as a Service) 提供虚拟化的计算资源（虚拟机、存储、网络），用户自己管理 OS、中间件和应用，类似租用一台远程电脑。\n\n**SaaS** (Software as a Service) 提供完整的可直接使用的软件应用，用户只管用，底层一切由厂商管理，比如 Gmail、飞书、钉钉。\n\n简单说：IaaS 给你基础设施你自己搭，SaaS 直接给你现成的软件。"
+    },
+    {
+      "variant": "before",
+      "case": "c09",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15845,
+          "output": 108,
+          "usd": 0.00224854,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 3040,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15845,
+      "output": 108,
+      "usd": 0.00224854,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 3040,
+      "text": "**IaaS** (Infrastructure as a Service) 提供虚拟化的计算资源，如虚拟机、存储和网络，用户自行管理操作系统和应用。**SaaS** (Software as a Service) 提供完整的软件应用，用户直接使用，无需管理底层基础设施。\n\n简单说：IaaS 给你\"机房\"，你自己装系统装软件；SaaS 给你\"现成的软件\"，打开就用。"
+    },
+    {
+      "variant": "before",
+      "case": "c10",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 86,
+          "usd": 0.0022488200000000003,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 3524,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 86,
+      "usd": 0.0022488200000000003,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 3524,
+      "text": "您好，欢迎加入我们！很高兴您成为我们中的一员，期待在接下来的日子里与您携手共进。"
+    },
+    {
+      "variant": "before",
+      "case": "c10",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 49,
+          "usd": 0.00223846,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 2297,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 49,
+      "usd": 0.00223846,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 2297,
+      "text": "您好，欢迎加入我们！非常高兴您成为我们团队的一员，您的到来让我们倍感期待。"
+    },
+    {
+      "variant": "before",
+      "case": "c10",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15891,
+          "output": 59,
+          "usd": 0.00224126,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 2773,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15891,
+      "output": 59,
+      "usd": 0.00224126,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 2773,
+      "text": "您好！欢迎加入我们的社区，很高兴与您相遇，期待与您一起开启这段全新的旅程。"
+    },
+    {
+      "variant": "before",
+      "case": "c11",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15932,
+          "output": 135,
+          "usd": 0.00226828,
+          "promptBytes": 13583,
+          "toolBytes": 48353,
+          "responseBytes": 4824,
+          "toolNames": [
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15932,
+      "output": 135,
+      "usd": 0.00226828,
+      "promptBytes": 13583,
+      "toolBytes": 48353,
+      "responseBytes": 4824,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c11",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15932,
+          "output": 92,
+          "usd": 0.00225624,
+          "promptBytes": 13583,
+          "toolBytes": 48353,
+          "responseBytes": 2748,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15932,
+      "output": 92,
+      "usd": 0.00225624,
+      "promptBytes": 13583,
+      "toolBytes": 48353,
+      "responseBytes": 2748,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c11",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15932,
+          "output": 88,
+          "usd": 0.0022551199999999998,
+          "promptBytes": 13583,
+          "toolBytes": 48353,
+          "responseBytes": 2558,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15932,
+      "output": 88,
+      "usd": 0.0022551199999999998,
+      "promptBytes": 13583,
+      "toolBytes": 48353,
+      "responseBytes": 2558,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c12",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15930,
+          "output": 199,
+          "usd": 0.00228592,
+          "promptBytes": 13595,
+          "toolBytes": 48353,
+          "responseBytes": 8592,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15930,
+      "output": 199,
+      "usd": 0.00228592,
+      "promptBytes": 13595,
+      "toolBytes": 48353,
+      "responseBytes": 8592,
+      "text": "`x` 和 `i` 都是无信息量的名字。读代码的人需要猜测 `items` 里是什么,以及 `id` 的含义。可读性一般。更好的写法: `const userIds = users.map(user => user.id)`"
+    },
+    {
+      "variant": "before",
+      "case": "c12",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15930,
+          "output": 181,
+          "usd": 0.0022808800000000003,
+          "promptBytes": 13595,
+          "toolBytes": 48353,
+          "responseBytes": 7546,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15930,
+      "output": 181,
+      "usd": 0.0022808800000000003,
+      "promptBytes": 13595,
+      "toolBytes": 48353,
+      "responseBytes": 7546,
+      "text": "Variable `x` is meaningless — rename to something like `const ids = items.map(item => item.id)`. The shorthand `i` is fine in a tiny lambda, but `x` offers zero context about what the result contains."
+    },
+    {
+      "variant": "before",
+      "case": "c12",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15930,
+          "output": 208,
+          "usd": 0.0022884400000000005,
+          "promptBytes": 13595,
+          "toolBytes": 48353,
+          "responseBytes": 6878,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15930,
+      "output": 208,
+      "usd": 0.0022884400000000005,
+      "promptBytes": 13595,
+      "toolBytes": 48353,
+      "responseBytes": 6878,
+      "text": "该代码可读性中等偏下：\n\n- `x` 是无意义命名，读者需回溯上下文才能理解含义\n- `i` 虽是常见缩写，但不如 `item` 清晰\n- `items` 本身较泛，若能反映集合类型更好（如 `users`）\n\n建议：`const userIds = items.map(item => item.id)` 或 `const ids = items.map(({ id }) => id)`。"
+    },
+    {
+      "variant": "before",
+      "case": "c13",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15890,
+          "output": 91,
+          "usd": 0.0022500800000000002,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 3415,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15890,
+      "output": 91,
+      "usd": 0.0022500800000000002,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 3415,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c13",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15890,
+          "output": 57,
+          "usd": 0.0022405600000000004,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 1875,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15890,
+      "output": 57,
+      "usd": 0.0022405600000000004,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 1875,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c13",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15890,
+          "output": 168,
+          "usd": 0.00227164,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 7345,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15890,
+      "output": 168,
+      "usd": 0.00227164,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 7345,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c14",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15889,
+          "output": 81,
+          "usd": 0.00224714,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 3063,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15889,
+      "output": 81,
+      "usd": 0.00224714,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 3063,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c14",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15889,
+          "output": 137,
+          "usd": 0.00226282,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 4996,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17409,
+          "output": 53,
+          "usd": 0.0024521000000000005,
+          "promptBytes": 20047,
+          "toolBytes": 48353,
+          "responseBytes": 1689,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-dispatch",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md"
+        }
+      ],
+      "input": 33298,
+      "output": 190,
+      "usd": 0.004714920000000001,
+      "promptBytes": 33612,
+      "toolBytes": 96706,
+      "responseBytes": 6685,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c14",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15889,
+          "output": 423,
+          "usd": 0.0023429,
+          "promptBytes": 13565,
+          "toolBytes": 48353,
+          "responseBytes": 19349,
+          "toolNames": [
+            "alpha_cloud_access",
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-dispatch",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md"
+        }
+      ],
+      "input": 15889,
+      "output": 423,
+      "usd": 0.0023429,
+      "promptBytes": 13565,
+      "toolBytes": 48353,
+      "responseBytes": 19349,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c15",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 1,
+      "failures": [
+        {
+          "code": "network_error",
+          "attempt": 1
+        }
+      ],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15853,
+          "output": 1024,
+          "usd": 0.0025061400000000005,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 48549,
+          "toolNames": [
+            "alpha_word_write_docx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15853,
+      "output": 1024,
+      "usd": 0.0025061400000000005,
+      "promptBytes": 13622,
+      "toolBytes": 48353,
+      "responseBytes": 48549,
+      "tool": "alpha_word_write_docx"
+    },
+    {
+      "variant": "before",
+      "case": "c15",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "error",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15853,
+          "output": 1024,
+          "usd": 0.0025061400000000005,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 48839,
+          "toolNames": [
+            "alpha_word_write_docx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15853,
+      "output": 1024,
+      "usd": 0.0025061400000000005,
+      "promptBytes": 13622,
+      "toolBytes": 48353,
+      "responseBytes": 48839,
+      "tool": "invalid",
+      "error": "engine_or_empty_response"
+    },
+    {
+      "variant": "before",
+      "case": "c15",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "error",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15853,
+          "output": 514,
+          "usd": 0.0023633400000000002,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 31514,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 18528,
+          "output": 1024,
+          "usd": 0.0028806400000000003,
+          "promptBytes": 26471,
+          "toolBytes": 48353,
+          "responseBytes": 72906,
+          "toolNames": []
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 34381,
+      "output": 1538,
+      "usd": 0.0052439800000000005,
+      "promptBytes": 40093,
+      "toolBytes": 96706,
+      "responseBytes": 104420,
+      "text": "",
+      "error": "engine_or_empty_response"
+    },
+    {
+      "variant": "before",
+      "case": "c16",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15818,
+          "output": 188,
+          "usd": 0.0022671600000000003,
+          "promptBytes": 13608,
+          "toolBytes": 48353,
+          "responseBytes": 8256,
+          "toolNames": [
+            "skill",
+            "read"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 15818,
+      "output": 188,
+      "usd": 0.0022671600000000003,
+      "promptBytes": 13608,
+      "toolBytes": 48353,
+      "responseBytes": 8256,
+      "tool": "read"
+    },
+    {
+      "variant": "before",
+      "case": "c16",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15818,
+          "output": 1024,
+          "usd": 0.0025012400000000005,
+          "promptBytes": 13608,
+          "toolBytes": 48353,
+          "responseBytes": 51977,
+          "toolNames": [
+            "alpha_excel_write_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15818,
+      "output": 1024,
+      "usd": 0.0025012400000000005,
+      "promptBytes": 13608,
+      "toolBytes": 48353,
+      "responseBytes": 51977,
+      "tool": "alpha_excel_write_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c16",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15849,
+          "output": 445,
+          "usd": 0.00234346,
+          "promptBytes": 13608,
+          "toolBytes": 48353,
+          "responseBytes": 53110,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15849,
+      "output": 445,
+      "usd": 0.00234346,
+      "promptBytes": 13608,
+      "toolBytes": 48353,
+      "responseBytes": 53110,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c17",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15902,
+          "output": 153,
+          "usd": 0.0022691200000000003,
+          "promptBytes": 13605,
+          "toolBytes": 48353,
+          "responseBytes": 5823,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 18577,
+          "output": 554,
+          "usd": 0.0027559,
+          "promptBytes": 24919,
+          "toolBytes": 48353,
+          "responseBytes": 23840,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 34479,
+      "output": 707,
+      "usd": 0.00502502,
+      "promptBytes": 38524,
+      "toolBytes": 96706,
+      "responseBytes": 29663,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c17",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "error",
+      "retries": 1,
+      "failures": [
+        {
+          "code": "network_error",
+          "attempt": 1
+        },
+        {
+          "code": "network_error",
+          "attempt": 2
+        }
+      ],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15902,
+          "output": 206,
+          "usd": 0.0022839600000000002,
+          "promptBytes": 13605,
+          "toolBytes": 48353,
+          "responseBytes": 8787,
+          "toolNames": [
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 15902,
+      "output": 206,
+      "usd": 0.0022839600000000002,
+      "promptBytes": 13605,
+      "toolBytes": 48353,
+      "responseBytes": 8787,
+      "error": "provider_or_usage_error"
+    },
+    {
+      "variant": "before",
+      "case": "c17",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15902,
+          "output": 405,
+          "usd": 0.0023396800000000002,
+          "promptBytes": 13605,
+          "toolBytes": 48353,
+          "responseBytes": 17217,
+          "toolNames": [
+            "skill",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 15902,
+      "output": 405,
+      "usd": 0.0023396800000000002,
+      "promptBytes": 13605,
+      "toolBytes": 48353,
+      "responseBytes": 17217,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c18",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15893,
+          "output": 342,
+          "usd": 0.0023207800000000006,
+          "promptBytes": 13592,
+          "toolBytes": 48353,
+          "responseBytes": 14829,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15893,
+      "output": 342,
+      "usd": 0.0023207800000000006,
+      "promptBytes": 13592,
+      "toolBytes": 48353,
+      "responseBytes": 14829,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c18",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15893,
+          "output": 149,
+          "usd": 0.00226674,
+          "promptBytes": 13592,
+          "toolBytes": 48353,
+          "responseBytes": 5233,
+          "toolNames": [
+            "bash",
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15893,
+      "output": 149,
+      "usd": 0.00226674,
+      "promptBytes": 13592,
+      "toolBytes": 48353,
+      "responseBytes": 5233,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c18",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15893,
+          "output": 221,
+          "usd": 0.0022869000000000006,
+          "promptBytes": 13592,
+          "toolBytes": 48353,
+          "responseBytes": 9863,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15893,
+      "output": 221,
+      "usd": 0.0022869000000000006,
+      "promptBytes": 13592,
+      "toolBytes": 48353,
+      "responseBytes": 9863,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c19",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15840,
+          "output": 85,
+          "usd": 0.0022414000000000006,
+          "promptBytes": 13559,
+          "toolBytes": 48353,
+          "responseBytes": 5042,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15840,
+      "output": 85,
+      "usd": 0.0022414000000000006,
+      "promptBytes": 13559,
+      "toolBytes": 48353,
+      "responseBytes": 5042,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c19",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15840,
+          "output": 82,
+          "usd": 0.0022405600000000004,
+          "promptBytes": 13559,
+          "toolBytes": 48353,
+          "responseBytes": 4160,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15840,
+      "output": 82,
+      "usd": 0.0022405600000000004,
+      "promptBytes": 13559,
+      "toolBytes": 48353,
+      "responseBytes": 4160,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c19",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15809,
+          "output": 97,
+          "usd": 0.00224042,
+          "promptBytes": 13559,
+          "toolBytes": 48353,
+          "responseBytes": 2676,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15809,
+      "output": 97,
+      "usd": 0.00224042,
+      "promptBytes": 13559,
+      "toolBytes": 48353,
+      "responseBytes": 2676,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c20",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15897,
+          "output": 452,
+          "usd": 0.0023521400000000004,
+          "promptBytes": 13604,
+          "toolBytes": 48353,
+          "responseBytes": 20207,
+          "toolNames": [
+            "alpha_cloud_access",
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-dispatch",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md"
+        }
+      ],
+      "input": 15897,
+      "output": 452,
+      "usd": 0.0023521400000000004,
+      "promptBytes": 13604,
+      "toolBytes": 48353,
+      "responseBytes": 20207,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c20",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15897,
+          "output": 267,
+          "usd": 0.0023003400000000005,
+          "promptBytes": 13604,
+          "toolBytes": 48353,
+          "responseBytes": 10850,
+          "toolNames": [
+            "alpha_cloud_access",
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-dispatch",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/before/packages/ui-mac/resources/factory-skills/cloud-dispatch/SKILL.md"
+        }
+      ],
+      "input": 15897,
+      "output": 267,
+      "usd": 0.0023003400000000005,
+      "promptBytes": 13604,
+      "toolBytes": 48353,
+      "responseBytes": 10850,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c20",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15897,
+          "output": 409,
+          "usd": 0.0023401000000000003,
+          "promptBytes": 13604,
+          "toolBytes": 48353,
+          "responseBytes": 16202,
+          "toolNames": [
+            "alpha_cloud_access",
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15897,
+      "output": 409,
+      "usd": 0.0023401000000000003,
+      "promptBytes": 13604,
+      "toolBytes": 48353,
+      "responseBytes": 16202,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c21",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15935,
+          "output": 158,
+          "usd": 0.0022751399999999997,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 5182,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15935,
+      "output": 158,
+      "usd": 0.0022751399999999997,
+      "promptBytes": 13622,
+      "toolBytes": 48353,
+      "responseBytes": 5182,
+      "tool": "websearch"
+    },
+    {
+      "variant": "before",
+      "case": "c21",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15683,
+          "output": 175,
+          "usd": 0.0022446200000000006,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 5451,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15683,
+      "output": 175,
+      "usd": 0.0022446200000000006,
+      "promptBytes": 13622,
+      "toolBytes": 48353,
+      "responseBytes": 5451,
+      "tool": "websearch"
+    },
+    {
+      "variant": "before",
+      "case": "c21",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15683,
+          "output": 169,
+          "usd": 0.0022429400000000006,
+          "promptBytes": 13622,
+          "toolBytes": 48353,
+          "responseBytes": 4068,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15683,
+      "output": 169,
+      "usd": 0.0022429400000000006,
+      "promptBytes": 13622,
+      "toolBytes": 48353,
+      "responseBytes": 4068,
+      "tool": "websearch"
+    },
+    {
+      "variant": "before",
+      "case": "c22",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15819,
+          "output": 160,
+          "usd": 0.0022594600000000005,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 3520,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15819,
+      "output": 160,
+      "usd": 0.0022594600000000005,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 3520,
+      "tool": "grep"
+    },
+    {
+      "variant": "before",
+      "case": "c22",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15819,
+          "output": 150,
+          "usd": 0.00225666,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 3211,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15819,
+      "output": 150,
+      "usd": 0.00225666,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 3211,
+      "tool": "grep"
+    },
+    {
+      "variant": "before",
+      "case": "c22",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15819,
+          "output": 146,
+          "usd": 0.0022555400000000003,
+          "promptBytes": 13586,
+          "toolBytes": 48353,
+          "responseBytes": 3082,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15819,
+      "output": 146,
+      "usd": 0.0022555400000000003,
+      "promptBytes": 13586,
+      "toolBytes": 48353,
+      "responseBytes": 3082,
+      "tool": "grep"
+    },
+    {
+      "variant": "before",
+      "case": "c23",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15101,
+          "output": 368,
+          "usd": 0.0022171800000000005,
+          "promptBytes": 13598,
+          "toolBytes": 45134,
+          "responseBytes": 15759,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15101,
+      "output": 368,
+      "usd": 0.0022171800000000005,
+      "promptBytes": 13598,
+      "toolBytes": 45134,
+      "responseBytes": 15759,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c23",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15101,
+          "output": 148,
+          "usd": 0.0021555800000000003,
+          "promptBytes": 13598,
+          "toolBytes": 45134,
+          "responseBytes": 5851,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15101,
+      "output": 148,
+      "usd": 0.0021555800000000003,
+      "promptBytes": 13598,
+      "toolBytes": 45134,
+      "responseBytes": 5851,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "before",
+      "case": "c23",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15101,
+          "output": 437,
+          "usd": 0.0022365000000000006,
+          "promptBytes": 13598,
+          "toolBytes": 45134,
+          "responseBytes": 20475,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15101,
+      "output": 437,
+      "usd": 0.0022365000000000006,
+      "promptBytes": 13598,
+      "toolBytes": 45134,
+      "responseBytes": 20475,
+      "text": "Cloudflare 官网是 https://www.cloudflare.com"
+    },
+    {
+      "variant": "before",
+      "case": "c24",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 112,
+          "usd": 0.0022505000000000003,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 3919,
+          "toolNames": [
+            "cloud_cloud_account_status"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 112,
+      "usd": 0.0022505000000000003,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 3919,
+      "tool": "cloud_cloud_account_status"
+    },
+    {
+      "variant": "before",
+      "case": "c24",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 100,
+          "usd": 0.0022471400000000003,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 3371,
+          "toolNames": [
+            "cloud_cloud_account_status"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 100,
+      "usd": 0.0022471400000000003,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 3371,
+      "tool": "cloud_cloud_account_status"
+    },
+    {
+      "variant": "before",
+      "case": "c24",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15851,
+          "output": 126,
+          "usd": 0.0022544200000000005,
+          "promptBytes": 13610,
+          "toolBytes": 48353,
+          "responseBytes": 4479,
+          "toolNames": [
+            "cloud_cloud_account_status"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15851,
+      "output": 126,
+      "usd": 0.0022544200000000005,
+      "promptBytes": 13610,
+      "toolBytes": 48353,
+      "responseBytes": 4479,
+      "tool": "cloud_cloud_account_status"
+    },
+    {
+      "variant": "before",
+      "case": "c25",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15847,
+          "output": 111,
+          "usd": 0.00224966,
+          "promptBytes": 13575,
+          "toolBytes": 48353,
+          "responseBytes": 7394,
+          "toolNames": [
+            "alpha_cloud_access",
+            "alpha_word_read_docx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15847,
+      "output": 111,
+      "usd": 0.00224966,
+      "promptBytes": 13575,
+      "toolBytes": 48353,
+      "responseBytes": 7394,
+      "tool": "alpha_word_read_docx"
+    },
+    {
+      "variant": "before",
+      "case": "c25",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15816,
+          "output": 120,
+          "usd": 0.00224784,
+          "promptBytes": 13575,
+          "toolBytes": 48353,
+          "responseBytes": 2889,
+          "toolNames": [
+            "alpha_cloud_access",
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15816,
+      "output": 120,
+      "usd": 0.00224784,
+      "promptBytes": 13575,
+      "toolBytes": 48353,
+      "responseBytes": 2889,
+      "tool": "glob"
+    },
+    {
+      "variant": "before",
+      "case": "c25",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15816,
+          "output": 117,
+          "usd": 0.0022470000000000003,
+          "promptBytes": 13575,
+          "toolBytes": 48353,
+          "responseBytes": 2849,
+          "toolNames": [
+            "alpha_cloud_access",
+            "read"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15816,
+      "output": 117,
+      "usd": 0.0022470000000000003,
+      "promptBytes": 13575,
+      "toolBytes": 48353,
+      "responseBytes": 2849,
+      "tool": "read"
+    },
+    {
+      "variant": "before",
+      "case": "c26",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15850,
+          "output": 166,
+          "usd": 0.00226548,
+          "promptBytes": 13590,
+          "toolBytes": 48353,
+          "responseBytes": 20123,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        },
+        {
+          "input": 15917,
+          "output": 104,
+          "usd": 0.0022575,
+          "promptBytes": 14683,
+          "toolBytes": 48353,
+          "responseBytes": 2336,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 31767,
+      "output": 270,
+      "usd": 0.004522979999999999,
+      "promptBytes": 28273,
+      "toolBytes": 96706,
+      "responseBytes": 22459,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c26",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15819,
+          "output": 106,
+          "usd": 0.00224434,
+          "promptBytes": 13590,
+          "toolBytes": 48353,
+          "responseBytes": 2371,
+          "toolNames": [
+            "alpha_cloud_access",
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15819,
+      "output": 106,
+      "usd": 0.00224434,
+      "promptBytes": 13590,
+      "toolBytes": 48353,
+      "responseBytes": 2371,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c26",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15850,
+          "output": 124,
+          "usd": 0.00225372,
+          "promptBytes": 13590,
+          "toolBytes": 48353,
+          "responseBytes": 8141,
+          "toolNames": [
+            "alpha_cloud_access",
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15850,
+      "output": 124,
+      "usd": 0.00225372,
+      "promptBytes": 13590,
+      "toolBytes": 48353,
+      "responseBytes": 8141,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "before",
+      "case": "c27",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 812,
+          "usd": 0.0024525200000000006,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 36097,
+          "toolNames": [
+            "bash",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 812,
+      "usd": 0.0024525200000000006,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 36097,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c27",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "error",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 1024,
+          "usd": 0.00251188,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 48308,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 1024,
+      "usd": 0.00251188,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 48308,
+      "tool": "invalid",
+      "error": "engine_or_empty_response"
+    },
+    {
+      "variant": "before",
+      "case": "c27",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15894,
+          "output": 272,
+          "usd": 0.0023013200000000004,
+          "promptBytes": 13580,
+          "toolBytes": 48353,
+          "responseBytes": 9722,
+          "toolNames": [
+            "bash",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15894,
+      "output": 272,
+      "usd": 0.0023013200000000004,
+      "promptBytes": 13580,
+      "toolBytes": 48353,
+      "responseBytes": 9722,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c28",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15900,
+          "output": 174,
+          "usd": 0.0022747199999999996,
+          "promptBytes": 13604,
+          "toolBytes": 48353,
+          "responseBytes": 6190,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15900,
+      "output": 174,
+      "usd": 0.0022747199999999996,
+      "promptBytes": 13604,
+      "toolBytes": 48353,
+      "responseBytes": 6190,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c28",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15900,
+          "output": 491,
+          "usd": 0.00236348,
+          "promptBytes": 13604,
+          "toolBytes": 48353,
+          "responseBytes": 21471,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15900,
+      "output": 491,
+      "usd": 0.00236348,
+      "promptBytes": 13604,
+      "toolBytes": 48353,
+      "responseBytes": 21471,
+      "tool": "bash"
+    },
+    {
+      "variant": "before",
+      "case": "c28",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 1,
+      "failures": [
+        {
+          "code": "network_error",
+          "attempt": 1
+        }
+      ],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15900,
+          "output": 517,
+          "usd": 0.0023707600000000004,
+          "promptBytes": 13604,
+          "toolBytes": 48353,
+          "responseBytes": 21863,
+          "toolNames": [
+            "bash",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15900,
+      "output": 517,
+      "usd": 0.0023707600000000004,
+      "promptBytes": 13604,
+      "toolBytes": 48353,
+      "responseBytes": 21863,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c01",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15948,
+          "output": 108,
+          "usd": 0.00226296,
+          "promptBytes": 13915,
+          "toolBytes": 48353,
+          "responseBytes": 5554,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15948,
+      "output": 108,
+      "usd": 0.00226296,
+      "promptBytes": 13915,
+      "toolBytes": 48353,
+      "responseBytes": 5554,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c01",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15948,
+          "output": 63,
+          "usd": 0.0022503600000000003,
+          "promptBytes": 13915,
+          "toolBytes": 48353,
+          "responseBytes": 2411,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15948,
+      "output": 63,
+      "usd": 0.0022503600000000003,
+      "promptBytes": 13915,
+      "toolBytes": 48353,
+      "responseBytes": 2411,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c01",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16027,
+          "output": 150,
+          "usd": 0.0022857800000000003,
+          "promptBytes": 13915,
+          "toolBytes": 48353,
+          "responseBytes": 5014,
+          "toolNames": [
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16027,
+      "output": 150,
+      "usd": 0.0022857800000000003,
+      "promptBytes": 13915,
+      "toolBytes": 48353,
+      "responseBytes": 5014,
+      "tool": "glob"
+    },
+    {
+      "variant": "after",
+      "case": "c02",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16004,
+          "output": 133,
+          "usd": 0.0022778000000000004,
+          "promptBytes": 13941,
+          "toolBytes": 48353,
+          "responseBytes": 4087,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16004,
+      "output": 133,
+      "usd": 0.0022778000000000004,
+      "promptBytes": 13941,
+      "toolBytes": 48353,
+      "responseBytes": 4087,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c02",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16004,
+          "output": 164,
+          "usd": 0.0022864800000000005,
+          "promptBytes": 13941,
+          "toolBytes": 48353,
+          "responseBytes": 5249,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16004,
+      "output": 164,
+      "usd": 0.0022864800000000005,
+      "promptBytes": 13941,
+      "toolBytes": 48353,
+      "responseBytes": 5249,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c02",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16004,
+          "output": 79,
+          "usd": 0.0022626800000000004,
+          "promptBytes": 13941,
+          "toolBytes": 48353,
+          "responseBytes": 1885,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16004,
+      "output": 79,
+      "usd": 0.0022626800000000004,
+      "promptBytes": 13941,
+      "toolBytes": 48353,
+      "responseBytes": 1885,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c03",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16000,
+          "output": 87,
+          "usd": 0.00226436,
+          "promptBytes": 13939,
+          "toolBytes": 48353,
+          "responseBytes": 2263,
+          "toolNames": [
+            "alpha_powerpoint_read_pptx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16000,
+      "output": 87,
+      "usd": 0.00226436,
+      "promptBytes": 13939,
+      "toolBytes": 48353,
+      "responseBytes": 2263,
+      "tool": "alpha_powerpoint_read_pptx"
+    },
+    {
+      "variant": "after",
+      "case": "c03",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16000,
+          "output": 132,
+          "usd": 0.00227696,
+          "promptBytes": 13939,
+          "toolBytes": 48353,
+          "responseBytes": 3875,
+          "toolNames": [
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16000,
+      "output": 132,
+      "usd": 0.00227696,
+      "promptBytes": 13939,
+      "toolBytes": 48353,
+      "responseBytes": 3875,
+      "tool": "glob"
+    },
+    {
+      "variant": "after",
+      "case": "c03",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16000,
+          "output": 181,
+          "usd": 0.00229068,
+          "promptBytes": 13939,
+          "toolBytes": 48353,
+          "responseBytes": 6001,
+          "toolNames": [
+            "bash",
+            "glob"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16000,
+      "output": 181,
+      "usd": 0.00229068,
+      "promptBytes": 13939,
+      "toolBytes": 48353,
+      "responseBytes": 6001,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c04",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15997,
+          "output": 188,
+          "usd": 0.00229222,
+          "promptBytes": 13922,
+          "toolBytes": 48353,
+          "responseBytes": 5212,
+          "toolNames": [
+            "glob",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15997,
+      "output": 188,
+      "usd": 0.00229222,
+      "promptBytes": 13922,
+      "toolBytes": 48353,
+      "responseBytes": 5212,
+      "tool": "glob"
+    },
+    {
+      "variant": "after",
+      "case": "c04",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15997,
+          "output": 152,
+          "usd": 0.00228214,
+          "promptBytes": 13922,
+          "toolBytes": 48353,
+          "responseBytes": 4913,
+          "toolNames": [
+            "alpha_pdf_read_pdf"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15997,
+      "output": 152,
+      "usd": 0.00228214,
+      "promptBytes": 13922,
+      "toolBytes": 48353,
+      "responseBytes": 4913,
+      "tool": "alpha_pdf_read_pdf"
+    },
+    {
+      "variant": "after",
+      "case": "c04",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15997,
+          "output": 216,
+          "usd": 0.0023000600000000005,
+          "promptBytes": 13922,
+          "toolBytes": 48353,
+          "responseBytes": 6906,
+          "toolNames": [
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15997,
+      "output": 216,
+      "usd": 0.0023000600000000005,
+      "promptBytes": 13922,
+      "toolBytes": 48353,
+      "responseBytes": 6906,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c05",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16025,
+          "output": 51,
+          "usd": 0.00225778,
+          "promptBytes": 13908,
+          "toolBytes": 48353,
+          "responseBytes": 2033,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 16025,
+      "output": 51,
+      "usd": 0.00225778,
+      "promptBytes": 13908,
+      "toolBytes": 48353,
+      "responseBytes": 2033,
+      "text": "Cloudflare 官网地址是：https://www.cloudflare.com"
+    },
+    {
+      "variant": "after",
+      "case": "c05",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16025,
+          "output": 89,
+          "usd": 0.00226842,
+          "promptBytes": 13908,
+          "toolBytes": 48353,
+          "responseBytes": 1993,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16025,
+      "output": 89,
+      "usd": 0.00226842,
+      "promptBytes": 13908,
+      "toolBytes": 48353,
+      "responseBytes": 1993,
+      "tool": "websearch"
+    },
+    {
+      "variant": "after",
+      "case": "c05",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16025,
+          "output": 114,
+          "usd": 0.0022754200000000002,
+          "promptBytes": 13908,
+          "toolBytes": 48353,
+          "responseBytes": 3094,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16025,
+      "output": 114,
+      "usd": 0.0022754200000000002,
+      "promptBytes": 13908,
+      "toolBytes": 48353,
+      "responseBytes": 3094,
+      "tool": "websearch"
+    },
+    {
+      "variant": "after",
+      "case": "c06",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15947,
+          "output": 95,
+          "usd": 0.0022591800000000004,
+          "promptBytes": 13922,
+          "toolBytes": 48353,
+          "responseBytes": 2728,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15947,
+      "output": 95,
+      "usd": 0.0022591800000000004,
+      "promptBytes": 13922,
+      "toolBytes": 48353,
+      "responseBytes": 2728,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "after",
+      "case": "c06",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15947,
+          "output": 95,
+          "usd": 0.0022591800000000004,
+          "promptBytes": 13922,
+          "toolBytes": 48353,
+          "responseBytes": 2732,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15947,
+      "output": 95,
+      "usd": 0.0022591800000000004,
+      "promptBytes": 13922,
+      "toolBytes": 48353,
+      "responseBytes": 2732,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "after",
+      "case": "c06",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15947,
+          "output": 82,
+          "usd": 0.0022555400000000003,
+          "promptBytes": 13922,
+          "toolBytes": 48353,
+          "responseBytes": 2092,
+          "toolNames": [
+            "webfetch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15947,
+      "output": 82,
+      "usd": 0.0022555400000000003,
+      "promptBytes": 13922,
+      "toolBytes": 48353,
+      "responseBytes": 2092,
+      "tool": "webfetch"
+    },
+    {
+      "variant": "after",
+      "case": "c07",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15953,
+          "output": 107,
+          "usd": 0.00226338,
+          "promptBytes": 13931,
+          "toolBytes": 48353,
+          "responseBytes": 5293,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15953,
+      "output": 107,
+      "usd": 0.00226338,
+      "promptBytes": 13931,
+      "toolBytes": 48353,
+      "responseBytes": 5293,
+      "text": "函数名 `add` 意在加法，但实现是 `a - b`（减法）。应改为 `return a + b`。"
+    },
+    {
+      "variant": "after",
+      "case": "c07",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15953,
+          "output": 65,
+          "usd": 0.0022516199999999998,
+          "promptBytes": 13931,
+          "toolBytes": 48353,
+          "responseBytes": 3729,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15953,
+      "output": 65,
+      "usd": 0.0022516199999999998,
+      "promptBytes": 13931,
+      "toolBytes": 48353,
+      "responseBytes": 3729,
+      "text": "函数名 `add` 与实现不符：`a - b` 应为 `a + b`。"
+    },
+    {
+      "variant": "after",
+      "case": "c07",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15953,
+          "output": 74,
+          "usd": 0.00225414,
+          "promptBytes": 13931,
+          "toolBytes": 48353,
+          "responseBytes": 3513,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15953,
+      "output": 74,
+      "usd": 0.00225414,
+      "promptBytes": 13931,
+      "toolBytes": 48353,
+      "responseBytes": 3513,
+      "text": "`add` 函数名表示加法，但实现却是 `a - b`（减法），是个逻辑 bug。应为 `return a + b`。"
+    },
+    {
+      "variant": "after",
+      "case": "c08",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15957,
+          "output": 145,
+          "usd": 0.00227458,
+          "promptBytes": 13962,
+          "toolBytes": 48353,
+          "responseBytes": 6910,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15957,
+      "output": 145,
+      "usd": 0.00227458,
+      "promptBytes": 13962,
+      "toolBytes": 48353,
+      "responseBytes": 6910,
+      "tool": "grep"
+    },
+    {
+      "variant": "after",
+      "case": "c08",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15957,
+          "output": 160,
+          "usd": 0.00227878,
+          "promptBytes": 13962,
+          "toolBytes": 48353,
+          "responseBytes": 8608,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15957,
+      "output": 160,
+      "usd": 0.00227878,
+      "promptBytes": 13962,
+      "toolBytes": 48353,
+      "responseBytes": 8608,
+      "tool": "grep"
+    },
+    {
+      "variant": "after",
+      "case": "c08",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "ask",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15957,
+          "output": 255,
+          "usd": 0.00230538,
+          "promptBytes": 13962,
+          "toolBytes": 48353,
+          "responseBytes": 14316,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15957,
+      "output": 255,
+      "usd": 0.00230538,
+      "promptBytes": 13962,
+      "toolBytes": 48353,
+      "responseBytes": 14316,
+      "text": "Without seeing where `total` and `fee` come from, I can't tell if this is a fix or a new bug. What domain is this — e.g. an invoice (fee added), a refund (fee subtracted), or something else?"
+    },
+    {
+      "variant": "after",
+      "case": "c09",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15951,
+          "output": 123,
+          "usd": 0.0022675800000000004,
+          "promptBytes": 13938,
+          "toolBytes": 48353,
+          "responseBytes": 4043,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15951,
+      "output": 123,
+      "usd": 0.0022675800000000004,
+      "promptBytes": 13938,
+      "toolBytes": 48353,
+      "responseBytes": 4043,
+      "text": "**IaaS** (Infrastructure as a Service) 提供虚拟化的计算资源，如云服务器、存储和网络，用户自己管理操作系统、中间件和应用。\n\n**SaaS** (Software as a Service) 提供完整的、可直接使用的软件应用，用户只需通过浏览器或客户端使用，无需管理底层任何基础设施。\n\n简单说：IaaS 给你\"原材料\"，你自己搭建；SaaS 给你\"成品\"，拿来就用。"
+    },
+    {
+      "variant": "after",
+      "case": "c09",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15951,
+          "output": 115,
+          "usd": 0.0022653400000000002,
+          "promptBytes": 13938,
+          "toolBytes": 48353,
+          "responseBytes": 4077,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15951,
+      "output": 115,
+      "usd": 0.0022653400000000002,
+      "promptBytes": 13938,
+      "toolBytes": 48353,
+      "responseBytes": 4077,
+      "text": "IaaS (Infrastructure as a Service) 提供的是虚拟化的计算资源，比如虚拟机、存储和网络，你可以自己管理 OS、中间件和应用。SaaS (Software as a Service) 提供的是完整的、可直接使用的软件应用，你只管用，底层都由厂商管理。简单说：IaaS 给你“原材料”，SaaS 给你“成品”。"
+    },
+    {
+      "variant": "after",
+      "case": "c09",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15951,
+          "output": 109,
+          "usd": 0.0022636600000000002,
+          "promptBytes": 13938,
+          "toolBytes": 48353,
+          "responseBytes": 3594,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15951,
+      "output": 109,
+      "usd": 0.0022636600000000002,
+      "promptBytes": 13938,
+      "toolBytes": 48353,
+      "responseBytes": 3594,
+      "text": "**IaaS** (Infrastructure as a Service) 提供虚拟化的计算资源，如云服务器、存储和网络，用户自己管理 OS、中间件和应用（如 AWS EC2）。\n\n**SaaS** (Software as a Service) 提供完整的、可直接使用的软件应用，用户只需登录使用，不管理底层基础设施（如 Google Workspace、Salesforce）。"
+    },
+    {
+      "variant": "after",
+      "case": "c10",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15997,
+          "output": 114,
+          "usd": 0.0022715000000000005,
+          "promptBytes": 13932,
+          "toolBytes": 48353,
+          "responseBytes": 5725,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15997,
+      "output": 114,
+      "usd": 0.0022715000000000005,
+      "promptBytes": 13932,
+      "toolBytes": 48353,
+      "responseBytes": 5725,
+      "text": "亲爱的 [名字]：\n\n欢迎加入 [公司/产品名] 大家庭！很高兴与你相遇，这封邮件将帮助你快速了解接下来的每一步。"
+    },
+    {
+      "variant": "after",
+      "case": "c10",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15997,
+          "output": 68,
+          "usd": 0.0022586200000000002,
+          "promptBytes": 13932,
+          "toolBytes": 48353,
+          "responseBytes": 2590,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15997,
+      "output": 68,
+      "usd": 0.0022586200000000002,
+      "promptBytes": 13932,
+      "toolBytes": 48353,
+      "responseBytes": 2590,
+      "text": "你好！感谢你选择我们，我很高兴欢迎你加入。这里是为你准备的一些入门信息，希望帮助你快速上手。"
+    },
+    {
+      "variant": "after",
+      "case": "c10",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15997,
+          "output": 214,
+          "usd": 0.0022995000000000003,
+          "promptBytes": 13932,
+          "toolBytes": 48353,
+          "responseBytes": 10753,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15997,
+      "output": 214,
+      "usd": 0.0022995000000000003,
+      "promptBytes": 13932,
+      "toolBytes": 48353,
+      "responseBytes": 10753,
+      "text": "欢迎使用我们的服务，期待与您一同开启这段全新旅程！"
+    },
+    {
+      "variant": "after",
+      "case": "c11",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "local",
+      "retries": 1,
+      "failures": [
+        {
+          "code": "network_error",
+          "attempt": 1
+        }
+      ],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16038,
+          "output": 84,
+          "usd": 0.0022688400000000003,
+          "promptBytes": 13935,
+          "toolBytes": 48353,
+          "responseBytes": 2308,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16038,
+      "output": 84,
+      "usd": 0.0022688400000000003,
+      "promptBytes": 13935,
+      "toolBytes": 48353,
+      "responseBytes": 2308,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c11",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16038,
+          "output": 103,
+          "usd": 0.0022741600000000003,
+          "promptBytes": 13935,
+          "toolBytes": 48353,
+          "responseBytes": 3110,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16038,
+      "output": 103,
+      "usd": 0.0022741600000000003,
+      "promptBytes": 13935,
+      "toolBytes": 48353,
+      "responseBytes": 3110,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c11",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16038,
+          "output": 104,
+          "usd": 0.00227444,
+          "promptBytes": 13935,
+          "toolBytes": 48353,
+          "responseBytes": 3118,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16038,
+      "output": 104,
+      "usd": 0.00227444,
+      "promptBytes": 13935,
+      "toolBytes": 48353,
+      "responseBytes": 3118,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c12",
+      "repeat": 1,
+      "expected": "local",
+      "observed": "ask",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16036,
+          "output": 161,
+          "usd": 0.0022901200000000005,
+          "promptBytes": 13947,
+          "toolBytes": 48353,
+          "responseBytes": 5245,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 16036,
+      "output": 161,
+      "usd": 0.0022901200000000005,
+      "promptBytes": 13947,
+      "toolBytes": 48353,
+      "responseBytes": 5245,
+      "text": "可读性尚可，但有几点：\n\n1. `x` 无意义——建议用 `ids`/`itemIds` 等描述性名称\n2. `i` 可读性一般——`item` 比 `i` 更清晰（除非上下文极短）\n3. 若 `items` 可能为 `null/undefined`，缺少防御性处理\n\n推荐：`const itemIds = items?.map(item => item.id) ?? []`"
+    },
+    {
+      "variant": "after",
+      "case": "c12",
+      "repeat": 2,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16036,
+          "output": 181,
+          "usd": 0.0022957200000000002,
+          "promptBytes": 13947,
+          "toolBytes": 48353,
+          "responseBytes": 7046,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 16036,
+      "output": 181,
+      "usd": 0.0022957200000000002,
+      "promptBytes": 13947,
+      "toolBytes": 48353,
+      "responseBytes": 7046,
+      "text": "1. `x` is too vague — rename to something like `ids`, `itemIds`, or `idList` to indicate the result.\n2. `i` is fine in a one-liner but `item` would be clearer.\n3. Otherwise it's standard JS and easy to parse."
+    },
+    {
+      "variant": "after",
+      "case": "c12",
+      "repeat": 3,
+      "expected": "local",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16036,
+          "output": 221,
+          "usd": 0.0023069200000000005,
+          "promptBytes": 13947,
+          "toolBytes": 48353,
+          "responseBytes": 6632,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 16036,
+      "output": 221,
+      "usd": 0.0023069200000000005,
+      "promptBytes": 13947,
+      "toolBytes": 48353,
+      "responseBytes": 6632,
+      "text": "`const x = items.map(i => i.id)` 可读性中等偏低：\n\n- `x` 是泛泛名称，看不出是单个 id 还是 id 数组 → 建议 `const ids = items.map(i => i.id)`  \n- `i` 是单字母缩写 → 建议 `const ids = items.map(item => item.id)`  \n- 如果 `items` 可能为空或 `i.id` 可能缺失，缺少防御 → 考虑 `items.map(i => i.id).filter(Boolean)`"
+    },
+    {
+      "variant": "after",
+      "case": "c13",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15996,
+          "output": 161,
+          "usd": 0.00228452,
+          "promptBytes": 13917,
+          "toolBytes": 48353,
+          "responseBytes": 6021,
+          "toolNames": [
+            "skill",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 15996,
+      "output": 161,
+      "usd": 0.00228452,
+      "promptBytes": 13917,
+      "toolBytes": 48353,
+      "responseBytes": 6021,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c13",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15996,
+          "output": 322,
+          "usd": 0.0023296,
+          "promptBytes": 13917,
+          "toolBytes": 48353,
+          "responseBytes": 14282,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17288,
+          "output": 161,
+          "usd": 0.0024654,
+          "promptBytes": 20308,
+          "toolBytes": 48353,
+          "responseBytes": 7175,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 33284,
+      "output": 483,
+      "usd": 0.004795,
+      "promptBytes": 34225,
+      "toolBytes": 96706,
+      "responseBytes": 21457,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c13",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15996,
+          "output": 92,
+          "usd": 0.0022652,
+          "promptBytes": 13917,
+          "toolBytes": 48353,
+          "responseBytes": 3048,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15996,
+      "output": 92,
+      "usd": 0.0022652,
+      "promptBytes": 13917,
+      "toolBytes": 48353,
+      "responseBytes": 3048,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c14",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15995,
+          "output": 153,
+          "usd": 0.00228214,
+          "promptBytes": 13917,
+          "toolBytes": 48353,
+          "responseBytes": 5331,
+          "toolNames": [
+            "alpha_cloud_access",
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 15995,
+      "output": 153,
+      "usd": 0.00228214,
+      "promptBytes": 13917,
+      "toolBytes": 48353,
+      "responseBytes": 5331,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c14",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15995,
+          "output": 106,
+          "usd": 0.00226898,
+          "promptBytes": 13917,
+          "toolBytes": 48353,
+          "responseBytes": 3648,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17287,
+          "output": 118,
+          "usd": 0.0024532200000000003,
+          "promptBytes": 19343,
+          "toolBytes": 48353,
+          "responseBytes": 5088,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 33282,
+      "output": 224,
+      "usd": 0.0047222,
+      "promptBytes": 33260,
+      "toolBytes": 96706,
+      "responseBytes": 8736,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c14",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15995,
+          "output": 221,
+          "usd": 0.0023011800000000003,
+          "promptBytes": 13917,
+          "toolBytes": 48353,
+          "responseBytes": 9407,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15995,
+      "output": 221,
+      "usd": 0.0023011800000000003,
+      "promptBytes": 13917,
+      "toolBytes": 48353,
+      "responseBytes": 9407,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c15",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15959,
+          "output": 380,
+          "usd": 0.0023406600000000005,
+          "promptBytes": 13974,
+          "toolBytes": 48353,
+          "responseBytes": 23458,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 18926,
+          "output": 180,
+          "usd": 0.0027000400000000003,
+          "promptBytes": 27547,
+          "toolBytes": 48353,
+          "responseBytes": 9440,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 20232,
+          "output": 131,
+          "usd": 0.0028691600000000004,
+          "promptBytes": 33350,
+          "toolBytes": 48353,
+          "responseBytes": 6442,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        },
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 55117,
+      "output": 691,
+      "usd": 0.007909860000000001,
+      "promptBytes": 74871,
+      "toolBytes": 145059,
+      "responseBytes": 39340,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c15",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15959,
+          "output": 117,
+          "usd": 0.0022670200000000002,
+          "promptBytes": 13974,
+          "toolBytes": 48353,
+          "responseBytes": 5067,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 18926,
+          "output": 165,
+          "usd": 0.00269584,
+          "promptBytes": 26421,
+          "toolBytes": 48353,
+          "responseBytes": 8261,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 34885,
+      "output": 282,
+      "usd": 0.00496286,
+      "promptBytes": 40395,
+      "toolBytes": 96706,
+      "responseBytes": 13328,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c15",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15959,
+          "output": 129,
+          "usd": 0.0022703800000000002,
+          "promptBytes": 13974,
+          "toolBytes": 48353,
+          "responseBytes": 6401,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 18926,
+          "output": 103,
+          "usd": 0.0026784800000000004,
+          "promptBytes": 26476,
+          "toolBytes": 48353,
+          "responseBytes": 4696,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 34885,
+      "output": 232,
+      "usd": 0.004948860000000001,
+      "promptBytes": 40450,
+      "toolBytes": 96706,
+      "responseBytes": 11097,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c16",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15955,
+          "output": 119,
+          "usd": 0.0022670200000000002,
+          "promptBytes": 13960,
+          "toolBytes": 48353,
+          "responseBytes": 9468,
+          "toolNames": [
+            "skill",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 15955,
+      "output": 119,
+      "usd": 0.0022670200000000002,
+      "promptBytes": 13960,
+      "toolBytes": 48353,
+      "responseBytes": 9468,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c16",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 1,
+      "failures": [
+        {
+          "code": "network_error",
+          "attempt": 1
+        }
+      ],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15955,
+          "output": 118,
+          "usd": 0.00226674,
+          "promptBytes": 13960,
+          "toolBytes": 48353,
+          "responseBytes": 7145,
+          "toolNames": [
+            "skill",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 15955,
+      "output": 118,
+      "usd": 0.00226674,
+      "promptBytes": 13960,
+      "toolBytes": 48353,
+      "responseBytes": 7145,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c16",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15955,
+          "output": 402,
+          "usd": 0.00234626,
+          "promptBytes": 13960,
+          "toolBytes": 48353,
+          "responseBytes": 50664,
+          "toolNames": [
+            "skill",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 15955,
+      "output": 402,
+      "usd": 0.00234626,
+      "promptBytes": 13960,
+      "toolBytes": 48353,
+      "responseBytes": 50664,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c17",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16008,
+          "output": 137,
+          "usd": 0.0022794800000000004,
+          "promptBytes": 13957,
+          "toolBytes": 48353,
+          "responseBytes": 5041,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17300,
+          "output": 83,
+          "usd": 0.0024452400000000004,
+          "promptBytes": 19513,
+          "toolBytes": 48353,
+          "responseBytes": 3401,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 33308,
+      "output": 220,
+      "usd": 0.004724720000000001,
+      "promptBytes": 33470,
+      "toolBytes": 96706,
+      "responseBytes": 8442,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c17",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16008,
+          "output": 260,
+          "usd": 0.0023139200000000006,
+          "promptBytes": 13957,
+          "toolBytes": 48353,
+          "responseBytes": 10968,
+          "toolNames": [
+            "skill",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        }
+      ],
+      "input": 16008,
+      "output": 260,
+      "usd": 0.0023139200000000006,
+      "promptBytes": 13957,
+      "toolBytes": 48353,
+      "responseBytes": 10968,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c17",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16008,
+          "output": 305,
+          "usd": 0.0023265200000000003,
+          "promptBytes": 13957,
+          "toolBytes": 48353,
+          "responseBytes": 11936,
+          "toolNames": [
+            "alpha_cloud_access",
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "office-docs",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/office-docs/SKILL.md"
+        },
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 16008,
+      "output": 305,
+      "usd": 0.0023265200000000003,
+      "promptBytes": 13957,
+      "toolBytes": 48353,
+      "responseBytes": 11936,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c18",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15999,
+          "output": 193,
+          "usd": 0.0022939,
+          "promptBytes": 13944,
+          "toolBytes": 48353,
+          "responseBytes": 6963,
+          "toolNames": [
+            "alpha_cloud_access",
+            "skill"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 15999,
+      "output": 193,
+      "usd": 0.0022939,
+      "promptBytes": 13944,
+      "toolBytes": 48353,
+      "responseBytes": 6963,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c18",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15999,
+          "output": 149,
+          "usd": 0.00228158,
+          "promptBytes": 13944,
+          "toolBytes": 48353,
+          "responseBytes": 5880,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17291,
+          "output": 91,
+          "usd": 0.0024462200000000003,
+          "promptBytes": 19602,
+          "toolBytes": 48353,
+          "responseBytes": 3815,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 33290,
+      "output": 240,
+      "usd": 0.004727800000000001,
+      "promptBytes": 33546,
+      "toolBytes": 96706,
+      "responseBytes": 9695,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c18",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15999,
+          "output": 115,
+          "usd": 0.00227206,
+          "promptBytes": 13944,
+          "toolBytes": 48353,
+          "responseBytes": 4590,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17291,
+          "output": 110,
+          "usd": 0.0024515400000000003,
+          "promptBytes": 19433,
+          "toolBytes": 48353,
+          "responseBytes": 4579,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 33290,
+      "output": 225,
+      "usd": 0.0047236,
+      "promptBytes": 33377,
+      "toolBytes": 96706,
+      "responseBytes": 9169,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c19",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15946,
+          "output": 64,
+          "usd": 0.0022503600000000003,
+          "promptBytes": 13911,
+          "toolBytes": 48353,
+          "responseBytes": 2676,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15946,
+      "output": 64,
+      "usd": 0.0022503600000000003,
+      "promptBytes": 13911,
+      "toolBytes": 48353,
+      "responseBytes": 2676,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c19",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15946,
+          "output": 86,
+          "usd": 0.00225652,
+          "promptBytes": 13911,
+          "toolBytes": 48353,
+          "responseBytes": 4498,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15946,
+      "output": 86,
+      "usd": 0.00225652,
+      "promptBytes": 13911,
+      "toolBytes": 48353,
+      "responseBytes": 4498,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c19",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15946,
+          "output": 79,
+          "usd": 0.00225456,
+          "promptBytes": 13911,
+          "toolBytes": 48353,
+          "responseBytes": 3492,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15946,
+      "output": 79,
+      "usd": 0.00225456,
+      "promptBytes": 13911,
+      "toolBytes": 48353,
+      "responseBytes": 3492,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c20",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16003,
+          "output": 234,
+          "usd": 0.0023059400000000002,
+          "promptBytes": 13956,
+          "toolBytes": 48353,
+          "responseBytes": 8961,
+          "toolNames": [
+            "skill",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 16003,
+      "output": 234,
+      "usd": 0.0023059400000000002,
+      "promptBytes": 13956,
+      "toolBytes": 48353,
+      "responseBytes": 8961,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c20",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16003,
+          "output": 286,
+          "usd": 0.0023205,
+          "promptBytes": 13956,
+          "toolBytes": 48353,
+          "responseBytes": 11449,
+          "toolNames": [
+            "skill",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 16003,
+      "output": 286,
+      "usd": 0.0023205,
+      "promptBytes": 13956,
+      "toolBytes": 48353,
+      "responseBytes": 11449,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c20",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16003,
+          "output": 162,
+          "usd": 0.0022857800000000003,
+          "promptBytes": 13956,
+          "toolBytes": 48353,
+          "responseBytes": 6884,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17295,
+          "output": 113,
+          "usd": 0.0024529400000000002,
+          "promptBytes": 19708,
+          "toolBytes": 48353,
+          "responseBytes": 4537,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 33298,
+      "output": 275,
+      "usd": 0.00473872,
+      "promptBytes": 33664,
+      "toolBytes": 96706,
+      "responseBytes": 11421,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c21",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15789,
+          "output": 118,
+          "usd": 0.0022435,
+          "promptBytes": 13974,
+          "toolBytes": 48353,
+          "responseBytes": 4165,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15789,
+      "output": 118,
+      "usd": 0.0022435,
+      "promptBytes": 13974,
+      "toolBytes": 48353,
+      "responseBytes": 4165,
+      "tool": "websearch"
+    },
+    {
+      "variant": "after",
+      "case": "c21",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15789,
+          "output": 250,
+          "usd": 0.00228046,
+          "promptBytes": 13974,
+          "toolBytes": 48353,
+          "responseBytes": 12770,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15789,
+      "output": 250,
+      "usd": 0.00228046,
+      "promptBytes": 13974,
+      "toolBytes": 48353,
+      "responseBytes": 12770,
+      "tool": "websearch"
+    },
+    {
+      "variant": "after",
+      "case": "c21",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15962,
+          "output": 317,
+          "usd": 0.0023234400000000004,
+          "promptBytes": 13974,
+          "toolBytes": 48353,
+          "responseBytes": 17102,
+          "toolNames": [
+            "websearch"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15962,
+      "output": 317,
+      "usd": 0.0023234400000000004,
+      "promptBytes": 13974,
+      "toolBytes": 48353,
+      "responseBytes": 17102,
+      "tool": "websearch"
+    },
+    {
+      "variant": "after",
+      "case": "c22",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15925,
+          "output": 249,
+          "usd": 0.00229922,
+          "promptBytes": 13938,
+          "toolBytes": 48353,
+          "responseBytes": 6372,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15925,
+      "output": 249,
+      "usd": 0.00229922,
+      "promptBytes": 13938,
+      "toolBytes": 48353,
+      "responseBytes": 6372,
+      "tool": "grep"
+    },
+    {
+      "variant": "after",
+      "case": "c22",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15925,
+          "output": 419,
+          "usd": 0.0023468200000000003,
+          "promptBytes": 13938,
+          "toolBytes": 48353,
+          "responseBytes": 11258,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15925,
+      "output": 419,
+      "usd": 0.0023468200000000003,
+      "promptBytes": 13938,
+      "toolBytes": 48353,
+      "responseBytes": 11258,
+      "text": "That's a risky change. A timeout of `0` means either \"immediate failure\" or \"no timeout / wait forever\" depending on the API. Both are extreme departures from a 1-second timeout. Without knowing the exact semantics, this will either break every call or make them hang indefinitely. Consider `timeout = None` if the intent is no timeout, or a small positive value if this is just reducing latency tolerance."
+    },
+    {
+      "variant": "after",
+      "case": "c22",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15925,
+          "output": 157,
+          "usd": 0.00227346,
+          "promptBytes": 13938,
+          "toolBytes": 48353,
+          "responseBytes": 3599,
+          "toolNames": [
+            "grep"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15925,
+      "output": 157,
+      "usd": 0.00227346,
+      "promptBytes": 13938,
+      "toolBytes": 48353,
+      "responseBytes": 3599,
+      "tool": "grep"
+    },
+    {
+      "variant": "after",
+      "case": "c23",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15207,
+          "output": 119,
+          "usd": 0.0021623000000000002,
+          "promptBytes": 13950,
+          "toolBytes": 45134,
+          "responseBytes": 4821,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15207,
+      "output": 119,
+      "usd": 0.0021623000000000002,
+      "promptBytes": 13950,
+      "toolBytes": 45134,
+      "responseBytes": 4821,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c23",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15207,
+          "output": 419,
+          "usd": 0.0022463,
+          "promptBytes": 13950,
+          "toolBytes": 45134,
+          "responseBytes": 19899,
+          "toolNames": []
+        }
+      ],
+      "instructions": [],
+      "input": 15207,
+      "output": 419,
+      "usd": 0.0022463,
+      "promptBytes": 13950,
+      "toolBytes": 45134,
+      "responseBytes": 19899,
+      "text": "Cloudflare 官网地址是 https://www.cloudflare.com"
+    },
+    {
+      "variant": "after",
+      "case": "c23",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15207,
+          "output": 288,
+          "usd": 0.00220962,
+          "promptBytes": 13950,
+          "toolBytes": 45134,
+          "responseBytes": 11701,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15207,
+      "output": 288,
+      "usd": 0.00220962,
+      "promptBytes": 13950,
+      "toolBytes": 45134,
+      "responseBytes": 11701,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c24",
+      "repeat": 1,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15957,
+          "output": 178,
+          "usd": 0.00228382,
+          "promptBytes": 13962,
+          "toolBytes": 48353,
+          "responseBytes": 10950,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15957,
+      "output": 178,
+      "usd": 0.00228382,
+      "promptBytes": 13962,
+      "toolBytes": 48353,
+      "responseBytes": 10950,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c24",
+      "repeat": 2,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15957,
+          "output": 116,
+          "usd": 0.00226646,
+          "promptBytes": 13962,
+          "toolBytes": 48353,
+          "responseBytes": 4534,
+          "toolNames": [
+            "cloud_cloud_account_status"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15957,
+      "output": 116,
+      "usd": 0.00226646,
+      "promptBytes": 13962,
+      "toolBytes": 48353,
+      "responseBytes": 4534,
+      "tool": "cloud_cloud_account_status"
+    },
+    {
+      "variant": "after",
+      "case": "c24",
+      "repeat": 3,
+      "expected": "cloud",
+      "observed": "cloud",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15957,
+          "output": 62,
+          "usd": 0.00225134,
+          "promptBytes": 13962,
+          "toolBytes": 48353,
+          "responseBytes": 2656,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15957,
+      "output": 62,
+      "usd": 0.00225134,
+      "promptBytes": 13962,
+      "toolBytes": 48353,
+      "responseBytes": 2656,
+      "tool": "alpha_cloud_access"
+    },
+    {
+      "variant": "after",
+      "case": "c25",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15922,
+          "output": 315,
+          "usd": 0.00231728,
+          "promptBytes": 13927,
+          "toolBytes": 48353,
+          "responseBytes": 7938,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15922,
+      "output": 315,
+      "usd": 0.00231728,
+      "promptBytes": 13927,
+      "toolBytes": 48353,
+      "responseBytes": 7938,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c25",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        },
+        {
+          "tool": "cloud_cloud_account_status",
+          "args": {
+            "task": "office-report",
+            "format": "docx"
+          }
+        },
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15953,
+          "output": 117,
+          "usd": 0.0022661800000000005,
+          "promptBytes": 13927,
+          "toolBytes": 48353,
+          "responseBytes": 13067,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        },
+        {
+          "input": 16066,
+          "output": 172,
+          "usd": 0.0022974000000000002,
+          "promptBytes": 14824,
+          "toolBytes": 48353,
+          "responseBytes": 14214,
+          "toolNames": [
+            "cloud_cloud_account_status",
+            "alpha_cloud_access"
+          ]
+        },
+        {
+          "input": 16290,
+          "output": 140,
+          "usd": 0.0023198000000000003,
+          "promptBytes": 16395,
+          "toolBytes": 48353,
+          "responseBytes": 3362,
+          "toolNames": [
+            "alpha_word_read_docx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 48309,
+      "output": 429,
+      "usd": 0.0068833800000000014,
+      "promptBytes": 45146,
+      "toolBytes": 145059,
+      "responseBytes": 30643,
+      "tool": "alpha_word_read_docx"
+    },
+    {
+      "variant": "after",
+      "case": "c25",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15922,
+          "output": 118,
+          "usd": 0.0022621200000000003,
+          "promptBytes": 13927,
+          "toolBytes": 48353,
+          "responseBytes": 2749,
+          "toolNames": [
+            "read",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15922,
+      "output": 118,
+      "usd": 0.0022621200000000003,
+      "promptBytes": 13927,
+      "toolBytes": 48353,
+      "responseBytes": 2749,
+      "tool": "read"
+    },
+    {
+      "variant": "after",
+      "case": "c26",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15956,
+          "output": 149,
+          "usd": 0.00227556,
+          "promptBytes": 13942,
+          "toolBytes": 48353,
+          "responseBytes": 8438,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15956,
+      "output": 149,
+      "usd": 0.00227556,
+      "promptBytes": 13942,
+      "toolBytes": 48353,
+      "responseBytes": 8438,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c26",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 15956,
+          "output": 53,
+          "usd": 0.0022486800000000003,
+          "promptBytes": 13942,
+          "toolBytes": 48353,
+          "responseBytes": 1016,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 15956,
+      "output": 53,
+      "usd": 0.0022486800000000003,
+      "promptBytes": 13942,
+      "toolBytes": 48353,
+      "responseBytes": 1016,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c26",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 15956,
+          "output": 29,
+          "usd": 0.00224196,
+          "promptBytes": 13942,
+          "toolBytes": 48353,
+          "responseBytes": 430,
+          "toolNames": [
+            "alpha_cloud_access"
+          ]
+        },
+        {
+          "input": 16023,
+          "output": 104,
+          "usd": 0.0022723400000000003,
+          "promptBytes": 14445,
+          "toolBytes": 48353,
+          "responseBytes": 2354,
+          "toolNames": [
+            "alpha_excel_read_xlsx"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 31979,
+      "output": 133,
+      "usd": 0.004514300000000001,
+      "promptBytes": 28387,
+      "toolBytes": 96706,
+      "responseBytes": 2784,
+      "tool": "alpha_excel_read_xlsx"
+    },
+    {
+      "variant": "after",
+      "case": "c27",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 16000,
+          "output": 289,
+          "usd": 0.00232092,
+          "promptBytes": 13932,
+          "toolBytes": 48353,
+          "responseBytes": 11110,
+          "toolNames": [
+            "alpha_cloud_access",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16000,
+      "output": 289,
+      "usd": 0.00232092,
+      "promptBytes": 13932,
+      "toolBytes": 48353,
+      "responseBytes": 11110,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c27",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16000,
+          "output": 682,
+          "usd": 0.0024309600000000002,
+          "promptBytes": 13932,
+          "toolBytes": 48353,
+          "responseBytes": 28389,
+          "toolNames": [
+            "skill",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/cloud/SKILL.md"
+        }
+      ],
+      "input": 16000,
+      "output": 682,
+      "usd": 0.0024309600000000002,
+      "promptBytes": 13932,
+      "toolBytes": 48353,
+      "responseBytes": 28389,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c27",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 16000,
+          "output": 1023,
+          "usd": 0.00252644,
+          "promptBytes": 13932,
+          "toolBytes": 48353,
+          "responseBytes": 49070,
+          "toolNames": [
+            "alpha_cloud_access",
+            "glob",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [],
+      "input": 16000,
+      "output": 1023,
+      "usd": 0.00252644,
+      "promptBytes": 13932,
+      "toolBytes": 48353,
+      "responseBytes": 49070,
+      "tool": "glob"
+    },
+    {
+      "variant": "after",
+      "case": "c28",
+      "repeat": 1,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 16006,
+          "output": 372,
+          "usd": 0.002345,
+          "promptBytes": 13956,
+          "toolBytes": 48353,
+          "responseBytes": 18376,
+          "toolNames": [
+            "skill"
+          ]
+        },
+        {
+          "input": 17298,
+          "output": 275,
+          "usd": 0.0024987200000000003,
+          "promptBytes": 20626,
+          "toolBytes": 48353,
+          "responseBytes": 10631,
+          "toolNames": [
+            "bash",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 33304,
+      "output": 647,
+      "usd": 0.00484372,
+      "promptBytes": 34582,
+      "toolBytes": 96706,
+      "responseBytes": 29007,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c28",
+      "repeat": 2,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [
+        {
+          "tool": "alpha_cloud_access",
+          "args": {}
+        }
+      ],
+      "calls": [
+        {
+          "input": 16006,
+          "output": 263,
+          "usd": 0.00231448,
+          "promptBytes": 13956,
+          "toolBytes": 48353,
+          "responseBytes": 9514,
+          "toolNames": [
+            "skill",
+            "bash",
+            "alpha_cloud_access"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 16006,
+      "output": 263,
+      "usd": 0.00231448,
+      "promptBytes": 13956,
+      "toolBytes": 48353,
+      "responseBytes": 9514,
+      "tool": "bash"
+    },
+    {
+      "variant": "after",
+      "case": "c28",
+      "repeat": 3,
+      "expected": "ask",
+      "observed": "local",
+      "retries": 0,
+      "failures": [],
+      "preflights": [],
+      "calls": [
+        {
+          "input": 16006,
+          "output": 361,
+          "usd": 0.00234192,
+          "promptBytes": 13956,
+          "toolBytes": 48353,
+          "responseBytes": 14143,
+          "toolNames": [
+            "skill",
+            "bash"
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "tool": "skill",
+          "name": "cloud-capabilities",
+          "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/cloud-routing-eval-5NflPX/after/packages/ui-mac/resources/factory-skills/cloud-capabilities/SKILL.md"
+        }
+      ],
+      "input": 16006,
+      "output": 361,
+      "usd": 0.00234192,
+      "promptBytes": 13956,
+      "toolBytes": 48353,
+      "responseBytes": 14143,
+      "tool": "bash"
+    }
+  ],
+  "markdown": "模式：真实 provider；28 例 × 3 次。\n\n| 变体 | 正确/次数 | 按次正确率 | 多数票正确率 | 三次全一致/例数 | 噪声极差 |\n|---|---:|---:|---:|---:|---:|\n| before | 56/84 | 66.67% | 67.86% | 21/28 | 7.14% |\n| after | 62/84 | 73.81% | 78.57% | 24/28 | 3.57% |\n\n改后−改前：7.14%；噪声带：7.14%；超出噪声：false。\nusage：2987233 in / 37724 out；累计 $0.428775；停止原因：completed。\n",
+  "arithmeticAudit": {
+    "sourceFile": "results-2026-10-15T11-43-27Z-real-round2.json",
+    "sourceSha256": "bb87776899f21c43b66638515bf03b54e5995ab947ab526178e896028993f04e",
+    "frozenProtocolCommit": "d74e5b37dc19842e7eb57dfcbaac5337d946a5ea",
+    "criterion": "after accuracy minus before accuracy must be positive and STRICTLY greater than max within-variant repeat accuracy range; unchanged from pre-run README",
+    "repeatCorrectCounts": {
+      "before": [
+        20,
+        18,
+        18
+      ],
+      "after": [
+        21,
+        20,
+        21
+      ]
+    },
+    "correctDifference": 6,
+    "accuracyDenominator": 84,
+    "repeatNoiseCorrectRange": {
+      "before": 2,
+      "after": 1
+    },
+    "repeatDenominator": 28,
+    "exactDifference": "1/14",
+    "exactNoiseBand": "1/14",
+    "equivalentIntegerComparison": "6 > 6",
+    "rawComparison": {
+      "delta": 0.07142857142857151,
+      "noiseBand": 0.0714285714285714,
+      "improvedBeyondNoise": true,
+      "ac3Evidence": true
+    },
+    "exactComparison": {
+      "delta": 0.07142857142857142,
+      "noiseBand": 0.07142857142857142,
+      "improvedBeyondNoise": false,
+      "ac3Evidence": false
+    },
+    "matchesRawFlag": false,
+    "scope": "Arithmetic only. No row classification, usage, majority, consistency, source criteria, skills or model requests changed. Raw artifacts preserved byte-for-byte."
+  }
+}

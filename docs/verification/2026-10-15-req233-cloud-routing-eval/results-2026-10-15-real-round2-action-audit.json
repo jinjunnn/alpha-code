@@ -1,0 +1,1060 @@
+[
+  {
+    "variant": "before",
+    "case": "c15",
+    "repeat": 2,
+    "observed": "error",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 1323
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "invalid",
+            "status": "error",
+            "inputKeys": [
+              "error",
+              "tool"
+            ],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c15",
+    "repeat": 3,
+    "observed": "error",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 1876
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "skill",
+            "status": "completed",
+            "inputKeys": [
+              "name"
+            ],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      },
+      {
+        "finish": "length",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 3843
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c25",
+    "repeat": 1,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 180
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_word_read_docx",
+            "status": "error",
+            "inputKeys": [
+              "path"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c25",
+    "repeat": 2,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 259
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "glob",
+            "status": "error",
+            "inputKeys": [
+              "pattern"
+            ],
+            "containsSyntheticEvalPath": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c25",
+    "repeat": 3,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 237
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "read",
+            "status": "error",
+            "inputKeys": [
+              "filePath"
+            ],
+            "containsSyntheticEvalPath": true
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c26",
+    "repeat": 1,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 566
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      },
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 213
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_excel_read_xlsx",
+            "status": "error",
+            "inputKeys": [
+              "path"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c26",
+    "repeat": 2,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 175
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_excel_read_xlsx",
+            "status": "error",
+            "inputKeys": [
+              "path"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c26",
+    "repeat": 3,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 203
+          },
+          {
+            "type": "text",
+            "characters": 23
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_excel_read_xlsx",
+            "status": "error",
+            "inputKeys": [
+              "path"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c27",
+    "repeat": 1,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 2885
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c27",
+    "repeat": 2,
+    "observed": "error",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 3878
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "invalid",
+            "status": "error",
+            "inputKeys": [
+              "error",
+              "tool"
+            ],
+            "containsSyntheticEvalPath": true
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c27",
+    "repeat": 3,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 681
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c28",
+    "repeat": 1,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 427
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c28",
+    "repeat": 2,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 1628
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "c28",
+    "repeat": 3,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 1802
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c25",
+    "repeat": 1,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 705
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c25",
+    "repeat": 2,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 378
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      },
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 400
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "cloud_cloud_account_status",
+            "status": "completed",
+            "inputKeys": [
+              "format",
+              "task"
+            ],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      },
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 356
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_word_read_docx",
+            "status": "error",
+            "inputKeys": [
+              "path"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c25",
+    "repeat": 3,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 255
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "read",
+            "status": "error",
+            "inputKeys": [
+              "filePath"
+            ],
+            "containsSyntheticEvalPath": true
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c26",
+    "repeat": 1,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "text",
+            "characters": 78
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c26",
+    "repeat": 2,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_excel_read_xlsx",
+            "status": "error",
+            "inputKeys": [
+              "path"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c26",
+    "repeat": 3,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": "tool-calls",
+        "errorPresent": false,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "step-finish",
+            "characters": 0
+          }
+        ]
+      },
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 222
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_excel_read_xlsx",
+            "status": "error",
+            "inputKeys": [
+              "path"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c27",
+    "repeat": 1,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 775
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c27",
+    "repeat": 2,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 2365
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "skill",
+            "status": "error",
+            "inputKeys": [
+              "name"
+            ],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "c27",
+    "repeat": 3,
+    "observed": "local",
+    "source": "read-only engine SQLite; exact prompt matched; only tool names, input keys and synthetic-path flags; no reasoning text or tool argument values exported",
+    "assistantMessages": [
+      {
+        "finish": null,
+        "errorPresent": true,
+        "parts": [
+          {
+            "type": "step-start",
+            "characters": 0
+          },
+          {
+            "type": "reasoning",
+            "characters": 3840
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "alpha_cloud_access",
+            "status": "completed",
+            "inputKeys": [],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "glob",
+            "status": "error",
+            "inputKeys": [
+              "pattern"
+            ],
+            "containsSyntheticEvalPath": false
+          },
+          {
+            "type": "tool",
+            "characters": 0,
+            "tool": "bash",
+            "status": "error",
+            "inputKeys": [
+              "command"
+            ],
+            "containsSyntheticEvalPath": true
+          }
+        ]
+      }
+    ]
+  }
+]
