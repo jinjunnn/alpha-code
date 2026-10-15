@@ -111,7 +111,7 @@ describe("#1250 随包技能资产的可达性普查", () => {
     expect(table).toEqual([
       "factory-skills/agent-creator → factory",
       "factory-skills/alpha-workspace → factory",
-      "factory-skills/cloud-dispatch → factory",
+      "factory-skills/cloud-capabilities → factory",
       "factory-skills/customize-code-puppy → factory",
       "factory-skills/integrate-project → factory",
       "factory-skills/office-docs → factory",

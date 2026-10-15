@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { ConfigMarkdown } from "../../../core/src/config/markdown"
+import { Glob } from "../../../core/src/util/glob"
 import { FACTORY_SKILL_IDS, factorySkillIds, factorySkillSources, isAlphaFactoryLink, reconcileFactorySkills } from "./factory-skills"
+import { CLOUD_MCP_TOOLS } from "./fixtures/cloud-mcp-tools"
+import { classifySkill } from "./alpha-skill-placeholder"
 
 let tmp: string
 let home: string
@@ -171,5 +175,109 @@ describe("isAlphaFactoryLink — 自有链判定(同名 + alpha 资源布局)", 
     expect(isAlphaFactoryLink("/their/skill", "skill-creator")).toBe(false)
     expect(isAlphaFactoryLink("/x/skills/foo", "skill-creator")).toBe(false) // 异名
     expect(isAlphaFactoryLink("/x/resources/skills/other", "skill-creator")).toBe(false)
+  })
+})
+
+// These assertions guard shipped model instructions, not model behavior (AC3 is a separate live eval).
+describe("REQ-233 cloud skill instructions", () => {
+  const dev = factorySkillSources({ packaged: false, resourcesPath: "/ignored", moduleDir: import.meta.dir })
+  const cloud = ConfigMarkdown.parse(readFileSync(join(dev["cloud-capabilities"], "SKILL.md"), "utf8"))
+  const office = ConfigMarkdown.parse(readFileSync(join(dev["office-docs"], "SKILL.md"), "utf8"))
+
+  test("AC1 ships cloud-capabilities instead of cloud-dispatch, with a discoverable /cloud entry", async () => {
+    expect(FACTORY_SKILL_IDS).toContain("cloud-capabilities")
+    expect(FACTORY_SKILL_IDS).not.toContain("cloud-dispatch")
+    expect(sources["cloud-capabilities"]).toBe(join(res, "factory-skills", "cloud-capabilities"))
+    expect(reconcileFactorySkills(dev, roots).active).toContain("cloud-capabilities")
+    expect(existsSync(join(dev["cloud-capabilities"], "../cloud-dispatch"))).toBe(false)
+    expect(cloud.data.name).toBe("cloud-capabilities")
+
+    // Same recursive scan and frontmatter parser as engine Skill discovery; names become slash commands.
+    const entries = await Promise.all(
+      (await Glob.scan("**/SKILL.md", { cwd: dev["cloud-capabilities"], absolute: true, include: "file", symlink: true }))
+        .map(async (file) => ConfigMarkdown.parse(await Bun.file(file).text())),
+    )
+    expect(entries.map((entry) => entry.data.name).sort()).toEqual(["cloud", "cloud-capabilities"])
+    expect(entries.find((entry) => entry.data.name === "cloud")?.content).toContain("加载并遵循 `cloud-capabilities` 技能")
+    expect(entries.every((entry) => !classifySkill(entry.content).placeholder)).toBe(true)
+  })
+
+  test("AC1 §2.8 routes explicit cloud, local files, formatted creation, images, facts, research and review", () => {
+    for (const rule of [
+      /用户明确说「用云端」 \| 用云/,
+      /读、改本机已有的 Word\/Excel\/PPT\/PDF \| 用本机 MCP；文件不出本机，无云端费用/,
+      /从零生成要排版好看的 Word\/Excel\/PPT\/网页 \| 用云端固定模板与自动校验；派发前告知估价或费用未知/,
+      /生成图片 \| 用云；本机没有图片生成能力/,
+      /查一个事实、读一个网页 \| 先用本机搜索\/读取；本机不可用才用 `cloud_web_search` \/ `cloud_web_fetch`/,
+      /多来源深度调研 \| 用云端 `research`，做多轮检索与综合/,
+      /代码审查 \| 默认本机 agent；用户要求「联网复核」或「第二意见」时用云/,
+      /要把本机私有文件传云 \| 先问用户，获得上传授权后才发送内容/,
+    ]) expect(cloud.content).toMatch(rule)
+  })
+
+  test("AC1 checks local login before paid cloud, separates estimates from reserves, and explains refusals without retrying", () => {
+    for (const instruction of [
+      "先调用本机工具 `alpha_cloud_access`",
+      "未登录时按返回入口引导登录并停止",
+      "调用任何收费云能力之前，先用免费的 `cloud_account_status`",
+      "会员额度、钱包可用余额和「额度用完后用余额付」开关",
+      "传入目标 `task`",
+      "预留额不是报价，也不是费用上限",
+      "第一步通过不保证整个任务付得起",
+      "派发前告诉用户返回的估价；无法估价时明说「费用事先算不准」",
+      "有些费用必须走钱包",
+      "预检、派发或后续步骤拒绝时，按返回的拒绝码解释缺什么、怎么解决",
+      "`allowance_exhausted` 对应额度耗尽",
+      "`wallet_insufficient` 对应钱包不足",
+      "按返回建议指向充值或余额支付设置，不反复重试",
+      "实际已产生的服务方费用仍可能结算",
+      "不能把选用云端当作上传私有文件的授权",
+      "代码审查只发送相关 diff，不发送整个仓库",
+    ]) expect(cloud.content).toContain(instruction)
+  })
+
+  test("AC1 every cloud tool named in shipped instructions exists in the alpha-platform registry snapshot", async () => {
+    // Vendor contracts contain artifact/job schemas but no MCP tool registry. The snapshot carries its source SHA.
+    const texts = await Promise.all([
+      ...await Glob.scan("**/SKILL.md", { cwd: dev["cloud-capabilities"], absolute: true, include: "file", symlink: true }),
+      join(dev["office-docs"], "SKILL.md"),
+    ].map((file) => Bun.file(file).text()))
+    const names = [...new Set(texts.flatMap((text) => text.match(/\bcloud_[a-z][a-z0-9_]*\b/g) ?? []))]
+    expect(names).toContain("cloud_account_status")
+    expect(names).toContain("cloud_dispatch")
+    expect(CLOUD_MCP_TOOLS).toContain("cloud_account_status")
+    expect(names.filter((name) => !(CLOUD_MCP_TOOLS as readonly string[]).includes(name))).toEqual([])
+    expect(texts.join("\n")).not.toMatch(/schedule_(?:create|list|delete)/)
+  })
+
+  test("AC1 Office and HTML use hosted templates and artifacts require authenticated byte download", () => {
+    for (const instruction of [
+      "Office 与 HTML 使用托管执行、固定模板和自动校验",
+      '`office-report` | `{topic, format: "docx" \\| "xlsx" \\| "pptx", data?}`',
+      '`html-generate` | `{prompt}`',
+      '`image-generation` | `{prompt}`',
+      "`cloud_await` 等待，或用 `cloud_status` 查状态",
+      "`cloud_artifacts` 获取产物描述符",
+      "产物字节不内联返回；需由宿主通过 `contentRef.url` 鉴权下载",
+      "下载成功后才声称文件已保存",
+      "失败、取消或超时要报告真实状态与错误",
+    ]) expect(cloud.content).toContain(instruction)
+  })
+
+  test("AC2 office-docs creates formatted files in cloud and reads or edits existing files locally", () => {
+    const text = office.content.replace(/\s+/g, " ")
+    for (const instruction of [
+      "**From scratch, with layout:** generate a formatted Word/Excel/PowerPoint file in the Code Puppy cloud",
+      "hosted execution, fixed templates and automatic validation",
+      "Load `cloud-capabilities` (also available as `/cloud`)",
+      "follow its login, account, estimate and artifact download steps",
+      "`office-report` pipeline",
+      "Tell the user the estimate before dispatch; if unknown, say 「费用事先算不准」",
+      "**Read or edit an existing local Word/Excel/PowerPoint/PDF:** use Alpha's four first-party local stdio MCP connectors",
+      "Keep the file local, with no cloud charge",
+      "An explicit request to use the cloud selects the cloud path",
+      "**Ask before uploading private local files**",
+      "For a new formatted document, use the cloud branch above; for an existing local file, offer the fallback script",
+    ]) expect(text).toContain(instruction)
   })
 })
