@@ -1,10 +1,10 @@
 {
   "v": 1,
-  "catalogVersion": "2026-08-31.2",
-  "lockSha256": "1de6bfd18d58cfca384fc6e5748ac095c218fdbf14a94eb9b6f5cfbcec4d486c",
-  "noticeSha256": "30cff2600b2e3b1951abd5a2847f7d12de8b5b84c42dfcc101d9cf7dda7796cb",
+  "catalogVersion": "2026-10-15.1",
+  "lockSha256": "0cc29bc9cf672445cb93f14e86195775cea89645907d5486cc853a28699f0ddc",
+  "noticeSha256": "60efd1b3f55d1ab384401ae2b98a138425e7c94ce74b1165772b6bc03422fa2f",
   "blobCount": 98,
-  "blobBytes": 5670465,
+  "blobBytes": 5670569,
   "source": "remote",
   "_note": "由 scripts/sync-extension-seed.mjs 生成;resources/extension-seed 禁手编(REQ-102 #194)。stable 晋级后必须重跑本脚本 + sync-catalog-snapshot.mjs(extension-seed-snapshot.test.ts 互钉守卫)。"
 }

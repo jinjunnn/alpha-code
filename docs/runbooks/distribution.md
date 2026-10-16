@@ -43,7 +43,7 @@ review_after: 2026-10-14
 #    (同样走 trust→stable→payload 全链验签,并与上一步 catalog 字节互钉;resources/extension-seed 禁手编。
 #     离线演练可用 --from-dir <alpha-web checkout>,但仍必须验签。脚本连跑两次后 git diff 必须不再变化。)
 # ① 版本号:改 packages/ui-mac/package.json 的 "version"(语义真源;About/崩溃屏/updater 都读它)
-#    例:0.1.0 → 0.1.1。用真实 semver,别回 0.0.0。
+#    例:0.1.19 → 0.1.20。用真实 semver,别回 0.0.0。
 # ①a 同一个字面量还被抄在**另外三处**,必须同批抬(`#1255`:0.1.10 那次只抬了真源,于是两条
 #    consumer-pin 断言在 alpha 基线上恒红了两天,与任何人的改动无关,并诱发 `--no-verify`):
 #      · packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-640/ledger-page.json 的 consumer_version
@@ -95,14 +95,14 @@ OPENCODE_CHANNEL=prod bun scripts/release-manifest.ts produce \
 # ④ 发 GitHub Release(dmg + zip + 两个 .blockmap + latest-mac.yml + manifest 三件一起传,
 #    tag = v<版本>)。manifest 是 alpha-web 消费的唯一发布真相,漏传 = 该版本对 web 不存在。
 cd dist
-gh release create v0.1.1 \
+gh release create v0.1.20 \
   code-puppy-mac-arm64.dmg code-puppy-mac-arm64.zip \
   code-puppy-mac-arm64.dmg.blockmap code-puppy-mac-arm64.zip.blockmap \
   latest-mac.yml \
   alpha-release-manifest.json alpha-release-manifest.json.sig \
-  alpha-code-0.1.1-sbom.cdx.json \
+  alpha-code-0.1.20-sbom.cdx.json \
   --repo jinjunnn/alpha-code --target alpha \
-  --title "Code Puppy 0.1.1" --notes "……"
+  --title "Code Puppy 0.1.20" --notes "……"
 
 # ⑤ 确认自动更新 feed 通(electron-updater 就读这个 URL)
 curl -sL -o /dev/null -w "%{http_code}\n" \
