@@ -350,7 +350,7 @@ test("带 {workspace} 的 Hub MCP 安装不打开目录选择器,只发送全局
   let filesystemCard: HTMLElement | undefined
   await waitFor(() => {
     filesystemCard = Array.from(document.querySelectorAll<HTMLElement>(".alpha-ext-card")).find((card) =>
-      card.textContent?.includes("文件系统"),
+      card.textContent?.includes("本地文件读写"),
     )
     expect(filesystemCard).toBeInstanceOf(HTMLElement)
   })
@@ -403,7 +403,7 @@ test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", a
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
   mount("cloud")
-  await openCloudEntry("云代码审查")
+  await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
   expect(primaryAddButton()!.disabled).toBe(true)
 
@@ -411,7 +411,7 @@ test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", a
   reset()
   engineStatus = { cloud: { status: "connected" } }
   mount("cloud")
-  await openCloudEntry("云代码审查")
+  await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
   expect(primaryAddButton()!.disabled).toBe(false)
 })
@@ -425,14 +425,14 @@ test("`#624` 恢复中:code-review 详情的云派发按钮禁用(ready 时可�
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
   mount("cloud")
-  await openCloudEntry("云代码审查")
+  await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
   expect(dispatchButtons().map((b) => b.disabled)).not.toContain(false)
 
   reset()
   engineStatus = { cloud: { status: "connected" } }
   mount("cloud")
-  await openCloudEntry("云代码审查")
+  await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
   expect(dispatchButtons().map((b) => b.disabled)).toContain(false)
 })

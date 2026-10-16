@@ -1,5 +1,5 @@
 {
-  "version": "2026-08-31.2",
+  "version": "2026-10-15.1",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:codepuppy.cn/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -16,19 +16,19 @@
       "id": "mcp:markitdown",
       "type": "mcp",
       "name": "markitdown",
-      "displayName": "文档读取(markitdown)",
-      "description": "把 PDF/Word/PPT/Excel/图片/HTML 转成 Markdown 供模型读取。Microsoft 官方。",
+      "displayName": "文档读取（markitdown）",
+      "description": "让助手读取 PDF、Word、PowerPoint、Excel、图片或网页内容。由 Microsoft 提供，会将内容转成便于助手读取的 Markdown 文本。",
       "source": "official",
       "category": "office",
       "license": "MIT",
       "redistributable": true,
-      "version": "1.0.0",
+      "version": "1.0.1",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
         "command": [
           "uvx",
-          "markitdown-mcp@0.0.1a4"
+          "markitdown-mcp@0.0.1a7"
         ],
         "requiredEnvVars": [],
         "runtimeDep": [
@@ -38,69 +38,16 @@
       "tools": [
         {
           "name": "convert_to_markdown",
-          "description": "把文件 / URL(PDF/Word/PPT/Excel/图片/HTML)转成 Markdown"
+          "description": "读取文件或网址中的内容，并转成 Markdown 文本；支持 PDF、Word、PowerPoint、Excel、图片和 HTML。"
         }
-      ],
-      "curation": {
-        "schema": "alpha.catalog.curation.v1",
-        "tier": "labs",
-        "activationPolicy": "session-grant",
-        "deliveryMode": "installable",
-        "review": {
-          "reviewedAt": "2026-07-18T00:00:00Z",
-          "reviewedBy": "jinjunnn",
-          "upstreamStatus": "active",
-          "supportTier": "community",
-          "reviewBefore": "2027-01-18T00:00:00Z"
-        },
-        "applicability": {
-          "frameworks": [
-            "*"
-          ]
-        },
-        "summaries": {
-          "capabilities": [],
-          "networkDomains": [
-            "127.0.0.1",
-            "github.com",
-            "img.shields.io",
-            "modelcontextprotocol.io",
-            "pdm.fming.dev",
-            "pypi.org",
-            "python-poetry.org",
-            "www.microsoft.com"
-          ],
-          "requiredSecrets": [],
-          "runtimeDependencies": [
-            "python"
-          ],
-          "download": {
-            "bytes": null,
-            "basis": "unknown"
-          }
-        },
-        "refs": {
-          "sbom": {
-            "sha256": "448b40a09ce894a6cc1b93b14e85b6f4c892f57ba6782974fc3c77a7126a1d23",
-            "bytes": 258,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.markitdown/1.0.0/alpha-curation/sbom/448b40a09ce894a6cc1b93b14e85b6f4c892f57ba6782974fc3c77a7126a1d23.cdx.json",
-            "format": "cyclonedx-1.6+json"
-          },
-          "intakeProvenance": {
-            "sha256": "752d7ab8d17ebd5712a82606a5785bad384da312b63b98b2b5266cc1fa1bb3b9",
-            "bytes": 465,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.markitdown/1.0.0/alpha-curation/intake-provenance/752d7ab8d17ebd5712a82606a5785bad384da312b63b98b2b5266cc1fa1bb3b9.json",
-            "format": "alpha.intake-provenance.v1+json"
-          }
-        }
-      }
+      ]
     },
     {
       "id": "mcp:alpha-word",
       "type": "mcp",
       "name": "alpha-word",
       "displayName": "Word 文档读写",
-      "description": "读写 .docx:提取正文与结构、生成或改写文档。Code Puppy 出品(随 app 内置的小型 stdio 连接器,python-docx 实现),不需要安装 Microsoft Office;仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。",
+      "description": "读取 .docx 的正文和结构，也能新建或改写文档。由 Code Puppy 提供，在本机运行，无需安装 Microsoft Office。只能读写你已授权的项目目录；请提供完整文件路径。",
       "source": "alpha",
       "category": "office",
       "license": "MIT",
@@ -128,11 +75,11 @@
       "tools": [
         {
           "name": "read_docx",
-          "description": "读取 .docx 正文与结构"
+          "description": "读取 Word 文档（.docx）的正文和结构"
         },
         {
           "name": "write_docx",
-          "description": "生成 / 改写 .docx"
+          "description": "新建或改写 Word 文档（.docx）"
         }
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。与 2026-03-03 归档的社区 Word 连接器无关(其 id 与包名仍在禁列)。",
@@ -186,7 +133,7 @@
       "type": "mcp",
       "name": "alpha-excel",
       "displayName": "Excel 表格读写",
-      "description": "读写 .xlsx:读取工作表数据、写入单元格与新建工作簿。Code Puppy 出品(随 app 内置的小型 stdio 连接器,openpyxl 实现),不需要安装 Microsoft Office;仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。Hub Excel 仅提供本条目。",
+      "description": "读取 .xlsx 工作表，写入单元格或新建工作簿。由 Code Puppy 提供，在本机运行，无需安装 Microsoft Office。只能读写你已授权的项目目录；请提供完整文件路径。定制中心的本地 Excel 连接器使用此项。",
       "source": "alpha",
       "category": "office",
       "license": "MIT",
@@ -215,11 +162,11 @@
       "tools": [
         {
           "name": "read_xlsx",
-          "description": "读取 .xlsx 工作表数据"
+          "description": "读取 Excel 工作表（.xlsx）中的数据"
         },
         {
           "name": "write_xlsx",
-          "description": "写入 / 新建 .xlsx"
+          "description": "写入或新建 Excel 工作簿（.xlsx）"
         }
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。REQ-135(2026-08-18,alpha-work#65;alpha-web#155):Hub Excel owner lock 仅保留本 Alpha 条目;社区实现从推荐面退役,不改标、不保留 legacy 卡。REQ-105(2026-08-25,alpha-work#7 AC2;alpha-web#164):artifactDigest = 本条目执行物(A 侧随包 office-mcp/server.py)的内容地址,与 A 侧 receipt 同域同算法 —— alpha-code packages/ui-mac/src/main/ext-mcp-policy.ts bundledOfficeServerDigest,即 aggregateFilesDigest 域:对 path+NUL字节+file-sha256 的行排序 join(LF) 再 sha256,带 sha256: 前缀;path 恒为 office-mcp/server.py,file-sha256 = 本仓 intake record(catalog-src/intake/records/mcp.alpha-excel/<version>/intake.json,source alpha-code@e3d2eec)files[server.py].sha256。server.py 换字节 = 重新 intake,并同步改本字段与 tests/catalog-guard.test.mjs 的独立锚点,缺一即测试红。",
@@ -273,7 +220,7 @@
       "type": "mcp",
       "name": "alpha-powerpoint",
       "displayName": "PowerPoint 幻灯片读写",
-      "description": "读写 .pptx:读取幻灯片文本与结构、生成或改写演示文稿。Code Puppy 出品(随 app 内置的小型 stdio 连接器,python-pptx 实现),不需要安装 Microsoft Office;仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。",
+      "description": "读取 .pptx 的幻灯片文字和结构，也能新建或改写演示文稿。由 Code Puppy 提供，在本机运行，无需安装 Microsoft Office。只能读写你已授权的项目目录；请提供完整文件路径。",
       "source": "alpha",
       "category": "office",
       "license": "MIT",
@@ -301,11 +248,11 @@
       "tools": [
         {
           "name": "read_pptx",
-          "description": "读取 .pptx 幻灯片文本与结构"
+          "description": "读取 PowerPoint（.pptx）的幻灯片文字和结构"
         },
         {
           "name": "write_pptx",
-          "description": "生成 / 改写 .pptx"
+          "description": "新建或改写 PowerPoint 演示文稿（.pptx）"
         }
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。与 2026-03-03 归档的社区 PowerPoint 连接器无关(其 id 与包名仍在禁列)。",
@@ -358,8 +305,8 @@
       "id": "mcp:alpha-pdf",
       "type": "mcp",
       "name": "alpha-pdf",
-      "displayName": "PDF 读写",
-      "description": "读写 PDF:提取文本内容、生成文本型 PDF、替换正文或追加文本页(pypdf + reportlab 实现)。Code Puppy 出品(随 app 内置的小型 stdio 连接器);仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。写入面只做文本型文档,不做版式设计、印刷保真编辑、Office 转换、数字签名或任意 PDF 对象编辑。",
+      "displayName": "PDF 文本读写",
+      "description": "提取 PDF 文字，创建文字型 PDF，替换正文或追加文字页。由 Code Puppy 提供，在本机运行；只能读写已授权的项目目录，请提供完整文件路径。不支持版式设计、保持印刷效果的编辑、Office 格式转换、数字签名或任意修改 PDF 对象。",
       "source": "alpha",
       "category": "office",
       "license": "MIT",
@@ -389,11 +336,11 @@
       "tools": [
         {
           "name": "read_pdf",
-          "description": "提取 PDF 文本内容"
+          "description": "提取 PDF 中的文字"
         },
         {
           "name": "write_pdf",
-          "description": "生成文本型 PDF / 替换正文 / 追加文本页"
+          "description": "新建文字型 PDF、替换正文或追加文字页"
         }
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。写入面的边界(仅文本型文档)是已批基线的安全不变量,不得在文案或工具面外扩。",
@@ -446,8 +393,8 @@
       "id": "mcp:filesystem",
       "type": "mcp",
       "name": "filesystem",
-      "displayName": "文件系统",
-      "description": "在白名单目录内读写本地文件。modelcontextprotocol 官方参考实现。",
+      "displayName": "本地文件读写",
+      "description": "让助手读取和修改允许访问的本地文件夹中的文件。由 modelcontextprotocol 提供的官方参考实现。",
       "source": "official",
       "category": "dev",
       "license": "MIT",
@@ -471,23 +418,23 @@
       "tools": [
         {
           "name": "read_text_file",
-          "description": "读取白名单目录内的文件"
+          "description": "读取允许访问的文件夹中的文件"
         },
         {
           "name": "write_file",
-          "description": "写入 / 覆盖文件"
+          "description": "写入文件，或覆盖现有内容"
         },
         {
           "name": "edit_file",
-          "description": "按 diff 编辑文件"
+          "description": "按指定改动编辑文件"
         },
         {
           "name": "list_directory",
-          "description": "列目录"
+          "description": "查看文件夹中的内容"
         },
         {
           "name": "search_files",
-          "description": "按名称递归检索文件"
+          "description": "按名称查找文件，包括子文件夹"
         }
       ],
       "curation": {
@@ -549,18 +496,19 @@
       "id": "mcp:fetch",
       "type": "mcp",
       "name": "fetch",
-      "displayName": "网页抓取(fetch)",
-      "description": "抓取 URL 并转 Markdown,供研究/检索。官方参考实现。",
+      "displayName": "网页读取（fetch）",
+      "description": "提供网页地址，让助手读取网页并转成 Markdown 文本，用于检索和研究。由官方参考实现提供。",
       "source": "official",
       "category": "research",
       "license": "MIT",
       "redistributable": true,
-      "version": "1.0.0",
+      "version": "1.0.1",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
         "command": [
           "uvx",
+          "--with=mcp==1.29.0",
           "mcp-server-fetch@2026.6.4"
         ],
         "requiredEnvVars": [],
@@ -571,81 +519,16 @@
       "tools": [
         {
           "name": "fetch",
-          "description": "抓取 URL 并转 Markdown(可分段续读)"
+          "description": "读取网页并转成 Markdown 文本，较长内容可以分段继续读取"
         }
-      ],
-      "curation": {
-        "schema": "alpha.catalog.curation.v1",
-        "tier": "precache",
-        "activationPolicy": "default-disabled",
-        "deliveryMode": "installable",
-        "review": {
-          "reviewedAt": "2026-07-18T00:00:00Z",
-          "reviewedBy": "jinjunnn",
-          "upstreamStatus": "active",
-          "supportTier": "community",
-          "reviewBefore": "2027-01-18T00:00:00Z"
-        },
-        "applicability": {
-          "frameworks": [
-            "*"
-          ]
-        },
-        "summaries": {
-          "capabilities": [
-            "net:http"
-          ],
-          "networkDomains": [
-            "api.example.com",
-            "bower.io",
-            "docs.astral.sh",
-            "example.com",
-            "files.pythonhosted.org",
-            "github.com",
-            "gruntjs.com",
-            "img.shields.io",
-            "insiders.vscode.dev",
-            "nextjs.org",
-            "nodejs.org",
-            "parceljs.org",
-            "pdm.fming.dev",
-            "proxy.example.com",
-            "pypi.org",
-            "python-poetry.org",
-            "snowpack.dev"
-          ],
-          "requiredSecrets": [],
-          "runtimeDependencies": [
-            "python",
-            "uv"
-          ],
-          "download": {
-            "bytes": null,
-            "basis": "unknown"
-          }
-        },
-        "refs": {
-          "sbom": {
-            "sha256": "74413850a99f90697df0a24f292eff7b5533f22c1de2942286cb7e70ed9110f3",
-            "bytes": 248,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.fetch/1.0.0/alpha-curation/sbom/74413850a99f90697df0a24f292eff7b5533f22c1de2942286cb7e70ed9110f3.cdx.json",
-            "format": "cyclonedx-1.6+json"
-          },
-          "intakeProvenance": {
-            "sha256": "3260c296249bb49dfc7e0ff894250f57b4436d00c74ca0a28a9f62d6a57bd5b3",
-            "bytes": 709,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.fetch/1.0.0/alpha-curation/intake-provenance/3260c296249bb49dfc7e0ff894250f57b4436d00c74ca0a28a9f62d6a57bd5b3.json",
-            "format": "alpha.intake-provenance.v1+json"
-          }
-        }
-      }
+      ]
     },
     {
       "id": "mcp:playwright",
       "type": "mcp",
       "name": "playwright",
-      "displayName": "浏览器自动化(Playwright)",
-      "description": "让 agent 真正操作浏览器:打开网页、点击、填表单、截图、执行 JS——能读 webfetch 抓不动的 JS 动态站点。Microsoft 官方 MCP。",
+      "displayName": "浏览器操作（Playwright）",
+      "description": "让助手打开网页、点击、填写表单、截图和运行页面脚本，也能读取需要 JavaScript 加载的网页。由 Microsoft 提供。使用前请在本机安装 Google Chrome 和 Node.js 18 或以上版本。",
       "source": "official",
       "category": "dev",
       "license": "Apache-2.0",
@@ -662,33 +545,32 @@
         "requiredEnvVars": [],
         "runtimeDep": [
           "node"
-        ],
-        "_verify": "首次浏览时 Playwright 需浏览器内核:默认下载 Chromium(~150MB,中国区 egress 慢),或在 command 末尾加 \"--browser\",\"chrome\" 复用系统已装 Chrome(免下载但需已装)。runtimeDep 只能 which 到 node,内核下载发生在运行时而非安装时 → A6 必须桌面实测首个 navigate 能否真起浏览器。"
+        ]
       },
       "tools": [
         {
           "name": "browser_navigate",
-          "description": "打开网页"
+          "description": "打开指定网页"
         },
         {
           "name": "browser_click",
-          "description": "点击页面元素"
+          "description": "点击网页中的按钮或其它元素"
         },
         {
           "name": "browser_type",
-          "description": "输入文本 / 填表单"
+          "description": "输入文字或填写网页表单"
         },
         {
           "name": "browser_snapshot",
-          "description": "读取页面可访问性快照(供模型理解页面)"
+          "description": "读取页面的文字和控件信息，帮助助手理解网页"
         },
         {
           "name": "browser_take_screenshot",
-          "description": "截图"
+          "description": "截取网页画面"
         },
         {
           "name": "browser_evaluate",
-          "description": "在页面内执行 JS"
+          "description": "在网页中运行 JavaScript 代码"
         }
       ],
       "curation": {
@@ -764,19 +646,19 @@
       "id": "mcp:git",
       "type": "mcp",
       "name": "git",
-      "displayName": "Git 操作",
-      "description": "在仓库内执行 git 读写(status/log/diff/commit 等)。官方参考实现。",
+      "displayName": "Git 版本管理",
+      "description": "查看仓库状态、改动和提交历史，也能暂存文件并创建提交。由官方 Git 参考实现提供。",
       "source": "official",
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
-      "version": "1.0.0",
+      "version": "1.0.1",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
         "command": [
           "uvx",
-          "mcp-server-git@2026.6.16",
+          "mcp-server-git@2026.10.10",
           "--repository",
           "{workspace}"
         ],
@@ -789,317 +671,32 @@
       "tools": [
         {
           "name": "git_status",
-          "description": "工作区状态"
+          "description": "查看仓库当前状态"
         },
         {
           "name": "git_diff",
-          "description": "查看改动 diff"
+          "description": "查看文件改动"
         },
         {
           "name": "git_log",
-          "description": "提交历史"
+          "description": "查看提交历史"
         },
         {
           "name": "git_add",
-          "description": "暂存文件"
+          "description": "将文件加入下一次提交"
         },
         {
           "name": "git_commit",
-          "description": "提交"
+          "description": "创建 Git 提交"
         }
-      ],
-      "curation": {
-        "schema": "alpha.catalog.curation.v1",
-        "tier": "precache",
-        "activationPolicy": "default-disabled",
-        "deliveryMode": "installable",
-        "review": {
-          "reviewedAt": "2026-07-18T00:00:00Z",
-          "reviewedBy": "jinjunnn",
-          "upstreamStatus": "active",
-          "supportTier": "community",
-          "reviewBefore": "2027-01-18T00:00:00Z"
-        },
-        "applicability": {
-          "frameworks": [
-            "*"
-          ]
-        },
-        "summaries": {
-          "capabilities": [
-            "fs:read",
-            "fs:write"
-          ],
-          "networkDomains": [
-            "code.visualstudio.com",
-            "docs.astral.sh",
-            "files.pythonhosted.org",
-            "github.com",
-            "img.shields.io",
-            "insiders.vscode.dev",
-            "pypi.org",
-            "zencoder.ai"
-          ],
-          "requiredSecrets": [],
-          "runtimeDependencies": [
-            "python",
-            "uv"
-          ],
-          "download": {
-            "bytes": null,
-            "basis": "unknown"
-          }
-        },
-        "refs": {
-          "sbom": {
-            "sha256": "8c33653a19e1c19b3a804bf7200cc1fa2600f2a2cc2a908e1002d28938f7d5a6",
-            "bytes": 244,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.git/1.0.0/alpha-curation/sbom/8c33653a19e1c19b3a804bf7200cc1fa2600f2a2cc2a908e1002d28938f7d5a6.cdx.json",
-            "format": "cyclonedx-1.6+json"
-          },
-          "intakeProvenance": {
-            "sha256": "f00ec33f400fbe5a09480ff150c3235176b3ad19eb1f072a9c615a11fc5165e4",
-            "bytes": 706,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.git/1.0.0/alpha-curation/intake-provenance/f00ec33f400fbe5a09480ff150c3235176b3ad19eb1f072a9c615a11fc5165e4.json",
-            "format": "alpha.intake-provenance.v1+json"
-          }
-        }
-      }
-    },
-    {
-      "id": "mcp:github",
-      "type": "mcp",
-      "name": "github",
-      "displayName": "GitHub",
-      "description": "查询/操作 GitHub 仓库、PR、issue。需 Personal Access Token。",
-      "source": "official",
-      "category": "dev",
-      "license": "MIT",
-      "redistributable": true,
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "mcp",
-        "mcpType": "local",
-        "command": [
-          "npx",
-          "-y",
-          "@modelcontextprotocol/server-github@2025.4.8"
-        ],
-        "requiredEnvVars": [
-          "GITHUB_PERSONAL_ACCESS_TOKEN"
-        ],
-        "runtimeDep": [
-          "node"
-        ],
-        "_verify": "GitHub 官方 MCP 已迁向 Go 二进制及 remote 端点;落地前确认用 npm 包还是 remote+OAuth。token 走 keychain 占位,不硬编码。"
-      },
-      "tools": [
-        {
-          "name": "search_repositories",
-          "description": "检索仓库"
-        },
-        {
-          "name": "get_file_contents",
-          "description": "读取仓库文件"
-        },
-        {
-          "name": "create_issue",
-          "description": "新建 issue"
-        },
-        {
-          "name": "create_pull_request",
-          "description": "发起 PR"
-        },
-        {
-          "name": "list_issues",
-          "description": "列出 issue"
-        }
-      ],
-      "curation": {
-        "schema": "alpha.catalog.curation.v1",
-        "tier": "connector",
-        "activationPolicy": "default-disabled",
-        "deliveryMode": "installable",
-        "review": {
-          "reviewedAt": "2026-07-18T00:00:00Z",
-          "reviewedBy": "jinjunnn",
-          "upstreamStatus": "archived",
-          "supportTier": "none",
-          "reviewBefore": "2027-01-18T00:00:00Z"
-        },
-        "applicability": {
-          "frameworks": [
-            "*"
-          ]
-        },
-        "summaries": {
-          "capabilities": [
-            "env:read",
-            "net:http"
-          ],
-          "networkDomains": [
-            "anthropic.com",
-            "api.github.com",
-            "docs.github.com",
-            "github.com",
-            "modelcontextprotocol.io"
-          ],
-          "requiredSecrets": [
-            {
-              "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
-              "source": "environment"
-            }
-          ],
-          "runtimeDependencies": [
-            "node"
-          ],
-          "download": {
-            "bytes": null,
-            "basis": "unknown"
-          }
-        },
-        "refs": {
-          "sbom": {
-            "sha256": "89f798c7bb6d233f0370e3a4b535ac1804f109255c4dd3bf1bf90511c5f65108",
-            "bytes": 250,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.github/1.0.0/alpha-curation/sbom/89f798c7bb6d233f0370e3a4b535ac1804f109255c4dd3bf1bf90511c5f65108.cdx.json",
-            "format": "cyclonedx-1.6+json"
-          },
-          "intakeProvenance": {
-            "sha256": "221ffa173da98063a20ec6028b60a399c27a6d05742962fcd856b36b60bf1bb2",
-            "bytes": 505,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.github/1.0.0/alpha-curation/intake-provenance/221ffa173da98063a20ec6028b60a399c27a6d05742962fcd856b36b60bf1bb2.json",
-            "format": "alpha.intake-provenance.v1+json"
-          }
-        }
-      }
-    },
-    {
-      "id": "mcp:dbhub",
-      "type": "mcp",
-      "name": "dbhub",
-      "displayName": "数据库(DBHub)",
-      "description": "只读档访问数据库:读库表结构、执行 SELECT 查询(PostgreSQL / MySQL / MariaDB / SQL Server / SQLite;Bytebase 官方)。连接串经 DSN 环境变量密文采集,不落配置文件。",
-      "source": "official",
-      "category": "dev",
-      "license": "MIT",
-      "redistributable": true,
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "mcp",
-        "mcpType": "local",
-        "command": [
-          "npx",
-          "-y",
-          "@bytebase/dbhub@0.12.0",
-          "--transport",
-          "stdio",
-          "--readonly"
-        ],
-        "requiredEnvVars": [
-          "DSN"
-        ],
-        "runtimeDep": [
-          "node"
-        ],
-        "mirrorCommand": [
-          "npx",
-          "-y",
-          "--registry=https://registry.npmmirror.com",
-          "@bytebase/dbhub@0.12.0",
-          "--transport",
-          "stdio",
-          "--readonly"
-        ],
-        "_verify": "版本钉 0.12.0 的理由(2026-07-06 源码核实,S23/E6):这是最后支持 --readonly CLI 档的版本(0.13.0 起只读改走 TOML 配置文件,catalog 安装链无 TOML 物化通道 → 取零机械只读;0.12.0 未被 npm deprecate,代价=放弃 0.13.0+ 修复)。DSN 支持环境变量注入(src/config/env.ts resolveDSN:--dsn > process.env.DSN),密钥经 {file:} 通道不落盘明文。0.12.0 的 readonly 语义(SELECT 类白名单)与 Node 版本下限未逐项核实 → 真机安装 + SELECT/写拒绝走查待验。"
-      },
-      "tools": [
-        {
-          "name": "execute_sql",
-          "description": "执行 SQL(--readonly 档:仅查询类语句)"
-        }
-      ],
-      "curation": {
-        "schema": "alpha.catalog.curation.v1",
-        "tier": "connector",
-        "activationPolicy": "default-disabled",
-        "deliveryMode": "installable",
-        "review": {
-          "reviewedAt": "2026-07-18T00:00:00Z",
-          "reviewedBy": "jinjunnn",
-          "upstreamStatus": "active",
-          "supportTier": "community",
-          "reviewBefore": "2027-01-18T00:00:00Z"
-        },
-        "applicability": {
-          "frameworks": [
-            "*"
-          ]
-        },
-        "summaries": {
-          "capabilities": [
-            "env:read",
-            "fs:read",
-            "net:http"
-          ],
-          "networkDomains": [
-            "api.star-history.com",
-            "contrib.rocks",
-            "creativecommons.org",
-            "database.windows.net",
-            "dbhub.ai",
-            "github.com",
-            "raw.githubusercontent.com",
-            "reactjs.org",
-            "reactrouter.com",
-            "www.bytebase.com",
-            "www.cs.aau.dk",
-            "www.w3.org"
-          ],
-          "requiredSecrets": [
-            {
-              "name": "DB_PASSWORD",
-              "source": "environment"
-            },
-            {
-              "name": "SSH_KEY",
-              "source": "environment"
-            },
-            {
-              "name": "SSH_PASSWORD",
-              "source": "environment"
-            }
-          ],
-          "runtimeDependencies": [
-            "node"
-          ],
-          "download": {
-            "bytes": null,
-            "basis": "unknown"
-          }
-        },
-        "refs": {
-          "sbom": {
-            "sha256": "afcc8fb456cbd0e7163744b23d3f7f2cb2f922e390782b67ed98dd084c5d2dc9",
-            "bytes": 248,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.dbhub/1.0.0/alpha-curation/sbom/afcc8fb456cbd0e7163744b23d3f7f2cb2f922e390782b67ed98dd084c5d2dc9.cdx.json",
-            "format": "cyclonedx-1.6+json"
-          },
-          "intakeProvenance": {
-            "sha256": "3ddee2b1f538a5d834ba9b8fd9b9199b44451cdff8ad778d49006c28dce30d1c",
-            "bytes": 605,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.dbhub/1.0.0/alpha-curation/intake-provenance/3ddee2b1f538a5d834ba9b8fd9b9199b44451cdff8ad778d49006c28dce30d1c.json",
-            "format": "alpha.intake-provenance.v1+json"
-          }
-        }
-      }
+      ]
     },
     {
       "id": "mcp:chrome-devtools",
       "type": "mcp",
       "name": "chrome-devtools",
-      "displayName": "网页性能与调试(Chrome DevTools)",
-      "description": "让 agent 用 Chrome 开发者工具排查网页:录制性能追踪、读控制台报错、查网络请求、截图与执行调试脚本。Google 官方 MCP,需本机已装 Chrome。",
+      "displayName": "网页排查（Chrome DevTools）",
+      "description": "帮助排查网页加载慢、报错和网络请求问题，还能截图和运行调试脚本。由 Google 提供。请先在本机安装 Chrome；Node.js 需使用 20.19+、22.12+ 或 23+ 版本。",
       "source": "official",
       "category": "dev",
       "license": "Apache-2.0",
@@ -1116,33 +713,32 @@
         "requiredEnvVars": [],
         "runtimeDep": [
           "node"
-        ],
-        "_verify": "运行时需系统已装 Chrome(不自带内核下载,免 Chromium egress);能力面含进程派生与文件写(截图/trace 落盘),故首批以逐会话授权层上架;冒烟 = stdio 握手 initialize+tools/list。"
+        ]
       },
       "tools": [
         {
           "name": "performance_start_trace",
-          "description": "录制页面性能追踪(找加载慢的原因)"
+          "description": "记录网页运行情况，帮助找出加载慢的原因"
         },
         {
           "name": "navigate_page",
-          "description": "打开网页"
+          "description": "打开指定网页"
         },
         {
           "name": "list_console_messages",
-          "description": "读浏览器控制台报错"
+          "description": "查看浏览器控制台中的错误信息"
         },
         {
           "name": "list_network_requests",
-          "description": "查网络请求"
+          "description": "查看网页发出的网络请求"
         },
         {
           "name": "take_screenshot",
-          "description": "截图"
+          "description": "截取网页画面"
         },
         {
           "name": "evaluate_script",
-          "description": "在页面内执行调试脚本"
+          "description": "在网页中运行调试脚本"
         }
       ],
       "curation": {
@@ -1262,7 +858,7 @@
       "type": "skill",
       "name": "skill-creator",
       "displayName": "技能创建助手",
-      "description": "指导创建/改进/评测 SKILL.md 的工作流(Anthropic example-skills)。",
+      "description": "帮助你创建、改进和测试技能（SKILL.md）。来自 Anthropic 的 example-skills。",
       "source": "official",
       "category": "dev",
       "license": "Apache-2.0",
@@ -1272,16 +868,15 @@
         "kind": "skill",
         "source": "builtin",
         "builtinAssetKey": "skills/skill-creator",
-        "targetDir": "alpha-skills",
-        "_verify": "Apache-2.0 可内置;打包前放入 ui-mac 资源并附 NOTICE。"
+        "targetDir": "alpha-skills"
       }
     },
     {
       "id": "skill:alpha-upstream-sync",
       "type": "skill",
       "name": "alpha-upstream-sync",
-      "displayName": "上游同步 + 覆盖校验",
-      "description": "把 opencode 上游并进 fork,并按 ADR-015 复核 Code Puppy 的 prompt/agent 覆盖是否与新底座矛盾。",
+      "displayName": "同步上游更新并检查兼容性",
+      "description": "将 opencode 的更新合入你的 Code Puppy 分支，并按 ADR-015 检查原有助手指令和设置是否仍与新版本兼容。",
       "source": "alpha",
       "category": "dev",
       "license": "MIT",
@@ -1298,8 +893,8 @@
       "id": "skill:safe-refactor",
       "type": "skill",
       "name": "safe-refactor",
-      "displayName": "安全重构",
-      "description": "不改行为地重构:先固化可观测行为,小步可逆推进,全程保持 observers 为绿。",
+      "displayName": "保持功能不变的代码整理",
+      "description": "在保持现有功能表现不变的前提下整理代码。先记录并检查现有行为，再分小步修改，每一步都能撤回，并持续检查结果。",
       "source": "alpha",
       "category": "dev",
       "license": "MIT",
@@ -1316,86 +911,86 @@
       "id": "skill:mcp-builder",
       "type": "skill",
       "name": "mcp-builder",
-      "displayName": "MCP 构建指南",
-      "description": "编写高质量 MCP server 的指南(Anthropic example-skills)。",
+      "displayName": "MCP 服务开发指南",
+      "description": "指导你编写 MCP 服务，让助手连接工具和外部服务。来自 Anthropic 的 example-skills。",
       "source": "official",
       "category": "dev",
       "license": "Apache-2.0",
       "redistributable": true,
-      "version": "1.0.0",
+      "version": "1.0.1",
       "installSpec": {
         "kind": "skill",
         "source": "remote"
       },
-      "_provenance": "REQ-045 补货:再分发自 anthropics/skills@9d2f1ae(Apache-2.0,LICENSE.txt+NOTICE.md 随资产,内容与上游逐字节一致);S22 关闭内置通道后经远程资产管线上架。",
+      "_provenance": "REQ-045 补货:再分发自 anthropics/skills@9d2f1ae(Apache-2.0,LICENSE.txt+NOTICE.md 随资产,仅依赖钉版由 Code Puppy 维护,见 NOTICE.md);S22 关闭内置通道后经远程资产管线上架。",
       "remoteAsset": {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "files": [
           {
             "path": "LICENSE.txt",
             "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
             "bytes": 11345,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/LICENSE.txt"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/LICENSE.txt"
           },
           {
             "path": "NOTICE.md",
-            "sha256": "49055ac997aff245a6d604a455ba20803e82c5a48b4f87d84838cbaaf546bc3c",
-            "bytes": 402,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/NOTICE.md"
+            "sha256": "f9b432e6330f7353c9afec28884f70a17d295e0ab62decdf9ea4010b437e4804",
+            "bytes": 505,
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/NOTICE.md"
           },
           {
             "path": "SKILL.md",
             "sha256": "0f4592dcb53cf2b5d6b7febee6b4152018b565551a1c29e3c612f57b218ab295",
             "bytes": 9092,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/SKILL.md"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/SKILL.md"
           },
           {
             "path": "reference/evaluation.md",
             "sha256": "8c99479f8a2d22a636c38e274537aac3610879e26f34e0709825077c4576f427",
             "bytes": 21663,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/reference/evaluation.md"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/reference/evaluation.md"
           },
           {
             "path": "reference/mcp_best_practices.md",
             "sha256": "80fb4369a349447cf18ecdd7494fe7938b6065377e9f08c077cec411093a3007",
             "bytes": 7330,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/reference/mcp_best_practices.md"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/reference/mcp_best_practices.md"
           },
           {
             "path": "reference/node_mcp_server.md",
             "sha256": "c3ba35a4f599dd53be9c6555ae72c19a7bf412cd5426576c2c08d42755482c66",
             "bytes": 28550,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/reference/node_mcp_server.md"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/reference/node_mcp_server.md"
           },
           {
             "path": "reference/python_mcp_server.md",
             "sha256": "2da52f77e675191014ca2e146a4b95aa04d0ca7dd7e2b100322df15ade685e80",
             "bytes": 25099,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/reference/python_mcp_server.md"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/reference/python_mcp_server.md"
           },
           {
             "path": "scripts/connections.py",
             "sha256": "9403668a2041568772082a8b334122c1f88daf0541fb393af4522d0094a47a6e",
             "bytes": 4875,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/scripts/connections.py"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/scripts/connections.py"
           },
           {
             "path": "scripts/evaluation.py",
             "sha256": "49ed1d17cdce5da101b210197740713f49b935c29d4f339542a14b132658e6f7",
             "bytes": 12579,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/scripts/evaluation.py"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/scripts/evaluation.py"
           },
           {
             "path": "scripts/example_evaluation.xml",
             "sha256": "9272b348ddcc4b06ba562367ccd0770e018158c0068ac5116d5e34aaeff8777a",
             "bytes": 1194,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/scripts/example_evaluation.xml"
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/scripts/example_evaluation.xml"
           },
           {
             "path": "scripts/requirements.txt",
-            "sha256": "d5d7558b2368ecea9dfeed7d1fbc71ee9e0750bebd1282faa527d528a344c3c7",
-            "bytes": 29,
-            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.0/scripts/requirements.txt"
+            "sha256": "4ce08a3337ca8c6c165781f472d6836419d1e50a73592a4015474e74f6667217",
+            "bytes": 30,
+            "url": "https://codepuppy.cn/catalog/assets/skill.mcp-builder/1.0.1/scripts/requirements.txt"
           }
         ]
       }
@@ -1404,8 +999,8 @@
       "id": "skill:canvas-design",
       "type": "skill",
       "name": "canvas-design",
-      "displayName": "视觉/海报设计",
-      "description": "用设计哲学产出 .png/.pdf 视觉作品(Anthropic example-skills;含 OFL 字体约 5.4MB,安装时下载)。",
+      "displayName": "视觉作品与海报设计",
+      "description": "帮助设计并生成 PNG 或 PDF 视觉作品。来自 Anthropic 的 example-skills，安装时需下载约 5.4 MB 的 OFL 授权字体。",
       "source": "official",
       "category": "design",
       "license": "Apache-2.0",
@@ -1977,8 +1572,8 @@
       "id": "skill:brand-guidelines",
       "type": "skill",
       "name": "brand-guidelines",
-      "displayName": "品牌规范应用",
-      "description": "把品牌色彩/字体规范应用到各类产物(Anthropic example-skills)。",
+      "displayName": "应用品牌色彩与字体",
+      "description": "将品牌规定的颜色和字体应用到作品中。来自 Anthropic 的 example-skills。",
       "source": "official",
       "category": "design",
       "license": "Apache-2.0",
@@ -2061,8 +1656,8 @@
       "id": "agent:bug-triage",
       "type": "agent",
       "name": "bug-triage",
-      "displayName": "问题定位(只读)",
-      "description": "只读问题定位 Agent:按报错/现象收敛疑源,产出复现步骤 + 根因假设(附代码证据)+ 修复建议;edit 拒绝、bash 逐次确认(与 code-reviewer 同款只读档)。Code Puppy 自写。",
+      "displayName": "问题排查助手（只读）",
+      "description": "根据报错或现象查找可能的问题位置，给出复现步骤、有代码依据的原因分析和修复建议。由 Code Puppy 开发。不能编辑文件；每次运行 bash 命令前都需要你确认。",
       "source": "alpha",
       "category": "dev",
       "license": "MIT",
@@ -2089,8 +1684,8 @@
       "id": "agent:code-reviewer",
       "type": "agent",
       "name": "code-reviewer",
-      "displayName": "代码审查(只读)",
-      "description": "只读代码审查 Agent:审查 diff / 指定文件,产出问题清单与修复建议;edit 拒绝、bash 逐次确认(只读权限档示例)。",
+      "displayName": "代码审查助手（只读）",
+      "description": "审查代码改动或指定文件，列出问题和修复建议。不能编辑文件；每次运行 bash 命令前都需要你确认。",
       "source": "alpha",
       "category": "dev",
       "license": "MIT",
@@ -2107,7 +1702,7 @@
       "type": "bundle",
       "name": "office-suite",
       "displayName": "办公套件",
-      "description": "办公套件:markitdown 读取 + 文件系统 + Code Puppy Excel 表格读写。创建 docx/pptx 由桌面端出厂技能(office-docs,随 app 内置)引导本地脚本完成,无需另装连接器。",
+      "description": "组合安装 markitdown 文档读取、本地文件读写和 Code Puppy Excel 表格读写。创建 docx 或 pptx 时，应用自带的 office-docs 技能会指导使用本地脚本，无需另装连接器。",
       "source": "alpha",
       "category": "office",
       "license": "mixed",
@@ -2137,7 +1732,7 @@
       "type": "bundle",
       "name": "research-suite",
       "displayName": "研究套件",
-      "description": "多源检索 + 网页抓取 + 本地资料读写,支撑深度调研。",
+      "description": "组合使用多来源检索、网页读取和本地资料读写，帮助深入研究问题。",
       "source": "alpha",
       "category": "research",
       "license": "MIT",
@@ -2161,22 +1756,17 @@
       "type": "bundle",
       "name": "dev-suite",
       "displayName": "开发套件",
-      "description": "Git + GitHub + MCP/技能构建指南。",
+      "description": "组合安装 Git 工具和 MCP 服务、技能开发指南。",
       "source": "alpha",
       "category": "dev",
       "license": "mixed",
       "redistributable": true,
-      "version": "1.0.0",
+      "version": "1.1.0",
       "bundleItems": [
         {
           "catalogEntryId": "mcp:git",
           "optional": false,
           "installOrder": 1
-        },
-        {
-          "catalogEntryId": "mcp:github",
-          "optional": true,
-          "installOrder": 2
         },
         {
           "catalogEntryId": "skill:mcp-builder",
@@ -2195,7 +1785,7 @@
       "type": "bundle",
       "name": "design-suite",
       "displayName": "设计套件",
-      "description": "视觉/品牌设计技能组合(Apache-2.0,远程资产)。",
+      "description": "组合安装视觉设计和品牌应用技能。内容通过网络下载，使用 Apache-2.0 许可证。",
       "source": "alpha",
       "category": "design",
       "license": "Apache-2.0",
@@ -2219,8 +1809,8 @@
       "id": "cloud:code-review",
       "type": "cloud",
       "name": "cloud-code-review",
-      "displayName": "云代码审查(code-review)",
-      "description": "把 git diff 派发到云端流水线审查(正确性/安全/性能/风格,必要时联网查库行为与 CVE),结果回流本地 .code-puppy/runs。diff-only:绝不上传全库。",
+      "displayName": "云端代码审查（code-review）",
+      "description": "将 Git 代码改动交给云端检查正确性、安全、性能和风格；必要时会联网查证依赖库行为和已知漏洞（CVE）。只发送代码改动，不上传整个仓库。结果保存到本地 .code-puppy/runs。",
       "source": "alpha",
       "category": "cloud",
       "version": "1.0.0",
@@ -2230,7 +1820,7 @@
         "inputContract": [
           {
             "field": "input.diff",
-            "description": "git diff 文本(diff-only;云侧另截断至 12k 字符)",
+            "description": "需要审查的 Git 代码改动文本；云端最多处理前 12,000 个字符。",
             "required": true
           }
         ],
@@ -2244,10 +1834,10 @@
           "max_tokens": 500000,
           "max_wall_clock_sec": 1800
         },
-        "tier": "Tier-1(云端流水线,无沙箱)",
+        "tier": "Tier-1：在云端处理，不使用沙箱",
         "upstreamData": [
-          "git diff 文本(input.diff;1MB 信封帽,云侧另截 12k 字符)",
-          "变更意图摘要与审查结论(云侧模型生成,存于任务产物)",
+          "要审查的代码改动(git diff 文本,最多 256 KB;超出 1.2 万字的部分云端不会读)",
+          "云端会生成改动目的摘要和审查结论，并保存在任务结果中。",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
       }
@@ -2256,8 +1846,8 @@
       "id": "cloud:research",
       "type": "cloud",
       "name": "cloud-research",
-      "displayName": "深度调研(research)",
-      "description": "把调研问题派发到云端流水线:拆解子问题、联网检索、带来源综合作答;结果回流本地 .code-puppy/runs。",
+      "displayName": "云端深度调研（research）",
+      "description": "提供调研问题，云端会分解问题、联网检索，并整理带来源的回答。结果保存到本地 .code-puppy/runs。",
       "source": "alpha",
       "category": "cloud",
       "version": "1.0.0",
@@ -2267,7 +1857,7 @@
         "inputContract": [
           {
             "field": "input.question",
-            "description": "调研问题文本",
+            "description": "你想调研的问题",
             "required": true
           }
         ],
@@ -2281,9 +1871,9 @@
           "max_tokens": 500000,
           "max_wall_clock_sec": 1800
         },
-        "tier": "Tier-1(云端流水线,无沙箱,联网检索)",
+        "tier": "Tier-1：在云端联网检索，不使用沙箱",
         "upstreamData": [
-          "调研问题文本(input.question)",
+          "发送你填写的调研问题（input.question）。",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
       }
@@ -2292,8 +1882,8 @@
       "id": "cloud:docs",
       "type": "cloud",
       "name": "cloud-docs",
-      "displayName": "文档生成(docs)",
-      "description": "把代码片段派发到云端流水线生成文档(README/API 文档等,先大纲后成文);结果回流本地 .code-puppy/runs。",
+      "displayName": "云端开发文档生成（docs）",
+      "description": "提供代码片段，让云端先拟大纲，再生成 README、API 说明等文档。结果保存到本地 .code-puppy/runs。",
       "source": "alpha",
       "category": "cloud",
       "version": "1.0.0",
@@ -2303,12 +1893,12 @@
         "inputContract": [
           {
             "field": "input.code",
-            "description": "代码片段(云侧截断至 12k 字符;传片段,勿传全库)",
+            "description": "提供代码片段，不要上传整个仓库；云端最多处理前 12,000 个字符。",
             "required": true
           },
           {
             "field": "input.type",
-            "description": "文档类型(如 readme / api,默认 readme)"
+            "description": "要生成的文档类型，如 readme 或 api；未指定时使用 readme。"
           }
         ],
         "budgetDefaults": {
@@ -2321,9 +1911,144 @@
           "max_tokens": 500000,
           "max_wall_clock_sec": 1800
         },
-        "tier": "Tier-1(云端流水线,无沙箱)",
+        "tier": "Tier-1：在云端处理，不使用沙箱",
         "upstreamData": [
-          "代码片段(input.code;云侧截 12k 字符)",
+          "发送代码片段（input.code），云端最多处理前 12,000 个字符。",
+          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+        ]
+      }
+    },
+    {
+      "id": "cloud:word",
+      "type": "cloud",
+      "name": "cloud-word",
+      "displayName": "云端 Word",
+      "description": "提供内容和要求，在云端生成报告、方案或说明文档。完成后可下载 .docx 文件。",
+      "source": "alpha",
+      "category": "cloud",
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "cloud",
+        "pipelineKind": "office-report",
+        "inputContract": [
+          {
+            "field": "input.topic",
+            "description": "请说明文档内容和具体要求。",
+            "required": true
+          },
+          {
+            "field": "input.format",
+            "description": "输出为 Word 文档（docx），应用会自动填写此格式。",
+            "required": true
+          },
+          {
+            "field": "input.data",
+            "description": "补充数据（可选，请使用 JSON 格式）"
+          }
+        ],
+        "budgetDefaults": {
+          "max_iter": 25,
+          "max_tokens": 300000,
+          "max_wall_clock_sec": 600
+        },
+        "budgetLimits": {
+          "max_iter": 50,
+          "max_tokens": 500000,
+          "max_wall_clock_sec": 1800
+        },
+        "tier": "Tier-2：在云端沙箱中生成办公文件",
+        "upstreamData": [
+          "发送你填写的内容要求（input.topic）、文件格式（input.format）和可选补充数据（input.data）。",
+          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+        ]
+      }
+    },
+    {
+      "id": "cloud:excel",
+      "type": "cloud",
+      "name": "cloud-excel",
+      "displayName": "云端 Excel",
+      "description": "提供数据和要求，在云端生成用于整理数据或统计的 Excel 表格。完成后可下载 .xlsx 文件。",
+      "source": "alpha",
+      "category": "cloud",
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "cloud",
+        "pipelineKind": "office-report",
+        "inputContract": [
+          {
+            "field": "input.topic",
+            "description": "请说明表格内容和具体要求。",
+            "required": true
+          },
+          {
+            "field": "input.format",
+            "description": "输出为 Excel 表格（xlsx），应用会自动填写此格式。",
+            "required": true
+          },
+          {
+            "field": "input.data",
+            "description": "补充数据（可选，请使用 JSON 格式）"
+          }
+        ],
+        "budgetDefaults": {
+          "max_iter": 25,
+          "max_tokens": 300000,
+          "max_wall_clock_sec": 600
+        },
+        "budgetLimits": {
+          "max_iter": 50,
+          "max_tokens": 500000,
+          "max_wall_clock_sec": 1800
+        },
+        "tier": "Tier-2：在云端沙箱中生成办公文件",
+        "upstreamData": [
+          "发送你填写的内容要求（input.topic）、文件格式（input.format）和可选补充数据（input.data）。",
+          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+        ]
+      }
+    },
+    {
+      "id": "cloud:powerpoint",
+      "type": "cloud",
+      "name": "cloud-powerpoint",
+      "displayName": "云端 PowerPoint",
+      "description": "提供主题和要求，在云端生成用于汇报或讲解的 PowerPoint 演示文稿。完成后可下载 .pptx 文件。",
+      "source": "alpha",
+      "category": "cloud",
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "cloud",
+        "pipelineKind": "office-report",
+        "inputContract": [
+          {
+            "field": "input.topic",
+            "description": "请说明演示主题和具体要求。",
+            "required": true
+          },
+          {
+            "field": "input.format",
+            "description": "输出为 PowerPoint 演示文稿（pptx），应用会自动填写此格式。",
+            "required": true
+          },
+          {
+            "field": "input.data",
+            "description": "补充数据（可选，请使用 JSON 格式）"
+          }
+        ],
+        "budgetDefaults": {
+          "max_iter": 25,
+          "max_tokens": 300000,
+          "max_wall_clock_sec": 600
+        },
+        "budgetLimits": {
+          "max_iter": 50,
+          "max_tokens": 500000,
+          "max_wall_clock_sec": 1800
+        },
+        "tier": "Tier-2：在云端沙箱中生成办公文件",
+        "upstreamData": [
+          "发送你填写的内容要求（input.topic）、文件格式（input.format）和可选补充数据（input.data）。",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
       }
@@ -2332,8 +2057,8 @@
       "id": "skill:conventional-commits",
       "type": "skill",
       "name": "conventional-commits",
-      "displayName": "规范化提交信息",
-      "description": "以 Conventional Commits 规范撰写 git 提交信息(type(scope): subject + 破坏性变更脚注)。Code Puppy 自写。",
+      "displayName": "Git 提交说明助手",
+      "description": "按 Conventional Commits 格式编写提交说明，包括 type(scope): subject，以及说明不兼容改动的脚注。由 Code Puppy 开发。",
       "source": "alpha",
       "category": "dev",
       "license": "MIT",

@@ -61,7 +61,8 @@ describe("readSessionGrantIdsSync(同步读链,r1-4:不可判定 ≠ 空集)", (
       expect(oracle.ok).toBe(false)
       if (!oracle.ok) {
         expect(oracle.reason).toContain("no verified channel LKG")
-        expect([...oracle.partialIds].sort()).toEqual(["mcp:chrome-devtools", "mcp:markitdown"])
+        // 签名目录 2026-10-15.1 的 mcp:markitdown 已无 curation 字段;随包可识别的 session-grant 仅余 mcp:chrome-devtools。
+        expect([...oracle.partialIds].sort()).toEqual(["mcp:chrome-devtools"])
       }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
