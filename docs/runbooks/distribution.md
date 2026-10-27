@@ -162,7 +162,10 @@ bun run merge:latest-mac
 xcrun stapler validate "dist/mac/Code Puppy.app"          # x64 的 .app 在 dist/mac/(electron-builder 对 x64 不加后缀)
 spctl -a -vvv -t install "dist/mac/Code Puppy.app"
 lipo -archs "dist/mac/Code Puppy.app/Contents/MacOS/Code Puppy"                                   # 期望 x86_64
-find "dist/mac/Code Puppy.app" \( -name "*.node" -o -name spawn-helper \) -exec lipo -archs {} \;   # 每行都含 x86_64
+find "dist/mac/Code Puppy.app" \( -name "*.node" -o -name spawn-helper \) -not -path "*darwin-arm64*" -exec lipo -archs {} \;   # 每行都含 x86_64
+# 包里还会带着同名的 *-darwin-arm64 原生包(⓪ 的 --cpu='*' 把两种都装进了 node_modules),它们只有 arm64 一片 = 正常:
+# x64 上只加载 *-darwin-x64 那一份。已发布的 v0.1.20、v0.1.21 x64 包都是这样(2026-10-27 逐项核过)。要判的是 x64 那份齐不齐:
+find "dist/mac/Code Puppy.app" -path "*darwin-x64*" \( -name "*.node" -o -name spawn-helper \) | wc -l   # 期望 4(pty.node、spawn-helper、watcher.node、msgpackr-extract)
 ls dist/code-puppy-mac-x64.dmg dist/code-puppy-mac-x64.zip
 grep -c "url: code-puppy-mac-" dist/latest-mac.yml       # 期望 4(两种架构各 dmg + zip)
 ```
