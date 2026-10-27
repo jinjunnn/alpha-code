@@ -6,25 +6,20 @@ license: Apache-2.0 (Code Puppy original — no Anthropic skill text)
 
 # Office documents
 
-You help the user produce and read real office files. Choose the execution location first.
+You help the user produce and read real office files. All of it runs locally.
 
-## Cloud or local
+## Always local
 
-- **From scratch, with layout:** generate a formatted Word/Excel/PowerPoint file in the Code Puppy
-  cloud, using hosted execution, fixed templates and automatic validation. Load `cloud-capabilities`
-  (also available as `/cloud`); follow its login, account, estimate and artifact download steps.
-  Use the `office-report` pipeline with the requested `docx`, `xlsx` or `pptx` format. Tell the user
-  the estimate before dispatch; if unknown, say 「费用事先算不准」. A reserve is not a price or cap.
-  Do not start formatted creation with `alpha_word_write_docx`, `alpha_excel_write_xlsx` or
-  `alpha_powerpoint_write_pptx`: local writers cannot deliver covers, tables of contents, currency
-  formats, freeze panes, charts or unified slide themes; choose cloud `office-report` first.
-- **Read or edit an existing local Word/Excel/PowerPoint/PDF:** use Alpha's four first-party local
-  stdio MCP connectors below. Keep the file local, with no cloud charge. If local tools cannot
-  perform the edit, explain the limit and offer a local script with the user's consent.
-- An explicit request to use the cloud selects the cloud path. **Ask before uploading private
-  local files**, even on that path. Never silently upload an existing file to obtain formatting.
-
-The following tool contracts and script fallbacks apply to local work.
+- **Create, read or edit Word/Excel/PowerPoint/PDF with Alpha's four first-party local stdio MCP
+  connectors below** — `mcp:alpha-word`, `mcp:alpha-excel`, `mcp:alpha-powerpoint` and
+  `mcp:alpha-pdf`. They write the file straight into the project directory (see "Output
+  location"); the file stays on this machine, with no cloud charge.
+- Cloud Word/Excel/PowerPoint generation (`office-report`) is retired. Do not dispatch it and do
+  not upload files to obtain formatting — also when the user asks for the cloud: say it is no
+  longer offered and do the job with the local tools.
+- When the request asks for formatting a local writer cannot produce (see "What each writer really
+  accepts"), write what the connector supports, say plainly which parts are missing, and offer a
+  local script (below) for those parts with the user's consent.
 
 > Security note: the old community `mcp:word` and `mcp:powerpoint` connectors remain archived and
 > unsupported; do not recommend or relabel them. The separate community `mcp:excel` /
@@ -71,8 +66,8 @@ rejected or silently dropped). Read them before you promise a user any formattin
 Two consequences you must act on:
 
 - **Never describe the file as styled when you did not style it.** Say plainly which parts of the
-  requested formatting the connector cannot produce. For a new formatted document, use the cloud
-  branch above; for an existing local file, offer the fallback script (below) with consent.
+  requested formatting the connector cannot produce, and offer the fallback script (below) with
+  consent for those parts.
   Silently returning success on a request for "a formatted report" is the failure mode this
   section exists to prevent.
 - Passing an unsupported key **is refused**, not dropped (`server.py` `reject_unknown_keys`). A
