@@ -1202,6 +1202,7 @@ export const dict = {
   "alpha.model.refreshFailedDetail":
     "Showing the last known list. Your own API keys are unaffected. Reason: {{code}}",
   "alpha.model.syncing": "Syncing…",
+  "alpha.model.serverUnreachable": "Can't reach the server — retrying automatically",
   "alpha.model.pricingPair": "In {{input}}× · Out {{output}}×",
   "alpha.model.pricingUnavailable": "Pricing unavailable",
   "alpha.model.pricingBasisNote": "Multipliers are relative to {{model}} uncached token pricing",

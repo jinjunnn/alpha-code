@@ -1372,6 +1372,71 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
+  // #1543 AC1:证书过期那类「一直连不上登录服务器」的窗口里,弹窗曾一直写「正在同步…」(15 小时不变)。
+  // main 在续期网络失败后给登录态带上 refreshUnreachable;横幅与平台行据此说实话。三段:
+  // 续期中尚未失败 ⇒ 仍是「正在同步…」;网络失败 ⇒ 新文案;续期成功 ⇒ 不重开弹窗即回到正常。
+  // 真 subscribeAuthState 接线 —— auth-recovery 的签名漏了这一位,第二段就收不到推送而变红。
+  test("#1543 AC1:续期网络失败后横幅与平台行说「连不上服务器」,续期成功后不重开即恢复", async () => {
+    resetComposerModelProjection()
+    const account = { email: "offline@alpha.dev", plan: "pro" }
+    let authNow: AuthState = {
+      status: "logged-in",
+      mode: "platform",
+      platformStatus: "recovering",
+      account,
+      expiresAt: Date.now() - 1_000,
+    }
+    let authListener: ((state: AuthState) => void) | undefined
+    installApi({
+      auth: async () => authNow,
+      onAuthSubscribe: (listener) => {
+        authListener = listener
+      },
+    })
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+    const banner = () => mounted.host.querySelector(".a-acct-banner")?.textContent ?? ""
+    const platformRow = () =>
+      mounted.host.querySelector<HTMLButtonElement>(`.a-mpp-row[aria-label^="${platformModels[0]!.name},"]`)
+
+    // 续期进行中、尚未失败过:仍是「正在同步…」(控制组 —— 证明新文案不是无条件替换)。
+    await waitFor(() => {
+      expect(banner()).toContain(zh["alpha.model.syncing"])
+      expect(platformRow()?.textContent).toContain(zh["alpha.model.syncing"])
+    })
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.serverUnreachable"])
+
+    // ① 续期因网络错误失败:横幅与平台行都换成「连不上服务器,正在自动重试」,行仍不可点。
+    authNow = { ...authNow, refreshUnreachable: true }
+    authListener?.(authNow)
+    await waitFor(() => {
+      expect(banner()).toContain(zh["alpha.model.serverUnreachable"])
+      expect(platformRow()?.textContent).toContain(zh["alpha.model.serverUnreachable"])
+    })
+    expect(banner()).not.toContain(zh["alpha.model.syncing"])
+    expect(platformRow()?.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(platformRow()?.disabled).toBe(true)
+
+    // ② 随后续期成功:同一个弹窗实例回到正常(会员横幅、行可点),两句恢复中文案都不剩。
+    authNow = { status: "logged-in", mode: "platform", platformStatus: "ready", account, expiresAt: Date.now() + 15 * 60_000 }
+    authListener?.(authNow)
+    await waitFor(() => {
+      expect(banner()).toContain("Pro")
+      expect(platformRow()?.disabled).toBe(false)
+    })
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.serverUnreachable"])
+    expect(banner()).not.toContain(zh["alpha.model.syncing"])
+    expect(platformRow()?.textContent).not.toContain(zh["alpha.model.syncing"])
+    mounted.dispose()
+  })
+
   test("#577 负向:从未进入静默窗口的 failed(structural / 代不匹配)不得触发额外 list 重拉", async () => {
     // 静默腿的「同代 failed 立即重试」若回流到所有 failed,就推翻 #577 的终态语义。
     resetComposerModelProjection()

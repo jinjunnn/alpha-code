@@ -1172,6 +1172,7 @@ export const dict = {
   "alpha.model.refreshFailedTitle": "Code Puppy 模型清单刷新失败",
   "alpha.model.refreshFailedDetail": "当前显示的是上次拿到的清单;自带 KEY 的节点不受影响。原因:{{code}}",
   "alpha.model.syncing": "正在同步…",
+  "alpha.model.serverUnreachable": "连不上服务器,正在自动重试",
   "alpha.model.pricingPair": "输入 {{input}}× · 输出 {{output}}×",
   "alpha.model.pricingUnavailable": "计价信息暂不可用",
   "alpha.model.pricingBasisNote": "计价倍数相对 {{model}} 的未缓存 token 单价",

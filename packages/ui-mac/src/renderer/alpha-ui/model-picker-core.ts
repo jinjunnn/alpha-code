@@ -4,7 +4,7 @@ import { byokEngineId, byokModelMeta, isByokEngineId } from "../../shared/alpha-
 import type { ComposerModel } from "./composer-state"
 import { t } from "../i18n"
 
-export type AccountState = "member" | "balance" | "empty" | "out" | "loading" | "recovering" | "failed"
+export type AccountState = "member" | "balance" | "empty" | "out" | "loading" | "recovering" | "unreachable" | "failed"
 export type ModelListState = "loading" | "recovering" | "ready" | "failed"
 export type KeyStatusState = "loading" | "ready" | "failed"
 export type ModelAvailability = "available" | "needs-login" | "needs-credit" | "needs-key" | "loading" | "unavailable"
@@ -248,6 +248,7 @@ function platformAvailability(
 ): { kind: ModelAvailability; reason?: string } {
   if (account === "out") return { kind: "needs-login", reason: t("alpha.model.needsLogin") }
   if (account === "empty") return { kind: "needs-credit", reason: t("alpha.model.needsCredit") }
+  if (account === "unreachable") return { kind: "loading", reason: t("alpha.model.serverUnreachable") }
   if (account === "loading" || account === "recovering")
     return {
       kind: "loading",

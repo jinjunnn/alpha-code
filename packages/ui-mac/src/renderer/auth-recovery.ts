@@ -107,11 +107,16 @@ let staleReads = 0
 let probeTimer: ReturnType<typeof setTimeout> | undefined
 let probeAttempt = 0
 
-/** 判据粒度对齐 main/alpha-auth.ts publish() 的身份签名(含 plan),否则它播了本侧却吞掉。 */
+/** 判据粒度对齐 main/alpha-auth.ts publish() 的身份签名(含 plan、#1543 refreshUnreachable),否则它播了本侧却吞掉。 */
 const signatureOf = (state: AuthState) =>
-  [state.status, state.mode, state.platformStatus ?? "ready", state.account?.email ?? "", state.account?.plan ?? ""].join(
-    "\u0000",
-  )
+  [
+    state.status,
+    state.mode,
+    state.platformStatus ?? "ready",
+    state.account?.email ?? "",
+    state.account?.plan ?? "",
+    state.refreshUnreachable ? "unreachable" : "",
+  ].join("\u0000")
 
 /** 身份轴 = 签名去掉 platformStatus:status / mode / email / plan。呈现序只在同身份内比较。 */
 const identityOf = (state: AuthState) =>

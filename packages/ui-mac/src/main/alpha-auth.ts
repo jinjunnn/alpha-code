@@ -141,6 +141,9 @@ let authIdentityEpoch = 0
 // #600 M1:续期提交后、换血落定前(以及换血失败后),sidecar 仍握旧 token 或已不存在 ——
 // 平台面必须保持 recovering,绝不能因为 main 手里有了新 token 就先报 ready。
 let unappliedRenewalGeneration: number | null = null
+// #1543:最近一次续期因网络错误失败时所在的 token 代。只在仍是当前代时对外报 `refreshUnreachable`
+// —— 续期成功 / 登录 / 登出 / 重新装载都推进 tokenGeneration,标记随之自然失效,不另设清除点。
+let refreshUnreachableGeneration: number | null = null
 /** 等换血落定的上界。超时不取消换血(它自带封顶低频重试),只是不再让调用方(account 401
  *  路径)继续悬着:如实报 applied:false,平台面维持 recovering,直到 latch 真正应用。 */
 const ROTATION_WAIT_MS = 10_000
@@ -239,6 +242,7 @@ function deriveState(): AuthState {
     account: stored.account,
     expiresAt: stored.expiresAt,
     ...(loggedIn ? { platformStatus: platformReady ? ("ready" as const) : ("recovering" as const) } : {}),
+    ...(loggedIn && refreshUnreachableGeneration === tokenGeneration ? { refreshUnreachable: true } : {}),
   }
 }
 
@@ -261,6 +265,8 @@ function publish() {
     email: state.account?.email,
     plan: state.account?.plan,
     platformStatus: state.platformStatus,
+    // #1543:「正在续」与「续不上」对渲染层是两句不同的话 —— 只翻这一位也必须送达。
+    refreshUnreachable: state.refreshUnreachable,
   })
   if (sig === lastPublishedSig) return
   // R2 Minor2:先记账后发送会在 IPC 抛出时把这次状态「记成已发布」——后续同签名的 publish
@@ -818,6 +824,7 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     })
   } catch (error) {
     warn("alpha-auth: refresh network failure — keeping current tokens", error)
+    refreshUnreachableGeneration = startedGeneration
     publish()
     return "transient-failure"
   }
