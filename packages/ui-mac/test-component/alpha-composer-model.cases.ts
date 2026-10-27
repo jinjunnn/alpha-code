@@ -227,6 +227,21 @@ async function waitFor(assertion: () => void) {
   throw failure
 }
 
+/** #1543:芯片悬停提示的文字 —— Tooltip 把 label 放进经 aria-describedby 挂到芯片上的隐藏节点。 */
+function tooltipOf(trigger: Element | null) {
+  return (trigger?.getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => (id ? (document.getElementById(id)?.textContent ?? "") : ""))
+    .join(" ")
+}
+
+/** #1543:用户**看得见**的文字 —— 去掉 Tooltip 的视觉隐藏说明节点(.a-tip-desc)后的 textContent。 */
+function visibleText(host: HTMLElement) {
+  const clone = host.cloneNode(true) as HTMLElement
+  clone.querySelectorAll(".a-tip-desc").forEach((node) => node.remove())
+  return clone.textContent ?? ""
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -412,9 +427,10 @@ describe("AlphaComposer production model seam", () => {
       expect(mounted.host.textContent).toContain(zh["alpha.composer.modelReading"])
     })
 
-    // #1476:不可用原因是芯片旁的可见文字(不再藏在原生 title 里)。
-    expect(mounted.host.querySelector('[data-alpha-chip-reason="effort"]')?.textContent).toContain("当前会话模型加载中")
+    // #1543(取代 #1476):不可用原因不写成底栏正文,进芯片的悬停提示。
+    expect(mounted.host.querySelector(".a-chip-reason")).toBeNull()
     const effort = mounted.host.querySelector<HTMLButtonElement>('[data-kind="effort"] > button')
+    expect(tooltipOf(effort)).toContain("当前会话模型加载中")
     expect(effort?.disabled).toBe(true)
     effort?.click()
     click(mounted.host.querySelector('[data-kind="model"] > button'))
@@ -613,11 +629,10 @@ describe("AlphaComposer production model seam", () => {
     // ① chip 自身就已经在说话:muted + 值位显式的「—」,不是一个看起来能选的档位。
     expect(offChip.getAttribute("data-muted"), "无档位的模型,档位入口看起来仍然可选").toBe("")
     expect(offChip.querySelector(".a-comp-eff")?.textContent?.trim()).toBe("—")
-    // ② 原因是芯片旁的**可见文字**,并经 aria-describedby 挂到芯片上(#1476:不再藏进原生 title;
-    //    zh 由 scripts/test-preload.ts 钉死)。
-    const reason = off.host.querySelector('[data-alpha-chip-reason="effort"]')
-    expect(reason?.textContent, "档位入口没说清为什么用不了").toBe("当前模型不支持推理档")
-    expect(offChip.getAttribute("aria-describedby")).toContain(reason!.id)
+    // ② 原因进芯片的悬停提示,并经 aria-describedby 交给读屏(#1543 取代 #1476 的「芯片旁可见文字」;
+    //    不用原生 title;zh 由 scripts/test-preload.ts 钉死)。
+    expect(tooltipOf(offChip), "档位入口没说清为什么用不了").toBe("当前模型不支持推理档")
+    expect(off.host.querySelector(".a-chip-reason")).toBeNull()
     expect(offChip.hasAttribute("title")).toBe(false)
     // ③ 点开之后**点名那个模型**,而不是一片空白 —— 票面那种「你以为设上了」的沉默正是这里。
     click(offChip)
@@ -629,6 +644,51 @@ describe("AlphaComposer production model seam", () => {
     // ④ 且**一个档位按钮都不给** —— 给了就等于让用户去选一个引擎不认识的档。
     expect(popItems(), "无档位的模型仍然列出了可点的档位").toEqual([])
     off.dispose()
+  })
+
+  // #1543 AC2(owner 2026-10-26:「不支持用后面的 icon 就可以了,不可以这样写上啊,页面看的乱七八糟的」):
+  // 输入框底栏不再以正文写任何芯片原因 —— 推理档与计划模式两颗芯片都只置灰,原因进各自的悬停提示
+  // (同一句经 aria-describedby 交给读屏);推理档浮层里原有的说明保留。
+  test("#1543 AC2:底栏不渲染芯片原因正文,推理档与计划模式的原因进芯片悬停提示", async () => {
+    installApi()
+    const withoutVariants = catalog.platformModels.find((model) => !model.variants)
+    expect(withoutVariants?.id, "alpha-models.json 里没有无档位模型 —— 本次测量作废(不是通过)").toEqual(expect.any(String))
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => ({ providerID: catalog.platformProvider.id, id: withoutVariants!.id }),
+          switch: async () => {},
+        },
+      }),
+    )
+    const effortChip = mounted.host.querySelector<HTMLButtonElement>('[data-kind="effort"] > button')!
+    await waitFor(() => expect(effortChip.disabled).toBe(false))
+    setComposerAgent("plan")
+    setComposerPerm("readonly")
+    const planChip = () => mounted.host.querySelector<HTMLButtonElement>(".a-chip-plan")
+    await waitFor(() => expect(planChip()?.getAttribute("data-disabled")).toBe(""))
+
+    const effortReason = zh["alpha.composer.effortUnsupported"]
+    const planReason = zh["alpha.composer.planLocked"].replace("{{tier}}", zh["alpha.composer.permReadonly"])
+    // ① 底栏没有原因正文:节点不在,用户看得见的文字里也没有这两句。
+    expect(mounted.host.querySelector(".a-chip-reason")).toBeNull()
+    expect(visibleText(mounted.host)).not.toContain(effortReason)
+    expect(visibleText(mounted.host)).not.toContain(planReason)
+    // ② 芯片仍置灰,原因在各自的悬停提示里。
+    expect(effortChip.getAttribute("data-muted")).toBe("")
+    expect(effortChip.querySelector(".a-comp-eff")?.textContent?.trim()).toBe("—")
+    expect(tooltipOf(effortChip)).toContain(effortReason)
+    expect(tooltipOf(planChip())).toContain(planReason)
+    // ③ 推理档浮层里的说明保留。
+    click(effortChip)
+    await waitFor(() => expect(document.body.querySelector(".a-pop-note")?.textContent).toContain(withoutVariants!.name))
+    mounted.dispose()
   })
 
   test("真实 composer 打开 picker 时恰好挂载一个 canonical owner 实例", async () => {
