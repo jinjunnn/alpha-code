@@ -1,6 +1,6 @@
 ---
 name: cloud-capabilities
-description: 判断任务该用本机还是 Code Puppy 云端。用户说用云端、从零生成网页、生成图片、多来源深度调研、请求联网复核或第二意见时使用；Word/Excel/PPT/PDF 文档、读改本机已有文件、简单查询和默认代码审查优先本机。也可用 /cloud 调用。
+description: 判断任务该用本机还是 Code Puppy 云端。用户说用云端、生成图片、多来源深度调研、请求联网复核或第二意见时使用；Word/Excel/PPT/PDF 文档、网页、读改本机已有文件、简单查询和默认代码审查优先本机。也可用 /cloud 调用。
 license: MIT (Code Puppy original)
 ---
 
@@ -12,9 +12,9 @@ license: MIT (Code Puppy original)
 
 | 情况 | 执行位置与动作 |
 | --- | --- |
-| 用户明确说「用云端」 | 用云（Word/Excel/PPT/PDF 除外，见下），仍须先检查登录、费用和上传授权。 |
+| 用户明确说「用云端」 | 用云（Word/Excel/PPT/PDF 与网页除外，见下），仍须先检查登录、费用和上传授权。 |
 | 生成、读、改 Word/Excel/PPT/PDF | 一律用本机 MCP（按 `office-docs` 技能）；文件写进项目目录、不出本机，无云端费用。 |
-| 从零生成要排版好看的网页 | 用云端固定模板与自动校验；派发前告知估价或费用未知。 |
+| 生成网页 / HTML | 本机直接写 HTML 文件进项目目录（可自带 CSS 与 JS），在文件面板预览；不派发云端，无云端费用。 |
 | 生成图片 | 用云；本机没有图片生成能力。 |
 | 查一个事实、读一个网页 | 先用本机搜索/读取；本机不可用才用 `cloud_web_search` / `cloud_web_fetch`。 |
 | 多来源深度调研 | 用云端 `research`，做多轮检索与综合。 |
@@ -22,6 +22,7 @@ license: MIT (Code Puppy original)
 | 要把本机私有文件传云 | 先问用户，获得上传授权后才发送内容；不能把选用云端当作上传私有文件的授权。 |
 
 云端 Word/Excel/PPT 生成（`office-report`）已停用：不要派发它，用户明确要求云端时也如实说明，改用本机 `mcp:alpha-word`、`mcp:alpha-excel`、`mcp:alpha-powerpoint`、`mcp:alpha-pdf`，按 `office-docs` 技能执行。
+网页 / HTML 由本机直接写文件：不要派发云端 `html-generate`，用户明确要求云端时也如实说明并改为本机生成。
 代码审查一旦要求联网复核或第二意见，选择云端 `code-review`；先加载本技能并检查云端准入，不先改成本机搜索或本机代码审查。
 
 ## 调用云端前
@@ -40,10 +41,7 @@ license: MIT (Code Puppy original)
 | --- | --- |
 | `research` | `{question}` |
 | `code-review` | `{diff}` |
-| `html-generate` | `{prompt}` |
 | `image-generation` | `{prompt}` |
-
-HTML 使用托管执行、固定模板和自动校验。不要按任意沙箱脚本任务派发它。
 
 1. `cloud_dispatch` 返回任务 ID 后，用 `cloud_await` 等待，或用 `cloud_status` 查状态；未终结可继续等待。
 2. 完成后用 `cloud_artifacts` 获取产物描述符（ID、MIME、size、sha256、provenance、contentRef）。产物字节不内联返回；需由宿主通过 `contentRef.url` 鉴权下载。不要读取登录令牌，也不要把该地址当公开下载链接。
