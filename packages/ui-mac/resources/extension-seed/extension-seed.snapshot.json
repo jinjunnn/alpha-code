@@ -1,8 +1,8 @@
 {
   "v": 1,
-  "catalogVersion": "2026-10-15.1",
-  "lockSha256": "0cc29bc9cf672445cb93f14e86195775cea89645907d5486cc853a28699f0ddc",
-  "noticeSha256": "60efd1b3f55d1ab384401ae2b98a138425e7c94ce74b1165772b6bc03422fa2f",
+  "catalogVersion": "2026-10-15.3",
+  "lockSha256": "b9fdfd90c9c45ea53ef98fc33e819bac1e8d9df53c040392e4b7445f9ae61553",
+  "noticeSha256": "7a819285fdc550f5e317a08b96a6dc6144c29d623627b5fd76c7c5f47ac45346",
   "blobCount": 98,
   "blobBytes": 5670569,
   "source": "remote",

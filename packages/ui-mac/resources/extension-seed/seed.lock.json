@@ -1,12 +1,12 @@
 {
   "schema": "alpha.extension-seed.lock.v1",
   "channel": "stable",
-  "catalogVersion": "2026-10-15.1",
+  "catalogVersion": "2026-10-15.3",
   "catalog": {
-    "sha256": "6241106da8ab79531992074f3a3049a9dd670c2080a4f5f61f84c35dcc163ce3",
-    "bytes": 87005,
-    "url": "https://codepuppy.cn/catalog/v1/releases/2026-10-15.1/catalog.json",
-    "sigUrl": "https://codepuppy.cn/catalog/v1/releases/2026-10-15.1/catalog.json.sig"
+    "sha256": "aaf22dbea2308f7cb2937654ab3848923a57837392ab014e6d37f61db1f10dbd",
+    "bytes": 91908,
+    "url": "https://codepuppy.cn/catalog/v1/releases/2026-10-15.3/catalog.json",
+    "sigUrl": "https://codepuppy.cn/catalog/v1/releases/2026-10-15.3/catalog.json.sig"
   },
   "supportedPlatforms": [
     "darwin-arm64",
