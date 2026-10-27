@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-15.3",
+  "version": "2026-10-27.2",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:codepuppy.cn/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -1919,141 +1919,6 @@
       }
     },
     {
-      "id": "cloud:word",
-      "type": "cloud",
-      "name": "cloud-word",
-      "displayName": "云端 Word",
-      "description": "提供内容和要求，在云端生成报告、方案或说明文档。完成后可下载 .docx 文件。",
-      "source": "alpha",
-      "category": "cloud",
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "cloud",
-        "pipelineKind": "office-report",
-        "inputContract": [
-          {
-            "field": "input.topic",
-            "description": "请说明文档内容和具体要求。",
-            "required": true
-          },
-          {
-            "field": "input.format",
-            "description": "输出为 Word 文档（docx），应用会自动填写此格式。",
-            "required": true
-          },
-          {
-            "field": "input.data",
-            "description": "补充数据（可选，请使用 JSON 格式）"
-          }
-        ],
-        "budgetDefaults": {
-          "max_iter": 25,
-          "max_tokens": 300000,
-          "max_wall_clock_sec": 600
-        },
-        "budgetLimits": {
-          "max_iter": 50,
-          "max_tokens": 500000,
-          "max_wall_clock_sec": 1800
-        },
-        "tier": "Tier-2：在云端沙箱中生成办公文件",
-        "upstreamData": [
-          "发送你填写的内容要求（input.topic）、文件格式（input.format）和可选补充数据（input.data）。",
-          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
-        ]
-      }
-    },
-    {
-      "id": "cloud:excel",
-      "type": "cloud",
-      "name": "cloud-excel",
-      "displayName": "云端 Excel",
-      "description": "提供数据和要求，在云端生成用于整理数据或统计的 Excel 表格。完成后可下载 .xlsx 文件。",
-      "source": "alpha",
-      "category": "cloud",
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "cloud",
-        "pipelineKind": "office-report",
-        "inputContract": [
-          {
-            "field": "input.topic",
-            "description": "请说明表格内容和具体要求。",
-            "required": true
-          },
-          {
-            "field": "input.format",
-            "description": "输出为 Excel 表格（xlsx），应用会自动填写此格式。",
-            "required": true
-          },
-          {
-            "field": "input.data",
-            "description": "补充数据（可选，请使用 JSON 格式）"
-          }
-        ],
-        "budgetDefaults": {
-          "max_iter": 25,
-          "max_tokens": 300000,
-          "max_wall_clock_sec": 600
-        },
-        "budgetLimits": {
-          "max_iter": 50,
-          "max_tokens": 500000,
-          "max_wall_clock_sec": 1800
-        },
-        "tier": "Tier-2：在云端沙箱中生成办公文件",
-        "upstreamData": [
-          "发送你填写的内容要求（input.topic）、文件格式（input.format）和可选补充数据（input.data）。",
-          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
-        ]
-      }
-    },
-    {
-      "id": "cloud:powerpoint",
-      "type": "cloud",
-      "name": "cloud-powerpoint",
-      "displayName": "云端 PowerPoint",
-      "description": "提供主题和要求，在云端生成用于汇报或讲解的 PowerPoint 演示文稿。完成后可下载 .pptx 文件。",
-      "source": "alpha",
-      "category": "cloud",
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "cloud",
-        "pipelineKind": "office-report",
-        "inputContract": [
-          {
-            "field": "input.topic",
-            "description": "请说明演示主题和具体要求。",
-            "required": true
-          },
-          {
-            "field": "input.format",
-            "description": "输出为 PowerPoint 演示文稿（pptx），应用会自动填写此格式。",
-            "required": true
-          },
-          {
-            "field": "input.data",
-            "description": "补充数据（可选，请使用 JSON 格式）"
-          }
-        ],
-        "budgetDefaults": {
-          "max_iter": 25,
-          "max_tokens": 300000,
-          "max_wall_clock_sec": 600
-        },
-        "budgetLimits": {
-          "max_iter": 50,
-          "max_tokens": 500000,
-          "max_wall_clock_sec": 1800
-        },
-        "tier": "Tier-2：在云端沙箱中生成办公文件",
-        "upstreamData": [
-          "发送你填写的内容要求（input.topic）、文件格式（input.format）和可选补充数据（input.data）。",
-          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
-        ]
-      }
-    },
-    {
       "id": "skill:conventional-commits",
       "type": "skill",
       "name": "conventional-commits",
@@ -2106,35 +1971,6 @@
             "bytes": 624,
             "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
             "url": "https://codepuppy.cn/catalog/assets/skill.alpha-first/1.0.0/alpha-package/495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc.json"
-          }
-        }
-      ],
-      "capabilities": []
-    },
-    {
-      "schema": "alpha.host-extension-package.v1",
-      "prelude": {
-        "packageId": "package:cloud-html",
-        "version": "1.0.0"
-      },
-      "presentation": {
-        "description": "描述页面内容与样式，云端生成可下载的 HTML 网页。",
-        "displayName": "云端网页生成"
-      },
-      "root": "cloud:html",
-      "components": [
-        {
-          "id": "cloud:html",
-          "required": true,
-          "dependencies": [],
-          "profileId": "cloud",
-          "profileVersion": 1,
-          "capabilities": [],
-          "payloadRef": {
-            "sha256": "05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
-            "bytes": 690,
-            "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
-            "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda.json"
           }
         }
       ],
