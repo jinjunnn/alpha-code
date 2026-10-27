@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-15.1",
+  "version": "2026-10-15.3",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:codepuppy.cn/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -2110,6 +2110,134 @@
         }
       ],
       "capabilities": []
+    },
+    {
+      "schema": "alpha.host-extension-package.v1",
+      "prelude": {
+        "packageId": "package:cloud-html",
+        "version": "1.0.0"
+      },
+      "presentation": {
+        "description": "描述页面内容与样式，云端生成可下载的 HTML 网页。",
+        "displayName": "云端网页生成"
+      },
+      "root": "cloud:html",
+      "components": [
+        {
+          "id": "cloud:html",
+          "required": true,
+          "dependencies": [],
+          "profileId": "cloud",
+          "profileVersion": 1,
+          "capabilities": [],
+          "payloadRef": {
+            "sha256": "05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda",
+            "bytes": 690,
+            "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/05f6eb58942bc7b5f5fc68fc5882c735d343d4e04b519f93afa45130e1792cda.json"
+          }
+        }
+      ],
+      "capabilities": []
+    },
+    {
+      "schema": "alpha.host-extension-package.v1",
+      "prelude": {
+        "packageId": "package:cloud-image",
+        "version": "1.0.0"
+      },
+      "presentation": {
+        "description": "描述画面内容与风格，云端生成可下载的 PNG 图片。",
+        "displayName": "云端图片生成"
+      },
+      "root": "cloud:image",
+      "components": [
+        {
+          "id": "cloud:image",
+          "required": true,
+          "dependencies": [],
+          "profileId": "cloud",
+          "profileVersion": 1,
+          "capabilities": [],
+          "payloadRef": {
+            "sha256": "622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
+            "bytes": 695,
+            "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/cloud.image/1.0.0/alpha-package/622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143.json"
+          }
+        }
+      ],
+      "capabilities": []
+    },
+    {
+      "schema": "alpha.host-extension-package.v1",
+      "prelude": {
+        "packageId": "package:dbhub-readonly",
+        "version": "1.0.0"
+      },
+      "presentation": {
+        "description": "让助手查询你电脑上的数据库，只支持本机 SQLite 数据库文件，只读，不会修改数据。安装前请准备已有的数据库文件，并安装 Node.js 22.5 或更高版本；在安装窗口填写以 sqlite:// 开头的文件地址。目前仅 macOS 可安装。",
+        "displayName": "数据库（本机 SQLite，只读）"
+      },
+      "root": "mcp:dbhub-readonly",
+      "components": [
+        {
+          "id": "mcp:dbhub-readonly",
+          "required": true,
+          "dependencies": [],
+          "profileId": "mcp-local",
+          "profileVersion": 1,
+          "capabilities": [
+            "alpha.official-connectors.v1",
+            "alpha.secret-prerequisite.v1"
+          ],
+          "payloadRef": {
+            "sha256": "349bdddf84b69691cc8a18198e8279022eb26242f6820037a66c53305af464ac",
+            "bytes": 313,
+            "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/mcp.dbhub-readonly/1.0.0/alpha-package/349bdddf84b69691cc8a18198e8279022eb26242f6820037a66c53305af464ac.json"
+          }
+        }
+      ],
+      "capabilities": [
+        "alpha.official-connectors.v1",
+        "alpha.secret-prerequisite.v1"
+      ]
+    },
+    {
+      "schema": "alpha.host-extension-package.v1",
+      "prelude": {
+        "packageId": "package:github-official",
+        "version": "1.0.0"
+      },
+      "presentation": {
+        "description": "让助手查找 GitHub 仓库、阅读代码和查看提交记录，只读访问。需要你自己的 GitHub 令牌，建议只读的 fine-grained 令牌；请在安装窗口填写。目前仅 macOS 可安装。",
+        "displayName": "GitHub（官方）"
+      },
+      "root": "mcp:github-official",
+      "components": [
+        {
+          "id": "mcp:github-official",
+          "required": true,
+          "dependencies": [],
+          "profileId": "mcp-remote",
+          "profileVersion": 1,
+          "capabilities": [
+            "alpha.official-connectors.v1",
+            "alpha.secret-prerequisite.v1"
+          ],
+          "payloadRef": {
+            "sha256": "1fc0f27012ab19a53eace30fe4cfe05c8ae65c02f46809745509a5cc544d7582",
+            "bytes": 429,
+            "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/mcp.github-official/1.0.0/alpha-package/1fc0f27012ab19a53eace30fe4cfe05c8ae65c02f46809745509a5cc544d7582.json"
+          }
+        }
+      ],
+      "capabilities": [
+        "alpha.official-connectors.v1",
+        "alpha.secret-prerequisite.v1"
+      ]
     }
   ]
 }
