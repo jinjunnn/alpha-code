@@ -240,9 +240,9 @@ describe("REQ-233 cloud skill instructions", () => {
 
   test("AC1 §2.8 routes explicit cloud, local files, formatted creation, images, facts, research and review", () => {
     for (const rule of [
-      /用户明确说「用云端」 \| 用云/,
-      /读、改本机已有的 Word\/Excel\/PPT\/PDF \| 用本机 MCP；文件不出本机，无云端费用/,
-      /从零生成要排版好看的 Word\/Excel\/PPT\/网页 \| 用云端固定模板与自动校验；派发前告知估价或费用未知/,
+      /用户明确说「用云端」 \| 用云（Word\/Excel\/PPT\/PDF 除外，见下）/,
+      /生成、读、改 Word\/Excel\/PPT\/PDF \| 一律用本机 MCP（按 `office-docs` 技能）；文件写进项目目录、不出本机，无云端费用/,
+      /从零生成要排版好看的网页 \| 用云端固定模板与自动校验；派发前告知估价或费用未知/,
       /生成图片 \| 用云；本机没有图片生成能力/,
       /查一个事实、读一个网页 \| 先用本机搜索\/读取；本机不可用才用 `cloud_web_search` \/ `cloud_web_fetch`/,
       /多来源深度调研 \| 用云端 `research`，做多轮检索与综合/,
@@ -251,12 +251,18 @@ describe("REQ-233 cloud skill instructions", () => {
     ]) expect(cloud.content).toMatch(rule)
   })
 
-  test("AC3 formatted creation and explicit review requests select their cloud pipelines first", () => {
-    expect(cloud.content).toContain("必须选云端 `office-report`")
-    expect(cloud.content).toContain("不要先用本机 `alpha_word_write_docx`、`alpha_excel_write_xlsx`")
+  // alpha-platform#552 AC3: cloud office-report is retired; Office files are always made locally.
+  test("AC3 Office files go to the local tools and explicit review requests select cloud code-review first", () => {
+    expect(cloud.content).toContain("云端 Word/Excel/PPT 生成（`office-report`）已停用：不要派发它，用户明确要求云端时也如实说明")
+    expect(cloud.content).toContain("改用本机 `mcp:alpha-word`、`mcp:alpha-excel`、`mcp:alpha-powerpoint`、`mcp:alpha-pdf`")
     expect(cloud.content).toContain("选择云端 `code-review`")
     expect(cloud.content).toContain("不先改成本机搜索或本机代码审查")
-    expect(office.content.replace(/\s+/g, " ")).toContain("choose cloud `office-report` first")
+    expect(office.content.replace(/\s+/g, " ")).toContain(
+      "Cloud Word/Excel/PowerPoint generation (`office-report`) is retired. Do not dispatch it",
+    )
+    for (const text of [cloud.content, office.content]) {
+      expect(text).not.toMatch(/选云端 `office-report`|choose cloud `office-report`|`office-report` pipeline/)
+    }
   })
 
   test("AC1 checks local login before paid cloud, separates estimates from reserves, and explains refusals without retrying", () => {
@@ -296,8 +302,7 @@ describe("REQ-233 cloud skill instructions", () => {
 
   test("AC1 Office and HTML use hosted templates and artifacts require authenticated byte download", () => {
     for (const instruction of [
-      "Office 与 HTML 使用托管执行、固定模板和自动校验",
-      '`office-report` | `{topic, format: "docx" \\| "xlsx" \\| "pptx", data?}`',
+      "HTML 使用托管执行、固定模板和自动校验",
       '`html-generate` | `{prompt}`',
       '`image-generation` | `{prompt}`',
       "`cloud_await` 等待，或用 `cloud_status` 查状态",
@@ -306,22 +311,19 @@ describe("REQ-233 cloud skill instructions", () => {
       "下载成功后才声称文件已保存",
       "失败、取消或超时要报告真实状态与错误",
     ]) expect(cloud.content).toContain(instruction)
+    expect(cloud.content).not.toContain("| `office-report` |")
   })
 
-  test("AC2 office-docs creates formatted files in cloud and reads or edits existing files locally", () => {
+  test("AC2 office-docs creates, reads and edits every office file locally", () => {
     const text = office.content.replace(/\s+/g, " ")
     for (const instruction of [
-      "**From scratch, with layout:** generate a formatted Word/Excel/PowerPoint file in the Code Puppy cloud",
-      "hosted execution, fixed templates and automatic validation",
-      "Load `cloud-capabilities` (also available as `/cloud`)",
-      "follow its login, account, estimate and artifact download steps",
-      "`office-report` pipeline",
-      "Tell the user the estimate before dispatch; if unknown, say 「费用事先算不准」",
-      "**Read or edit an existing local Word/Excel/PowerPoint/PDF:** use Alpha's four first-party local stdio MCP connectors",
-      "Keep the file local, with no cloud charge",
-      "An explicit request to use the cloud selects the cloud path",
-      "**Ask before uploading private local files**",
-      "For a new formatted document, use the cloud branch above; for an existing local file, offer the fallback script",
+      "**Create, read or edit Word/Excel/PowerPoint/PDF with Alpha's four first-party local stdio MCP connectors below**",
+      "`mcp:alpha-word`, `mcp:alpha-excel`, `mcp:alpha-powerpoint` and `mcp:alpha-pdf`",
+      "They write the file straight into the project directory",
+      "the file stays on this machine, with no cloud charge",
+      "also when the user asks for the cloud: say it is no longer offered and do the job with the local tools",
+      "write what the connector supports, say plainly which parts are missing, and offer a local script (below) for those parts with the user's consent",
     ]) expect(text).toContain(instruction)
+    expect(text).not.toContain("Load `cloud-capabilities`")
   })
 })
