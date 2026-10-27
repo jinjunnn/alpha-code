@@ -91,7 +91,7 @@ export function ModelPickPop(props: {
   const epochKey = () => `${props.directory() ?? ""}\u0000${composerModelProjection().sessionID ?? ""}`
   const isCurrent = (seq: number, epoch: string) => !disposed && seq === loadSeq && epoch === epochKey()
   const authSignature = (state: AuthState) =>
-    `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
+    `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}\u0000${state.refreshUnreachable ? "unreachable" : ""}`
   const authIdentitySignature = (state: AuthState) =>
     JSON.stringify({
       status: state.status,
@@ -392,7 +392,8 @@ export function ModelPickPop(props: {
     if (authValue.data.status !== "logged-in") return "out"
     const summaryValue = summary()
     if (summaryValue.status === "loading") return "loading"
-    if (summaryValue.status === "recovering") return "recovering"
+    // #1543:续期因网络失败而停在恢复中 —— 说「连不上、自动重试」,不说「正在同步」。
+    if (summaryValue.status === "recovering") return authValue.data.refreshUnreachable ? "unreachable" : "recovering"
     if (summaryValue.status === "failed" || !summaryValue.data) return "failed"
     const current = summaryValue.data
     if (current.plan.status === "active") return "member"
@@ -535,9 +536,15 @@ export function ModelPickPop(props: {
           </button>
         </div>
       </Show>
-      <Show when={accountState() === "loading" || accountState() === "recovering"}>
+      <Show when={accountState() === "loading" || accountState() === "recovering" || accountState() === "unreachable"}>
         <div class="a-acct-banner balance" role="status">
-          <span class="bt">{accountState() === "recovering" ? t("alpha.model.syncing") : t("alpha.model.accountReading")}</span>
+          <span class="bt">
+            {accountState() === "unreachable"
+              ? t("alpha.model.serverUnreachable")
+              : accountState() === "recovering"
+                ? t("alpha.model.syncing")
+                : t("alpha.model.accountReading")}
+          </span>
         </div>
       </Show>
       <Show when={accountState() === "failed"}>

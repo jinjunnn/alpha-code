@@ -790,6 +790,51 @@ describe("refresh bundle rotation", () => {
     expect(getAuthState().platformStatus).toBe("ready")
   })
 
+  // #1543 AC1:续期因网络错误失败 ⇒ 登录态带 refreshUnreachable,且**只翻这一位也必须推送**(publish 的
+  // 去重签名若漏了它,renderer 永远看不到「续不上」);随后续期成功 ⇒ 标记消失并再次推送。
+  test("#1543 a network-failed refresh publishes refreshUnreachable; the next successful refresh clears it", async () => {
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    const pushed: unknown[] = []
+    setAuthDeps({
+      getWindow: () =>
+        windowWith((channel, payload) => {
+          if (channel === "auth-state") pushed.push(payload)
+        }),
+      respawn: () => {
+        structuralRespawns++
+      },
+      onRenewed: (result) => markTokenGenerationApplied(result.generation),
+    })
+    // 尚未失败过:恢复中,但不是「续不上」。
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
+    expect(getAuthState()).not.toHaveProperty("refreshUnreachable")
+
+    globalThis.fetch = (async () => {
+      throw new TypeError("fetch failed")
+    }) as typeof fetch
+    expect(await refreshTokens()).toMatchObject({ outcome: "transient-failure" })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering", refreshUnreachable: true })
+    expect(pushed.at(-1)).toMatchObject({ platformStatus: "recovering", refreshUnreachable: true })
+
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: tokenBundle("new"),
+        refresh_token: "refresh-new",
+        expires_in: 3600,
+      })) as typeof fetch
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed", applied: true })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "ready" })
+    expect(getAuthState()).not.toHaveProperty("refreshUnreachable")
+    expect(pushed.at(-1)).toMatchObject({ platformStatus: "ready" })
+    expect(pushed.at(-1)).not.toHaveProperty("refreshUnreachable")
+    expect(structuralRespawns).toBe(0)
+  })
+
   test("ensureFreshToken models a not-due token as still-valid without network or respawn", async () => {
     storeAuth({
       platformAccessTokens: tokenBundle(),

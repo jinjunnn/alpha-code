@@ -186,6 +186,9 @@ export type AuthState = {
   expiresAt?: number
   /** 登录态的平台代理凭证是否已经验证可用；过期续期与瞬态恢复窗口必须保持 recovering。 */
   platformStatus?: "ready" | "recovering"
+  /** #1543:当前凭证这一代最近一次续期因网络错误失败(连不上登录服务器)。续期成功 / 登录 / 登出即消失;
+   *  只在登录态出现。渲染层据此把 recovering 说成「连不上、自动重试」而不是「正在同步」。 */
+  refreshUnreachable?: true
 }
 // B11 复扫行16:登录链失败原因(main 只送 code,文案由 renderer i18n 映射)。
 export type AuthErrorCode =

@@ -14,7 +14,6 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  createUniqueId,
   For,
   Match,
   onCleanup,
@@ -404,16 +403,19 @@ export function PermChip() {
  * (buildPromptRequest 强制该档的 agent),chip 如实置灰并在 title 里点名是哪一档压的。 */
 function PlanChip() {
   const label = () => (composerAgent() === "plan" ? t("alpha.composer.plan") : composerAgent())
-  const reasonId = `a-plan-reason-${createUniqueId()}`
   const locked = () => permLocksAgent(composerPerm())
-  // #1476:「为什么不生效」不藏进悬停提示 —— 被权限档压住时,原因作为可见文字写在芯片旁。
+  // #1543(owner 2026-10-26 取代 #1476):底栏不写原因正文 —— 被权限档压住时芯片置灰,
+  // 原因进悬停提示(Tooltip 同时经 aria-describedby 交给读屏)。
+  const tip = () =>
+    locked()
+      ? `${t("alpha.composer.planLocked", { tier: permLabel(composerPerm()) })} · ${t("alpha.composer.planEnabled")}`
+      : t("alpha.composer.planEnabled")
   return (
     <Show when={composerAgent()}>
-      <Tooltip label={t("alpha.composer.planEnabled")}>
+      <Tooltip label={tip()}>
         <button
           class="a-chip a-chip-plan"
           data-disabled={locked() ? "" : undefined}
-          aria-describedby={locked() ? reasonId : undefined}
           onClick={(e) => (stop(e), setComposerAgent(null))}
         >
           <span class="a-chip-x" aria-hidden="true">
@@ -422,11 +424,6 @@ function PlanChip() {
           {label()}
         </button>
       </Tooltip>
-      <Show when={locked()}>
-        <span id={reasonId} class="a-chip-reason" data-alpha-chip-reason="plan">
-          {t("alpha.composer.planLocked", { tier: permLabel(composerPerm()) })}
-        </span>
-      </Show>
     </Show>
   )
 }
@@ -514,7 +511,8 @@ function EffortChip(props: {
       .then(close)
       .catch(() => {})
   }
-  /** #1476:芯片「为什么不能用」的原因 —— 写成芯片旁的可见文字,不藏进悬停提示;能用时为 undefined。 */
+  /** 芯片「为什么不能用」的原因;能用时为 undefined。#1543(owner 2026-10-26 取代 #1476):底栏不写原因正文,
+   *  原因进芯片的悬停提示(Tooltip 同时经 aria-describedby 交给读屏);浮层里的说明不变。 */
   const reason = () => {
     if (composerModelProjection().status === "loading") return t("alpha.composer.effortModelLoading")
     if (composerModelProjection().status === "error") return t("alpha.composer.effortModelFailed")
@@ -522,21 +520,14 @@ function EffortChip(props: {
     if (!composerModel()) return t("alpha.composer.effortNeedsModel")
     return supported() ? undefined : t("alpha.composer.effortUnsupported")
   }
-  const reasonId = `a-effort-reason-${createUniqueId()}`
   return (
     <div class="a-pop-wrap" data-kind="effort">
-      <Show when={reason()}>
-        <span id={reasonId} class="a-chip-reason" data-alpha-chip-reason="effort">
-          {reason()}
-        </span>
-      </Show>
-      <Tooltip label={t("alpha.composer.effortTitle")}>
+      <Tooltip label={reason() ?? t("alpha.composer.effortTitle")}>
         <button
           ref={btn}
           class="a-chip"
           data-muted={supported() ? undefined : ""}
           disabled={blocked()}
-          aria-describedby={reason() ? reasonId : undefined}
           aria-haspopup="dialog"
           aria-expanded={isOpen()}
           onClick={(e) => (stop(e), toggle())}
