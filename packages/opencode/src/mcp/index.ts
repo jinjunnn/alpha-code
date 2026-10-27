@@ -39,6 +39,27 @@ import { governedMcpEvidence } from "@opencode-ai/plugin/alpha-cloud-authority"
 import { ToolAliasLedger, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 const DEFAULT_TIMEOUT = 30_000
+const TRANSPORT_ERROR_CODES = new Set(["UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET", "ECONNRESET"])
+
+/**
+ * #1547: a connection-level failure — undici's `fetch failed` with a connect-timeout / socket / reset
+ * cause, or this module's own connect timeout. An HTTP status from the server is an answer, not one of these.
+ */
+function isTransportError(error: Error, timeout: number) {
+  if (error.message === `Operation timed out after ${timeout}ms`) return true
+  const code = (error.cause as { code?: unknown } | undefined)?.code
+  return (
+    error instanceof TypeError &&
+    error.message === "fetch failed" &&
+    typeof code === "string" &&
+    TRANSPORT_ERROR_CODES.has(code)
+  )
+}
+
+// undici's `fetch failed` says nothing on its own; the reason is in `cause`.
+function describeError(error: Error) {
+  return error.cause instanceof Error ? `${error.message}: ${error.cause.message}` : error.message
+}
 const CLIENT_OPTIONS = {
   capabilities: {
     // https://github.com/anomalyco/opencode/issues/11948
@@ -300,27 +321,30 @@ const layer = Layer.effect(
         )
       }
 
-      const transports: Array<{ name: string; transport: TransportWithAuth }> = [
-        {
-          name: "StreamableHTTP",
-          transport: new StreamableHTTPClientTransport(url, {
-            authProvider,
-            requestInit: mcp.headers ? { headers: mcp.headers } : undefined,
-          }),
-        },
-        {
-          name: "SSE",
-          transport: new SSEClientTransport(url, {
-            authProvider,
-            requestInit: mcp.headers ? { headers: mcp.headers } : undefined,
-          }),
-        },
+      const requestInit = mcp.headers ? { headers: mcp.headers } : undefined
+      const streamableHTTP = () => new StreamableHTTPClientTransport(url, { authProvider, requestInit })
+      // A transport serves a single connect(), so every attempt builds a fresh one. #1547: an attempt
+      // with `retryAfter` runs only when the previous StreamableHTTP attempt died on the wire.
+      const transports: Array<{ name: string; create: () => TransportWithAuth; retryAfter?: number }> = [
+        { name: "StreamableHTTP", create: streamableHTTP },
+        { name: "StreamableHTTP", create: streamableHTTP, retryAfter: 500 },
+        { name: "StreamableHTTP", create: streamableHTTP, retryAfter: 1000 },
+        { name: "SSE", create: () => new SSEClientTransport(url, { authProvider, requestInit }) },
       ]
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
       let lastStatus: Status | undefined
+      let retryable = false
+      // StreamableHTTP's transport failure is the real cause; the SSE 405 that follows must not hide it.
+      let transportFailure: Status | undefined
 
-      for (const { name, transport } of transports) {
+      for (const { name, create, retryAfter } of transports) {
+        if (retryAfter !== undefined) {
+          if (!retryable) continue
+          yield* Effect.sleep(retryAfter)
+        } else if (retryable) transportFailure = lastStatus
+        retryable = false
+        const transport = create()
         const result = yield* connectTransport(transport, connectTimeout).pipe(
           Effect.map((client) => ({ client, transportName: name })),
           Effect.catch((error) => {
@@ -356,7 +380,8 @@ const layer = Layer.effect(
               }
             }
 
-            lastStatus = { status: "failed" as const, error: lastError.message }
+            retryable = name === "StreamableHTTP" && isTransportError(lastError, connectTimeout)
+            lastStatus = { status: "failed" as const, error: describeError(lastError) }
             return Effect.void
           }),
         )
@@ -365,9 +390,10 @@ const layer = Layer.effect(
         if (lastStatus?.status === "needs_auth" || lastStatus?.status === "needs_client_registration") break
       }
 
+      const status = lastStatus?.status === "failed" && transportFailure ? transportFailure : lastStatus
       return {
         client: undefined as MCPClient | undefined,
-        status: (lastStatus ?? { status: "failed", error: "Unknown error" }) as Status,
+        status: (status ?? { status: "failed", error: "Unknown error" }) as Status,
       }
     })
 
@@ -416,7 +442,12 @@ const layer = Layer.effect(
 
         if (!mcpClient) {
           if (status.status !== "connected" && status.status !== "disabled") {
-            yield* Effect.logWarning("server unavailable", { key, type: mcp.type, status: status.status })
+            yield* Effect.logWarning("server unavailable", {
+              key,
+              type: mcp.type,
+              status: status.status,
+              error: "error" in status ? status.error : undefined,
+            })
           }
           return { status } satisfies CreateResult
         }

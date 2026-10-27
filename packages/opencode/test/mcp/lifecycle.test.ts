@@ -557,7 +557,8 @@ it.instance("local stdio timeout terminates the real server process", () =>
   }),
 )
 
-it.instance("remote timeout aborts both real HTTP transport attempts", () =>
+// #1547: a connect timeout is a transport error, so StreamableHTTP is retried twice before SSE.
+it.instance("remote timeout aborts every real HTTP transport attempt", () =>
   Effect.gen(function* () {
     const server = yield* hangingLifecycleServer()
     const mcp = yield* MCP.Service
@@ -565,10 +566,10 @@ it.instance("remote timeout aborts both real HTTP transport attempts", () =>
 
     expect(statusName(result.status, "hanging-remote")).toBe("failed")
     yield* pollWithTimeout(
-      Effect.sync(() => (server.aborted() >= 2 ? server.aborted() : undefined)),
+      Effect.sync(() => (server.aborted() >= 4 ? server.aborted() : undefined)),
       "remote transport requests were not aborted",
     )
-    expect(server.requests).toEqual(["POST", "GET"])
+    expect(server.requests).toEqual(["POST", "POST", "POST", "GET"])
   }),
 )
 
