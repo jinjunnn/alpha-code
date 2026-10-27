@@ -240,9 +240,9 @@ describe("REQ-233 cloud skill instructions", () => {
 
   test("AC1 §2.8 routes explicit cloud, local files, formatted creation, images, facts, research and review", () => {
     for (const rule of [
-      /用户明确说「用云端」 \| 用云（Word\/Excel\/PPT\/PDF 除外，见下）/,
+      /用户明确说「用云端」 \| 用云（Word\/Excel\/PPT\/PDF 与网页除外，见下）/,
       /生成、读、改 Word\/Excel\/PPT\/PDF \| 一律用本机 MCP（按 `office-docs` 技能）；文件写进项目目录、不出本机，无云端费用/,
-      /从零生成要排版好看的网页 \| 用云端固定模板与自动校验；派发前告知估价或费用未知/,
+      /生成网页 \/ HTML \| 本机直接写 HTML 文件进项目目录（可自带 CSS 与 JS），在文件面板预览；不派发云端，无云端费用/,
       /生成图片 \| 用云；本机没有图片生成能力/,
       /查一个事实、读一个网页 \| 先用本机搜索\/读取；本机不可用才用 `cloud_web_search` \/ `cloud_web_fetch`/,
       /多来源深度调研 \| 用云端 `research`，做多轮检索与综合/,
@@ -300,10 +300,8 @@ describe("REQ-233 cloud skill instructions", () => {
     expect(texts.join("\n")).not.toMatch(/schedule_(?:create|list|delete)/)
   })
 
-  test("AC1 Office and HTML use hosted templates and artifacts require authenticated byte download", () => {
+  test("AC1 cloud dispatch keeps image generation and artifacts require authenticated byte download", () => {
     for (const instruction of [
-      "HTML 使用托管执行、固定模板和自动校验",
-      '`html-generate` | `{prompt}`',
       '`image-generation` | `{prompt}`',
       "`cloud_await` 等待，或用 `cloud_status` 查状态",
       "`cloud_artifacts` 获取产物描述符",
@@ -312,6 +310,19 @@ describe("REQ-233 cloud skill instructions", () => {
       "失败、取消或超时要报告真实状态与错误",
     ]) expect(cloud.content).toContain(instruction)
     expect(cloud.content).not.toContain("| `office-report` |")
+  })
+
+  // alpha-platform#552 AC4: web pages are written locally; no shipped skill steers them to cloud html-generate.
+  test("AC4 web pages are written locally and no factory skill steers them to cloud html-generate", async () => {
+    expect(cloud.content).toContain("网页 / HTML 由本机直接写文件：不要派发云端 `html-generate`，用户明确要求云端时也如实说明并改为本机生成")
+    const files = await Glob.scan("**/SKILL.md", { cwd: join(dev["cloud-capabilities"], ".."), absolute: true, include: "file", symlink: true })
+    expect(files).toContain(join(dev["office-docs"], "SKILL.md"))
+    for (const file of files) {
+      const text = await Bun.file(file).text()
+      expect(text).not.toContain("| `html-generate` |")
+      expect(text).not.toMatch(/网页[^|\n]*\| 用云端/)
+      expect(text).not.toMatch(/HTML 使用托管执行|从零生成网页/)
+    }
   })
 
   test("AC2 office-docs creates, reads and edits every office file locally", () => {

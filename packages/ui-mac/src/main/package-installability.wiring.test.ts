@@ -516,7 +516,6 @@ describe("package installability production wiring", () => {
     if (!shape.ok) throw new Error(`bundled catalog failed the production shape gate: ${shape.error}`)
     expect(shape.packages.map((item) => `${item.prelude.packageId}@${item.prelude.version}`)).toEqual([
       "package:alpha-first@1.0.0",
-      "package:cloud-html@1.0.0",
       "package:cloud-image@1.0.0",
       "package:dbhub-readonly@1.0.0",
       "package:github-official@1.0.0",
