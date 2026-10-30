@@ -79,7 +79,15 @@ export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-st
 
 /* ── signals(模块级 = 所有渲染面共享)──────────────────────────────────────── */
 
-const [model, setModelSignal] = createSignal<ComposerModel | null>(null)
+const [model, setModelValue] = createSignal<ComposerModel | null>(null)
+/* #1560(REQ-236 §2.8):当前选择是不是用户**显式**选的。只有 `selectComposerModel` 那条写入口置真;
+ * 默认解析、会话投影、挂起、清空一律复位为假。发送时据此决定带不带 `model`:显式才带(压过 agent /
+ * 命令自带的推荐模型),否则不带(推荐模型照旧作默认)。 */
+const [modelExplicit, setModelExplicit] = createSignal(false)
+function setModelSignal(m: ComposerModel | null, explicit = false) {
+  setModelValue(m)
+  setModelExplicit(explicit && m !== null)
+}
 export type ComposerModelProjection = {
   status: "loading" | "ready" | "error"
   sessionID: string | null
@@ -93,6 +101,7 @@ const [agent, setAgent] = createSignal<string | null>(null) // null = 引擎默�
 const [agents, setAgents] = createSignal<ComposerAgent[]>([])
 
 export const composerModel = model
+export const composerModelExplicit = modelExplicit
 export const composerModelProjection = modelProjection
 export const composerEffortSel = () => model()?.variant ?? null
 export const composerPerm = perm
@@ -268,8 +277,8 @@ export function clearSuspendedModel() {
   setSuspended(null)
 }
 
-export function setComposerModel(m: ComposerModel | null) {
-  setModelSignal(m?.variant && !m.variants.includes(m.variant) ? { ...m, variant: undefined } : m)
+export function setComposerModel(m: ComposerModel | null, explicit = false) {
+  setModelSignal(m?.variant && !m.variants.includes(m.variant) ? { ...m, variant: undefined } : m, explicit)
 }
 
 /** Session 路由一进入新的同步 epoch 就先撤销旧投影，避免上一会话的 Ref 仍可被操作。 */
@@ -333,6 +342,18 @@ export type PromptRequest = {
   parts: unknown[]
   model?: ModelRef
   agent?: string
+}
+
+/** #1560:显式选择写进 v1 `session.promptAsync` 的字段(引擎 `PromptInput.model` + `variant`);未显式 = 空。 */
+export function v1PromptModelFields(ref: ModelRef | undefined) {
+  if (!ref) return {}
+  return { model: { providerID: ref.providerID, modelID: ref.id }, ...(ref.variant ? { variant: ref.variant } : {}) }
+}
+
+/** #1560:显式选择写进 v1 `session.command` 的字段(引擎 `CommandInput.model` 是 `provider/model` 字符串)。 */
+export function v1CommandModelFields(ref: ModelRef | undefined) {
+  if (!ref) return {}
+  return { model: `${ref.providerID}/${ref.id}`, ...(ref.variant ? { variant: ref.variant } : {}) }
 }
 
 /** 提交参数构造:

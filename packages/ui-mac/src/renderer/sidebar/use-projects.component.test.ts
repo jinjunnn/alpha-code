@@ -12,9 +12,10 @@ import path from "node:path"
 // #882 追加 1 例:`/global/event` 上的 `catalog.updated` 必须按 directory 派发给
 // `notifyCatalogUpdated` —— 首屏就绪屏障的唤醒源就是它。没有这一条,switch 里那个 case
 // 可以被整段删掉而全仓仍然全绿(model-contract 的单测只驱动通知函数,证明不了接线)。
+// #1560 追加 1 例:首发 startChat 只在显式选择时把模型/档位写进 command 与 promptAsync 的请求体。
 // 行为断言全部在 cases 文件内;本包装只核对「全部用例都跑了且零失败」——
 // bun test 对通过用例不输出逐条行,计数 + 退出码是包装层能拿到的最强信号。
-test("use-projects 恢复语义(9 例)+ REQ-126 供给回报(2 例)+ #692 非 Git 侧栏(1 例)+ #882 catalog.updated 接线(1 例)+ REQ-236 首页斜杠命令档位(1 例)", () => {
+test("use-projects 恢复语义(9 例)+ REQ-126 供给回报(2 例)+ #692 非 Git 侧栏(1 例)+ #882 catalog.updated 接线(1 例)+ REQ-236 首页斜杠命令档位(1 例)+ #1560 首发显式模型(1 例)", () => {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "test", path.resolve(import.meta.dir, "../../../test-component/use-projects.cases.ts")],
     cwd: path.resolve(import.meta.dir, "../../.."),
@@ -22,7 +23,7 @@ test("use-projects 恢复语义(9 例)+ REQ-126 供给回报(2 例)+ #692 非 Gi
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 14 pass")
+  expect(output).toContain(" 15 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 14 tests across 1 file/)
+  expect(output).toMatch(/Ran 15 tests across 1 file/)
 })

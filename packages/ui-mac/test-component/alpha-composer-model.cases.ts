@@ -2042,6 +2042,153 @@ describe("#652 会话发送走 v1 promptAsync(与首页同一条)+ 停止键诚�
   })
 })
 
+// #1560(REQ-236 §2.8 / I9):用户**显式**选的模型才随会话内的普通消息与斜杠命令发出;没显式选时都不带,
+// 让 agent / 命令自带的推荐模型照旧作默认。判据只看引擎收到的真实载荷(promptAsync / session.command 的入参)。
+describe("#1560 会话内发送:显式选择的模型随消息与命令发出,默认选择不带", () => {
+  test("默认模型不带 model;picker + 档位显式选择后普通消息带 {providerID, modelID} + variant、斜杠命令带 provider/model + variant", async () => {
+    installApi()
+    // 夹具取自生产 alpha-models.json:从无档位模型起步,显式换到有档位的模型再选一档。
+    const first = catalog.platformModels.find((model) => !model.variants)!
+    const second = catalog.platformModels.find((model) => model.variants)!
+    const tier = Object.keys(second.variants!).at(-1)!
+    const pid = catalog.platformProvider.id
+    const promptAsyncCalls: Array<Record<string, unknown>> = []
+    const commandCalls: Array<Record<string, unknown>> = []
+    const client = {
+      command: { list: async () => ({ data: [{ name: "review", source: "command" }] }) },
+      session: {
+        promptAsync: async (args: Record<string, unknown>) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+        command: async (args: Record<string, unknown>) => {
+          commandCalls.push(args)
+          return { data: { info: { id: `msg_cmd_${commandCalls.length}` } } }
+        },
+      },
+    }
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: { ...projects, sdk: () => client as never },
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => ({ providerID: pid, id: first.id }),
+          switch: async () => {},
+        },
+        sessionDock: { running: () => false, contextUsage: () => null, approvalPending: () => false },
+      }),
+    )
+    const send = async (value: string) => {
+      const textarea = mounted.host.querySelector("textarea")!
+      textarea.value = value
+      textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+      await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    }
+    await waitFor(() => expect(composerModel()?.id).toBe(first.id))
+
+    // 未显式选择:会话投影出来的模型只是默认,两条入口都不带 model / variant。
+    await send("普通消息")
+    await waitFor(() => expect(promptAsyncCalls).toHaveLength(1))
+    expect("model" in promptAsyncCalls[0]!).toBe(false)
+    expect("variant" in promptAsyncCalls[0]!).toBe(false)
+    await send("/review 默认")
+    await waitFor(() => expect(commandCalls).toHaveLength(1))
+    expect(commandCalls[0]).toMatchObject({ sessionID: "A", command: "review", arguments: "默认" })
+    expect("model" in commandCalls[0]!).toBe(false)
+    expect("variant" in commandCalls[0]!).toBe(false)
+
+    // 显式选择第二个模型:两条入口都带上它(引擎 v1 的两种形状)。
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain(second.name))
+    click(
+      [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
+        row.getAttribute("aria-label")?.startsWith(`${second.name},`),
+      ) ?? null,
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(second.id))
+    click(mounted.host.querySelector('[data-kind="effort"] > button'))
+    let tierItem: HTMLButtonElement | undefined
+    await waitFor(() => {
+      tierItem = [...document.body.querySelectorAll<HTMLButtonElement>(".a-pop-item")].find(
+        (b) => b.textContent?.trim() === tier,
+      )
+      expect(tierItem).toBeDefined()
+    })
+    click(tierItem ?? null)
+    await waitFor(() => expect(composerModel()?.variant).toBe(tier))
+
+    await send("换模型之后")
+    await waitFor(() => expect(promptAsyncCalls).toHaveLength(2))
+    expect(promptAsyncCalls[1]).toMatchObject({
+      sessionID: "A",
+      model: { providerID: pid, modelID: second.id },
+      variant: tier,
+    })
+    await send("/review 显式")
+    await waitFor(() => expect(commandCalls).toHaveLength(2))
+    expect(commandCalls[1]).toMatchObject({
+      sessionID: "A",
+      command: "review",
+      model: `${pid}/${second.id}`,
+      variant: tier,
+    })
+    mounted.dispose()
+  })
+
+  test("首页:只有显式选择才作为 explicitModel 交给 startChat;默认模型只用于建会话", async () => {
+    installApi()
+    const target = catalog.platformModels.find((model) => model.variants)!
+    const pid = catalog.platformProvider.id
+    const calls: Array<Parameters<AlphaProjectsApi["startChat"]>[3]> = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async (_dir, _text, _parts, opts) => {
+            calls.push(opts)
+            return `ses_${calls.length}`
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    const send = async (value: string) => {
+      const textarea = mounted.host.querySelector("textarea")!
+      textarea.value = value
+      textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+      await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    }
+
+    await waitFor(() => expect(composerModel()).not.toBeNull())
+    await send("默认模型")
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]?.model).toBeDefined()
+    expect(calls[0]?.explicitModel).toBeUndefined()
+
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain(target.name))
+    click(
+      [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
+        row.getAttribute("aria-label")?.startsWith(`${target.name},`),
+      ) ?? null,
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(target.id))
+    await send("/review 显式")
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1]?.explicitModel).toEqual({ providerID: pid, id: target.id })
+    mounted.dispose()
+  })
+})
+
 // REQ-125 C558:seam dock 的 child-session 门翻转会卸载 composer(保持子会话零可发送路径);
 // per-identity 草稿暂存依赖 AlphaComposer 的两点契约 —— ①卸载时经 onDraftCapture 交回当前草稿,
 // ②initialText 注入即为 textarea 起始值(门翻回时还原)。这里对真实组件验这两点。
