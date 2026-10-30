@@ -28,6 +28,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
+import type { Attributes, Span, SpanOptions } from "@opentelemetry/api"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
@@ -242,15 +243,30 @@ const live: Layer.Layer<
       const tracer = cfg.experimental?.openTelemetry
         ? Option.getOrUndefined(yield* Effect.serviceOption(OtelTracer.OtelTracer))
         : undefined
+      // REQ-236 `#1562`:平台凭据现在以请求级 authorization 头发送(ext `chat.headers`),而 `ai` 把每个请求级头
+      // 记成 span 属性 `ai.request.headers.<name>`。两条建 span 的路(startSpan / startActiveSpan)都包住:初始
+      // attributes 里删掉认证头,span 上后补的同名键也丢弃 —— 凭据不进遥测导出。
       const telemetryTracer = tracer
         ? new Proxy(tracer, {
             get(target, prop, receiver) {
-              if (prop !== "startSpan") return Reflect.get(target, prop, receiver)
-              return (...args: Parameters<typeof target.startSpan>) => {
-                const span = target.startSpan(...args)
-                span.setAttribute("session.id", input.sessionID)
-                return span
-              }
+              if (prop === "startSpan")
+                return (...args: Parameters<typeof target.startSpan>) => {
+                  const span = withoutAuthorization(target.startSpan(args[0], withoutAuthorizationOptions(args[1]), args[2]))
+                  span.setAttribute("session.id", input.sessionID)
+                  return span
+                }
+              // startActiveSpan(name, [options], [context], fn):换掉 options 里的初始 attributes 与交给 fn 的 span。
+              if (prop === "startActiveSpan")
+                return (...args: unknown[]) => {
+                  const fn = args.pop() as (span: Span) => unknown
+                  return Reflect.apply(target.startActiveSpan, receiver, [
+                    args[0],
+                    withoutAuthorizationOptions(args[1] as SpanOptions | undefined) ?? {},
+                    ...args.slice(2),
+                    (span: Span) => fn(withoutAuthorization(span)),
+                  ])
+                }
+              return Reflect.get(target, prop, receiver)
             },
           })
         : undefined
@@ -437,3 +453,25 @@ export const node = LayerNode.make({
 })
 
 export * as LLM from "./llm"
+
+// REQ-236 `#1562`:`ai` 把请求级头记成 `ai.request.headers.<name>`(按装着的 ai@6 实读,头名已小写归一);
+// 大小写不敏感地比较,免得哪一层没归一时漏掉。
+const isAuthorizationAttribute = (key: string) => key.toLowerCase() === "ai.request.headers.authorization"
+
+function withoutAuthorizationAttributes(attributes: Attributes): Attributes {
+  return Object.fromEntries(Object.entries(attributes).filter(([key]) => !isAuthorizationAttribute(key)))
+}
+
+function withoutAuthorizationOptions(options: SpanOptions | undefined) {
+  if (!options?.attributes) return options
+  return { ...options, attributes: withoutAuthorizationAttributes(options.attributes) }
+}
+
+/** span 建好之后再补的同名键也丢掉(实例上覆盖两个写属性的方法,其余行为不变)。 */
+function withoutAuthorization(span: Span): Span {
+  const setAttribute = span.setAttribute.bind(span)
+  const setAttributes = span.setAttributes.bind(span)
+  span.setAttribute = (key, value) => (isAuthorizationAttribute(key) ? span : setAttribute(key, value))
+  span.setAttributes = (attributes) => setAttributes(withoutAuthorizationAttributes(attributes))
+  return span
+}
