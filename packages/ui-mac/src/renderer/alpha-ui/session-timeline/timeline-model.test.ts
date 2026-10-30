@@ -1605,6 +1605,8 @@ describe("#1553 附件卡读取结果:只按会话里的真实读取调用与逐
     const failed = (error: string) => readCall("prt_t", "msg_a1", absolute, { state: { status: "error", input: { path: absolute }, error, time: { start: 0, end: 1 } } })
     expect(readsOf(run({ ...base, msg_a1: [failed("File is not a zip file")] }, { services: connected }))).toEqual(["failed:unreadable"])
     expect(readsOf(run({ ...base, msg_a1: [failed("MCP error -32001: Request timed out")] }, { services: connected }))).toEqual(["failed:timeout"])
+    // 引擎 mcp/index.ts 的原文:调用时服务不在(没启动 / 已失败)⇒ 是读取工具没起来,不是文件打不开。
+    expect(readsOf(run({ ...base, msg_a1: [failed('MCP server "alpha-word" is not available: spawn ENOENT')] }, { services: connected }))).toEqual(["failed:not-running"])
     const pdfPath = `${DIR}/${PROJECT_HIDDEN_DIR}/attachments/${UUID}/合同.pdf`
     const pdfCall = (output: string) =>
       readCall("prt_t", "msg_a1", pdfPath, { origin: "alpha-pdf", name: "read_pdf", state: { output } })

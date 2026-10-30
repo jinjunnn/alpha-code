@@ -97,7 +97,12 @@ export function attachmentReadOf(meta: StagedAttachmentMeta, input: ReadInput): 
   const done = calls.find((state) => state.status === "completed")
   if (done) return meta.reader === "pdf" && pdfTextEmpty(done.output) ? { kind: "empty" } : { kind: "read" }
   const failed = calls.findLast((state) => state.status === "error")
-  if (failed) return { kind: "failed", reason: /timed?[ _-]?out/i.test(String(failed.error ?? "")) ? "timeout" : "unreadable" }
+  if (failed) {
+    const error = String(failed.error ?? "")
+    // 引擎 mcp/index.ts:调用时服务不在 ⇒ `MCP server "<名>" is not available: …` —— 读取工具没起来,不是文件打不开。
+    if (/is not available/.test(error)) return { kind: "failed", reason: "not-running" }
+    return { kind: "failed", reason: /timed?[ _-]?out/i.test(error) ? "timeout" : "unreadable" }
+  }
   if (calls.length > 0) return { kind: "saved" }
   const service = input.services ? ((input.services[server] as { status?: unknown } | undefined)?.status ?? "absent") : undefined
   if (service !== undefined && service !== "connected" && service !== "pending") return { kind: "failed", reason: "not-running" }
