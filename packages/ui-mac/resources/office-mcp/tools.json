@@ -1,0 +1,417 @@
+{
+  "serverSha256": "76dad6328c3b37b105d83bfd16c3d86d68137b38e97d323ac00e421f53e6dc69",
+  "formats": {
+    "word": {
+      "command": [
+        "{alphaResources}/office-runtime/bin/python3",
+        "-I",
+        "-B",
+        "{alphaResources}/office-mcp/server.py",
+        "word",
+        "{workspace}"
+      ],
+      "tools": [
+        {
+          "name": "read_docx",
+          "description": "Read paragraphs and tables from a Word document",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "write_docx",
+          "description": "Create, replace, or append to a Word document: title, body paragraphs, multi-level headings, tables, page size/margins (A4 default) and fonts (East Asian font set by default). Unknown fields are refused, never silently dropped.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              },
+              "title": {
+                "type": "string",
+                "description": "Document title (Title style), written before the blocks"
+              },
+              "paragraphs": {
+                "type": "array",
+                "description": "Document body in order. A bare string is a body paragraph; use heading blocks for section titles (e.g. 一、总体情况) instead of body text.",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "paragraph"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "heading"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text",
+                        "level"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "table"
+                        },
+                        "rows": {
+                          "type": "array",
+                          "minItems": 1,
+                          "description": "Rectangular grid of cell strings; row 0 is the header when header=true",
+                          "items": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "header": {
+                          "type": "boolean",
+                          "default": true
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "rows"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "append": {
+                "type": "boolean",
+                "default": false
+              },
+              "page": {
+                "type": "object",
+                "description": "Page geometry. New documents default to A4 portrait with 25.4 mm margins; when appending, page is only changed if this field is given (then unspecified margins reset to 25.4 mm).",
+                "properties": {
+                  "size": {
+                    "type": "string",
+                    "enum": [
+                      "A4",
+                      "Letter"
+                    ],
+                    "default": "A4"
+                  },
+                  "orientation": {
+                    "type": "string",
+                    "enum": [
+                      "portrait",
+                      "landscape"
+                    ],
+                    "default": "portrait"
+                  },
+                  "margins": {
+                    "type": "object",
+                    "description": "Millimetres, 0–100",
+                    "properties": {
+                      "top": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "bottom": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "left": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "right": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "font": {
+                "type": "object",
+                "description": "Document-default fonts. New documents always get an East Asian font (宋体 unless eastAsia is given); when appending, fonts only change if this field is given.",
+                "properties": {
+                  "eastAsia": {
+                    "type": "string",
+                    "description": "CJK font family, e.g. 宋体 / 黑体 / 微软雅黑"
+                  },
+                  "latin": {
+                    "type": "string",
+                    "description": "Latin font family, e.g. Times New Roman"
+                  },
+                  "size": {
+                    "type": "number",
+                    "minimum": 6,
+                    "maximum": 72,
+                    "description": "Body text size in points"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "paragraphs"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "excel": {
+      "command": [
+        "{alphaResources}/office-runtime/bin/python3",
+        "-I",
+        "-B",
+        "{alphaResources}/office-mcp/server.py",
+        "excel",
+        "{workspace}"
+      ],
+      "tools": [
+        {
+          "name": "read_xlsx",
+          "description": "Read cell values from every worksheet in an Excel workbook",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "write_xlsx",
+          "description": "Create a workbook or update addressed cells in an existing workbook",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              },
+              "sheets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "cells": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "cells"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "path",
+              "sheets"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "powerpoint": {
+      "command": [
+        "{alphaResources}/office-runtime/bin/python3",
+        "-I",
+        "-B",
+        "{alphaResources}/office-mcp/server.py",
+        "powerpoint",
+        "{workspace}"
+      ],
+      "tools": [
+        {
+          "name": "read_pptx",
+          "description": "Read text from every slide in a PowerPoint deck",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "write_pptx",
+          "description": "Create, replace, or append text slides in a PowerPoint deck",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              },
+              "slides": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string"
+                    },
+                    "body": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "body"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "append": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "path",
+              "slides"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "pdf": {
+      "command": [
+        "{alphaResources}/office-runtime/bin/python3",
+        "-I",
+        "-B",
+        "{alphaResources}/office-mcp/server.py",
+        "pdf",
+        "{workspace}"
+      ],
+      "tools": [
+        {
+          "name": "read_pdf",
+          "description": "Extract the text layer from every PDF page",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "write_pdf",
+          "description": "Generate a text PDF, replace its text document, or append text pages",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path inside the granted workspace"
+              },
+              "pages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "replace",
+                  "append"
+                ],
+                "default": "replace"
+              }
+            },
+            "required": [
+              "path",
+              "pages"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  }
+}
