@@ -35,14 +35,8 @@ license: MIT (Code Puppy original)
 
 ## 派发与取回
 
-优先用 `cloud_dispatch` 的固定流水线（`autonomy: "pipeline"`），按当前工具 schema 提供 `kind` 与 `input`：
+优先用 `cloud_dispatch` 的固定流水线（`autonomy: "pipeline"`）。可用的 `kind` 与每个 kind 的 `input` 字段以 `cloud_dispatch` 的工具说明为准：只从说明列出的 kind 里选，字段照说明放进 `input`，不要自己拼 kind 名或字段名。
 
-| kind | input |
-| --- | --- |
-| `research` | `{question}` |
-| `code-review` | `{diff}` |
-| `image-generation` | `{prompt}` |
-
-1. `cloud_dispatch` 返回任务 ID 后，用 `cloud_await` 等待，或用 `cloud_status` 查状态；未终结可继续等待。
-2. 完成后用 `cloud_artifacts` 获取产物描述符（ID、MIME、size、sha256、provenance、contentRef）。产物字节不内联返回；需由宿主通过 `contentRef.url` 鉴权下载。不要读取登录令牌，也不要把该地址当公开下载链接。
-3. 下载成功后才声称文件已保存，并给出实际路径。只有描述符时如实说明尚未下载；失败、取消或超时要报告真实状态与错误，不虚构产物。
+1. `cloud_dispatch` 返回任务 ID 后，可以用 `cloud_await` 等待，或用 `cloud_status` 查状态；未终结可继续等待。
+2. 需要描述产物时用 `cloud_artifacts` 获取产物描述符（ID、MIME、size、sha256、provenance、contentRef）。产物字节不内联返回；需由宿主通过 `contentRef.url` 鉴权下载。不要读取登录令牌，也不要把该地址当公开下载链接。
+3. 产物由宿主下载到本机并核对，你看不到下载结果：不要自行声称文件已保存或已下载，也不要给出保存路径；告诉用户结果会出现在对话和产物面板里。失败、取消或超时要报告真实状态与错误，不虚构产物。

@@ -300,16 +300,21 @@ describe("REQ-233 cloud skill instructions", () => {
     expect(texts.join("\n")).not.toMatch(/schedule_(?:create|list|delete)/)
   })
 
-  test("AC1 cloud dispatch keeps image generation and artifacts require authenticated byte download", () => {
+  // REQ-236 #1551 AC8:kind 与 input 只读 cloud_dispatch 的工具说明(不再手抄表);下载归宿主,模型不报保存。
+  test("AC8 cloud dispatch points at the tool description and the host owns the download", () => {
     for (const instruction of [
-      '`image-generation` | `{prompt}`',
+      "可用的 `kind` 与每个 kind 的 `input` 字段以 `cloud_dispatch` 的工具说明为准",
       "`cloud_await` 等待，或用 `cloud_status` 查状态",
       "`cloud_artifacts` 获取产物描述符",
       "产物字节不内联返回；需由宿主通过 `contentRef.url` 鉴权下载",
-      "下载成功后才声称文件已保存",
+      "产物由宿主下载到本机并核对",
+      "不要自行声称文件已保存或已下载，也不要给出保存路径",
       "失败、取消或超时要报告真实状态与错误",
     ]) expect(cloud.content).toContain(instruction)
+    expect(cloud.content).not.toMatch(/^\|\s*kind\s*\|/m)
+    expect(cloud.content).not.toContain("| `image-generation` |")
     expect(cloud.content).not.toContain("| `office-report` |")
+    expect(cloud.content).not.toContain("给出实际路径")
   })
 
   // alpha-platform#552 AC4: web pages are written locally; no shipped skill steers them to cloud html-generate.
