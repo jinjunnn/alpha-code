@@ -18,6 +18,7 @@
 .pc-tiers .menu-item .desc{flex-basis:100%;margin-left:26px;line-height:1.5}
 .pc-foot{margin:4px 0 0;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
 .pc-dev{padding:0 12px 10px}
+.pf-btn:disabled{opacity:.5;cursor:default}
 </style>
 </head>
 <body>
@@ -119,11 +120,11 @@
           <div class="alpha-ext-authz-box pc-box">
             <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-plug"/></svg></span><span class="alpha-ext-authz-nm"><b>search_pages</b><small>第三方 · mcp.notion.com</small></span></div>
           </div>
-          <div class="alpha-ext-confirm-note pc-box">只读模式下每次都要确认</div>
+          <div class="alpha-ext-confirm-note pc-box">这个工具每次都要确认</div>
           <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn pri" type="button">允许一次</button></div>
         </div>
       </div></div>
-      <p class="pf-cap">「只读」下的外部与云端工具:设置里启用了、本会话允许过,也照样这样问。</p>
+      <p class="pf-cap">档位或权限规则要求每次确认时,设置里启用过也照样问。能确证执行的是只读档时才写「只读模式下每次都要确认」。主机名取自服务地址。</p>
     </div>
 
     <div id="delegation">
@@ -179,13 +180,55 @@
     </div>
   </div>
 
+  <h3 class="pf-h" id="state-disabled" style="font-size:var(--a-text-lg)">F · 仍会置灰的三种情况</h3>
+  <p class="pf-sub">只有「没有可记住的范围」不再置灰,改为不出现中间按钮。下面三种照旧置灰,各一句状态。</p>
+  <div class="pf-grid">
+    <div>
+      <div class="pf-tag">请求无法核实</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>使用工具</p>
+          <div class="alpha-ext-confirm-note pc-box">无法核实这次请求,已拒绝</div>
+          <div class="pf-btns"><button class="pf-btn" type="button" disabled>正在提交…</button><button class="pf-btn pri" type="button" disabled>允许一次</button></div>
+        </div>
+      </div></div>
+    </div>
+    <div>
+      <div class="pf-tag">找不到当前项目</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>使用工具</p>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-cloud"/></svg></span><span class="alpha-ext-authz-nm"><b>下发云端任务</b><small>Code Puppy 云</small></span></div>
+          </div>
+          <div class="alpha-ext-confirm-note pc-box">找不到当前项目,不能始终允许</div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button" disabled>在此项目中始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+    </div>
+    <div>
+      <div class="pf-tag">提交中</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>运行命令</p>
+          <code>bun test src/session</code>
+          <div class="pf-btns"><button class="pf-btn" type="button" disabled>拒绝</button><button class="pf-btn" type="button" disabled>本次会话内允许</button><button class="pf-btn pri" type="button" disabled>正在提交…</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">被点的按钮写「正在提交…」(现有文案),其余不可点。</p>
+    </div>
+  </div>
+
   <table class="pf-table">
     <thead><tr><th>请求</th><th>中间按钮</th><th>记住框</th></tr></thead>
     <tbody>
       <tr><td>改文件、运行命令、外部文件夹、子任务</td><td>本次会话内允许</td><td>本次会话 · 重启后失效</td></tr>
       <tr><td>同上,请求不带可记住的范围</td><td>无</td><td>无</td></tr>
       <tr><td>外部与云端工具,设置要求询问</td><td>在此项目中始终允许</td><td>当前项目 · 当前账户 · 可在设置里撤回</td></tr>
-      <tr><td>外部与云端工具,当前模式要求每次确认</td><td>无</td><td>无;写「只读模式下每次都要确认」</td></tr>
+      <tr><td>外部与云端工具,当前模式要求每次确认</td><td>无</td><td>无;写「这个工具每次都要确认」</td></tr>
       <tr><td>自带可保存资源的新式请求</td><td>始终允许(不变)</td><td>不变</td></tr>
     </tbody>
   </table>
@@ -224,7 +267,7 @@
 
   <!-- ═══════════ 三、来源 × 位置 ═══════════ -->
   <h2 class="pf-h" id="source-location">三、来源 × 位置</h2>
-  <p class="pf-sub">「内置 · 本机」不标。其余步骤行尾只写位置;来源写在详情底部,完整证据在开发者详情。</p>
+  <p class="pf-sub">「内置 · 本机」不标。其余步骤行尾只写位置;来源写在详情底部,完整证据在开发者详情。主机名取自服务地址;本机程序型服务与插件写「本机」;缺事实才写「位置未知」。</p>
   <div class="pf-grid">
     <div>
       <div class="pf-tag">第二层 · 每步一行</div>
@@ -239,8 +282,8 @@
             <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索</span><span class="pf-o">竞品定价 2026</span><span class="pf-end">云端<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
             <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end">mcp.notion.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
             <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">filesystem</span><span class="pf-v">read_file</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
-            <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">obsidian-tools</span><span class="pf-v">open_note</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
-            <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-v">lint_project</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">第三方插件</span><span class="pf-v">open_note</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">第三方插件</span><span class="pf-v">lint_project</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
             <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">codepuppy</span><span class="pf-v">dispatch</span><span class="pf-end">mcp.example.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
             <div class="pf-step"><svg class="pf-i"><use href="#i-help"/></svg><span class="pf-v">fetch_data</span><span class="pf-end">位置未知<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
           </div>
@@ -257,8 +300,9 @@
           <tr><td>检查云端登录</td><td>内置 · 本机;随包扩展、清单证明过的工具</td></tr>
           <tr><td>下发云端任务、搜索</td><td>Code Puppy 云 · 云端</td></tr>
           <tr><td>Notion</td><td>第三方 · 远端主机</td></tr>
-          <tr><td>filesystem、obsidian-tools</td><td>第三方 · 本机</td></tr>
-          <tr><td>lint_project</td><td>第三方 · 本机;项目插件合并进扩展的工具,来源记录是安装路径,不写名字</td></tr>
+          <tr><td>filesystem</td><td>第三方 · 本机;本机程序型服务</td></tr>
+          <tr><td>第三方插件 open_note</td><td>第三方 · 本机;插件不写包名或路径,包名只在开发者详情</td></tr>
+          <tr><td>第三方插件 lint_project</td><td>第三方 · 本机;项目插件合并进扩展的工具,同上</td></tr>
           <tr><td>codepuppy dispatch</td><td>第三方 · 远端主机;名字像我们的,没有证明就是第三方</td></tr>
           <tr><td>fetch_data</td><td>第三方 · 位置未知;记录没有来源快照</td></tr>
         </tbody>
@@ -324,7 +368,7 @@
       <div class="pf-tag">项目插件合并进来</div>
       <div class="frame"><div class="tl">
         <div class="pf" data-open><div class="pf-list">
-          <div class="pf-step" data-open><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-v">lint_project</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step" data-open><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">第三方插件</span><span class="pf-v">lint_project</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
           <div class="pf-detail"><div class="pf-detail-txt">这个工具来自第三方插件,我们不显示它收到和返回的内容。</div><div class="pf-detail-foot"><span>第三方 · 本机</span><span class="pf-grow"></span><a href="#dev-project-plugin">› 开发者详情</a></div></div>
         </div></div>
       </div></div>
@@ -336,7 +380,7 @@
 
   <!-- ═══════════ 四、开发者详情 ═══════════ -->
   <h2 class="pf-h" id="developer-details">四、开发者详情</h2>
-  <p class="pf-sub">默认收起。今天的三行照旧,加 location;插件工具加 origin(安装路径)。</p>
+  <p class="pf-sub">默认收起。今天的三行照旧,加 location;插件工具加 origin(包名或安装路径)。</p>
   <div class="pf-grid">
     <div id="dev-cloud">
       <div class="pf-tag">Code Puppy 云</div>
@@ -377,7 +421,8 @@
       <tr><td>将记住</td><td>以 {{前缀}} 开头的命令 / 这两个文件夹及其子文件夹 / 本会话派出的所有子任务 / 在此项目使用这个工具 / 本会话所有{{动作}}</td><td>Commands starting with {{prefix}} / These folders and their subfolders / All subtasks this session / This tool in this project / All {{action}} this session</td></tr>
       <tr><td>范围</td><td>本次会话 / 当前项目 · 当前账户 / 当前项目 · 未登录</td><td>This session / This project · this account / This project · signed out</td></tr>
       <tr><td>期限</td><td>重启后失效 / 可在设置里撤回</td><td>Until restart / Undo in Settings</td></tr>
-      <tr><td>只能一次</td><td>只读模式下每次都要确认</td><td>Read-only asks every time</td></tr>
+      <tr><td>只能一次</td><td>这个工具每次都要确认(能确证执行的是只读档时:只读模式下每次都要确认)</td><td>This tool asks every time (Read-only asks every time)</td></tr>
+      <tr><td>仍会置灰</td><td>无法核实这次请求,已拒绝 / 找不到当前项目,不能始终允许 / 正在提交…(现有)</td><td>Couldn't verify this request. Rejected. / No project found. Can't always allow. / Submitting…</td></tr>
       <tr><td>委派</td><td>子任务里不再逐项询问</td><td>The subtask won't ask step by step</td></tr>
       <tr><td>没存上</td><td>没能保存,这次未放行</td><td>Not saved. This action wasn't allowed.</td></tr>
       <tr><td>菜单 · 全部批准</td><td>改文件、运行命令不再询问。项目外文件夹、.env、外部与云端工具仍询问。</td><td>Edits files and runs commands without asking. Still asks for outside folders, .env, external and cloud tools.</td></tr>
@@ -388,7 +433,7 @@
       <tr><td>位置</td><td>本机 / 云端 / {{主机名}} / 位置未知</td><td>This computer / Cloud / {{host}} / Location unknown</td></tr>
       <tr><td>步骤行行尾</td><td>{{位置}}(只给非「内置 · 本机」)</td><td>{{location}}</td></tr><tr><td>详情底部</td><td>{{来源}} · {{位置}}</td><td>{{source}} · {{location}}</td></tr>
       <tr><td>旧对话</td><td>内置步骤位置未知</td><td>Built-in steps: location unknown</td></tr>
-      <tr><td>详情隐藏句</td><td>这个工具来自第三方插件,我们不显示它收到和返回的内容。(取代「来自插件」)</td><td>This tool comes from a third-party plugin. We don't show what it receives or returns.</td></tr>
+      <tr><td>详情隐藏句</td><td>这个工具来自第三方插件,我们不显示它收到和返回的内容。(插件一律用这句,取代「来自插件({{origin}})」两句)</td><td>This tool comes from a third-party plugin. We don't show what it receives or returns.</td></tr>
     </tbody>
   </table>
 </div>
