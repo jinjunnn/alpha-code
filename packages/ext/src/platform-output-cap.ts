@@ -47,7 +47,15 @@ export type PlatformOutputCapDecision =
 export function platformOutputCap(input: PlatformOutputCapInput): PlatformOutputCapDecision {
   const alpha = input.alphaBaseURL
   if (typeof alpha !== "string" || alpha.length === 0) return { omit: false, reason: "no-alpha-base-url" }
-  if (typeof input.providerBaseURL !== "string" || input.providerBaseURL !== alpha)
-    return { omit: false, reason: "not-platform-provider" }
+  if (!isPlatformProvider(input)) return { omit: false, reason: "not-platform-provider" }
   return { omit: true, reason: "platform-gateway" }
+}
+
+/** 「这个 provider 是平台代理节点」的唯一判据(上面文件头的「判据」一节):`ALPHA_BASE_URL` 非空且
+ *  `provider.options.baseURL` 与它逐字相等。输出上限与平台凭据头(platform-credential-header.ts,REQ-236
+ *  `#1562`)共用这一份,不各写一遍。 */
+export function isPlatformProvider(input: PlatformOutputCapInput): boolean {
+  const alpha = input.alphaBaseURL
+  if (typeof alpha !== "string" || alpha.length === 0) return false
+  return typeof input.providerBaseURL === "string" && input.providerBaseURL === alpha
 }

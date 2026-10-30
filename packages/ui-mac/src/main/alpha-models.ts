@@ -37,6 +37,9 @@ import { readCustomProviderRecords } from "./custom-provider-records"
 
 const BUNDLED = catalog as unknown as Pick<AlphaModelCatalog, "defaultModel" | "defaultPlatformModel" | "platformProvider">
 
+/** 平台 provider 注入配置里的 apiKey:固定的非凭据占位值(REQ-236 `#1562`,见下方平台段)。 */
+export const PLATFORM_API_KEY_PLACEHOLDER = "alpha-platform-credential-from-request-header"
+
 /** BYOK 段的**唯一**投影:已应用 BYOK 目录 × App 内置适配器表(方案 §2.3)。provider 身份 / 名称 / preset / 模型 /
  *  逐模型元数据取目录;`compat` / `baseURL` / `keyEnv` / `pico` 只取适配器表 —— 目录里不认识的 provider 没有适配器,
  *  投影不出来(采纳时已跳过,这里是同一判据的读侧)。 */
@@ -194,7 +197,10 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     provider[pp.id] = {
       npm: pp.npm,
       name: pp.name,
-      options: { baseURL: process.env.ALPHA_BASE_URL, apiKey: secretFileRef(userDataPath, "ALPHA_API_KEY") },
+      // REQ-236 §2.1-4(`#1562`):占位值,不是凭据。真凭据由 ext 的 `chat.headers` 每次请求从
+      // `ALPHA_PLATFORM_AUTH_REF` 指向的文件现读、写进请求级 authorization(盖过 SDK 由 apiKey 生成的配置头);
+      // 于是 SDK 缓存与 provider options 里结构上没有平台令牌,续期后无旧值可回落,读不到就在发出前拒绝。
+      options: { baseURL: process.env.ALPHA_BASE_URL, apiKey: PLATFORM_API_KEY_PLACEHOLDER },
       models,
     }
     enabled.unshift(pp.id)

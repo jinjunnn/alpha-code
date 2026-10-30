@@ -25,8 +25,8 @@ import { decodeAccountSummary } from "./alpha-account-contract"
 const accountBase = () => resolveEndpoints().account
 
 // B2 defense-in-depth:如果「续期后重试仍 401」,说明该 access token 确实被端点拒绝(不是过期),
-// 再续也只是白烧往返 —— 而每次成功续期都会驱动一次 token-only 换血。#601:该 purpose 的账户驱动
-// 刷新就此锁住,直到该端点出现非 401 成功或用户登入/登出,不再用有限冷却窗口当终局(那会自激成
+// 再续也只是白烧往返(#601 当时每次续期还会重启引擎;REQ-236 `#1562` 起续期热应用、不重启)。该 purpose 的
+// 账户驱动刷新就此锁住,直到该端点出现非 401 成功或用户登入/登出,不再用有限冷却窗口当终局(当时会自激成
 // 每 30 秒中断一次会话的 respawn 循环)。
 // B2:401 拦截 —— access token 失效时先续期一次再重试(单飞在 refreshTokens 内);续期失败(会话
 // revoked → 那边已降级登出)才把 unauthorized 交给 renderer 触发重新登录。

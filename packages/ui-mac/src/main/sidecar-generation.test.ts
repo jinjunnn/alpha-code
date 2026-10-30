@@ -13,11 +13,11 @@ test("sidecar generation snapshot moves from recovering to ready without credent
   const state = createSidecarGenerationState()
   expect(state.get()).toEqual({ status: "recovering", generation: 0, reason: "boot" })
 
-  state.update({ status: "recovering", generation: 4, reason: "token-only" })
-  expect(state.get()).toEqual({ status: "recovering", generation: 4, reason: "token-only" })
+  state.update({ status: "recovering", generation: 4, reason: "structural" })
+  expect(state.get()).toEqual({ status: "recovering", generation: 4, reason: "structural" })
 
-  state.update({ status: "ready", generation: 4, reason: "token-only" })
-  expect(state.get()).toEqual({ status: "ready", generation: 4, reason: "token-only" })
+  state.update({ status: "ready", generation: 4, reason: "structural" })
+  expect(state.get()).toEqual({ status: "ready", generation: 4, reason: "structural" })
 })
 
 // #577 回归锁(基线 rev2b ③′-1 行为断言①):冷启动的健康等待不能活在 forkChild

@@ -165,7 +165,7 @@ export function readyWslServerState(distro: string, url: string): WslServersStat
   }
 }
 
-// —— sidecar generation 广播(token-only 换血的生产信道)———————————————————————
+// —— sidecar generation 广播(runtime-recovery 的生产信道)———————————————————————
 // runtime-recovery.ts 的 install() 是模块单例且 generation 单调:整个测试文件共用一个
 // 递增计数器,跨用例不得回退。
 const generationSubscribers = new Set<(state: SidecarGenerationState) => void>()
@@ -190,12 +190,6 @@ export function timelineMarks(): TimelineRecord[] {
 /** 生产 AlphaComposer onMount 的 `renderer.composer.mount` 计数 —— 与真机取证同一个可观察量。 */
 export function composerMountCount(): number {
   return timeline.filter((mark) => mark.name === "renderer.composer.mount").length
-}
-/** 生产 runtime-recovery 真实收到并放行的 generation 序列(证明换血事件没有打进死桥)。 */
-export function generationsReceived(): number[] {
-  return timeline
-    .filter((mark) => mark.name === "renderer.sidecar.generation.received")
-    .map((mark) => Number(mark.extra?.generation))
 }
 export function resetTimeline() {
   timeline.length = 0

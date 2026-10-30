@@ -61,10 +61,10 @@ mock.module("./alpha-keychain-backend", () => ({
 // <tempdir>/alpha-secrets,无 ALPHA 密钥环境变量时 no-op,afterEach 清理)。全局 mock.module 会跨文件
 // 泄漏残缺导出面,撞坏 alpha-secret-files.test.ts 的 `import { secretFileRef, ... }`(2026-07-21 Linux CI 实锤)。
 
-const { hasSecretFile, secretFilePath } = await import("./alpha-secret-files")
+const { applyPlatformCredentialsHot, hasSecretFile, secretFilePath } = await import("./alpha-secret-files")
 const { clearByokKeys, initByokKeys, storeByokKey } = await import("./alpha-byok-keys")
 const { writeShellEnvCache } = await import("./shell-env-cache")
-const { preferAppEnv, spawnLocalServer } = await import("./server")
+const { forkedSecretNames, preferAppEnv, spawnLocalServer } = await import("./server")
 const { requestCatalogRefresh } = await import("./catalog-refresher")
 const { appliedCatalogPath, writeCatalogSnapshot } = await import("./alpha-live-allowlist")
 // REQ-159 `#1321`:生产 spawnLocalServer 在 fork 前做围栏计划(真 store / 真 sandbox-exec / 真原生模块路径);
@@ -105,6 +105,8 @@ const managedEnv = [
   "ALPHA_CLOUD_MCP_URL",
   "ALPHA_CLOUD_TOKEN",
   "ALPHA_MCP_TOKEN",
+  "ALPHA_API_KEY",
+  "ALPHA_PLATFORM_AUTH_REF",
   "ALPHA_ENV_FILE",
   "ALPHA_SECRETS_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
@@ -620,7 +622,7 @@ describe("keyless baseline vs the real login-shell import (#223 Major 3)", () =>
 })
 
 describe("spawnLocalServer", () => {
-  test("token rotation bounds graceful stop at 500ms while the default keeps the 6s budget", async () => {
+  test("a stop that never drains is bounded by the 6s graceful budget", async () => {
     class HangingStopChild extends FakeChild {
       kills = 0
 
@@ -635,7 +637,7 @@ describe("spawnLocalServer", () => {
       }
     }
 
-    const run = async (mode: "token-rotation" | "graceful", beforeKillMs: number) => {
+    const run = async (beforeKillMs: number) => {
       creditDanglingSweepForSpawn()
       const child = new HangingStopChild()
       const result = await spawnLocalServer("127.0.0.1", 4098, "password", {
@@ -646,7 +648,7 @@ describe("spawnLocalServer", () => {
       })
       await result.health.wait
 
-      const stopping = result.listener.stop(mode)
+      const stopping = result.listener.stop()
       vi.advanceTimersByTime(beforeKillMs)
       await Promise.resolve()
       expect(child.kills).toBe(0)
@@ -657,8 +659,7 @@ describe("spawnLocalServer", () => {
 
     vi.useFakeTimers()
     try {
-      await run("token-rotation", 499)
-      await run("graceful", 5_999)
+      await run(5_999)
     } finally {
       vi.useRealTimers()
     }
@@ -775,6 +776,24 @@ describe("spawnLocalServer", () => {
     } finally {
       clearByokKeys()
     }
+  })
+
+  // REQ-236 `#1562`:续期热应用依赖 fork 时定下的两样事实 —— 这次 fork 写进 {file:} 通道的凭据名集合
+  // (applyPlatformCredentialsHot 据它判在场性变没变;不记就恒为「还没 fork 过」⇒ 热写被跳过,引擎一直读旧令牌),
+  // 与交给 sidecar 的平台凭据引用(ext chat.headers 据它现读)。引用只能是 {file:} 形态,env 里不带令牌(方案 I1)。
+  test("#1562 fork 记下写入的凭据名集合,并把平台凭据的 {file:} 引用(不是令牌)交给 sidecar", async () => {
+    process.env.ALPHA_API_KEY = "test-platform-key-not-real-7Kd2"
+    applyAuthEnvLikeLogin()
+    const env = await forkSidecar()
+    expect(env.ALPHA_PLATFORM_AUTH_REF).toMatch(/^\{file:\/.+\}$/)
+    expect(env.ALPHA_PLATFORM_AUTH_REF).toBe(`{file:${secretFilePath(userDataPath, "ALPHA_API_KEY")}}`)
+    expect(JSON.stringify(env)).not.toContain("test-platform-key")
+    expect([...(forkedSecretNames() ?? [])]).toEqual(expect.arrayContaining(["ALPHA_API_KEY", "ALPHA_MCP_TOKEN"]))
+    // 同一份 fork 集合下的续期 ⇒ 热写生效(凭据文件就地换新)。
+    expect(applyPlatformCredentialsHot(userDataPath, { ...process.env, ALPHA_API_KEY: "next-key" }, forkedSecretNames())).toBe(
+      "applied",
+    )
+    expect(readFileSync(secretFilePath(userDataPath, "ALPHA_API_KEY"), "utf8")).toBe("next-key")
   })
 
   test("forks the sidecar in the userData scratch directory", async () => {

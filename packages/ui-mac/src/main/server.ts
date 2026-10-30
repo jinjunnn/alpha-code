@@ -15,7 +15,7 @@ import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
-import { syncSecretFiles } from "./alpha-secret-files"
+import { secretFileRef, syncSecretFiles } from "./alpha-secret-files"
 import { customProviderSecretValues } from "./alpha-byok-keys"
 import { ignoredConfigProviderBlocks, ignoredConfigRemoteMcpEntries } from "./ext-config"
 import { readCustomProviderRecords } from "./custom-provider-records"
@@ -35,7 +35,7 @@ import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
 import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 import { markStartupTimeline } from "./startup-timeline"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
-import { buildSidecarStopCommand, type SidecarStopMode } from "./sidecar-stop"
+import { SIDECAR_STOP_COMMAND } from "./sidecar-stop"
 import type { AlphaSidecarOutbound } from "./alpha-sidecar-messages"
 import { consumeDanglingSweepCredit } from "./dangling-sweep-latch"
 // REQ-159 `#1321`:进程围栏计划 —— fork 之前渲染 + 试编译可写集、解析原生模块路径,经 StartCommand 交给
@@ -81,11 +81,8 @@ type SidecarMessage =
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
-// 形状与两侧的读写都住在 ./sidecar-stop(sidecar.ts 消费同一份);此处只做再导出,
-// 让既有 `import { SidecarStopMode } from "./server"` 的调用点不必改。
-export type { SidecarStopMode }
 export type SidecarListener = {
-  stop: (mode?: SidecarStopMode) => Promise<void>
+  stop: () => Promise<void>
   kill: () => void
   /**
    * REQ-159 `#1322`:让**被围栏的 sidecar** 在 `directory` 真写一次再删,回答 writable / denied / unknown。
@@ -97,15 +94,6 @@ export type SidecarListener = {
 const SIDECAR_SERVICE_NAME = "opencode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
-// #858:token-only 换血已经会如实中断活动流并保留 renderer/draft。给旧请求
-// 一个很短的收口机会,但不能让它阻塞新 token 的 sidecar 整整 6s。结构换血和退出
-// 仍用上面的完整 graceful 预算。
-//
-// 这个数是**兜底**,不是正常路径:正常路径下停止命令带着 `closeActiveConnections`,
-// sidecar 主动关掉活动连接后自己退出,远早于此。它只在 sidecar 连强关都做不完(引擎卡死)
-// 时才到期,而到期意味着 SIGTERM —— 把 sidecar 自己的 finalizer 砍在半路。
-// 换句话说:主动关连接是修法,这个 timer 是安全网;别把安全网当修法。
-const SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT = 500
 
 type SpawnLocalServerOptions = {
   userDataPath: string
@@ -467,6 +455,14 @@ export function preferAppEnv(userDataPath: string) {
   applyWebSearchSovereignty()
 }
 
+// REQ-236 §2.1-1(`#1562`):最近一次 fork 时写进 {file:} 通道的凭据名。续期热应用据它判「凭据在场性
+// 变没变」(alpha-secret-files.applyPlatformCredentialsHot);还没 fork 过 = undefined。
+let forkedSecrets: ReadonlySet<string> | undefined
+
+export function forkedSecretNames(): ReadonlySet<string> | undefined {
+  return forkedSecrets
+}
+
 export async function spawnLocalServer(
   hostname: string,
   port: number,
@@ -495,6 +491,7 @@ export async function spawnLocalServer(
         : {}
     logIgnoredConfigRecordsOnce()
     const sync = syncSecretFiles(options.userDataPath, process.env, customSecrets)
+    forkedSecrets = new Set(sync.written)
     getLogger()?.log(`alpha-secrets sync: wrote [${sync.written.join(", ")}] removed [${sync.removed.join(", ")}]`)
     // REQ-076 T2(ADR-026 §5,C28 反 placebo):0600/0700 在 NTFS 近乎 no-op —— 密钥文件的
     // owner-only 保证在 Windows 缺位(icacls ACL 待 T3 拍板)。loud,不静默装样子。
@@ -545,6 +542,9 @@ export async function spawnLocalServer(
   // REQ-159:围栏计划在 fork **之前**做(试编译失败 / 模块缺失 / 默认工作区不在 ⇒ 抛 ⇒ 这一代被拒,
   // 与上面 alpha-secrets sync 失败同一条 fail-closed 路径)。env 先算好:计划要读的 XDG_* / HOME
   // 必须是 sidecar 将拿到的那一份,不是 main 自己的 process.env。
+  // REQ-236 §2.1-4(`#1562`):平台模型请求的凭据只从这份文件现读(ext `chat.headers`),注入的 provider
+  // 配置只有占位值。值是 `{file:}` 引用,不是凭据;经 sidecar env 白名单(sidecar-env.ts)进引擎进程。
+  process.env.ALPHA_PLATFORM_AUTH_REF = secretFileRef(options.userDataPath, "ALPHA_API_KEY")
   const sidecarEnv = createSidecarEnv()
   // uv's default ~/.cache/uv is outside the fence; keep Office dependencies under the existing W3 root.
   sidecarEnv.UV_CACHE_DIR = join(options.userDataPath, "uv-cache")
@@ -733,16 +733,13 @@ export async function spawnLocalServer(
         if (!exited) child.kill()
       },
       probeWrite: (directory: string) => writeProbes.request(directory),
-      stop: (mode: SidecarStopMode = "graceful") => {
+      stop: () => {
         if (stopping) return stopping
         if (exited) return Promise.resolve()
-        // #858:停止原因必须过进程边界 —— 关不关活动连接的开关在 sidecar 那一侧的
-        // `listener.stop(close)` 上,main 这边只有 timer,而 timer 到期 = SIGTERM,不是"关连接"。
-        child.postMessage(buildSidecarStopCommand(mode))
-        const timeoutMs = mode === "token-rotation" ? SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT : SIDECAR_STOP_TIMEOUT
+        child.postMessage(SIDECAR_STOP_COMMAND)
         stopping = Promise.race([
           exit.promise.then(() => undefined),
-          delay(timeoutMs).then(() => {
+          delay(SIDECAR_STOP_TIMEOUT).then(() => {
             if (!exited) child.kill()
           }),
         ])

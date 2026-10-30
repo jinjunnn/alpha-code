@@ -1,5 +1,5 @@
 import path from "node:path"
-import { stat } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -51,7 +51,11 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
 import { McpEvent } from "@opencode-ai/schema/mcp-event"
 import { McpBrowser } from "./browser"
-import { governedMcpEvidence } from "@opencode-ai/plugin/alpha-cloud-authority"
+import {
+  governedCredentialFetch,
+  governedMcpEvidence,
+  isGovernedMcpEntry,
+} from "@opencode-ai/plugin/alpha-cloud-authority"
 import { ToolAliasLedger, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 const DEFAULT_TIMEOUT = 30_000
@@ -514,14 +518,19 @@ const layer = Layer.effect(
       }
 
       const requestInit = mcp.headers ? { headers: mcp.headers } : undefined
-      const streamableHTTP = () => new StreamableHTTPClientTransport(url, { authProvider, requestInit })
+      // REQ-236 `#1562`:alpha 治理的云连接器每次请求现读 ALPHA_CLOUD_MCP_DEF 里引用的凭据文件(续期热应用,
+      // 引擎不重启);读不到就以认证错误失败,不用已装载条目里的旧字面量。其它条目不传 fetch,行为不变。
+      const fetch = isGovernedMcpEntry(key, mcp, process.env)
+        ? governedCredentialFetch(process.env, (file) => readFile(file, "utf8"), (input, init) => globalThis.fetch(input, init))
+        : undefined
+      const streamableHTTP = () => new StreamableHTTPClientTransport(url, { authProvider, requestInit, fetch })
       // A transport serves a single connect(), so every attempt builds a fresh one. #1547: an attempt
       // with `retryAfter` runs only when the previous StreamableHTTP attempt died on the wire.
       const transports: Array<{ name: string; create: () => TransportWithAuth; retryAfter?: number }> = [
         { name: "StreamableHTTP", create: streamableHTTP },
         { name: "StreamableHTTP", create: streamableHTTP, retryAfter: 500 },
         { name: "StreamableHTTP", create: streamableHTTP, retryAfter: 1000 },
-        { name: "SSE", create: () => new SSEClientTransport(url, { authProvider, requestInit }) },
+        { name: "SSE", create: () => new SSEClientTransport(url, { authProvider, requestInit, fetch }) },
       ]
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT

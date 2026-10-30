@@ -23,6 +23,7 @@
 // Electron-free on purpose: main calls syncSecretFiles; the sidecar (utilityProcess) reaches
 // hasSecretFile/secretFileRef through alpha-models.ts/sidecar.ts.
 
+import { createHash, randomBytes } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { BYOK_ADAPTERS } from "./byok-adapters"
@@ -93,8 +94,7 @@ export function syncSecretFiles(
     const file = path.join(dir, name)
     if (value) {
       wanted.add(name)
-      fs.writeFileSync(file, value, { mode: 0o600 })
-      fs.chmodSync(file, 0o600) // writeFileSync's mode is ignored when the file already exists
+      writeSecretFileAtomic(dir, name, value)
       written.push(name)
       continue
     }
@@ -110,9 +110,7 @@ export function syncSecretFiles(
       throw new Error("alpha-secrets: refusing an extra secret whose name is not a plain file name")
     if (!value) continue // absent ⇒ swept below like a retired var
     wanted.add(name)
-    const file = path.join(dir, name)
-    fs.writeFileSync(file, value, { mode: 0o600 })
-    fs.chmodSync(file, 0o600)
+    writeSecretFileAtomic(dir, name, value)
     written.push(name)
   }
 
@@ -124,4 +122,70 @@ export function syncSecretFiles(
   }
 
   return { written, removed }
+}
+
+/**
+ * REQ-236 §2.1-1 / I2(`#1562`):秘密文件的唯一写法。续期热应用之后引擎在**每次请求**现读这些文件
+ * (ext `chat.headers` 与引擎云 MCP 的 fetch 包装),截断后写会让读者撞上半个令牌;同目录临时文件写满、
+ * 0600、fsync 后 rename 覆盖,读者只会看到完整的旧值或新值。临时文件名以点开头且带随机后缀,
+ * 写失败时删掉它,不留半截文件(残留也会被下一次 syncSecretFiles 的清扫收走)。
+ */
+export function writeSecretFileAtomic(dir: string, name: string, value: string): void {
+  const file = path.join(dir, name)
+  const temp = path.join(dir, `.${name}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`)
+  try {
+    const fd = fs.openSync(temp, "wx", 0o600)
+    try {
+      fs.writeFileSync(fd, value)
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+    fs.chmodSync(temp, 0o600)
+    fs.renameSync(temp, file)
+  } catch (error) {
+    fs.rmSync(temp, { force: true })
+    throw error
+  }
+}
+
+/** 续期热应用只重写这两份:平台模型请求(ext `chat.headers` 经 `ALPHA_PLATFORM_AUTH_REF`)与云 MCP
+ *  (引擎 fetch 包装经 `ALPHA_CLOUD_MCP_DEF` 里的引用)在请求边界现读它们。 */
+const HOT_CREDENTIALS = ["ALPHA_API_KEY", "ALPHA_MCP_TOKEN"] as const
+
+export type HotApplyOutcome = "applied" | "needs-structural"
+
+/**
+ * REQ-236 §2.1-1(`#1562`):同身份续期把新凭据原子写进文件,不重启引擎。
+ *
+ * `forked` = 最近一次 fork 时 `syncSecretFiles` 写入的名字(server.ts 记录);还没 fork 过 ⇒ 直接
+ * `applied`,下一次 fork 的 syncSecretFiles 自然带上 env 里的新值。两份热凭据的在场集合与 fork 时不同
+ * (凭据出现或消失)⇒ `needs-structural`:平台 provider 与云 MCP 条目是否存在是 fork 时定的,热写改不了。
+ * 任一写入或回读摘要不一致 ⇒ `needs-structural`(热写失败,由结构性重启的 syncSecretFiles 再写一次)。
+ * 只返回结论,不记录任何值。
+ */
+export function applyPlatformCredentialsHot(
+  userDataPath: string,
+  env: NodeJS.ProcessEnv,
+  forked: ReadonlySet<string> | undefined,
+): HotApplyOutcome {
+  if (!forked) return "applied"
+  const present = HOT_CREDENTIALS.filter((name) => env[name])
+  if (present.length !== HOT_CREDENTIALS.filter((name) => forked.has(name)).length) return "needs-structural"
+  if (present.some((name) => !forked.has(name))) return "needs-structural"
+  const dir = path.join(userDataPath, SECRET_DIR)
+  try {
+    for (const name of present) {
+      const value = env[name]!
+      writeSecretFileAtomic(dir, name, value)
+      if (digest(fs.readFileSync(path.join(dir, name), "utf8")) !== digest(value)) return "needs-structural"
+    }
+  } catch {
+    return "needs-structural"
+  }
+  return "applied"
+}
+
+function digest(value: string) {
+  return createHash("sha256").update(value).digest("hex")
 }

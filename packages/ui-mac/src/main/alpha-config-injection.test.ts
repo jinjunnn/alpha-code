@@ -45,6 +45,7 @@ import {
   cloudMcpToolId,
   WITHHELD_CLOUD_MCP,
 } from "./cloud-web-search"
+import { PLATFORM_API_KEY_PLACEHOLDER } from "./alpha-models"
 // #650:云工具 id 从远端工具名**推导**(引擎按 `McpCatalog.toolName(server, remote)` 拼)。
 // 这里以前手写 `cloud_web_search` / `cloud_dispatch` 字面量,与生产代码同错,于是恒绿。
 const CLOUD_DISPATCH_TOOL_ID = cloudMcpToolId("cloud_dispatch")
@@ -159,9 +160,10 @@ function assertInjectedFacts(content: string | undefined, userDataPath: string):
   expect(Object.keys(config.agent ?? {})).toEqual(
     expect.arrayContaining(["alpha-automation", "alpha-readonly", "alpha-automation-standard", "alpha-ask"]),
   )
-  // A6:密钥以 {file:} ref 进 content,明文永不进(此处是**组合体**层面的锁,
-  // alpha-models.test.ts 锁的是单件 buildAlphaModelConfig)。
-  expect(config.provider!.alpha.options!.apiKey).toBe(`{file:${secretFilePath(userDataPath, "ALPHA_API_KEY")}}`)
+  // A6:BYOK 密钥以 {file:} ref 进 content,明文永不进(此处是**组合体**层面的锁,
+  // alpha-models.test.ts 锁的是单件 buildAlphaModelConfig)。REQ-236 `#1562`:平台 provider 只带非凭据占位值,
+  // 凭据由 ext 的 chat.headers 每次请求现读。
+  expect(config.provider!.alpha.options!.apiKey).toBe(PLATFORM_API_KEY_PLACEHOLDER)
   expect(config.provider!["deepseek-byok"].options!.apiKey).toBe(
     `{file:${secretFilePath(userDataPath, "DEEPSEEK_API_KEY")}}`,
   )

@@ -19,6 +19,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/provider": "3.0.16",
     "@alpha-code/contracts-consumer": "workspace:*",
     "@opencode-ai/plugin": "workspace:*",
     "@silvia-odwyer/photon-node": "0.3.4"

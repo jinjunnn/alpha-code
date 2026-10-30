@@ -18,7 +18,7 @@ export function createAuthedGet(deps: {
   reportContractFailure: (error: unknown) => void
 }) {
   // #601:续期后仍 401 ⇒ 该 access token 确实被端点拒绝(不是过期),再续只会白烧往返 ——
-  // 而每次续期成功都会驱动一次 token-only 换血。旧实现用 30s cooldown 当终局:窗口一过
+  // (当时每次续期成功还会重启一次引擎;REQ-236 `#1562` 起续期热应用、不重启)。旧实现用 30s cooldown 当终局:窗口一过
   // 又允许 account 驱动刷新,于是「持续 401」自激成每 30 秒中断一次 sidecar/会话的循环
   // (基线 ③ 明令 transient 降级保持、禁循环 respawn)。改为锁住该 purpose 的账户驱动刷新,
   // 直到 ① 该端点出现非 401 成功,或 ② 外部 auth 身份变化(登入/登出)。有限 cooldown 不是终局。

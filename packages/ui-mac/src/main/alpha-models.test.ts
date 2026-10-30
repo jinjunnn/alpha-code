@@ -18,7 +18,7 @@ import {
 } from "./alpha-live-allowlist"
 import { BYOK_ADAPTERS } from "./byok-adapters"
 import bundledCatalog from "./alpha-models.json"
-import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
+import { buildAlphaModelConfig, getModelCatalog, PLATFORM_API_KEY_PLACEHOLDER } from "./alpha-models"
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { buildModelPickerRows } from "../renderer/alpha-ui/model-picker-core"
 import { customProviderSecretName, secretFilePath, secretFileRef, syncSecretFiles } from "./alpha-secret-files"
@@ -293,8 +293,11 @@ describe("buildAlphaModelConfig — platform gateway (代发)", () => {
     expect(cfg.enabled_providers[0]).toBe("alpha") // unshifted to the front
     const p = cfg.provider.alpha as any
     expect(p.options.baseURL).toBe("https://gw.example/v1")
-    // key is fronted by ALPHA (代发) as a {file:} ref, never inlined and never an env ref
-    expect(p.options.apiKey).toBe(`{file:${secretFilePath(userData, "ALPHA_API_KEY")}}`)
+    // REQ-236 `#1562`:平台 provider 的注入配置不含任何凭据值 —— apiKey 是固定的非凭据占位值,真凭据由 ext 的
+    // chat.headers 每次请求从文件现读(platform-credential-header.ts);既不内联、也不是 {file:} / env 引用。
+    expect(p.options.apiKey).toBe(PLATFORM_API_KEY_PLACEHOLDER)
+    expect(JSON.stringify(cfg)).not.toContain("jwt-abc")
+    expect(JSON.stringify(p)).not.toContain(secretFilePath(userData, "ALPHA_API_KEY"))
     expect(Object.keys(p.models).length).toBeGreaterThan(0)
   })
 

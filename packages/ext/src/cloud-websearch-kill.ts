@@ -116,6 +116,7 @@ import {
   CLOUD_MCP_SERVER_ENV,
   computeMcpOwnership,
   type McpOwnership,
+  resolveFileRefs,
   UNVERIFIED_MCP_OWNERSHIP,
 } from "@opencode-ai/plugin/alpha-cloud-authority"
 
@@ -389,18 +390,9 @@ export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
  */
 type McpHost = { mcp?: Record<string, unknown> }
 
-/**
- * `{file:/abs/path}` 解析。引擎的 `ConfigVariable.substitute` 在**配置文本**阶段就把它换掉了,
- * 而 `config` 钩子拿到的是**已解析后的**对象 —— 本函数装进去的定义是钩子阶段新加的,不会再被
- * 替换,所以必须自己解析(语义与上游一致:读文件、trim)。读不到就抛,由调用方 fail-closed。
- */
-export function resolveFileRefs(value: unknown, readFile: (path: string) => string): unknown {
-  if (typeof value === "string") return value.replace(/\{file:([^}]+)\}/g, (_, path: string) => readFile(path).trim())
-  if (Array.isArray(value)) return value.map((item) => resolveFileRefs(item, readFile))
-  if (value && typeof value === "object")
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveFileRefs(item, readFile)]))
-  return value
-}
+// `{file:/abs/path}` 解析:文法与实现住在 @opencode-ai/plugin/alpha-cloud-authority(alpha 代码里唯一一份),
+// 这里转出给 ext 内既有的调用方(installCloudMcp、cloud-vision)。
+export { resolveFileRefs }
 
 /**
  * 把注入面托管的云 MCP server 定义装进配置。返回被装上的 server 名(没有可装的则 undefined)。

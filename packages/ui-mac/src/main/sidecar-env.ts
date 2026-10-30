@@ -58,6 +58,9 @@ const EXACT = new Set([
   // alpha non-secret controls the SIDECAR reads (injectAlphaConfig/buildAlphaModelConfig).
   // NEVER add a token/key var here — that's what the {file:} channel is for (A6).
   "ALPHA_BASE_URL",
+  // REQ-236 `#1562`:平台模型凭据文件的 `{file:}` 引用(server.ts 在 fork 时置位)。是路径不是凭据 ——
+  // ext 的 `chat.headers` 每次请求按它现读文件,续期热应用不必重启引擎。
+  "ALPHA_PLATFORM_AUTH_REF",
   "ALPHA_CLOUD_MCP_URL",
   "ALPHA_DEFAULT_MODEL",
   "ALPHA_MODELS_DISABLE",

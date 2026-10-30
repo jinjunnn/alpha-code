@@ -23,11 +23,14 @@ packages/ui-mac/src/main/alpha-installs.ts	mkdirSync	root	W2
 packages/ui-mac/src/main/alpha-installs.ts	renameSync	file	W2
 packages/ui-mac/src/main/alpha-live-allowlist.ts	mkdirSync	userDataPath	W3
 packages/ui-mac/src/main/alpha-secret-files.ts	chmodSync	dir	W3
-packages/ui-mac/src/main/alpha-secret-files.ts	chmodSync	file	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	chmodSync	temp	W3
 packages/ui-mac/src/main/alpha-secret-files.ts	mkdirSync	dir	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	openSync	temp	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	renameSync	temp	W3
 packages/ui-mac/src/main/alpha-secret-files.ts	rmSync	file	W3
 packages/ui-mac/src/main/alpha-secret-files.ts	rmSync	path.join(dir, leftover)	W3
-packages/ui-mac/src/main/alpha-secret-files.ts	writeFileSync	file	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	rmSync	temp	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	writeFileSync	fd	W3
 packages/ui-mac/src/main/alpha-workdir.ts	mkdirSync	artifactsDir	W1
 packages/ui-mac/src/main/alpha-workdir.ts	mkdirSync	dir	W1
 packages/ui-mac/src/main/alpha-workdir.ts	mkdirSync	root	W1
