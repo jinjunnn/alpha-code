@@ -3,6 +3,7 @@ import { CodeModeTool, describeCatalog } from "@/tool/code-mode"
 import { McpCatalog } from "@/mcp/catalog"
 import { Permission } from "@/permission"
 import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
+import { callToolVia } from "../fixture/alpha-mcp-call-tool"
 import { Agent } from "@/agent/agent"
 import { MCP } from "@/mcp"
 import { Plugin } from "@/plugin"
@@ -167,6 +168,8 @@ async function buildTool() {
       tools: () => Effect.succeed(mcpTools),
       clients: () => Effect.succeed({ [SERVER]: {} as any }),
       bindingFacts: () => Effect.succeed(undefined),
+      // alpha #1563:child calls go through the MCP service entry; the rig hands them to the entry's own client.
+      callTool: callToolVia(mcpTools),
     }),
   )
   return {

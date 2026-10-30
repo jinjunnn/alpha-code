@@ -225,6 +225,14 @@ export function projectMcpStatusView(state: ProjectMcpState | undefined) {
       tone: "warn" as const,
       textKey: "alpha.ext.projectMcpShadowed" as const,
     }
+  // `#1563`:引擎还在后台启动它(准备中)。复用定制中心三档视图给同一状态的文案键,不新造文案(定稿归 T19)。
+  if (state === "pending")
+    return {
+      state,
+      connected: false,
+      tone: "muted" as const,
+      textKey: "alpha.ext.hubReasonNotLoaded" as const,
+    }
   return {
     state: "unverifiable" as const,
     connected: false,
@@ -470,6 +478,10 @@ function isDisabled(info: unknown): boolean {
 function needsAuth(info: unknown): boolean {
   return statusTag(info) === "needs_auth"
 }
+/** `#1563`:引擎还在后台启动这台服务(`pending`)—— 判等,与上面一样不靠子串。 */
+function isPending(info: unknown): boolean {
+  return statusTag(info) === "pending"
+}
 function statusError(info: unknown): string | undefined {
   if (!info || typeof info !== "object") return undefined
   const o = info as Record<string, unknown>
@@ -629,6 +641,7 @@ export function useExtensions(
           connected: isConnected(info),
           enabled: !isDisabled(info),
           needsAuth: needsAuth(info),
+          pending: isPending(info),
           error: statusError(info),
         }
       }

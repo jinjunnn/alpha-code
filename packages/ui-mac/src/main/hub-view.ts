@@ -21,6 +21,7 @@
 //   command      GET /command?directory 有同名
 //   其它种类      核不了 —— 落 installed + 原因(重载修不好「没有判据」),不出重载入口(`#1531`)
 //   MCP 要授权    needs_auth / needs_client_registration 同上:installed + 原状态词,不出重载入口(`#1531`)
+//   MCP 准备中    pending(引擎后台启动中)同上;后台重连时细节附上次失败(`#1563`)
 //
 // 状态词与会话无关(I4)。会话 / agent 的权限只进 ext 侧应答的 agentNote,且只对技能行。
 
@@ -49,7 +50,7 @@ import {
 } from "./alpha-sidecar-messages"
 import { CLOUD_MCP_SERVER_NAME } from "./cloud-web-search"
 import { collectInventory, type InventoryCatalogInput, type InventoryRow } from "./ext-inventory"
-import { verifyInstalledMcp } from "./ext-mcp-activation"
+import { type McpVerification, verifyInstalledMcp } from "./ext-mcp-activation"
 import { skillGenerationKey } from "./ext-skill-generations"
 import { resolveLiveGenerationDir } from "./ext-transaction"
 import type { ReloadCoordinator } from "./reload-coordinator"
@@ -90,6 +91,12 @@ export type HubViewService = {
 
 /** `reloadable: false` = 核验没过,但重载修不好它(要授权 / 没有核验判据):落 installed + 原因,不出重载入口(`#1531`)。 */
 type Verdict = { ok: true } | { ok: false; detail: string; reloadable?: false }
+
+/** 原因细节:状态词原样;后台重连中的 pending 附上一次失败(`#1563`)。 */
+const mcpDetail = (label: string, status: McpVerification) =>
+  status.status === "pending" && status.lastFailure
+    ? `${label} pending (last failure: ${status.lastFailure})`
+    : `${label} ${status.status}`
 type Read = { ok: true; items: Record<string, unknown>[] } | { ok: false; detail: string }
 
 const DEFAULT_TIMEOUT_MS = 5_000
@@ -276,17 +283,21 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
       if (row.scope === "project") {
         if (!project) return { ok: false, detail: "project MCP outside its project" }
         const state = await deps.projectMcpState(row.name, project.projectDir)
-        return state === "active" ? { ok: true } : { ok: false, detail: `project MCP ${state}` }
+        if (state === "active") return { ok: true }
+        // `#1563`:pending = 引擎还在后台启动它(准备中);重载修不好「还没连上」,不出重载入口。
+        if (state === "pending") return { ok: false, detail: "project MCP pending", reloadable: false }
+        return { ok: false, detail: `project MCP ${state}` }
       }
       const status = await verifyInstalledMcp(row.name, directory, deps.awaitServer, fetchImpl, { awaitServer: timeoutMs, status: timeoutMs })
       if (status.status === "connected") return { ok: true }
-      if (status.status === "needs_auth" || status.status === "needs_client_registration")
-        return { ok: false, detail: `MCP ${status.status}`, reloadable: false }
-      return { ok: false, detail: `MCP ${status.status}` }
+      // `#1563`:pending = 引擎还在后台启动它(准备中),不是失败;与要授权一样,重载修不好,不出重载入口。
+      if (status.status === "needs_auth" || status.status === "needs_client_registration" || status.status === "pending")
+        return { ok: false, detail: mcpDetail("MCP", status), reloadable: false }
+      return { ok: false, detail: mcpDetail("MCP", status) }
     }
     if (row.kind === "cloud") {
       const status = await verifyInstalledMcp(CLOUD_MCP_SERVER_NAME, directory, deps.awaitServer, fetchImpl, { awaitServer: timeoutMs, status: timeoutMs })
-      if (status.status !== "connected") return { ok: false, detail: `cloud MCP ${status.status}` }
+      if (status.status !== "connected") return { ok: false, detail: mcpDetail("cloud MCP", status) }
       const inventory = await reads.toolInventory()
       if (!inventory.ok) return { ok: false, detail: `tool list unreadable (${inventory.code})` }
       const tool = inventory.inventory.services

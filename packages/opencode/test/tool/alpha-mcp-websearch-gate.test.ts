@@ -7,8 +7,9 @@
 //     { "mcp": { "exa": { "type": "remote", "url": "https://mcp.exa.ai/mcp" } } }
 //
 // 引擎经 `src/mcp/index.ts` 建**通用** MCP 传输,产生 `exa_web_search_exa`。普通模式经
-// `session/tools.ts` → `McpCatalog.convertTool()` → `client.callTool()`,code-mode 经
-// `tool/code-mode.ts` 的 `invokeChildTool` 直接 `client.callTool()` —— 两条都不经过那两道传输闸。
+// `session/tools.ts` → `McpCatalog.convertTool()`(其 client 是委托 `MCP.callTool` 的适配器,#1563)→
+// 该服务当前连接的 `client.callTool()`;code-mode 经 `tool/code-mode.ts` 的 `invokeChildTool` →
+// `MCP.callTool` → 同一处 —— 两条都不经过那两道传输闸。
 //
 // 唯一同时钳制这两条链的点是 `plugin.trigger("tool.execute.before", …)`,也就是 @alpha-code/ext
 // 的钩子。本文件把那份 exa 配置当**真实配置**跑:真 streamable-HTTP MCP server、真 `mcp` 配置段、
@@ -38,7 +39,7 @@ import { Session } from "../../src/session/session"
 import { CodeModeTool } from "../../src/tool/code-mode"
 import { Tool } from "../../src/tool/tool"
 import * as Truncate from "../../src/tool/truncate"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 // ext 的主权信号名(alpha 自有包;这里只取常量,判决逻辑由被装载的插件本体执行)。
 import {
@@ -54,6 +55,15 @@ const EXA_SERVER = "exa"
 /** 真实的 exa MCP 工具名(`mcp.exa.ai` 的 `web_search_exa`);拼进 server 名后是 `exa_web_search_exa`。 */
 const EXA_TOOL = "web_search_exa"
 const TOOL_ID = McpCatalog.toolName(EXA_SERVER, EXA_TOOL)
+
+/** #1563:配置里的服务在后台启动(读状态不再等它)。用例先等替身连上,量的仍是主权闸。 */
+const exaConnected = Effect.gen(function* () {
+  const mcp = yield* MCP.Service
+  yield* pollWithTimeout(
+    mcp.status().pipe(Effect.map((status) => (status[EXA_SERVER]?.status === "connected" ? true : undefined))),
+    "exa stand-in did not connect",
+  )
+})
 
 /** ext 插件本体的绝对路径 —— 装的是生产代码,不是替身。 */
 const EXT_PLUGIN = join(import.meta.dir, "..", "..", "..", "ext", "src", "plugin.ts")
@@ -180,6 +190,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
     () =>
       Effect.gen(function* () {
         withSovereignty(true)
+        yield* exaConnected
         const mcp = yield* MCP.Service
         const plugin = yield* Plugin.Service
 
@@ -221,6 +232,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
     () =>
       Effect.gen(function* () {
         withSovereignty(false)
+        yield* exaConnected
         const mcp = yield* MCP.Service
         const plugin = yield* Plugin.Service
         const entry = (yield* mcp.tools())[TOOL_ID]!
@@ -251,6 +263,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
     () =>
       Effect.gen(function* () {
         withSovereignty(true)
+        yield* exaConnected
         const tool = yield* Tool.init(yield* CodeModeTool)
         const exit = yield* tool
           .execute({ code: `return await tools.${EXA_SERVER}.${EXA_TOOL}({ query: 'effect typescript' })` }, toolContext())
@@ -270,6 +283,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
     () =>
       Effect.gen(function* () {
         withSovereignty(false)
+        yield* exaConnected
         const tool = yield* Tool.init(yield* CodeModeTool)
         const result = yield* tool.execute(
           { code: `return await tools.${EXA_SERVER}.${EXA_TOOL}({ query: 'effect typescript' })` },

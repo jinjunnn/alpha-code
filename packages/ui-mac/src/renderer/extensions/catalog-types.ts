@@ -169,6 +169,8 @@ export interface InstalledState {
    * 少了这一位不是渲染问题,是**这个状态在下游结构上不存在**:UI 想补救也无从判起。
    */
   needsAuth?: boolean
+  /** MCP:引擎报的 `pending` —— 还在后台启动它,不是停用也不是失败(`#1563`)。 */
+  pending?: boolean
   error?: string
 }
 

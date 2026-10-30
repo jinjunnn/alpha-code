@@ -10,7 +10,7 @@ import { Wildcard } from "../../../core/src/util/wildcard"
 import { CLOUD_DISPATCH_REMOTE_TOOL } from "../../../ext/src/cloud-contract-hook"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 import { AGENT_NOTE_DENIED, AGENT_NOTE_UNVERIFIED, type AlphaSidecarOutbound, type HubViewRow } from "./alpha-sidecar-messages"
-import { applyPackageMutation, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
+import { applyPackageMutation, projectScopeIdentity, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { bundleOwner, computeInstalledGraphDigest } from "./ext-package-ledger-v3"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import { decodePackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
@@ -60,7 +60,7 @@ const record = (root: string, over: Partial<UpsertInput> & Pick<UpsertInput, "id
 }
 
 type Engine = {
-  mcp: Record<string, { status: string }>
+  mcp: Record<string, { status: string; error?: string }>
   skills: Array<{ name: string; location: string }>
   agents: Array<Record<string, unknown>>
   commands: Array<{ name: string }>
@@ -117,7 +117,10 @@ function engineFetch(engine: Engine, seen: string[]): typeof fetch {
   }) as typeof fetch
 }
 
-function world(name: string, extra: { packages?: CatalogPackageViewV1[] } = {}) {
+function world(
+  name: string,
+  extra: { packages?: CatalogPackageViewV1[]; projectMcpState?: HubViewDeps["projectMcpState"] } = {},
+) {
   const globalRoot = join(tmp, name, "global")
   const projectDir = join(tmp, name, "project")
   const workspace = join(tmp, name, "workspace")
@@ -160,7 +163,7 @@ function world(name: string, extra: { packages?: CatalogPackageViewV1[] } = {}) 
     projectEntry: (directory) =>
       directory === projectDir ? { ok: true, projectDir, root: join(projectDir, ".code-puppy") } : { ok: false, reason: "not a project" },
     defaultDirectory: () => workspace,
-    projectMcpState: async () => "unverifiable",
+    projectMcpState: extra.projectMcpState ?? (async () => "unverifiable"),
     awaitServer: async () => ({ url: "http://127.0.0.1:39117", username: "opencode", password: "pw" }),
     pendingFor: (directory) => coordinator.pendingFor(directory),
     fetch: engineFetch(engine, seen),
@@ -279,6 +282,54 @@ describe("hub-view 三档状态(§2.5)", () => {
       state: "installed",
       stateReason: { code: "not-loaded", detail: 'no verification for kind "plugin"' },
     })
+  })
+
+  // `#1563`:引擎在后台启动 MCP 时报 pending。它是准备中,不是失败 —— 落 installed、不出重载入口、不取在途重载
+  // 的原因(重载修不好「还没连上」);后台重连的那次带着上一次失败,细节里附上。对照:failed 仍是待重载。
+  test("#1563:pending 的 MCP / 云条目 ⇒ installed(准备中),不出重载入口;后台重连附上次失败", async () => {
+    const w = world("pending")
+    w.coordinator.request({ scope: "global", items: [], reason: "x" })
+    w.engine.mcp.files = { status: "pending" }
+    expect(row((await w.service.view(w.projectDir)).rows, "mcp:files")).toMatchObject({
+      installed: true,
+      enabled: true,
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: "MCP pending" },
+    })
+    w.engine.mcp.files = { status: "pending", error: "fetch failed: connect ECONNREFUSED 127.0.0.1:443" }
+    expect(row((await w.service.view(w.projectDir)).rows, "mcp:files").stateReason).toEqual({
+      code: "not-loaded",
+      detail: "MCP pending (last failure: fetch failed: connect ECONNREFUSED 127.0.0.1:443)",
+    })
+    w.engine.cloudDispatch = "enabled"
+    w.engine.mcp.cloud = { status: "pending" }
+    expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: "cloud MCP pending" },
+    })
+    w.engine.mcp.files = { status: "failed" }
+    expect(row((await w.service.view(w.projectDir)).rows, "mcp:files")).toMatchObject({
+      state: "reload-pending",
+      stateReason: { code: "reload-waiting" },
+    })
+  })
+
+  // 审计 F2:项目范围的 MCP 走既有 D-scoped 判据(projectMcpState)。引擎报 pending 时判据给的是独立的 pending,
+  // 不能落成「待重载 + 现在重载」(重载修不好「还没连上」);对照:shadowed 仍是待重载。
+  test("#1563:项目范围的 MCP 判据为 pending ⇒ installed(准备中),不出重载入口", async () => {
+    let state = "pending"
+    const w = world("project-pending", { projectMcpState: async () => state })
+    const identity = projectScopeIdentity(w.projectDir)
+    if (!identity.ok) throw new Error(identity.reason)
+    record(join(w.projectDir, ".code-puppy"), { id: "user:proj", name: "proj", kind: "mcp", origin: "created", scope: identity.scope })
+    w.coordinator.request({ scope: "project", items: [], reason: "x" })
+    expect(row((await w.service.view(w.projectDir)).rows, "user:proj")).toMatchObject({
+      scope: "project",
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: "project MCP pending" },
+    })
+    state = "shadowed"
+    expect(row((await w.service.view(w.projectDir)).rows, "user:proj")).toMatchObject({ state: "reload-pending" })
   })
 
   test("#1533:真实 cloud@1 载荷的预留说明进包行与云组件行;旧云条目缺席 priceNote", async () => {

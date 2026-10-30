@@ -813,8 +813,12 @@ describe("cloud_web_search failure surface (real MCP catalog path, #223 Major 2)
   }
 
   test("a platform 402 surfaces loudly with the gateway body intact", async () => {
+    // #1563:解析成功必须直接判败 —— 先前把结果包成 Error 再断言,而那段 JSON 里恰好就有 body 文本,
+    // 关掉 McpCatalog.convertTool 的 isError 分支这条照样绿(生产 session/tools.ts 走的正是那份投影)。
     const error: Error = await cloudToolReturning(platform402).then(
-      (value) => new Error(`expected a loud failure, got a result: ${JSON.stringify(value)}`),
+      (value) => {
+        throw new Error(`expected a loud failure, got a result: ${JSON.stringify(value)}`)
+      },
       (error: unknown) => error as Error,
     )
 
@@ -829,7 +833,9 @@ describe("cloud_web_search failure surface (real MCP catalog path, #223 Major 2)
   // **正向**断言,并同步更新 ADR-035 §1 与 ADR-009 裁决 (d) 的消费面边界段。
   test("but the HTTP status never reaches the client — the shell drops it (alpha-platform#105)", async () => {
     const error: Error = await cloudToolReturning(platform402).then(
-      () => new Error("expected a loud failure"),
+      () => {
+        throw new Error("expected a loud failure")
+      },
       (error: unknown) => error as Error,
     )
 

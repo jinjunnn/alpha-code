@@ -479,7 +479,27 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   for (const [key, entry] of Object.entries(yield* mcp.tools())) {
     if (!entry.identity || !entry.authority) throw new Error(`MCP tool ${key} is missing its source identity`)
-    const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
+    const origin = entry.identity.origin
+    // #1563 AC6:convertTool 的 execute 只用 client.callTool —— 给它一个委托给 MCP 服务入口的适配器:执行取该服务的
+    // **当前**连接(换代后定义变了就响亮失败),结果投影仍是 McpCatalog.convertTool 那唯一一份。
+    const viaEntry = {
+      callTool: (
+        params: { name: string; arguments?: Record<string, unknown> },
+        _schema?: unknown,
+        options?: { signal?: AbortSignal; timeout?: number },
+      ) =>
+        mcp.callTool
+          ? run.promise(
+              mcp.callTool(origin, params.name, params.arguments ?? {}, {
+                generation: entry.generation,
+                defDigest: entry.defDigest,
+                timeout: options?.timeout,
+                signal: options?.signal,
+              }),
+            )
+          : Promise.reject(new Error(`MCP tool ${key} has no execution entry`)),
+    } as unknown as Parameters<typeof McpCatalog.convertTool>[1]
+    const item = McpCatalog.convertTool(entry.def, viaEntry, entry.timeout)
     const execute = item.execute
     if (!execute) continue
 

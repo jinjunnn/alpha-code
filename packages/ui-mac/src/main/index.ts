@@ -124,7 +124,7 @@ import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
 import { runBootDanglingSweep } from "./boot-dangling-sweep"
 import { creditDanglingSweepForSpawn } from "./dangling-sweep-latch"
-import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-config"
+import { withConfigWriteLock } from "./ext-config"
 import { retireCommunityExcelAfterRecovery } from "./community-excel-retirement"
 import { reconcileMcpWorkspaceMarkers } from "./mcp-workspace-marker"
 import { engineDataDir } from "./data-clear"
@@ -871,11 +871,9 @@ const main = Effect.gen(function* () {
     logger.warn("[req144-t3] legacy cloud mcp-auth sweep failed (non-fatal)", error)
   }
   // REQ-155 `#1244`:随包 Office 连接器跟随运行中的实例 —— 当前根里指着旧 bundle 的 server 路径重锚到
-  // 本 bundle;当前根里没有、兄弟渠道根里有的 committed 记录经安装同一道写策略收养进来。排在 timeout /
-  // marker 两个 reconcile 之前:收养进来的叶子要吃到 governed timeout,marker reconcile 认模板需要当前
-  // server 路径。锚在 alpha-office-instance.test.ts。
+  // 本 bundle;当前根里没有、兄弟渠道根里有的 committed 记录经安装同一道写策略收养进来。排在 marker
+  // reconcile 之前:marker reconcile 认模板需要当前 server 路径。锚在 alpha-office-instance.test.ts。
   reconcileAlphaOfficeInstalls()
-  ensureGovernedMcpConnectTimeouts()
   reconcileMcpWorkspaceMarkers()
   ensureAlphaLayoutDefault()
   // Packaged builds only: on macOS this sets the user-level Launch Services handler pref to the

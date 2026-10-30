@@ -324,6 +324,17 @@ test("connected 的 MCP 行不出授权按钮", async () => {
   expect(authorizeButtons().length).toBe(0)
 })
 
+// `#1563` 审计 F5:引擎在后台启动这台服务时报 pending —— 已安装行不能说「已停用」,说定制中心对同一状态的那句。
+test("`#1563` pending 的 MCP 行不说「已停用」,也不出授权按钮", async () => {
+  reset()
+  engineStatus = { cloud: { status: "pending" } }
+  mount("installed")
+
+  await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.ext.hubReasonNotLoaded"]))
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.disabled"])
+  expect(authorizeButtons().length).toBe(0)
+})
+
 // ── 云连接器卡:用户看云通道状态的主要位置 ───────────────────────────────────────────────
 test("云连接器卡在 needs_auth 时说「需要重新登录」并给出同一个动作", async () => {
   reset()

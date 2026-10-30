@@ -34,6 +34,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import { Permission } from "@/permission"
 import type { ToolPolicyRecord } from "@opencode-ai/schema/alpha-tool-policy"
 import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
+import { callToolVia } from "../fixture/alpha-mcp-call-tool"
 
 const SERVER = "fixtures"
 
@@ -166,6 +167,8 @@ async function buildTool(input: {
       tools: () => Effect.succeed(mcpTools),
       clients: () => Effect.succeed({ [SERVER]: {} as any }),
       bindingFacts: () => Effect.succeed(undefined),
+      // #1563:child 调用经 MCP 服务入口;替身把它交给条目自己的 client(探头仍在那条 transport 上)。
+      callTool: callToolVia(mcpTools),
     }),
   )
 

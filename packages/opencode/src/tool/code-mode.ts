@@ -1,5 +1,5 @@
 import * as Tool from "./tool"
-import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { Cause, Effect, Schema } from "effect"
 import { CodeMode, Tool as SandboxTool, toolError } from "@opencode-ai/codemode"
 import { MCP } from "@/mcp"
@@ -180,28 +180,28 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
     { args: input.args },
   )
   const result: CallToolResult = yield* Effect.gen(function* () {
-    // Deliberately mirrors McpCatalog.convertTool's transport call so the MCP service stays free of tool-loop concerns.
-    return yield* Effect.promise(async () => {
-      const raw = await input.entry.tool.client.callTool(
-        { name: input.entry.tool.def.name, arguments: input.args },
-        CallToolResultSchema,
-        {
-          resetTimeoutOnProgress: true,
-          signal: input.ctx.abort,
-          timeout: input.entry.tool.timeout,
-          // The MCP SDK only sends a progress token when this hook is present, enabling timeout resets.
-          onprogress: () => {},
-        },
-      )
-      if (raw.isError)
-        throw new Error(
+    // #1563 AC6: the MCP service's entry picks the server's *current* connection (the catalog's captured client is not
+    // used to call); the isError projection deliberately mirrors McpCatalog.convertTool, keeping the service free of
+    // tool-loop concerns.
+    if (!input.mcp.callTool) return yield* Effect.die(new Error(`MCP tool ${input.entry.key} has no execution entry`))
+    const raw = yield* input.mcp
+      .callTool(identity.origin, input.entry.tool.def.name, input.args, {
+        generation: input.entry.tool.generation,
+        defDigest: input.entry.tool.defDigest,
+        timeout: input.entry.tool.timeout,
+        signal: input.ctx.abort,
+      })
+      .pipe(Effect.orDie)
+    if (raw.isError)
+      return yield* Effect.die(
+        new Error(
           raw.content
             .flatMap((item) => (item.type === "text" ? [item.text] : []))
             .filter((text) => text.trim())
             .join("\n\n") || "MCP tool returned an error",
-        )
-      return raw
-    })
+        ),
+      )
+    return raw
   }).pipe(
     Effect.withSpan("Tool.execute", {
       attributes: {

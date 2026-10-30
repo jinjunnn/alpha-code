@@ -16,7 +16,8 @@ test("needs_auth 从引擎状态一路走到用户能点的按钮(真 useExtensi
   // 条数是**先确认新用例真的跑起来了**才写上来的。反过来用它去确认新增,会在
   // 「块替换吞掉一条 + 新增一条」时净数对上而看不见 —— `#765` 已经栽过。
   // `#1106`:13 → 17(kick 的 4 条,先单跑 cases 文件确认 17 pass 再改的这两个数)。
-  expect(output).toContain(" 17 pass")
+  // `#1563`:17 → 18(pending 行那 1 条,同样先单跑 cases 文件确认 18 pass)。
+  expect(output).toContain(" 18 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 17 tests across 1 file/)
+  expect(output).toMatch(/Ran 18 tests across 1 file/)
 })

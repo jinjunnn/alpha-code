@@ -2065,6 +2065,8 @@ export function ExtensionHub(props: {
       // `#733`:`needs_auth` 不是「未连接」——它是一个用户能自己修好的状态,
       // 说成「未连接」等于把唯一的补救路径从界面上抹掉。
       if (row.mcp?.needsAuth) return t("alpha.ext.mcpNeedsAuth")
+      // `#1563`:还在后台启动(准备中)不是「已停用」;复用定制中心三档视图给同一状态的文案键(定稿归 T19)。
+      if (row.mcp?.pending) return t("alpha.ext.hubReasonNotLoaded")
       return row.mcp?.connected ? t("alpha.ext.enabledLive") : t("alpha.ext.disabled")
     }
     const isUpdatable = () =>

@@ -1,15 +1,18 @@
 import path from "node:path"
+import { stat } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
+import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { SSEClientTransport, SseError } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import {
+  CallToolResultSchema,
+  type CallToolResult,
   ListRootsRequestSchema,
   type LoggingMessageNotification,
   LoggingMessageNotificationSchema,
@@ -27,7 +30,20 @@ import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { TuiEvent } from "@/server/tui-event"
-import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Context,
+  Option,
+  Schema,
+  ScopedCache,
+  Scope,
+  Semaphore,
+  Stream,
+} from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -59,6 +75,57 @@ function isTransportError(error: Error, timeout: number) {
 // undici's `fetch failed` says nothing on its own; the reason is in `cause`.
 function describeError(error: Error) {
   return error.cause instanceof Error ? `${error.message}: ${error.cause.message}` : error.message
+}
+
+// #1563 AC3: background reconnect waits 30 s, doubling per consecutive failure up to 10 min; a success resets it.
+const RECONNECT_BASE = 30_000
+const RECONNECT_CAP = 600_000
+// Remote failure codes that reconnect (`http` only on 5xx, see remoteFailure); every other failure stays failed.
+const RECONNECT_CODES = new Set([
+  "transport",
+  "dns",
+  "tcp",
+  "connect-timeout",
+  "tls-silent",
+  "tls-failed",
+  "timeout",
+  "handshake_timeout",
+])
+
+type NetFailureLayer =
+  | "policy"
+  | "dns"
+  | "tcp"
+  | "connect-timeout"
+  | "tls-silent"
+  | "tls-failed"
+  | "tls-cert"
+  | "http"
+  | "timeout"
+type NetFailurePath = { via: "egress-proxy"; proxyOrigin: string } | { via: "other" }
+
+/**
+ * #1563 interface point. The layered network classifier belongs to the REQ-236 network baseline
+ * (`classifyNetFailure(error, path)` in `@opencode-ai/plugin/alpha-net-failure`) and is not merged yet. Until it is,
+ * nothing is recognised, so a remote network failure reports `transport` and reconnects; replace this body with
+ * that import when it lands.
+ */
+function classifyNetFailure(
+  _error: unknown,
+  _path: NetFailurePath,
+): { layer: NetFailureLayer; code: string } | undefined {
+  return undefined
+}
+
+// The engine's proxy variables always name the egress proxy (sidecar-env.ts); loopback targets bypass it (NO_PROXY).
+function netPath(url: URL): NetFailurePath {
+  const proxy =
+    url.protocol === "https:"
+      ? (process.env.HTTPS_PROXY ?? process.env.https_proxy)
+      : (process.env.HTTP_PROXY ?? process.env.http_proxy)
+  if (!proxy || !URL.canParse(proxy) || ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))
+    return { via: "other" }
+  return { via: "egress-proxy", proxyOrigin: new URL(proxy).origin }
 }
 const CLIENT_OPTIONS = {
   capabilities: {
@@ -107,10 +174,24 @@ function createClient(directory: string) {
 const StatusConnected = Schema.Struct({ status: Schema.Literal("connected") }).annotate({
   identifier: "MCPStatusConnected",
 })
+// #1563: a server still starting (the upstream v2 API names this phase `pending` too). `error` is the previous
+// attempt's failure, present only while a background reconnect (AC3) is in flight.
+const StatusPending = Schema.Struct({
+  status: Schema.Literal("pending"),
+  error: Schema.optional(Schema.String),
+}).annotate({
+  identifier: "MCPStatusPending",
+})
 const StatusDisabled = Schema.Struct({ status: Schema.Literal("disabled") }).annotate({
   identifier: "MCPStatusDisabled",
 })
-const StatusFailed = Schema.Struct({ status: Schema.Literal("failed"), error: Schema.String }).annotate({
+// #1563 AC2: `code` names the cause — workspace_missing / dependency_missing / spawn_failed, handshake_timeout /
+// tools_list_failed / auth, or a remote network layer (`transport` when it is not recognised).
+const StatusFailed = Schema.Struct({
+  status: Schema.Literal("failed"),
+  error: Schema.String,
+  code: Schema.optional(Schema.String),
+}).annotate({
   identifier: "MCPStatusFailed",
 })
 const StatusNeedsAuth = Schema.Struct({ status: Schema.Literal("needs_auth") }).annotate({
@@ -123,6 +204,7 @@ const StatusNeedsClientRegistration = Schema.Struct({
 
 export const Status = Schema.Union([
   StatusConnected,
+  StatusPending,
   StatusDisabled,
   StatusFailed,
   StatusNeedsAuth,
@@ -148,11 +230,38 @@ function remoteURL(value: string) {
   if (URL.canParse(value)) return new URL(value)
 }
 
-interface CreateResult {
-  mcpClient?: MCPClient
-  status: Status
-  defs?: MCPToolDef[]
-  instructions?: string
+/** Why one startup attempt ended without a connection; `reconnect` = the AC3 background retry applies. */
+class ConnectFailure extends Schema.TaggedErrorClass<ConnectFailure>()("MCP.ConnectFailure", {
+  status: Status,
+  reconnect: Schema.Boolean,
+}) {}
+
+const cacheKey = (name: string, generation: number) => `${name}#${generation}`
+
+const failed = (code: string, error: string): Status => ({ status: "failed", error, code })
+
+const digest = (def: MCPToolDef) => createHash("sha256").update(JSON.stringify(def)).digest("hex")
+
+function localFailure(error: Error, timeout: number): Status {
+  if (error.message === `Operation timed out after ${timeout}ms`) return failed("handshake_timeout", error.message)
+  // Preparing already proved the cwd exists, so a spawn ENOENT means the command itself is missing.
+  const spawn = error as NodeJS.ErrnoException
+  if (spawn.syscall?.startsWith("spawn") && spawn.code === "ENOENT") return failed("dependency_missing", error.message)
+  return failed("spawn_failed", error.message)
+}
+
+function remoteFailure(error: Error, url: URL, timeout: number) {
+  const message = describeError(error)
+  if (error.message === `Operation timed out after ${timeout}ms`)
+    return new ConnectFailure({ status: failed("handshake_timeout", message), reconnect: true })
+  if ((error instanceof StreamableHTTPError || error instanceof SseError) && (error.code === 401 || error.code === 403))
+    return new ConnectFailure({ status: failed("auth", message), reconnect: false })
+  const net = classifyNetFailure(error, netPath(url))
+  if (!net) return new ConnectFailure({ status: failed("transport", message), reconnect: true })
+  return new ConnectFailure({
+    status: failed(net.layer, message),
+    reconnect: RECONNECT_CODES.has(net.layer) || (net.layer === "http" && Number(net.code) >= 500),
+  })
 }
 
 interface AuthResult {
@@ -163,14 +272,40 @@ interface AuthResult {
 
 // --- Effect Service ---
 
+/** A live connection: the value under one `name#generation` key of the instance's connection cache. */
+interface Connection {
+  readonly client: MCPClient
+  /** Refreshed in place by `notifications/tools/list_changed`. */
+  defs: MCPToolDef[]
+  readonly instructions?: string
+  readonly authority: ToolAuthority
+}
+
+interface Server {
+  /** The definition this generation connects with. */
+  entry: ConfigMCPV1.Info
+  /** Bumped by add / connect / disconnect / reconnect; the cache key is `name#generation`. */
+  generation: number
+  /** `configured` = this generation has not started yet; reported as `pending` (with the reconnect's last error). */
+  status: Status | { status: "configured"; error?: string }
+  /** Consecutive background reconnects since the last success (AC3 backoff). */
+  retries: number
+  /** A client that already finished OAuth: the next lookup adopts it instead of connecting. */
+  handoff?: MCPClient
+}
+
 interface State {
   config: Record<string, ConfigMCPV1.Info>
-  status: Record<string, Status>
-  clients: Record<string, MCPClient>
-  defs: Record<string, MCPToolDef[]>
-  instructions: Record<string, string>
-  authority: Record<string, ToolAuthority>
+  servers: Record<string, Server>
+  connections: ScopedCache.ScopedCache<string, Connection, ConnectFailure>
+  scope: Scope.Scope
+  /** Set by the instance's first-running finalizer: nothing is written back or published after it. */
+  disposed: boolean
+  bridge: EffectBridge.Shape
 }
+
+const isCurrent = (s: State, name: string, generation: number) =>
+  !s.disposed && s.servers[name]?.generation === generation
 
 export interface ServerInstructions {
   name: string
@@ -186,6 +321,16 @@ export interface McpTool {
   readonly timeout?: number
   readonly identity?: ToolIdentity
   readonly authority?: ToolAuthority
+  /** #1563: the server generation and definition digest this tool was offered with; `callTool` checks both. */
+  readonly generation?: number
+  readonly defDigest?: string
+}
+
+export interface CallToolOptions {
+  readonly generation?: number
+  readonly defDigest?: string
+  readonly timeout?: number
+  readonly signal?: AbortSignal
 }
 
 export function authorityForMcp(
@@ -221,6 +366,17 @@ export interface Interface {
   readonly bindingFacts?: (
     origin: string,
   ) => Effect.Effect<{ entry?: ConfigMCPV1.Info; authority: ToolAuthority } | undefined>
+  /**
+   * #1563 AC6 —— 执行入口:按 `origin` 取**当前**连接调用工具,只等这一台服务。服务换代后该工具的定义摘要
+   * 与 offer 时不同 ⇒ 响亮失败;相同 ⇒ 用新连接。可选的理由与 `bindingFacts` 相同(上游存量全量 stub
+   * 不必逐个补桩);生产 layer 恒有实现。
+   */
+  readonly callTool?: (
+    origin: string,
+    name: string,
+    args: Record<string, unknown>,
+    options: CallToolOptions,
+  ) => Effect.Effect<CallToolResult, Error>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: (clientName?: string) => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
   readonly resourceTemplates: (
@@ -263,30 +419,66 @@ const layer = Layer.effect(
     const auth = yield* McpAuth.Service
     const events = yield* EventV2Bridge.Service
     const browser = yield* McpBrowser.Service
+    const cfgSvc = yield* Config.Service
+    // #1563 AC5: at most four servers start (spawn + handshake + tools/list) at once, across every instance.
+    const startups = yield* Semaphore.make(4)
 
     type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 
+    const descendants = Effect.fnUntraced(
+      function* (pid: number) {
+        if (process.platform === "win32") return [] as number[]
+        const pids: number[] = []
+        const queue = [pid]
+        for (let index = 0; index < queue.length; index++) {
+          const current = queue[index]
+          const handle = yield* spawner.spawn(ChildProcess.make("pgrep", ["-P", String(current)], { stdin: "ignore" }))
+          const text = yield* Stream.mkString(Stream.decodeText(handle.stdout))
+          yield* handle.exitCode
+          for (const tok of text.split("\n")) {
+            const cpid = parseInt(tok, 10)
+            if (!isNaN(cpid) && !pids.includes(cpid)) {
+              pids.push(cpid)
+              queue.push(cpid)
+            }
+          }
+        }
+        return pids
+      },
+      Effect.scoped,
+      Effect.catch(() => Effect.succeed([] as number[])),
+    )
+
+    /** Kill a stdio server's descendants (the SDK's close only ends the direct child), then close. Idempotent. */
+    const release = (transport: { close(): Promise<void> } | undefined) =>
+      Effect.gen(function* () {
+        const pid = transport instanceof StdioClientTransport ? transport.pid : null
+        if (typeof pid === "number") {
+          for (const dpid of yield* descendants(pid)) {
+            try {
+              process.kill(dpid, "SIGTERM")
+            } catch {}
+          }
+        }
+        if (transport) yield* Effect.tryPromise(() => transport.close()).pipe(Effect.ignore)
+      })
+
     /**
-     * Connect a client via the given transport with resource safety:
-     * on failure the transport is closed; on success the caller owns it.
+     * Connect a client via the given transport. The attempt's scope owns the transport — and a stdio server's whole
+     * process tree — from before the spawn: invalidating the key or disposing the instance mid-handshake reaps it,
+     * and a failed or interrupted handshake reaps it at once (#1563 AC4).
      */
     const connectTransport = Effect.fn("MCP.connectTransport")(function* (transport: Transport, timeout: number) {
       const directory = yield* InstanceState.directory
-      return yield* Effect.acquireUseRelease(
-        Effect.succeed(transport),
-        (t) =>
-          Effect.tryPromise({
-            try: () => {
-              const client = createClient(directory)
-              return withTimeout(client.connect(t), timeout).then(() => client)
-            },
-            catch: (e) => (e instanceof Error ? e : new Error(String(e))),
-          }),
-        (t, exit) => (Exit.isFailure(exit) ? Effect.tryPromise(() => t.close()).pipe(Effect.ignore) : Effect.void),
-      )
+      yield* Effect.addFinalizer(() => release(transport))
+      return yield* Effect.tryPromise({
+        try: () => {
+          const client = createClient(directory)
+          return withTimeout(client.connect(transport), timeout).then(() => client)
+        },
+        catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+      }).pipe(Effect.onError(() => release(transport)))
     })
-
-    const DISABLED_RESULT: CreateResult = { status: { status: "disabled" } }
 
     const connectRemote = Effect.fn("MCP.connectRemote")(function* (
       key: string,
@@ -295,12 +487,12 @@ const layer = Layer.effect(
       const oauthDisabled = mcp.oauth === false
       const oauthConfig = typeof mcp.oauth === "object" ? mcp.oauth : undefined
       const url = remoteURL(mcp.url)
-      if (!url) {
-        return {
-          client: undefined as MCPClient | undefined,
-          status: { status: "failed" as const, error: `Invalid MCP URL for "${key}"` },
-        }
-      }
+      // An unparseable URL never reaches the network; retrying it cannot help.
+      if (!url)
+        return yield* new ConnectFailure({
+          status: failed("transport", `Invalid MCP URL for "${key}"`),
+          reconnect: false,
+        })
       let authProvider: McpOAuthProvider | undefined
 
       if (!oauthDisabled) {
@@ -333,20 +525,19 @@ const layer = Layer.effect(
       ]
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
-      let lastStatus: Status | undefined
+      let lastFailure: ConnectFailure | undefined
       let retryable = false
       // StreamableHTTP's transport failure is the real cause; the SSE 405 that follows must not hide it.
-      let transportFailure: Status | undefined
+      let transportFailure: ConnectFailure | undefined
 
       for (const { name, create, retryAfter } of transports) {
         if (retryAfter !== undefined) {
           if (!retryable) continue
           yield* Effect.sleep(retryAfter)
-        } else if (retryable) transportFailure = lastStatus
+        } else if (retryable) transportFailure = lastFailure
         retryable = false
         const transport = create()
-        const result = yield* connectTransport(transport, connectTimeout).pipe(
-          Effect.map((client) => ({ client, transportName: name })),
+        const client = yield* connectTransport(transport, connectTimeout).pipe(
           Effect.catch((error) => {
             const lastError = error instanceof Error ? error : new Error(String(error))
             const isAuthError =
@@ -354,10 +545,13 @@ const layer = Layer.effect(
 
             if (isAuthError) {
               if (lastError.message.includes("registration") || lastError.message.includes("client_id")) {
-                lastStatus = {
-                  status: "needs_client_registration" as const,
-                  error: "Server does not support dynamic client registration. Please provide clientId in config.",
-                }
+                lastFailure = new ConnectFailure({
+                  status: {
+                    status: "needs_client_registration" as const,
+                    error: "Server does not support dynamic client registration. Please provide clientId in config.",
+                  },
+                  reconnect: false,
+                })
                 return events
                   .publish(TuiEvent.ToastShow, {
                     title: "MCP Authentication Required",
@@ -368,7 +562,7 @@ const layer = Layer.effect(
                   .pipe(Effect.ignore, Effect.as(undefined))
               } else {
                 pendingOAuthTransports.set(key, { transport })
-                lastStatus = { status: "needs_auth" as const }
+                lastFailure = new ConnectFailure({ status: { status: "needs_auth" as const }, reconnect: false })
                 return events
                   .publish(TuiEvent.ToastShow, {
                     title: "MCP Authentication Required",
@@ -381,20 +575,23 @@ const layer = Layer.effect(
             }
 
             retryable = name === "StreamableHTTP" && isTransportError(lastError, connectTimeout)
-            lastStatus = { status: "failed" as const, error: describeError(lastError) }
+            lastFailure = remoteFailure(lastError, url, connectTimeout)
             return Effect.void
           }),
         )
-        if (result) return { client: result.client, status: { status: "connected" } as Status }
-        // If this was an auth error, stop trying other transports
-        if (lastStatus?.status === "needs_auth" || lastStatus?.status === "needs_client_registration") break
+        if (client) return client
+        // An auth answer will not change on another transport: stop here and keep it as the cause.
+        const answer = lastFailure?.status
+        if (
+          answer?.status === "needs_auth" ||
+          answer?.status === "needs_client_registration" ||
+          (answer?.status === "failed" && answer.code === "auth")
+        )
+          break
       }
 
-      const status = lastStatus?.status === "failed" && transportFailure ? transportFailure : lastStatus
-      return {
-        client: undefined as MCPClient | undefined,
-        status: (status ?? { status: "failed", error: "Unknown error" }) as Status,
-      }
+      const failure = lastFailure?.status.status === "failed" && transportFailure ? transportFailure : lastFailure
+      return yield* failure ?? new ConnectFailure({ status: failed("transport", "Unknown error"), reconnect: true })
     })
 
     const connectLocal = Effect.fn("MCP.connectLocal")(function* (
@@ -404,6 +601,18 @@ const layer = Layer.effect(
       const [cmd, ...args] = mcp.command
       const baseDir = yield* InstanceState.directory
       const cwd = mcp.cwd ? path.resolve(baseDir, mcp.cwd) : baseDir
+      // Preparing is one stat: spawning into a missing cwd fails as `spawn <cmd> ENOENT`, exactly like a missing command.
+      const workspace = yield* Effect.promise(() =>
+        stat(cwd).then(
+          (info) => info.isDirectory(),
+          () => false,
+        ),
+      )
+      if (!workspace)
+        return yield* new ConnectFailure({
+          status: failed("workspace_missing", `MCP working directory does not exist: ${cwd}`),
+          reconnect: false,
+        })
       const transport = new StdioClientTransport({
         stderr: "pipe",
         command: cmd,
@@ -418,121 +627,65 @@ const layer = Layer.effect(
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
       return yield* connectTransport(transport, connectTimeout).pipe(
-        Effect.map((client): { client: MCPClient | undefined; status: Status } => ({
-          client,
-          status: { status: "connected" },
-        })),
-        Effect.catch((error): Effect.Effect<{ client: MCPClient | undefined; status: Status }> => {
-          const msg = error instanceof Error ? error.message : String(error)
-          return Effect.succeed({ client: undefined, status: { status: "failed", error: msg } })
-        }),
+        Effect.mapError(
+          (error) => new ConnectFailure({ status: localFailure(error, connectTimeout), reconnect: false }),
+        ),
       )
     })
 
-    const create = Effect.fn("MCP.create")(
-      function* (key: string, mcp: ConfigMCPV1.Info) {
-        if (mcp.enabled === false) {
-          return DISABLED_RESULT
+    /** One startup attempt of one generation: spawn or connect, initialize, then `tools/list` on its own budget (AC7). */
+    const attempt = Effect.fnUntraced(function* (name: string, mcp: ConfigMCPV1.Info, handoff: MCPClient | undefined) {
+      const client =
+        handoff ??
+        (mcp.type === "remote"
+          ? yield* connectRemote(name, mcp as ConfigMCPV1.Info & { type: "remote" })
+          : yield* connectLocal(name, mcp as ConfigMCPV1.Info & { type: "local" }))
+      return yield* Effect.gen(function* () {
+        const listed = client.getServerCapabilities()?.tools ? yield* McpCatalog.defs(client) : []
+        if (!listed)
+          return yield* new ConnectFailure({
+            status: failed("tools_list_failed", "Failed to get tools"),
+            reconnect: false,
+          })
+        const connection: Connection = {
+          client,
+          defs: listed,
+          instructions: client.getInstructions()?.trim(),
+          authority: authorityForMcp(name, mcp),
         }
+        return connection
+      }).pipe(Effect.onError(() => release(client.transport)))
+    })
 
-        const { client: mcpClient, status } =
-          mcp.type === "remote"
-            ? yield* connectRemote(key, mcp as ConfigMCPV1.Info & { type: "remote" })
-            : yield* connectLocal(key, mcp as ConfigMCPV1.Info & { type: "local" })
-
-        if (!mcpClient) {
-          if (status.status !== "connected" && status.status !== "disabled") {
-            yield* Effect.logWarning("server unavailable", {
-              key,
-              type: mcp.type,
-              status: status.status,
-              error: "error" in status ? status.error : undefined,
-            })
-          }
-          return { status } satisfies CreateResult
-        }
-
-        return yield* Effect.gen(function* () {
-          const listed = mcpClient.getServerCapabilities()?.tools ? yield* McpCatalog.defs(mcpClient, mcp.timeout) : []
-          if (!listed) {
-            return yield* Effect.fail(new Error("Failed to get tools"))
-          }
-          return {
-            mcpClient,
-            status,
-            defs: listed,
-            instructions: mcpClient.getInstructions()?.trim(),
-          } satisfies CreateResult
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.tryPromise(() => mcpClient.close()).pipe(Effect.ignore, Effect.andThen(Effect.failCause(cause))),
-          ),
-        )
-      },
-      Effect.map((result): CreateResult => result),
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
-        const error = Cause.squash(cause)
-        return Effect.succeed<CreateResult>({
-          status: { status: "failed", error: error instanceof Error ? error.message : String(error) },
-        })
-      }),
-    )
-    const cfgSvc = yield* Config.Service
-
-    const descendants = Effect.fnUntraced(
-      function* (pid: number) {
-        if (process.platform === "win32") return [] as number[]
-        const pids: number[] = []
-        const queue = [pid]
-        for (let index = 0; index < queue.length; index++) {
-          const current = queue[index]
-          const handle = yield* spawner.spawn(ChildProcess.make("pgrep", ["-P", String(current)], { stdin: "ignore" }))
-          const text = yield* Stream.mkString(Stream.decodeText(handle.stdout))
-          yield* handle.exitCode
-          for (const tok of text.split("\n")) {
-            const cpid = parseInt(tok, 10)
-            if (!isNaN(cpid) && !pids.includes(cpid)) {
-              pids.push(cpid)
-              queue.push(cpid)
-            }
-          }
-        }
-        return pids
-      },
-      Effect.scoped,
-      Effect.catch(() => Effect.succeed([] as number[])),
-    )
-
-    function watch(s: State, name: string, client: MCPClient, bridge: EffectBridge.Shape, timeout?: number) {
+    function watch(s: State, name: string, generation: number, connection: Connection) {
+      const { client } = connection
       client.onclose = () => {
-        if (s.clients[name] !== client) return
-        delete s.clients[name]
-        delete s.defs[name]
-        delete s.instructions[name]
-        s.status[name] = { status: "failed", error: "Connection closed" }
-        bridge.fork(
+        if (!isCurrent(s, name, generation)) return
+        const server = s.servers[name]!
+        server.status = failed(server.entry.type === "remote" ? "transport" : "spawn_failed", "Connection closed")
+        s.bridge.fork(
           Effect.logWarning("MCP connection closed", { server: name }).pipe(
             Effect.andThen(events.publish(ToolsChanged, { server: name })),
+            Effect.andThen(ScopedCache.invalidate(s.connections, cacheKey(name, generation))),
             Effect.ignore,
           ),
         )
       }
 
       client.setNotificationHandler(LoggingMessageNotificationSchema, (notification) =>
-        bridge.promise(serverLog(name, notification.params)),
+        s.bridge.promise(serverLog(name, notification.params)),
       )
 
       if (!client.getServerCapabilities()?.tools) return
       client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
-        if (s.clients[name] !== client || s.status[name]?.status !== "connected") return
+        const live = () => isCurrent(s, name, generation) && s.servers[name]?.status.status === "connected"
+        if (!live()) return
 
-        const listed = await bridge.promise(McpCatalog.defs(client, timeout))
-        if (!listed) return
-        if (s.clients[name] !== client || s.status[name]?.status !== "connected") return
+        const listed = await s.bridge.promise(McpCatalog.defs(client))
+        if (!listed || !live()) return
 
-        s.defs[name] = listed
-        await bridge.promise(events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore))
+        connection.defs = listed
+        await s.bridge.promise(events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore))
       })
     }
 
@@ -554,179 +707,251 @@ const layer = Layer.effect(
       }
     }
 
+    /**
+     * Move `name` to its next generation: the previous key leaves the cache and its process tree is reaped.
+     * `error` = the failure a background reconnect is retrying, reported on the new attempt's `pending`.
+     */
+    const replace = Effect.fnUntraced(function* (
+      s: State,
+      name: string,
+      entry: ConfigMCPV1.Info,
+      next: { handoff?: MCPClient; error?: string } = {},
+    ) {
+      const { handoff, error } = next
+      const status: Server["status"] =
+        entry.enabled === false
+          ? { status: "disabled" }
+          : error === undefined
+            ? { status: "configured" }
+            : { status: "configured", error }
+      const server = s.servers[name]
+      if (!server) {
+        s.servers[name] = { entry, generation: 0, status, retries: 0, handoff }
+        return
+      }
+      const previous = cacheKey(name, server.generation)
+      Object.assign(server, { entry, generation: server.generation + 1, status, handoff })
+      yield* ScopedCache.invalidate(s.connections, previous)
+    })
+
+    /** Start this generation once, in a fiber the instance owns: no reader waits for it (AGENTS.md:107). */
+    const start = (s: State, name: string) =>
+      Effect.suspend(() => {
+        const server = s.servers[name]
+        if (s.disposed || server?.status.status !== "configured") return Effect.void
+        server.status = { ...server.status, status: "pending" }
+        return Effect.forkIn(
+          ScopedCache.get(s.connections, cacheKey(name, server.generation)).pipe(Effect.ignore),
+          s.scope,
+          { startImmediately: true },
+        ).pipe(Effect.asVoid)
+      })
+
+    /** AC3: retry `name` in the background — 30 s, doubling per consecutive failure, capped at 10 min. */
+    const reconnect = (s: State, name: string, generation: number, error: string) => {
+      const server = s.servers[name]!
+      const delay = Math.min(RECONNECT_BASE * 2 ** server.retries, RECONNECT_CAP)
+      server.retries++
+      return Effect.sleep(delay).pipe(
+        Effect.andThen(
+          Effect.suspend(() =>
+            isCurrent(s, name, generation)
+              ? replace(s, name, server.entry, { error }).pipe(Effect.andThen(start(s, name)))
+              : Effect.void,
+          ),
+        ),
+        Effect.forkIn(s.scope),
+        Effect.asVoid,
+      )
+    }
+
+    /** The lookup of one `name#generation` key: one attempt, its outcome written back only while still current. */
+    const lookup = (s: State) => (key: string) =>
+      Effect.gen(function* () {
+        const at = key.lastIndexOf("#")
+        const name = key.slice(0, at)
+        const generation = Number(key.slice(at + 1))
+        const server = s.servers[name]
+        if (!server) return yield* Effect.die(new Error(`MCP server ${name} is not configured`))
+        const handoff = server.handoff
+        server.handoff = undefined
+        // Owned by this key's scope from the start, so a replacement before adoption still closes it.
+        if (handoff) yield* Effect.addFinalizer(() => release(handoff.transport))
+
+        // A replacement closes this key's scope but does not interrupt the lookup. Queued for a slot (or in the cwd
+        // stat) a replaced key must not spawn at all; past that point its late success is closed here (audit F1).
+        const exit = yield* startups
+          .withPermit(
+            Effect.suspend(() =>
+              isCurrent(s, name, generation)
+                ? attempt(name, server.entry, handoff)
+                : Effect.fail(
+                    new ConnectFailure({
+                      status: { status: "failed", error: "replaced before it started" },
+                      reconnect: false,
+                    }),
+                  ),
+            ),
+          )
+          .pipe(Effect.exit)
+        if (Exit.isSuccess(exit)) {
+          if (!isCurrent(s, name, generation)) {
+            yield* release(exit.value.client.transport)
+            return exit.value
+          }
+          server.status = { status: "connected" }
+          server.retries = 0
+          watch(s, name, generation, exit.value)
+          yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+          return exit.value
+        }
+        if (Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
+        const failure = Option.getOrElse(Cause.findErrorOption(exit.cause), () => {
+          const error = Cause.squash(exit.cause)
+          return new ConnectFailure({
+            status: failed(
+              server.entry.type === "remote" ? "transport" : "spawn_failed",
+              error instanceof Error ? error.message : String(error),
+            ),
+            reconnect: false,
+          })
+        })
+        if (isCurrent(s, name, generation)) {
+          server.status = failure.status
+          yield* Effect.logWarning("server unavailable", {
+            key: name,
+            type: server.entry.type,
+            status: failure.status.status,
+            error: "error" in failure.status ? failure.status.error : undefined,
+          })
+          // Readers re-read status on this event; without it a failed background start stays "pending" (audit F3).
+          yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+          if (failure.reconnect && failure.status.status === "failed")
+            yield* reconnect(s, name, generation, failure.status.error)
+        }
+        return yield* failure
+      })
+
     const state = yield* InstanceState.make<State>(
       Effect.fn("MCP.state")(function* () {
         const cfg = yield* cfgSvc.get()
-        const bridge = yield* EffectBridge.make()
-        const config = cfg.mcp ?? {}
-        const s: State = {
+        const s = {
           config: {},
-          status: {},
-          clients: {},
-          defs: {},
-          instructions: {},
-          authority: {},
+          servers: {},
+          scope: yield* Effect.scope,
+          disposed: false,
+          bridge: yield* EffectBridge.make(),
+        } as Omit<State, "connections"> as State
+
+        for (const [key, mcp] of Object.entries(cfg.mcp ?? {})) {
+          if (!isMcpConfigured(mcp)) {
+            yield* Effect.logError("Ignoring MCP config entry without type", { key })
+            continue
+          }
+          s.servers[key] = {
+            entry: mcp,
+            generation: 0,
+            status: mcp.enabled === false ? { status: "disabled" } : { status: "configured" },
+            retries: 0,
+          }
         }
 
-        yield* Effect.forEach(
-          Object.entries(config),
-          ([key, mcp]) =>
-            Effect.gen(function* () {
-              if (!isMcpConfigured(mcp)) {
-                yield* Effect.logError("Ignoring MCP config entry without type", { key })
-                return
-              }
-
-              if (mcp.enabled === false) {
-                s.status[key] = { status: "disabled" }
-                return
-              }
-
-              const result = yield* create(key, mcp)
-              s.status[key] = result.status
-              if (result.mcpClient) {
-                s.clients[key] = result.mcpClient
-                s.defs[key] = result.defs!
-                s.authority[key] = authorityForMcp(key, mcp)
-                if (result.instructions) s.instructions[key] = result.instructions
-                watch(s, key, result.mcpClient, bridge, mcp.timeout)
-              }
-            }),
-          { concurrency: "unbounded" },
-        )
-
+        // Synchronous work only (AGENTS.md:104-107): readers start servers at their call sites. Finalizers run in
+        // reverse, so `disposed` below runs before this cache closes (closing it reaps every key's process tree).
+        s.connections = yield* ScopedCache.make({ capacity: Number.POSITIVE_INFINITY, lookup: lookup(s) })
         yield* Effect.addFinalizer(() =>
-          Effect.gen(function* () {
-            const clients = Object.values(s.clients)
-            s.clients = {}
-            s.defs = {}
-            s.instructions = {}
-            s.authority = {}
-            yield* Effect.forEach(
-              clients,
-              (client) =>
-                Effect.gen(function* () {
-                  const pid = client.transport instanceof StdioClientTransport ? client.transport.pid : null
-                  if (typeof pid === "number") {
-                    const pids = yield* descendants(pid)
-                    for (const dpid of pids) {
-                      try {
-                        process.kill(dpid, "SIGTERM")
-                      } catch {}
-                    }
-                  }
-                  yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
-                }),
-              { concurrency: "unbounded" },
-            )
+          Effect.sync(() => {
+            s.disposed = true
             pendingOAuthTransports.clear()
           }),
         )
-
         return s
       }),
     )
 
-    function closeClient(s: State, name: string) {
-      const client = s.clients[name]
-      delete s.clients[name]
-      delete s.defs[name]
-      delete s.instructions[name]
-      delete s.authority[name]
-      if (!client) return Effect.void
-      return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
-    }
-
-    const storeClient = Effect.fnUntraced(function* (
-      s: State,
-      name: string,
-      client: MCPClient,
-      listed: MCPToolDef[],
-      instructions: string | undefined,
-      mcp: ConfigMCPV1.Info,
-      timeout?: number,
-    ) {
-      const bridge = yield* EffectBridge.make()
-      const previous = s.clients[name]
-      s.status[name] = { status: "connected" }
-      s.clients[name] = client
-      s.defs[name] = listed
-      s.authority[name] = authorityForMcp(name, mcp)
-      if (instructions) s.instructions[name] = instructions
-      else delete s.instructions[name]
-      watch(s, name, client, bridge, timeout)
-      if (previous) yield* Effect.tryPromise(() => previous.close()).pipe(Effect.ignore)
-      return s.status[name]
+    /** The instance with every server that has not started yet kicked off; never waits for one (AC1). */
+    const read = Effect.fnUntraced(function* () {
+      const s = yield* InstanceState.get(state)
+      for (const name of Object.keys(s.servers)) yield* start(s, name)
+      return s
     })
 
-    const status = Effect.fn("MCP.status")(function* () {
-      const s = yield* InstanceState.get(state)
-
-      const cfg = yield* cfgSvc.get()
-      const config = cfg.mcp ?? {}
-      const result: Record<string, Status> = {}
-
-      for (const [key, mcp] of Object.entries(config)) {
-        if (!isMcpConfigured(mcp)) continue
-        result[key] = s.status[key] ?? { status: "disabled" }
+    /** Servers that are up right now: `getSuccess` neither waits nor starts a lookup. */
+    const connected = Effect.fnUntraced(function* (s: State) {
+      const result: Array<{ name: string; generation: number; connection: Connection }> = []
+      if (s.disposed) return result
+      for (const [name, server] of Object.entries(s.servers)) {
+        if (server.status.status !== "connected") continue
+        const live = yield* ScopedCache.getSuccess(s.connections, cacheKey(name, server.generation))
+        if (Option.isSome(live)) result.push({ name, generation: server.generation, connection: live.value })
       }
-
-      for (const key of Object.keys(s.config)) {
-        result[key] = s.status[key] ?? { status: "disabled" }
-      }
-
       return result
     })
 
+    /** The current connection of `name`, waiting only for that server's own attempt (AC1). */
+    const connection = Effect.fnUntraced(function* (s: State, name: string) {
+      yield* start(s, name)
+      const server = s.servers[name]!
+      const status = server.status
+      if (status.status !== "connected" && status.status !== "pending")
+        return yield* new ConnectFailure({ status: status as Status, reconnect: false })
+      const generation = server.generation
+      // Awaited in a fiber the instance owns: an aborted caller never interrupts (and so never poisons) the attempt.
+      const fiber = yield* Effect.forkIn(ScopedCache.get(s.connections, cacheKey(name, generation)), s.scope, {
+        startImmediately: true,
+      })
+      return { connection: yield* Fiber.join(fiber), generation }
+    })
+
+    const report = (status: Server["status"]): Status =>
+      status.status === "configured" ? { ...status, status: "pending" } : status
+
+    const statuses = (s: State) =>
+      Object.fromEntries(Object.entries(s.servers).map(([name, server]) => [name, report(server.status)]))
+
+    /** Replace `name`'s definition and wait for that one server's outcome: explicit actions still answer with it. */
+    const settle = Effect.fnUntraced(function* (s: State, name: string, entry: ConfigMCPV1.Info, handoff?: MCPClient) {
+      yield* replace(s, name, entry, { handoff })
+      yield* connection(s, name).pipe(Effect.ignore)
+      return report(s.servers[name]!.status)
+    })
+
+    const status = Effect.fn("MCP.status")(function* () {
+      return statuses(yield* read())
+    })
+
     const clients = Effect.fn("MCP.clients")(function* () {
-      const s = yield* InstanceState.get(state)
-      return s.clients
+      const live = yield* connected(yield* read())
+      return Object.fromEntries(live.map((item) => [item.name, item.connection.client]))
     })
 
     const instructions = Effect.fn("MCP.instructions")(function* () {
-      const s = yield* InstanceState.get(state)
-      return Object.entries(s.instructions)
-        .filter(([name]) => s.status[name]?.status === "connected")
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, item]) => ({
-          name,
-          instructions: item,
-          tools: (s.defs[name] ?? []).map((tool) => McpCatalog.toolName(name, tool.name)),
+      const live = yield* connected(yield* read())
+      return live
+        .filter((item) => item.connection.instructions)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((item) => ({
+          name: item.name,
+          instructions: item.connection.instructions!,
+          tools: item.connection.defs.map((tool) => McpCatalog.toolName(item.name, tool.name)),
         }))
-    })
-
-    const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCPV1.Info) {
-      const s = yield* InstanceState.get(state)
-      const result = yield* create(name, mcp)
-
-      s.status[name] = result.status
-      if (!result.mcpClient) {
-        yield* closeClient(s, name)
-        delete s.clients[name]
-        return result.status
-      }
-
-      return yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, mcp, mcp.timeout)
     })
 
     const add = Effect.fn("MCP.add")(function* (name: string, mcp: ConfigMCPV1.Info) {
       const s = yield* InstanceState.get(state)
       s.config[name] = mcp
-      yield* createAndStore(name, mcp)
-      return { status: s.status }
+      yield* settle(s, name, mcp)
+      return { status: statuses(s) }
     })
 
     const connect = Effect.fn("MCP.connect")(function* (name: string) {
       const mcp = yield* requireMcpConfig(name)
-      yield* createAndStore(name, { ...mcp, enabled: true })
+      yield* settle(yield* InstanceState.get(state), name, { ...mcp, enabled: true })
     })
 
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
-      yield* requireMcpConfig(name)
-      const s = yield* InstanceState.get(state)
-      yield* closeClient(s, name)
-      delete s.clients[name]
-      s.status[name] = { status: "disabled" }
+      const mcp = yield* requireMcpConfig(name)
+      yield* replace(yield* InstanceState.get(state), name, { ...mcp, enabled: false })
     })
 
     function requestTimeout(s: State, name: string, configured: McpEntry | undefined, fallback?: number) {
@@ -737,35 +962,67 @@ const layer = Layer.effect(
     const tools = Effect.fn("MCP.tools")(function* () {
       const result: Record<string, McpTool> = {}
       const aliases = new ToolAliasLedger()
-      const s = yield* InstanceState.get(state)
+      const s = yield* read()
 
       const cfg = yield* cfgSvc.get()
       const config = cfg.mcp ?? {}
       const defaultTimeout = cfg.experimental?.mcp_timeout
 
-      for (const [clientName, client] of Object.entries(s.clients)) {
-        if (s.status[clientName]?.status !== "connected") continue
-        const mcpConfig = config[clientName]
-        const listed = s.defs[clientName]
-        if (!listed) {
-          yield* Effect.logWarning("missing cached tools for connected server", { clientName })
-          continue
-        }
-        const timeout = requestTimeout(s, clientName, mcpConfig, defaultTimeout)
-        for (const def of listed) {
+      for (const { name: clientName, generation, connection } of yield* connected(s)) {
+        const timeout = requestTimeout(s, clientName, config[clientName], defaultTimeout)
+        for (const def of connection.defs) {
           const alias = McpCatalog.toolName(clientName, def.name)
           const identity = { source: "mcp", origin: clientName, name: def.name } as const
           aliases.add(alias, identity)
           result[alias] = {
             def,
-            client,
+            client: connection.client,
             timeout,
             identity,
-            authority: s.authority[clientName] ?? { kind: "not-asserted" },
+            authority: connection.authority,
+            generation,
+            defDigest: digest(def),
           }
         }
       }
       return result
+    })
+
+    const callTool = Effect.fn("MCP.callTool")(function* (
+      origin: string,
+      name: string,
+      args: Record<string, unknown>,
+      options: CallToolOptions,
+    ) {
+      const s = yield* InstanceState.get(state)
+      if (!s.servers[origin]) return yield* Effect.fail(new Error(`MCP server "${origin}" is not configured`))
+      const live = yield* connection(s, origin).pipe(
+        Effect.mapError(
+          (failure) =>
+            new Error(
+              `MCP server "${origin}" is not available: ${"error" in failure.status ? failure.status.error : failure.status.status}`,
+            ),
+        ),
+      )
+      // A reconnect may have changed what this name means: a call planned against the old definition must not run.
+      if (live.generation !== options.generation) {
+        const def = live.connection.defs.find((item) => item.name === name)
+        if (!def || digest(def) !== options.defDigest)
+          return yield* Effect.fail(
+            new Error(`MCP tool "${name}" on "${origin}" changed after this request was prepared; retry it`),
+          )
+      }
+      return yield* Effect.tryPromise({
+        try: () =>
+          live.connection.client.callTool({ name, arguments: args }, CallToolResultSchema, {
+            resetTimeoutOnProgress: true,
+            signal: options.signal,
+            timeout: options.timeout,
+            // The MCP SDK only sends a progress token when this hook is present, enabling timeout resets.
+            onprogress: () => {},
+          }),
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      })
     })
 
     const bindingFacts = Effect.fn("MCP.bindingFacts")(function* (origin: string) {
@@ -774,7 +1031,7 @@ const layer = Layer.effect(
       const configured = (cfg.mcp ?? {})[origin]
       const raw = s.config[origin] ?? configured
       const entry = raw !== undefined && isMcpConfigured(raw) ? raw : undefined
-      const authority = s.authority[origin]
+      const authority = (yield* connected(s)).find((item) => item.name === origin)?.connection.authority
       if (entry === undefined && authority === undefined) return undefined
       return { entry, authority: authority ?? ({ kind: "not-asserted" } as const) }
     })
@@ -788,14 +1045,13 @@ const layer = Layer.effect(
     ) {
       return Effect.gen(function* () {
         const cfg = yield* cfgSvc.get()
+        const live = (yield* connected(s)).filter((item) => !targetClientName || item.name === targetClientName)
         return yield* Effect.forEach(
-          Object.entries(s.clients).filter(
-            ([name]) => s.status[name]?.status === "connected" && (!targetClientName || name === targetClientName),
-          ),
-          ([clientName, client]) =>
+          live,
+          ({ name: clientName, connection }) =>
             McpCatalog.fetch(
               clientName,
-              client,
+              connection.client,
               (c) => listFn(c, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
               label,
               key,
@@ -806,12 +1062,12 @@ const layer = Layer.effect(
     }
 
     const prompts = Effect.fn("MCP.prompts")(function* () {
-      return yield* collectFromConnected(yield* InstanceState.get(state), McpCatalog.prompts, "prompts")
+      return yield* collectFromConnected(yield* read(), McpCatalog.prompts, "prompts")
     })
 
     const resources = Effect.fn("MCP.resources")(function* (clientName?: string) {
       return yield* collectFromConnected(
-        yield* InstanceState.get(state),
+        yield* read(),
         McpCatalog.resources,
         "resources",
         (resource) => resource.uri,
@@ -821,7 +1077,7 @@ const layer = Layer.effect(
 
     const resourceTemplates = Effect.fn("MCP.resourceTemplates")(function* (clientName?: string) {
       return yield* collectFromConnected(
-        yield* InstanceState.get(state),
+        yield* read(),
         McpCatalog.resourceTemplates,
         "resource templates",
         (template) => template.uriTemplate,
@@ -836,11 +1092,12 @@ const layer = Layer.effect(
       meta?: Record<string, unknown>,
     ) {
       const s = yield* InstanceState.get(state)
-      const client = s.clients[clientName]
-      if (!client) {
+      const live = s.servers[clientName] ? yield* connection(s, clientName).pipe(Effect.option) : Option.none()
+      if (Option.isNone(live)) {
         yield* Effect.logWarning(`client not found for ${label}`, { clientName })
         return undefined
       }
+      const client = live.value.connection.client
       const cfg = yield* cfgSvc.get()
       return yield* Effect.tryPromise({
         try: () => fn(client, requestTimeout(s, clientName, cfg.mcp?.[clientName], cfg.experimental?.mcp_timeout)),
@@ -971,28 +1228,11 @@ const layer = Layer.effect(
         const mcpConfig = yield* requireMcpConfig(mcpName).pipe(
           Effect.tapError(() => Effect.tryPromise(() => client?.close() ?? Promise.resolve()).pipe(Effect.ignore)),
         )
+        if (!client) return { status: "failed", error: "Failed to get tools" } satisfies Status
 
-        const listed = client
-          ? client.getServerCapabilities()?.tools
-            ? yield* McpCatalog.defs(client, mcpConfig.timeout)
-            : []
-          : undefined
-        if (!client || !listed) {
-          yield* Effect.tryPromise(() => client?.close() ?? Promise.resolve()).pipe(Effect.ignore)
-          return { status: "failed", error: "Failed to get tools" } satisfies Status
-        }
-
-        const s = yield* InstanceState.get(state)
         yield* auth.clearOAuthState(mcpName)
-        return yield* storeClient(
-          s,
-          mcpName,
-          client,
-          listed,
-          client.getInstructions()?.trim(),
-          mcpConfig,
-          mcpConfig.timeout,
-        )
+        // Already connected and authorized: the next generation adopts this client instead of reconnecting.
+        return yield* settle(yield* InstanceState.get(state), mcpName, { ...mcpConfig, enabled: true }, client)
       }
 
       const callbackPromise = McpOAuthCallback.waitForCallback(result.oauthState, mcpName)
@@ -1038,7 +1278,7 @@ const layer = Layer.effect(
 
       const mcpConfig = yield* requireMcpConfig(mcpName)
 
-      return yield* createAndStore(mcpName, { ...mcpConfig, enabled: true })
+      return yield* settle(yield* InstanceState.get(state), mcpName, { ...mcpConfig, enabled: true })
     })
 
     const removeAuth = Effect.fn("MCP.removeAuth")(function* (mcpName: string) {
@@ -1074,6 +1314,7 @@ const layer = Layer.effect(
       clients,
       instructions,
       tools,
+      callTool,
       bindingFacts,
       prompts,
       resources,
