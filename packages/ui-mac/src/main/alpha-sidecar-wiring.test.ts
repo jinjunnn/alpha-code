@@ -4,7 +4,7 @@
 // harness 与 process-fence-wiring.test.ts 同形:mock electron / logging,假子进程记录线上消息。
 import { afterEach, beforeEach, expect, mock, test } from "bun:test"
 import { EventEmitter } from "node:events"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { mockElectron } from "../../test-component/electron-mock"
@@ -151,6 +151,38 @@ test("真 host + 真协调器:阶段查询经子进程往返;退出 ⇒ pendingF
   expect(reloads.pendingFor("/w")).toEqual({ code: "reload-waiting", detail: "queued" })
   await result.listener.stop()
   expect(reloads.pendingFor("/w")).toEqual({ code: "reload-waiting", detail: "sidecar exited with code 0" })
+})
+
+// #1565:生产 spawnLocalServer 在 fork 时把随包文档工具清单的路径交给引擎(名字取引擎读的那个常量),而引擎的判定
+// 拿这份 env 认得出 main 写策略写下的四条命令(两边对资源根的解析一致、清单与模板逐 token 对上)。
+// 删掉注入 ⇒ env 里没有这个键;注入的路径与写策略的资源根解析不一致 ⇒ 四条都拿不到声明定义。
+test("#1565: fork 注入 ALPHA_OFFICE_MCP_MANIFEST,引擎据它认出写策略写下的四条文档工具命令", async () => {
+  const { OFFICE_MCP_MANIFEST_ENV, declaredFirstPartyTools } = await import("../../../opencode/src/mcp/alpha-first-party-mcp")
+  const { applyMcpWritePolicy } = await import("./ext-mcp-policy")
+  const { ALPHA_OFFICE_CONNECTORS } = await import("../shared/office-advisories")
+  const child = new RecordingChild()
+  let env: Record<string, string> = {}
+  creditDanglingSweepForSpawn()
+  const result = await spawnLocalServer("127.0.0.1", 4393, "password", {
+    userDataPath,
+    healthCheck: async () => true,
+    fork: ((_: string, __: string[], options: { env: Record<string, string> }) => {
+      env = options.env
+      return child
+    }) as unknown as typeof import("electron").utilityProcess.fork,
+    egressProxy: async () => ({ port: 4433 }),
+    planFence: () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" }),
+  })
+  await result.health.wait
+  expect(env[OFFICE_MCP_MANIFEST_ENV]).toEndWith("/office-mcp/tools.json")
+  for (const connector of ALPHA_OFFICE_CONNECTORS) {
+    const server: Record<string, unknown> = { type: "local", command: ["placeholder"] }
+    expect(applyMcpWritePolicy(connector.name, server).ok).toBe(true)
+    const declared = declaredFirstPartyTools(connector.name, server, env, readFileSync) as Array<{ name: string }> | undefined
+    const extension = connector.extension.slice(1)
+    expect(declared?.map((tool) => tool.name).sort()).toEqual([`read_${extension}`, `write_${extension}`])
+  }
+  await result.listener.stop()
 })
 
 // `#1531`:ext 的 parentPort 监听必须在 ready **之前**挂上(main 只在 ready 那一刻重发在途代际)。sidecar.ts 顶层的 registerHooks /

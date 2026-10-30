@@ -16,7 +16,7 @@ export const callToolVia =
           (tool) => tool.identity?.origin === origin && tool.identity.name === name,
         )
         if (!entry) throw new Error(`no MCP tool ${origin}/${name} in this rig`)
-        return entry.client.callTool({ name, arguments: args }, CallToolResultSchema, {
+        return entry.client!.callTool({ name, arguments: args }, CallToolResultSchema, {
           signal: options.signal,
           timeout: options.timeout,
         })

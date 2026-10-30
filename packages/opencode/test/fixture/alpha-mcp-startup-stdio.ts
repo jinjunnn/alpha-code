@@ -8,6 +8,8 @@
 //   ALPHA_MCP_STARTUP_LOG       append "+" at launch and "-" when answering tools/list (end of startup)
 //   ALPHA_MCP_DESCRIPTION_FILE  the `echo` tool's description, read at launch (a reconnect can change the definition)
 //   ALPHA_MCP_CALL_LOG          append "<tool>\n" when a tools/call starts
+//   ALPHA_MCP_TOOLS_FILE        serve this JSON array of tool definitions instead of echo/slow (#1565: stand in for
+//                               a first-party Office server whose definitions come from its bundled manifest)
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
@@ -34,6 +36,7 @@ const server = new Server({ name: "alpha-mcp-startup", version: "1.0.0" }, { cap
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   if (env.ALPHA_MCP_LIST_DELAY_MS) await Bun.sleep(Number(env.ALPHA_MCP_LIST_DELAY_MS))
   mark("-")
+  if (env.ALPHA_MCP_TOOLS_FILE) return { tools: JSON.parse(readFileSync(env.ALPHA_MCP_TOOLS_FILE, "utf8")) }
   return {
     tools: [
       { name: "echo", description, inputSchema: { type: "object", properties: { text: { type: "string" } } } },
