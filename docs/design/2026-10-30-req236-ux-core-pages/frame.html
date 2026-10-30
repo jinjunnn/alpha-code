@@ -6,516 +6,248 @@
 <title>首页 · 对话 · 搜索 · 产物:逐页改稿</title>
 <link rel="stylesheet" href="../current/conversation-timeline/design.css" />
 <style>
-/* 本稿自有类一律 ux- 前缀;token 来自链接的 current/conversation-timeline/design.css,
-   依赖对比度的几项与本稿要用、该文件没有的几项按 packages/ui-mac/src/renderer/alpha-ui/tokens.css 实值补齐。 */
-:root{--a-text-tertiary:#64656d;--a-user-bubble:#e6f1fd;--a-user-bubble-text:#11233f;--a-perm-allow:#4f46e5;--a-perm-ask:#18181b;--a-perm-readonly:#166534;--a-overlay-selected:rgba(79,70,229,.10)}
-html[data-theme="dark"]{--a-text-tertiary:#86878f;--a-user-bubble:#193767;--a-user-bubble-text:#f5f9fd;--a-perm-allow:#818cf8;--a-perm-ask:#fafafa;--a-perm-readonly:#4ade80;--a-overlay-selected:rgba(129,140,248,.16)}
-*{box-sizing:border-box}
-body{margin:0;padding:0 0 96px;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base)}
-button{font-family:inherit;cursor:pointer}
-svg.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none}
-svg.ic.sm{width:14px;height:14px}
-.ux-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 90%,transparent);backdrop-filter:blur(14px);flex-wrap:wrap}
-.ux-bar b{font-size:12.5px}.ux-bar nav{display:flex;gap:4px;flex-wrap:wrap}
-.ux-bar nav a{font-size:11.5px;color:var(--a-text-secondary);text-decoration:none;padding:4px 8px;border-radius:6px}
-.ux-bar nav a:hover{background:var(--a-overlay-hover);color:var(--a-text)}
-.ux-grow{flex:1}
-.seg{display:inline-flex;padding:2px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);border-radius:8px;gap:2px}
-.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:11.5px;font-weight:500;padding:5px 10px;border-radius:6px}
-.seg button.on{background:var(--a-surface-raised);color:var(--a-text);font-weight:600;box-shadow:0 0 0 1px var(--a-border),var(--a-shadow-xs)}
-.ux-wrap{max-width:1180px;margin:0 auto;padding:30px 24px 0}
-.ux-intro h1{margin:0 0 10px;font-size:24px;letter-spacing:-.02em}
-.ux-intro p{margin:0 0 8px;color:var(--a-text-secondary);font-size:14px;line-height:1.65;max-width:76ch}
-.ux-rel{margin:18px 0 0;padding:16px 18px;border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:8px;background:var(--a-bg-canvas);font-size:12.5px;color:var(--a-text-secondary);line-height:1.65}
-.ux-rel h3{margin:0 0 8px;font-size:14px;color:var(--a-text)}.ux-rel b{color:var(--a-text)}.ux-rel ul{margin:4px 0 8px;padding-left:18px}
-.ux-h2{margin:48px 0 4px;font-size:19px;letter-spacing:-.015em;scroll-margin-top:64px}
-.ux-lede{margin:0 0 14px;color:var(--a-text-secondary);font-size:13px;line-height:1.6;max-width:80ch}
-.ux-pair{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
-.ux-col>.ux-cap{display:flex;align-items:baseline;gap:8px;margin:0 0 8px;font-size:12px;color:var(--a-text-tertiary)}
-.ux-col>.ux-cap b{font-size:12.5px;color:var(--a-text)}
-.ux-col>.ux-cap .tag{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--a-bg-muted);color:var(--a-text-secondary)}
-.ux-col>.ux-cap .tag.new{background:var(--a-accent-subtle);color:var(--a-accent)}
-.ux-note{margin:10px 0 0;font-size:12px;color:var(--a-text-secondary);line-height:1.6}
-.ux-note b{color:var(--a-text)}
-.ux-spec{width:100%;border-collapse:collapse;margin:14px 0 0;font-size:12.5px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-radius:8px;overflow:hidden}
-.ux-spec th{background:var(--a-bg-subtle);text-align:left;font-size:11.5px;color:var(--a-text-tertiary);font-weight:600;padding:8px 12px}
-.ux-spec td{padding:9px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top;line-height:1.55}
-.ux-spec td:first-child{color:var(--a-text)}
-.ux-spec s{color:var(--a-text-tertiary)}
-/* ── 产品帧:一个窗口片段 ── */
-.win{background:var(--a-bg-canvas);border:1px solid var(--a-border);border-radius:12px;box-shadow:var(--a-shadow-sm);overflow:hidden}
-.win-body{padding:18px 20px}
-/* 新对话页 */
-.home{position:relative;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px 22px;text-align:center;overflow:hidden}
-.home .ghost{position:absolute;inset:auto 0 -18px 0;font-size:64px;font-weight:800;letter-spacing:.04em;color:var(--a-text);opacity:.035;pointer-events:none}
-.home h4{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em}
-.home h4 span{color:var(--a-text-tertiary);font-weight:500}
-.comp{width:100%;max-width:440px;border:1px solid var(--a-border);border-radius:14px;background:var(--a-surface);box-shadow:var(--a-shadow-xs);text-align:left}
-.comp .ph{padding:12px 14px 6px;color:var(--a-text-tertiary);font-size:13px;min-height:44px}
-.comp .tools{display:flex;align-items:center;gap:6px;padding:6px 8px 8px}
-.comp .tools .b{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border-radius:7px;color:var(--a-text-secondary);font-size:11.5px;border:1px solid var(--a-border-faint)}
-.comp .tools .send{margin-left:auto;width:28px;height:28px;border-radius:8px;background:var(--a-text);color:var(--a-bg-canvas);display:grid;place-items:center}
-.chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;border:1px solid var(--a-border);font-size:11.5px;color:var(--a-text-secondary)}
-.banner{width:100%;max-width:440px;display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:10px;text-align:left;font-size:12.5px;line-height:1.5}
-.banner.warn{background:var(--a-warning-subtle);border:1px solid color-mix(in srgb,var(--a-warning) 30%,transparent)}
-.banner .ic{color:var(--a-warning);margin-top:1px}
-.banner b{display:block;color:var(--a-text);font-weight:600}
-.banner span{color:var(--a-text-secondary)}
-.banner .act{margin-left:auto;flex:none;align-self:center;font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text)}
-.prep{width:100%;max-width:440px;min-height:96px;border:1px dashed var(--a-border);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--a-text-secondary);font-size:12.5px}
-.prep small{color:var(--a-text-tertiary);font-size:11.5px}
-.spin{width:12px;height:12px;border-radius:50%;border:1.6px solid var(--a-border-strong);border-top-color:var(--a-text-secondary);display:inline-block;vertical-align:-1px;margin-right:6px}
-.tip{display:inline-block;padding:5px 9px;border-radius:7px;background:var(--a-text);color:var(--a-bg-canvas);font-size:11.5px;line-height:1.4}
-/* 会话页 */
-.sess{display:flex;flex-direction:column;min-height:300px}
-.wtop{display:flex;align-items:center;gap:8px;height:46px;padding:0 14px;border-bottom:1px solid var(--a-border-faint);font-size:12.5px;white-space:nowrap}
-.wtop .av{width:20px;height:20px;border-radius:6px;background:var(--a-bg-muted);display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--a-text-secondary)}
-.wtop .proj{color:var(--a-text-secondary)}
-.wtop .sep{color:var(--a-text-disabled)}
-.wtop .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.wtop .st{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;background:var(--a-bg-subtle);color:var(--a-text-secondary);font-size:11px}
-.wtop .st i{width:6px;height:6px;border-radius:50%;background:var(--a-text-disabled)}
-.wtop .st.run i{background:var(--a-accent)}
-.wtop .st.wait{background:var(--a-warning-subtle);color:var(--a-text)}
-.wtop .st.wait i{background:var(--a-warning)}
-.wtop .grow{flex:1}
-.wtop .ib{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--a-text-tertiary)}
-.tl{flex:1;padding:16px 18px 14px;display:flex;flex-direction:column;gap:12px;position:relative}
-.u{align-self:flex-end;max-width:78%;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
-.u .bub{background:var(--a-user-bubble);color:var(--a-user-bubble-text);padding:8px 12px;border-radius:14px 14px 4px 14px;font-size:13px;line-height:1.5}
-.u .meta{font-size:11px;color:var(--a-text-tertiary);display:flex;align-items:center;gap:5px}
-.u .meta .dot{width:6px;height:6px;border-radius:50%}
-.a{font-size:13px;line-height:1.6;color:var(--a-text);max-width:92%}
-.fold{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--a-text-secondary)}
-.fold .warn{color:var(--a-warning)}
-.foot{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--a-text-secondary)}
-.foot.wait{color:var(--a-text)}
-.foot.wait i{width:7px;height:7px;border-radius:50%;background:var(--a-warning)}
-.blank{flex:1;min-height:180px}
-.loadrow{display:flex;align-items:center;justify-content:center;gap:6px;min-height:180px;color:var(--a-text-tertiary);font-size:12.5px}
-.failrow{margin:auto;max-width:340px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;min-height:180px;justify-content:center}
-.failrow b{font-size:13px;font-weight:600}
-.failrow span{font-size:12px;color:var(--a-text-secondary)}
-.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:8px;border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text);font-size:12px;font-weight:500}
-.hist{align-self:center;font-size:11.5px;color:var(--a-text-tertiary);display:flex;gap:6px;align-items:center}
-.hist a{color:var(--a-accent);text-decoration:none}
-.jump{position:absolute;right:16px;bottom:12px;width:30px;height:30px;border-radius:50%;background:var(--a-surface-raised);border:1px solid var(--a-border);box-shadow:var(--a-shadow-sm);display:grid;place-items:center;color:var(--a-text-secondary)}
-.cut{font-size:11px;color:var(--a-text-tertiary);text-align:center;border-top:1px dashed var(--a-border);padding-top:6px}
-.terr{display:flex;gap:10px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--a-error) 22%,transparent);background:var(--a-error-subtle);border-radius:10px;font-size:12.5px;line-height:1.55}
-.terr .ic{color:var(--a-error);margin-top:2px}
-.terr b{display:block;font-weight:600;color:var(--a-text)}
-.terr p{margin:2px 0 6px;color:var(--a-text-secondary)}
-.terr code{font-family:var(--a-font-mono);font-size:11px;color:var(--a-text-tertiary);word-break:break-all}
-/* 搜索面板 */
-.dlg{max-width:520px;margin:0 auto;border:1px solid var(--a-border);border-radius:14px;background:var(--a-surface-raised);box-shadow:var(--a-shadow-lg);overflow:hidden}
-.dlg-h{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 4px;font-size:13px;font-weight:600}
-.dlg-h .x{color:var(--a-text-tertiary)}
-.dlg-b{padding:8px 14px 12px;display:flex;flex-direction:column;gap:8px}
-.inp{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--a-border);border-radius:9px;background:var(--a-bg-canvas);font-size:13px}
-.inp .ic{color:var(--a-text-tertiary)}
-.inp .ph{color:var(--a-text-tertiary)}
-.inp.focus{box-shadow:0 0 0 3px var(--a-accent-ring);border-color:var(--a-accent-border)}
-.res{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
-.res li{display:flex;align-items:baseline;gap:10px;padding:7px 10px;border-radius:8px;font-size:13px}
-.res li .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.res li .p{flex:none;font-size:11.5px;color:var(--a-text-tertiary)}
-.res li .w{flex:none;width:72px;text-align:right;font-size:11.5px;color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
-.res li.on{background:var(--a-overlay-selected)}
-.res li.on .t{font-weight:500}
-.raw{font-family:var(--a-font-mono);font-size:12px}
-.empty{padding:16px 8px;text-align:center;color:var(--a-text-tertiary);font-size:12.5px;line-height:1.6}
-.empty b{display:block;color:var(--a-text-secondary);font-weight:500}
-.keys{display:flex;gap:12px;justify-content:flex-end;padding:8px 14px;border-top:1px solid var(--a-border-faint);font-size:11px;color:var(--a-text-tertiary)}
-.keys kbd{font-family:var(--a-font-sans);font-size:10.5px;padding:1px 5px;border-radius:4px;border:1px solid var(--a-border);background:var(--a-bg-subtle);color:var(--a-text-secondary);margin-right:3px}
-.states{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}
-/* 产物右栏文字 */
-.rail{max-width:400px;border:1px solid var(--a-border);border-radius:12px;background:var(--a-bg-canvas);overflow:hidden}
-.rail-tabs{display:flex;gap:2px;padding:8px 10px;border-bottom:1px solid var(--a-border-faint);font-size:12.5px;color:var(--a-text-secondary)}
-.rail-tabs span{padding:4px 9px;border-radius:7px}.rail-tabs span.on{background:var(--a-bg-muted);color:var(--a-text);font-weight:500}
-.rail-b{padding:12px;display:flex;flex-direction:column;gap:10px}
-.ntc{padding:9px 11px;border-radius:9px;font-size:12px;line-height:1.55;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);color:var(--a-text-secondary)}
-.ntc.err{background:var(--a-error-subtle);border-color:color-mix(in srgb,var(--a-error) 20%,transparent);color:var(--a-text)}
-.ntc.warn{background:var(--a-warning-subtle);border-color:color-mix(in srgb,var(--a-warning) 24%,transparent);color:var(--a-text)}
-.ntc small{display:block;margin-top:2px;color:var(--a-text-secondary);font-size:11.5px}
-.ofc{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:11px}
-.ofc.ok{background:var(--a-success-subtle);color:var(--a-text)}
-.ofc.bad{background:var(--a-error-subtle);color:var(--a-text)}
-.ofc.chk{background:var(--a-bg-muted);color:var(--a-text-secondary)}
-.miss{padding:22px 10px;text-align:center;font-size:12.5px;color:var(--a-text-secondary);display:flex;flex-direction:column;gap:8px;align-items:center}
-@media (max-width:860px){.ux-pair,.states{grid-template-columns:1fr}.ux-wrap{padding:22px 16px 0}}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* 本页的排版、时间线帧与表格全部来自 current/conversation-timeline/design.css(.topbar .wrap .pf-* .frame .tl .turn-err .row-user .umeta .sess-empty .interrupted)。
+   新对话页、对话顶栏、产物右栏各自用它们的活稿样式,装在 frames/ 下的子帧里(三份活稿的类名互相冲突,不能同页引用)。
+   以下只有改动块的少量新增,只用 --a-* token。 */
+.ux-if{display:block;width:100%;border:0;height:420px;background:transparent}
+.ux-sec{scroll-margin-top:70px}
+/* 用户消息脚注的档位色点:值同 packages/ui-mac/src/renderer/alpha-ui/tokens.css 的 --a-perm-* */
+:root{--a-perm-allow:#4f46e5;--a-perm-ask:#18181b;--a-perm-readonly:#166534}
+html[data-theme="dark"]{--a-perm-allow:#818cf8;--a-perm-ask:#fafafa;--a-perm-readonly:#4ade80}
+.ux-pdot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:1px}
+/* 回合错误卡的动作与开发者详情(动作样式同 .interrupted .cont) */
+.turn-err .ux-acts{display:flex;gap:14px;margin-top:4px;font-size:var(--a-text-sm)}
+.turn-err .ux-acts span{color:var(--a-accent);font-weight:var(--a-weight-medium);cursor:pointer}
+.turn-err details{margin-top:6px}
+.turn-err summary{cursor:pointer;list-style:none;font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.turn-err summary::-webkit-details-marker{display:none}
+/* 读取中的转圈(同 .retry-card .sp 的写法,中性色) */
+.ux-sp{display:inline-block;width:12px;height:12px;border:1.6px solid var(--a-border-strong);border-top-color:var(--a-text-tertiary);border-radius:50%;vertical-align:-2px;margin-right:6px}
+.sess-empty .cont{color:var(--a-accent);font-weight:var(--a-weight-medium);font-size:var(--a-text-sm);cursor:pointer}
+/* 会话搜索:没有活稿,照抄已上线组件 alpha-ui/dialog.css · input.css · session-search.css 的规则(静态摆放) */
+.ux-dlg{width:min(520px,100%);margin:0 auto;display:flex;flex-direction:column;background:var(--a-surface-raised);border:1px solid var(--a-border);border-radius:var(--a-radius-xl);box-shadow:var(--a-shadow-lg);overflow:hidden;font-family:var(--a-font-sans)}
+.ux-dlg-h{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--a-border-faint)}
+.ux-dlg-t{flex:1;min-width:0;font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.ux-dlg-x{width:30px;height:30px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center}
+.ux-dlg-b{padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+.ux-inp{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--a-border-strong);border-radius:var(--a-radius-md);background:var(--a-bg-canvas);box-shadow:var(--a-ring-focus);font-size:var(--a-text-base);color:var(--a-text)}
+.ux-inp .ic{color:var(--a-text-tertiary)}
+.ux-inp .ph{color:var(--a-text-tertiary)}
+.a-search-empty{margin:0;padding:16px 8px;color:var(--a-text-tertiary);font-size:var(--a-text-sm);text-align:center}
+.a-search-results{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.a-search-result{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:var(--a-radius-md);color:var(--a-text)}
+.a-search-result-title{flex:1 1 auto;min-width:0;font-size:var(--a-text-base);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.a-search-result-project{flex:0 0 auto;color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+/* 搜索改动块:选中行、行尾时间、按键提示 */
+.a-search-result[aria-selected="true"]{background:var(--a-accent-subtle)}
+.a-search-result-time{flex:0 0 64px;text-align:right;color:var(--a-text-tertiary);font-size:var(--a-text-xs);font-variant-numeric:tabular-nums}
+.ux-keys{display:flex;justify-content:flex-end;gap:12px;padding:8px 20px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.ux-keys kbd{font-family:var(--a-font-sans);padding:0 5px;margin-right:3px;border:1px solid var(--a-border);border-radius:4px;background:var(--a-bg-subtle);color:var(--a-text-secondary)}
 </style>
 </head>
 <body>
-<div class="ux-bar">
-  <b>首页 · 对话 · 搜索 · 产物</b>
-  <nav>
-    <a href="#home">新对话页</a><a href="#conv-header">对话顶栏</a><a href="#conv-loading">读取对话</a><a href="#turn-error">回复没完成</a><a href="#user-meta">消息脚注</a><a href="#send-follow">发送后</a><a href="#search">搜索</a><a href="#artifacts-copy">产物文字</a>
-  </nav>
-  <span class="ux-grow"></span>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-grep" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+</svg>
+<div class="topbar">
+  <div class="brand">首页 · 对话 · 搜索 · 产物 改稿</div>
+  <div class="spacer"></div>
+  <nav><a href="#home">新对话页</a><a href="#conv-header">顶栏</a><a href="#conv-loading">读取</a><a href="#turn-error">回复失败</a><a href="#user-meta">脚注</a><a href="#send-follow">发送后</a><a href="#search">搜索</a><a href="#artifacts-copy">产物</a></nav>
   <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
 </div>
 
-<div class="ux-wrap">
-  <div class="ux-intro">
-    <h1>打开应用、读对话、找对话、取结果,每一步都说人话、都有出路</h1>
-    <p>这一稿只改四页里「挡住任务、说得让人误会、或者写的是工程话」的那几处。每节左边是今天用户真正看到的样子(按代码与本机记录还原),右边是改后。没有新页面、新功能或新设置项。</p>
-    <p>右上角切换浅色 / 深色;也可以在地址后加 <code>?theme=dark</code>。每节有锚点,可以直接打开 <code>frame.html#search</code> 这类地址跳到那一节。</p>
-  </div>
+<div class="wrap">
+  <div class="sec-kicker">逐页改稿 · 只动审查表列出的元素</div>
+  <h2 class="t">首页、对话、搜索、产物</h2>
+  <p class="lede">左边是现在,右边是改后。没列出的元素与活稿一致。</p>
 
-  <div class="ux-rel" id="relation">
+  <div class="pf-rel" id="relation">
     <h3>与上一稿的关系</h3>
-    <b>继承</b>:
+    <b>继承</b>:输入框 = <span class="mono">current/composer/</span>;顶栏 = <span class="mono">current/session-workspace/</span> §顶栏;时间线、回合错误卡、会话空态 = <span class="mono">current/conversation-timeline/</span>;产物预览区 = <span class="mono">current/artifact-workbench/</span>,右栏结构按已批的结果优先稿;模型按钮图标按已批的模型选择器稿。
     <ul>
-      <li>会话页四面板外壳、顶栏 46px 高度与按钮位置(<code>current/session-workspace/</code>);时间线的工作过程折叠、回合脚行、回合错误卡的形态(<code>current/conversation-timeline/</code> 的 <code>#process-fold</code>、<code>#turn-running</code> 与回合级错误卡帧);产物右栏的结构完全按已批的「结果优先」增量(<code>2026-10-30-req236-results-rail/</code>)。</li>
-      <li>同期已批的五份增量照用不重画:生图卡、结果右栏、附件、模型状态行、模型选择器。它们管的东西本稿只在审查表里标归属。</li>
+      <li><b>改了</b>:新对话页加配置失效提示与准备中占位;顶栏标题与状态;时间线读取中与读取失败;回合错误卡的五类原因;用户消息脚注;会话搜索(第一次出稿);产物预览区六句文字。</li>
+      <li><b>不改</b>:工具名称与来源、生图卡、附件、模型状态行与选择器、权限确认卡、联网失败原因。</li>
     </ul>
-    <b>改了</b>:
-    <ul>
-      <li>新对话页也显示「全局配置未生效」提示(今天只在很少到达的首页上显示);临时状态从黄色警告改成中性的「正在准备新对话…」;输入框几处提示去掉工程话。</li>
-      <li>对话顶栏的标题与侧栏同一种显示法,不再出现英文时间戳或内部编号;状态跟着时间线走(等你批准时不再写「正在生成」),空闲时不显示。</li>
-      <li>时间线新增两个状态:「正在读取对话…」与「没能读出这段对话 · 重新读取」(今天两种情况都是一片空白)。</li>
-      <li>回合错误卡对认得出的几类原因(余额与会员、登录凭据、频率上限、对话太长、回答被截断)换成人话加下一步;认不出的原样不动。</li>
-      <li>用户消息脚注写所选权限档,不写内部代号;往上翻着看历史时发出新消息,视图回到最新。</li>
-      <li>会话搜索:第一次有稿。显示和侧栏一致的标题、每行带时间、方向键选择回车打开、列表未就绪时不再说「没有匹配」。</li>
-      <li>产物右栏的七条警告与出错文字换成人话。</li>
-    </ul>
-    <b>不改</b>:工具名称与来源标签、开发者详情、生图卡、附件、模型状态行与模型选择器、权限确认卡、联网失败的分层原因 —— 各有已批稿或在途方案。不新增消息上下条导航、搜索筛选器或对话内容全文搜索。
   </div>
 
   <!-- ══════════ 新对话页 ══════════ -->
-  <h2 class="ux-h2" id="home">一 · 新对话页:配置坏了要看得见,临时状态不吓人</h2>
-  <p class="ux-lede">每次启动应用都会自动落到「新对话」这一页;侧栏顶部的品牌标志才通往另一张几乎一样的首页。今天「全局配置未生效」只在后者显示,所以启动后的用户看不到它。</p>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">配置文件写坏了,启动后</span></div>
-      <div class="win"><div class="home">
-        <div class="ghost" aria-hidden="true">CODE PUPPY</div>
-        <h4>新会话<span> — Alpha</span></h4>
-        <div class="comp"><div class="ph">问点什么,输入 / 调命令,@ 引用上下文…</div>
-          <div class="tools"><span class="b">+</span><span class="b">全部批准</span><span class="b">DeepSeek V4 Flash</span><span class="send"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span></div></div>
-        <span class="chip">Alpha ▾</span>
-      </div></div>
-    </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">同一状态</span></div>
-      <div class="win"><div class="home">
-        <div class="ghost" aria-hidden="true">CODE PUPPY</div>
-        <div class="banner warn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg><div><b>全局配置未生效</b><span>配置文件存在语法错误,引擎会忽略整份配置</span></div><span class="act">打开配置</span></div>
-        <h4>新对话<span> — Alpha</span></h4>
-        <div class="comp"><div class="ph">问点什么,输入 / 调命令,@ 引用上下文…</div>
-          <div class="tools"><span class="b">+</span><span class="b">全部批准</span><span class="b">DeepSeek V4 Flash</span><span class="send"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span></div></div>
-        <span class="chip">Alpha ▾</span>
-      </div></div>
-    </div>
-  </div>
-  <p class="ux-note">提示条与首页上的那一条是<b>同一个组件、同一句话、同一个动作</b>,只是多挂一处;第二行原样显示配置检查给出的原因。标题从「新会话」改成「新对话」,与侧栏按钮同一个词。</p>
-
-  <div class="ux-pair" style="margin-top:18px">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">新对话还没准备好的那一下</span></div>
-      <div class="win"><div class="home" style="min-height:200px">
-        <h4>新会话<span> — Alpha</span></h4>
-        <div class="banner warn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg><div><b>草稿目录未就绪</b><span>等待草稿状态加载</span></div></div>
-        <span class="chip">Alpha ▾</span>
-      </div></div>
-    </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">同一状态</span></div>
-      <div class="win"><div class="home" style="min-height:200px">
-        <h4>新对话<span> — Alpha</span></h4>
-        <div class="prep"><span><span class="spin" aria-hidden="true"></span>正在准备新对话…</span><small>一直没好的话,点左侧「新对话」重来</small></div>
-        <span class="chip">Alpha ▾</span>
-      </div></div>
-    </div>
-  </div>
-  <p class="ux-note">占位与输入框同宽同高,准备好后原地换成输入框,页面不跳。不是故障,所以不用警告色。</p>
-
-  <table class="ux-spec">
-    <thead><tr><th>输入框上的提示(共用于首页、新对话页与会话页)</th><th>现在</th><th>改后</th></tr></thead>
+  <h3 class="pf-h ux-sec" id="home">新对话页</h3>
+  <p class="pf-sub">启动后落在这一页,配置失效提示也挂在这里;标题与侧栏同为「新对话」。</p>
+  <iframe class="ux-if" data-ux src="frames/home.html" title="新对话页对照"></iframe>
+  <table class="pf-table">
+    <thead><tr><th>输入框悬停提示</th><th>现在</th><th>改后</th></tr></thead>
     <tbody>
-      <tr><td>「+」按钮悬停</td><td><s>装配:引用 · 附加 · 模式(与 @ 同一弹窗)</s></td><td><span class="tip">添加文件、上下文或切换模式(也可以输入 @)</span></td></tr>
-      <tr><td>推理强度按钮悬停(正常)</td><td><s>推理强度(逐模型推理参数档)</s></td><td><span class="tip">推理强度:模型想得多深,越深越慢</span></td></tr>
-      <tr><td>推理强度按钮悬停(模型还在读取)</td><td><s>推理强度 · 模型状态链尚未就绪</s></td><td><span class="tip">推理强度 · 正在读取模型,稍后可调</span></td></tr>
-      <tr><td>推理强度菜单「默认」一行的说明</td><td><s>引擎默认档</s></td><td>由模型决定</td></tr>
+      <tr><td>「+」</td><td>装配:引用 · 附加 · 模式(与 @ 同一弹窗)</td><td>添加文件、上下文或模式</td></tr>
+      <tr><td>推理强度</td><td>推理强度(逐模型推理参数档)</td><td>推理强度</td></tr>
+      <tr><td>推理强度 · 模型未就绪</td><td>推理强度 · 模型状态链尚未就绪</td><td>模型读取中</td></tr>
+      <tr><td>推理强度菜单「默认」</td><td>引擎默认档</td><td>由模型决定</td></tr>
     </tbody>
   </table>
 
   <!-- ══════════ 对话顶栏 ══════════ -->
-  <h2 class="ux-h2" id="conv-header">二 · 对话顶栏:标题和侧栏一致,状态和时间线一致</h2>
-  <p class="ux-lede">标题没生成出来的对话,侧栏写「新对话」,顶栏却写原始的英文时间戳;会话记录还没读到时甚至写内部编号。助手停下来等你批准时,时间线写「等待你的决定」,顶栏仍写「正在生成…」。</p>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">标题没生成 · 正在等你批准</span></div>
-      <div class="win"><div class="sess">
-        <div class="wtop"><span class="av">A</span><span class="proj">Alpha</span><span class="sep">›</span><span class="title">New session - 2026-09-21T06:29:08.485Z</span><span class="st run"><i></i>正在生成…</span><span class="grow"></span><span class="ib">⌘</span><span class="ib">▥</span></div>
-        <div class="tl">
-          <div class="u"><div class="bub">把 downloads 里的旧安装包删掉</div></div>
-          <div class="fold"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>工作过程 · 运行 1 次</div>
-          <div class="foot wait"><i></i>等待你的决定 · 生成已暂停,到审批窗口里选择</div>
-        </div>
-      </div></div>
-    </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">同一状态</span></div>
-      <div class="win"><div class="sess">
-        <div class="wtop"><span class="av">A</span><span class="proj">Alpha</span><span class="sep">›</span><span class="title">新对话</span><span class="st wait"><i></i>等你批准</span><span class="grow"></span><span class="ib">⌘</span><span class="ib">▥</span></div>
-        <div class="tl">
-          <div class="u"><div class="bub">把 downloads 里的旧安装包删掉</div></div>
-          <div class="fold"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>工作过程 · 运行 1 次</div>
-          <div class="foot wait"><i></i>等待你的决定 · 生成已暂停,到审批窗口里选择</div>
-        </div>
-      </div></div>
-    </div>
-  </div>
-  <table class="ux-spec">
-    <thead><tr><th>顶栏状态</th><th>现在</th><th>改后</th></tr></thead>
+  <h3 class="pf-h ux-sec" id="conv-header">对话顶栏</h3>
+  <p class="pf-sub">标题与侧栏一致;状态与时间线一致,空闲不显示。</p>
+  <iframe class="ux-if" data-ux src="frames/workspace.html" title="对话顶栏对照"></iframe>
+  <table class="pf-table">
+    <thead><tr><th>状态</th><th>现在</th><th>改后</th></tr></thead>
     <tbody>
-      <tr><td>没在跑</td><td>空闲(常驻)</td><td>不显示</td></tr>
-      <tr><td>在生成</td><td>正在生成…</td><td>正在生成</td></tr>
-      <tr><td>停下等你批准</td><td>正在生成…</td><td>等你批准(警示色点)</td></tr>
-      <tr><td>停下等你回答</td><td>正在生成…</td><td>等你回答(警示色点)</td></tr>
-      <tr><td>自动重试中</td><td>正在生成…</td><td>正在重试</td></tr>
+      <tr><td>空闲</td><td>空闲</td><td>不显示</td></tr>
+      <tr><td>生成中</td><td>正在生成…</td><td>正在生成</td></tr>
+      <tr><td>等你批准</td><td>正在生成…</td><td>等你批准</td></tr>
+      <tr><td>等你回答</td><td>正在生成…</td><td>等你回答</td></tr>
+      <tr><td>自动重试</td><td>正在生成…</td><td>正在重试</td></tr>
+      <tr><td>标题未生成</td><td>New session - 2026-09-21T06:29:08.485Z</td><td>新对话</td></tr>
+      <tr><td>记录未读到</td><td>会话编号</td><td>对话</td></tr>
     </tbody>
   </table>
-  <p class="ux-note">标题规则与侧栏、搜索、空对话提示用<b>同一份</b>:没生成标题的显示「新对话」;会话记录还没到时显示「对话」,不显示编号。项目头像在拿不到项目名时显示空白圆角块,不再显示「α」。</p>
 
   <!-- ══════════ 读取对话 ══════════ -->
-  <h2 class="ux-h2" id="conv-loading">三 · 读取对话:读着要说在读,读不出来要给重来</h2>
-  <p class="ux-lede">点开一段较长的旧对话,内容到之前时间线是一片空白;如果读取卡住或失败,会一直空白下去,没有任何字,也没有按钮。用户只能猜「是不是被删了」。</p>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">读取中,和读取失败,长得一样</span></div>
-      <div class="win"><div class="sess">
-        <div class="wtop"><span class="av">A</span><span class="proj">Alpha</span><span class="sep">›</span><span class="title">季度数据汇总</span><span class="st"><i></i>空闲</span><span class="grow"></span><span class="ib">⌘</span><span class="ib">▥</span></div>
-        <div class="tl"><div class="blank"></div></div>
+  <h3 class="pf-h ux-sec" id="conv-loading">读取对话</h3>
+  <p class="pf-sub">今天读取中与读取失败都是空白。复用会话空态的版式。</p>
+  <div class="pf-grid">
+    <div><span class="pf-tag">现在 · 读取中 / 失败</span>
+      <div class="frame"><div style="min-height:200px;display:grid;place-items:center;background:var(--a-bg-canvas)"></div></div>
+    </div>
+    <div><span class="pf-tag">改后 · 读取中</span>
+      <div class="frame"><div style="min-height:200px;display:grid;place-items:center;background:var(--a-bg-canvas)">
+        <div class="sess-empty" role="status"><p><span class="ux-sp" aria-hidden="true"></span>正在读取对话…</p></div>
       </div></div>
     </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">读取中(超过 0.3 秒才出现)</span></div>
-      <div class="win"><div class="sess">
-        <div class="wtop"><span class="av">A</span><span class="proj">Alpha</span><span class="sep">›</span><span class="title">季度数据汇总</span><span class="grow"></span><span class="ib">⌘</span><span class="ib">▥</span></div>
-        <div class="tl"><div class="loadrow" role="status"><span class="spin" aria-hidden="true"></span>正在读取对话…</div></div>
-      </div></div>
-      <div class="ux-cap" style="margin-top:14px"><b>改后</b><span class="tag new">读取失败,或等过了读取期限</span></div>
-      <div class="win"><div class="sess">
-        <div class="wtop"><span class="av">A</span><span class="proj">Alpha</span><span class="sep">›</span><span class="title">季度数据汇总</span><span class="grow"></span><span class="ib">⌘</span><span class="ib">▥</span></div>
-        <div class="tl"><div class="failrow" role="alert"><b>没能读出这段对话的内容</b><span>引擎可能还在启动,或者刚才连接断了。对话本身没有被删除。</span><button class="btn">重新读取</button></div></div>
+    <div></div>
+    <div><span class="pf-tag">改后 · 失败或超时</span>
+      <div class="frame"><div style="min-height:200px;display:grid;place-items:center;background:var(--a-bg-canvas)">
+        <div class="sess-empty" role="alert"><div class="se-name">对话读取失败</div><span class="cont">重试</span></div>
       </div></div>
     </div>
   </div>
-  <div class="ux-pair" style="margin-top:18px">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">往上翻,更早的消息没加载出来</span></div>
-      <div class="win"><div class="tl" style="min-height:0"><div class="hist"><a href="#conv-loading">加载更早的消息</a></div><div class="a">……上一段回答的结尾。</div></div></div>
+  <div class="pf-grid">
+    <div><span class="pf-tag">现在 · 更早的消息没加载出来</span>
+      <div class="frame"><div class="tl"><div class="interrupted" style="justify-content:center"><span class="cont">加载更早的消息</span></div></div></div>
     </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">同一状态</span></div>
-      <div class="win"><div class="tl" style="min-height:0"><div class="hist">更早的消息没加载出来 · <a href="#conv-loading">重试</a></div><div class="a">……上一段回答的结尾。</div></div></div>
+    <div><span class="pf-tag">改后</span>
+      <div class="frame"><div class="tl"><div class="interrupted" style="justify-content:center"><span>更早的消息加载失败</span><span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)"></span><span class="cont">重试</span></div></div></div>
     </div>
   </div>
 
-  <!-- ══════════ 回复没完成 ══════════ -->
-  <h2 class="ux-h2" id="turn-error">四 · 回复没完成:认得出的原因说人话,并说下一步</h2>
-  <p class="ux-lede">今天卡片正文直接贴模型服务返回的原话。本机记录里真实出现过「预授权拒绝: member-only model 需 active 会员」—— 用户读不出是「这个模型要会员」,也不知道可以换模型。</p>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">选了会员专属模型,但不是会员</span></div>
-      <div class="win"><div class="tl" style="min-height:0">
-        <div class="u"><div class="bub">帮我总结这份报告</div></div>
-        <div class="terr" role="alert"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>这轮回复没有完成</b><p>预授权拒绝: member-only model 需 active 会员</p><code>APIError</code></div></div>
+  <!-- ══════════ 回复失败 ══════════ -->
+  <h3 class="pf-h ux-sec" id="turn-error">回复失败</h3>
+  <p class="pf-sub">标题说原因,按钮给出路,原文收进开发者详情。认不出的原因不变。</p>
+  <div class="pf-grid">
+    <div><span class="pf-tag">现在(实际显示)</span>
+      <div class="frame"><div class="tl">
+        <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>这轮回复没有完成</b><p>预授权拒绝: member-only model 需 active 会员</p><span class="code">APIError</span></div></div>
       </div></div>
     </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">同一状态</span></div>
-      <div class="win"><div class="tl" style="min-height:0">
-        <div class="u"><div class="bub">帮我总结这份报告</div></div>
-        <div class="terr" role="alert"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>这轮回复没有完成</b><p>余额或会员不够,这个模型现在用不了。充值或开通会员后重新发送;也可以在输入框里换一个模型。</p><code>APIError 402 · 预授权拒绝: member-only model 需 active 会员</code></div></div>
+    <div><span class="pf-tag">改后</span>
+      <div class="frame"><div class="tl">
+        <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>余额或会员不足</b><span class="ux-acts"><span>充值</span><span>换模型</span></span><details><summary>› 开发者详情</summary><span class="code">APIError 402 · 预授权拒绝: member-only model 需 active 会员</span></details></div></div>
       </div></div>
     </div>
   </div>
-  <table class="ux-spec">
-    <thead><tr><th>原因(只按结构化字段认,不按原话里的字眼猜)</th><th>改后正文</th></tr></thead>
+  <table class="pf-table">
+    <thead><tr><th>原因(只认错误名与状态码)</th><th>标题</th><th>按钮</th></tr></thead>
     <tbody>
-      <tr><td>状态码 402</td><td>余额或会员不够,这个模型现在用不了。充值或开通会员后重新发送;也可以在输入框里换一个模型。</td></tr>
-      <tr><td>状态码 401 / 403,或登录凭据错误</td><td>模型服务没有认可这次的登录凭据。重新登录,或到设置里检查你自己的 Key,然后重新发送。</td></tr>
-      <tr><td>状态码 429</td><td>请求频率达到上限,模型暂时不可用;稍后重新发送这条消息即可。</td></tr>
-      <tr><td>对话超出模型能读的长度</td><td>这段对话太长,超出了这个模型一次能读的量。开一个新对话接着聊,或换一个能读更长内容的模型。</td></tr>
-      <tr><td>回答长度到顶</td><td>回答太长,写到一半被截断了。可以让助手接着写。</td></tr>
-      <tr><td>其余(认不出)</td><td>不变:原样显示模型服务的原话与错误名</td></tr>
+      <tr><td>402</td><td>余额或会员不足</td><td>充值 · 换模型</td></tr>
+      <tr><td>401 / 403 · 登录凭据错误</td><td>登录或 Key 无效</td><td>重新登录 · 去设置</td></tr>
+      <tr><td>429</td><td>请求太频繁,稍后再试</td><td>—</td></tr>
+      <tr><td>对话超出模型长度</td><td>对话太长</td><td>新对话 · 换模型</td></tr>
+      <tr><td>回答长度到顶</td><td>回答被截断</td><td>继续</td></tr>
+      <tr><td>其余</td><td colspan="2">不变</td></tr>
     </tbody>
   </table>
-  <p class="ux-note">卡片形态一个像素不变:同一图标、同一标题、一段正文、一行等宽字。等宽那一行从只写错误名,改为「错误名 + 状态码 + 原话」,排查信息一个不少。联网类失败的分层说法不在这一节,由另一份方案给出。</p>
 
-  <!-- ══════════ 消息脚注 ══════════ -->
-  <h2 class="ux-h2" id="user-meta">五 · 用户消息脚注:写你选的权限档,不写内部代号</h2>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b></div>
-      <div class="win"><div class="tl" style="min-height:0">
-        <div class="u"><div class="bub">把这三个文件合成一份</div><div class="meta">发往 Build · DeepSeek V4 Flash · 14:32</div></div>
-        <div class="u"><div class="bub">先别动文件,只看看哪里有问题</div><div class="meta">发往 Alpha-readonly · DeepSeek V4 Flash · 14:40</div></div>
+  <!-- ══════════ 用户消息脚注 ══════════ -->
+  <h3 class="pf-h ux-sec" id="user-meta">用户消息脚注</h3>
+  <p class="pf-sub">写所选权限档,不写内部代号。自建助手照写原名。</p>
+  <div class="pf-grid">
+    <div><span class="pf-tag">现在(悬停显示)</span>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这三个文件合成一份</div><div class="umeta" style="opacity:1"><span>发往 Build · DeepSeek V4 Flash · 14:32</span></div></div>
+        <div class="row-user"><div class="bubble">先别动文件,只看看哪里有问题</div><div class="umeta" style="opacity:1"><span>发往 Codepuppy-readonly · DeepSeek V4 Flash · 14:40</span></div></div>
       </div></div>
     </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b></div>
-      <div class="win"><div class="tl" style="min-height:0">
-        <div class="u"><div class="bub">把这三个文件合成一份</div><div class="meta"><span class="dot" style="background:var(--a-perm-allow)"></span>全部批准 · DeepSeek V4 Flash · 14:32</div></div>
-        <div class="u"><div class="bub">先别动文件,只看看哪里有问题</div><div class="meta"><span class="dot" style="background:var(--a-perm-readonly)"></span>只读 · DeepSeek V4 Flash · 14:40</div></div>
+    <div><span class="pf-tag">改后</span>
+      <div class="frame"><div class="tl">
+        <div class="row-user"><div class="bubble">把这三个文件合成一份</div><div class="umeta" style="opacity:1"><span><i class="ux-pdot" style="background:var(--a-perm-allow)"></i>全部批准 · DeepSeek V4 Flash · 14:32</span></div></div>
+        <div class="row-user"><div class="bubble">先别动文件,只看看哪里有问题</div><div class="umeta" style="opacity:1"><span><i class="ux-pdot" style="background:var(--a-perm-readonly)"></i>只读 · DeepSeek V4 Flash · 14:40</span></div></div>
       </div></div>
     </div>
   </div>
-  <p class="ux-note">档位名与色点和输入框里的权限档按钮同一套(全部批准 / 请求审批 / 只读;计划模式写「计划」,定时任务写「自动化任务」)。你自己建的助手照写它的名字(「发往 我的翻译助手」),不改。</p>
+  <p class="pf-cap">现在的第二行是模式改名后的样子(今天显示旧品牌代号)。档名:全部批准 / 请求审批 / 只读 / 计划 / 自动化任务。</p>
 
   <!-- ══════════ 发送后 ══════════ -->
-  <h2 class="ux-h2" id="send-follow">六 · 发送后:往上翻着看的时候发消息,视图回到最新</h2>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">翻在上面,刚按了发送</span></div>
-      <div class="win"><div class="sess"><div class="tl">
-        <div class="a">……三十条之前的一段回答,用户正在对照它写新问题。</div>
-        <div class="a" style="color:var(--a-text-secondary)">再往下还有很多内容。刚发出的消息在最底下,看不见;输入框已经清空。</div>
-        <span class="jump" aria-label="回到最新"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg></span>
-      </div></div></div>
-    </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">同一时刻</span></div>
-      <div class="win"><div class="sess"><div class="tl">
-        <div class="cut">之前的内容</div>
-        <div class="u"><div class="bub">那按第二种方案改,先改配置那部分</div><div class="meta"><span class="dot" style="background:var(--a-perm-allow)"></span>全部批准 · 刚刚</div></div>
-        <div class="foot"><span class="spin" aria-hidden="true"></span>正在思考…</div>
-      </div></div></div>
-    </div>
-  </div>
-  <p class="ux-note">只在<b>你自己发出</b>新消息时回到最新;助手在生成、你在往上翻时,照旧不打扰(保留今天「回到最新」按钮的行为)。</p>
+  <h3 class="pf-h ux-sec" id="send-follow">发送后</h3>
+  <p class="pf-sub">往上翻着看时自己发出消息,视图回到最新。助手生成时不打扰,与今天一致。无界面元素变化。</p>
 
   <!-- ══════════ 搜索 ══════════ -->
-  <h2 class="ux-h2" id="search">七 · 搜索对话:找得到、分得清、键盘走得通</h2>
-  <p class="ux-lede">侧栏「搜索」或 ⌘K 打开。今天它直接拿原始标题去比:侧栏写着「新对话」的那几条,在这里是一串英文时间戳,搜「新对话」反而什么都搜不到;同名的对话分不清是哪次;输入后按回车没有反应。</p>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b><span class="tag">输入「新对话」</span></div>
-      <div class="dlg">
-        <div class="dlg-h">搜索会话<span class="x">✕</span></div>
-        <div class="dlg-b">
-          <div class="inp focus"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>新对话</div>
-          <div class="empty">没有标题匹配的会话</div>
-        </div>
-      </div>
-      <div class="ux-cap" style="margin-top:14px"><b>现在</b><span class="tag">输入「e」</span></div>
-      <div class="dlg">
-        <div class="dlg-h">搜索会话<span class="x">✕</span></div>
-        <div class="dlg-b">
-          <div class="inp focus"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>e</div>
-          <ul class="res">
-            <li><span class="t">Greeting</span><span class="p">Alpha</span></li>
-            <li><span class="t">Greeting</span><span class="p">Alpha</span></li>
-            <li><span class="t raw">New session - 2026-09-21T06:29:08.485Z</span><span class="p">Alpha</span></li>
-            <li><span class="t">Greeting</span><span class="p">Alpha</span></li>
-            <li><span class="t raw">New session - 2026-09-21T02:48:09.162Z</span><span class="p">Alpha</span></li>
-          </ul>
-        </div>
-      </div>
+  <h3 class="pf-h ux-sec" id="search">搜索对话</h3>
+  <p class="pf-sub">第一次出稿。按侧栏所见标题匹配;行尾带时间;方向键选择,回车打开。</p>
+  <div class="pf-grid">
+    <div><span class="pf-tag">现在 · 输入「新对话」</span>
+      <div class="ux-dlg"><div class="ux-dlg-h"><span class="ux-dlg-t">搜索会话</span><button class="ux-dlg-x" title="关闭"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="ux-dlg-b"><div class="ux-inp"><svg class="ic sm"><use href="#i-grep"/></svg>新对话</div><p class="a-search-empty">没有标题匹配的会话</p></div></div>
     </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">输入「新对话」</span></div>
-      <div class="dlg">
-        <div class="dlg-h">搜索对话<span class="x">✕</span></div>
-        <div class="dlg-b">
-          <div class="inp focus"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>新对话</div>
-          <ul class="res" role="listbox">
-            <li class="on" role="option" aria-selected="true"><span class="t">新对话</span><span class="p">Alpha</span><span class="w">9月21日</span></li>
-            <li role="option"><span class="t">新对话</span><span class="p">Alpha</span><span class="w">9月21日</span></li>
-            <li role="option"><span class="t">新对话</span><span class="p">Alpha</span><span class="w">9月21日</span></li>
-          </ul>
-        </div>
-        <div class="keys"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>↵</kbd>打开</span><span><kbd>esc</kbd>关闭</span></div>
-      </div>
-      <div class="ux-cap" style="margin-top:14px"><b>改后</b><span class="tag new">输入「e」</span></div>
-      <div class="dlg">
-        <div class="dlg-h">搜索对话<span class="x">✕</span></div>
-        <div class="dlg-b">
-          <div class="inp focus"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>e</div>
-          <ul class="res" role="listbox">
-            <li class="on" role="option" aria-selected="true"><span class="t">Greeting</span><span class="p">Alpha</span><span class="w">今天 09:12</span></li>
-            <li role="option"><span class="t">Greeting</span><span class="p">Alpha</span><span class="w">昨天 22:40</span></li>
-            <li role="option"><span class="t">Greeting</span><span class="p">Alpha</span><span class="w">10月26日</span></li>
-            <li role="option"><span class="t">JEV AI model 联网查询</span><span class="p">Alpha</span><span class="w">10月25日</span></li>
-          </ul>
-        </div>
-        <div class="keys"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>↵</kbd>打开</span><span><kbd>esc</kbd>关闭</span></div>
-      </div>
+    <div><span class="pf-tag">改后</span>
+      <div class="ux-dlg"><div class="ux-dlg-h"><span class="ux-dlg-t">搜索对话</span><button class="ux-dlg-x" title="关闭"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="ux-dlg-b"><div class="ux-inp"><svg class="ic sm"><use href="#i-grep"/></svg>新对话</div>
+          <ul class="a-search-results" role="listbox">
+            <li class="a-search-result" role="option" aria-selected="true"><span class="a-search-result-title">新对话</span><span class="a-search-result-project">workspace</span><span class="a-search-result-time">9月21日</span></li>
+            <li class="a-search-result" role="option"><span class="a-search-result-title">新对话</span><span class="a-search-result-project">workspace</span><span class="a-search-result-time">9月21日</span></li>
+            <li class="a-search-result" role="option"><span class="a-search-result-title">新对话</span><span class="a-search-result-project">workspace</span><span class="a-search-result-time">9月20日</span></li>
+          </ul></div>
+        <div class="ux-keys"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>↵</kbd>打开</span><span><kbd>esc</kbd>关闭</span></div></div>
+    </div>
+    <div><span class="pf-tag">现在 · 输入「e」</span>
+      <div class="ux-dlg"><div class="ux-dlg-h"><span class="ux-dlg-t">搜索会话</span><button class="ux-dlg-x" title="关闭"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="ux-dlg-b"><div class="ux-inp"><svg class="ic sm"><use href="#i-grep"/></svg>e</div>
+          <ul class="a-search-results">
+            <li class="a-search-result"><span class="a-search-result-title">Greeting</span><span class="a-search-result-project">workspace</span></li>
+            <li class="a-search-result"><span class="a-search-result-title">Greeting</span><span class="a-search-result-project">workspace</span></li>
+            <li class="a-search-result"><span class="a-search-result-title">New session - 2026-09-21T06:29:08.485Z</span><span class="a-search-result-project">workspace</span></li>
+            <li class="a-search-result"><span class="a-search-result-title">Greeting</span><span class="a-search-result-project">workspace</span></li>
+          </ul></div></div>
+    </div>
+    <div><span class="pf-tag">改后</span>
+      <div class="ux-dlg"><div class="ux-dlg-h"><span class="ux-dlg-t">搜索对话</span><button class="ux-dlg-x" title="关闭"><svg class="ic sm"><use href="#i-x"/></svg></button></div>
+        <div class="ux-dlg-b"><div class="ux-inp"><svg class="ic sm"><use href="#i-grep"/></svg>e</div>
+          <ul class="a-search-results" role="listbox">
+            <li class="a-search-result" role="option" aria-selected="true"><span class="a-search-result-title">Greeting</span><span class="a-search-result-project">workspace</span><span class="a-search-result-time">今天 09:12</span></li>
+            <li class="a-search-result" role="option"><span class="a-search-result-title">Greeting</span><span class="a-search-result-project">workspace</span><span class="a-search-result-time">昨天 22:40</span></li>
+            <li class="a-search-result" role="option"><span class="a-search-result-title">Greeting</span><span class="a-search-result-project">workspace</span><span class="a-search-result-time">10月26日</span></li>
+          </ul></div>
+        <div class="ux-keys"><span><kbd>↑</kbd><kbd>↓</kbd>选择</span><span><kbd>↵</kbd>打开</span><span><kbd>esc</kbd>关闭</span></div></div>
     </div>
   </div>
-  <p class="ux-note">第一条默认高亮,回车直接打开;方向键在结果间移动,焦点留在输入框里,接着打字会重新过滤并把高亮放回第一条。鼠标悬停与点击照旧。时间沿用产物面板的写法(今天 / 昨天 / 日期);搜的是用户在侧栏看到的那个标题。</p>
-  <div class="states">
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">还没输入</span></div>
-      <div class="dlg"><div class="dlg-h">搜索对话<span class="x">✕</span></div><div class="dlg-b">
-        <div class="inp focus"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="ph">按标题搜索对话…</span></div>
-        <div class="empty">输入标题里的词,找到以前的对话</div></div></div>
-    </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">没有结果</span></div>
-      <div class="dlg"><div class="dlg-h">搜索对话<span class="x">✕</span></div><div class="dlg-b">
-        <div class="inp focus"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>报销</div>
-        <div class="empty"><b>没有标题里含「报销」的对话</b>只搜标题,不搜对话内容</div></div></div>
-    </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b><span class="tag new">对话列表还没读到</span></div>
-      <div class="dlg"><div class="dlg-h">搜索对话<span class="x">✕</span></div><div class="dlg-b">
-        <div class="inp focus"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>周报</div>
-        <div class="empty"><span class="spin" aria-hidden="true"></span>对话列表还在读取…</div></div></div>
-    </div>
-  </div>
-  <p class="ux-note">今天第三种情况也显示「没有标题匹配的会话」,会让人以为对话丢了。读到后结果自动出现,不需要重新输入。</p>
+  <table class="pf-table">
+    <thead><tr><th>状态</th><th>现在</th><th>改后</th></tr></thead>
+    <tbody>
+      <tr><td>标题</td><td>搜索会话</td><td>搜索对话</td></tr>
+      <tr><td>输入框占位</td><td>按标题搜索会话…</td><td>按标题搜索…</td></tr>
+      <tr><td>还没输入</td><td>输入关键词搜索会话</td><td>输入标题关键词</td></tr>
+      <tr><td>没有结果</td><td>没有标题匹配的会话</td><td>没有匹配的对话</td></tr>
+      <tr><td>列表还没读到</td><td>没有标题匹配的会话</td><td>对话列表读取中…</td></tr>
+    </tbody>
+  </table>
 
-  <!-- ══════════ 产物文字 ══════════ -->
-  <h2 class="ux-h2" id="artifacts-copy">八 · 产物右栏:警告和出错说人话</h2>
-  <p class="ux-lede">右栏的结构按已批的「结果优先」稿走,这里只换它里面七句话。下面是会出现这些话的位置。</p>
-  <div class="ux-pair">
-    <div class="ux-col">
-      <div class="ux-cap"><b>现在</b></div>
-      <div class="rail">
-        <div class="rail-tabs"><span>审查</span><span>文件</span><span>终端</span><span class="on">产物</span></div>
-        <div class="rail-b">
-          <div class="ntc">平台产物列表不可用(离线或未登录)—— 仅显示本地产物。</div>
-          <div class="ntc err">完整性校验不符(digest/尺寸不一致)—— 内容按原样显示,请谨慎对待。</div>
-          <div><span class="ofc chk">结构检查中</span> <span class="ofc ok">结构安全</span> <span class="ofc bad">已拒绝</span></div>
-          <div class="miss">文件已在盘上消失。</div>
-          <div class="miss">尚未落盘 —— 下载后可预览。<span class="btn">下载</span></div>
-          <div class="ntc err">预览已崩溃(已隔离),Source 与元数据仍可用</div>
-          <div class="ntc err">打开前复核失败:sha256 mismatch</div>
-        </div>
-      </div>
-    </div>
-    <div class="ux-col">
-      <div class="ux-cap"><b>改后</b></div>
-      <div class="rail">
-        <div class="rail-tabs"><span>审查</span><span>文件</span><span>终端</span><span class="on">产物</span></div>
-        <div class="rail-b">
-          <div class="ntc">暂时取不到云端的结果(没联网或没登录),下面只列这台电脑上已有的文件。</div>
-          <div class="ntc warn">这个文件和云端记录的不一致,可能不完整。内容照原样显示,使用前请核对。</div>
-          <div><span class="ofc chk">正在检查文件…</span> <span class="ofc ok">可以预览</span> <span class="ofc bad">文件结构异常,不预览</span></div>
-          <div class="miss">这个文件已经不在电脑上了,可能被移动或删除。</div>
-          <div class="miss">还没存到这台电脑,下载后可以预览。<span class="btn">下载</span></div>
-          <div class="ntc err">预览出错了。可以切到「源文」看原始内容。</div>
-          <div class="ntc err">打开前核对文件没通过<small>sha256 mismatch</small></div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <p class="ux-note">「不一致」从红色改成警示色:内容仍然显示,它是提醒不是故障。核对失败的原因原话保留,降为第二行小字;「重试」按钮位置不变。</p>
+  <!-- ══════════ 产物右栏 ══════════ -->
+  <h3 class="pf-h ux-sec" id="artifacts-copy">产物右栏文字</h3>
+  <p class="pf-sub">只换文字;「不一致」从错误色改为警示色。原文进技术详情。</p>
+  <iframe class="ux-if" data-ux src="frames/artifacts.html" title="产物右栏文字对照"></iframe>
 </div>
 
 <script>
 (function(){
   var root=document.documentElement,seg=document.getElementById('themeSeg');
-  function mark(v){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===v)});}
+  var frames=[].slice.call(document.querySelectorAll('iframe[data-ux]'));
   var q=new URLSearchParams(location.search);
-  var dark=q.get('theme')?q.get('theme')==='dark':(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
-  root.setAttribute('data-theme',dark?'dark':'light');mark(dark?'dark':'light');
-  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){root.setAttribute('data-theme',b.dataset.theme);mark(b.dataset.theme);};});
+  var theme=q.get('theme')?(q.get('theme')==='dark'?'dark':'light'):((window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');
+  function mark(v){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===v)});}
+  function apply(v){theme=v;root.setAttribute('data-theme',v);mark(v);frames.forEach(function(f){if(f.contentWindow)f.contentWindow.postMessage({uxTheme:v},'*');});}
+  frames.forEach(function(f){f.src=f.getAttribute('src')+'?theme='+theme;});
+  addEventListener('message',function(e){var d=e.data;if(!d||!d.uxFrame)return;frames.forEach(function(f){if(f.contentWindow===e.source)f.style.height=d.h+'px';});});
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){apply(b.dataset.theme);};});
+  apply(theme);
 })();
 </script>
 </body>
