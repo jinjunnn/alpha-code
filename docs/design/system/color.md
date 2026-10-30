@@ -72,6 +72,35 @@ clean over any background:
 with a `-subtle` tinted background. Use for status meaning only — never to
 decorate or as a second accent.
 
+## Run-permission tiers
+
+The three run-permission tiers each have **one** color, used identically by the
+composer chip, every row icon of the permission menu, and the menu's selected
+row (which is also set in semibold, so the neutral tier is still visibly
+selected).
+
+| Token | Tier | Light | Dark |
+| --- | --- | --- | --- |
+| `--a-perm-allow` | 全部批准 (full approval, the default) | `#4f46e5` | `#818cf8` |
+| `--a-perm-ask` | 请求审批 (ask before changes) | `#18181b` | `#fafafa` |
+| `--a-perm-readonly` | 只读 (read-only) | `#166534` | `#4ade80` |
+
+No tier uses `--a-warning`: amber on the chip means only "an approval is
+pending" (`.a-comp[data-approval]`). Each tier clears AA on every container
+background in all three theme blocks (`contrast-ratchet.test.ts`).
+
+## User message bubble
+
+| Token | Role | Light | Dark |
+| --- | --- | --- | --- |
+| `--a-user-bubble` | bubble fill (owner's reference blues) | `#e6f1fd` | `#193767` |
+| `--a-user-bubble-text` | bubble body text | `#11233f` (13.7:1) | `#f5f9fd` (11.1:1) |
+| `--a-user-bubble-link` | agent mention inside the bubble, on its `--a-accent-subtle` tint | `#4f46e5` (4.77:1) | `#a5b4fc` (4.83:1) |
+
+The truncation note inside the bubble uses `--a-text-secondary` (6.76:1 /
+4.59:1). Attachment cards sit outside the bubble on `--a-surface` and keep their
+own colors. All pairs are judged by `contrast-ratchet.test.ts`.
+
 ## Usage rules
 
 - Main reading surface = `--a-bg-canvas`; recess chrome (sidebar) to `--a-bg-subtle`.

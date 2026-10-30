@@ -17,7 +17,10 @@
   min-height: 68px;
   align-items: center;
   gap: var(--a-space-3);
-  padding: 10px 22px;
+  /* #1550:设置页铺满整窗,macOS 红绿灯(windows.ts trafficLightPosition y:14)画在它上面,
+     此前把返回键压在灯下点不到。顶部留出与首页/定制中心/自动化同一个窗口按钮带
+     (`--a-home-top`,同一个回落值),这一条本身仍是拖拽区。 */
+  padding: var(--a-home-top, 40px) 22px 10px;
   border-bottom: 1px solid var(--a-border-faint);
   background: var(--a-bg-canvas);
   -webkit-app-region: drag;

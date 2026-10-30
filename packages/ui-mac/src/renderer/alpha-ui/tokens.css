@@ -76,6 +76,21 @@
   --a-orange: #ea7317;
   --a-orange-subtle: rgba(234, 115, 23, 0.13);
 
+  /* ── Run-permission tiers (#1550) — one color per tier, used by the composer chip, every
+     row of the permission menu and its selected state alike. Full approval = the indigo accent
+     (the default tier), ask = primary neutral, read-only = deep green. None is amber: amber stays
+     reserved for "an approval is pending" (.a-comp[data-approval]). Literal hex, not var(): the
+     contrast ratchet must read a measurable color in every theme block. */
+  --a-perm-allow: #4f46e5;
+  --a-perm-ask: #18181b;
+  --a-perm-readonly: #166534;
+
+  /* ── User message bubble (#1550) — the owner's reference blues. Text and the in-bubble mention
+     ("link") color are paired with this exact fill; judged by contrast-ratchet.test.ts. */
+  --a-user-bubble: #e6f1fd;
+  --a-user-bubble-text: #11233f;
+  --a-user-bubble-link: #4f46e5;
+
   /* ── Timeline tool type palette (REQ-125 C6; matches conversation-timeline 稿 --t-*) ── */
   --a-tool-read: #0891b2;
   --a-tool-list: #0891b2;
@@ -230,6 +245,13 @@
   --a-orange: #fb923c;
   --a-orange-subtle: rgba(251, 146, 60, 0.16);
   --a-tool-bash: #52525b;
+  --a-perm-allow: #818cf8;
+  --a-perm-ask: #fafafa;
+  --a-perm-readonly: #4ade80;
+  --a-user-bubble: #193767;
+  --a-user-bubble-text: #f5f9fd;
+  /* --a-accent (#818cf8) on its tint over this fill is 3.23:1; indigo-300 clears AA (4.83:1). */
+  --a-user-bubble-link: #a5b4fc;
 
   --a-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --a-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -282,6 +304,12 @@
     --a-orange: #fb923c;
     --a-orange-subtle: rgba(251, 146, 60, 0.16);
     --a-tool-bash: #52525b;
+    --a-perm-allow: #818cf8;
+    --a-perm-ask: #fafafa;
+    --a-perm-readonly: #4ade80;
+    --a-user-bubble: #193767;
+    --a-user-bubble-text: #f5f9fd;
+    --a-user-bubble-link: #a5b4fc;
     --a-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4);
     --a-shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.7), 0 8px 16px rgba(0, 0, 0, 0.5);
   }
