@@ -21,6 +21,7 @@ import { build } from "vite"
 import type { render } from "solid-js/web"
 import type * as Runtime from "./alpha-session-search-test-runtime"
 import { decodeDirectory, encodeDirectory, hrefFor } from "../../shared/route-manifest"
+import { dict as zh } from "../i18n/zh"
 
 type TestRuntime = typeof Runtime & { render: typeof render }
 
@@ -117,6 +118,20 @@ async function type(value: string) {
   field.dispatchEvent(new Event("input", { bubbles: true }))
   await flush()
 }
+
+async function key(name: string) {
+  const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })
+  input().dispatchEvent(event)
+  await settle()
+  return event
+}
+
+const emptyText = () => document.querySelector<HTMLElement>("[data-alpha-session-search-empty]")?.textContent
+/** 被选中行的会话 id(比 id 不比 DOM 节点:节点 diff 会把失败输出撑到数万行)。 */
+const selectedRows = () =>
+  rows()
+    .filter((row) => row.closest("[role='option']")?.getAttribute("aria-selected") === "true")
+    .map((row) => row.dataset.alphaSessionSearchResult)
 
 async function openViaSidebarButton() {
   await mountShell(() => runtime.AlphaShell())
@@ -252,5 +267,159 @@ describe("按标题搜会话,跳转 href 钉在结果来源的 server 上", () =
     expect(runtime.routerPath()).toBe(href)
     expect(runtime.routerPath()).toBe(hrefFor.session(runtime.SIDECAR_SERVER_KEY, "ses_new"))
     expect(panel()).toBeNull()
+  })
+})
+
+describe("#1589 AC1/AC2:按侧栏所见的显示标题匹配与显示", () => {
+  test("引擎默认标题 `New session - <ISO>` 显示为「新对话」,能被「新对话」搜到", async () => {
+    await openViaSidebarButton()
+    await type("新对话")
+
+    const row = rowFor(runtime.DEFAULT_TITLE_SESSION)
+    expect(row).not.toBeNull()
+    expect(row!.querySelector(".a-search-result-title")!.textContent).toBe(zh["alpha.sidebar.newChat"])
+  })
+
+  test("负对照:原始英文时间戳标题不再参与匹配 —— 搜「new session」搜不到它", async () => {
+    await openViaSidebarButton()
+    await type("new session")
+
+    // 比布尔不比节点:节点 diff 失败时会把输出撑到数万行。
+    expect(rowFor(runtime.DEFAULT_TITLE_SESSION) === null).toBe(true)
+  })
+})
+
+describe("#1589 AC3:方向键选择、回车打开,焦点留在输入框", () => {
+  test("有结果时第一条默认选中", async () => {
+    await openViaSidebarButton()
+    await type("整理")
+
+    expect(selectedRows()).toEqual([rows()[0]!.dataset.alphaSessionSearchResult])
+  })
+
+  test("↓ + 回车打开第二条结果,真实路由落到它的 href", async () => {
+    await openViaSidebarButton()
+    input().focus()
+    await type("整理")
+    const second = rows()[1]!
+    const href = second.getAttribute("href")!
+
+    const down = await key("ArrowDown")
+    expect(down.defaultPrevented).toBe(true)
+    expect(selectedRows()).toEqual([second.dataset.alphaSessionSearchResult])
+    expect(document.activeElement === input()).toBe(true)
+
+    await key("Enter")
+
+    expect(runtime.routerPath()).toBe(href)
+    expect(panel()).toBeNull()
+  })
+
+  test("↑ 从第一条回绕到最后一条", async () => {
+    await openViaSidebarButton()
+    await type("整理")
+    const last = rows().at(-1)!
+
+    await key("ArrowUp")
+
+    expect(selectedRows()).toEqual([last.dataset.alphaSessionSearchResult])
+  })
+
+  test("无结果时回车不导航,面板留着", async () => {
+    await openViaSidebarButton()
+    await type("这个标题不存在")
+    const before = runtime.routerPath()
+
+    await key("Enter")
+
+    expect(runtime.routerPath()).toBe(before)
+    expect(panel()).not.toBeNull()
+  })
+
+  test("面板底部有按键提示", async () => {
+    await openViaSidebarButton()
+    const text = panel()!.querySelector(".a-search-keys")!.textContent!
+
+    for (const label of [zh["alpha.search.keySelect"], zh["alpha.search.keyOpen"], zh["alpha.search.keyClose"]]) {
+      expect(text).toContain(label)
+    }
+  })
+})
+
+describe("#1589 AC4:每条结果带项目名与最近更新时间", () => {
+  // 固定「现在」= 2026-10-30 15:00(本地时区),三种分档各一条。
+  const now = new Date(2026, 9, 30, 15, 0)
+
+  test("今天 HH:MM", () => {
+    expect(runtime.sessionSearchTime(new Date(2026, 9, 30, 9, 12).getTime(), now)).toBe("今天 09:12")
+  })
+
+  test("昨天 HH:MM", () => {
+    expect(runtime.sessionSearchTime(new Date(2026, 9, 29, 22, 40).getTime(), now)).toBe("昨天 22:40")
+  })
+
+  test("更早:月日", () => {
+    expect(runtime.sessionSearchTime(new Date(2026, 8, 21, 6, 29).getTime(), now)).toBe("9月21日")
+  })
+
+  test("结果行渲染项目名与时间", async () => {
+    await openViaSidebarButton()
+    await type("整理架构图")
+
+    const row = rowFor("ses_new")!
+    expect(row.querySelector(".a-search-result-project")!.textContent).toBe("alpha-code")
+    expect(row.querySelector(".a-search-result-time")!.textContent).toBe(runtime.sessionSearchTime(30, new Date()))
+  })
+})
+
+describe("#1589 AC5:列表还没读到时如实说「读取中」,读到后结果自动出现", () => {
+  test("服务未就绪 → 读取中;服务就绪后不重新输入,结果出现", async () => {
+    await openViaSidebarButton()
+    runtime.setServerKey(undefined)
+    await type("整理架构图")
+
+    expect(rows()).toHaveLength(0)
+    expect(emptyText()).toBe(zh["alpha.search.loading"])
+
+    runtime.setServerKey(runtime.SIDECAR_SERVER_KEY)
+    await flush()
+
+    expect(rowFor("ses_new")).not.toBeNull()
+  })
+
+  test("项目的对话还没读到 → 读取中;读到后不重新输入,结果出现", async () => {
+    await openViaSidebarButton()
+    runtime.unloadSessions()
+    await type("整理架构图")
+
+    expect(rows()).toHaveLength(0)
+    expect(emptyText()).toBe(zh["alpha.search.loading"])
+
+    runtime.loadSessions()
+    await flush()
+
+    expect(rowFor("ses_new")).not.toBeNull()
+  })
+
+  test("负对照:列表已读到、确实无匹配 → 「没有匹配的对话」", async () => {
+    await openViaSidebarButton()
+    await type("这个标题不存在")
+
+    expect(emptyText()).toBe(zh["alpha.search.empty"])
+  })
+})
+
+describe("#1589 AC6:面板文案与批准稿 #search 表一致", () => {
+  test("zh 文案", () => {
+    expect(zh["alpha.search.title"]).toBe("搜索对话")
+    expect(zh["alpha.search.placeholder"]).toBe("按标题搜索…")
+    expect(zh["alpha.search.hint"]).toBe("输入标题关键词")
+    expect(zh["alpha.search.empty"]).toBe("没有匹配的对话")
+    expect(zh["alpha.search.loading"]).toBe("对话列表读取中…")
+  })
+
+  test("还没输入时显示提示文案", async () => {
+    await openViaSidebarButton()
+    expect(emptyText()).toBe(zh["alpha.search.hint"])
   })
 })

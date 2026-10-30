@@ -15,10 +15,12 @@
 import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection, type Platform } from "@opencode-ai/app"
 import { MemoryRouter, useLocation } from "@solidjs/router"
 import { createEffect, createSignal } from "solid-js"
+import { createStore } from "solid-js/store"
 import { render } from "solid-js/web"
 import { AlphaSessionSearch } from "./alpha-session-search"
+export { sessionSearchTime } from "./alpha-session-search"
 import { AlphaSidebar } from "../sidebar/alpha-sidebar"
-import type { AlphaProject, AlphaProjectsApi } from "../sidebar/use-projects"
+import type { AlphaProject, AlphaProjectsApi, AlphaProjectsStore } from "../sidebar/use-projects"
 
 export { render }
 
@@ -35,21 +37,52 @@ const project = (name: string, worktree: string, sessions: AlphaProject["session
   loaded: true,
 })
 
-export const FIXTURE_PROJECTS: AlphaProject[] = [
-  project("alpha-code", FIXTURE_DIRECTORY, [
+/** 引擎给新建会话的默认标题(形状取自本机库:`New session - <ISO>`,见批准稿审查表 S1)。 */
+export const DEFAULT_TITLE_SESSION = "ses_default"
+
+const fixtureSessions = (): AlphaProject["sessions"][] => [
+  [
+    {
+      id: DEFAULT_TITLE_SESSION,
+      title: "New session - 2026-09-21T06:29:08.485Z",
+      directory: FIXTURE_DIRECTORY,
+      projectID: "prj_alpha-code",
+      updated: 5,
+    },
     { id: "ses_old", title: "架构说明整理", directory: FIXTURE_DIRECTORY, projectID: "prj_alpha-code", updated: 10 },
     { id: "ses_new", title: "整理架构图", directory: FIXTURE_DIRECTORY, projectID: "prj_alpha-code", updated: 30 },
-  ]),
-  project("alpha-web", "/repos/alpha-web", [
-    { id: "ses_web", title: "Landing page copy", directory: "/repos/alpha-web", projectID: "prj_alpha-web", updated: 20 },
-  ]),
+  ],
+  [{ id: "ses_web", title: "Landing page copy", directory: "/repos/alpha-web", projectID: "prj_alpha-web", updated: 20 }],
 ]
 
-/** 只喂壳真正读的那一面(store);本闸门路径不触达其余 API。 */
-const projects = {
-  store: { projects: FIXTURE_PROJECTS, ready: true, error: false },
-  reload: async () => {},
-} as unknown as AlphaProjectsApi
+export const FIXTURE_PROJECTS: AlphaProject[] = [
+  project("alpha-code", FIXTURE_DIRECTORY, fixtureSessions()[0]!),
+  project("alpha-web", "/repos/alpha-web", fixtureSessions()[1]!),
+]
+
+/**
+ * 与生产 `use-projects` 同为 Solid store(响应式),这样「对话列表读到之后结果自动出现」
+ * 才测得出来。只喂壳真正读的那一面(store);本闸门路径不触达其余 API。
+ */
+const [store, setStore] = createStore<AlphaProjectsStore>({ projects: [], ready: true, error: false })
+const projects = { store, reload: async () => {} } as unknown as AlphaProjectsApi
+
+/** 项目已列出、但各项目的对话还没读到(`loaded: false`、会话为空)。 */
+export function unloadSessions() {
+  setStore(
+    "projects",
+    FIXTURE_PROJECTS.map((p) => ({ ...p, sessions: [], loaded: false })),
+  )
+}
+
+/** 各项目的对话读到了(与生产 `loadSessions` 落定后同形)。 */
+export function loadSessions() {
+  const sessions = fixtureSessions()
+  setStore(
+    "projects",
+    FIXTURE_PROJECTS.map((p, i) => ({ ...p, sessions: sessions[i]!, loaded: true })),
+  )
+}
 
 const connection: ServerConnection.Any = {
   displayName: "Local Server",
@@ -122,6 +155,7 @@ export function installRootHost() {
 }
 
 export function resetHarness() {
+  loadSessions()
   setServerKey(SIDECAR_SERVER_KEY)
   setRouterPath("")
 }

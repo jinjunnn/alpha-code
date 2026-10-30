@@ -16,6 +16,7 @@ import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
 import { pushToast } from "../alpha-ui/Toast"
+import { sessionDisplayTitle } from "../alpha-ui/session-title"
 import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
@@ -89,8 +90,6 @@ function projectDisplayName(project: AlphaProject): string {
   return project.worktree
 }
 
-// Eagerly-created sessions carry a "New session - <ISO>" title until the first message retitles
-// them; show a friendly placeholder. "Untitled" is our own empty-title fallback (see toSession).
 // Robust clipboard write. The async Clipboard API needs transient user activation (and can be
 // blocked); fall back to a hidden-textarea execCommand, which works in the Electron renderer even
 // when the activation heuristic is unhappy. Returns whether the copy landed.
@@ -125,11 +124,6 @@ async function copyText(text: string): Promise<boolean> {
       return false
     }
   }
-}
-
-function sessionDisplayTitle(title: string): string {
-  if (title === "Untitled" || /^New session - /.test(title)) return t("alpha.sidebar.newChat")
-  return title
 }
 
 // REQ-126 AC2(#655):当前**已登记**的全页覆盖层就这两个(产物工作台已随 #654 下线)。

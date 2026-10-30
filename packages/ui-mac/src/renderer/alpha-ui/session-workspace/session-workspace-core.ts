@@ -1,5 +1,6 @@
 import type { Route } from "../../../shared/route-manifest"
 import { projectLabel } from "../../sidebar/route"
+import { sessionDisplayTitle } from "../session-title"
 
 export interface AlphaSessionIdentity {
   serverKey: string
@@ -43,7 +44,8 @@ export function sessionLiveSnapshotOf(input: {
       sessionID: input.route.id,
     },
     project: projectLabel(directory),
-    title: input.session?.title.trim() || input.route.id,
+    // #1589 AC1:与侧栏同一份显示规则;会话记录未读到时留空,由界面显示「对话」—— 不显示会话编号。
+    title: input.session ? sessionDisplayTitle(input.session.title.trim()) : "",
     activity: input.status?.type && input.status.type !== "idle" ? "running" : "idle",
   }
 }
