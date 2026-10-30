@@ -936,6 +936,8 @@ describe("refresh compare-and-set before commit", () => {
       refreshToken: "refresh-b",
       sessionId: "session-b",
     })
+    // REQ-236 `#1562`:换号之后到达的旧账号续期结果不得热写凭据文件 —— 续期写入不晚于撤权生效。
+    expect(renewedGenerations).toEqual([])
   })
 })
 

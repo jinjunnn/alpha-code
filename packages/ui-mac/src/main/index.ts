@@ -648,7 +648,7 @@ const main = Effect.gen(function* () {
 
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
   let authScheduler: ReturnType<typeof createAuthRenewalScheduler> | null = null
-  let pendingAuthStructuralRespawn = false
+  let pendingAuthRespawn: SidecarRespawnTrigger | null = null
 
   yield* Effect.promise(() => app.whenReady())
   markStartupTimeline("main.app.ready")
@@ -674,7 +674,7 @@ const main = Effect.gen(function* () {
         void requestSidecarRespawn(trigger)
         return
       }
-      pendingAuthStructuralRespawn = true
+      pendingAuthRespawn = pendingAuthRespawn ?? trigger
     },
     // REQ-236 §2.1(`#1562`):同身份续期把新凭据原子写进引擎现读的文件,不重启引擎;在场性变了或写失败
     // ⇒ needs-structural,alpha-auth 自己请求 credential-change 重启并等它确认。
@@ -1501,9 +1501,8 @@ const main = Effect.gen(function* () {
   const respawnSidecar = createSidecarRespawnQueue(doRespawnSidecar)
 
   requestSidecarRespawn = respawnSidecar // B5:崩溃自愈复用同一互斥/合并入口
-  if (pendingAuthStructuralRespawn && bootForkTokenGeneration !== getTokenGeneration())
-    void respawnSidecar("identity-change")
-  pendingAuthStructuralRespawn = false
+  if (pendingAuthRespawn && bootForkTokenGeneration !== getTokenGeneration()) void respawnSidecar(pendingAuthRespawn)
+  pendingAuthRespawn = null
   setProviderLifecycleDeps({ refreshRuntime: () => respawnSidecar("provider-change") })
   // B21:BYOK 改键/删键即时生效 —— 持久化成功后重注 env(自有注入权威覆盖/清除,用户值不动)+
   // respawn(fork 时 A6 syncSecretFiles 把新 env 镜像进 {file:} 通道 → 新 sidecar 即用新 key)。
