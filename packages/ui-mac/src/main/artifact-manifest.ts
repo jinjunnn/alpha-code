@@ -61,11 +61,24 @@ export interface ManifestArtifactEntry {
   local: LocalArtifactRecord
 }
 
+/**
+ * run 级归属(REQ-236 alpha-code#1551):哪个对话发起了这个 run。只由已受理的第一方 `cloud_dispatch`
+ * 经 artifact-service.recordRunOrigin 写入,先写者胜;字段缺失 = 无归属(读为 null,不猜)。
+ */
+export interface ArtifactRunOrigin {
+  sessionID: string
+  messageID?: string
+  partID?: string
+  /** ISO-8601 记录时刻。 */
+  recordedAt: string
+}
+
 export interface ArtifactManifestV1 {
   schemaVersion: typeof ARTIFACT_MANIFEST_VERSION
   runId: string
   updatedAt: string
   artifacts: ManifestArtifactEntry[]
+  origin?: ArtifactRunOrigin
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +137,18 @@ function validateLocal(v: unknown, errors: string[], at: string): void {
     errors.push(`${at}: warnings must be a string array`)
 }
 
+function validateOrigin(v: unknown, errors: string[]): void {
+  if (!isRecord(v)) {
+    errors.push("origin must be an object")
+    return
+  }
+  if (typeof v.sessionID !== "string" || v.sessionID.length === 0) errors.push("origin.sessionID required")
+  for (const key of ["messageID", "partID"] as const)
+    if (v[key] !== undefined && (typeof v[key] !== "string" || v[key].length === 0))
+      errors.push(`origin.${key} must be a non-empty string`)
+  if (typeof v.recordedAt !== "string" || v.recordedAt.length === 0) errors.push("origin.recordedAt required")
+}
+
 export type ManifestValidateResult = { ok: true; manifest: ArtifactManifestV1 } | { ok: false; errors: string[] }
 
 /** 结构校验(v1 语义)。schemaVersion 不匹配不在这里判 —— 读取端先分流 unsupported-version。 */
@@ -134,6 +159,7 @@ export function validateArtifactManifest(v: unknown): ManifestValidateResult {
     errors.push(`unsupported schemaVersion: ${String(v.schemaVersion)}`)
   if (typeof v.runId !== "string" || !isSafeRunId(v.runId)) errors.push("runId invalid")
   if (typeof v.updatedAt !== "string" || v.updatedAt.length === 0) errors.push("updatedAt required")
+  if (v.origin !== undefined) validateOrigin(v.origin, errors)
   if (!Array.isArray(v.artifacts)) {
     errors.push("artifacts must be an array")
     return { ok: false, errors }

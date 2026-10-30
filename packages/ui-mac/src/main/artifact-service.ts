@@ -20,7 +20,7 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { foldedArtifactNameKey, isSafeRunId, safeResolveInAlpha } from "./alpha-workdir"
+import { ensureAlphaScaffold, foldedArtifactNameKey, isSafeRunId, safeResolveInAlpha } from "./alpha-workdir"
 import {
   ARTIFACT_MANIFEST_VERSION,
   RUN_ARTIFACTS_SUBDIR,
@@ -29,6 +29,7 @@ import {
   writeArtifactManifest,
   type ArtifactDescriptor,
   type ArtifactManifestV1,
+  type ArtifactRunOrigin,
   type LocalArtifactState,
   type ManifestArtifactEntry,
 } from "./artifact-manifest"
@@ -1181,6 +1182,56 @@ export function registerDownloadedArtifact(
   return { ok: true, entry }
 }
 
+export type RecordRunOriginResult = { ok: true } | { ok: false; reason: string }
+
+/**
+ * REQ-236(alpha-code#1551):把「哪个对话发起了这个 run」写进 manifest 的 run 级 origin。
+ * 只该由「已受理的第一方 `cloud_dispatch`」驱动(调用方负责这条准入);受理时 run 往往还没有
+ * manifest ⇒ 写一份 `artifacts: []` 的空 manifest 带上 origin。先写者胜:已有同一会话 = 幂等成功、
+ * 不改记录时刻;已有别的会话 = 拒绝。未知版本 / 损坏的 manifest 照旧只读拒写。
+ */
+export function recordRunOrigin(
+  projectDir: string,
+  runId: string,
+  origin: Omit<ArtifactRunOrigin, "recordedAt">,
+): RecordRunOriginResult {
+  if (!isSafeRunId(runId)) return { ok: false, reason: "invalid run id" }
+  const read = readArtifactManifest(projectDir, runId)
+  if (!read.ok)
+    return {
+      ok: false,
+      reason:
+        read.reason === "unsupported-version"
+          ? `manifest is read-only: unsupported schemaVersion ${read.version}`
+          : read.reason === "corrupt"
+            ? `manifest is read-only: corrupt (${read.detail})`
+            : "invalid run",
+    }
+  if (read.manifest?.origin) {
+    if (read.manifest.origin.sessionID === origin.sessionID) return { ok: true }
+    return { ok: false, reason: "run already attributed to another session" }
+  }
+  // 空 manifest 会建出 run 目录:先播种 `.code-puppy/.gitignore`,与 saveCloudRun 的落盘同一纪律。
+  if (!read.manifest && !ensureAlphaScaffold(projectDir)) return { ok: false, reason: "invalid project directory" }
+  const now = new Date().toISOString()
+  const manifest: ArtifactManifestV1 = read.manifest ?? {
+    schemaVersion: ARTIFACT_MANIFEST_VERSION,
+    runId,
+    updatedAt: now,
+    artifacts: [],
+  }
+  manifest.origin = {
+    sessionID: origin.sessionID,
+    ...(origin.messageID ? { messageID: origin.messageID } : {}),
+    ...(origin.partID ? { partID: origin.partID } : {}),
+    recordedAt: now,
+  }
+  manifest.updatedAt = now
+  const written = writeArtifactManifest(projectDir, runId, manifest)
+  if (!written.ok) return { ok: false, reason: written.reason }
+  return { ok: true }
+}
+
 /**
  * #1112:账本视角的名字归属 —— `artifacts/<name>`(折叠键,与 registerDownloadedArtifact 的
  * pathOwner 检查同一比较)当前登记在哪个 artifactId 名下。预约(reserveArtifactSavedName)靠它
@@ -1607,6 +1658,8 @@ export type RunArtifactUsage = {
    * 会造出永远不会被发现的错值。界面对 `null` 失败关闭,回落显示编号。
    */
   updatedAt: string | null
+  /** 发起这个 run 的会话(manifest run 级 origin,REQ-236 #1551);无归属 / manifest 不可读 = `null`,不猜。 */
+  sessionID: string | null
 }
 
 export type RunUsageResult = { ok: true; usage: RunArtifactUsage } | { ok: false; reason: string }
@@ -1631,6 +1684,7 @@ export function runArtifactUsage(projectDir: string, runId: string): RunUsageRes
         missingCount: 0,
         readOnly: true,
         updatedAt: null,
+        sessionID: null,
       },
     }
   }
@@ -1649,6 +1703,7 @@ export function runArtifactUsage(projectDir: string, runId: string): RunUsageRes
       missingCount: entries.filter((e) => !onDisk.has(e.local.savedPath)).length,
       readOnly: false,
       updatedAt: read.manifest?.updatedAt ?? null,
+      sessionID: read.manifest?.origin?.sessionID ?? null,
     },
   }
 }
