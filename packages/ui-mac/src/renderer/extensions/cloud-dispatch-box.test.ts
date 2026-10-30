@@ -132,7 +132,7 @@ describe("`#1572` dispatch network failure says which step failed", () => {
     disposers.splice(0).forEach((dispose) => dispose())
     document.body.replaceChildren()
     await mount("network")
-    expect(text()).toBe("网络错误 —— 云端点不可达")
+    expect(text()).toBe("暂时连不上云端服务,稍后重试")
   })
 })
 
