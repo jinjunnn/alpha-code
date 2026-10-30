@@ -306,12 +306,13 @@ type Outcome = {
 
 /**
  * 跑一条入口,数 `permission.asked`,按 `answer` 处置那一问,收尾数子会话。
- * `reject` = 用户点拒绝;`timeout` = 不答,等期限到点;`none` = 不该有任何一问(有就让它自己超时、计数会红)。
+ * `reject` = 用户点拒绝;`once` = 用户点「允许一次」(只答第一问 —— 若还有第二问,它没人答、到点 fail-closed,
+ * 计数照样记下);`timeout` = 不答,等期限到点;`none` = 不该有任何一问(有就让它自己超时、计数会红)。
  */
 const drive = (
   sessionID: SessionID,
   entry: Effect.Effect<unknown, unknown, any>,
-  answer: "reject" | "timeout" | "none",
+  answer: "reject" | "once" | "timeout" | "none",
 ) =>
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
@@ -324,7 +325,7 @@ const drive = (
     })
     yield* Effect.addFinalizer(() => unsub)
     const fiber = yield* entry.pipe(Effect.exit, Effect.forkChild)
-    if (answer === "reject") {
+    if (answer === "reject" || answer === "once") {
       const pending = yield* pollWithTimeout(
         Effect.gen(function* () {
           const list = yield* permission.list()
@@ -333,7 +334,7 @@ const drive = (
         "这条委派入口没有进入待批队列 —— 它没有在问",
         "10 seconds",
       )
-      yield* permission.reply({ requestID: pending[0]!.id, reply: "reject" })
+      yield* permission.reply({ requestID: pending[0]!.id, reply: answer })
     }
     const exit = yield* Fiber.join(fiber)
     const children = (yield* sessions.children(sessionID)).length
@@ -590,6 +591,128 @@ it.instance(
       expect(out.asked).toEqual([])
       expect(Exit.isSuccess(out.exit)).toBe(true)
       expect(yield* assistantsAs(chat.id, "build")).toBe(1)
+    }),
+  TEST_TIMEOUT_MS,
+)
+
+// ── r1(代码审计后):被拒的子任务不再挂在会话里;「仅弹出一次」有能失败的证据;计划助手点名 general 照规则拒 ──
+/** 被拒之后再发一条普通消息:它必须得到一次真正的模型回复(不是标题请求),且不重派、不重问旧子任务。 */
+const followUp = (sessionID: SessionID, tier: Tier) =>
+  Effect.gen(function* () {
+    const llm = yield* TestLLMServer
+    const prompt = yield* SessionPrompt.Service
+    const out = yield* drive(
+      sessionID,
+      prompt.prompt({ sessionID, ...agentField(tier), parts: [{ type: "text", text: "FOLLOW-UP-1573" }] }),
+      "none",
+    )
+    const replies = (yield* llm.inputs)
+      .map((body) => JSON.stringify(body))
+      .filter((body) => body.includes("FOLLOW-UP-1573") && !body.includes("Generate a title"))
+    return { ...out, replies: replies.length }
+  })
+
+it.instance(
+  "E3 只读:被拒的子任务不挂在会话里 —— 再发一条普通消息照常回复,不重派、零子会话",
+  () =>
+    Effect.gen(function* () {
+      const { chat } = yield* setup()
+      const first = yield* drive(chat.id, runCommand(chat.id, "readonly"), "none")
+      expect(failureOf(first.exit)).toBeInstanceOf(PermissionV1.DeniedError)
+      const next = yield* followUp(chat.id, "readonly")
+      expect(Exit.isSuccess(next.exit)).toBe(true)
+      expect(next.asked).toEqual([])
+      expect(next.children).toBe(0)
+      expect(next.replies).toBe(1)
+    }),
+  TEST_TIMEOUT_MS,
+)
+
+it.instance(
+  "E3 请求审批:拒绝过的子任务不挂在会话里 —— 再发一条普通消息不重弹旧询问、照常回复",
+  () =>
+    Effect.gen(function* () {
+      const { chat } = yield* setup()
+      const first = yield* drive(chat.id, runCommand(chat.id, "ask"), "reject")
+      expect(failureOf(first.exit)).toBeInstanceOf(PermissionV1.RejectedError)
+      const next = yield* followUp(chat.id, "ask")
+      expect(Exit.isSuccess(next.exit)).toBe(true)
+      expect(next.asked).toEqual([])
+      expect(next.children).toBe(0)
+      expect(next.replies).toBe(1)
+    }),
+  TEST_TIMEOUT_MS,
+)
+
+it.instance(
+  "E6 目标规则表拒绝(会话 deny builtin::task):被拒的子任务同样不挂在会话里",
+  () =>
+    Effect.gen(function* () {
+      const { sessions } = yield* setup()
+      const chat = yield* sessions.create({
+        title: "REQ-236 E6 refused",
+        permission: [{ permission: "builtin::task", pattern: "*", action: "deny" }],
+      })
+      const first = yield* drive(chat.id, runCommand(chat.id, "allow"), "none")
+      expect(failureOf(first.exit)).toBeInstanceOf(PermissionV1.DeniedError)
+      const next = yield* followUp(chat.id, "allow")
+      expect(Exit.isSuccess(next.exit)).toBe(true)
+      expect(next.children).toBe(0)
+      expect(next.replies).toBe(1)
+    }),
+  TEST_TIMEOUT_MS,
+)
+
+it.instance(
+  "E3 请求审批:允许一次 ⇒ 恰好一问,子任务真的执行",
+  () =>
+    Effect.gen(function* () {
+      const { chat } = yield* setup()
+      const out = yield* drive(chat.id, runCommand(chat.id, "ask"), "once")
+      expect(out.asked.map((a) => [a.permission, a.patterns])).toEqual([["task", ["general"]]])
+      expect(Exit.isSuccess(out.exit)).toBe(true)
+      expect(out.children).toBe(1)
+    }),
+  TEST_TIMEOUT_MS,
+)
+
+it.instance(
+  "E4 请求审批:允许一次 ⇒ 恰好一问,命令真的以 build 执行",
+  () =>
+    Effect.gen(function* () {
+      const { chat } = yield* setup()
+      const out = yield* drive(chat.id, runCommand(chat.id, "ask", COMMAND_OTHER_AGENT), "once")
+      expect(out.asked.map((a) => [a.permission, a.patterns])).toEqual([["task", ["build"]]])
+      expect(Exit.isSuccess(out.exit)).toBe(true)
+      expect(yield* assistantsAs(chat.id, "build")).toBe(1)
+    }),
+  TEST_TIMEOUT_MS,
+)
+
+// 全部批准档下手选计划助手:计划助手自带 `task: {general: "deny"}`(引擎 agent/agent.ts),用户点名 general 照规则拒。
+it.instance(
+  "E2 全部批准 + 计划助手:@general ⇒ 照计划助手自带规则拒绝,零子会话,不问",
+  () =>
+    Effect.gen(function* () {
+      const { llm, prompt, chat } = yield* setup()
+      yield* llm.tool("task", TASK_CALL)
+      const out = yield* drive(
+        chat.id,
+        prompt.prompt({
+          sessionID: chat.id,
+          agent: "plan",
+          parts: [
+            { type: "text", text: "@general 改个文件" },
+            { type: "agent", name: "general" },
+          ],
+        }),
+        "none",
+      )
+      expect(out.asked).toEqual([])
+      expect(out.children).toBe(0)
+      const part = yield* taskPart(chat.id)
+      expect(part?.state.status).toBe("error")
+      if (part?.state.status === "error") expect(part.state.error).toContain('"permission":"task"')
     }),
   TEST_TIMEOUT_MS,
 )

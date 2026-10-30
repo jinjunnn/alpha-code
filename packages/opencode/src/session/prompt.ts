@@ -310,30 +310,65 @@ const layer = Layer.effect(
         yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
         throw error
       }
-      // REQ-236 E3:直接子任务(`subtask:true` 或 subagent 模式的命令)派给与本轮发起方不同的助手 ⇒
-      // 先按发起方档位问。下面的闸用的是**目标**助手的规则集,父档位在那里不参与。
-      yield* askDelegation({ from: lastUser.agent, to: task.agent, session, description: task.description })
       const taskRuleset = Permission.merge(taskAgent.permission, session.permission ?? [])
-      if (
-        Permission.disabled([{ technicalId: TaskTool.id, identity: taskTool.identity }], taskRuleset).has(TaskTool.id)
+      // REQ-236(#1573 r1):派出前的三道闸任一拒绝(含询问被拒 / 超时)⇒ 先把这条子任务写成一条已结束、
+      // 带 error 的助手消息,再抛。否则子任务 part 之后没有已结束的助手消息,MessageV2.latest 仍把它当待办,
+      // 下一条消息的 loop 又把它交回这里 —— 发起方已换成新消息的档位,旧子任务被重问或重派。
+      yield* Effect.gen(function* () {
+        // REQ-236 E3:直接子任务(`subtask:true` 或 subagent 模式的命令)派给与本轮发起方不同的助手 ⇒
+        // 先按发起方档位问。下面的闸用的是**目标**助手的规则集,父档位在那里不参与。
+        yield* askDelegation({ from: lastUser.agent, to: task.agent, session, description: task.description })
+        if (
+          Permission.disabled([{ technicalId: TaskTool.id, identity: taskTool.identity }], taskRuleset).has(TaskTool.id)
+        )
+          return yield* Effect.die(new PermissionV1.DeniedError({ ruleset: taskRuleset }))
+        // #1129 / #724 §6 E6:direct subtask 绕过 SessionTools,上面的 disabled 检查只完成
+        // deny;identity=ask 必须同样成立。在任何副作用(消息/part 持久化、plugin hook、
+        // subsession/Task execute)之前走与 E1-E4 同一个 gate:ruleset 轴 + 策略**文档轴**
+        // (调用时重读;task 是 builtin 类,binding 为应用常量)。deny ⇒ 具名拒绝(与上面
+        // 同型,双保险)、ask ⇒ 挂起等批准(reject/超时即 fail-closed,只写下面那条已结束的拒绝消息)、
+        // allow ⇒ 静默通过(builtin 类默认 enabled,agent 默认 `*: allow` 底保持现状)。
+        yield* AlphaToolPolicyGate.gateToolExecution({
+          policy: toolPolicy,
+          permission,
+          subject: Effect.succeed(AlphaToolPolicyGate.builtinSubject(taskTool.identity, { kind: "not-asserted" })),
+          ruleset: taskRuleset,
+          sessionID,
+          metadata: { agent: task.agent, description: task.description },
+        }).pipe(Effect.orDie)
+      }).pipe(
+        Effect.catchCause((cause) => {
+          const refusal = Cause.squash(cause)
+          if (
+            !(
+              refusal instanceof PermissionV1.DeniedError ||
+              refusal instanceof PermissionV1.RejectedError ||
+              refusal instanceof PermissionV1.CorrectedError
+            )
+          )
+            return Effect.failCause(cause)
+          const now = Date.now()
+          return sessions
+            .updateMessage({
+              id: MessageID.ascending(),
+              role: "assistant",
+              parentID: task.messageID,
+              sessionID,
+              mode: task.agent,
+              agent: task.agent,
+              variant: lastUser.model.variant,
+              path: { cwd: ctx.directory, root: ctx.worktree },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              modelID: taskModel.id,
+              providerID: taskModel.providerID,
+              time: { created: now, completed: now },
+              finish: "error",
+              error: MessageV2.fromError(refusal, { providerID: taskModel.providerID }),
+            })
+            .pipe(Effect.andThen(Effect.failCause(cause)))
+        }),
       )
-        return yield* Effect.die(new PermissionV1.DeniedError({ ruleset: taskRuleset }))
-      // #1129 / #724 §6 E6:direct subtask 绕过 SessionTools,上面的 disabled 检查只完成
-      // deny;identity=ask 必须同样成立。在任何副作用(消息/part 持久化、plugin hook、
-      // subsession/Task execute)之前走与 E1-E4 同一个 gate:ruleset 轴 + 策略**文档轴**
-      // (调用时重读;task 是 builtin 类,binding 为应用常量)。deny ⇒ 具名拒绝(与上面
-      // 同型,双保险)、ask ⇒ 挂起等批准(reject/超时即 fail-closed,什么都没写盘)、
-      // allow ⇒ 静默通过(builtin 类默认 enabled,agent 默认 `*: allow` 底保持现状)。
-      yield* AlphaToolPolicyGate.gateToolExecution({
-        policy: toolPolicy,
-        permission,
-        subject: Effect.succeed(
-          AlphaToolPolicyGate.builtinSubject(taskTool.identity, { kind: "not-asserted" }),
-        ),
-        ruleset: taskRuleset,
-        sessionID,
-        metadata: { agent: task.agent, description: task.description },
-      }).pipe(Effect.orDie)
       const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",
