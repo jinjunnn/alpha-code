@@ -8,6 +8,8 @@ export type UpdaterBackend = {
   checkForUpdates(): Promise<{ isUpdateAvailable?: boolean; updateInfo?: { version?: string } } | null | undefined>
   downloadUpdate(): Promise<unknown>
   quitAndInstall(): void
+  // [ac#1559] 版本新旧只由更新器自身判断(electron-updater 的 currentVersion),本模块不做版本算术。
+  isNewer(version: string): boolean
 }
 
 type UpdaterPersistence = {
@@ -73,7 +75,8 @@ export function createUpdaterController(input: {
 
   const check = () => {
     if (!input.enabled) return Promise.resolve(state)
-    if (state.status === "ready") return Promise.resolve(state)
+    // [ac#1559] 只有本进程实际下载完成的 ready 才早退;从记录恢复的 ready 不阻断后台检查。
+    if (state.status === "ready" && sessionDownloaded) return Promise.resolve(state)
     return runCheck()
   }
 
@@ -86,19 +89,18 @@ export function createUpdaterController(input: {
     },
     async start() {
       const ready = await input.persistence.get()
-      if (ready?.version === input.currentVersion) {
-        // 上一会话装的就是这个版本 → 记录已兑现,清掉再照常检查。
-        await input.persistence.clear()
-      } else if (ready && input.enabled) {
-        // [ac#1207] REQ-147 AC2:跨重启恢复。上一会话已完整下载并登记 ready,重启后把这份
-        // 持久化记录**投影成状态**,让 UI 一启动就看得见「已就绪」入口 —— 而不是重新走一遍
-        // checking→downloading(在线才到得了 ready,离线会把一份好端端的就绪更新报成 error)。
-        // 记录版本是否仍然该装,不在这里做版本算术(手写 semver 比较 = 又一个别人文法的替身):
-        // install() 会经 runCheck() 让 feed 重新裁决 —— 记录过期(如已手动装了更新的版本)
-        // 时 feed 判 up-to-date,记录被清、入口消失;feed 有更新版本时装的是更新的那个。
-        // 恢复态先不 check():ready 是稳态,check() 对 ready 本就早退;真正的重验发生在
-        // install()(sessionDownloaded=false 分支),那里失败会响亮落 error。
-        return transition({ status: "ready", version: ready.version })
+      if (ready) {
+        // [ac#1559] 只有比当前版本新的记录才投影成 ready(REQ-147 AC2 跨重启恢复);旧于或等于当前的
+        // 记录(已装完 / 陈旧)清掉,照常检查。恢复出来的 ready 不让 check() 早退,后台检查照常重判。
+        const newer = input.backend.isNewer(ready.version)
+        const restore = newer && input.enabled
+        input.log?.("updater restore decision", {
+          version: ready.version,
+          currentVersion: input.currentVersion,
+          decision: restore ? "restore-ready" : newer ? "keep-disabled" : "clear-not-newer",
+        })
+        if (!newer) await input.persistence.clear()
+        if (restore) return transition({ status: "ready", version: ready.version })
       }
       return check()
     },
@@ -114,6 +116,12 @@ export function createUpdaterController(input: {
         if (current.status !== "ready") return
       }
       const version = current.version
+      if (!input.backend.isNewer(version)) {
+        // [ac#1559] 安装前再判一次:目标不新于当前就不装。
+        await input.persistence.clear()
+        transition({ status: "up-to-date" })
+        return
+      }
       transition({ status: "installing", version })
       await input
         .stop()

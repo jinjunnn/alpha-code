@@ -73,7 +73,13 @@ export function setupAutoUpdater(stop: () => Promise<void>) {
   return createUpdaterController({
     enabled,
     currentVersion: app.getVersion(),
-    backend: autoUpdater,
+    backend: {
+      checkForUpdates: () => autoUpdater.checkForUpdates(),
+      downloadUpdate: () => autoUpdater.downloadUpdate(),
+      quitAndInstall: () => autoUpdater.quitAndInstall(),
+      // [ac#1559] 用更新器自己的 currentVersion(SemVer)判新旧 —— 与它判「有无可用更新」同一把尺子。
+      isNewer: (version) => autoUpdater.currentVersion.compare(version) < 0,
+    },
     persistence: {
       get() {
         const value = store.get(key)
