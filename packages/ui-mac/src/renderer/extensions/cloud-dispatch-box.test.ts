@@ -81,7 +81,7 @@ async function mount(error?: string, failureCode?: string) {
           statusCalls.push(id)
           return { ...status, result: failureCode ? { failure_code: failureCode } : {} }
         },
-        saveRun: async () => ({ ok: true, dir: "/synthetic/results/run", files: [], warnings: [] }),
+        saveRun: async () => ({ ok: true, dir: "/synthetic/results/run", files: [], warnings: [], failures: [] }),
         subscribe: async () => ({ ok: true }),
         unsubscribe: async () => ({ ok: true }),
         onEvent: (handler: typeof event) => {
@@ -205,6 +205,7 @@ function mountLegacy(options: {
   picked?: string[]
   result?: unknown
   savedFiles?: string[]
+  saveFailures?: unknown[]
   gitDiff?: { ok: true; diff: string; source: "worktree" | "last-commit" } | { ok: false; reason: string }
   upload?: unknown
   confirm?: unknown
@@ -242,7 +243,7 @@ function mountLegacy(options: {
         },
         saveRun: async (...args: unknown[]) => {
           saves.push(args)
-          return { ok: true, dir: "/synthetic/results/run", files: options.savedFiles ?? [], warnings: [] }
+          return { ok: true, dir: "/synthetic/results/run", files: options.savedFiles ?? [], warnings: [], failures: options.saveFailures ?? [] }
         },
         subscribe: async () => ({ ok: true }),
         unsubscribe: async () => ({ ok: true }),
@@ -351,6 +352,26 @@ describe("REQ-235 AC2 legacy cloud branches are frozen before the lifecycle extr
     expect(harness.saves).toEqual([["/synthetic/results", accepted.job_id, harness.envelopes[0]]])
     expect(document.body.textContent).toContain(zh["alpha.ext.cloudSaved"])
     expect(document.querySelector(".alpha-ext-card-err")?.textContent).toBe(zh["alpha.ext.cloudRunFailed"])
+  })
+
+  // REQ-236 #1551 AC2:saveCloudRun 的第三个生产消费者(定制中心表单经 cloud-save-run)—— 产物没齐不报「完成」。
+  test("#1551 a completed job whose artifacts did not all land is not reported as done", async () => {
+    const harness = mountLegacy({
+      spec: legacySpecOf("cloud:research"),
+      entryId: "cloud:research",
+      savedFiles: [],
+      saveFailures: [{ scope: "download", artifactId: "art_1", code: "network" }],
+    })
+    typeInto("Synthetic input")
+    inputButton()!.click()
+    await flush()
+    await flush()
+    harness.send("job.completed")
+    await flush()
+    await flush()
+    expect(harness.saves).toHaveLength(1)
+    expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudDone"])
+    expect(document.querySelector(".alpha-ext-card-err")?.textContent).toBe(zh["alpha.ext.cloudSaveFailed"])
   })
 
   test("events for another job id are ignored", async () => {

@@ -26,7 +26,7 @@ const requested: RoutePurpose[] = []
 const wire: Array<{ path: string; bearer: string; body?: string }> = []
 /** #400 注入的瞬态失败队列:每元素消费一次 —— "network" 抛(超时/断连形态),数字回该 HTTP 状态,
  *  对象回该状态 + 指定 body(#940:平台分类拒绝形态 `{ error, code }`)。 */
-const transientFailures: Array<"network" | number | { status: number; body: string }> = []
+const transientFailures: Array<"network" | "reset" | number | { status: number; body: string }> = []
 /** #400 cancel 端点响应体(测试可换,验证 decode 闸真的在跑)。默认 = platform#255 契约形状。 */
 const CANCEL_OK = { schema_version: 1, job_id: JOB, status: "cancelling", accepted: true }
 let cancelBody = JSON.stringify(CANCEL_OK)
@@ -40,8 +40,16 @@ mock.module("./alpha-auth", () => ({
 mock.module("./alpha-endpoints", () => ({
   resolveEndpoints: () => ({ cloud: BASE }),
 }))
+/** #1551 AC7:main 侧 warn 日志行(按调用序)。 */
+const warns: string[] = []
 mock.module("./logging", () => ({
-  getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }),
+  getLogger: () => ({
+    log: () => {},
+    warn: (...args: unknown[]) => {
+      warns.push(args.map(String).join(" "))
+    },
+    error: () => {},
+  }),
 }))
 mock.module("./alpha-contract-health", () => ({
   reportContractFailure: () => {},
@@ -52,7 +60,12 @@ const downloads: Array<{ token: string; base: string }> = []
 /** `#970`:下一次 downloadArtifactToFile 的返回值。默认成功;失败信封的用例就地改再还原。 */
 const DOWNLOAD_OK = { ok: true, path: "/tmp/unused", bytes: 0 }
 let downloadOutcome: unknown = DOWNLOAD_OK
+// 日志格式与错误码提取用真实现(#1551 AC7 判的就是它们进了日志);只替换真正出网的下载器。
+const { artifactDownloadFailureLog, errorCauseCode, sanitizeTransportError } = await import("./alpha-artifact-download")
 mock.module("./alpha-artifact-download", () => ({
+  artifactDownloadFailureLog,
+  errorCauseCode,
+  sanitizeTransportError,
   downloadArtifactToFile: async (_req: unknown, opts: { token: string; base: string }) => {
     downloads.push({ token: opts.token, base: opts.base })
     return downloadOutcome
@@ -115,6 +128,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   wire.push({ path, bearer, ...(typeof init?.body === "string" ? { body: init.body } : {}) })
   const injected = transientFailures.shift()
   if (injected === "network") throw new TypeError("fetch failed (injected transient)")
+  // #1551 AC7:Node/undici 的真实形状 —— TypeError("fetch failed") + cause.code。
+  if (injected === "reset") throw new TypeError("fetch failed", { cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }) })
   if (typeof injected === "number") return new Response(JSON.stringify({ error: "injected" }), { status: injected })
   if (typeof injected === "object" && injected !== null) return new Response(injected.body, { status: injected.status })
   const required = REQUIRED_ACTION.find(([re]) => re.test(path))?.[1]
@@ -294,4 +309,40 @@ test("对照臂:平台 400 无 code(或形状不认识)⇒ 保持 http-400,不�
 
   expect(await jobs.dispatchExplicitCloudUpload(UPLOAD_INPUT)).toEqual({ error: "http-400" })
   expect(wire.length).toBe(1)
+})
+
+// ---- #1551 AC7:失败日志带上真因(阶段 / detail / 已收字节 / 底层 cause 码),且不带 token 与 URL query ----
+
+test("#1551 状态请求的网络失败日志带底层 cause 码,不带 token", async () => {
+  warns.length = 0
+  transientFailures.push("reset")
+
+  expect(await jobs.getCloudJobStatus(JOB)).toEqual({ error: "network" })
+  const line = warns.find((w) => w.includes("fetch failed"))
+  // base 上这一行只有 `alpha-cloud-jobs: fetch failed` + 原始 error 对象,没有 cause 码。
+  expect(line).toContain("cause=ECONNRESET")
+  expect(line).not.toContain("tok.")
+})
+
+test("#1551 下载失败日志行含阶段、净化后的 detail 与已收字节,不含 token 与 URL query", async () => {
+  warns.length = 0
+  try {
+    downloadOutcome = {
+      ok: false,
+      error: "network",
+      detail: "socket closed (Bearer tok.artifact.read) at https://cloud.invalid/v1/cloud/artifacts/a/content?sig=SECRETQUERY",
+      stage: "body",
+      bytes: 1024,
+    }
+    await jobs.downloadCloudArtifactTo({ jobId: JOB } as never, (() => ({ ok: true })) as never)
+  } finally {
+    downloadOutcome = DOWNLOAD_OK
+  }
+  const line = warns.find((w) => w.includes("artifact download failed"))
+  expect(line).toContain("(network)")
+  expect(line).toContain("stage=body")
+  expect(line).toContain("received=1024")
+  expect(line).toContain("socket closed")
+  expect(line).not.toContain("tok.artifact.read")
+  expect(line).not.toContain("SECRETQUERY")
 })

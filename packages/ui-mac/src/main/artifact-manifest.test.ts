@@ -224,3 +224,35 @@ describe("validateArtifactManifest", () => {
     expect(validateArtifactManifest(manifest([entry({}, d2)])).ok).toBe(false)
   })
 })
+
+// REQ-236 #1551 AC4:run 级 origin(哪个对话发起了这个 run)。
+describe("run origin (#1551)", () => {
+  const origin = { sessionID: "ses_a", messageID: "msg_1", partID: "prt_1", recordedAt: "2026-10-30T00:00:00.000Z" }
+
+  test("an empty manifest carrying an origin round-trips verbatim", () => {
+    const m: ArtifactManifestV1 = { ...manifest([]), origin }
+    expect(writeArtifactManifest(projectDir, RUN, m).ok).toBe(true)
+    expect(readArtifactManifest(projectDir, RUN)).toEqual({ ok: true, manifest: m })
+  })
+
+  test("a manifest without origin still reads (absent field = no attribution)", () => {
+    expect(writeArtifactManifest(projectDir, RUN, manifest([entry()])).ok).toBe(true)
+    const read = readArtifactManifest(projectDir, RUN)
+    expect(read.ok && read.manifest && "origin" in read.manifest).toBe(false)
+  })
+
+  test("malformed origins are refused (no write lands)", () => {
+    for (const bad of [
+      "ses_a",
+      { recordedAt: origin.recordedAt },
+      { sessionID: "", recordedAt: origin.recordedAt },
+      { sessionID: "ses_a" },
+      { sessionID: "ses_a", messageID: 7, recordedAt: origin.recordedAt },
+    ]) {
+      const res = validateArtifactManifest({ ...manifest([]), origin: bad })
+      expect(res.ok).toBe(false)
+      expect(writeArtifactManifest(projectDir, RUN, { ...manifest([]), origin: bad } as unknown as ArtifactManifestV1).ok).toBe(false)
+    }
+    expect(fs.existsSync(manifestPath())).toBe(false)
+  })
+})

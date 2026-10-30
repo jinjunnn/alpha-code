@@ -13,6 +13,7 @@ import {
   MAX_ARTIFACTS_PER_RUN,
   listRunArtifacts,
   projectArtifactUsage,
+  recordRunOrigin,
   registerDownloadedArtifact,
   registeredArtifactNameOwner,
   removeArtifact,
@@ -326,6 +327,21 @@ describe("resolveArtifact / verifyArtifact", () => {
     expect(res.ok && res.entry.local.state).toBe("verified") // descriptor.sha256 吻合 → 升级
   })
 
+  // #1551 r1:复核在交付热路径上(每次 track / reverify),结论不变时不得改写 manifest、不得刷新 updatedAt
+  // (否则旧 run 会被顶到 REQ-126 B1 按时间排序的最前)。
+  test("#1551 a verify that confirms the stored result leaves the manifest file and updatedAt untouched", async () => {
+    const a = seedArtifact("report.md", "# hi")
+    registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
+    const before = { ino: fs.statSync(manifestPath()).ino, text: fs.readFileSync(manifestPath(), "utf8") }
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    for (let i = 0; i < 2; i++) {
+      const res = await verifyArtifact(projectDir, RUN, a.descriptor.id)
+      expect(res.ok && res.entry.local.state).toBe("verified")
+    }
+    expect(fs.statSync(manifestPath()).ino).toBe(before.ino)
+    expect(fs.readFileSync(manifestPath(), "utf8")).toBe(before.text)
+  })
+
   test("no producer digest: verify pins local digest but stays unverified", async () => {
     const a = seedArtifact("blob.bin", "data")
     const d = { ...a.descriptor }
@@ -390,6 +406,7 @@ describe("byte accounting", () => {
       missingCount: 0,
       readOnly: false,
       updatedAt: writtenAt,
+      sessionID: null,
     })
   })
 
@@ -498,5 +515,83 @@ describe("IPC read-only shape (renderer 可见面不含绝对路径/凭据)", ()
     expect(json.toLowerCase().includes("bearer ")).toBe(false) // 无凭据字面量
     expect(json.includes("base64")).toBe(false) // 无内容字段
     if (list.ok) expect(list.entries[0].descriptor.contentRef.url.startsWith("/")).toBe(true)
+  })
+})
+
+// REQ-236 #1551 AC4:归属写进现有 manifest 的 run 级 origin。只由已受理的 dispatch 驱动(调用方准入,
+// 见 cloud-run-tracker.test.ts「status/await 命中不写归属」);这里钉写者本身的语义。
+describe("recordRunOrigin (#1551)", () => {
+  const ORIGIN = { sessionID: "ses_dispatcher", messageID: "msg_1", partID: "prt_1" }
+  const freshProject = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-origin-"))
+    return { dir, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) }
+  }
+
+  test("accepted before any artifact: writes an empty manifest carrying the origin and seeds .code-puppy/.gitignore", () => {
+    const fresh = freshProject()
+    try {
+      expect(recordRunOrigin(fresh.dir, RUN, ORIGIN)).toEqual({ ok: true })
+      const read = readArtifactManifest(fresh.dir, RUN)
+      expect(read.ok).toBe(true)
+      if (!read.ok || !read.manifest) throw new Error("manifest missing")
+      expect(read.manifest.artifacts).toEqual([])
+      expect(read.manifest.origin).toMatchObject(ORIGIN)
+      expect(typeof read.manifest.origin?.recordedAt).toBe("string")
+      expect(fs.readFileSync(path.join(fresh.dir, ".code-puppy", ".gitignore"), "utf8")).toBe("*\n")
+      expect(runArtifactUsage(fresh.dir, RUN)).toMatchObject({ ok: true, usage: { sessionID: "ses_dispatcher", artifactCount: 0 } })
+    } finally {
+      fresh.cleanup()
+    }
+  })
+
+  test("a manifest without the field reads as no attribution (sessionID null)", () => {
+    const a = seedArtifact("report.md", "# hi")
+    expect(registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest }).ok).toBe(true)
+    expect(runArtifactUsage(projectDir, RUN)).toMatchObject({ ok: true, usage: { sessionID: null } })
+    expect(projectArtifactUsage(projectDir)).toMatchObject({ ok: true, usage: { runs: [{ runId: RUN, sessionID: null }] } })
+  })
+
+  test("register, reconcile, verify and remove all keep the origin", async () => {
+    expect(recordRunOrigin(projectDir, RUN, ORIGIN).ok).toBe(true)
+    const recorded = readArtifactManifest(projectDir, RUN)
+    const before = recorded.ok ? recorded.manifest?.origin : undefined
+    const a = seedArtifact("report.md", "# hi")
+    const b = seedArtifact("notes.md", "notes", 1)
+    expect(registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest }).ok).toBe(true)
+    expect(registerDownloadedArtifact(projectDir, RUN, { descriptor: b.descriptor, savedPath: b.savedPath, verifiedSha256: b.digest }).ok).toBe(true)
+    const originNow = () => {
+      const read = readArtifactManifest(projectDir, RUN)
+      return read.ok ? read.manifest?.origin : undefined
+    }
+    expect(originNow()).toEqual(before)
+    fs.rmSync(path.join(artifactsDir(), "notes.md"))
+    expect(listRunArtifacts(projectDir, RUN).ok).toBe(true) // reconcile 降级 missing 并持久化
+    expect(originNow()).toEqual(before)
+    expect((await verifyArtifact(projectDir, RUN, a.descriptor.id)).ok).toBe(true)
+    expect(originNow()).toEqual(before)
+    expect(removeArtifact(projectDir, RUN, a.descriptor.id).ok).toBe(true)
+    expect(originNow()).toEqual(before)
+  })
+
+  test("first writer wins: same session is idempotent, a different session is refused", () => {
+    expect(recordRunOrigin(projectDir, RUN, ORIGIN).ok).toBe(true)
+    const first = readArtifactManifest(projectDir, RUN)
+    expect(recordRunOrigin(projectDir, RUN, { ...ORIGIN, messageID: "msg_2" })).toEqual({ ok: true })
+    expect(readArtifactManifest(projectDir, RUN)).toEqual(first)
+    expect(recordRunOrigin(projectDir, RUN, { sessionID: "ses_intruder" })).toEqual({
+      ok: false,
+      reason: "run already attributed to another session",
+    })
+    expect(readArtifactManifest(projectDir, RUN)).toEqual(first)
+  })
+
+  test("unknown-version and corrupt manifests are refused, bytes untouched", () => {
+    fs.writeFileSync(manifestPath(), JSON.stringify({ schemaVersion: 99, runId: RUN, updatedAt: "x", artifacts: [] }))
+    const future = fs.readFileSync(manifestPath(), "utf8")
+    expect(recordRunOrigin(projectDir, RUN, ORIGIN)).toEqual({ ok: false, reason: "manifest is read-only: unsupported schemaVersion 99" })
+    expect(fs.readFileSync(manifestPath(), "utf8")).toBe(future)
+    fs.writeFileSync(manifestPath(), "{ not json")
+    expect(recordRunOrigin(projectDir, RUN, ORIGIN)).toMatchObject({ ok: false })
+    expect(fs.readFileSync(manifestPath(), "utf8")).toBe("{ not json")
   })
 })

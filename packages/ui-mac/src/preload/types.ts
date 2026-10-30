@@ -454,10 +454,12 @@ export type CloudArtifactDownloadResult =
 /** #660 裁决 A1:run 回流落盘 settle 后 main 向全部窗口广播的最小提示事件。只有这两个字段 ——
  *  它是「去重读」的提示,不是数据源;消费端收到后仍走 projectUsage / list 重新取真相。 */
 export type CloudRunSavedEvent = { directory: string; runId: string }
-/** B3/ADR-019 artifact 回流:写 <projectDir>/.code-puppy/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
-export type CloudRunManifest =
-  | { ok: true; dir: string; files: string[]; warnings: string[] }
-  | { ok: false; reason: string }
+/** B3/ADR-019 artifact 回流:写 <projectDir>/.code-puppy/runs/<runId>/ 的结果清单(真源 main/alpha-workdir.ts;
+ *  #1551 起带 `failures`,`ok:true` 只表示 status.json 已写)。 */
+import type { CloudRunManifest, CloudRunSaveFailure } from "../main/alpha-workdir"
+/** REQ-236 #1551:宿主交付状态(真源 main/cloud-run-tracker.ts;冻结面,供时间线生图卡与产物面板消费)。 */
+import type { CloudRunDeliveryFailure, CloudRunOrigin, CloudRunState } from "../main/cloud-run-tracker"
+export type { CloudRunDeliveryFailure, CloudRunManifest, CloudRunOrigin, CloudRunSaveFailure, CloudRunState }
 /** SSE 进度事件(job.snapshot / job.started / job.running / workflow.step.completed / job.completed|failed|cancelled / error)。 */
 export type CloudJobEvent = { event: string; data: unknown; id?: string }
 /** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
@@ -1235,6 +1237,15 @@ export type ElectronAPI = {
     saveRun: (directory: string, runId: string, contract?: CloudJobEnvelope) => Promise<CloudRunManifest>
     /** #660 A1:订阅「run 回流已落盘」最小提示事件(全窗口广播;返回退订函数)。 */
     onRunSaved: (cb: (e: CloudRunSavedEvent) => void) => () => void
+    /** REQ-236 #1551:让宿主跟住这个 run 直到产物落盘并核验(幂等,同一 run 单飞)。origin 只在
+     *  「已受理的第一方 cloud_dispatch」时传,用来记下发起它的对话;先写者胜。 */
+    trackRun: (directory: string, runId: string, origin?: CloudRunOrigin) => Promise<{ ok: boolean }>
+    /** 重新下载:与自动重试共用同一协调,在途时不另起;永不重新派发任务。 */
+    retry: (directory: string, runId: string) => Promise<{ ok: boolean }>
+    /** 交付状态快照(重载后取);宿主没跟过这个 run = null。 */
+    getRunState: (directory: string, runId: string) => Promise<CloudRunState | null>
+    /** 订阅 `cloud-run-state`(全窗口广播;返回退订函数)。 */
+    onRunState: (cb: (state: CloudRunState) => void) => () => void
     // 订阅 SSE 进度:main 流式 /events → 推 cloud-job-event。onEvent 注册监听,返回取消函数。
     subscribe: (jobId: string) => Promise<{ ok: boolean }>
     unsubscribe: (jobId: string) => Promise<{ ok: boolean }>

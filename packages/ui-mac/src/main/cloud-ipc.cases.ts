@@ -33,7 +33,17 @@ function fakeWindow(name: string, destroyed = false) {
 
 let windows: ReturnType<typeof fakeWindow>[] = []
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
-let saveResult: { ok: boolean; dir?: string; files?: string[]; warnings?: string[]; reason?: string } = { ok: true }
+let saveResult: { ok: boolean; dir?: string; files?: string[]; warnings?: string[]; failures?: unknown[]; reason?: string } = {
+  ok: true,
+}
+/** #1551:tracker 经由的状态 / 列表 / 现盘复核 / 登记(逐条用例改写)。 */
+let statusImpl: () => Promise<unknown> = async () => ({ error: "unused" })
+let listResult: unknown = { error: "unused" }
+let verifyResult: unknown = { ok: false, reason: "artifact not found" }
+/** 逐次消费的复核结果(空 = 回落 verifyResult);tracker 成功路径需要「落盘前没有、落盘后通过」。 */
+const verifyQueue: unknown[] = []
+let registerResult: unknown = { ok: false, reason: "unused in this harness" }
+let downloadCalls = 0
 /** `#970`:cloud-artifact-download handler 这一跳要转发的下载结局(逐条用例改写)。 */
 let downloadOutcome: unknown = { ok: false, error: "unused" }
 /** #1112:handler 每次预约名字的实参捕获(含账本占用谓词)。 */
@@ -68,16 +78,21 @@ mock.module("./logging", () => ({
 const ledgerOwners = new Map<string, string>()
 mock.module("./artifact-service", () => ({
   finalizeArtifactWithQuota: () => ({ ok: false, reason: "unused in this harness" }),
-  registerDownloadedArtifact: () => ({ ok: false, reason: "unused in this harness" }),
+  registerDownloadedArtifact: () => registerResult,
   registeredArtifactNameOwner: (_dir: string, _run: string, name: string) => ledgerOwners.get(name),
+  recordRunOrigin: () => ({ ok: true }),
+  verifyArtifact: async () => (verifyQueue.length > 0 ? verifyQueue.shift() : verifyResult),
 }))
 mock.module("./alpha-cloud-jobs", () => ({
   dispatchCloudJob: async () => ({ error: "unused" }),
   dispatchExplicitCloudUpload: async () => ({ error: "unused" }),
-  getCloudJobStatus: async () => ({ error: "unused" }),
+  getCloudJobStatus: () => statusImpl(),
   cancelCloudJob: async () => ({ error: "unused" }),
-  listCloudArtifacts: async () => ({ error: "unused" }),
-  downloadCloudArtifactTo: async () => downloadOutcome,
+  listCloudArtifacts: async () => listResult,
+  downloadCloudArtifactTo: async () => {
+    downloadCalls++
+    return downloadOutcome
+  },
 }))
 mock.module("./alpha-cloud-events", () => ({
   isTerminalCloudEvent: () => false,
@@ -111,6 +126,8 @@ mock.module("./alpha-user-workspace", () => ({
 }))
 mock.module("./alpha-auth", () => ({
   getAccessTokenIdentity: async () => ({ error: "unused" }),
+  getAuthIdentityEpoch: () => 1,
+  getAuthIdentityTag: () => "acct",
 }))
 mock.module("./alpha-web-upload-consent", () => ({
   requestUploadConsent: async () => ({ error: "unused" }),
@@ -148,8 +165,9 @@ beforeEach(() => {
   sent.length = 0
   reserveCalls.length = 0
   ledgerOwners.clear()
-  saveResult = { ok: true, dir: "/proj/.alpha/runs/job_abc", files: ["artifacts/a.md"], warnings: [] }
+  saveResult = { ok: true, dir: "/proj/.alpha/runs/job_abc", files: ["artifacts/a.md"], warnings: [], failures: [] }
   downloadOutcome = { ok: false, error: "unused" }
+  downloadCalls = 0
   windows = [fakeWindow("A"), fakeWindow("B")]
 })
 
@@ -223,5 +241,93 @@ describe("#970 cloud-artifact-download 这一跳既不吞掉、也不凭空造�
     expect(claimedByOther!("owned-by-other.md")).toBe(true)
     expect(claimedByOther!("owned-by-self.md")).toBe(false)
     expect(claimedByOther!("unowned.md")).toBe(false)
+  })
+})
+
+// ---- REQ-236 #1551:cloud-save-run 不吞失败;tracker 与面板单件下载共用一个协调者 ----
+
+const producer = new URL("../../../alpha-contracts-consumer/vendor/alpha-platform/contracts/v1/fixtures/producer/", import.meta.url)
+const DESCRIPTOR = (await Bun.file(new URL("artifact-list.json", producer)).json()).value.artifacts[0]
+const COMPLETED = { ...(await Bun.file(new URL("cloud-job-status.json", producer)).json()).value, job_id: "job_abc" }
+const runStates = () => sent.filter((s) => s.channel === "cloud-run-state").map((s) => s.payload as { delivery: { status: string } })
+
+describe("#1551 AC2/AC5 cloud IPC wiring", () => {
+  test("cloud-save-run 把 failures 原样交给调用方(不折成成功)", async () => {
+    saveResult = { ...saveResult, failures: [{ scope: "download", artifactId: "art_1", code: "network" }] }
+    const result = (await saveRun({ sender: windows[0]!.webContents }, "/proj", "job_abc")) as { failures: unknown[] }
+    expect(result.failures).toEqual([{ scope: "download", artifactId: "art_1", code: "network" }])
+  })
+
+  test("tracker 交付在途时,面板单件下载返回 already-downloading,不发下载", async () => {
+    statusImpl = () => new Promise(() => {}) // 状态回包永不到:交付一直在途
+    expect(await handlers.get("cloud-run-track")!({}, "/proj-inflight", "job_abc")).toEqual({ ok: true })
+    const result = await artifactDownload({ sender: windows[0]!.webContents }, "/proj-inflight", "job_abc", DESCRIPTOR)
+    expect(result).toEqual({ ok: false, error: "already-downloading" })
+    expect(downloadCalls).toBe(0)
+  })
+
+  test("单件下载成功登记后,宿主重新核验并向全部窗口广播 cloud-run-state saved", async () => {
+    statusImpl = async () => COMPLETED
+    listResult = { schema_version: 1, job_id: "job_abc", status: "completed", artifacts: [DESCRIPTOR], artifact_ids: [DESCRIPTOR.id], result: null }
+    verifyResult = { ok: false, reason: "artifact not found" }
+    saveResult = { ...saveResult, failures: [{ scope: "download", artifactId: DESCRIPTOR.id, code: "not-found" }] }
+    await handlers.get("cloud-run-track")!({}, "/proj-manual", "job_abc")
+    for (let i = 0; i < 200 && runStates().at(-1)?.delivery.status !== "failed"; i++) await Bun.sleep(2)
+    expect(runStates().at(-1)?.delivery.status).toBe("failed")
+
+    // 用户在面板手动补下:下载成功、登记成功、现盘复核此刻通过。
+    downloadOutcome = { ok: true, path: "/tmp/unused", bytes: 12, sha256: DESCRIPTOR.sha256, verification: "verified", via: "stream" }
+    registerResult = { ok: true, entry: {} }
+    verifyResult = { ok: true, entry: { descriptor: DESCRIPTOR, local: { state: "verified" } } }
+    sent.length = 0
+    await artifactDownload({ sender: windows[0]!.webContents }, "/proj-manual", "job_abc", DESCRIPTOR)
+    for (let i = 0; i < 200 && runStates().length < 2; i++) await Bun.sleep(2)
+    const saved = sent.filter((s) => s.channel === "cloud-run-state")
+    expect(saved.map((s) => s.window).sort()).toEqual(["A", "B"])
+    expect(saved[0]!.payload).toMatchObject({ directory: "/proj-manual", runId: "job_abc", delivery: { status: "saved" } })
+    expect(await handlers.get("cloud-run-state-get")!({}, "/proj-manual", "job_abc")).toMatchObject({ delivery: { status: "saved" } })
+  })
+
+  test("trackRun 拒绝形状不对的 origin(归属只收会话 id 等字符串)", async () => {
+    statusImpl = () => new Promise(() => {})
+    expect(await handlers.get("cloud-run-track")!({}, "/proj-origin", "job_abc", { sessionID: 7 })).toEqual({ ok: false })
+    expect(await handlers.get("cloud-run-track")!({}, "/proj-origin", "../evil")).toEqual({ ok: false })
+    expect(await handlers.get("cloud-run-track")!({}, "/proj-origin", "job_abc", { sessionID: "ses_a", partID: "prt_1" })).toEqual({ ok: true })
+  })
+})
+
+// r1 审计 Major:产物面板据 cloud-run-saved 提示「有一次新的云任务结果已回到本地」;交付有失败就不得广播。
+describe("#1551 r1 cloud-run-saved only for a complete delivery", () => {
+  const savedTo = () => sent.filter((s) => s.channel === "cloud-run-saved")
+  const settle = async (directory: string, status: string) => {
+    for (let i = 0; i < 200; i++) {
+      const last = sent.filter((s) => s.channel === "cloud-run-state" && (s.payload as { directory: string }).directory === directory).at(-1)
+      if ((last?.payload as { delivery?: { status: string } } | undefined)?.delivery?.status === status) return
+      await Bun.sleep(2)
+    }
+    throw new Error(`delivery for ${directory} never reached ${status}`)
+  }
+
+  test("cloud-save-run:落盘有 failures ⇒ 零 cloud-run-saved 广播", async () => {
+    saveResult = { ...saveResult, failures: [{ scope: "download", artifactId: "art_1", code: "network" }] }
+    await saveRun({ sender: windows[0]!.webContents }, "/proj", "job_abc")
+    expect(savedTo()).toEqual([])
+  })
+
+  test("tracker:一轮下载失败 ⇒ 不广播;全部落盘并复核通过 ⇒ 向全部窗口广播", async () => {
+    statusImpl = async () => COMPLETED
+    listResult = { schema_version: 1, job_id: "job_abc", status: "completed", artifacts: [DESCRIPTOR], artifact_ids: [DESCRIPTOR.id], result: null }
+    verifyResult = { ok: false, reason: "artifact not found" }
+    saveResult = { ...saveResult, failures: [{ scope: "download", artifactId: DESCRIPTOR.id, code: "not-found" }] }
+    await handlers.get("cloud-run-track")!({}, "/proj-r1-failed", "job_abc")
+    await settle("/proj-r1-failed", "failed")
+    expect(savedTo()).toEqual([])
+
+    saveResult = { ...saveResult, failures: [] }
+    verifyQueue.push({ ok: false, reason: "artifact not found" }, { ok: true, entry: { descriptor: DESCRIPTOR, local: { state: "verified" } } })
+    await handlers.get("cloud-run-track")!({}, "/proj-r1-saved", "job_abc")
+    await settle("/proj-r1-saved", "saved")
+    expect(savedTo().map((s) => s.window).sort()).toEqual(["A", "B"])
+    expect(savedTo()[0]!.payload).toEqual({ directory: "/proj-r1-saved", runId: "job_abc" })
   })
 })

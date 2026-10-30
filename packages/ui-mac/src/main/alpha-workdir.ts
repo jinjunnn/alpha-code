@@ -15,8 +15,12 @@ import type { ArtifactDownloadOutcome } from "./alpha-artifact-download"
 import { validateArtifactDescriptor, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import { parsePrefs, type ProjectPrefs } from "./alpha-cloud-consent"
 
+/** REQ-236(#1551):一次交付里没落成的那一段 —— 列表、某件下载、或某件登记。 */
+export type CloudRunSaveFailure = { scope: "list" | "download" | "register"; artifactId?: string; code: string; detail?: string }
+
+/** `ok:true` 只表示 run 目录与 status.json 已写;产物是否齐全看 `failures`(空 = 列出的每件都已下载并登记)。 */
 export type CloudRunManifest =
-  | { ok: true; dir: string; files: string[]; warnings: string[] }
+  | { ok: true; dir: string; files: string[]; warnings: string[]; failures: CloudRunSaveFailure[] }
   | { ok: false; reason: string }
 
 // job ids are platform-issued; keep the accepted alphabet tight (no separators, no leading dot).
@@ -291,8 +295,9 @@ export type SaveRunDeps = {
 /**
  * Persist one cloud run under `<projectDir>/.code-puppy/runs/<runId>/` — status.json (always),
  * contract.json (when the caller knows the dispatch envelope) and artifacts/* (fetched in main,
- * bearer never leaves the main process). Partial artifact failures degrade to warnings; the run
- * dir + status.json are the success criterion.
+ * bearer never leaves the main process). The run dir + status.json are the `ok` criterion; a failed
+ * list / download / register is reported structurally in `failures` (#1551 R2) — never folded into
+ * an empty list or a warning that a caller can mistake for "saved".
  */
 export async function saveCloudRun(
   projectDir: string,
@@ -315,6 +320,7 @@ export async function saveCloudRun(
 
   const files: string[] = []
   const warnings: string[] = []
+  const failures: CloudRunSaveFailure[] = []
   const artifactsDir = path.join(runDir, "artifacts")
   try {
     fs.mkdirSync(artifactsDir, { recursive: true })
@@ -329,8 +335,11 @@ export async function saveCloudRun(
   }
 
   const list = await deps.artifacts(runId)
-  const metas = list && typeof list === "object" && !("error" in list) ? list.artifacts : []
-  if (list && typeof list === "object" && "error" in list) warnings.push(`artifacts: ${list.error}`)
+  if ("error" in list) {
+    failures.push({ scope: "list", code: list.error })
+    return { ok: true, dir: runDir, files, warnings, failures }
+  }
+  const metas = list.artifacts
 
   // REQ-092:字节不再进本模块 —— 名字净化 + .code-puppy 逃逸守卫后,把目标路径交给流式下载器
   // (.part + 限额前置 + 单遍 sha256 + 原子 rename;失败分类回警告,绝不产出看似成功的最终文件)。
@@ -346,12 +355,12 @@ export async function saveCloudRun(
     })
     const target = safeResolveInAlpha(projectDir, "runs", runId, "artifacts", name)
     if (!target) {
-      warnings.push(`artifact ${meta.id}: refused unsafe name`)
+      failures.push({ scope: "download", artifactId: meta.id, code: "unsafe-path" })
       continue
     }
     const got = await deps.download(meta, target, runId)
     if (!got.ok) {
-      warnings.push(`artifact ${meta.id}: ${got.error}${got.detail ? ` (${got.detail})` : ""}`)
+      failures.push({ scope: "download", artifactId: meta.id, code: got.error, ...(got.detail ? { detail: got.detail } : {}) })
       continue
     }
     files.push(path.join("artifacts", name))
@@ -365,12 +374,12 @@ export async function saveCloudRun(
           savedPath: `artifacts/${name}`,
           verifiedSha256: got.sha256,
         })
-        if (!reg.ok) warnings.push(`artifact ${meta.id}: manifest 登记失败 — ${reg.reason ?? "unknown"}`)
+        if (!reg.ok) failures.push({ scope: "register", artifactId: meta.id, code: "register-failed", detail: reg.reason ?? "unknown" })
       } else {
         warnings.push(`artifact ${meta.id}: legacy meta 未入 manifest(legacyFiles 只读呈现)`)
       }
     }
   }
 
-  return { ok: true, dir: runDir, files, warnings }
+  return { ok: true, dir: runDir, files, warnings, failures }
 }

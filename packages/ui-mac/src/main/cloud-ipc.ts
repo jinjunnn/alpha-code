@@ -13,6 +13,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { dispatchCloudJob, dispatchExplicitCloudUpload, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, downloadCloudArtifactTo } from "./alpha-cloud-jobs"
 import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
+import { backoffMs } from "./alpha-cloud-events-core"
+import { createCloudRunTracker, type CloudRunOrigin } from "./cloud-run-tracker"
 // #420(REQ-115):云任务 completed / failed 终态 → 系统通知的唯一咽喉(去重、取消不通知都在里面)。
 import { noticeFromCloudEvent, noticeFromCloudStatus, notifyCloudJobFinished } from "./cloud-job-notify"
 import {
@@ -22,11 +24,13 @@ import {
   safeResolveInAlpha,
   sanitizeArtifactName,
   saveCloudRun,
+  type CloudRunManifest,
+  type SaveRunDeps,
 } from "./alpha-workdir"
 import { mirrorRunArtifacts } from "./alpha-user-workspace"
 import { getLogger } from "./logging"
 import type { CloudJobEnvelope, CloudUploadIntent } from "../preload/types"
-import { getAccessTokenIdentity } from "./alpha-auth"
+import { getAccessTokenIdentity, getAuthIdentityEpoch, getAuthIdentityTag } from "./alpha-auth"
 import { requestUploadConsent } from "./alpha-web-upload-consent"
 import { assertSafeUploadResult, createMainUploadService } from "./alpha-upload"
 import { resolveEndpoints } from "./alpha-endpoints"
@@ -60,6 +64,90 @@ function gitDiff(directory: string): Promise<{ ok: true; diff: string; source: "
 const subs = new Map<string, () => void>()
 // 进行中的 artifact 下载:key = `${webContentsId}:${artifactId}` → abort(取消 IPC + 窗口销毁自动清)。
 const downloads = new Map<string, AbortController>()
+
+// 下载 / 登记 / 名字归属:cloud-save-run 与 tracker 同一套装配(REQ-092 流式落盘 + REQ-093 登记 + #1112 账本让路)。
+function runSaveDeps(
+  directory: string,
+  runId: string,
+  signal?: AbortSignal,
+): Pick<SaveRunDeps, "download" | "register" | "artifactNameOwner"> {
+  return {
+    download: (artifact, targetPath, jobId) =>
+      downloadCloudArtifactTo(
+        { artifact, targetPath, jobId, signal },
+        (input) => finalizeArtifactWithQuota(directory, runId, input),
+      ),
+    register: (input) => registerDownloadedArtifact(directory, runId, input),
+    artifactNameOwner: (name) => registeredArtifactNameOwner(directory, runId, name),
+  }
+}
+
+function broadcast(channel: string, payload: unknown) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send(channel, payload)
+  }
+}
+
+function afterRunSaved(directory: string, runId: string, saved: CloudRunManifest) {
+  if (!saved.ok) return
+  // REQ-071/ADR-025:目标项目 = ~/Alpha 时,交付物镜像到可见区 Outputs(best-effort,真源不变)。
+  const mirrored = mirrorRunArtifacts(directory, runId, saved)
+  if (!mirrored.ok && mirrored.reason !== "not the user workspace" && mirrored.reason !== "no files")
+    getLogger().warn(`cloud: outputs mirror failed for ${runId}: ${mirrored.reason}`)
+  // #660 裁决 A1:落盘 settle(镜像也跑完)之后,向「全部存活窗口」广播一条最小提示事件。
+  // 刻意不同于 cloud-artifact-progress 的单窗口 wc.send:CloudRunWatcher 只活在某一个窗口,
+  // 关心这次结果的产物面板可能在另一个窗口 —— 单窗口发送会漏掉跨窗口那一半。
+  // 载荷只有 directory + runId:这是「去重读」的提示,不是数据源(面板收到后仍走
+  // projectUsage / list 重新取真相),多带任何字段都会变成第二份会漂移的真相。
+  // #1551:面板据它提示「有一次新的云任务结果已回到本地」—— 列表 / 下载 / 登记有任何失败都不是这句话。
+  if (saved.failures.length > 0) return
+  broadcast("cloud-run-saved", { directory, runId })
+}
+
+// REQ-236 #1551:宿主自己跟住云任务直到产物落盘并核验(cloud-run-tracker.ts)。
+// 身份代 = 登入/登出推进的 epoch + 稳定账户标签;不比较含原始 accessToken 的 getAccessTokenIdentity 返回值。
+const tracker = createCloudRunTracker({
+  identity: () => `${getAuthIdentityEpoch()}:${getAuthIdentityTag() ?? ""}`,
+  // #420:助手经 MCP 派发的任务没有界面订阅,tracker 的状态查询与 SSE 是 main 侧看得见它终态的地方,通知从这里发
+  // (与界面派发两路都到时由 notify 的 jobId+终态去重只弹一次)。
+  status: async (id) => {
+    const status = await getCloudJobStatus(id)
+    notifyCloudJobFinished(noticeFromCloudStatus(status))
+    return status
+  },
+  artifacts: listCloudArtifacts,
+  subscribe: (id, sink) =>
+    subscribeCloudJobEvents(id, (ev) => {
+      notifyCloudJobFinished(noticeFromCloudEvent(id, ev))
+      sink(ev)
+    }),
+  saveDeps: runSaveDeps,
+  afterSave: afterRunSaved,
+  broadcast: (state) => broadcast("cloud-run-state", state),
+  wait: (attempt) => new Promise((resolve) => setTimeout(resolve, backoffMs(attempt))),
+  log: (message) => getLogger().warn(message),
+})
+
+/** main/index.ts 既有 onChanged 回调里调用:身份代变化 ⇒ 作废在途交付;同账户续期 ⇒ 什么都不做。 */
+export function onCloudAuthChanged() {
+  tracker.onAuthChanged()
+}
+
+function isRunOrigin(value: unknown): value is CloudRunOrigin {
+  if (!value || typeof value !== "object") return false
+  const origin = value as Record<string, unknown>
+  return (
+    typeof origin.sessionID === "string" &&
+    origin.sessionID.length > 0 &&
+    (origin.messageID === undefined || typeof origin.messageID === "string") &&
+    (origin.partID === undefined || typeof origin.partID === "string")
+  )
+}
+
+const runRequest = (directory: unknown, runId: unknown) =>
+  typeof directory === "string" && directory.length > 0 && typeof runId === "string" && isSafeRunId(runId)
+    ? { directory, runId }
+    : null
 
 const uploadService = createMainUploadService({
   identity: () => getAccessTokenIdentity("cloud.dispatch"),
@@ -124,6 +212,8 @@ export function registerCloudIpcHandlers() {
     const a = artifact && typeof artifact === "object" ? (artifact as { id?: unknown; name?: unknown }) : null
     const artifactId = a && typeof a.id === "string" && a.id ? a.id : null
     if (!artifactId) return { ok: false, error: "invalid-artifact" }
+    // #1551 AC5:同一 run 只有一个协调者 —— 宿主交付在途时,面板手动下载让路。
+    if (tracker.isDelivering(directory, runId)) return { ok: false, error: "already-downloading" }
     if (!ensureAlphaScaffold(directory)) return { ok: false, error: "invalid-directory" }
     const desiredName = sanitizeArtifactName(typeof a?.name === "string" ? a.name : undefined, `artifact-${artifactId}`)
     const artifactsDir = safeResolveInAlpha(directory, "runs", runId, "artifacts")
@@ -171,6 +261,8 @@ export function registerCloudIpcHandlers() {
             verifiedSha256: outcome.sha256,
           })
           if (!reg.ok) getLogger().warn(`cloud: artifact ${artifactId} downloaded but manifest register failed: ${reg.reason}`)
+          // #1551 AC5:手动补下成功后,宿主对这个 run 重新核验并广播新的交付状态。
+          if (reg.ok) void tracker.reverify(directory, runId)
         }
       }
       return outcome
@@ -193,47 +285,43 @@ export function registerCloudIpcHandlers() {
 
   // B3/ADR-019:把一个终态 run 回流写进 <directory>/.code-puppy/runs/<runId>/(status/contract/artifacts)。
   // renderer 提供 directory(main 不知道当前项目目录);字节在 main 侧取,bearer 不进 renderer。
+  // 界面派发(定制中心表单)仍走这里;返回值原样带 `failures`,由调用方判定是否交付完整(#1551 AC2)。
   ipcMain.handle("cloud-save-run", async (_e: IpcMainInvokeEvent, directory: string, runId: string, contract?: CloudJobEnvelope) => {
     const saved = await saveCloudRun(
       directory,
       runId,
       {
-        // #420:助手经 MCP 调的任务由 renderer CloudRunWatcher 从会话事件流发现终态后来 saveRun,
-        // 它没有 SSE 订阅 —— 这次状态查询是 main 侧唯一看得见那个终态的地方,通知从这里发
-        // (界面派发的任务两路都到,由 notify 的 jobId+终态去重只弹一次)。
+        ...runSaveDeps(directory, runId),
+        // #420:界面派发的任务 SSE 与这次状态查询两路都到,由 notify 的 jobId+终态去重只弹一次。
         status: async (id) => {
           const status = await getCloudJobStatus(id)
           notifyCloudJobFinished(noticeFromCloudStatus(status))
           return status
         },
         artifacts: listCloudArtifacts,
-        download: (artifact, targetPath, jobId) =>
-          downloadCloudArtifactTo(
-            { artifact, targetPath, jobId },
-            (input) => finalizeArtifactWithQuota(directory, runId, input),
-          ),
-        // REQ-093:下载成功即入 manifest(依赖注入,见 SaveRunDeps.register)。
-        register: (input) => registerDownloadedArtifact(directory, runId, input),
-        // #1112:预约名字前问账本占用(精确同名不同件让路,同件重下照旧覆盖)。
-        artifactNameOwner: (name) => registeredArtifactNameOwner(directory, runId, name),
       },
       contract,
     )
-    // REQ-071/ADR-025:目标项目 = ~/Alpha 时,交付物镜像到可见区 Outputs(best-effort,真源不变)。
-    if (saved.ok) {
-      const mirrored = mirrorRunArtifacts(directory, runId, saved)
-      if (!mirrored.ok && mirrored.reason !== "not the user workspace" && mirrored.reason !== "no files")
-        getLogger().warn(`cloud: outputs mirror failed for ${runId}: ${mirrored.reason}`)
-      // #660 裁决 A1:落盘 settle(镜像也跑完)之后,向「全部存活窗口」广播一条最小提示事件。
-      // 刻意不同于 cloud-artifact-progress 的单窗口 wc.send:CloudRunWatcher 只活在某一个窗口,
-      // 关心这次结果的产物面板可能在另一个窗口 —— 单窗口发送会漏掉跨窗口那一半。
-      // 载荷只有 directory + runId:这是「去重读」的提示,不是数据源(面板收到后仍走
-      // projectUsage / list 重新取真相),多带任何字段都会变成第二份会漂移的真相。
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.webContents.isDestroyed()) win.webContents.send("cloud-run-saved", { directory, runId })
-      }
-    }
+    afterRunSaved(directory, runId, saved)
     return saved
+  })
+
+  // REQ-236 #1551 冻结面:trackRun / retry / 状态快照;状态变化经 `cloud-run-state` 广播到全部窗口。
+  ipcMain.handle("cloud-run-track", (_e: IpcMainInvokeEvent, directory: unknown, runId: unknown, origin?: unknown) => {
+    const run = runRequest(directory, runId)
+    if (!run || (origin !== undefined && !isRunOrigin(origin))) return { ok: false }
+    tracker.track(isRunOrigin(origin) ? { ...run, origin } : run)
+    return { ok: true }
+  })
+  ipcMain.handle("cloud-run-retry", (_e: IpcMainInvokeEvent, directory: unknown, runId: unknown) => {
+    const run = runRequest(directory, runId)
+    if (!run) return { ok: false }
+    tracker.retry(run.directory, run.runId)
+    return { ok: true }
+  })
+  ipcMain.handle("cloud-run-state-get", (_e: IpcMainInvokeEvent, directory: unknown, runId: unknown) => {
+    const run = runRequest(directory, runId)
+    return run ? tracker.get(run.directory, run.runId) : null
   })
 
   // 订阅 job 进度(SSE)→ 推 "cloud-job-event" 给发起的 renderer。幂等(同 wc+job 只订一次)。

@@ -2,9 +2,10 @@
 //
 // main 进程的唯一咽喉;桌面既有的两条终态发现通路都汇到这里(接线在 cloud-ipc.ts):
 //   · SSE 订阅的 sink —— 界面派发的任务(cloud-dispatch-box)订阅 /events,alpha-cloud-events 识别终态帧;
-//   · cloud-save-run 里的状态查询 —— 助手经 MCP 调的任务由 renderer CloudRunWatcher 从会话事件流发现,
-//     它没有 SSE 订阅,saveRun 时的 GET /v1/cloud/jobs/:id 是 main 侧唯一看得见终态的地方。
-// 去重:jobId + 终态,进程级 —— SSE 重连重放、两个窗口各自订阅、SSE 与 saveRun 双路到达,只弹一次。
+//   · 交付 tracker(cloud-run-tracker.ts,#1551)的状态查询与 SSE —— 助手经 MCP 派发的任务由 renderer
+//     CloudRunWatcher 从会话事件流发现后交给 tracker,它查到 / 等到的终态从这里发通知;
+//     界面派发的任务在 cloud-save-run 的状态查询里也会再到一次。
+// 去重:jobId + 终态,进程级 —— SSE 重连重放、两个窗口各自订阅、多路同时到达,只弹一次。
 // 不通知:job.cancelled(用户主动取消)、非终态、状态查询的传输错误信封。桌面未运行期间结束的任务
 // 没有推送来源,不在范围 —— alpha-cloud-schedules 的开机拉回直接调 saveCloudRun,不经本咽喉。
 // 正文只含任务种类 + job id + 结果;刻意不读 objective / input / result / error 文案 / 本地路径。

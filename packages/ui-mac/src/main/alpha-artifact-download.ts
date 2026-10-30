@@ -85,6 +85,10 @@ export type ArtifactDownloadOutcome =
        *  平台的任何字节都到不了这个槽,咽喉臂一个字不写它。消费端要区分「服务端拒绝」与
        *  「本地取消」一律读这里,照 `#963`/`#965` 已合入的「呈现槽 / 结构槽」二分。 */
       cancelled?: true
+      /** 传输失败卡在哪一段(#1551 R1):`headers` = 响应头没回来 / 连接没建成;`body` = 读正文时断流或静默。 */
+      stage?: "headers" | "body"
+      /** 失败前已收的正文字节(只随 `stage` 给出)。 */
+      bytes?: number
     }
 
 export type ArtifactDownloadRequest = {
@@ -126,10 +130,41 @@ export function sanitizeTransportError(message: string, secrets: readonly string
   let out = message
   for (const s of secrets) if (s) out = out.split(s).join("[redacted]")
   out = out.replace(/bearer\s+[A-Za-z0-9._~+/=-]+/gi, "bearer [redacted]")
+  // URL query 可能携带签名或凭据(#1551 AC7):只留路径,query 整段替换。
+  out = out.replace(/(https?:\/\/[^\s?#"']*)\?[^\s#"']*/gi, "$1?[redacted]")
   return out.length > 300 ? `${out.slice(0, 300)}…` : out
 }
 
 const errMsg = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+/** 底层网络错误码(Node/undici 放在 `cause.code`,Bun 放在 `code`);拿不到 = undefined。#1551 R1。 */
+export function errorCauseCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined
+  const cause = (error as { cause?: unknown }).cause
+  const code = cause && typeof cause === "object" ? (cause as { code?: unknown }).code : undefined
+  if (typeof code === "string") return code
+  const own = (error as { code?: unknown }).code
+  return typeof own === "string" ? own : undefined
+}
+
+/** 传输错误 → detail:净化后的 message + 底层错误码。 */
+function transportDetail(error: unknown, secrets: readonly string[] = []): string {
+  const code = errorCauseCode(error)
+  return sanitizeTransportError(`${errMsg(error)}${code ? ` (cause ${code})` : ""}`, secrets)
+}
+
+/**
+ * 下载失败的日志行(#1551 AC7):分类码 + 阶段 + 已收字节 + 净化后的 detail。
+ * 不含 token(detail 过 sanitizeTransportError)、不含 URL query、不含文件内容。
+ */
+export function artifactDownloadFailureLog(outcome: Extract<ArtifactDownloadOutcome, { ok: false }>): string {
+  return [
+    `artifact download failed (${outcome.error})`,
+    `stage=${outcome.stage ?? "-"}`,
+    `received=${outcome.bytes ?? "-"}`,
+    `detail=${outcome.detail ? sanitizeTransportError(outcome.detail) : "-"}`,
+  ].join(" ")
+}
 
 // ---- 唯一 .part 后缀(重试/并发绝不与旧 .part 相撞;REQ-092 AC#4)----
 let partSeq = 0
@@ -335,7 +370,7 @@ export async function writeChunksChecked(
     // 读取侧失败(断流/abort)。写入侧失败已在内层归类为 disk。
     await cleanup()
     if (opts.signal?.aborted) return { ok: false, error: "cancelled", cancelled: true }
-    return { ok: false, error: "network", detail: sanitizeTransportError(errMsg(error)) }
+    return { ok: false, error: "network", detail: transportDetail(error), stage: "body", bytes }
   }
 
   if (opts.signal?.aborted) {
@@ -414,9 +449,11 @@ async function authedFetch(
     done()
     if (external?.aborted) return { err: { ok: false, error: "cancelled", cancelled: true } }
     if (error instanceof IdleTimeoutError || ctrl.signal.aborted) {
-      return { err: { ok: false, error: "network", detail: `no response headers within ${headerTimeoutMs}ms` } }
+      return {
+        err: { ok: false, error: "network", detail: `no response headers within ${headerTimeoutMs}ms`, stage: "headers", bytes: 0 },
+      }
     }
-    return { err: { ok: false, error: "network", detail: sanitizeTransportError(errMsg(error), [token]) } }
+    return { err: { ok: false, error: "network", detail: transportDetail(error, [token]), stage: "headers", bytes: 0 } }
   } finally {
     clearTimeout(timer)
   }

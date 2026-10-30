@@ -27,7 +27,7 @@ import { registerIpcHandlers, sendMenuCommand } from "./ipc"
 import { registerExtIpcHandlers } from "./ext-ipc"
 import { refreshRemoteCatalog } from "./remote-catalog"
 import { registerAccountIpcHandlers } from "./account-ipc"
-import { registerCloudIpcHandlers } from "./cloud-ipc"
+import { onCloudAuthChanged, registerCloudIpcHandlers } from "./cloud-ipc"
 import { registerArtifactIpcHandlers } from "./artifact-ipc"
 import { initializeArtifactQuotaEnvironment } from "./artifact-service"
 import { registerHtmlPreviewIpcHandlers } from "./html-preview-host"
@@ -735,6 +735,8 @@ const main = Effect.gen(function* () {
       notifyModerationAuthChanged()
       // `#1555`:续期每次都走到这里;刷新器自己比对身份标签,只有身份真变了才拉平台目录。同步返回,不 await。
       requestCatalogRefresh("identity-change")
+      // `#1551`:云任务交付绑定登录身份代;身份代变了 ⇒ 作废在途交付(abort 下载、丢弃迟到回包),纯续期不打断。
+      onCloudAuthChanged()
     },
   })
   // Windows/Linux cold start: the OS launches the FIRST process with the link on its command

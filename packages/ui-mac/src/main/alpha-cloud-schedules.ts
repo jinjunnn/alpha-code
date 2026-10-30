@@ -193,12 +193,15 @@ async function doPull(): Promise<{ pulled: number } | { error: string }> {
     // codex M1:落账前重读最新任务(await 期间用户可能已编辑)—— 只叠加历史,不回写旧快照。
     const fresh = getAutomation(task.id)
     const target = fresh ?? task
+    // #1551 AC2:列表 / 下载 / 登记任一失败都不是「结果已拉回」。
+    const delivered = saved.ok && saved.failures.length === 0
     const record = {
       at: new Date(job.fired_at).toISOString(),
-      status: st === "completed" ? ("ok" as const) : ("failed" as const),
+      status: st === "completed" && delivered ? ("ok" as const) : ("failed" as const),
       sessionID: job.job_id,
       runDir: (saved as { ok?: boolean; dir?: string }).ok ? (saved as { dir?: string }).dir : undefined,
-      summary: st === "completed" ? "云端定时执行完成(结果已拉回)" : `云端执行 ${st}`,
+      summary:
+        st !== "completed" ? `云端执行 ${st}` : delivered ? "云端定时执行完成(结果已拉回)" : "云端定时执行完成,但结果没有全部存到本机",
     }
     target.lastRun = record
     target.history = [record, ...(target.history ?? [])].slice(0, 30)

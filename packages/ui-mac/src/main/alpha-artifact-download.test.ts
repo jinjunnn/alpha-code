@@ -13,6 +13,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import {
+  artifactDownloadFailureLog,
   downloadArtifactToFile,
   expectedShaFromHeaders,
   resolveContentUrl,
@@ -513,7 +514,74 @@ test("content 404 fails loudly without an inline compatibility request", async (
   expect(calls).toHaveLength(1)
 })
 
+// #1551 AC7(R1):两次真实的 `download failed (network)` 当时无从追溯 —— 日志只有分类码。这里起真实本地服务
+// 注入两种传输故障,断言失败结局与日志行带阶段、净化后的 detail 与已收字节(base 上只有 `(network)`)。
+describe("#1551 AC7 transport failures carry stage, detail and received bytes into the log line", () => {
+  test("server never sends response headers → stage=headers, received=0, detail names the wait", async () => {
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Promise<Response>(() => {}) })
+    try {
+      const res = await downloadArtifactToFile(
+        { artifact: descriptor({ sha256: "c".repeat(64) }), targetPath: target() },
+        { token: TOKEN, base: `http://127.0.0.1:${server.port}`, finalize: finalizeWithoutQuota, idleTimeoutMs: 50 },
+      )
+      expect(res).toMatchObject({ ok: false, error: "network", stage: "headers", bytes: 0 })
+      if (res.ok) return
+      const line = artifactDownloadFailureLog(res)
+      expect(line).toContain("artifact download failed (network)")
+      expect(line).toContain("stage=headers")
+      expect(line).toContain("received=0")
+      expect(line).toContain("detail=no response headers within 50ms")
+      expect(line).not.toContain(TOKEN)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test("connection drops mid-body → stage=body, received counts what arrived, detail carries the cause code", async () => {
+    // 原始 socket:回响应头与第一块 8 字节,然后不发终止块直接断开(Bun fetch 实测 → ECONNRESET)。
+    const server = Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        data(socket) {
+          socket.write("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\nABCDEFGH\r\n")
+          setTimeout(() => socket.end(), 20)
+        },
+      },
+    })
+    try {
+      const res = await downloadArtifactToFile(
+        { artifact: descriptor({ sha256: "c".repeat(64) }), targetPath: target() },
+        { token: TOKEN, base: `http://127.0.0.1:${server.port}`, finalize: finalizeWithoutQuota },
+      )
+      expect(res).toMatchObject({ ok: false, error: "network", stage: "body", bytes: 8 })
+      if (res.ok) return
+      const line = artifactDownloadFailureLog(res)
+      expect(line).toContain("stage=body")
+      expect(line).toContain("received=8")
+      expect(line).toContain("cause ECONNRESET")
+      expect(line).not.toContain(TOKEN)
+      expect(residueIn(dir)).toEqual([])
+    } finally {
+      server.stop(true)
+    }
+  })
+})
+
 describe("helpers", () => {
+  test("#1551 unknown stage and byte count both print as '-' in the log line (never a fake 0)", () => {
+    const line = artifactDownloadFailureLog({ ok: false, error: "not-found" })
+    expect(line).toContain("stage=-")
+    expect(line).toContain("received=-")
+    expect(line).not.toContain("received=0")
+  })
+
+  test("#1551 sanitizeTransportError drops URL query strings (signatures never reach the log)", () => {
+    const out = sanitizeTransportError("GET https://cloud.test/v1/cloud/artifacts/a/content?sig=SECRET-QUERY&x=1 failed")
+    expect(out).toContain("https://cloud.test/v1/cloud/artifacts/a/content?[redacted]")
+    expect(out).not.toContain("SECRET-QUERY")
+  })
+
   test("sanitizeTransportError strips explicit secrets and bearer word-forms", () => {
     const msg = `request failed: authorization Bearer ${TOKEN} rejected; retry with bearer abc.def-123`
     const out = sanitizeTransportError(msg, [TOKEN])

@@ -215,7 +215,7 @@ function mountRunningJob(options: { cancel: () => Promise<CancelResult> }) {
           pushEvent = handler
           return () => {}
         },
-        saveRun: async () => ({ ok: true, dir: "/project/.alpha/runs/job_cancelme", files: [], warnings: [] }),
+        saveRun: async () => ({ ok: true, dir: "/project/.alpha/runs/job_cancelme", files: [], warnings: [], failures: [] }),
       },
     },
   })
@@ -397,7 +397,7 @@ function mountCloudEntry(id: string, kind: CloudPipelineSpec["pipelineKind"], re
         onEvent: (handler: typeof event) => { event = handler; return () => {} },
         saveRun: async (...args: unknown[]) => {
           saves.push(args)
-          return { ok: true, dir: "/results/.code-puppy/runs/job", files: kind === "office-report" ? [`artifacts/output.${id === "cloud:word" ? "docx" : id === "cloud:excel" ? "xlsx" : "pptx"}`] : [], warnings: [] }
+          return { ok: true, dir: "/results/.code-puppy/runs/job", files: kind === "office-report" ? [`artifacts/output.${id === "cloud:word" ? "docx" : id === "cloud:excel" ? "xlsx" : "pptx"}`] : [], warnings: [], failures: [] }
         },
       },
     },

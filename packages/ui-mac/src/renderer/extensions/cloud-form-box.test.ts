@@ -91,7 +91,7 @@ function mount(options: {
         },
         saveRun: async (...args: unknown[]) => {
           saves.push(args)
-          return { ok: true, dir: "/synthetic/results/run", files: ["artifacts/output.html", "contract.json"], warnings: [] }
+          return { ok: true, dir: "/synthetic/results/run", files: ["artifacts/output.html", "contract.json"], warnings: [], failures: [] }
         },
         cancel: async () => ({ schema_version: 1, job_id: accepted.job_id, status: "cancelling", accepted: true }),
         subscribe: async () => ({ ok: true }),
