@@ -137,6 +137,29 @@ it.instance(
   { config: { mcp: { hang: local({ ALPHA_MCP_HANG: "1" }), fast: local() } } },
 )
 
+// 审计 F3:后台启动失败时也要发 mcp.tools.changed —— 界面靠它重读状态;不发就一直停在「准备中」。
+it.instance(
+  "AC2: a background startup that fails publishes the server's change and reports failed",
+  () =>
+    Effect.gen(function* () {
+      const changed: unknown[] = []
+      const listen = (event: { payload?: { type?: string; properties?: { server?: string } } }) => {
+        if (event.payload?.type === "mcp.tools.changed") changed.push(event.payload.properties?.server)
+      }
+      GlobalBus.on("event", listen)
+      yield* Effect.gen(function* () {
+        const mcp = yield* MCP.Service
+        expect((yield* mcp.status()).stuck).toEqual({ status: "pending" })
+        yield* pollWithTimeout(
+          Effect.sync(() => (changed.includes("stuck") ? true : undefined)),
+          "the failed background startup published no mcp.tools.changed",
+        )
+        expect((yield* mcp.status()).stuck).toMatchObject({ status: "failed", code: "handshake_timeout" })
+      }).pipe(Effect.ensuring(Effect.sync(() => GlobalBus.off("event", listen))))
+    }),
+  { config: { mcp: { stuck: local({ ALPHA_MCP_HANG: "1" }, { timeout: 500 }) } } },
+)
+
 // 删掉 connectLocal 的那一次 stat ⇒ cwd 缺失也是 `spawn … ENOENT` ⇒ 被报成 dependency_missing。
 it.instance("AC2: a missing working directory and a missing command fail with their named codes", () =>
   Effect.gen(function* () {

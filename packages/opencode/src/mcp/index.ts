@@ -824,6 +824,8 @@ const layer = Layer.effect(
             status: failure.status.status,
             error: "error" in failure.status ? failure.status.error : undefined,
           })
+          // Readers re-read status on this event; without it a failed background start stays "pending" (audit F3).
+          yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
           if (failure.reconnect && failure.status.status === "failed")
             yield* reconnect(s, name, generation, failure.status.error)
         }
