@@ -132,6 +132,12 @@ export function AlphaSessionSearch(props: {
   const [selected, setSelected] = createSignal(0)
   createEffect(on(results, () => setSelected(0)))
   let list: HTMLUListElement | undefined
+  // 焦点留在输入框(APG combobox + listbox):活动项经 aria-activedescendant 指认,选项 id 随会话稳定。
+  const optionId = (sessionID: string) => `a-search-opt-${sessionID}`
+  const activeDescendant = () => {
+    const result = results()[selected()]
+    return result ? optionId(result.sessionID) : undefined
+  }
 
   const go = (href: string) => {
     setOpen(false)
@@ -180,6 +186,10 @@ export function AlphaSessionSearch(props: {
           data-alpha-session-search-input
           onInput={(event) => setQuery(event.currentTarget.value)}
           onKeyDown={onKeyDown}
+          role="combobox"
+          aria-expanded={results().length > 0}
+          aria-controls="a-search-results"
+          aria-activedescendant={activeDescendant()}
           icon={<Icon name="magnifying-glass" />}
         />
         <Show
@@ -194,10 +204,10 @@ export function AlphaSessionSearch(props: {
             </p>
           }
         >
-          <ul class="a-search-results" role="listbox" ref={list}>
+          <ul class="a-search-results" id="a-search-results" role="listbox" ref={list}>
             <For each={results()}>
               {(result, index) => (
-                <li role="option" aria-selected={index() === selected()}>
+                <li id={optionId(result.sessionID)} role="option" aria-selected={index() === selected()}>
                   <a
                     class="a-search-result"
                     classList={{ "a-search-result--selected": index() === selected() }}

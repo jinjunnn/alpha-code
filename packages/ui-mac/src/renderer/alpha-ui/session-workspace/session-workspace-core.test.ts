@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { parseRoute } from "../../../shared/route-manifest"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
-import { dict as zh } from "../../i18n/zh"
+import { t } from "../../i18n"
 
 describe("REQ-125 C1a typed live session context", () => {
   test("v2 target route plus typed sync record resolves the real server/directory/session triple", () => {
@@ -49,8 +49,8 @@ describe("REQ-125 C1a typed live session context", () => {
     const titleOf = (title: string) =>
       sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session: { id: "ses_1", directory: "/tmp/proj", title } })
         ?.title
-    expect(titleOf("New session - 2026-09-21T06:29:08.485Z")).toBe(zh["alpha.sidebar.newChat"])
-    expect(titleOf("Untitled")).toBe(zh["alpha.sidebar.newChat"])
+    expect(titleOf("New session - 2026-09-21T06:29:08.485Z")).toBe(t("alpha.sidebar.newChat"))
+    expect(titleOf("Untitled")).toBe(t("alpha.sidebar.newChat"))
     expect(titleOf("整理架构说明")).toBe("整理架构说明")
   })
 

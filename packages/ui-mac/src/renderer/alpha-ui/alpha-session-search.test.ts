@@ -307,6 +307,10 @@ describe("#1589 AC3:方向键选择、回车打开,焦点留在输入框", () =>
     const down = await key("ArrowDown")
     expect(down.defaultPrevented).toBe(true)
     expect(selectedRows()).toEqual([second.dataset.alphaSessionSearchResult])
+    // 焦点留在输入框时,活动项由 aria-activedescendant 指认,并指向选中的那个 option。
+    const active = input().getAttribute("aria-activedescendant")!
+    expect(document.getElementById(active)?.getAttribute("aria-selected")).toBe("true")
+    expect(document.getElementById(active)?.contains(second)).toBe(true)
     expect(document.activeElement === input()).toBe(true)
 
     await key("Enter")
