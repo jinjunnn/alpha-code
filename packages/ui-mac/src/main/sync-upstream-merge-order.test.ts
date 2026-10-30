@@ -346,7 +346,8 @@ describe("#1272 sync-upstream 冲突分支:补丁必须先于 install", () => {
     const fx = fixture({ conflict: "unexpected" })
     const run = runStep(fx, mergeStepBody())
     expect(run.exitCode, `only-add 纪律被破坏时没有拦住:\n${run.output}`).toBe(1)
-    expect(run.output, `没说清是 only-add 纪律被破坏:\n${run.output}`).toContain("only-add discipline was broken")
+    // `#1566`:报错改为具名的「未登记的偏离」(intake 已排除接管清单,剩余冲突都在清单外)。
+    expect(run.output, `没说清是未登记的偏离:\n${run.output}`).toContain("未登记的偏离:按 ADR-029 登记或还原")
     expect(run.output, `没点名到冲突文件:\n${run.output}`).toContain("packages/opencode/src/engine.ts")
     expect(run.calls, `意外冲突时还去跑了 install:\n${run.output}`).toHaveLength(0)
     // merge 必须被 abort —— 留着半合并的树,下一次 sync 从一个坏状态起跑。

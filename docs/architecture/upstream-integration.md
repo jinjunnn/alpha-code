@@ -4,8 +4,8 @@ kind: architecture
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-09-06
-review_after: 2026-12-06
+last_reviewed: 2026-10-30
+review_after: 2027-01-30
 ---
 
 # Upstream integration
@@ -134,6 +134,56 @@ it serves a real HTTP stub of the GitHub API, spawns the production script
 against it, and asserts the writes it actually issued. Its wiring cases carry
 mutation arms (flip the job's `if` to `success`, point it at another workflow,
 add a `bun install` step) so the checker is proven to detect the known-bad.
+
+### The takeover list governs the sync (`#1566`)
+
+Conflicts alone never told the sync which files Alpha owns. An upstream change
+to an annexed file that did not overlap Alpha's edit merged cleanly and was
+silently mixed into Alpha's version (`003f6f764`, 2026-10-01: +2 lines in
+`session/llm/request.ts`; `57646831b`, 2026-09-24: `test/provider/transform.test.ts`);
+an overlapping one aborted the whole run (`#1408`, 19 consecutive failures from
+2026-10-11). The rules now are:
+
+1. **One list.** The takeover list is `UPSTREAM_EXCLUDES` in
+   [`scripts/north-star-guard.sh`](../../scripts/north-star-guard.sh) and nowhere
+   else. Its read-only mode `--print-takeover` prints one path per line and runs
+   no git command. The workflow contains no literal takeover path.
+2. **Intake before merge.** `Takeover intake check` takes the guard from the
+   pre-merge trusted tree (`git show "$OLD_ALPHA:scripts/north-star-guard.sh"`;
+   the working tree at that moment is upstream `dev`, so nothing in it is
+   executed) and diffs `merge-base(OLD_ALPHA, NEW_DEV)..NEW_DEV` against the list
+   with git pathspec semantics, the same ones the guard uses. Any hit ⇒ no merge,
+   no bundle; every path with its upstream commits, the upstream diff and Alpha's
+   diff goes to the step summary and the `takeover-review` artifact, and the step
+   fails with `takeover upgrade review required` (需要升级审查). The alert
+   workflow files it under that step name like any other failure.
+3. **Named residual conflicts.** With the list excluded, any remaining conflict
+   outside `bun.lock` and `packages/{app,ui}` fails as
+   「未登记的偏离:按 ADR-029 登记或还原」 (it used to say "the only-add discipline
+   was broken", which was false for annexed files).
+4. **Assert after merge.** `Takeover paths unchanged by merge` re-reads the list
+   from the same trusted tree and fails if `git diff OLD_ALPHA alpha` touches any
+   listed path.
+5. **A reviewed integration keeps upstream ancestry.** The human port lands as a
+   real merge commit whose second parent is the reviewed `dev` SHA, merged with
+   `gh pr merge --merge` — never squash or rebase
+   ([`docs/runbooks/ci.md`](../runbooks/ci.md) §4). The merge-base then moves
+   forward and the next run only sees newer upstream commits; a squash leaves the
+   merge-base where it was and the same paths are hit again.
+6. The candidate job still holds no push credential (`#899`); the new steps only
+   execute the guard script from Alpha's own pre-merge tree.
+
+Not part of this mechanism: registering or reverting the conflicting paths that
+are outside the list (27 in run `40869114423`) — until each is handled the sync
+keeps failing, now with the named message above.
+
+The gate is
+[`packages/ui-mac/src/main/sync-upstream-takeover-isolation.test.ts`](../../packages/ui-mac/src/main/sync-upstream-takeover-isolation.test.ts):
+it runs the production step bodies in order on a real git repository whose Alpha
+tree carries a verbatim copy of the guard, with mutation arms (drop the intake
+step ⇒ the clean case merges silently; port with squash ⇒ the next run hits the
+same paths again; read the guard from the working tree ⇒ an upstream script is
+executed). `north-star-guard.test.ts` pins `--print-takeover` to the array.
 
 ## Sovereignty ladder
 

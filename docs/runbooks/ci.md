@@ -253,6 +253,12 @@ bundle(逐字比对提交 sha,防篡改),推送凭据仅在最后一步临时配
 1. push 前 `bash scripts/alpha-check.sh` **必须绿**。
 2. 需要新增能力 → 走 alpha 自有文件(`packages/ext`、`packages/ui-mac`)或接缝(tool/plugin/MCP/sidecar,ADR-002/005),**绝不改上游 7 包**(改了北极星守卫本地就红)。
 3. 短命 `feat/*` / `fix/*` 分支 → PR → squash 合回 `alpha` → **合后即删分支**(ADR-005)。
+   **唯一例外:受审上游集成**(`#1566`)。每日同步的 `Takeover intake check` 以
+   「takeover upgrade review required」失败时,人工把上游改动移植进接管文件,这次集成必须落在一个
+   **真合并提交**上:第二父 = 那次 run 摘要里写明的上游 `dev` SHA(形同 `9dba00807`,父
+   `ee9200a6f fe3f3a41f`)。该 PR 用 `gh pr merge --merge` 合入(或直接推这个合并提交),
+   **禁止 squash / rebase** —— squash 不保留上游祖先,merge-base 不前移,下一次同步会再次命中同一批
+   接管路径。机制见 [`docs/architecture/upstream-integration.md`](../architecture/upstream-integration.md)。
 4. 想把 local-first 变**强制** → 装 §6 的 pre-push 钩子。
 
 ## 5. CI 卡住了怎么办(排查手册)
