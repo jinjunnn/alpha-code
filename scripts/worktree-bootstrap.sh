@@ -34,6 +34,10 @@
 # 一起关掉(`#754` 那个形态)。所以本脚本在 install 前后存/还原它;还原是**无条件**的:
 # install 失败也还原,**被 TERM/INT/HUP 打断也还原**(EXIT trap),且还原之前先收割
 # install 进程组 —— 不收割的话孤儿化的 husky 会在还原之后才写,最后写的人赢(`#945`)。
+# 事后还原有窗口:install 期间共享配置是 `.husky/_`,并发 lane 的门在窗口里读到它就假红。
+# 所以 install 带 `HUSKY=0`(husky 9 的官方开关,`node_modules/husky/index.js` 第一行就判它),
+# 让 husky 从源头不写;还原逻辑保留作兜底。判据:assert-worktree-bootstrap.sh [3/6] 的
+# 「install 期间」那一臂(在 bun install 返回、还原之前采样共享配置)。
 set -uo pipefail
 
 usage() {
@@ -174,7 +178,10 @@ INSTALL_RC=0
 set -m
 (
   cd "$TARGET" || exit 1
-  bun install || exit $?
+  # HUSKY=0:husky 的 prepare 从源头不碰共享 core.hooksPath。只靠事后还原时,install 期间
+  # 共享配置停在 `.husky/_`,并发 lane 的 [3/6] 读到它就假红(2026-10-30 一个 session 撞三次)。
+  # 下面的事后还原保留作兜底(HUSKY 被外部环境覆写、被打断等)。
+  HUSKY=0 bun install || exit $?
   # #1512:bare bun install 不下载 Electron,也不编译 darwin 围栏 addon。
   [ "$(uname -s)" = Darwin ] && [ -f packages/ui-mac/scripts/build-fence-addon.ts ] || exit 0
   ELECTRON="$TARGET/packages/ui-mac/node_modules/electron"
