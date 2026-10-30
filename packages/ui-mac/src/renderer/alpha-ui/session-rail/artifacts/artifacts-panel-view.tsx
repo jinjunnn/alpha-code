@@ -10,7 +10,7 @@
 //
 // #660 discipline (design §① / decision D): no copy in this panel may make a session-level
 // claim over project-level data — the run bar states which run is shown, nothing more.
-import { createEffect, createMemo, createSignal, ErrorBoundary, For, Index, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, ErrorBoundary, For, Index, onCleanup, onMount, Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { t } from "../../../i18n"
 import { boundaryErrorText } from "../../boundary-error-text"
@@ -21,7 +21,7 @@ import {
   type ArtifactCard,
   type DownloadPhase,
 } from "../../artifact-workbench/workbench-core"
-import { RENDERER_COMPONENTS, type PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
+import { RENDERER_COMPONENTS, SourceView, type PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
 import type { OfficeStructurePresentation } from "../../artifact-workbench/renderers/office-structure"
 import { rovingKey, rovingTabIndex } from "../../roving-focus"
 import { formatTurnElapsed } from "../../session-timeline/timeline-model"
@@ -127,9 +127,28 @@ const OWNER_LABEL_KEYS = {
   none: "alpha.session.artifactsOwnerNone",
 } as const
 
+/** 预览失败:一句话 + 「查看源文」;报错原文交给 技术详情(挂载时登记,卸载时撤回)。 */
+function PreviewFailed(props: { detail: string; onDetail: (detail: string | undefined) => void; onViewSource: () => void }) {
+  onMount(() => props.onDetail(props.detail))
+  onCleanup(() => props.onDetail(undefined))
+  return (
+    <>
+      <div class="a-wb-notice" data-kind="error" role="alert" data-artifacts-preview-failed>
+        {t("alpha.wb.previewCrashed")}
+      </div>
+      <button type="button" class="a-wb-btn" data-artifacts-view-source onClick={props.onViewSource}>
+        {t("alpha.wb.viewSource")}
+      </button>
+    </>
+  )
+}
+
 export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
   const [runsOpen, setRunsOpen] = createSignal(false)
   const [techOpen, setTechOpen] = createSignal(false)
+  // Preview failed → 「查看源文」 shows the same file as plain text; the crash's raw text lives in 技术详情 only.
+  const [sourceMode, setSourceMode] = createSignal(false)
+  const [previewError, setPreviewError] = createSignal<string>()
   const [now, setNow] = createSignal(Date.now())
   const selectedDelivery = createMemo(() =>
     props.selectedRunId ? props.deliveries[props.selectedRunId] : undefined,
@@ -191,6 +210,7 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
   createEffect(() => {
     props.selectedKey
     setTechOpen(false)
+    setSourceMode(false)
   })
   // Switching runs closes the sheet (the pick is done; the panel below changes content).
   createEffect(() => {
@@ -319,6 +339,16 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                 <span class="a-wb-fact-k">{t("alpha.timeline.image.fact.run")}</span>
                 <span class="a-wb-fact-v" title={run()}>
                   {run()}
+                </span>
+              </div>
+            )}
+          </Show>
+          <Show when={props.verifyFailure ?? previewError()}>
+            {(reason) => (
+              <div class="a-wb-fact" data-artifacts-tech-error>
+                <span class="a-wb-fact-k">{t("alpha.session.artifactsTechError")}</span>
+                <span class="a-wb-fact-v" title={reason()}>
+                  {reason()}
                 </span>
               </div>
             )}
@@ -576,7 +606,7 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                   </For>
                 </Show>
                 <Show when={card().state === "mismatch"}>
-                  <div class="a-wb-notice" data-kind="error">
+                  <div class="a-wb-notice" data-kind="warn">
                     {t("alpha.wb.mismatchBanner")}
                   </div>
                 </Show>
@@ -587,7 +617,7 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                     fallback={
                       <div class="a-rart-status" data-artifacts-verify-failed>
                         <div class="a-wb-notice" data-kind="error" role="alert">
-                          {t("alpha.session.artifactsVerifyFailed")}:{props.verifyFailure}
+                          {t("alpha.session.artifactsVerifyFailed")}
                         </div>
                         <button type="button" class="a-wb-btn" onClick={props.onRetry}>
                           {t("alpha.wb.retry")}
@@ -622,16 +652,26 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                       /* 单 renderer 崩溃只影响本预览区(沿 REQ-094 AC#7 合同) */
                       <ErrorBoundary
                         fallback={(err, reset) => (
-                          <div class="a-wb-notice" data-kind="error" role="alert">
-                            {/* [REQ-085][CODE]:恢复 UI 只渲染脱敏后的错误文本,失败一律隐藏原文。 */}
-                            {t("alpha.wb.previewCrashed")}:{boundaryErrorText(err) ?? t("alpha.error.detailHidden")}
-                            <button type="button" class="a-wb-btn" onClick={reset}>
-                              {t("alpha.wb.retry")}
-                            </button>
-                          </div>
+                          <PreviewFailed
+                            // [REQ-085][CODE]:技术详情只收脱敏后的错误文本,失败一律隐藏原文。
+                            detail={boundaryErrorText(err) ?? t("alpha.error.detailHidden")}
+                            onDetail={setPreviewError}
+                            onViewSource={() => {
+                              setSourceMode(true)
+                              reset()
+                            }}
+                          />
                         )}
                       >
-                        <Dynamic component={RENDERER_COMPONENTS[ctx().decision.rendererId]} ctx={ctx()} />
+                        <Show when={sourceMode()}>
+                          <button type="button" class="a-wb-btn" data-artifacts-view-preview onClick={() => setSourceMode(false)}>
+                            {t("alpha.wb.tab.preview")}
+                          </button>
+                        </Show>
+                        <Dynamic
+                          component={sourceMode() ? SourceView : RENDERER_COMPONENTS[ctx().decision.rendererId]}
+                          ctx={ctx()}
+                        />
                       </ErrorBoundary>
                     )}
                   </Show>
