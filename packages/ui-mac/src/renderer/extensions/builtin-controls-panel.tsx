@@ -7,7 +7,7 @@
 // 数据流:extIpc.builtinRead/builtinApply/builtinReset(main 校验+物化 home jsonc 受控叶子)→
 // props.requestReload()(REQ-234 `#1529`:请 ext 调度器在会话空闲时重载)→ 重载之后的下一条消息生效 → props.reloadAgents() 刷新列表。
 
-import { extensionError, iconForRow, MoreMenu } from "./ext-presentation"
+import { extensionError, MoreMenu } from "./ext-presentation"
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaBuiltinPolicy } from "../../preload/types"
 import type { HubAgent } from "./use-extensions"
@@ -16,6 +16,9 @@ import { extIpc } from "./ext-ipc"
 
 /** 引擎内置 command(REQ-037 机制核实面;上游冻结,变更随 sync retro 复核)。 */
 const BUILTIN_COMMANDS = ["init", "review"]
+
+/** 「系统」分段里应用自带条目的图标底色(批准稿 `#hub-skills` 系统行)。 */
+const BUILTIN_TINT = "#52525b"
 
 const DEFAULT_GOV: AlphaBuiltinPolicy = {
   version: 1,
@@ -192,7 +195,6 @@ export function BuiltinControlsPanel(props: {
               const disabled = () => g().agents.disable.includes(name)
               const overridden = () => !!g().agents.override[name]?.prompt
               const allowed = () => g().agents.allow.includes(name)
-              const ic = iconForRow(undefined, "agent", name)
               const state = () =>
                 [
                   hidden() ? t("alpha.builtin.stateHidden") : "",
@@ -204,8 +206,8 @@ export function BuiltinControlsPanel(props: {
                   .join(" · ") || t("alpha.ext.builtinAgentLabel")
               return (
                 <div class="alpha-ext-kit alpha-ext-man" data-gov-dim={disabled() || hidden() ? "" : undefined} data-builtin-agent={name}>
-                  <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
-                    {ic.glyph}
+                  <span class="alpha-ext-kit-ic" style={{ background: BUILTIN_TINT }}>
+                    {(name[0] ?? "?").toUpperCase()}
                   </span>
                   <div class="alpha-ext-kit-body">
                     <div class="alpha-ext-kit-ttl">
@@ -244,10 +246,9 @@ export function BuiltinControlsPanel(props: {
           <For each={BUILTIN_COMMANDS}>
             {(name) => {
               const overridden = () => !!g().commands.override[name]
-              const ic = iconForRow(undefined, "command", name)
               return (
                 <div class="alpha-ext-kit alpha-ext-man" data-builtin-command={name}>
-                  <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
+                  <span class="alpha-ext-kit-ic" style={{ background: BUILTIN_TINT }}>
                     /
                   </span>
                   <div class="alpha-ext-kit-body">
