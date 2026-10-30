@@ -62,7 +62,8 @@ The catalog ids, server names, tools, pins, and exact command arrays are one map
 > [req236-engine-lifecycle.md §2.4](req236-engine-lifecycle.md); build and size:
 > [distribution runbook](../runbooks/distribution.md#随包-office-运行时1564). The table is kept as the historical record.
 
-These are the exact commands the alpha-web catalog cards should copy. Each card is independently
+These were the exact commands the alpha-web catalog cards copied until #1564; the desktop no longer reads or
+validates a card's command for these four ids (a card may keep, update or drop it). Each card is independently
 installable. A bundle may reference them later, but phase-one atomic bundle/seed installation cannot
 install workspace-policy members and therefore rejects these commands rather than bypassing their
 sandbox contract. The former community Excel coexistence allowance is superseded by

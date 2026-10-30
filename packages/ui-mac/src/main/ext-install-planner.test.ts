@@ -998,6 +998,34 @@ describe("other kinds — derivation & records", () => {
     expect(cfg.mcp["alpha-word"].command).toContain("word")
   })
 
+  // #1564 审计 r1:安装准入也不再拿卡片命令做校验 —— alpha-web 把四张卡片的命令换成新形态(两个 {alphaResources})
+  // 或干脆删掉之后,四个工具仍装得上,落盘的只有 main 模板;中国区的镜像 env 也不再附上(随包运行时不下载)。
+  test("#1564: a first-party Office card with the new-template command, or with no command at all, still installs main's template", async () => {
+    const resources = fs.realpathSync(path.resolve(import.meta.dir, "../../resources"))
+    const newShape: CatalogEntry = {
+      ...mcpEntry,
+      id: "mcp:alpha-word",
+      name: "alpha-word",
+      installSpec: {
+        kind: "mcp",
+        mcpType: "local",
+        command: ["{alphaResources}/office-runtime/bin/python3", "-I", "-B", "{alphaResources}/office-mcp/server.py", "word", "{workspace}"],
+        requiredEnvVars: [],
+      },
+    }
+    const noCommand: CatalogEntry = { ...mcpEntry, id: "mcp:alpha-pdf", name: "alpha-pdf", installSpec: { kind: "mcp", mcpType: "local", requiredEnvVars: [] } }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, newShape, noCommand] })
+    for (const [entry, format] of [[newShape, "word"], [noCommand, "pdf"]] as const) {
+      const result = await installAuthorized({ catalogId: entry.id, scope: { scope: "global" }, grants: { cnMirror: true } }, deps)
+      expect(result.ok, JSON.stringify(result)).toBe(true)
+      const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+      expect(cfg.mcp[entry.name]).toEqual({
+        type: "local",
+        command: [path.join(resources, "office-runtime", "bin", "python3"), "-I", "-B", path.join(resources, "office-mcp", "server.py"), format, "{workspace}"],
+      })
+    }
+  })
+
   // #1564 AC1:目录卡片里的命令不再被消费 —— 卡片的 workspace 槽写的是具体路径,落盘的仍是 main 模板与字面量
   // `{workspace}`(REQ-134 的保证由「只写 main 模板」承担,不再靠拒装)。
   test("REQ-133/#823 + #1564: applyMcpWritePolicy — not classifyBundleChild's early-out — persists main's template over a malformed card workspace argument", async () => {
