@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设置 · 定制中心 · 自动化 — 文案与布局增量</title>
+<link rel="stylesheet" href="../current/settings/design.css">
+<style>
+/* 只有两条:改前/改后并排的版式(无颜色),以及「云端」置灰这一处改动(只用 token)。其余全部来自链接的活稿样式。 */
+.ux-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(520px,1fr));gap:22px;align-items:start;margin-top:14px}
+.form-types button[disabled]{color:var(--a-text-disabled);cursor:not-allowed}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">设置 · 定制中心 · 自动化 — 增量稿</div>
+  <div class="spacer"></div>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+
+  <section class="sec" id="relation">
+    <div class="sec-head">
+      <div class="sec-kicker">与上一稿的关系</div>
+      <h2>只改审查表列出的那几行</h2>
+    </div>
+    <div class="note">设置:组件取自 <span class="mono">current/settings/</span>。定制中心:改前取自 <span class="mono">current/customization-center/</span>(浏览页 <span class="mono">#browse</span>、详情页 <span class="mono">#detail</span>);改后的列表页用设置活稿里定制中心已有的页签栏、搜索框、精选行(<span class="mono">.kit</span>:图标 + 名称 + 一行描述 + 动作)与双列网格,详情页仍用定制中心活稿。自动化没有活稿,用同一套页面外壳、行、表单与开关拼出。改前即活稿原样;改后只动审查表那一行。活稿中的旧品牌字样一律写作 Code Puppy。</div>
+  </section>
+
+  <!-- ════════ 一、自动化 ════════ -->
+  <section class="sec" id="automation">
+    <div class="sec-head">
+      <div class="sec-kicker">一 · 自动化</div>
+      <h2>自动化</h2>
+    </div>
+
+    <div class="sec-kicker" id="auto-list" style="margin-top:22px">1.1 任务列表</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="frame"><div class="content">
+          <button class="hub-close" title="关闭"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <div class="hub-scroll"><div class="hub-center">
+            <div class="hub-h1">自动化</div>
+            <div class="hub-sub">任务只在应用运行时执行 —— 应用没开就不会跑(不是后台常驻服务)。</div>
+            <div class="note">当前为平台代付模式:任务执行会消耗平台额度。</div>
+            <div class="hub-secrow"><span class="t">任务 · <b>2</b></span><button class="btn-ghost btn-sm">模板:每日总结 → code-puppy/Journal</button></div>
+            <div class="man-row"><div class="body"><div class="nm"><b>每日总结</b><span class="meta-pill">每天 21:00</span></div><div class="st"><span class="dot ok"></span>下次 今天 21:00 · 上次成功</div></div><button class="btn-ghost btn-sm" title="手动执行一次;不影响排程时间,计入每日上限">立即运行</button><span class="sw on"></span></div>
+            <div class="man-row"><div class="body"><div class="nm"><b>竞品周报</b><span class="meta-pill">每周一 09:00</span><span class="meta-pill">☁ 云端</span></div><div class="st"><span class="dot off"></span>上次失败 · scheduler not started</div></div><button class="btn-ghost btn-sm" title="手动执行一次;不影响排程时间,计入每日上限">立即运行</button><span class="sw on"></span></div>
+          </div></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="content">
+          <button class="hub-close" title="关闭"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <div class="hub-scroll"><div class="hub-center">
+            <div class="hub-h1">自动化</div>
+            <div class="hub-sub">应用关着时,本机任务不运行</div>
+            <div class="note">本机任务消耗平台额度</div>
+            <div class="hub-secrow"><span class="t">任务 · <b>2</b></span><button class="btn-ghost btn-sm">每日总结模板</button></div>
+            <div class="man-row"><div class="body"><div class="nm"><b>每日总结</b><span class="meta-pill">每天 21:00</span></div><div class="st"><span class="dot ok"></span>下次 今天 21:00 · 上次成功</div></div><button class="btn-ghost btn-sm" title="跑一次,计入每日 24 次上限">立即运行</button><span class="sw on"></span></div>
+            <div class="man-row"><div class="body"><div class="nm"><b>竞品周报</b><span class="meta-pill">每周一 09:00</span><span class="meta-pill">☁ 云端</span></div><div class="st"><span class="dot off"></span>上次失败 · 应用未就绪,本次未运行</div></div><button class="btn-ghost btn-sm" title="在本机跑一次,不改云端排程">在本机试跑</button><span class="sw on"></span></div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="cap">改动:页头说明、额度提示、模板按钮、云端行按钮与悬停说明、失败原因。「24」取应用常量。原始报错只留在运行记录。</div>
+
+    <div class="sec-kicker" id="auto-edit-cloud" style="margin-top:34px">1.2 编辑任务 · 执行位置选「云端」</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="frame"><div class="hub-scroll"><div class="form">
+          <div class="field"><label>执行内容(任务指令)</label><input class="inp" value="调研本周三家竞品的发布与定价变化"/></div>
+          <div class="field"><label>执行位置</label><div class="form-types" style="margin-bottom:6px"><button>本地</button><button class="on">云端</button></div>
+            <div class="cap" style="margin-top:0">云端执行:应用不在线也按时运行。任务描述将作为调研问题发送到云端(仅任务文本本身,不上传项目文件);结果在打开应用时自动拉回项目的 .code-puppy/runs 留档。预算受云端硬帽(15 轮/15 万 token/5 分钟)。</div></div>
+          <div class="field"><label>权限档</label><div class="form-types" style="margin-bottom:6px"><button class="on">只读</button><button>可写</button></div>
+            <div class="cap" style="margin-top:0">只读档:可读文件/检索/联网查询,不能改文件、不能执行命令;无人值守全程零弹窗。</div></div>
+          <div class="field"><label>单次最长(分钟)</label><input class="inp" value="15" style="width:120px"/></div>
+          <div class="field"><label><input type="checkbox" checked/> 完成后系统通知</label></div>
+          <button class="btn-primary">保存</button>
+        </div></div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="hub-scroll"><div class="form">
+          <div class="field"><label>执行内容</label><input class="inp" value="调研本周三家竞品的发布与定价变化"/></div>
+          <div class="field"><label>执行位置</label><div class="form-types" style="margin-bottom:6px"><button>本机</button><button class="on">云端</button></div></div>
+          <div class="note" style="margin-top:0;margin-bottom:15px"><b>云端运行</b><br/>应用关着也按时运行<br/>只发送执行内容,不读项目文件<br/>结果在下次打开应用时存入项目<br/>单次运行有时长上限</div>
+          <button class="btn-primary">保存</button>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="cap">改动:选云端时收起「权限」「单次最长」「完成后通知」,换成四行运行条件;切回本机时三项原样回来。</div>
+
+    <div class="sec-kicker" id="auto-cloud-locked" style="margin-top:34px">1.3 没登录 Code Puppy 账户 · 改成「可改文件」时的确认</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="frame"><div class="hub-scroll"><div class="form">
+          <div class="field"><label>执行位置</label><div class="form-types" style="margin-bottom:6px"><button>本地</button><button class="on">云端</button></div></div>
+          <div class="note warn" style="margin:0 0 15px">尚未登录或登录已过期。请登录平台账号后重试。</div>
+          <div class="field"><label>权限档</label><div class="form-types" style="margin-bottom:6px"><button>只读</button><button class="on">可写</button></div>
+            <div class="cap" style="margin-top:0">可写档:AI 可修改文件、执行常规命令(破坏类命令被权限拦截,但黑名单非穷尽)。仅给你信任的重复性任务用。</div></div>
+          <div class="modal" style="width:100%"><div class="modal-body"><p class="modal-note">standard 档 = 无人值守时 AI 可以改文件、执行常规命令。破坏类命令(删除/系统级/发布)被拦截,但拦截清单非穷尽。确定启用?</p></div><div class="modal-foot"><button class="btn-primary">确定</button><button class="alt">取消</button></div></div>
+        </div></div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="hub-scroll"><div class="form">
+          <div class="field"><label>执行位置</label><div class="form-types" style="margin-bottom:6px"><button class="on">本机</button><button disabled>云端</button></div>
+            <div class="cap" style="margin-top:0">需登录 Code Puppy 账户 · <button class="btn-ghost btn-sm">登录</button></div></div>
+          <div class="field"><label>权限</label><div class="form-types" style="margin-bottom:6px"><button>只读</button><button class="on">可改文件</button></div>
+            <div class="cap" style="margin-top:0">可改文件、运行命令,拦截危险命令</div></div>
+          <div class="tp-confirm" role="alertdialog" style="padding-left:14px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);margin-bottom:15px"><span>无人值守时可改文件、运行命令</span><button class="btn-primary btn-sm">确定</button><button class="btn-ghost btn-sm">改回只读</button></div>
+          <button class="btn-primary">保存</button>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="cap">改动:按账户登录状态禁用「云端」并提前说明(已登录、用自带 Key 的用户照常可选);可改文件的确认改用工具节的行内确认,取代系统原生框。</div>
+
+    <div class="sec-kicker" id="auto-parse" style="margin-top:34px">1.4 「用 AI 解析」的结果</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="frame"><div class="hub-scroll"><div class="form">
+          <div class="note" style="margin-top:0">AI 解析:{desc}(临时会话已删除;可修改后保存)</div>
+          <div class="note warn">模型返回的结构不合法(缺 name/schedule/prompt 或周期过密)</div>
+        </div></div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="hub-scroll"><div class="form">
+          <div class="note" style="margin-top:0">已识别:每周一 09:00</div>
+          <div class="note warn">没识别出周期,请手动选择</div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="cap">另两句失败文案:「AI 暂不可用」「内容未通过安全审核」。</div>
+  </section>
+
+  <!-- ════════ 二、设置 ════════ -->
+  <section class="sec" id="settings">
+    <div class="sec-head">
+      <div class="sec-kicker">二 · 设置</div>
+      <h2>设置</h2>
+    </div>
+
+    <div class="sec-kicker" id="set-shortcuts" style="margin-top:22px">2.1 快捷键</div>
+    <div class="ux-pair" style="grid-template-columns:1fr">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="frame"><div class="app" style="height:420px">
+          <div class="set-nav">
+            <button class="set-back"><span style="font-size:15px;line-height:1">‹</span> 返回应用</button>
+            <div class="title">设置</div>
+            <div class="set-nav-item" data-set="general"><svg class="ic" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="2" fill="currentColor" stroke="none"/></svg>通用</div>
+            <div class="set-nav-item on" data-set="shortcuts"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h0M11 10h0M15 10h0M7 14h10"/></svg>快捷键</div>
+            <div class="set-nav-item" data-set="tools"><svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3l9.4-9.4z"/><path d="M15 5l4 4"/></svg>工具</div>
+          </div>
+          <div class="set-content"><div class="set-inner">
+            <div class="set-pagehd"><h2>快捷键</h2><span class="sub">输入组合键名称;留空会恢复应用默认值。</span></div>
+            <div class="set-card">
+              <div class="set-rw"><div class="meta"><b>打开设置</b><small class="mono">settings.open</small></div><input class="set-input" placeholder="⌘,"/></div>
+              <div class="set-rw"><div class="meta"><b>打开命令面板</b><small class="mono">command.palette</small></div><input class="set-input" placeholder="⌘K"/></div>
+              <div class="set-rw"><div class="meta"><b>打开项目</b><small class="mono">project.open</small></div><input class="set-input" placeholder="⌘O"/></div>
+              <div class="set-rw"><div class="meta"><b>新建会话</b><small class="mono">session.new</small></div><input class="set-input" placeholder="⌘N"/></div>
+            </div>
+          </div></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="app" style="height:420px">
+          <div class="set-nav">
+            <button class="set-back"><span style="font-size:15px;line-height:1">‹</span> 返回应用</button>
+            <div class="title">设置</div>
+            <div class="set-nav-item" data-set="general"><svg class="ic" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="2" fill="currentColor" stroke="none"/></svg>通用</div>
+            <div class="set-nav-item on" data-set="shortcuts"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h0M11 10h0M15 10h0M7 14h10"/></svg>快捷键</div>
+            <div class="set-nav-item" data-set="tools"><svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3l9.4-9.4z"/><path d="M15 5l4 4"/></svg>工具</div>
+          </div>
+          <div class="set-content"><div class="set-inner">
+            <div class="set-pagehd"><h2>快捷键</h2><span class="sub">例:mod+shift+s · 留空恢复默认</span></div>
+            <div class="set-card">
+              <div class="set-rw"><div class="meta"><b>打开设置</b></div><span class="kb-chord"><span class="kb-key">⌘</span><span class="kb-key">,</span></span><input class="set-input" placeholder="mod+comma"/></div>
+              <div class="set-rw"><div class="meta"><b>搜索会话</b></div><span class="kb-chord"><span class="kb-key">⌘</span><span class="kb-key">K</span></span><input class="set-input" placeholder="mod+k,mod+shift+p"/></div>
+              <div class="set-rw"><div class="meta"><b>打开项目</b></div><span class="kb-chord"><span class="kb-key">⌘</span><span class="kb-key">O</span></span><input class="set-input" placeholder="mod+o"/></div>
+              <div class="set-rw"><div class="meta"><b>新建会话</b></div><span class="kb-chord"><span class="kb-key">⌘</span><span class="kb-key">⇧</span><span class="kb-key">S</span></span><input class="set-input" placeholder="mod+shift+s"/></div>
+            </div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="cap">改动:节说明、去掉内部名、「搜索会话」、键帽显示当前生效组合、占位取注册默认值。导航与活稿一致(三项);实现多一项「扩展存储」是台账已登记的漂移。活稿此节画的是点键帽录入,现行实现是文本框,改前按现行实现画。</div>
+
+    <div class="sec-kicker" id="set-tools" style="margin-top:34px">2.2 工具 · 云端与第三方</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="frame"><div class="set-inner tp-pane" style="max-width:none;padding:18px 20px 22px">
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>云端工具</h3><span class="n">2 项</span><span class="tp-badge cloud">已核验</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="云端工具 · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 云端调用可能计费;启用只免去询问,不能越过套餐限制</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>网页搜索</b><span class="tp-badge">按用量计费</span></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                <span class="tp-eff ask"><i></i>每次询问</span>
+                <div class="tp-seg" role="radiogroup" aria-label="网页搜索"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>文档生成</b><span class="tp-badge">计费:未知</span></div><small>生效:已停用 · 当前套餐不含此服务</small></div>
+                <span class="tp-eff off"><i></i>已停用</span>
+                <span class="tp-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+                <div class="tp-seg" role="radiogroup" aria-label="文档生成" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>第三方 MCP</h3><span class="n">2 个服务 · 8 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="第三方 MCP · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 第三方服务的自我描述不参与判定;计费与风险按服务标注,标不出即「未知」</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="false" aria-label="展开 context7">▸</button>
+                <div class="meta"><div class="nm"><b>context7</b><span class="tp-badge new">1 项新发现</span></div><small>6 个工具 · 计费:未知 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="context7 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-degraded"><span aria-hidden="true">◌</span><span>1 项注册身份无法核验,已自动停用,不会提供给模型。</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="set-inner tp-pane" style="max-width:none;padding:18px 20px 22px">
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>云端工具</h3><span class="n">2 项</span><span class="tp-badge cloud">已核验</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="云端工具 · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 云端调用可能计费;启用只免去询问,不能越过套餐限制</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>网页搜索</b><span class="tp-badge">按用量计费</span></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                <span class="tp-eff ask"><i></i>每次询问</span>
+                <div class="tp-seg" role="radiogroup" aria-label="网页搜索"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>文档生成</b></div><small>生效:已停用 · 当前套餐不含此服务</small></div>
+                <span class="tp-eff off"><i></i>已停用</span>
+                <span class="tp-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+                <div class="tp-seg" role="radiogroup" aria-label="文档生成" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>第三方 MCP</h3><span class="n">2 个服务 · 8 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="第三方 MCP · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 是否收费由服务方决定</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="false" aria-label="展开 context7">▸</button>
+                <div class="meta"><div class="nm"><b>context7</b><span class="tp-badge new">1 项新发现</span></div><small>6 个工具 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="context7 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-degraded"><span aria-hidden="true">◌</span><span>1 项来源无法确认,已停用</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="cap">改动:去掉「计费:未知」(有真实数据的「按用量计费」保留)、第三方组说明、无法确认那一行。组名、「已核验」徽标、工具名由别的稿子定,沿用活稿;活稿组名中的旧品牌写作「云端工具」(与实现一致)。</div>
+
+    <div class="sec-kicker" id="set-copy" style="margin-top:34px">2.3 通用与扩展存储的几句说明</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="frame"><div class="set-inner" style="max-width:none;padding:16px 20px 20px">
+          <div class="note" style="margin-top:0"><b>设置已保存</b> 页面已切换到刚刚确认的权威值。</div>
+          <div class="note warn"><b>已存设置无法校验</b> 页面显示安全默认值。保存后会显式修复权威值。</div>
+          <div class="set-grp"><div class="set-card">
+            <div class="set-rw"><div class="meta"><b>Agent 完成通知</b><small>在本机显示相应的系统通知。</small></div><span class="sw on"></span></div>
+            <div class="set-rw"><div class="meta"><b>缓存检查</b><small>只显示 renderer-safe 聚合计数</small></div><span class="meta-pill">状态:安全关闭 <span class="mono">fail-closed</span></span></div>
+          </div></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="set-inner" style="max-width:none;padding:16px 20px 20px">
+          <div class="note" style="margin-top:0"><b>设置已保存</b></div>
+          <div class="note warn"><b>已存设置无法校验</b> 已显示默认设置,保存后替换</div>
+          <div class="set-grp"><div class="set-card">
+            <div class="set-rw"><div class="meta"><b>Agent 完成通知</b></div><span class="sw on"></span></div>
+            <div class="set-rw"><div class="meta"><b>缓存检查</b><small>只显示数量</small></div><span class="meta-pill">未清理</span></div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="cap">改动:删掉「权威值」与重复标题的说明;三条通知开关不再共用同一句说明;状态不显示原码。</div>
+  </section>
+
+  <!-- ════════ 三、定制中心 ════════ -->
+  <section class="sec" id="hub">
+    <div class="sec-head">
+      <div class="sec-kicker">三 · 定制中心</div>
+      <h2>定制中心</h2>
+      <p class="lede">九个页签收成三个:连接器、技能、助手。每页 = 标题 + 一行副标题 + 搜索 +「添加」;列表行 = 图标 + 名称 + 一行描述 + 一个动作。实机现状见 owner 截图 img5–img12。</p>
+    </div>
+
+    <div class="sec-kicker" id="hub-tabs" style="margin-top:22px">3.1 页签</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <template data-css="../current/customization-center/design.css"><div class="frame" style="margin-top:0"><div class="hub">
+          <div class="hub-tabbar">
+            <div class="hub-tab">推荐</div><div class="hub-tab on">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">Agent</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab">已安装</div><div class="hub-tab">导入</div><div class="hub-tab">云能力</div>
+          </div>
+        </div></div></template>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="content">
+          <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab on">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">助手</div></div></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="cap">推荐 → 各页分组;插件 → 「添加」里的 npm 导入,已装的进连接器「已安装」;套件、云能力 → 连接器的类别;已安装 → 各页顶部一组;导入 → 「添加」下拉。对照表见 <span class="mono">audit.md</span>,由 owner 定。</div>
+
+    <div class="sec-kicker" id="hub-connectors" style="margin-top:34px">3.2 连接器</div>
+    <div class="ux-pair" style="grid-template-columns:1fr">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <template data-css="../current/customization-center/design.css"><div class="frame" style="margin-top:0"><div class="hub">
+          <div class="hub-tabbar">
+            <div class="hub-tab">推荐</div><div class="hub-tab on">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">Agent</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab">已安装</div><div class="hub-tab">导入</div><div class="hub-tab">云能力</div>
+          </div>
+          <div class="hub-body">
+            <div class="cat-h">研发</div>
+            <div class="grid">
+              <div class="card"><div class="top"><span class="ic" style="background:#4f46e5">FS</span><div class="hd"><div class="nm"><b>文件系统</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">在白名单目录内读写本地文件。modelcontextprotocol 官方参考实现。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 node</span><button class="add">添加</button></div></div>
+              <div class="card"><div class="top"><span class="ic" style="background:#0e7490">DB</span><div class="hd"><div class="nm"><b>数据库(DBHub)</b><span class="chip" data-shelf="connector">接入</span></div></div></div><p class="desc">只读档访问数据库:读库表结构、执行 SELECT 查询。</p><div class="foot"><span class="meta">官方</span><span class="meta">🔒 需 3 项密钥</span><button class="add">添加</button></div></div>
+            </div>
+            <div class="cat-h">未分级</div>
+            <p class="group-note">以下扩展尚未经安全审核分级:安装后默认关闭,请自行判断后手动开启。</p>
+            <div class="grid">
+              <div class="card"><div class="top"><span class="ic" style="background:#2563eb">X</span><div class="hd"><div class="nm"><b>Excel 表格读写</b></div></div></div><p class="desc">读写 xlsx 表格,支持公式与格式。</p><div class="foot"><span class="meta">社区</span><button class="add" data-variant="ghost">添加</button></div></div>
+            </div>
+          </div>
+        </div></div></template>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="content">
+          <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab on">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">助手</div></div></div>
+          <div class="hub-scroll"><div class="hub-center">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0"><div class="hub-h1">连接器</div><div class="hub-sub">让助手使用外部工具和服务</div></div>
+              <div class="hub-search" style="margin:0;height:34px;width:180px"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="搜索连接器"/></div>
+              <button class="btn-primary">添加 ▾</button>
+            </div>
+            <div class="hub-secrow"><span class="t">已安装</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#4f46e5">FS</div><div class="body"><div class="ttl"><b>本地文件读写</b></div><div class="desc">让助手读取和修改允许访问的本地文件夹中的文件。</div></div><button class="btn-ghost btn-sm" title="更多">…</button></div>
+              <div class="kit"><div class="ico" style="background:#18181b">GH</div><div class="body"><div class="ttl"><b>GitHub</b></div><div class="desc">需要 GitHub 令牌</div></div><button class="btn-ghost btn-sm">设置</button></div>
+              <div class="kit"><div class="ico" style="background:#5c7cbf">云</div><div class="body"><div class="ttl"><b>云连接器</b></div><div class="desc">已连接</div></div><button class="btn-ghost btn-sm" title="更多">…</button></div>
+              <div class="kit"><div class="ico" style="background:#0f766e">C7</div><div class="body"><div class="ttl"><b>context7</b></div><div class="desc">未开启</div></div><button class="btn-ghost btn-sm">开启</button></div>
+            </div>
+            <div class="hub-secrow"><span class="t">办公</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#1d4ed8">W</div><div class="body"><div class="ttl"><b>Word 文档读写</b></div><div class="desc">读取 .docx 的正文和结构,也能新建或改写文档。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#dc2626">P</div><div class="body"><div class="ttl"><b>PDF 文本读写</b></div><div class="desc">提取 PDF 文字,创建文字型 PDF,替换正文或追加文字页。</div></div><button class="add">添加</button></div>
+            </div>
+            <div class="hub-secrow"><span class="t">开发</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#0e7490">数</div><div class="body"><div class="ttl"><b>数据库(本机 SQLite)</b></div><div class="desc">让助手查询你电脑上的数据库。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#f97316">G</div><div class="body"><div class="ttl"><b>Git 版本管理</b></div><div class="desc">查看仓库状态、改动和提交历史,也能暂存文件并创建提交。</div></div><button class="add">添加</button></div>
+            </div>
+            <div class="hub-secrow"><span class="t">Code Puppy 云</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#5c7cbf">审</div><div class="body"><div class="ttl"><b>云端代码审查</b></div><div class="desc">将 Git 代码改动交给云端检查正确性、安全、性能和风格。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#5c7cbf">研</div><div class="body"><div class="ttl"><b>云端深度调研</b></div><div class="desc">提供调研问题,云端会分解问题、联网检索,并整理带来源的回答。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#5c7cbf">档</div><div class="body"><div class="ttl"><b>云端开发文档生成</b></div><div class="desc">提供代码片段,让云端先拟大纲,再生成 README、API 说明等文档。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#4f46e5">图</div><div class="body"><div class="ttl"><b>云端图片生成</b></div><div class="desc">描述画面内容与风格,云端生成可下载的 PNG 图片。</div></div><button class="add">添加</button></div>
+            </div>
+            <div class="hub-secrow"><span class="t">套件</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#16a34a">办</div><div class="body"><div class="ttl"><b>办公套件</b></div><div class="desc">组合安装 markitdown 文档读取、本地文件读写和 Code Puppy 的四种文档工具。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#2563eb">研</div><div class="body"><div class="ttl"><b>研究套件</b></div><div class="desc">组合使用多来源检索、网页读取和本地资料读写,帮助深入研究问题。</div></div><button class="add">添加</button></div>
+            </div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="cap">改动:去掉来源 / 许可证筛选、黄色说明框、「未分级」整段说明、卡片底部的来源 / 版本 / 兼容 / 运行位置标签;「处理前置条件」改为「设置」,状态写缺什么(需要 GitHub 令牌、需要选择数据库文件);未完成审核的扩展装上默认关闭,行上只写「未开启」+「开启」。描述取目录原文,一行放不下就省略。名称、图标沿用目录;云端任务名去掉括号原名。</div>
+
+    <div class="sec-kicker" id="hub-add" style="margin-top:34px">3.3 「添加」下拉(取代「导入」页签)</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改后 · 展开</div>
+        <div class="frame"><div class="hub-scroll" style="padding-bottom:24px"><div class="hub-center">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="flex:1;min-width:0"><div class="hub-h1">连接器</div><div class="hub-sub">让助手使用外部工具和服务</div></div>
+            <button class="btn-primary">添加 ▾</button>
+          </div>
+          <div class="set-card" style="width:220px;margin:8px 0 0 auto;box-shadow:var(--a-shadow-lg)">
+            <div class="set-rw"><div class="meta"><b>从文件夹导入</b></div></div>
+            <div class="set-rw"><div class="meta"><b>从 Git 地址导入</b></div></div>
+            <div class="set-rw"><div class="meta"><b>从 npm 导入插件</b></div></div>
+            <div class="set-rw"><div class="meta"><b>自定义连接器</b></div></div>
+            <div class="set-rw"><div class="meta"><b>导入助手</b></div></div>
+          </div>
+        </div></div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">说明</div>
+        <div class="note">五项都打开现有的导入窗口,窗口本身不改。「在对话中创建技能 / 助手」的说明框去掉:技能、助手页空态里一句「在对话里说“帮我创建一个技能”」即可。</div>
+      </div>
+    </div>
+
+    <div class="sec-kicker" id="hub-skills" style="margin-top:34px">3.4 技能</div>
+    <div class="ux-pair" style="grid-template-columns:1fr">
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="content">
+          <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab">连接器</div><div class="hub-tab on">技能</div><div class="hub-tab">助手</div></div></div>
+          <div class="hub-scroll"><div class="hub-center">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0"><div class="hub-h1">技能</div><div class="hub-sub">可重复使用的任务流程</div></div>
+              <div class="hub-search" style="margin:0;height:34px;width:180px"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="搜索技能"/></div>
+              <button class="btn-primary">添加 ▾</button>
+            </div>
+            <div class="hub-secrow"><span class="t">已安装</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#7c3aed">提</div><div class="body"><div class="ttl"><b>Git 提交说明助手</b></div><div class="desc">按 Conventional Commits 格式编写提交说明。</div></div><button class="btn-ghost btn-sm" title="更多">…</button></div>
+              <div class="kit"><div class="ico" style="background:#a16207">简</div><div class="body"><div class="ttl"><b>premarket-briefing</b></div><div class="desc">待生效 · 对话空闲后自动生效</div></div><button class="btn-ghost btn-sm">立即生效</button></div>
+            </div>
+            <div class="form-types" style="margin-top:26px"><button class="on">推荐</button><button>系统</button></div>
+            <div class="hub-secrow" style="margin-top:4px"><span class="t">开发</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#4f46e5">创</div><div class="body"><div class="ttl"><b>技能创建助手</b></div><div class="desc">帮助你创建、改进和测试技能。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#4f46e5">整</div><div class="body"><div class="ttl"><b>保持功能不变的代码整理</b></div><div class="desc">在保持现有功能表现不变的前提下整理代码。</div></div><button class="add">添加</button></div>
+            </div>
+            <div class="hub-secrow"><span class="t">设计</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#db2777">视</div><div class="body"><div class="ttl"><b>视觉作品与海报设计</b></div><div class="desc">帮助设计并生成 PNG 或 PDF 视觉作品。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#db2777">色</div><div class="body"><div class="ttl"><b>应用品牌色彩与字体</b></div><div class="desc">将品牌规定的颜色和字体应用到作品中。</div></div><button class="add">添加</button></div>
+            </div>
+          </div></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后 · 「系统」分段</div>
+        <div class="frame"><div class="hub-scroll"><div class="hub-center">
+          <div class="form-types"><button>推荐</button><button class="on">系统</button></div>
+          <div class="hub-grid" style="margin-top:4px">
+            <div class="kit"><div class="ico" style="background:#52525b">创</div><div class="body"><div class="ttl"><b>skill-creator</b></div><div class="desc">在对话里帮你创建技能</div></div><button class="btn-ghost btn-sm" title="更多">…</button></div>
+            <div class="kit"><div class="ico" style="background:#52525b">助</div><div class="body"><div class="ttl"><b>agent-creator</b></div><div class="desc">已停用</div></div><button class="btn-ghost btn-sm" title="更多">…</button></div>
+          </div>
+          <div class="set-card" style="width:180px;margin:4px 0 0 auto;box-shadow:var(--a-shadow-lg)">
+            <div class="set-rw"><div class="meta"><b>隐藏</b></div></div>
+            <div class="set-rw"><div class="meta"><b>停用</b></div></div>
+            <div class="set-rw"><div class="meta"><b>自定义</b></div></div>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="cap">「系统」= 应用自带的技能,原「已安装 → 应用自带的功能」那块(含黄色说明框)搬到这里,隐藏 / 停用 / 自定义收进「…」。待生效的扩展就在「已安装」组里显示状态与「立即生效」。没有「我的」分段:自建与导入的都在「已安装」。</div>
+
+    <div class="sec-kicker" id="hub-agents" style="margin-top:34px">3.5 助手</div>
+    <div class="ux-pair" style="grid-template-columns:1fr">
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="frame"><div class="content">
+          <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab">连接器</div><div class="hub-tab">技能</div><div class="hub-tab on">助手</div></div></div>
+          <div class="hub-scroll"><div class="hub-center">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0"><div class="hub-h1">助手</div><div class="hub-sub">为特定任务设置的角色</div></div>
+              <div class="hub-search" style="margin:0;height:34px;width:180px"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="搜索助手"/></div>
+              <button class="btn-primary">添加 ▾</button>
+            </div>
+            <div class="hub-secrow"><span class="t">已安装</span></div>
+            <div class="hub-grid">
+              <div class="kit"><div class="ico" style="background:#b45309">D</div><div class="body"><div class="ttl"><b>docs</b></div><div class="desc">写文档:报告、规范、设计说明、README、分析。</div></div><button class="btn-ghost btn-sm" title="更多">…</button></div>
+            </div>
+            <div class="form-types" style="margin-top:26px"><button class="on">推荐</button><button>系统</button></div>
+            <div class="hub-grid" style="margin-top:4px">
+              <div class="kit"><div class="ico" style="background:#4f46e5">问</div><div class="body"><div class="ttl"><b>问题排查助手</b></div><div class="desc">根据报错或现象查找可能的问题位置,给出复现步骤和修复建议。</div></div><button class="add">添加</button></div>
+              <div class="kit"><div class="ico" style="background:#4f46e5">代</div><div class="body"><div class="ttl"><b>代码审查助手</b></div><div class="desc">审查代码改动或指定文件,列出问题和修复建议。</div></div><button class="add">添加</button></div>
+            </div>
+          </div></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="sec-kicker">说明</div>
+        <div class="note">名称里的「(只读)」、卡片上的「Code Puppy 出品」「自建 · all」「你在会话中创建的助手」都移到详情页。build、plan 等应用自带的助手在「系统」分段。</div>
+      </div>
+    </div>
+
+    <div class="sec-kicker" id="cloud-task" style="margin-top:34px">3.6 详情页 · 云端任务(以「云端深度调研」为例)</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <template data-css="../current/customization-center/design.css"><div class="frame" style="margin-top:0"><div class="det">
+          <button class="backrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>云能力</button>
+          <div class="dhead"><div class="ico" style="background:#5c7cbf">云</div><div><div class="titleline"><h3>云端深度调研(research)</h3></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">提供调研问题,云端会分解问题、联网检索,并整理带来源的回答。结果保存到本地 .code-puppy/runs。</div></div></div>
+          <div class="dsec"><div class="dsec-t">云端任务</div>
+            <div class="fact"><span class="k">任务类型</span><span class="v mono">research</span></div>
+            <div class="fact"><span class="k">执行层</span><span class="v">Tier-1:在云端联网检索,不使用沙箱</span></div>
+            <div class="fact"><span class="k">预算默认</span><span class="v">25 iter · 300,000 tokens · 600s</span></div>
+            <div class="fact"><span class="k">预算上限(云侧 clamp)</span><span class="v">50 iter · 500,000 tokens · 1800s</span></div>
+            <div class="fact"><span class="k">需要提供的内容</span><span class="v"><span class="mono">input.question *</span> 你想调研的问题</span></div>
+            <div class="fact"><span class="k">发送到云端的内容</span><span class="v">发送你填写的调研问题(input.question)。派发信封元数据(预算/约束;denied_paths 缺省注入)</span></div>
+          </div>
+        </div></div></template>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <template data-css="../current/customization-center/design.css"><div class="frame" style="margin-top:0"><div class="det">
+          <button class="backrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>连接器</button>
+          <div class="dhead"><div class="ico" style="background:#5c7cbf">云</div><div><div class="titleline"><h3>云端深度调研</h3></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">提供调研问题,云端会分解问题、联网检索,并整理带来源的回答。</div></div><button class="add" style="margin-left:auto">添加</button></div>
+          <div class="dsec"><div class="dsec-t">云端任务</div>
+            <div class="fact"><span class="k">做什么</span><span class="v">联网检索,整理带来源的回答</span></div>
+            <div class="fact"><span class="k">最长运行</span><span class="v">约 10 分钟</span></div>
+            <div class="fact"><span class="k">发送内容</span><span class="v">调研问题与任务设置</span></div>
+            <div class="fact"><span class="k">结果</span><span class="v">存到所选文件夹</span></div>
+            <div class="fact"><span class="k">费用</span><span class="v">按用量结算</span></div>
+          </div>
+          <div class="dsec"><div class="dsec-t">开发者详情</div>
+            <div class="sbom-row"><div class="bd">来源、版本、运行环境、额度、输入字段</div><button class="ghost-btn">展开</button></div>
+          </div>
+        </div></div></template>
+      </div>
+    </div>
+    <div class="cap">卡片上不再出现的「结果存哪、费用」只在详情页写。「约 10 分钟」由目录秒数换算;「按用量结算」与发送框里「预留 US$…,按实际用量结算」同源。开发者详情展开后:来源与签名、版本、任务类型 research、运行环境、默认额度与上限、输入字段。</div>
+
+    <div class="sec-kicker" id="cloud-connector" style="margin-top:34px">3.7 详情页 · 云连接器</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <template data-css="../current/customization-center/design.css"><div class="frame" style="margin-top:0"><div class="det">
+          <button class="backrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>云能力</button>
+          <div class="dhead"><div class="ico" style="background:#5c7cbf">云</div><div><div class="titleline"><h3>云连接器(cloud)</h3></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">登录平台模式后,应用会自动连接云服务,让助手可以发送云端任务,无需另外安装。</div></div></div>
+          <div class="dsec"><div class="dsec-t">连接</div>
+            <div class="fact"><span class="k">连接状态</span><span class="v">未注入 —— 需登录平台模式</span></div>
+            <div class="fact"><span class="k">传输方式</span><span class="v">远程(HTTP)</span></div>
+          </div>
+          <div class="dsec"><div class="dsec-t">提供的工具</div>
+            <div class="fact"><span class="k mono">cloud_dispatch</span><span class="v">将任务发送到云端处理</span></div>
+            <div class="fact"><span class="k mono">cloud_status</span><span class="v">查询任务状态、进度与用量计数</span></div>
+            <div class="fact"><span class="k mono">cloud_await</span><span class="v">等待任务完成、失败或取消,并获取最终状态</span></div>
+            <div class="fact"><span class="k mono">cloud_artifacts</span><span class="v">查看并下载任务生成的文件</span></div>
+          </div>
+          <div class="dsec"><div class="dsec-t">注入方式</div><p class="dnote" style="margin:0">登录平台模式后自动连接,无需安装。…</p></div>
+        </div></div></template>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <template data-css="../current/customization-center/design.css"><div class="frame" style="margin-top:0"><div class="det">
+          <button class="backrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>连接器</button>
+          <div class="dhead"><div class="ico" style="background:#5c7cbf">云</div><div><div class="titleline"><h3>云连接器</h3></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">登录平台模式后,应用会自动连接云服务,让助手可以发送云端任务,无需另外安装。</div></div><button class="add" style="margin-left:auto">登录</button></div>
+          <div class="dsec"><div class="dsec-t">连接</div>
+            <div class="fact"><span class="k">连接状态</span><span class="v">未连接 · 需登录</span></div>
+            <div class="fact"><span class="k">传输方式</span><span class="v">远程(HTTP)</span></div>
+          </div>
+          <div class="dsec"><div class="dsec-t">提供的工具</div>
+            <div class="fact"><span class="k">发送云端任务</span><span class="v">将任务发送到云端处理</span></div>
+            <div class="fact"><span class="k">查看任务进度</span><span class="v">查询任务状态、进度与用量计数</span></div>
+            <div class="fact"><span class="k">等待任务结束</span><span class="v">等待任务完成、失败或取消,并获取最终状态</span></div>
+            <div class="fact"><span class="k">取回任务文件</span><span class="v">查看并下载任务生成的文件</span></div>
+          </div>
+          <div class="dsec"><div class="dsec-t">自动连接</div><p class="dnote" style="margin:0">登录平台模式后自动连接,无需安装。…</p></div>
+          <div class="dsec"><div class="dsec-t">开发者详情</div><div class="sbom-row"><div class="bd">工具的技术名</div><button class="ghost-btn">展开</button></div></div>
+        </div></div></template>
+      </div>
+    </div>
+    <div class="cap">工具名先写自然语言(四个名字为示意,取命名词典);技术名进「开发者详情」。</div>
+
+    <div class="sec-kicker" id="enable-flow" style="margin-top:34px">3.8 添加确认框</div>
+    <div class="ux-pair">
+      <div>
+        <div class="sec-kicker">改前</div>
+        <div class="modal-stage" style="min-height:0;padding:24px;display:flex;justify-content:center">
+          <div class="scrim"></div>
+          <div class="modal">
+            <button class="mclose"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="modal-hero">
+              <div class="modal-icons"><span class="big" style="background:#0f766e">C7</span></div>
+              <h3>添加「context7」</h3>
+              <div class="dev">开发者:社区</div>
+              <div class="approved"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>已通过运行时预检(node 就绪)</div>
+            </div>
+            <div class="modal-body">
+              <div class="install-box"><div class="install-row"><span class="d" style="background:#0f766e">C7</span>context7<span class="k">连接器</span></div></div><p class="modal-note">将写入你的 <span class="mono">~/.opencode/opencode.jsonc</span>(仅白名单字段),当场生效、免重启。密钥入钥匙串,不明文存储。</p></div>
+            <div class="modal-foot"><button class="btn-primary">继续添加</button><button class="alt">取消</button></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="sec-kicker">改后</div>
+        <div class="modal-stage" style="min-height:0;padding:24px;display:flex;justify-content:center">
+          <div class="scrim"></div>
+          <div class="modal">
+            <button class="mclose"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="modal-hero">
+              <div class="modal-icons"><span class="big" style="background:#0f766e">C7</span></div>
+              <h3>添加「context7」</h3>
+              <div class="dev">开发者:社区</div>
+              <div class="approved"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>已通过运行时预检(node 就绪)</div>
+            </div>
+            <div class="modal-body">
+              <div class="install-box"><div class="install-row"><span class="d" style="background:#0f766e">C7</span>context7<span class="k">连接器</span></div></div><p class="modal-note">未经审核,装好后默认关闭</p></div>
+            <div class="modal-foot"><button class="btn-primary">继续添加</button><button class="alt">取消</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">确认框只说一句:已审核的写「保存后立即生效」,未完成审核的写「未经审核,装好后默认关闭」。不再写配置文件路径。版式取自设置活稿 §A2,活稿里的旧品牌图标位不画。</div>
+  </section>
+
+  <section class="sec" id="spec">
+    <div class="sec-head">
+      <div class="sec-kicker">四 · 规格</div>
+      <h2>新增样式只有两处,其余复用</h2>
+    </div>
+    <div class="note">①「云端」置灰:<span class="mono">.form-types button[disabled]</span> 用 <span class="mono">--a-text-disabled</span>。②可改文件确认:复用工具节 <span class="mono">.tp-confirm</span>。③定制中心列表行:复用 <span class="mono">.kit</span> + <span class="mono">.hub-grid</span>,动作只有一个(添加 / 设置 / 开启 / 立即生效 / 「…」)。「添加」下拉与「…」菜单用 <span class="mono">.set-card</span> 列表 + <span class="mono">--a-shadow-lg</span> 示意。新文案与字数见 <span class="mono">audit.md</span>。</div>
+  </section>
+
+</div>
+
+<script>
+document.querySelectorAll('template[data-css]').forEach(function(t){
+  var host=document.createElement('div');
+  var root=host.attachShadow({mode:'open'});
+  var link=document.createElement('link');link.rel='stylesheet';link.href=t.getAttribute('data-css');
+  root.appendChild(link);root.appendChild(t.content.cloneNode(true));
+  t.replaceWith(host);
+});
+document.querySelectorAll('#themeSeg button').forEach(function(b){b.onclick=function(){document.querySelectorAll('#themeSeg button').forEach(function(x){x.classList.remove('on')});b.classList.add('on');document.documentElement.setAttribute('data-theme',b.dataset.theme);};});
+(function(){var q=new URLSearchParams(location.search).get('theme');if(q==='dark'||q==='light'){document.documentElement.setAttribute('data-theme',q);document.querySelectorAll('#themeSeg button').forEach(function(x){x.classList.toggle('on',x.dataset.theme===q)});}})();
+</script>
+</body>
+</html>

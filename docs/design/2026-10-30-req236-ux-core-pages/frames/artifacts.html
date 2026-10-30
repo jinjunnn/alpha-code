@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>产物右栏文字 · 帧</title>
+<link rel="stylesheet" href="../../current/artifact-workbench/design.css" />
+<style>
+/* 帧外排版:两列对照。预览区标记与样式全部来自 current/artifact-workbench/design.css;本帧只换文字与一处色调(不一致:err → warn)。
+   右栏结构按已批的结果优先稿,不在此重画;原话(sha256 mismatch、报错原文)进那张稿的「技术详情」。 */
+body{background:transparent;padding:0;margin:0}
+.ux-g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.ux-g2>div{min-width:0}
+.ux-g2 .frame{margin:0}
+.ux-tag{display:block;margin:0 0 6px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);color:var(--a-text-tertiary)}
+@media (max-width:820px){.ux-g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="ux-g2">
+  <div><span class="ux-tag">现在</span><div class="frame"><div class="wb" style="grid-template-columns:minmax(0,1fr);min-height:0"><div class="wb-col">
+            <div class="wb-prevhead">
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+            </div>
+            <div class="wb-preview-body">
+              <div class="noticex">平台产物列表不可用(离线或未登录)—— 仅显示本地产物。</div>
+              <div class="noticex" data-k="err">完整性校验不符(digest/尺寸不一致)—— 内容按原样显示,请谨慎对待。</div>
+              <div class="factcard"><p>文件已在盘上消失。</p></div>
+              <div class="factcard"><p>尚未落盘 —— 下载后可预览。</p><div class="wb-toolbar"><button class="wb-btn" type="button" data-variant="primary">下载</button></div></div>
+              <div class="noticex" data-k="err">预览已崩溃(已隔离),Source 与元数据仍可用:Cannot read properties of undefined</div>
+              <div class="noticex" data-k="err">打开前复核失败:sha256 mismatch</div><div class="wb-toolbar"><button class="wb-btn" type="button">重试</button></div>
+            </div>
+          </div></div></div></div>
+  <div><span class="ux-tag">改后</span><div class="frame"><div class="wb" style="grid-template-columns:minmax(0,1fr);min-height:0"><div class="wb-col">
+            <div class="wb-prevhead">
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+            </div>
+            <div class="wb-preview-body">
+              <div class="noticex">云端不可用 · 仅显示本机文件</div>
+              <div class="noticex" data-k="warn">文件与云端记录不一致</div>
+              <div class="factcard"><p>文件已不在本机</p></div>
+              <div class="factcard"><p>尚未下载</p><div class="wb-toolbar"><button class="wb-btn" type="button" data-variant="primary">下载</button></div></div>
+              <div class="noticex" data-k="err">预览失败</div><div class="wb-toolbar"><button class="wb-btn" type="button">查看源文</button></div>
+              <div class="noticex" data-k="err">文件校验未通过</div><div class="wb-toolbar"><button class="wb-btn" type="button">重试</button></div>
+            </div>
+          </div></div></div></div>
+</div>
+<script>
+(function(){
+  var root=document.documentElement,q=new URLSearchParams(location.search);
+  root.setAttribute('data-theme',q.get('theme')==='dark'?'dark':'light');
+  function post(){parent.postMessage({uxFrame:1,h:Math.ceil(document.body.getBoundingClientRect().height)+8},'*');}
+  addEventListener('message',function(e){if(e.data&&e.data.uxTheme){root.setAttribute('data-theme',e.data.uxTheme);post();}});
+  addEventListener('load',post);addEventListener('resize',post);
+})();
+</script>
+</body>
+</html>
