@@ -23,7 +23,10 @@ import { getAccessToken } from "./alpha-auth"
 import { httpErrorCode } from "./platform-error-code"
 import { guardCloudEnvelope } from "./cloud-envelope-guard"
 import {
+  artifactDownloadFailureLog,
   downloadArtifactToFile,
+  errorCauseCode,
+  sanitizeTransportError,
   type ArtifactDownloadOutcome,
   type ArtifactDownloadRequest,
   type ArtifactFinalizer,
@@ -105,7 +108,11 @@ async function authed<T>(
       reportContractFailure(error)
       return { error: "contract-incompatible" }
     }
-    getLogger().warn("alpha-cloud-jobs: fetch failed", error)
+    // #1551 R1:带底层错误码,否则「连不上 / 超时 / 被重置」在日志里都只是一句 fetch failed。
+    // 只写 message 与码 —— 不写 URL(含 job id 之外的 query)、不写 token。
+    getLogger().warn(
+      `alpha-cloud-jobs: fetch failed (network) cause=${errorCauseCode(error) ?? "-"} detail=${sanitizeTransportError(error instanceof Error ? error.message : String(error))}`,
+    )
     return { error: "network" }
   }
 }
@@ -210,7 +217,7 @@ export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArti
 
 // REQ-092:artifact 内容唯一入口 —— pinned descriptor.contentRef 流式下载到磁盘
 // (bearer 仅 main,renderer 零字节);legacy inline metadata and fallback are rejected.
-// 失败只回分类码 + 净化 detail;此处日志也只落分类码(token 卫生,REQ-092 AC#5)。
+// 失败只回分类码 + 净化 detail;日志落分类码 + 阶段 + 已收字节 + 净化 detail(token 卫生,REQ-092 AC#5;#1551 R1)。
 export async function downloadCloudArtifactTo(
   req: ArtifactDownloadRequest,
   finalize: ArtifactFinalizer,
@@ -228,7 +235,7 @@ export async function downloadCloudArtifactTo(
   // `#970`:抑制日志的条件读**结构槽** —— 比 `outcome.error !== "cancelled"` 会让平台发的
   // 一条叫 cancelled 的拒绝**不留痕**,而那恰恰是最需要留痕的一刻。
   if (!outcome.ok && !outcome.cancelled) {
-    getLogger().warn(`alpha-cloud-jobs: artifact download failed (${outcome.error})`)
+    getLogger().warn(`alpha-cloud-jobs: ${artifactDownloadFailureLog(outcome)}`)
   }
   return outcome
 }
