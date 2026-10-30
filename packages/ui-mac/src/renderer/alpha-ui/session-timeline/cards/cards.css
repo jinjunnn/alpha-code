@@ -155,6 +155,23 @@
   font-weight: var(--a-weight-medium);
 }
 
+/* ── 1576 详情底部:来源 · 位置(与开发者详情同一行,左写来源位置、右放开关)── */
+.a-tc-prov {
+  padding: 7px 12px;
+  border-top: 1px solid var(--a-border-faint);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+}
+
+.a-tc-prov:has(+ .a-tc-dev) {
+  float: left;
+  border-top: 0;
+}
+
+.a-tc-prov + .a-tc-dev summary {
+  text-align: right;
+}
+
 /* ── REQ-125 tool-provenance 开发者详情(默认折叠;technical-id / canonical / authority 唯一落点)── */
 .a-tc-dev {
   border-top: 1px solid var(--a-border-faint);

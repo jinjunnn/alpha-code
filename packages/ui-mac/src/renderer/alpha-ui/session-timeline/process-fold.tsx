@@ -29,10 +29,11 @@ import {
   useContext,
 } from "solid-js"
 import { t } from "../../i18n"
-import { StatBadge, stepSourceIcon, ToolStepDetail, toolIcon } from "./cards/tool-cards"
+import { StatBadge, stepLocationText, stepSourceIcon, ToolStepDetail, toolIcon } from "./cards/tool-cards"
 import {
   cappedItem,
   toolCardDispatchOf,
+  toolProvenanceOf,
   toolCardStatusOf,
   toolGroupVerbOf,
   toolStepLineOf,
@@ -106,12 +107,11 @@ function lineVerb(line: ToolStepLine): string {
 const SOURCE_FALLBACK_KEYS = {
   mcp: "alpha.timeline.stepSourceMcp",
   plugin: "alpha.timeline.stepSourcePlugin",
-  unknown: "alpha.timeline.stepSourceUnknown",
 } as const
 
-/** 非我方来源的行内标签:服务名 / 插件名;缺席时用通用文案;来源不明恒为「来源不明」。 */
-export function stepSourceLabel(source: NonNullable<ToolStepLine["source"]>): string {
-  if (source.kind !== "unknown" && source.label) return source.label
+/** 非我方来源的行内标签:服务名;缺席时用通用文案;插件恒为「第三方插件」(#1576)。 */
+export function stepSourceLabel(source: { kind: "mcp" | "plugin"; label?: string }): string {
+  if (source.label) return source.label
   return t(SOURCE_FALLBACK_KEYS[source.kind])
 }
 
@@ -123,6 +123,7 @@ function endText(end: ToolStepEnd): string {
 /**
  * 步骤行左侧:我方 = 类别图标 + 动作名;非我方 = 来源图标(插头 / 拼图 / 问号)+ 服务名。
  * 防冒充(AC5):data-alpha-step-source 与这三种图标只出现在非我方步骤上。
+ * #1576:没有来源快照的旧记录按第三方处理 —— 只留问号图标,不写「来源不明」这第四类标签(名字在对象位)。
  */
 function StepLead(props: { line: ToolStepLine; kind: string; verb?: string }) {
   return (
@@ -142,9 +143,11 @@ function StepLead(props: { line: ToolStepLine; kind: string; verb?: string }) {
           <span class="a-tl-pf-ico" data-alpha-step-source={source().kind} aria-hidden="true">
             {stepSourceIcon(source().kind)}
           </span>
-          <span class="a-tl-pf-v" data-alpha-step-origin>
-            {stepSourceLabel(source())}
-          </span>
+          <Show when={source().kind !== "unknown"}>
+            <span class="a-tl-pf-v" data-alpha-step-origin>
+              {stepSourceLabel(source() as { kind: "mcp" | "plugin"; label?: string })}
+            </span>
+          </Show>
         </>
       )}
     </Show>
@@ -289,6 +292,17 @@ export function ProcessRow(props: { row: Extract<TimelineRow, { kind: "process" 
       segments.push({ text: formatProcessDuration(props.row.durationMs), tone: "num" })
     return segments
   })
+  // `#1576`:旧记录里的内置步骤没有位置 —— 不逐行写,列表底部一句。
+  const builtinLocationUnknown = createMemo(() =>
+    props.row.steps.some(
+      (step) =>
+        step.kind === "tool" &&
+        step.parts.some((part) => {
+          const provenance = toolProvenanceOf(part)
+          return provenance.source === "builtin" && provenance.location.kind === "unknown"
+        }),
+    ),
+  )
   const liveWindow = createMemo(() => liveWindowOf(props.row.steps))
   const allKey = () => `${processKey()}/all`
   const showAll = () => !active() || (state.get(allKey()) ?? false)
@@ -373,6 +387,11 @@ export function ProcessRow(props: { row: Extract<TimelineRow, { kind: "process" 
               </button>
             </Show>
             <For each={listed()}>{(step) => <ProcessStepView step={step} scope={scope()} state={state} />}</For>
+            <Show when={builtinLocationUnknown()}>
+              <p class="a-tl-pf-foot" data-alpha-builtin-location-unknown>
+                {t("alpha.timeline.builtinLocationUnknown")}
+              </p>
+            </Show>
           </div>
         </ProcessLiveContext.Provider>
       </Show>
@@ -559,6 +578,8 @@ function ToolEnd(props: {
   line?: ToolStepLine
   stat?: { additions: number; deletions: number }
   waiting?: boolean
+  /** `#1576` 执行位置(只给不是「内置」的步骤;内置 · 本机不标)。 */
+  location?: string
 }) {
   const live = useContext(ProcessLiveContext)
   // 一步超过 10 秒:「运行中」换成「已等 m:ss」(只在活跃回合里、只对正在跑的单项步骤;并行的各自一行各自计)。
@@ -592,6 +613,7 @@ function ToolEnd(props: {
   const settled = () => waited() === undefined
   return (
     <span class="a-tl-pf-end">
+      <Show when={props.location}>{(text) => <span data-alpha-step-location>{text()}</span>}</Show>
       <Show
         when={props.waiting}
         fallback={
@@ -658,7 +680,14 @@ function ToolItem(props: { part: ToolPart; openKey: string; state: ProcessOpenSt
           <StepLead line={line()} kind={dispatch().kind} />
         </Show>
         <ToolObject line={line()} />
-        <ToolEnd parts={[props.part]} group={false} line={line()} stat={line().stat} waiting={waiting()} />
+        <ToolEnd
+          parts={[props.part]}
+          group={false}
+          line={line()}
+          stat={line().stat}
+          waiting={waiting()}
+          location={stepLocationText(toolProvenanceOf(props.part))}
+        />
       </button>
       <Show when={tail()}>
         {(lines) => (
@@ -724,7 +753,13 @@ function ToolGroupStep(props: {
       >
         <StepLead line={line()} kind={dispatch().kind} verb={verb()} />
         <ToolObject line={line()} text={object()} />
-        <ToolEnd parts={props.step.parts} group={true} line={line()} stat={stat()} />
+        <ToolEnd
+          parts={props.step.parts}
+          group={true}
+          line={line()}
+          stat={stat()}
+          location={stepLocationText(toolProvenanceOf(first()))}
+        />
       </button>
       <Show when={open()}>
         <div class="a-tl-pf-sublist">

@@ -11,7 +11,7 @@
 // 命中规则的卡,字段先走类别 allowlist 与 typed
 // normalization(I2 防御读取),再过共享 redactor(tool-redactor);redactor
 // 任一步失败即隐藏整字段(AC5),不回退 raw string。
-import type { ToolAuthority, ToolIdentity, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
+import type { ToolAuthority, ToolIdentity, ToolLocation, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
 import { DIFF_PATCH_MAX_CHARS } from "./tool-diff"
 import { redactPath, redactText, redactUrl, type RedactResult } from "./tool-redactor"
 
@@ -141,6 +141,13 @@ const ALPHA_CLOUD_RULES = new Map<string, AlphaCloudRule>([
   ["cloud_status", { titleKey: "alpha.timeline.cloud.status", targetInput: "job_id" }],
   ["cloud_await", { titleKey: "alpha.timeline.cloud.await", targetInput: "job_id" }],
   ["cloud_artifacts", { titleKey: "alpha.timeline.cloud.artifacts", targetInput: "job_id" }],
+  // #1576 AC5:平台注册表快照(`ui-mac/src/main/fixtures/cloud-mcp-tools.ts`)的其余 5 个;覆盖断言在
+  // tool-card-provenance-gates.test.ts —— 快照新增名字而本表未补 ⇒ 红。标题定稿归命名迁移。
+  ["cloud_cancel", { titleKey: "alpha.timeline.cloud.cancel", targetInput: "job_id" }],
+  ["cloud_web_fetch", { titleKey: "alpha.timeline.cloud.webFetch" }],
+  ["cloud_vision", { titleKey: "alpha.timeline.cloud.vision" }],
+  ["cloud_decide", { titleKey: "alpha.timeline.cloud.decide" }],
+  ["cloud_account_status", { titleKey: "alpha.timeline.cloud.accountStatus" }],
   ["cloud_schedule_create", { titleKey: "alpha.timeline.cloud.scheduleCreate", targetInput: "name" }],
   ["cloud_schedule_list", { titleKey: "alpha.timeline.cloud.scheduleList" }],
   ["cloud_schedule_delete", { titleKey: "alpha.timeline.cloud.scheduleDelete", targetInput: "schedule_id" }],
@@ -182,10 +189,16 @@ function nonEmptyString(value: unknown): value is string {
 /** #878 快照的防御校验:结构不完整/形状非法 = 无快照(按未知来源降级)。 */
 function displaySnapshotOf(
   part: ToolPart,
-): { identity: ToolIdentity; authority: ToolAuthority; technicalId: string } | undefined {
+): { identity: ToolIdentity; authority: ToolAuthority; technicalId: string; location?: ToolLocation } | undefined {
   const display = (part as { display?: unknown }).display
   if (typeof display !== "object" || display === null) return undefined
-  const record = display as { identity?: unknown; technicalId?: unknown; authority?: unknown; billing?: unknown }
+  const record = display as {
+    identity?: unknown
+    technicalId?: unknown
+    authority?: unknown
+    billing?: unknown
+    location?: unknown
+  }
   if (!nonEmptyString(record.technicalId)) return undefined
   const identity = record.identity
   if (typeof identity !== "object" || identity === null) return undefined
@@ -206,11 +219,54 @@ function displaySnapshotOf(
     if (typeof billing !== "object" || billing === null) return undefined
     if (!nonEmptyString(billing.class) || !nonEmptyString(billing.evidenceId)) return undefined
   }
+  // #1576:执行位置(可选;缺席 = 历史行 / 事实缺席)。形状非法与其它字段同待遇:整份快照无效。
+  let location: ToolLocation | undefined
+  if (record.location !== undefined) {
+    const loc = record.location as { kind?: unknown; host?: unknown }
+    if (typeof loc !== "object" || loc === null) return undefined
+    if (loc.kind === "local") location = { kind: "local" }
+    else if (loc.kind === "remote" && nonEmptyString(loc.host)) location = { kind: "remote", host: loc.host }
+    else return undefined
+  }
   return {
     identity: { source: id.source as ToolIdentity["source"], origin: id.origin, name: id.name },
     authority: auth as ToolAuthority,
     technicalId: record.technicalId,
+    ...(location ? { location } : {}),
   }
+}
+
+// ── #1576 来源三类 × 执行位置(只从持久化快照派生) ─────────────────────────
+/** 用户层来源三类:内置(builtin / host)、云(当次持久化 authority = alpha-cloud)、其余一律第三方(含无快照)。 */
+export type ToolProvenanceSource = "builtin" | "alpha-cloud" | "third-party"
+
+/** 执行位置:本机 / 云端(alpha-cloud 的远端)/ 远端主机(净化有界)/ 位置未知(快照或 location 缺席)。 */
+export type ToolProvenanceLocation =
+  | { kind: "local" }
+  | { kind: "cloud" }
+  | { kind: "remote"; host: string }
+  | { kind: "unknown" }
+
+export interface ToolProvenance {
+  source: ToolProvenanceSource
+  location: ToolProvenanceLocation
+}
+
+/**
+ * I2:来源只读 identity + authority,位置只读快照的 `location`;名字、URL、标题、工具返回内容
+ * (含其中任何同名 `location` / `host` 字段)都不是输入。
+ */
+export function toolProvenanceOf(part: ToolPart): ToolProvenance {
+  const snapshot = displaySnapshotOf(part)
+  if (!snapshot) return { source: "third-party", location: { kind: "unknown" } }
+  const category = categoryOf(snapshot.identity, snapshot.authority)
+  const source: ToolProvenanceSource =
+    category === "builtin" || category === "host" ? "builtin" : category === "alpha-cloud" ? "alpha-cloud" : "third-party"
+  const location = snapshot.location
+  if (!location) return { source, location: { kind: "unknown" } }
+  if (location.kind === "local") return { source, location: { kind: "local" } }
+  if (source === "alpha-cloud") return { source, location: { kind: "cloud" } }
+  return { source, location: { kind: "remote", host: sanitizedName(location.host) } }
 }
 
 function categoryOf(identity: ToolIdentity, authority: ToolAuthority): ToolSourceCategory {
@@ -1308,17 +1364,21 @@ export interface ToolStepLine {
   stat?: { additions: number; deletions: number }
 }
 
-/** 还没有展示规则的我方工具的通用动作名(「本机工具」「云端工具」……)。 */
+/** 还没有展示规则的我方工具的通用动作名(#1576:来源三类的名字 ——「Code Puppy 内置」「Code Puppy 云」)。 */
 const OWN_GENERIC_KEYS: Partial<Record<ToolSourceCategory, string>> = {
   builtin: "alpha.timeline.sourceBuiltin",
-  host: "alpha.timeline.sourceHost",
+  host: "alpha.timeline.sourceBuiltin",
   "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
 }
 
-/** 非我方来源分类(mcp / plugin / unknown);我方(builtin / host / alpha-cloud)= undefined。 */
+/**
+ * 非我方来源分类(mcp / plugin / unknown);我方(builtin / host / alpha-cloud)= undefined。
+ * #1576:插件不带名字 —— 一律「第三方插件」,包名 / 安装路径只进开发者详情(装载端的 file/npm 来源没传到
+ * 工具身份,origin 按字符串分不出是自报 ID 还是路径)。
+ */
 export function toolStepSourceOf(dispatch: Pick<ToolCardDispatch, "category" | "origin">): { kind: ToolStepSourceKind; label?: string } | undefined {
   if (dispatch.category === "mcp") return { kind: "mcp", label: dispatch.origin }
-  if (dispatch.category === "plugin") return { kind: "plugin", label: dispatch.origin }
+  if (dispatch.category === "plugin") return { kind: "plugin" }
   if (dispatch.category === "unknown") return { kind: "unknown" }
   return undefined
 }
@@ -1527,6 +1587,10 @@ export interface ToolDevDetails {
   technicalId: string
   /** 权威来源证明摘要:"not-asserted" 或 alpha-cloud + binding + digest(截断)。 */
   authority: string
+  /** #1576 AC6:执行位置原样(local / remote · 主机名;缺席 = 「—」)。 */
+  location: string
+  /** #1576:插件的包名或安装路径(只在开发者详情出现,正常界面一律「第三方插件」)。 */
+  origin?: string
 }
 
 /**
@@ -1537,13 +1601,20 @@ export interface ToolDevDetails {
 export function toolDevDetailsOf(part: ToolPart): ToolDevDetails | undefined {
   const snapshot = displaySnapshotOf(part)
   if (!snapshot) return undefined
-  const { identity, authority, technicalId } = snapshot
+  const { identity, authority, technicalId, location } = snapshot
   const canonical = `${identity.source}:${passiveSegment(identity.origin)}:${passiveSegment(identity.name)}`
   const authorityText =
     authority.kind === "alpha-cloud"
       ? `alpha-cloud · ${passiveSegment(authority.bindingId, 64)} · ${passiveSegment(authority.evidenceDigest, 32)}`
       : "not-asserted"
-  return { canonical, technicalId: passiveSegment(technicalId), authority: authorityText }
+  const locationText = !location ? "—" : location.kind === "local" ? "local" : `remote · ${passiveSegment(location.host)}`
+  return {
+    canonical,
+    technicalId: passiveSegment(technicalId),
+    authority: authorityText,
+    location: locationText,
+    ...(identity.source === "plugin" && identity.origin.length > 0 ? { origin: passiveSegment(identity.origin) } : {}),
+  }
 }
 
 // ── 分支专属信息 ────────────────────────────────────────────────────────────

@@ -1160,14 +1160,13 @@ describe("#1475 步骤行投影:来源标记只给非我方;行尾规则;答完�
   const snap = (source: string, origin: string, name: string, authority: Record<string, unknown> = { kind: "not-asserted" }) =>
     ({ identity: { source, origin, name }, technicalId: name, authority }) as unknown as ToolDisplaySnapshotV1
 
-  test("来源标记:mcp = 服务名、plugin = 插件名、无快照 = 来源不明;我方(builtin / host / 云端)恒缺席", () => {
+  test("来源标记:mcp = 服务名、plugin 不带名字(#1576)、无快照 = unknown;我方(builtin / host / 云端)恒缺席", () => {
     expect(toolStepLineOf(part("x_read", undefined, snap("mcp", "fs-srv", "read"))).source).toEqual({
       kind: "mcp",
       label: "fs-srv",
     })
     expect(toolStepLineOf(part("bash", undefined, snap("plugin", "evil-pack", "bash"))).source).toEqual({
       kind: "plugin",
-      label: "evil-pack",
     })
     expect(toolStepLineOf(part("read", undefined, null)).source).toEqual({ kind: "unknown" })
     // 冒名的第三方:没有我方动作名,对象只是被动净化的名称 —— 参数一个都不读。
@@ -1184,11 +1183,12 @@ describe("#1475 步骤行投影:来源标记只给非我方;行尾规则;答完�
       })),
     ])
       expect(toolStepLineOf(own).source).toBeUndefined()
-    // 还没有展示规则的我方工具:「本机工具 · 名称」通用行。
+    // 还没有展示规则的我方工具:「Code Puppy 内置 · 名称」通用行(#1576:host 同此)。
     expect([toolStepLineOf(part("lsp")).verbKey, toolStepLineOf(part("lsp")).object]).toEqual([
       "alpha.timeline.sourceBuiltin",
       "lsp",
     ])
+    expect(toolStepLineOf(part("h", undefined, snap("host", "", "h"))).verbKey).toBe("alpha.timeline.sourceBuiltin")
   })
 
   test("行尾:计数只在为零时(没找到);退出码只在非 0 时;审批超时对所有来源同一句;打开网页失败 = 没打开", () => {

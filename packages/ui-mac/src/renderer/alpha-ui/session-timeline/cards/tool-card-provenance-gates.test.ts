@@ -16,11 +16,14 @@ import {
   toolCardDispatchOf,
   toolCardHeadOf,
   toolDevDetailsOf,
+  toolProvenanceOf,
 } from "./tool-card-model"
 import { artifactLinksOf, projectTimelineRows, type TimelineRow } from "../timeline-model"
 // 生产字典是被验对象(标题必须真的解析成中文);期望值用本文件的独立字面量,
 // 不 import 被测模型的常量(自指等价链禁忌)。
 import { dict as zhDict } from "../../../i18n/zh"
+// #1576 AC5:平台注册表的桌面生成快照 —— 云卡规则表的覆盖权威。
+import { CLOUD_MCP_TOOLS } from "../../../../main/fixtures/cloud-mcp-tools"
 
 function toolPart(input: {
   tool: string
@@ -1121,3 +1124,113 @@ describe("#1214 AC2 — 审批超时分类:真引擎 UnansweredError 驱动,降�
     expect(body.type).toBe("error")
   })
 })
+
+// ── #1576 —— 来源三类 × 执行位置,只从持久化快照派生 ─────────────────────────
+describe("#1576 AC3 — 来源只有三类,只从 identity + authority 派生", () => {
+  test("builtin / host ⇒ 内置;alpha-cloud ⇒ 云;其余 MCP、插件、无快照 ⇒ 第三方", () => {
+    const sourceOf = (display: ToolDisplaySnapshotV1 | undefined) =>
+      toolProvenanceOf(toolPart({ tool: "x", display, state: completed({}, "") })).source
+    expect(sourceOf(builtin("read"))).toBe("builtin")
+    expect(
+      sourceOf({ identity: { source: "host", origin: "", name: "h" }, technicalId: "h", authority: { kind: "not-asserted" } }),
+    ).toBe("builtin")
+    expect(sourceOf(alphaCloud("cloud_dispatch"))).toBe("alpha-cloud")
+    expect(sourceOf(mcp("notion", "search_pages"))).toBe("third-party")
+    expect(sourceOf(plugin("acme", "lint_project"))).toBe("third-party")
+    expect(sourceOf(undefined)).toBe("third-party")
+  })
+
+  test("origin=cloud 无 authority ⇒ 第三方(名字像我们的,没有证明就是第三方)", () => {
+    const spoof = toolPart({
+      tool: "cloud_cloud_dispatch",
+      display: { ...mcp("cloud", "cloud_dispatch"), location: { kind: "remote", host: "cloud.example" } },
+      state: completed({ kind: "research" }, ""),
+    })
+    expect(toolProvenanceOf(spoof)).toEqual({ source: "third-party", location: { kind: "remote", host: "cloud.example" } })
+    // 对照:同一份调用带上持久化 authority ⇒ 云 · 云端。
+    const real = toolPart({
+      tool: "cloud_cloud_dispatch",
+      display: { ...alphaCloud("cloud_dispatch"), location: { kind: "remote", host: "cloud.example" } },
+      state: completed({ kind: "research" }, ""),
+    })
+    expect(toolProvenanceOf(real)).toEqual({ source: "alpha-cloud", location: { kind: "cloud" } })
+  })
+})
+
+describe("#1576 AC4 — 执行位置来自持久化快照的 location,不读工具返回", () => {
+  test("无需审批的远端第三方调用 → 持久化 → 重载回放:仍显示远端主机;返回内容里的同名字段不被读取", () => {
+    // 引擎在注册咽喉写 location(不经审批请求);工具返回与 metadata 故意带同名字段冒充本机 / 另一主机。
+    const live = toolPart({
+      tool: "notion_search_pages",
+      display: { ...mcp("notion", "search_pages"), location: { kind: "remote", host: "mcp.notion.com" } },
+      state: completed(
+        { query: "q", location: { kind: "local" } },
+        JSON.stringify({ location: { kind: "local" }, host: "evil.example" }),
+        { location: { kind: "remote", host: "evil.example" }, host: "evil.example" },
+      ),
+    })
+    // 持久化 = 会话库里存的 JSON;重载 = 读回后再走生产时间线投影。
+    const reloaded = JSON.parse(JSON.stringify(live)) as ToolPart
+    const [replayed] = visibleToolPartsOf(timelineRowsOf([reloaded]))
+    expect(replayed).toBeDefined()
+    expect(toolProvenanceOf(replayed!)).toEqual({
+      source: "third-party",
+      location: { kind: "remote", host: "mcp.notion.com" },
+    })
+    expect(JSON.stringify(toolProvenanceOf(replayed!))).not.toContain("evil.example")
+  })
+
+  test("缺 location ⇒ 位置未知(历史行与无快照同此);本机 location ⇒ 本机", () => {
+    const old = toolPart({ tool: "notion_search_pages", display: mcp("notion", "search_pages"), state: completed({}, "") })
+    expect(toolProvenanceOf(old).location).toEqual({ kind: "unknown" })
+    const legacy = toolPart({ tool: "fetch_data", display: undefined, state: completed({}, "") })
+    expect(toolProvenanceOf(legacy)).toEqual({ source: "third-party", location: { kind: "unknown" } })
+    const local = toolPart({
+      tool: "filesystem_read_file",
+      display: { ...mcp("filesystem", "read_file"), location: { kind: "local" } },
+      state: completed({}, ""),
+    })
+    expect(toolProvenanceOf(local).location).toEqual({ kind: "local" })
+  })
+})
+
+describe("#1576 AC5 — 平台注册表快照里的每个云工具名都有云卡规则", () => {
+  test("CLOUD_MCP_TOOLS 每个名字 + alpha-cloud authority ⇒ 专用云卡,标题经生产 zh 字典解析", () => {
+    expect(CLOUD_MCP_TOOLS.length).toBeGreaterThan(0)
+    for (const name of CLOUD_MCP_TOOLS) {
+      const head = toolCardHeadOf(toolPart({ tool: `cloud_${name}`, display: alphaCloud(name), state: completed({}, "") }))
+      const resolved = head.titleKey ? (zhDict as Record<string, string>)[head.titleKey] : undefined
+      expect({ name, kind: head.kind, titled: typeof resolved === "string" && resolved.length > 0 }).toEqual({
+        name,
+        kind: "cloud",
+        titled: true,
+      })
+    }
+  })
+})
+
+describe("#1576 AC6 — 开发者详情保留 identity、authority、bindingId、evidenceDigest 与 location", () => {
+  test("云:四样 + location;插件多一行 origin;历史行 location 写「—」", () => {
+    const cloud = toolDevDetailsOf(
+      toolPart({
+        tool: "cloud_cloud_dispatch",
+        display: { ...alphaCloud("cloud_dispatch"), location: { kind: "remote", host: "cloud.example" } },
+        state: completed({}, ""),
+      }),
+    )!
+    expect(cloud.canonical).toBe("mcp:cloud:cloud_dispatch")
+    expect(cloud.authority).toBe(`alpha-cloud · mcp:cloud · sha256:${"c".repeat(25)}`)
+    expect(cloud.location).toBe("remote · cloud.example")
+    expect(cloud.origin).toBeUndefined()
+    const pluginDev = toolDevDetailsOf(
+      toolPart({
+        tool: "lint_project",
+        display: { ...plugin("/Applications/Code Puppy.app/x/plugin.js", "lint_project"), location: { kind: "local" } },
+        state: completed({}, ""),
+      }),
+    )!
+    expect([pluginDev.location, pluginDev.origin]).toEqual(["local", "/Applications/Code Puppy.app/x/plugin.js"])
+    expect(toolDevDetailsOf(toolPart({ tool: "x", display: mcp("notion", "x"), state: completed({}, "") }))!.location).toBe("—")
+  })
+})
+
