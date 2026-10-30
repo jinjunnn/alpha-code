@@ -6,7 +6,7 @@
 > ①「用户在项目中生成的 skill command agent mcp 和 plugin 都应该落到 .alpha 中」
 > ②「(XDG provider 域 + 项目级 .opencode)这两个都应该接管,使用桥可以实现吗」
 > ③「我不希望每个项目都出现 .alpha .opencode 两个目录」
-> 前置:[[REQ-059]](全局 `~/.alpha/alpha.jsonc` 真源,ready)
+> 前置:[[REQ-059]]（全局 `~/.alpha/alpha.jsonc` 真源,ready）
 
 ## 〇、结论先行
 
