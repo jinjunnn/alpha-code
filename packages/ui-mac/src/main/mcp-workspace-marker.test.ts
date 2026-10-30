@@ -1,14 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { parse } from "jsonc-parser"
-import {
-  ALPHA_OFFICE_CONNECTORS,
-  WORKSPACE_MARKER,
-  alphaOfficeInstallCommand,
-  type AlphaOfficeFormat,
-} from "../shared/office-advisories"
+import { ALPHA_OFFICE_CONNECTORS, WORKSPACE_MARKER, alphaOfficeInstallCommand } from "../shared/office-advisories"
 import { reconcileMcpWorkspaceMarkers, restoreWorkspaceMarker } from "./mcp-workspace-marker"
 
 const roots: string[] = []
@@ -21,14 +16,6 @@ function tempRoot() {
   const root = mkdtempSync(join(tmpdir(), "alpha-mcp-marker-"))
   roots.push(root)
   return root
-}
-
-function officeCommand(format: AlphaOfficeFormat, server: string, workspace: string) {
-  return alphaOfficeInstallCommand(format).map((argument) => {
-    if (argument === "{alphaResources}/office-mcp/server.py") return server
-    if (argument === WORKSPACE_MARKER) return workspace
-    return argument
-  })
 }
 
 function receipt(id: string, name: string, origin = "catalog", configKey = `mcp.${name}`) {
@@ -58,8 +45,7 @@ function readConfig(file: string) {
 }
 
 describe("restoreWorkspaceMarker", () => {
-  test("restores the exact workspace slot for all six catalog templates", () => {
-    const server = "/Applications/alpha-code.app/Contents/Resources/office-mcp/server.py"
+  test("restores the exact workspace slot for both bundled catalog templates", () => {
     const workspace = "/Users/example/project"
     const cases = [
       {
@@ -72,15 +58,10 @@ describe("restoreWorkspaceMarker", () => {
         name: "git",
         command: ["uvx", "mcp-server-git@2026.6.16", "--repository", workspace],
       },
-      ...ALPHA_OFFICE_CONNECTORS.map((connector) => ({
-        id: connector.catalogId,
-        name: connector.name,
-        command: officeCommand(connector.format, server, workspace),
-      })),
     ]
 
     cases.forEach((item) => {
-      const restored = restoreWorkspaceMarker(item.id, item.name, item.command, server)
+      const restored = restoreWorkspaceMarker(item.id, item.name, item.command)
       expect(restored?.at(-1), item.id).toBe(WORKSPACE_MARKER)
       expect(restored?.slice(0, -1), item.id).toEqual(item.command.slice(0, -1))
     })
@@ -88,7 +69,6 @@ describe("restoreWorkspaceMarker", () => {
 
   test("refuses version/resource drift, extra argv, relative paths, marker substrings, and custom identity", () => {
     const workspace = "/Users/example/project"
-    const server = "/Applications/alpha-code.app/Contents/Resources/office-mcp/server.py"
     expect(
       restoreWorkspaceMarker("mcp:filesystem", "filesystem", [
         "npx",
@@ -120,29 +100,26 @@ describe("restoreWorkspaceMarker", () => {
         workspace,
       ]),
     ).toBeNull()
-    expect(
-      restoreWorkspaceMarker(
-        "mcp:alpha-word",
-        "alpha-word",
-        officeCommand("word", "/Applications/old-alpha.app/Contents/Resources/office-mcp/server.py", workspace),
-        server,
-      ),
-    ).toBeNull()
+  })
+
+  // #1564:四个第一方 Office 条目整条命令都是 main 模板(含 `{workspace}`),旧的 uv 形态由 alpha-office-instance 迁移;
+  // 本模块对它们一个字都不改 —— 包括此前那条只换 server 槽的分支能认出的形状(随包 server + 具体 workspace)。
+  test("first-party Office entries are not this module's (their command is main's template since #1564)", () => {
+    const server = realpathSync(resolve(import.meta.dir, "../../resources/office-mcp/server.py"))
+    for (const connector of ALPHA_OFFICE_CONNECTORS) {
+      const shaped = alphaOfficeInstallCommand(connector.format).map((argument) =>
+        argument === "{alphaResources}/office-mcp/server.py" ? server : argument === WORKSPACE_MARKER ? "/Users/example/project" : argument,
+      )
+      expect(restoreWorkspaceMarker(connector.catalogId, connector.name, shaped)).toBeNull()
+    }
   })
 })
 
 describe("reconcileMcpWorkspaceMarkers", () => {
-  test("migrates the six exact catalog-owned commands and is byte-idempotent", () => {
+  test("migrates the two exact catalog-owned commands and is byte-idempotent", () => {
     const root = tempRoot()
     const config = join(root, "alpha.jsonc")
-    const server = join(root, "resources", "office-mcp", "server.py")
     const workspace = join(root, "old-project")
-    const office = Object.fromEntries(
-      ALPHA_OFFICE_CONNECTORS.map((connector) => [
-        connector.name,
-        { type: "local", command: officeCommand(connector.format, server, workspace), timeout: 5_000 },
-      ]),
-    )
     writeConfig(config, {
       filesystem: {
         type: "local",
@@ -152,34 +129,18 @@ describe("reconcileMcpWorkspaceMarkers", () => {
         type: "local",
         command: ["uvx", "mcp-server-git@2026.6.16", "--repository", workspace],
       },
-      ...office,
     })
-    writeLedger(root, [
-      receipt("mcp:filesystem", "filesystem"),
-      receipt("mcp:git", "git"),
-      ...ALPHA_OFFICE_CONNECTORS.map((connector) => receipt(connector.catalogId, connector.name)),
-    ])
+    writeLedger(root, [receipt("mcp:filesystem", "filesystem"), receipt("mcp:git", "git")])
 
-    const first = reconcileMcpWorkspaceMarkers({
-      configPath: config,
-      ledgerRoot: root,
-      alphaOfficeServerPath: server,
-    })
+    const first = reconcileMcpWorkspaceMarkers({ configPath: config, ledgerRoot: root })
 
-    expect(first).toEqual({
-      migrated: ["filesystem", "git", ...ALPHA_OFFICE_CONNECTORS.map((connector) => connector.name)],
-      warnings: [],
-    })
+    expect(first).toEqual({ migrated: ["filesystem", "git"], warnings: [] })
     Object.values(readConfig(config).mcp).forEach((entry) => expect(entry.command.at(-1)).toBe(WORKSPACE_MARKER))
     expect(readFileSync(config, "utf8")).toContain("// retained comment")
 
     const afterFirst = readFileSync(config, "utf8")
     expect(
-      reconcileMcpWorkspaceMarkers({
-        configPath: config,
-        ledgerRoot: root,
-        alphaOfficeServerPath: server,
-      }),
+      reconcileMcpWorkspaceMarkers({ configPath: config, ledgerRoot: root }),
     ).toEqual({ migrated: [], warnings: [] })
     expect(readFileSync(config, "utf8")).toBe(afterFirst)
   })

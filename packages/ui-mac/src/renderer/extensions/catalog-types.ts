@@ -172,6 +172,11 @@ export interface InstalledState {
   /** MCP:引擎报的 `pending` —— 还在后台启动它,不是停用也不是失败(`#1563`)。 */
   pending?: boolean
   error?: string
+  /** MCP:修复动作。`reinstall-app` = 第一方文档工具随包的运行环境不在(引擎报 failed / dependency_missing),
+   *  能修好它的只有重新安装 Code Puppy —— 不是重载,也不是另装组件(`#1564` AC6)。 */
+  repair?: "reinstall-app"
 }
 
-export type RuntimeCheck = { ok: true } | { ok: false; missing: string }
+/** `missing` = a which-checked runtime binary the card declares; `office-runtime-missing` = the four
+ *  first-party Office entries' app-bundled runtime is absent (#1564 AC3: reinstall Code Puppy). */
+export type RuntimeCheck = { ok: true } | { ok: false; missing: string } | { ok: false; reason: "office-runtime-missing" }

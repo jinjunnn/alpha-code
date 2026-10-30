@@ -12,11 +12,14 @@ import { persistMcp } from "./ext-config"
 import { aggregateFilesDigest, sha256Hex } from "./ext-manifest-v2"
 import {
   ALPHA_OFFICE_CONNECTORS,
+  ALPHA_OFFICE_PYTHON_SLOT,
+  ALPHA_OFFICE_SERVER_SLOT,
   WORKSPACE_MARKER,
   alphaOfficeInstallCommand,
   checkAlphaOfficeMcpSafety,
   isAlphaOfficeMcp,
   isRetiredOfficeMcp,
+  type OfficeRuntimeReadiness,
 } from "../shared/office-advisories"
 import { resourcesRoot } from "./ext-fs-installer"
 
@@ -41,9 +44,10 @@ export function bundledOfficeServerDigest(serverPath: string): string {
  *  means "not recorded", never "audited". */
 export type McpWritePolicyResult = { ok: true; artifactDigest?: string } | { ok: false; reason: string }
 
-/** Require the spawn-time workspace marker and replace the catalog resource placeholder with
- *  Alpha's actual bundled server. Boot reconciliation owns legacy concrete-path migration.
- *  Static command tokens/pins must already match the registry exactly. */
+/** #1564 AC1: the four first-party Office entries always persist main's template — the app-bundled
+ *  interpreter and server resolved against Alpha's resources, the `{workspace}` spawn-time marker —
+ *  whatever command the catalog card (or a legacy uv-era card) carried. Card tokens are not compared or
+ *  consumed. Boot reconciliation owns migrating already-installed entries. */
 function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, unknown>): McpWritePolicyResult {
   if (!isAlphaOfficeMcp(name, server)) return { ok: true }
   const command = Array.isArray(server.command) && server.command.every((argument) => typeof argument === "string")
@@ -53,27 +57,18 @@ function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, un
     candidate.name === name || command.includes(candidate.format),
   )
   if (!connector) return { ok: false, reason: "unknown Code Puppy Office connector mode (REQ-133 fail-closed)" }
-  const template = alphaOfficeInstallCommand(connector.format)
-  if (
-    command.length !== template.length ||
-    template.some((argument, index) =>
-      argument !== WORKSPACE_MARKER && !argument.includes("{alphaResources}") && command[index] !== argument,
-    )
-  ) {
-    return { ok: false, reason: `${connector.name} command differs from the pinned Code Puppy stdio command (REQ-133)` }
-  }
-  const workspaceArg = command[template.indexOf(WORKSPACE_MARKER)]
-  if (workspaceArg !== WORKSPACE_MARKER) {
-    return { ok: false, reason: `${connector.name} requires the exact workspace marker (REQ-134)` }
-  }
   try {
     const alphaResources = fs.realpathSync(resourcesRoot())
     const serverPath = fs.realpathSync(path.join(alphaResources, "office-mcp", "server.py"))
     if (path.relative(alphaResources, serverPath).startsWith(`..${path.sep}`)) {
       return { ok: false, reason: `${connector.name} bundled server escaped Code Puppy resources (REQ-133)` }
     }
-    server.command = template.map((argument) =>
-      argument.replace(`{alphaResources}/${BUNDLED_OFFICE_SERVER_PATH}`, serverPath),
+    server.command = alphaOfficeInstallCommand(connector.format).map((argument) =>
+      argument === ALPHA_OFFICE_SERVER_SLOT
+        ? serverPath
+        : argument === ALPHA_OFFICE_PYTHON_SLOT
+          ? path.join(alphaResources, "office-runtime", "bin", "python3")
+          : argument,
     )
     const safety = checkAlphaOfficeMcpSafety(name, server, WORKSPACE_MARKER, alphaResources)
     if (!safety.ok) return safety
@@ -83,6 +78,20 @@ function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, un
     return { ok: true, artifactDigest: bundledOfficeServerDigest(serverPath) }
   } catch {
     return { ok: false, reason: `${connector.name} bundled server is unavailable (REQ-133 fail-closed)` }
+  }
+}
+
+/** #1564 AC3: the bundled Office runtime is ready when its `python3` is executable and the shared server
+ *  resolves inside Alpha's resources — the same two paths the write policy puts into the command. */
+export function officeRuntimeReadiness(alphaResourcesRoot: string = resourcesRoot()): OfficeRuntimeReadiness {
+  try {
+    const alphaResources = fs.realpathSync(alphaResourcesRoot)
+    const serverPath = fs.realpathSync(path.join(alphaResources, "office-mcp", "server.py"))
+    if (path.relative(alphaResources, serverPath).startsWith(`..${path.sep}`)) return { ok: false, reason: "office-runtime-missing" }
+    fs.accessSync(path.join(alphaResources, "office-runtime", "bin", "python3"), fs.constants.X_OK)
+    return { ok: true }
+  } catch {
+    return { ok: false, reason: "office-runtime-missing" }
   }
 }
 

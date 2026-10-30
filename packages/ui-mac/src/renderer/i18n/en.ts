@@ -356,6 +356,7 @@ export const dict = {
   "alpha.ext.sourceAlpha": "By Code Puppy",
   "alpha.ext.agentSelf": "Self-authored",
   "alpha.ext.runtimeMissing": "Install {{tool}} first",
+  "alpha.ext.officeRuntimeMissing": "The document runtime that comes with Code Puppy is missing or incomplete. Reinstall Code Puppy.",
   "alpha.ext.comingSoon": "Coming soon",
   "alpha.ext.installFailed": "Installation did not complete. Try again.",
   "alpha.ext.loading": "Loading…",
@@ -810,6 +811,7 @@ export const dict = {
   "alpha.ext.detailMode": "Mode",
   "alpha.ext.noSecrets": "No keys required",
   "alpha.ext.noRuntimeDeps": "No additional runtime programs required",
+  "alpha.ext.officeRuntime": "Document runtime included with Code Puppy",
   "alpha.ext.playwrightRuntimeNote":
     "By default, this uses Chrome already installed on your computer, with no browser download on first use. If Chrome is not installed, or you choose Chromium, about 268 MB is downloaded from cdn.playwright.dev on first use. If the download or startup fails, check your network connection and browser installation, then retry. Restricted networks or networks in China may affect the download.",
   "alpha.ext.skillNoAsset": "This version does not include the skill's content, so it cannot currently be installed.",

@@ -339,7 +339,10 @@ describe("REQ-233 cloud skill instructions", () => {
       "the file stays on this machine, with no cloud charge",
       "also when the user asks for the cloud: say it is no longer offered and do the job with the local tools",
       "write what the connector supports, say plainly which parts are missing, and offer a local script (below) for those parts with the user's consent",
+      // #1564:运行环境随应用自带 —— 不让模型告诉用户去装 uv 或等第一次下载。
+      "run on a Python runtime and pinned libraries that ship inside Code Puppy",
     ]) expect(text).toContain(instruction)
     expect(text).not.toContain("Load `cloud-capabilities`")
+    expect(text).not.toMatch(/`uv`|first run may download/)
   })
 })

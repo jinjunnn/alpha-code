@@ -165,6 +165,8 @@ const EXTENSION_REASON_KEYS: Record<string, Parameters<typeof t>[0]> = {
   "not an MCP entry": "alpha.ext.error.notConnector",
   "installed-disabled": "alpha.ext.error.installedDisabled",
   "connect-failed": "alpha.ext.error.connectFailed",
+  // #1564 AC3:四个第一方 Office 条目的随包运行时缺失(具名原因 + 「重新安装 Code Puppy」)。
+  "office-runtime-missing": "alpha.ext.officeRuntimeMissing",
   "slow": "alpha.ext.error.connecting",
   "mcp.add failed": "alpha.ext.error.connectSettings",
   "名称只能含字母数字 . _ -(1-64 位)": "alpha.ext.error.invalidName",

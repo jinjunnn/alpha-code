@@ -41,6 +41,7 @@ describe("IPC 参数必须 unwrap(REQ-016 真机批回归锁)", () => {
 import {
   catalogInstallTargetFor,
   DEFAULT_CATALOG_INSTALL_SCOPE,
+  mcpRepair,
   sdkMcpStatusForReceipt,
   nameOnlyLiveMcpIsUnambiguousGlobal,
   projectMcpStatusView,
@@ -211,5 +212,26 @@ describe("REQ-136 project MCP activation projection", () => {
       ]),
     ).toBeUndefined()
     expect(projectReceiptResponseForRoute(undefined, undefined, [projectReceipt])).toEqual([])
+  })
+})
+
+// ── #1564 AC6:随包文档运行环境不在时,已安装行给的修复动作是「重新安装 Code Puppy」──────────────────────
+// 样本 = 引擎 `MCP.Status` 的 failed 臂(packages/opencode/src/mcp/index.ts localFailure:Node spawn 的 ENOENT 消息 + code)。
+describe("mcpRepair(#1564 AC6)", () => {
+  const missingInterpreter = {
+    status: "failed",
+    error: "spawn /Applications/Code Puppy.app/Contents/Resources/office-runtime/bin/python3 ENOENT",
+    code: "dependency_missing",
+  }
+
+  test("a first-party Office tool whose bundled interpreter is missing ⇒ reinstall Code Puppy", () => {
+    for (const name of ["alpha-word", "alpha-excel", "alpha-powerpoint", "alpha-pdf"]) expect(mcpRepair(name, missingInterpreter)).toBe("reinstall-app")
+  })
+
+  test("other failures, other states, and third-party connectors get no reinstall action", () => {
+    expect(mcpRepair("my-tool", missingInterpreter)).toBeUndefined()
+    expect(mcpRepair("alpha-word", { ...missingInterpreter, code: "handshake_timeout" })).toBeUndefined()
+    expect(mcpRepair("alpha-word", { status: "pending", error: missingInterpreter.error })).toBeUndefined()
+    expect(mcpRepair("alpha-word", { status: "connected" })).toBeUndefined()
   })
 })

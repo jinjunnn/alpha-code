@@ -28,6 +28,8 @@ import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import { isExtensionName } from "../shared/extension-name"
 import {
+  ALPHA_OFFICE_CONNECTORS,
+  alphaOfficeInstallCommand,
   isAlphaOfficeMcp,
   isWorkspacePolicyMcp,
   retiredCommunityOfficeFor,
@@ -455,6 +457,7 @@ export function deriveMcpConfig(
   spec: McpInstallSpec,
   grants: InstallGrants,
   alphaResources = resourcesRoot(),
+  catalogId?: string,
 ): { ok: true; config: Record<string, unknown>; secretVars: string[] } | { ok: false; reason: string } {
   const declared = new Set(spec.requiredEnvVars ?? [])
   for (const k of Object.keys(grants.secrets ?? {})) {
@@ -469,6 +472,10 @@ export function deriveMcpConfig(
     if (/\{(file|env):/.test(v)) return { ok: false, reason: `grant "${k}" contains config substitution syntax ({file:}/{env:}) — refused` }
   }
   const subst: Record<string, string> = { ...(grants.env ?? {}), ...(grants.secrets ?? {}) }
+  // #1564:四个第一方 Office 条目的命令只由 main 模板产生 —— 卡片上的命令(今天的 uv 形态、清理后的新形态或
+  // 干脆没有)不校验也不消费,中国镜像 env 也不加(随包运行时不下载任何东西)。写策略随后把两个资源槽解析成本 bundle。
+  const office = ALPHA_OFFICE_CONNECTORS.find((connector) => connector.catalogId === catalogId)
+  if (office) return { ok: true, config: { type: "local", command: alphaOfficeInstallCommand(office.format) }, secretVars: [] }
   if (spec.mcpType === "remote") {
     if (typeof spec.url !== "string" || !spec.url) return { ok: false, reason: "catalog entry has no url" }
     let headers: Record<string, string> | undefined
@@ -932,7 +939,7 @@ async function classifyBundleChild(
     // (jinjunnn/alpha-code#823)。
     if ((spec.requiredEnvVars?.length ?? 0) > 0)
       return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
-    const derived = deriveMcpConfig(spec, {})
+    const derived = deriveMcpConfig(spec, {}, undefined, entry.id)
     if (!derived.ok) return { status: "skip", id, reason: `MCP needs grants not supported in bundle: ${derived.reason}` }
     if (derived.secretVars.length > 0)
       return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
@@ -1278,7 +1285,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         return mcpTruth
       }
     }
-    const derived = deriveMcpConfig(spec, grants)
+    const derived = deriveMcpConfig(spec, grants, undefined, entry.id)
     if (!derived.ok) {
       rollback(derived.reason)
       return derived
@@ -2400,7 +2407,7 @@ async function installSeedMcp(args: {
     rollback("workspace-policy MCP")
     return { ok: false, reason: "workspace-policy MCP is not seed-installable (managed workspace is outside the config-action boundary) — refused" }
   }
-  const derived = deriveMcpConfig(spec, {})
+  const derived = deriveMcpConfig(spec, {}, undefined, entry.id)
   if (!derived.ok) {
     rollback(derived.reason)
     return derived

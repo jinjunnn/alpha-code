@@ -16,7 +16,7 @@ import { extensionError, catalogDescription, iconFor, iconForRow, PackageLogo, s
 import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
-import { officeAdvisoryFor, retiredCommunityOfficeFor, type OfficeAdvisory } from "../../shared/office-advisories"
+import { isAlphaOfficeCatalogId, officeAdvisoryFor, retiredCommunityOfficeFor, type OfficeAdvisory } from "../../shared/office-advisories"
 import { receiptArtifactFacts } from "../../shared/receipt-artifact-facts"
 // #397 PR-B:策展呈现(签名摘要真源;curated 整段切换,uncurated 走旧真源,两真源不混排)。
 import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchived, isExpired, isSessionGrant } from "./ext-curation-view"
@@ -607,9 +607,14 @@ export function ExtensionDetail(props: {
   // REQ-019 T4:进详情页即实时 which 检测运行时依赖(复用 ext.checkRuntime),不再等点「添加」
   // 才发现缺依赖;缺失的给安装指引。source 串上 entry id,切换条目即重测。
   // #397:curated 条目的依赖供集改读甄选摘要(需要什么 = 签名真源;有没有 = 本地 which 实测)。
+  // #1564 AC3:四个第一方 Office 条目的运行环境随应用自带 —— 读 main 的随包运行时事实,不读卡片 / 甄选
+  // 摘要里的 runtimeDep(uv)。
+  const officeEntry = createMemo(() => isAlphaOfficeCatalogId(entry()?.id))
+  const [officeRuntime] = createResource(() => (officeEntry() ? entry()!.id : undefined), () => extIpc.officeRuntime())
+  const officeRuntimeState = () => (officeRuntime.loading || !officeRuntime() ? "checking" : officeRuntime()!.ok ? "ok" : "missing")
   const runtimeDepList = createMemo((): string[] => {
     const e = entry()
-    if (!e) return []
+    if (!e || officeEntry()) return []
     const c = curated()
     if (c) return c.summaries.runtimeDependencies
     return mcpSpec(e)?.runtimeDep ?? []
@@ -1417,7 +1422,21 @@ export function ExtensionDetail(props: {
           {/* #397:curated 供集 = 甄选摘要(需要什么);✓/✗ 仍是本地 which 实测(有没有)。 */}
           <Show
             when={runtimeDepList().length > 0}
-            fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noRuntimeDeps")}</p>}
+            fallback={
+              <Show when={officeEntry()} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noRuntimeDeps")}</p>}>
+                <div class="alpha-ext-dpills">
+                  <span class="alpha-ext-meta" data-dep={officeRuntimeState()}>
+                    {t("alpha.ext.officeRuntime")}
+                    {officeRuntimeState() === "checking" ? ` · ${t("alpha.ext.depChecking")}` : officeRuntimeState() === "ok" ? " ✓" : ` ✗ ${t("alpha.ext.depMissing")}`}
+                  </span>
+                </div>
+                <Show when={officeRuntimeState() === "missing"}>
+                  <div class="alpha-ext-verify-note">
+                    <p>{t("alpha.ext.officeRuntimeMissing")}</p>
+                  </div>
+                </Show>
+              </Show>
+            }
           >
             <div class="alpha-ext-dpills">
               <For each={runtimeDepList()}>

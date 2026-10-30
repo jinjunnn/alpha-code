@@ -95,22 +95,12 @@ describe("REQ-133 Alpha Office connector registry and stdio safety", () => {
       "mcp:alpha-powerpoint",
       "mcp:alpha-pdf",
     ])
-    expect(alphaOfficeInstallCommand("word")).toEqual([
-      "uv", "run", "--no-project", "--with", "python-docx==1.2.0",
-      "{alphaResources}/office-mcp/server.py", "word", "{workspace}",
-    ])
-    expect(alphaOfficeInstallCommand("excel")).toEqual([
-      "uv", "run", "--no-project", "--with", "openpyxl==3.1.5",
-      "{alphaResources}/office-mcp/server.py", "excel", "{workspace}",
-    ])
-    expect(alphaOfficeInstallCommand("powerpoint")).toEqual([
-      "uv", "run", "--no-project", "--with", "python-pptx==1.0.2",
-      "{alphaResources}/office-mcp/server.py", "powerpoint", "{workspace}",
-    ])
-    expect(alphaOfficeInstallCommand("pdf")).toEqual([
-      "uv", "run", "--no-project", "--with", "pypdf==6.16.1", "--with", "reportlab==5.0.0",
-      "{alphaResources}/office-mcp/server.py", "pdf", "{workspace}",
-    ])
+    // #1564 AC1:随包解释器(isolated、不写字节码)+ 随包 server,没有 uv、没有首次下载;四种格式只差格式名。
+    for (const format of ["word", "excel", "powerpoint", "pdf"] as const)
+      expect(alphaOfficeInstallCommand(format)).toEqual([
+        "{alphaResources}/office-runtime/bin/python3", "-I", "-B",
+        "{alphaResources}/office-mcp/server.py", format, "{workspace}",
+      ])
   })
 
   test("all four exact local commands pass and share the workspace-policy registry", () => {
@@ -150,6 +140,9 @@ describe("REQ-133 Alpha Office connector registry and stdio safety", () => {
       ).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { MCP_TRANSPORT: "sse" } }, workspace, resources).ok).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { PYTHONPATH: "/tmp/inject" } }, workspace, resources).ok).toBe(false)
+      // #1564:随包运行时不下载任何东西,uv 时代的包索引变量不再放行。
+      for (const key of ["UV_DEFAULT_INDEX", "PIP_INDEX_URL"])
+        expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { [key]: "https://pypi.tuna.tsinghua.edu.cn/simple" } }, workspace, resources).ok).toBe(false)
     }
   })
 })

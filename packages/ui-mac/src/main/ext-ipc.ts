@@ -22,7 +22,7 @@ import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersion
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { assertProjectMcpTransactionRootIdentity, assertProjectRecoveryJournalAlgebra, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
-import { applyMcpWritePolicy } from "./ext-mcp-policy"
+import { applyMcpWritePolicy, officeRuntimeReadiness } from "./ext-mcp-policy"
 import { probeProjectMcpActivation } from "./ext-mcp-activation"
 import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, removeFsInstallFilesOnly, resourcesRoot } from "./ext-fs-installer"
@@ -178,6 +178,8 @@ export function registerExtIpcHandlers(
   // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
   ipcMain.handle("ext-config-health", () => configHealth())
   ipcMain.handle("ext-check-runtime", (_event: IpcMainInvokeEvent, tool: string) => checkRuntime(tool))
+  // #1564 AC3:四个第一方 Office 条目的准备检查读这条随包运行时事实,不读卡片 runtimeDep(uv)。
+  ipcMain.handle("ext-office-runtime", () => officeRuntimeReadiness())
   // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原
   // ext-write-skill / ext-write-agent 渲染层通道随之下线。#390 起未策展导入(folder/git 技能 +
   // imported agent)也改走 planner 的 CAS 事务(installUncuratedSkillImport/installUncuratedAgentImport);

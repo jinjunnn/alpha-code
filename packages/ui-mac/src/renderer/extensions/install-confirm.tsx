@@ -18,6 +18,7 @@ import { projectLabel } from "../sidebar/route"
 import { Button } from "../alpha-ui/Button"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
+import { isAlphaOfficeCatalogId } from "../../shared/office-advisories"
 import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
 import { packageSkipReasonKey } from "./ext-package-presentation"
 import { catalog } from "./catalog-source"
@@ -258,8 +259,10 @@ export function createInstallConfirm(deps: InstallConfirmDeps) {
 
 export type InstallConfirm = ReturnType<typeof createInstallConfirm>
 
-// Pre-install disclosure for the confirm dialog.
+// Pre-install disclosure for the confirm dialog. #1564: the four first-party Office tools bring their own
+// runtime, so the card's leftover runtimeDep (uv) is not a program the user has to install.
 function runtimeDeps(e: CatalogEntry): string {
+  if (isAlphaOfficeCatalogId(e.id)) return ""
   const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
   return (spec?.runtimeDep ?? []).join(", ")
 }

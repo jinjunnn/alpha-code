@@ -1,0 +1,41 @@
+{
+  "_note": "#1564 bundled Office runtime. python = python-build-standalone CPython (URL + sha256 from the release's SHA256SUMS); requires = each locked distribution's Requires-Dist from its installed METADATA, markers evaluated for this CPython on macOS. build-office-runtime.ts re-reads the installed METADATA and refuses to build when requires disagrees; office-runtime-lock.test.ts checks both requirements-<arch>.lock files against it.",
+  "python": {
+    "version": "3.11.15",
+    "release": "20260310",
+    "arm64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260310/cpython-3.11.15%2B20260310-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "96842b1451580427d724500306f39466941f9cba2fc03a1de6f27016d899a764"
+    },
+    "x64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260310/cpython-3.11.15%2B20260310-x86_64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "9674ed8ff7e1db355b96dd1a1db6a4e66e03621b2f560de9e69b1d0fa5d2420a"
+    }
+  },
+  "requires": {
+    "charset-normalizer": [],
+    "et-xmlfile": [],
+    "lxml": [],
+    "openpyxl": [
+      "et-xmlfile"
+    ],
+    "pillow": [],
+    "pypdf": [],
+    "python-docx": [
+      "lxml",
+      "typing-extensions"
+    ],
+    "python-pptx": [
+      "lxml",
+      "pillow",
+      "typing-extensions",
+      "xlsxwriter"
+    ],
+    "reportlab": [
+      "charset-normalizer",
+      "pillow"
+    ],
+    "typing-extensions": [],
+    "xlsxwriter": []
+  }
+}

@@ -4,6 +4,8 @@
 // `/Applications/alpha-code.app/...`(已不存在),dev 根空账本 + 171 字节无 `mcp` 键的 alpha.jsonc。
 // 「当前 bundle」= 本仓 `resources/office-mcp/server.py` 的 realpath(bun 下 resourcesRoot() 的真值,
 // 与 applyMcpWritePolicy 解析到的同一个文件 —— 不注入假路径,判的就是生产那条 canonical 化)。
+// #1564:那四条记录的命令是 uv 形态(`uv run --no-project --with <钉版> <server> <格式> {workspace}`,timeout 5000,
+// 方案 req236-engine-lifecycle.md §1.3 实读的 owner 本机配置);启动时迁成随包运行时的 main 模板并去掉 timeout。
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -11,7 +13,7 @@ import { join, resolve } from "node:path"
 import { parse } from "jsonc-parser"
 import { ALPHA_OFFICE_CONNECTORS, WORKSPACE_MARKER, alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/office-advisories"
 import { siblingEnvironmentRoots } from "./alpha-environment"
-import { reanchorOfficeCommand, reconcileAlphaOfficeInstalls } from "./alpha-office-instance"
+import { migrateLegacyOfficeCommand, reanchorOfficeCommand, reconcileAlphaOfficeInstalls } from "./alpha-office-instance"
 import { readCapabilityGrant, writeCapabilityGrantSync } from "./ext-capability-grants"
 import { collectInventory } from "./ext-inventory"
 import { bundledOfficeServerDigest } from "./ext-mcp-policy"
@@ -19,6 +21,13 @@ import { readLedgerV2, upsertRecordV2 } from "./ext-receipt-v2"
 
 const STALE_SERVER = "/Applications/alpha-code.app/Contents/Resources/office-mcp/server.py"
 const CURRENT_SERVER = realpathSync(resolve(import.meta.dir, "../../resources/office-mcp/server.py"))
+/** owner 本机 2026-09-04 配置里的 uv 钉版(#1564 之前 catalog 卡片与安装记录的命令)。 */
+const LEGACY_PINS: Record<AlphaOfficeFormat, string[]> = {
+  word: ["python-docx==1.2.0"],
+  excel: ["openpyxl==3.1.5"],
+  powerpoint: ["python-pptx==1.0.2"],
+  pdf: ["pypdf==6.16.1", "reportlab==5.0.0"],
+}
 const DEV_CONFIG = `{
   "$schema": "https://opencode.ai/config.json",
   "skills": {
@@ -55,16 +64,25 @@ function base() {
   return { dir, prod, beta, dev }
 }
 
+/** main 模板(#1564):解释器与 server 在同一个资源根下。 */
 function officeCommand(format: AlphaOfficeFormat, server: string, workspace: string = WORKSPACE_MARKER) {
+  const resources = server.slice(0, -"/office-mcp/server.py".length)
   return alphaOfficeInstallCommand(format).map((argument) => {
+    if (argument === "{alphaResources}/office-runtime/bin/python3") return join(resources, "office-runtime", "bin", "python3")
     if (argument === "{alphaResources}/office-mcp/server.py") return server
     if (argument === WORKSPACE_MARKER) return workspace
     return argument
   })
 }
 
+/** 迁移前已安装条目的 uv 形态命令(owner 本机实读样本)。 */
+function legacyCommand(format: AlphaOfficeFormat, server: string, workspace: string = WORKSPACE_MARKER) {
+  return ["uv", "run", "--no-project", ...LEGACY_PINS[format].flatMap((pin) => ["--with", pin]), server, format, workspace]
+}
+
+/** owner 本机 alpha.jsonc 里那四片叶子的形状:uv 命令 + 旧启动补写的 timeout 5000。 */
 function leaf(format: AlphaOfficeFormat, server: string, workspace?: string) {
-  return { type: "local", command: officeCommand(format, server, workspace), timeout: 5000 }
+  return { type: "local", command: legacyCommand(format, server, workspace), timeout: 5000 }
 }
 
 /** 按生产写器写一条 committed catalog 记录(形状 = owner 本机 prod installs.json 的那四条)。 */
@@ -173,12 +191,41 @@ describe("siblingEnvironmentRoots", () => {
   })
 })
 
+describe("migrateLegacyOfficeCommand(#1564 AC4)", () => {
+  test("the exact uv-era command of every format becomes main's bundled-runtime template with the {workspace} marker", () => {
+    for (const connector of ALPHA_OFFICE_CONNECTORS) {
+      for (const server of [STALE_SERVER, CURRENT_SERVER])
+        for (const workspace of [WORKSPACE_MARKER, "/Users/example/project"])
+          expect(migrateLegacyOfficeCommand(connector.format, legacyCommand(connector.format, server, workspace), CURRENT_SERVER)).toEqual(
+            officeCommand(connector.format, CURRENT_SERVER),
+          )
+    }
+    // 命令头是当前资源根下的随包解释器(isolated、不写字节码),不是 uv。
+    expect(migrateLegacyOfficeCommand("word", legacyCommand("word", STALE_SERVER), CURRENT_SERVER)!.slice(0, 4)).toEqual([
+      join(realpathSync(resolve(import.meta.dir, "../../resources")), "office-runtime", "bin", "python3"),
+      "-I",
+      "-B",
+      CURRENT_SERVER,
+    ])
+  })
+
+  test("main-template, drifted-pin, extra-argv, relative and cross-format commands are not migrated", () => {
+    expect(migrateLegacyOfficeCommand("word", officeCommand("word", STALE_SERVER), CURRENT_SERVER)).toBeNull()
+    expect(migrateLegacyOfficeCommand("excel", ["uv", "run", "--no-project", "--with", "openpyxl==9.9.9", STALE_SERVER, "excel", WORKSPACE_MARKER], CURRENT_SERVER)).toBeNull()
+    expect(migrateLegacyOfficeCommand("word", [...legacyCommand("word", STALE_SERVER), "--extra"], CURRENT_SERVER)).toBeNull()
+    expect(migrateLegacyOfficeCommand("word", legacyCommand("word", "relative/office-mcp/server.py"), CURRENT_SERVER)).toBeNull()
+    expect(migrateLegacyOfficeCommand("word", legacyCommand("excel", STALE_SERVER), CURRENT_SERVER)).toBeNull()
+    expect(migrateLegacyOfficeCommand("word", "not-an-array", CURRENT_SERVER)).toBeNull()
+  })
+})
+
 describe("reanchorOfficeCommand", () => {
-  test("rewrites only the server slot of an exact template whose server names another bundle", () => {
+  test("rewrites the interpreter and server slots of a main-template command that names another bundle", () => {
     for (const connector of ALPHA_OFFICE_CONNECTORS) {
       const stale = officeCommand(connector.format, STALE_SERVER)
+      expect(stale[0]).toBe("/Applications/alpha-code.app/Contents/Resources/office-runtime/bin/python3")
       expect(reanchorOfficeCommand(connector.format, stale, CURRENT_SERVER)).toEqual(officeCommand(connector.format, CURRENT_SERVER))
-      // 遗留具体 workspace 路径也放行 —— 只改 server 槽,workspace 槽留给 marker reconcile。
+      // 遗留具体 workspace 路径也放行 —— 只改资源槽,workspace 槽原样。
       const legacyWorkspace = officeCommand(connector.format, STALE_SERVER, "/Users/example/project")
       expect(reanchorOfficeCommand(connector.format, legacyWorkspace, CURRENT_SERVER)).toEqual(
         officeCommand(connector.format, CURRENT_SERVER, "/Users/example/project"),
@@ -186,9 +233,10 @@ describe("reanchorOfficeCommand", () => {
     }
   })
 
-  test("leaves already-anchored, drifted, relative and non-server commands untouched", () => {
+  test("leaves already-anchored, uv-era, drifted, relative and non-server commands untouched", () => {
     const anchored = officeCommand("word", CURRENT_SERVER)
     expect(reanchorOfficeCommand("word", anchored, CURRENT_SERVER)).toBeNull()
+    expect(reanchorOfficeCommand("word", legacyCommand("word", STALE_SERVER), CURRENT_SERVER)).toBeNull()
     expect(reanchorOfficeCommand("word", [...officeCommand("word", STALE_SERVER), "--extra"], CURRENT_SERVER)).toBeNull()
     expect(reanchorOfficeCommand("word", officeCommand("word", "relative/office-mcp/server.py"), CURRENT_SERVER)).toBeNull()
     expect(reanchorOfficeCommand("word", officeCommand("word", "/somewhere/else/not-the-server.py"), CURRENT_SERVER)).toBeNull()
@@ -209,6 +257,7 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
 
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
     expect(outcome.warnings).toEqual([])
+    expect(outcome.migrated).toEqual([])
     expect(outcome.reanchored).toEqual([])
     expect(outcome.adopted).toEqual(ALPHA_OFFICE_CONNECTORS.map((connector) => connector.name))
 
@@ -223,7 +272,8 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     )
     for (const row of after.rows) expect(row.granted?.capabilities).toEqual(["engine:config", "process:spawn"])
 
-    // 配置叶子:当前 bundle 的 canonical server + {workspace} 标记 + 照抄的 timeout;其它键保留。
+    // 配置叶子:当前 bundle 的 main 模板(随包解释器 + canonical server + {workspace} 标记);uv 形态的 timeout
+    // 不照抄(#1564 AC4);其它键保留。
     const config = readConfig(dev)
     expect(config.$schema).toBe("https://opencode.ai/config.json")
     expect(config.skills).toEqual({ paths: ["/Users/example/Library/Application Support/alpha-code-state/env/dev/skills"] })
@@ -231,7 +281,7 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
       const entry = config.mcp![connector.name]!
       expect(entry.type).toBe("local")
       expect(entry.command).toEqual(officeCommand(connector.format, CURRENT_SERVER))
-      expect(entry.timeout).toBe(5000)
+      expect(entry.timeout).toBeUndefined()
       expect(entry.enabled).toBeUndefined()
     }
 
@@ -266,7 +316,7 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     run(dev, "dev", [{ environment: "prod", root: prod }])
     const afterFirst = snapshot(dev)
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
-    expect(outcome).toEqual({ reanchored: [], adopted: [], warnings: [] })
+    expect(outcome).toEqual({ migrated: [], reanchored: [], adopted: [], warnings: [] })
     expect(snapshot(dev)).toEqual(afterFirst)
   })
 
@@ -288,7 +338,7 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     seedProdLikeRoot(prod)
     seedEmptyDevRoot(dev)
     const own = installRecord(dev, ALPHA_OFFICE_CONNECTORS[0], "dev", { txId: "tx-dev-own", desiredState: "disabled" })
-    writeConfig(dev, { "alpha-word": { ...leaf("word", CURRENT_SERVER), enabled: false } })
+    writeConfig(dev, { "alpha-word": { type: "local", command: officeCommand("word", CURRENT_SERVER), enabled: false } })
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
     expect(outcome.adopted).toEqual(["alpha-excel", "alpha-powerpoint", "alpha-pdf"])
     const record = readLedgerV2(dev).records.find((entry) => entry.name === "alpha-word")
@@ -425,13 +475,58 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
   })
 })
 
+describe("reconcileAlphaOfficeInstalls — migrate uv-era entries in the current root (#1564 AC4)", () => {
+  for (const server of [STALE_SERVER, CURRENT_SERVER]) {
+    test(`uv-era leaves (${server === STALE_SERVER ? "stale" : "current"} bundle) become main's template, lose the 5 s timeout, and a second boot changes nothing`, () => {
+      const { prod, dev } = base()
+      seedProdLikeRoot(prod, "prod", server)
+      const custom = { type: "local", command: ["uv", "run", "--with", "python-docx==1.2.0", "/Users/example/custom/server.py"], timeout: 5000 }
+      const config = readConfig(prod)
+      config.mcp!.custom = custom as never
+      writeFileSync(join(prod, "alpha.jsonc"), `// retained comment\n${JSON.stringify(config, null, 2)}\n`)
+      const ledgerBefore = readFileSync(join(prod, "installs.json"), "utf8")
+
+      const { outcome, logged } = run(prod, "prod", [{ environment: "dev", root: dev }])
+      expect(outcome).toEqual({ migrated: ALPHA_OFFICE_CONNECTORS.map((connector) => connector.name), reanchored: [], adopted: [], warnings: [] })
+      expect(logged.some((line) => line.includes("#1564 migrated alpha-word, alpha-excel, alpha-powerpoint, alpha-pdf"))).toBe(true)
+      const after = readConfig(prod)
+      for (const connector of ALPHA_OFFICE_CONNECTORS) {
+        expect(after.mcp![connector.name]).toEqual({ type: "local", command: officeCommand(connector.format, CURRENT_SERVER) })
+        expect(after.mcp![connector.name]!.command.includes("uv")).toBe(false)
+      }
+      expect(after.mcp!.custom).toEqual(custom as never)
+      expect(readFileSync(join(prod, "alpha.jsonc"), "utf8").startsWith("// retained comment\n")).toBe(true)
+      expect(readFileSync(join(prod, "installs.json"), "utf8")).toBe(ledgerBefore)
+
+      const migratedText = snapshot(prod)
+      const again = run(prod, "prod", [{ environment: "dev", root: dev }])
+      expect(again.outcome).toEqual({ migrated: [], reanchored: [], adopted: [], warnings: [] })
+      expect(snapshot(prod)).toEqual(migratedText)
+    })
+  }
+
+  test("a drifted uv-era leaf stays byte-for-byte (only the exact shipped command is migrated)", () => {
+    const { prod, dev } = base()
+    seedProdLikeRoot(prod)
+    const config = readConfig(prod)
+    const drifted = { type: "local", command: ["uv", "run", "--no-project", "--with", "openpyxl==9.9.9", STALE_SERVER, "excel", WORKSPACE_MARKER], timeout: 5000 }
+    config.mcp!["alpha-excel"] = drifted as never
+    writeFileSync(join(prod, "alpha.jsonc"), JSON.stringify(config, null, 2))
+    const { outcome } = run(prod, "prod", [{ environment: "dev", root: dev }])
+    expect(outcome.migrated).toEqual(["alpha-word", "alpha-powerpoint", "alpha-pdf"])
+    expect(readConfig(prod).mcp!["alpha-excel"]).toEqual(drifted as never)
+  })
+})
+
 describe("reconcileAlphaOfficeInstalls — re-anchor a stale bundle path in the current root", () => {
-  test("rewrites the four stale server slots to the current bundle and leaves everything else byte-for-byte", () => {
+  test("rewrites the four stale interpreter and server slots to the current bundle and leaves everything else byte-for-byte", () => {
     const { prod, dev } = base()
     seedProdLikeRoot(prod)
     const custom = { type: "local", command: ["node", "/Users/example/custom/server.js", "/Applications/alpha-code.app/Contents/Resources/office-mcp/server.py"] }
     const filesystem = { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "/Users/example/project"] }
     const config = readConfig(prod)
+    for (const connector of ALPHA_OFFICE_CONNECTORS)
+      config.mcp![connector.name] = { type: "local", command: officeCommand(connector.format, STALE_SERVER), environment: { PIP_INDEX_URL: "https://example.invalid/simple" } } as never
     config.mcp!.custom = custom as never
     config.mcp!.filesystem = filesystem as never
     writeFileSync(join(prod, "alpha.jsonc"), `// retained comment\n${JSON.stringify(config, null, 2)}\n`)
@@ -440,12 +535,13 @@ describe("reconcileAlphaOfficeInstalls — re-anchor a stale bundle path in the 
     const { outcome } = run(prod, "prod", [{ environment: "dev", root: dev }])
     expect(outcome.warnings).toEqual([])
     expect(outcome.adopted).toEqual([])
+    expect(outcome.migrated).toEqual([])
     expect(outcome.reanchored).toEqual(ALPHA_OFFICE_CONNECTORS.map((connector) => connector.name))
 
     const after = readConfig(prod)
     for (const connector of ALPHA_OFFICE_CONNECTORS) {
       expect(after.mcp![connector.name]!.command).toEqual(officeCommand(connector.format, CURRENT_SERVER))
-      expect(after.mcp![connector.name]!.timeout).toBe(5000)
+      expect((after.mcp![connector.name] as unknown as { environment: unknown }).environment).toEqual({ PIP_INDEX_URL: "https://example.invalid/simple" })
     }
     expect(after.mcp!.custom).toEqual(custom as never)
     expect(after.mcp!.filesystem).toEqual(filesystem as never)
@@ -454,7 +550,7 @@ describe("reconcileAlphaOfficeInstalls — re-anchor a stale bundle path in the 
     expect(collectInventory({ catalog: null, globalRoot: prod }).rows.map((row) => row.activation)).toEqual(["enabled", "enabled", "enabled", "enabled"])
 
     const again = run(prod, "prod", [{ environment: "dev", root: dev }])
-    expect(again.outcome).toEqual({ reanchored: [], adopted: [], warnings: [] })
+    expect(again.outcome).toEqual({ migrated: [], reanchored: [], adopted: [], warnings: [] })
   })
 
   test("a leaf without a record in the current root is not re-anchored (ownership is the ledger's)", () => {

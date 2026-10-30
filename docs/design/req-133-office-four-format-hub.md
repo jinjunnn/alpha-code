@@ -53,7 +53,17 @@ The catalog ids, server names, tools, pins, and exact command arrays are one map
 | PowerPoint | `mcp:alpha-powerpoint` / `alpha-powerpoint` | `read_pptx`, `write_pptx` via `python-pptx==1.0.2`               | `["uv","run","--no-project","--with","python-pptx==1.0.2","{alphaResources}/office-mcp/server.py","powerpoint","{workspace}"]`                 |
 | PDF        | `mcp:alpha-pdf` / `alpha-pdf`               | `read_pdf`, `write_pdf` via `pypdf==6.16.1` + `reportlab==5.0.0` | `["uv","run","--no-project","--with","pypdf==6.16.1","--with","reportlab==5.0.0","{alphaResources}/office-mcp/server.py","pdf","{workspace}"]` |
 
-These are the exact commands the alpha-web catalog cards should copy. Each card is independently
+> **Superseded command shape (2026-10-30, [alpha-code#1564](https://github.com/jinjunnn/alpha-code/issues/1564)).**
+> The `uv run --with …` arrays above are no longer what runs. The four entries now persist only main's
+> template `["{alphaResources}/office-runtime/bin/python3","-I","-B","{alphaResources}/office-mcp/server.py",<format>,"{workspace}"]`,
+> backed by an app-bundled Python runtime whose five top-level packages (the pins above) and their full
+> dependency closure are hash-locked in `packages/ui-mac/resources/office-runtime/`. Card command tokens and
+> `runtimeDep` are not consumed for these ids; installed uv-era entries are migrated at boot. Design:
+> [req236-engine-lifecycle.md §2.4](req236-engine-lifecycle.md); build and size:
+> [distribution runbook](../runbooks/distribution.md#随包-office-运行时1564). The table is kept as the historical record.
+
+These were the exact commands the alpha-web catalog cards copied until #1564; the desktop no longer reads or
+validates a card's command for these four ids (a card may keep, update or drop it). Each card is independently
 installable. A bundle may reference them later, but phase-one atomic bundle/seed installation cannot
 install workspace-policy members and therefore rejects these commands rather than bypassing their
 sandbox contract. The former community Excel coexistence allowance is superseded by

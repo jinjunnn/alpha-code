@@ -172,6 +172,37 @@ it.instance("AC2: a missing working directory and a missing command fail with th
   }),
 )
 
+// #1564 AC6:文档工具随包的解释器不在(包被删改)⇒ 只是这台服务 failed / dependency_missing,不在后台反复重启它。
+// 判据:事后把那个路径补上(一个会记下自己被启动的脚本),推过 30 s / 60 s / 10 min 也一次没被启动;用户重试(装好之后)
+// 才启动并连上 —— 后一半证明「记下启动」这个探针测得到启动。把 localFailure 的 dependency_missing 改成可重连 ⇒ 记录提前出现。
+it.instance(
+  "#1564 AC6: a missing bundled Office interpreter fails as dependency_missing and is not respawned in the background",
+  () =>
+    Effect.gen(function* () {
+      const resources = path.join(scratch, `Code Puppy-${crypto.randomUUID()}.app`, "Contents", "Resources")
+      const python = path.join(resources, "office-runtime", "bin", "python3")
+      const launches = file("bundled-python-launches")
+      const mcp = yield* MCP.Service
+      yield* mcp.add("alpha-word", {
+        type: "local",
+        command: [python, "-I", "-B", path.join(resources, "office-mcp", "server.py"), "word", "{workspace}"],
+        environment: { ALPHA_MCP_STARTUP_LOG: launches },
+      })
+      expect(yield* statusOf("alpha-word")).toMatchObject({ status: "failed", code: "dependency_missing" })
+      fs.mkdirSync(path.dirname(python), { recursive: true })
+      fs.writeFileSync(python, `#!/bin/sh\nexec '${process.execPath}' '${fixture}' "$@"\n`, { mode: 0o755 })
+      for (const step of ["30 seconds", "60 seconds", "10 minutes", "10 minutes"] as const) {
+        yield* TestClock.adjust(step)
+        yield* quiet
+      }
+      expect(fs.existsSync(launches)).toBe(false)
+      expect(yield* statusOf("alpha-word")).toMatchObject({ status: "failed", code: "dependency_missing" })
+      yield* mcp.connect("alpha-word")
+      expect(yield* statusOf("alpha-word")).toEqual({ status: "connected" })
+      expect(fs.readFileSync(launches, "utf8")).toStartWith("+")
+    }).pipe(Effect.provide(TestClock.layer())),
+)
+
 // ── AC3 ──────────────────────────────────────────────────────────────────────────────────────────────────────
 const REMOTE = "http://alpha-1563-reconnect.invalid/mcp"
 const cloud = { type: "remote" as const, url: REMOTE, oauth: false as const, timeout: 5_000 }

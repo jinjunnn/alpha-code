@@ -71,57 +71,59 @@ export type AlphaOfficeFormat = "word" | "excel" | "powerpoint" | "pdf"
 export const WORKSPACE_MARKER = "{workspace}"
 
 /** REQ-133 first-party Office MCP facts. This is the single code-side authority consumed by the
- *  planner, write policy, tests, and factory skill; the signed web catalog remains the card source. */
+ *  planner, write policy, tests, and factory skill; the signed web catalog remains the card source.
+ *  #1564: the Python packages these formats need are pinned once, in resources/office-runtime/
+ *  (requirements.in + per-arch hashed locks), and ship inside the app. */
 export const ALPHA_OFFICE_CONNECTORS = [
   {
     catalogId: "mcp:alpha-word",
     name: "alpha-word",
     format: "word",
     extension: ".docx",
-    dependencies: ["python-docx==1.2.0"],
   },
   {
     catalogId: "mcp:alpha-excel",
     name: "alpha-excel",
     format: "excel",
     extension: ".xlsx",
-    dependencies: ["openpyxl==3.1.5"],
   },
   {
     catalogId: "mcp:alpha-powerpoint",
     name: "alpha-powerpoint",
     format: "powerpoint",
     extension: ".pptx",
-    dependencies: ["python-pptx==1.0.2"],
   },
   {
     catalogId: "mcp:alpha-pdf",
     name: "alpha-pdf",
     format: "pdf",
     extension: ".pdf",
-    dependencies: ["pypdf==6.16.1", "reportlab==5.0.0"],
   },
 ] as const satisfies ReadonlyArray<{
   catalogId: string
   name: string
   format: AlphaOfficeFormat
   extension: string
-  dependencies: readonly string[]
 }>
 
-/** Exact local command copied by each alpha-web catalog card. Main owns both substitutions. */
+/** #1564: the app-bundled interpreter and the shared server, as `{alphaResources}`-relative slots. */
+export const ALPHA_OFFICE_PYTHON_SLOT = "{alphaResources}/office-runtime/bin/python3"
+export const ALPHA_OFFICE_SERVER_SLOT = "{alphaResources}/office-mcp/server.py"
+
+/** The only command the four first-party Office entries run (#1564 AC1): the app-bundled Python in
+ *  isolated mode (`-I`: no user site / PYTHON* env; `-B`: never writes bytecode into the bundle), no uv,
+ *  no first-run download. Main owns both substitutions; catalog card commands are not consumed. */
 export function alphaOfficeInstallCommand(format: AlphaOfficeFormat): string[] {
-  const connector = ALPHA_OFFICE_CONNECTORS.find((candidate) => candidate.format === format)
-  if (!connector) throw new Error(`unknown Alpha Office format: ${format}`)
-  return [
-    "uv",
-    "run",
-    "--no-project",
-    ...connector.dependencies.flatMap((dependency) => ["--with", dependency]),
-    "{alphaResources}/office-mcp/server.py",
-    format,
-    WORKSPACE_MARKER,
-  ]
+  if (!ALPHA_OFFICE_CONNECTORS.some((candidate) => candidate.format === format)) throw new Error(`unknown Alpha Office format: ${format}`)
+  return [ALPHA_OFFICE_PYTHON_SLOT, "-I", "-B", ALPHA_OFFICE_SERVER_SLOT, format, WORKSPACE_MARKER]
+}
+
+/** #1564 AC3: main's fact about the app-bundled Office runtime. Install entry points and the detail page
+ *  read it for the four first-party catalog ids instead of the card's `runtimeDep` (uv). */
+export type OfficeRuntimeReadiness = { ok: true } | { ok: false; reason: "office-runtime-missing" }
+
+export function isAlphaOfficeCatalogId(id: string | undefined): boolean {
+  return ALPHA_OFFICE_CONNECTORS.some((connector) => connector.catalogId === id)
 }
 
 /** 按 catalog id / 安装名匹配 advisory(receipts.id、receipts.name、live MCP server 名都可传)。 */
@@ -145,7 +147,8 @@ export function retiredCommunityOfficeFor(
 export type OfficeSafetyVerdict = { ok: true } | { ok: false; reason: string }
 
 const ALPHA_OFFICE_BANNED_ENV = new Set(["HOST", "PORT", "MCP_HOST", "MCP_PORT", "MCP_TRANSPORT", "FASTMCP_HOST", "FASTMCP_PORT"])
-const ALPHA_OFFICE_ALLOWED_ENV = new Set(["UV_DEFAULT_INDEX", "PIP_INDEX_URL", "npm_config_registry"])
+// #1564: the bundled runtime downloads nothing, so the uv-era package-index variables are no longer allowed.
+const ALPHA_OFFICE_ALLOWED_ENV = new Set(["npm_config_registry"])
 
 function alphaOfficeConnector(name: string, command: readonly string[]) {
   const named = ALPHA_OFFICE_CONNECTORS.find((connector) => connector.name === name)

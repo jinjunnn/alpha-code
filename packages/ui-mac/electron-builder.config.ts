@@ -5,7 +5,7 @@ import { promisify } from "node:util"
 
 import { Arch, type Configuration, type MacOsTargetName } from "electron-builder"
 
-import { assertMacTargetArch, resolveTargetArch } from "./scripts/target-arch"
+import { OFFICE_RUNTIME_BUILD_DIR, assertMacTargetArch, resolveTargetArch } from "./scripts/target-arch"
 
 // REQ-089 AC3: the OS protocol list has exactly one source. The installer metadata that makes a
 // cold-start deep link reach the app at all is derived from the same manifest the runtime
@@ -157,6 +157,14 @@ const getBase = (appId: string): Configuration => ({
             to: "alpha-fence/",
             filter: ["alpha_fence.node"],
           },
+          // #1564:Word/Excel/PowerPoint/PDF 四个文档工具的随包运行时(prebuild 里 scripts/build-office-runtime.ts
+          // 按 resources/office-runtime/ 的两架构 lock 产出,只装目标架构那一份)。落点 <resources>/office-runtime/,
+          // main 模板的命令头就是 <resources>/office-runtime/bin/python3;beforePack 核对它每个 Mach-O 含目标片,
+          // 深签时与其它内嵌二进制同 Team 签名。
+          {
+            from: `${OFFICE_RUNTIME_BUILD_DIR}/${macTargetArch}/`,
+            to: "office-runtime/",
+          },
         ]
       : []),
   ],
@@ -190,7 +198,8 @@ const getBase = (appId: string): Configuration => ({
     target: macTargets(shouldSign ? ["dmg", "zip"] : ["dir"]),
   },
   // #1496:装包前核对 —— 正在打的架构 == 目标架构、out/main 里的 node-pty 包名 == 该架构、
-  // 该架构的原生包(node-pty / @parcel/watcher)在 node_modules 里且每个 Mach-O 都含这一片。
+  // 该架构的原生包(node-pty / @parcel/watcher)在 node_modules 里且每个 Mach-O 都含这一片;
+  // #1564:随包 Office 运行时同样在、且每个 Mach-O 都含这一片。
   // 任一不过即抛,宁可不出包,也不出一个终端打不开的包。
   beforePack: async (context) => {
     if (context.electronPlatformName !== "darwin") return

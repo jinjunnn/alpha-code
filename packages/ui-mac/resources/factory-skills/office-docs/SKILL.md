@@ -37,8 +37,8 @@ You help the user produce and read real office files. All of it runs locally.
 | **Read/write PDF text pages** | `mcp:alpha-pdf` (`read_pdf`, `write_pdf`) | `pypdf` + `reportlab`; replace/generate or append text pages, not layout design |
 | **Broad read/conversion** | markitdown (`convert_to_markdown`) | optional secondary path for formats outside the four focused tools |
 
-All four Alpha connectors run with pinned Python libraries through `uv`; they need no Microsoft
-Office installation. Hub Excel means `mcp:alpha-excel` only. Do not install, recommend, or fall back
+All four Alpha connectors run on a Python runtime and pinned libraries that ship inside Code Puppy;
+they need no Microsoft Office installation and nothing else to install. Hub Excel means `mcp:alpha-excel` only. Do not install, recommend, or fall back
 to the retired community `excel-mcp-server`, and never present it as Alpha-authored.
 
 ## If the tool is not available
@@ -46,7 +46,7 @@ to the retired community `excel-mcp-server`, and never present it as Alpha-autho
 Check your tool list first. If the needed tools are absent:
 
 1. Point the user to **Extension Hub (定制中心) → 连接器 → 办公** and the matching Alpha Word,
-   Excel, PowerPoint, or PDF card (first run may download its pinned Python library).
+   Excel, PowerPoint, or PDF card.
 2. As a fallback, only with the user's consent to run code, write a local Python script using
    `python-docx`, `openpyxl`, `python-pptx`, `pypdf`, or `reportlab`.
 3. Never fake success: if you can neither use a connector nor run code, say exactly that.
