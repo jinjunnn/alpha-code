@@ -1521,15 +1521,20 @@ const layer = Layer.effect(
       }
       template = template.trim()
 
+      // alpha: REQ-236 T24 §2.4(alpha-code#1560,ADR-041 接管清单 prompt.ts 订正)—— 命令模型优先级。
+      // 上游是 cmd.model → cmd.agent.model → input.model → currentModel,用户显式选的模型排在命令/agent
+      // 推荐之后。客户端只在用户显式选择时才带 input.model,所以把它提到最前 = 显式选择说了算,
+      // 推荐模型只作默认;不带 input.model 时与上游逐条相同。
       const taskModel = yield* Effect.gen(function* () {
+        if (input.model) return Provider.parseModel(input.model)
         if (cmd.model) return Provider.parseModel(cmd.model)
         if (cmd.agent) {
           const cmdAgent = yield* agents.get(cmd.agent)
           if (cmdAgent?.model) return cmdAgent.model
         }
-        if (input.model) return Provider.parseModel(input.model)
         return yield* currentModel(input.sessionID)
       })
+      // alpha: end REQ-236 T24 §2.4
 
       yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
 
