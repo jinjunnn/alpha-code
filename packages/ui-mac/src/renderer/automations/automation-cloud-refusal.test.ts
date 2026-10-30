@@ -549,3 +549,294 @@ describe("[#1001] 保存时本机失败给人话", () => {
     runtime.setLocale("zh")
   })
 })
+
+// ── [#1592] 自动化页说清本机与云端(批准稿 docs/design/2026-10-30-req236-ux-config-pages #automation)──────
+
+/** 挂面板、开到「新建」表单(一句话新建);返回前确认表单真的出来了。 */
+async function openCreateForm(text = "每天 9 点检查本项目未处理的 TODO 并生成清单"): Promise<void> {
+  disposers.push(runtime.render(() => runtime.AutomationRefusalHarness(), query<HTMLElement>("#root")))
+  runtime.openPanel()
+  await flush()
+  const nl = query<HTMLInputElement>(".alpha-auto-nl")
+  nl.value = text
+  nl.dispatchEvent(new Event("input", { bubbles: true }))
+  click(query(".alpha-auto-new .alpha-ext-add[data-variant='primary']"))
+  await flush()
+  expect(document.querySelector(".alpha-auto-form") !== null, "表单没出来").toBe(true)
+}
+
+const hasCjk = (text: string) => /[㐀-鿿]/.test(text)
+
+function localTask(id: string): Runtime.ListedTask {
+  return { ...cloudTask(id, "unused"), name: `本机任务 ${id}`, execution: "local", cloudScheduleId: undefined }
+}
+
+describe("#1592 AC1:「用 AI 解析」的结果显示解析出的周期,占位符全是双花括号", () => {
+  test("alpha.auto.* 的占位符只用 {{x}},且中英集合逐键相等", () => {
+    const placeholders = (copy: string) => [...copy.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]).sort()
+    const keys = Object.keys(zh).filter((key) => key.startsWith("alpha.auto.")) as Array<keyof typeof zh>
+    expect(keys.length).toBeGreaterThan(50)
+    for (const key of keys) {
+      for (const copy of [zh[key], en[key as keyof typeof en]]) {
+        expect(copy, `en 缺 ${key}`).toBeDefined()
+        // 去掉合法的 {{x}} 后不得再剩任何 { 或 } —— 单花括号 i18n 库不替换,会原样上屏。
+        expect(copy.replace(/\{\{\w+\}\}/g, ""), key).not.toMatch(/[{}]/)
+      }
+      expect(placeholders(en[key as keyof typeof en]), key).toEqual(placeholders(zh[key]))
+    }
+  })
+
+  test("解析成功 ⇒ 提示是「已识别:<周期>」,界面上没有字面 {desc}", async () => {
+    runtime.queueNlLlmResult({ ok: true, name: "周报", schedule: { kind: "cron", expr: "0 9 * * 1" }, prompt: "写周报" })
+    // 确定性规则解析不出周期的一句话,才会露出「用 AI 解析」。
+    await openCreateForm("饭点前提醒我写周报")
+    const llm = [...document.querySelectorAll<HTMLButtonElement>(".alpha-auto-hint .alpha-ext-inline-cta")].find(
+      (b) => b.textContent === zh["alpha.auto.llmParse"],
+    )
+    expect(llm !== undefined, "「用 AI 解析」按钮不在").toBe(true)
+    expect(llm!.disabled, "项目目录没填上,按钮还是禁用的").toBe(false)
+    click(llm!)
+    await flush()
+
+    const hint = query(".alpha-auto-hint").textContent ?? ""
+    expect(hint.startsWith("已识别:")).toBe(true)
+    expect(hint.length).toBeGreaterThan("已识别:".length)
+    expect(hint).not.toContain("{")
+  })
+})
+
+describe("#1592 AC2:云端任务的手动运行如实标为「在本机试跑」", () => {
+  test("云端行按钮「在本机试跑」+ 悬停「在本机跑一次,不改云端排程」;本机行仍「立即运行」带每日上限;点击都调同一个 runNow", async () => {
+    runtime.queueListedTasks([localTask("auto-local"), cloudTask("auto-cloud", "sched_1")])
+    disposers.push(runtime.render(() => runtime.AutomationRefusalHarness(), query<HTMLElement>("#root")))
+    runtime.openPanel()
+    await flush()
+
+    const local = query<HTMLButtonElement>("[data-alpha-auto-run-now='auto-local']")
+    const cloud = query<HTMLButtonElement>("[data-alpha-auto-run-now='auto-cloud']")
+    expect(local.textContent).toBe("立即运行")
+    expect(local.title).toBe("跑一次,计入每日 24 次上限")
+    expect(cloud.textContent).toBe("在本机试跑")
+    expect(cloud.title).toBe("在本机跑一次,不改云端排程")
+
+    click(cloud)
+    await flush()
+    click(local)
+    await flush()
+    expect(runtime.runNowCalls()).toEqual(["auto-cloud", "auto-local"])
+  })
+})
+
+describe("#1592 AC3:选「云端」时收起云端不看的三项,换成四行运行条件", () => {
+  test("云端 ⇒ 权限 / 单次最长 / 通知不显示,四行条件出现;切回本机 ⇒ 三项连同原值回来", async () => {
+    await openCreateForm()
+    const maxMin = query<HTMLInputElement>("[data-alpha-auto-local-fields] input[type='number']")
+    maxMin.value = "42"
+    maxMin.dispatchEvent(new Event("input", { bubbles: true }))
+    const notify = query<HTMLInputElement>("[data-alpha-auto-local-fields] input[type='checkbox']")
+    notify.click()
+    await flush()
+    expect(notify.checked).toBe(false)
+
+    click(buttonByText(zh["alpha.auto.execCloud"]))
+    await flush()
+    expect(document.querySelector("[data-alpha-auto-local-fields]") === null).toBe(true)
+    const note = query("[data-alpha-auto-cloud-note]").textContent ?? ""
+    for (const line of ["云端运行", "应用关着也按时运行", "只发送执行内容,不读项目文件", "结果在下次打开应用时存入项目", "单次运行有时长上限"]) {
+      expect(note).toContain(line)
+    }
+
+    click(buttonByText(zh["alpha.auto.execLocal"]))
+    await flush()
+    expect(document.querySelector("[data-alpha-auto-cloud-note]") === null).toBe(true)
+    expect(query<HTMLInputElement>("[data-alpha-auto-local-fields] input[type='number']").value).toBe("42")
+    expect(query<HTMLInputElement>("[data-alpha-auto-local-fields] input[type='checkbox']").checked).toBe(false)
+  })
+})
+
+describe("#1592 AC4:「云端」按 Code Puppy 账户登录状态可选,不按认证模式", () => {
+  test("没登录账户 ⇒ 「云端」不可选,下方「需登录 Code Puppy 账户」+「登录」(点了真的发起登录)", async () => {
+    runtime.setAuth({ status: "logged-out", mode: "byok" })
+    await openCreateForm()
+
+    expect(buttonByText(zh["alpha.auto.execCloud"]).disabled).toBe(true)
+    click(buttonByText(zh["alpha.auto.execCloud"]))
+    await flush()
+    expect(buttonByText(zh["alpha.auto.execLocal"]).getAttribute("data-on")).toBe("")
+    const locked = query("[data-alpha-auto-cloud-locked]")
+    expect(locked.textContent).toContain("需登录 Code Puppy 账户")
+    click(locked.querySelector("button")!)
+    await flush()
+    expect(runtime.authStartCalls()).toBe(1)
+  })
+
+  test("已登录、正在用自带 Key(mode=byok)⇒ 「云端」可选,不显示登录提示", async () => {
+    runtime.setAuth({ status: "logged-in", mode: "byok", platformStatus: "ready" })
+    await openCreateForm()
+
+    expect(buttonByText(zh["alpha.auto.execCloud"]).disabled).toBe(false)
+    expect(document.querySelector("[data-alpha-auto-cloud-locked]") === null).toBe(true)
+    click(buttonByText(zh["alpha.auto.execCloud"]))
+    await flush()
+    expect(buttonByText(zh["alpha.auto.execCloud"]).getAttribute("data-on")).toBe("")
+  })
+})
+
+describe("#1592 AC5:改成「可改文件」的确认在表单内完成,不弹系统原生确认框", () => {
+  test("保存 ⇒ 表单内出现确认行、还没保存;点「确定」才保存为可改文件;全程不调 window.confirm", async () => {
+    const confirmCalls: string[] = []
+    const original = window.confirm
+    window.confirm = ((message?: string) => {
+      confirmCalls.push(String(message))
+      return true
+    }) as typeof window.confirm
+    try {
+      await openCreateForm()
+      click(buttonByText(zh["alpha.auto.permStandard"]))
+      await flush()
+      click(query(".alpha-auto-actions .alpha-ext-add[data-variant='primary']"))
+      await flush()
+
+      const row = query("[data-alpha-auto-standard-confirm]")
+      expect(row.textContent).toContain("无人值守时可改文件、运行命令")
+      expect(runtime.saveCalls()).toHaveLength(0)
+
+      const ok = [...row.querySelectorAll("button")].find((b) => b.textContent === "确定")!
+      click(ok)
+      await flush()
+      expect(runtime.saveCalls()).toHaveLength(1)
+      expect(runtime.saveCalls()[0]!.permissionProfile).toBe("standard")
+      expect(confirmCalls).toEqual([])
+    } finally {
+      window.confirm = original
+    }
+  })
+
+  test("点「改回只读」⇒ 权限回到只读,确认行收起,不保存", async () => {
+    await openCreateForm()
+    click(buttonByText(zh["alpha.auto.permStandard"]))
+    await flush()
+    click(query(".alpha-auto-actions .alpha-ext-add[data-variant='primary']"))
+    await flush()
+
+    const revert = [...query("[data-alpha-auto-standard-confirm]").querySelectorAll("button")].find((b) => b.textContent === "改回只读")!
+    click(revert)
+    await flush()
+    expect(document.querySelector("[data-alpha-auto-standard-confirm]") === null).toBe(true)
+    expect(buttonByText(zh["alpha.auto.permReadonly"]).getAttribute("data-on")).toBe("")
+    expect(runtime.saveCalls()).toHaveLength(0)
+  })
+})
+
+describe("#1592 AC6:立即运行与 AI 解析的失败按结构码出文案,原文不上屏", () => {
+  test("立即运行被拒 ⇒ toast 是码对应的人话,不是 main 的原因串", async () => {
+    runtime.queueRunNowResult({ ok: false, code: "automation-run-daily-cap", reason: "daily run cap reached (24/day)" })
+    await renderListWith(localTask("auto-cap"))
+    click(query("[data-alpha-auto-run-now='auto-cap']"))
+    await flush()
+    expect(errorToasts().map((toast) => toast.title)).toEqual(["今日已达 24 次上限"])
+    expect(document.body.textContent).not.toContain("daily run cap")
+  })
+
+  test("AI 解析失败 ⇒ 错误行是码对应的人话(没识别出周期),不是模型原文", async () => {
+    runtime.queueNlLlmResult({
+      ok: false,
+      code: "automation-parse-no-schedule",
+      reason: "模型返回的结构不合法(缺 name/schedule/prompt 或周期过密)",
+    })
+    await openCreateForm("饭点前提醒我写周报")
+    const llm = [...document.querySelectorAll<HTMLButtonElement>(".alpha-auto-hint .alpha-ext-inline-cta")].find(
+      (b) => b.textContent === zh["alpha.auto.llmParse"],
+    )!
+    click(llm)
+    await flush()
+    expect(errorLine()).toBe("没识别出周期,请手动选择")
+    expect(document.body.textContent).not.toContain("name/schedule/prompt")
+  })
+
+  test("列表行:已知原因码出人话;没有码的失败只写「上次失败」,原文(scheduler not started / JSON)不上屏", async () => {
+    const known = { ...localTask("auto-known"), lastRun: { at: "2026-10-30T00:00:00.000Z", status: "failed" as const, summary: "scheduler not started", reasonCode: "automation-run-not-ready" as const } }
+    const unknown = { ...localTask("auto-unknown"), lastRun: { at: "2026-10-30T00:00:00.000Z", status: "failed" as const, summary: "模型未返回可解析的 JSON" } }
+    runtime.queueListedTasks([known, unknown])
+    disposers.push(runtime.render(() => runtime.AutomationRefusalHarness(), query<HTMLElement>("#root")))
+    runtime.openPanel()
+    await flush()
+
+    const [knownRow, unknownRow] = [...document.querySelectorAll(".alpha-auto-row-st")].map((el) => el.textContent ?? "")
+    expect(knownRow).toContain("上次失败 · 应用未就绪,本次未运行")
+    expect(knownRow).not.toContain("scheduler")
+    expect(unknownRow).toContain("上次失败")
+    expect(unknownRow).not.toContain("JSON")
+  })
+
+  test("每个本地动作码在 en 下是英文人话(不含中文),不认识的码回落 undefined", () => {
+    const codes = [
+      "automation-run-not-found",
+      "automation-run-busy",
+      "automation-run-daily-cap",
+      "automation-parse-no-schedule",
+      "automation-parse-unavailable",
+      "automation-parse-blocked",
+      "automation-run-not-ready",
+    ]
+    runtime.setLocale("en")
+    const seen = new Set<string>()
+    for (const code of codes) {
+      const copy = runtime.automationActionCopy(code)!
+      expect(copy, code).toBeDefined()
+      expect(hasCjk(copy), `${code} 的英文文案里有中文:${copy}`).toBe(false)
+      expect(copy).not.toContain(code)
+      expect(copy).not.toMatch(/\{\{/)
+      seen.add(copy)
+    }
+    expect(seen.size).toBe(codes.length)
+    expect(runtime.automationActionCopy("automation-something-new")).toBeUndefined()
+    expect(runtime.automationActionCopy(undefined)).toBeUndefined()
+    runtime.setLocale("zh")
+  })
+})
+
+describe("#1592 AC7:其余文字与批准稿文案对照表(自动化部分)一致", () => {
+  test("zh 文案逐条对照", () => {
+    const expected: Partial<Record<keyof typeof zh, string>> = {
+      "alpha.auto.offlineNote": "应用关着时,本机任务不运行",
+      "alpha.auto.platformCost": "本机任务消耗平台额度",
+      "alpha.auto.kind.cron": "自定义",
+      "alpha.auto.cronFormat": "格式:分 时 日 月 周",
+      "alpha.auto.fPrompt": "执行内容",
+      "alpha.auto.fPermission": "权限",
+      "alpha.auto.permStandard": "可改文件",
+      "alpha.auto.execLocal": "本机",
+      "alpha.auto.permNote": "只读:不改文件、不运行命令",
+      "alpha.auto.permStandardNote": "可改文件、运行命令,拦截危险命令",
+      "alpha.auto.standardConfirm": "无人值守时可改文件、运行命令",
+      "alpha.auto.standardConfirmOk": "确定",
+      "alpha.auto.standardConfirmRevert": "改回只读",
+      "alpha.auto.cloudRunTitle": "云端运行",
+      "alpha.auto.cloudNeedsLogin": "需登录 Code Puppy 账户",
+      "alpha.auto.runNow": "立即运行",
+      "alpha.auto.runErrNotFound": "任务已删除",
+      "alpha.auto.runErrBusy": "另一个任务在运行",
+      "alpha.auto.runErrDailyCap": "今日已达 {{cap}} 次上限",
+      "alpha.auto.llmNeedsDir": "先选择项目",
+      "alpha.auto.parsedLlm": "已识别:{{desc}}",
+      "alpha.auto.parseErrUnavailable": "AI 暂不可用",
+      "alpha.auto.parseErrBlocked": "内容未通过安全审核",
+      "alpha.auto.openRun": "打开结果",
+      "alpha.auto.tplDaily": "每日总结模板",
+      "alpha.auto.disabledBreaker": "连续失败 {{n}} 次,已停用",
+      "alpha.auto.cloudErrFormUnsupported": "云端不支持此间隔,请改用本机",
+      "alpha.auto.saving": "保存中…",
+      "alpha.auto.runReasonNotReady": "应用未就绪,本次未运行",
+    }
+    for (const [key, value] of Object.entries(expected)) expect(zh[key as keyof typeof zh], key).toBe(value)
+  })
+
+  test("云端说明不复述平台的数值上限(轮数 / token / 分钟)", () => {
+    const cloudKeys = Object.keys(zh).filter((key) => key.startsWith("alpha.auto.cloudRun")) as Array<keyof typeof zh>
+    expect(cloudKeys.length).toBe(5)
+    for (const key of cloudKeys) {
+      for (const copy of [zh[key], en[key as keyof typeof en]]) expect(copy, key).not.toMatch(/\d|token/i)
+    }
+  })
+})

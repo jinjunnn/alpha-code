@@ -42,6 +42,8 @@ import type {
 import type {
   AutomationEvent,
   AutomationGlobalState,
+  AutomationParseErrorCode,
+  AutomationRunNowErrorCode,
   AutomationTask,
   AutomationSchedule,
 } from "../shared/automation-types"
@@ -1364,13 +1366,15 @@ export type ElectronAPI = {
     toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
     pauseAll: (paused: boolean) => Promise<{ ok: true }>
     /** A2:立即运行(不改 next-fire;占并发位;计日 cap)。 */
-    runNow: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+    /** [#1592] 被拒时带本地结构码 `code`(界面按它出文案);`reason` 只是日志串。 */
+    runNow: (id: string) => Promise<{ ok: true } | { ok: false; code: AutomationRunNowErrorCode; reason: string }>
     /** A2:LLM 辅助解析(规则失败时用户显式触发;临时会话一次抽取即删)。 */
     nlLlm: (
       text: string,
       projectDir: string,
     ) => Promise<
-      { ok: true; name: string; schedule: AutomationSchedule; prompt: string } | { ok: false; reason: string }
+      | { ok: true; name: string; schedule: AutomationSchedule; prompt: string }
+      | { ok: false; code: AutomationParseErrorCode; reason: string }
     >
     /** A3:云侧状态回读(schedules=null 即离线)+ 错过 run 拉回。 */
     cloudSync: () => Promise<{

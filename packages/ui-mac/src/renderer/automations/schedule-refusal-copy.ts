@@ -10,8 +10,8 @@
 //  ① **不认识的码原样透出**,不假装认识 —— 平台新增一个码时,用户看到的是一个可以拿去搜/报
 //     的标识符,而不是一句和事实无关的万能抱歉;
 //  ② **文案不复述平台的数值上限**(每租户条数 / 名字字数 / 最小间隔 / 信封字节)。那些数字住在
-//     alpha-platform,在这里抄一份就是再造一处会静默漂移的跨仓常量副本(`alpha.auto.cloudBoundary`
-//     今天已经犯了这个错,另开票收)。
+//     alpha-platform,在这里抄一份就是再造一处会静默漂移的跨仓常量副本(云端说明里的平台数字
+//     已随 #1592 拿掉)。
 //
 // **刻意不映射**的四个平台 schedule 码 —— 桌面的注册信封结构上发不出它们,给它们写文案就是
 // 写永不执行的死分支(信封形状见 `../../main/cloud-schedule-config.ts`,恒为
@@ -24,7 +24,13 @@
 // 它们若真的出现,走下面的回落分支原样上屏 —— 那正是「我们的勘破错了」应该长的样子。
 
 import { t } from "../i18n"
-import type { AutomationStoreErrorCode } from "../../shared/automation-types"
+import {
+  AUTOMATION_DEFAULTS,
+  type AutomationParseErrorCode,
+  type AutomationRunNowErrorCode,
+  type AutomationRunReasonCode,
+  type AutomationStoreErrorCode,
+} from "../../shared/automation-types"
 
 /**
  * [#1001] 本地结构码 → 文案键。以类型为键:main 新增一个码而这里没跟上,typecheck 当场红
@@ -68,4 +74,30 @@ export function scheduleRefusalCopy(code: string): string {
   // 回落:原样带上码。刻意**不**区分注册/删除 —— 那个区分今天只存在于 main 硬编码的中文前缀里,
   // 而这一层要对 16 个语种成立。
   return t("alpha.auto.cloudErrUnknown", { code })
+}
+
+/**
+ * [#1592] 「立即运行」/「用 AI 解析」的失败码与运行记录的已知原因码 → 文案键。同 [#1001]:码是我们自己
+ * 铸的,以类型为键,main 新增一个码而这里没跟上 typecheck 当场红。
+ */
+const LOCAL_ACTION_COPY: Record<
+  AutomationRunNowErrorCode | AutomationParseErrorCode | AutomationRunReasonCode,
+  Parameters<typeof t>[0]
+> = {
+  "automation-run-not-found": "alpha.auto.runErrNotFound",
+  "automation-run-busy": "alpha.auto.runErrBusy",
+  "automation-run-daily-cap": "alpha.auto.runErrDailyCap",
+  "automation-parse-no-schedule": "alpha.auto.parseErrNoSchedule",
+  "automation-parse-unavailable": "alpha.auto.parseErrUnavailable",
+  "automation-parse-blocked": "alpha.auto.parseErrBlocked",
+  "automation-run-not-ready": "alpha.auto.runReasonNotReady",
+}
+
+/**
+ * [#1592] 本地动作码 → 人话;不认识(或没带码)回落 `undefined`,由调用面说通用的一句 ——
+ * main 的原因串永不上屏(它只进日志与运行记录)。
+ */
+export function automationActionCopy(code: string | undefined): string | undefined {
+  if (!code || !Object.hasOwn(LOCAL_ACTION_COPY, code)) return undefined
+  return t(LOCAL_ACTION_COPY[code as keyof typeof LOCAL_ACTION_COPY], { cap: AUTOMATION_DEFAULTS.dailyRunCap })
 }

@@ -17,7 +17,7 @@ import { hrefFor } from "../../shared/route-manifest"
 import { subscribeAuthState } from "../auth-recovery"
 import { Svg } from "../extensions/ext-presentation"
 import { automationOpen, setAutomationOpen } from "./automation-state"
-import { scheduleRefusalCopy } from "./schedule-refusal-copy"
+import { automationActionCopy, scheduleRefusalCopy } from "./schedule-refusal-copy"
 import { cloudDisabledReasonCopy } from "./cloud-disabled-reason-copy"
 import "./automation-panel.css"
 
@@ -139,6 +139,18 @@ export function AutomationPanel(props: {
   const [fNotify, setFNotify] = createSignal(true)
   const [fErr, setFErr] = createSignal("")
   const [saving, setSaving] = createSignal(false)
+  // [#1592 AC5] 改成「可改文件」的确认在表单内完成(取代系统原生确认框):保存时需要确认就先亮出
+  // 确认行;点「确定」记下确认再保存,点「改回只读」退回只读。改了权限 / 换了表单就作废。
+  const [standardConfirmOpen, setStandardConfirmOpen] = createSignal(false)
+  const [standardAcked, setStandardAcked] = createSignal(false)
+  const setProfile = (profile: "readonly" | "standard") => {
+    setFProfile(profile)
+    setStandardConfirmOpen(false)
+    setStandardAcked(false)
+  }
+  // [#1592 AC4] 云端执行要 Code Puppy 账户的登录令牌 —— 判据是**账户登录状态**,不是认证模式
+  // (已登录、正在用自带 Key 的用户照样能存云端任务)。
+  const accountSignedIn = () => authState().status === "logged-in"
 
   const refresh = async () => {
     try {
@@ -186,6 +198,8 @@ export function AutomationPanel(props: {
     setView("list")
     setEditing(null)
     setFErr("")
+    setStandardConfirmOpen(false)
+    setStandardAcked(false)
   }
 
   // REQ-071/ADR-025:新建任务目标目录默认 ~/Alpha(用户可改;真正落盘由 main 侧 lazy 供给)。
@@ -215,7 +229,7 @@ export function AutomationPanel(props: {
         : "",
     )
     setFMaxMin(AUTOMATION_DEFAULTS.maxDurationMin)
-    setFProfile("readonly")
+    setProfile("readonly")
     setFExec("local")
     setFNotify(true)
     setFErr("")
@@ -233,7 +247,7 @@ export function AutomationPanel(props: {
     setFForm({ ...DEFAULT_FORM, kind: "daily", time: "21:00" })
     setParseNote("")
     setFMaxMin(AUTOMATION_DEFAULTS.maxDurationMin)
-    setFProfile("standard")
+    setProfile("standard")
     setFExec("local")
     setFNotify(true)
     setFErr("")
@@ -247,7 +261,7 @@ export function AutomationPanel(props: {
     setFDir(task.target.projectDir)
     setFForm(toForm(task.schedule))
     setFMaxMin(task.budget.maxDurationMin)
-    setFProfile(task.permissionProfile === "standard" ? "standard" : "readonly")
+    setProfile(task.permissionProfile === "standard" ? "standard" : "readonly")
     setFExec(task.execution === "cloud" ? "cloud" : "local")
     setFNotify(task.notify.system)
     setParseNote("")
@@ -270,8 +284,9 @@ export function AutomationPanel(props: {
     if (!fDir()) return setFErr(t("alpha.auto.errDir"))
     const prev = editing()
     // A2:standard(可写)档启用确认 —— 无人值守可写可执行,风险显式(命令黑名单非穷尽)
-    if (fProfile() === "standard" && prev?.permissionProfile !== "standard") {
-      if (!window.confirm(t("alpha.auto.standardConfirm"))) return
+    if (fProfile() === "standard" && prev?.permissionProfile !== "standard" && !standardAcked()) {
+      setStandardConfirmOpen(true)
+      return
     }
     const task: AutomationTask = {
       id: prev?.id ?? `auto-${crypto.randomUUID().slice(0, 8)}`,
@@ -451,7 +466,7 @@ export function AutomationPanel(props: {
                                   : task.enabled && !pausedAll()
                                     ? `${t("alpha.auto.next")} ${fmtNext(task.nextFireAt)}`
                                     : task.disabledReason === "consecutive_failures"
-                                      ? t("alpha.auto.disabledBreaker")
+                                      ? t("alpha.auto.disabledBreaker", { n: AUTOMATION_DEFAULTS.failureBreaker })
                                       : t("alpha.auto.disabled")}
                                 <Show when={task.cloudScheduleId && cloudStates().get(task.cloudScheduleId!)?.disabled_reason}>
                                   {(reason) => (
@@ -465,21 +480,28 @@ export function AutomationPanel(props: {
                                 <Show when={task.lastRun}>
                                   {" · "}
                                   {dot().label}
-                                  <Show when={task.lastRun!.summary}> · {task.lastRun!.summary}</Show>
+                                  {/* [#1592] 已知原因出人话;原始报错只留在运行记录,不上列表行。 */}
+                                  <Show when={automationActionCopy(task.lastRun!.reasonCode)}>{(copy) => <> · {copy()}</>}</Show>
                                 </Show>
                               </div>
                             </div>
                             <button
                               class="alpha-ext-inline-cta"
                               disabled={task.running || runNowBusy() === task.id}
-                              title={t("alpha.auto.runNowHint")}
+                              data-alpha-auto-run-now={task.id}
+                              // [#1592 AC2] 云端任务的手动运行其实在本机执行(平台没有立即触发接口)—— 如实标注,行为不变。
+                              title={
+                                task.execution === "cloud"
+                                  ? t("alpha.auto.runNowLocalHint")
+                                  : t("alpha.auto.runNowHint", { cap: AUTOMATION_DEFAULTS.dailyRunCap })
+                              }
                               onClick={(e) => {
                                 e.stopPropagation()
                                 setRunNowBusy(task.id)
                                 void window.api.automations
                                   .runNow(task.id)
                                   .then((r) => {
-                                    if (!r.ok) pushToast({ kind: "error", title: r.reason })
+                                    if (!r.ok) pushToast({ kind: "error", title: automationActionCopy(r.code) ?? t("alpha.auto.runNowFailed") })
                                   })
                                   .finally(() => {
                                     setRunNowBusy(null)
@@ -487,7 +509,11 @@ export function AutomationPanel(props: {
                                   })
                               }}
                             >
-                              {runNowBusy() === task.id ? t("alpha.auto.runNowBusy") : t("alpha.auto.runNow")}
+                              {runNowBusy() === task.id
+                                ? t("alpha.auto.runNowBusy")
+                                : task.execution === "cloud"
+                                  ? t("alpha.auto.runNowLocal")
+                                  : t("alpha.auto.runNow")}
                             </button>
                             <button
                               class="alpha-ext-sw"
@@ -528,7 +554,7 @@ export function AutomationPanel(props: {
                           void window.api.automations
                             .nlLlm(nlInput().trim(), fDir())
                             .then((r) => {
-                              if (!r.ok) return setFErr(r.reason)
+                              if (!r.ok) return setFErr(automationActionCopy(r.code) ?? t("alpha.auto.parseErrUnavailable"))
                               setFName(r.name)
                               setFPrompt(r.prompt)
                               setFForm(toForm(r.schedule))
@@ -624,6 +650,9 @@ export function AutomationPanel(props: {
                         />
                       </Show>
                     </div>
+                    <Show when={fForm().kind === "cron"}>
+                      <p class="alpha-auto-preview">{t("alpha.auto.cronFormat")}</p>
+                    </Show>
                     <p class="alpha-auto-preview">
                       {(() => {
                         const s = fromForm(fForm())
@@ -657,48 +686,89 @@ export function AutomationPanel(props: {
                       <button data-on={fExec() === "local" ? "" : undefined} onClick={() => setFExec("local")}>
                         {t("alpha.auto.execLocal")}
                       </button>
-                      <button data-on={fExec() === "cloud" ? "" : undefined} onClick={() => setFExec("cloud")}>
+                      <button
+                        data-on={fExec() === "cloud" ? "" : undefined}
+                        disabled={!accountSignedIn()}
+                        onClick={() => setFExec("cloud")}
+                      >
                         {t("alpha.auto.execCloud")}
                       </button>
                     </div>
-                    <Show when={fExec() === "cloud"}>
-                      {/* A3:数据边界(ADR-021)+ research 管线映射,强制展示不可折叠 */}
-                      <p class="alpha-auto-preview">{t("alpha.auto.cloudBoundary")}</p>
+                    <Show when={!accountSignedIn()}>
+                      <p class="alpha-auto-preview" data-alpha-auto-cloud-locked>
+                        {t("alpha.auto.cloudNeedsLogin")} ·{" "}
+                        <button class="alpha-ext-inline-cta" onClick={() => void window.api.auth.start()}>
+                          {t("alpha.auth.signIn")}
+                        </button>
+                      </p>
                     </Show>
                   </div>
 
-                  <div class="alpha-auto-inline">
-                    <div class="alpha-auto-field">
-                      <span>{t("alpha.auto.fPermission")}</span>
-                      <div class="alpha-auto-seg">
-                        <button data-on={fProfile() === "readonly" ? "" : undefined} onClick={() => setFProfile("readonly")}>
-                          {t("alpha.auto.permReadonly")}
-                        </button>
-                        <button data-on={fProfile() === "standard" ? "" : undefined} onClick={() => setFProfile("standard")}>
-                          {t("alpha.auto.permStandard")}
-                        </button>
-                      </div>
-                      <p class="alpha-auto-preview">
-                        {fProfile() === "standard" ? t("alpha.auto.permStandardNote") : t("alpha.auto.permNote")}
-                      </p>
+                  {/* A3 / [#1592 AC3]:云端只带名称、周期与执行内容 —— 权限、单次最长、通知它都不看,选云端时
+                      收起这三项,换成四行运行条件(数据边界 ADR-021,强制展示);切回本机时原值仍在信号里。 */}
+                  <Show when={fExec() === "cloud"}>
+                    <div class="alpha-auto-cloud-note" data-alpha-auto-cloud-note>
+                      <b>{t("alpha.auto.cloudRunTitle")}</b>
+                      <span>{t("alpha.auto.cloudRunOffline")}</span>
+                      <span>{t("alpha.auto.cloudRunData")}</span>
+                      <span>{t("alpha.auto.cloudRunResults")}</span>
+                      <span>{t("alpha.auto.cloudRunLimit")}</span>
                     </div>
-                    <label class="alpha-auto-mini">
-                      {t("alpha.auto.fMaxMin")}
-                      <input
-                        class="alpha-auto-input"
-                        type="number"
-                        min="1"
-                        max="120"
-                        value={fMaxMin()}
-                        onInput={(e) => setFMaxMin(parseInt(e.currentTarget.value, 10) || AUTOMATION_DEFAULTS.maxDurationMin)}
-                      />
-                      {t("alpha.auto.fMinutes")}
-                    </label>
-                    <label class="alpha-auto-check">
-                      <input type="checkbox" checked={fNotify()} onChange={(e) => setFNotify(e.currentTarget.checked)} />
-                      {t("alpha.auto.fNotify")}
-                    </label>
-                  </div>
+                  </Show>
+                  <Show when={fExec() === "local"}>
+                    <div class="alpha-auto-inline" data-alpha-auto-local-fields>
+                      <div class="alpha-auto-field">
+                        <span>{t("alpha.auto.fPermission")}</span>
+                        <div class="alpha-auto-seg">
+                          <button data-on={fProfile() === "readonly" ? "" : undefined} onClick={() => setProfile("readonly")}>
+                            {t("alpha.auto.permReadonly")}
+                          </button>
+                          <button data-on={fProfile() === "standard" ? "" : undefined} onClick={() => setProfile("standard")}>
+                            {t("alpha.auto.permStandard")}
+                          </button>
+                        </div>
+                        <p class="alpha-auto-preview">
+                          {fProfile() === "standard" ? t("alpha.auto.permStandardNote") : t("alpha.auto.permNote")}
+                        </p>
+                      </div>
+                      <label class="alpha-auto-mini">
+                        {t("alpha.auto.fMaxMin")}
+                        <input
+                          class="alpha-auto-input"
+                          type="number"
+                          min="1"
+                          max="120"
+                          value={fMaxMin()}
+                          onInput={(e) => setFMaxMin(parseInt(e.currentTarget.value, 10) || AUTOMATION_DEFAULTS.maxDurationMin)}
+                        />
+                        {t("alpha.auto.fMinutes")}
+                      </label>
+                      <label class="alpha-auto-check">
+                        <input type="checkbox" checked={fNotify()} onChange={(e) => setFNotify(e.currentTarget.checked)} />
+                        {t("alpha.auto.fNotify")}
+                      </label>
+                    </div>
+                  </Show>
+
+                  <Show when={standardConfirmOpen()}>
+                    <div class="alpha-auto-confirm" role="alertdialog" data-alpha-auto-standard-confirm>
+                      <span>{t("alpha.auto.standardConfirm")}</span>
+                      <button
+                        class="alpha-ext-add"
+                        data-variant="primary"
+                        onClick={() => {
+                          setStandardAcked(true)
+                          setStandardConfirmOpen(false)
+                          void save()
+                        }}
+                      >
+                        {t("alpha.auto.standardConfirmOk")}
+                      </button>
+                      <button class="alpha-ext-add" onClick={() => setProfile("readonly")}>
+                        {t("alpha.auto.standardConfirmRevert")}
+                      </button>
+                    </div>
+                  </Show>
 
                   <Show when={authState().status === "logged-in" && authState().mode === "platform"}>
                     <p class="alpha-auto-hint">{t("alpha.auto.platformCost")}</p>
@@ -708,7 +778,7 @@ export function AutomationPanel(props: {
                   </Show>
                   <div class="alpha-auto-actions">
                     <button class="alpha-ext-add" data-variant="primary" disabled={saving()} onClick={() => void save()}>
-                      {saving() ? t("alpha.ext.adding") : t("alpha.auto.save")}
+                      {saving() ? t("alpha.auto.saving") : t("alpha.auto.save")}
                     </button>
                     <button class="alpha-ext-add" onClick={backToList}>
                       {t("alpha.ext.cancel")}
