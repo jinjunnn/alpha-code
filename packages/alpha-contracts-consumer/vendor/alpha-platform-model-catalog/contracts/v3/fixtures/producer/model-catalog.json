@@ -1,0 +1,282 @@
+{
+  "kind": "schema",
+  "contract": "ModelCatalogV3",
+  "expect": "valid",
+  "value": {
+    "schema_version": 3,
+    "object": "list",
+    "data": [
+      {
+        "id": "deepseek-v4-flash",
+        "object": "model",
+        "provider": "deepseek",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 1,
+          "output": 1
+        },
+        "display": {
+          "name": "DeepSeek V4 Flash",
+          "brand": "deepseek"
+        }
+      },
+      {
+        "id": "deepseek-v4-pro",
+        "object": "model",
+        "provider": "deepseek",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 3.1,
+          "output": 3.1
+        },
+        "display": {
+          "name": "DeepSeek V4 Pro",
+          "brand": "deepseek",
+          "reasoning": true,
+          "variants": {
+            "低": {
+              "reasoningEffort": "low"
+            },
+            "中": {
+              "reasoningEffort": "medium"
+            },
+            "高": {
+              "reasoningEffort": "high"
+            },
+            "最高": {
+              "reasoningEffort": "max"
+            }
+          }
+        }
+      },
+      {
+        "id": "glm-5.2",
+        "object": "model",
+        "provider": "zhipu",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 5.4,
+          "output": 8.5
+        },
+        "display": {
+          "name": "GLM-5.2",
+          "brand": "zhipu",
+          "reasoning": true,
+          "variants": {
+            "高": {
+              "reasoningEffort": "high"
+            },
+            "最高": {
+              "reasoningEffort": "max"
+            }
+          }
+        }
+      },
+      {
+        "id": "glm-5-turbo",
+        "object": "model",
+        "provider": "zhipu",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 8.6,
+          "output": 14.3
+        },
+        "display": {
+          "name": "GLM-5 Turbo",
+          "brand": "zhipu",
+          "reasoning": true,
+          "variants": {
+            "关": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "开": {
+              "thinking": {
+                "type": "enabled"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "qwen3.7-max",
+        "object": "model",
+        "provider": "openrouter",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 10.5,
+          "output": 15.8
+        },
+        "display": {
+          "name": "Qwen3.7 Max",
+          "brand": "qwen",
+          "reasoning": true,
+          "variants": {
+            "关": {
+              "reasoningEffort": "none"
+            },
+            "开": {
+              "reasoningEffort": "medium"
+            }
+          }
+        }
+      },
+      {
+        "id": "qwen3.7-plus",
+        "object": "model",
+        "provider": "openrouter",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 2.3,
+          "output": 4.6
+        },
+        "display": {
+          "name": "Qwen3.7 Plus",
+          "brand": "qwen",
+          "reasoning": true,
+          "variants": {
+            "关": {
+              "reasoningEffort": "none"
+            },
+            "开": {
+              "reasoningEffort": "medium"
+            }
+          }
+        }
+      },
+      {
+        "id": "gpt-5.4-mini",
+        "object": "model",
+        "provider": "openai",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 5.4,
+          "output": 16.1
+        },
+        "display": {
+          "name": "GPT-5.4 Mini",
+          "brand": "openai",
+          "reasoning": true,
+          "variants": {
+            "低": {
+              "reasoningEffort": "low"
+            },
+            "中": {
+              "reasoningEffort": "medium"
+            },
+            "高": {
+              "reasoningEffort": "high"
+            }
+          }
+        }
+      },
+      {
+        "id": "gpt-5.4-nano",
+        "object": "model",
+        "provider": "openai",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 1.4,
+          "output": 4.5
+        },
+        "display": {
+          "name": "GPT-5.4 Nano",
+          "brand": "openai",
+          "reasoning": true,
+          "variants": {
+            "低": {
+              "reasoningEffort": "low"
+            },
+            "中": {
+              "reasoningEffort": "medium"
+            },
+            "高": {
+              "reasoningEffort": "high"
+            }
+          }
+        }
+      },
+      {
+        "id": "claude-haiku-4.5",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 7.1,
+          "output": 17.9
+        },
+        "display": {
+          "name": "Claude Haiku 4.5",
+          "brand": "anthropic",
+          "web": true
+        }
+      },
+      {
+        "id": "claude-sonnet-5",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 21.4,
+          "output": 53.6
+        },
+        "display": {
+          "name": "Claude Sonnet 5",
+          "brand": "anthropic",
+          "web": true
+        }
+      },
+      {
+        "id": "claude-fable-5",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 71.4,
+          "output": 178.6
+        },
+        "display": {
+          "name": "Claude Fable 5",
+          "brand": "anthropic",
+          "web": true
+        }
+      },
+      {
+        "id": "claude-opus-4.8",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 35.7,
+          "output": 89.3
+        },
+        "display": {
+          "name": "Claude Opus 4.8",
+          "brand": "anthropic",
+          "reasoning": true,
+          "web": true,
+          "variants": {
+            "低": {
+              "reasoning": {
+                "effort": "low"
+              }
+            },
+            "中": {
+              "reasoning": {
+                "effort": "medium"
+              }
+            },
+            "高": {
+              "reasoning": {
+                "effort": "high"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "edition": "intl",
+    "pricing_basis_model_id": "deepseek-v4-flash"
+  }
+}

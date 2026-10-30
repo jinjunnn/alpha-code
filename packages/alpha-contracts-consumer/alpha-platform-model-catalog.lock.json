@@ -1,18 +1,26 @@
 {
   "repo": "jinjunnn/alpha-platform",
-  "commit": "7fd62d3edcb0d21f429ce06cadc2528fc5b0ab5c",
+  "commit": "a154d1f4f45fc614798a16c1535f73a1b67483f9",
   "files": [
     {
-      "path": "contracts/v2/model-catalog.schema.json",
-      "sha256": "152232c6aa266f30b2c78aefadbf00f32e4f93d574e6afd9f1b97bb8e763587e"
+      "path": "contracts/v3/model-catalog.schema.json",
+      "sha256": "32629bf52f8a92100c906dc167ef8cab4de873a0ce799eb78f1458026f28b697"
     },
     {
-      "path": "contracts/v2/fixtures/producer/model-catalog.json",
-      "sha256": "5b706b78a0efc6321c954a1440710e2d01c636650366e24e9edd92a8a2175c39"
+      "path": "contracts/v3/fixtures/producer/model-catalog.json",
+      "sha256": "cd5154edc3089e207543c3e87a26e034a272b18fa2d210dbcc072e6e43724415"
     },
     {
-      "path": "contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
-      "sha256": "f9113e384cd7f36d5c7307b4460c5910a7ac10e1339f2a04c43cb598f6227189"
+      "path": "contracts/v3/fixtures/invalid/v2-shaped-catalog.json",
+      "sha256": "b8c04e8e3966038bf78308d31643acf979c2604a47dc67130fd3d005dce52e9a"
+    },
+    {
+      "path": "contracts/v1/byok-catalog.schema.json",
+      "sha256": "2a22983d58b23a00bdc13b60c08f686ea994e108412ca1355a6a6bef3df8a4a9"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/byok-catalog.json",
+      "sha256": "18a3d7ec70d9350fa829e4835039b6ce91785fa0c22b5fcc98342a5af443e7bf"
     }
   ]
 }

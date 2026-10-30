@@ -91,15 +91,19 @@ export type LedgerEntryV1 = {
 /** One page, bounded at 500 entries upstream (LEDGER_PAGE_MAX); older facts are reached by cursor. */
 export type LedgerPageV1 = { schema_version: 1; transactions: LedgerEntryV1[] }
 
-// #681 / platform#138 / ADR-039: `GET /v1/models` hard-cut to ModelCatalogV2 — the URL's `v1` is the
-// HTTP namespace, this number is the payload generation. Every model now carries both multipliers, and
-// the catalog carries the reference model they are relative to. Two things the shape deliberately does
-// NOT say, because they are fixed contract semantics rather than per-response data: the unit
-// (uncached input/output USD-per-Mtok ratio) and the rounding (platform half-ups to one decimal).
+// #681 / platform#138 / ADR-039: `GET /v1/models` hard-cut to a versioned catalog — the URL's `v1` is the
+// HTTP namespace, this number is the payload generation. Every model carries both multipliers, and the
+// catalog carries the reference model they are relative to. Two things the shape deliberately does NOT
+// say, because they are fixed contract semantics rather than per-response data: the unit (uncached
+// input/output USD-per-Mtok ratio) and the rounding (platform half-ups to one decimal).
 // `pricing_basis_model_id` is that unit's definition, **not** a membership claim — an edition whose
 // allowlist filters the reference model out still publishes it, so never assume it appears in `data`.
-export type ModelCatalogV2 = {
-  schema_version: 2
+// `#1556` / platform#559: V3 adds the required `display` (name / brand / capabilities, owned by the
+// gateway registry) and drops `byok_providers`.
+export type ModelVariants = Record<string, { reasoningEffort?: string; reasoning?: Record<string, unknown>; thinking?: Record<string, unknown> }>
+export type ModelBrandV1 = "anthropic" | "openai" | "deepseek" | "zhipu" | "qwen" | "moonshot" | "minimax"
+export type ModelCatalogV3 = {
+  schema_version: 3
   object: "list"
   data: Array<{
     id: string
@@ -107,10 +111,25 @@ export type ModelCatalogV2 = {
     provider: "deepseek" | "openai" | "openrouter" | "anthropic" | "zhipu" | "alibaba"
     min_plan: "free" | "member"
     pricing_multiplier: { input: number; output: number }
+    display: { name: string; brand: ModelBrandV1; reasoning?: boolean; web?: boolean; variants?: ModelVariants }
   }>
   edition: string
-  byok_providers: string[] | null
   pricing_basis_model_id: string
+}
+
+// `#1556` / platform#559: `GET /v1/byok-catalog` — the BYOK preset catalog. Data only: no endpoint, key
+// name or protocol adapter (those are the App's built-in adapter table); `catalog_version` is monotonic.
+export type ByokCatalogV1 = {
+  schema_version: 1
+  catalog_version: number
+  published_at: string
+  providers: Array<{
+    id: string
+    name: string
+    brand: ModelBrandV1
+    preset: boolean
+    models: Array<{ id: string; name: string; reasoning?: boolean; variants?: ModelVariants; image_input: boolean }>
+  }>
 }
 
 export type ArtifactDescriptorV1 = {
@@ -223,7 +242,8 @@ export type ContractValues = {
   TokenClaimsV1: TokenClaimsV1
   UploadManifestV1: UploadManifestV1
   LedgerPageV1: LedgerPageV1
-  ModelCatalogV2: ModelCatalogV2
+  ModelCatalogV3: ModelCatalogV3
+  ByokCatalogV1: ByokCatalogV1
   CloudJobRequestV1: CloudJobRequestV1
   CloudJobAcceptedV1: CloudJobAcceptedV1
   CloudJobStatusV1: CloudJobStatusV1
