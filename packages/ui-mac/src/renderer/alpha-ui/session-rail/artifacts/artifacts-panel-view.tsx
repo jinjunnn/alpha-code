@@ -581,11 +581,6 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                     {t("alpha.wb.mismatchBanner")}
                   </div>
                 </Show>
-                <Show when={card().state === "mismatch"}>
-                  <div class="a-wb-notice" data-kind="error">
-                    {t("alpha.wb.mismatchBanner")}
-                  </div>
-                </Show>
                 {/* #1552 AC5 result first: the selected file's preview on top. */}
                 <div id="a-rart-panel" class="a-rart-preview" data-artifacts-preview>
                   <Show
