@@ -32,7 +32,7 @@ owner 也已明确「不需要考虑旧客户端兼容」。因此不建设旧�
 
 | 接缝 | 基线事实 | 对本次设计的约束 |
 |---|---|---|
-| 界面 | `ui-mac/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx:1` 使用公开 `useServerSDK/useServerSync`，会话页已自持渲染。`frontend/README.md:1` 与实际恢复脚本定义 app/ui 为 pin + 产品补丁。 | 无需重做会话 UI 接管；本次修复在自有面完成，禁止退回依赖上游 DOM 选择器。 |
+| 界面 | `ui-mac/src/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx:1` 使用公开 `useServerSDK/useServerSync`，会话页已自持渲染。`frontend/README.md:1` 与实际恢复脚本定义 app/ui 为 pin + 产品补丁。 | 无需重做会话 UI 接管；本次修复在自有面完成，禁止退回依赖上游 DOM 选择器。 |
 | 令牌续期 | `ui-mac/src/main/index.ts:728` 的 `onRenewed` 进入 token rotation；`:1444` 起 token-only 和 structural 都重新 fork，`:1458` 在之前 await 远端目录。token-only 不重载 renderer，但仍重启引擎。 | 需要拆开凭据更新、目录刷新和进程恢复。不能把“不刷新窗口”当作“不打断引擎”。 |
 | 秘密装配 | `ui-mac/src/main/alpha-secret-files.ts:1` 描述 fork 时把凭据映射到文件；`opencode/src/config/variable.ts:33` 在配置加载时展开 `{file:}`；`opencode/src/provider/provider.ts:1467,1846` 缓存 SDK。 | 只改秘密文件或停止 respawn 不足以证明新凭据生效，必须修改实际请求/transport 的取凭据接缝。 |
 | 目录刷新 | `ui-mac/src/main/alpha-platform-models.ts:121` 已有序号和账户身份仲裁、一次后台超时补试；`:64` 单次请求预算 8 秒。`models-ipc.ts:9` 特意避免在每次读取时启动刷新。 | 保留现有仲裁；补共享在途请求与生命周期调度。不能再在每个组件读目录时各发一次刷新。 |
