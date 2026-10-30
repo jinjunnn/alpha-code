@@ -569,6 +569,13 @@ describe("#1551 AC7 transport failures carry stage, detail and received bytes in
 })
 
 describe("helpers", () => {
+  test("#1551 unknown stage and byte count both print as '-' in the log line (never a fake 0)", () => {
+    const line = artifactDownloadFailureLog({ ok: false, error: "not-found" })
+    expect(line).toContain("stage=-")
+    expect(line).toContain("received=-")
+    expect(line).not.toContain("received=0")
+  })
+
   test("#1551 sanitizeTransportError drops URL query strings (signatures never reach the log)", () => {
     const out = sanitizeTransportError("GET https://cloud.test/v1/cloud/artifacts/a/content?sig=SECRET-QUERY&x=1 failed")
     expect(out).toContain("https://cloud.test/v1/cloud/artifacts/a/content?[redacted]")

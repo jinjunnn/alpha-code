@@ -161,7 +161,7 @@ export function artifactDownloadFailureLog(outcome: Extract<ArtifactDownloadOutc
   return [
     `artifact download failed (${outcome.error})`,
     `stage=${outcome.stage ?? "-"}`,
-    `received=${outcome.bytes ?? 0}`,
+    `received=${outcome.bytes ?? "-"}`,
     `detail=${outcome.detail ? sanitizeTransportError(outcome.detail) : "-"}`,
   ].join(" ")
 }
