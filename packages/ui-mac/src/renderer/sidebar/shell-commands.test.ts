@@ -172,8 +172,9 @@ describe("侧栏账户菜单「设置」:改接 alpha 自有设置面,与路由�
     document.querySelector<HTMLButtonElement>("[data-settings-section='shortcuts']")!.click()
     await settle()
 
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(".alpha-settings-shortcut-row code"))
-    const ids = rows.map((row) => row.textContent)
+    // #1593 AC3:行上不再显示内部命令名;命令 id 只留在行的 data 属性上。
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".alpha-settings-shortcut-row[data-shortcut]"))
+    const ids = rows.map((row) => row.dataset.shortcut)
     // 前提自检:表真的渲染出来了(否则下面的 not.toContain 是空绿)。
     expect(ids.length).toBeGreaterThan(0)
     expect(ids).toContain("settings.open")

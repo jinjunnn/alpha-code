@@ -22,6 +22,9 @@ type TestRuntime = {
   render: typeof render
   AlphaSettings: typeof AlphaSettings
   SettingsProductionHarness: typeof import("./settings-test-runtime").SettingsProductionHarness
+  DEFAULT_PALETTE_KEYBIND: typeof import("./settings-test-runtime").DEFAULT_PALETTE_KEYBIND
+  parseKeybind: typeof import("./settings-test-runtime").parseKeybind
+  SHELL_KEYBINDS: typeof import("./settings-test-runtime").SHELL_KEYBINDS
 }
 
 const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-settings-render-"))
@@ -207,8 +210,10 @@ describe("Alpha Settings real Solid render", () => {
     await flush()
     await flush()
 
-    const autoSave = document.querySelector<HTMLInputElement>("input[type='checkbox']")!
-    autoSave.click()
+    // #1593 AC4:「自动保存文件」开关已从页面拿掉(无读取方);改用页面上仍在的字号写一笔权威值。
+    const fontSize = document.querySelector<HTMLInputElement>("[data-setting='font-size']")!
+    fontSize.value = "16"
+    fontSize.dispatchEvent(new Event("input", { bubbles: true }))
     click("[data-settings-save]")
     await flush()
     await flush()
@@ -217,12 +222,12 @@ describe("Alpha Settings real Solid render", () => {
     // 上游若再加一处挂载期写,这条先红并当场点名是谁把 revision 顶走了 —— 缺了它,
     // 2026-09-14 的旧界面下线只把下一行变成一句没有线索的 `expect("true").toBe("false")`。
     expect(revisions).toEqual(["s1:initial"])
-    expect(document.querySelector("[data-context-auto-save]")?.textContent).toBe("false")
+    expect(document.querySelector("[data-context-font-size]")?.textContent).toBe("16")
     click("[data-context-update-release-notes]")
     await flush()
     await flush()
 
-    expect(authority.value.general.autoSave).toBe(false)
+    expect(authority.value.appearance.fontSize).toBe(16)
     expect(authority.value.general.releaseNotes).toBe(false)
     expect(revisions).toEqual(["s1:initial", "s1:saved-1"])
   })
@@ -385,7 +390,9 @@ describe("Alpha Settings real Solid render", () => {
     expect(document.querySelector("[data-storage-field='sweptCount']")?.textContent).toContain("0")
     expect(document.querySelector("[data-storage-field='keptByGrace']")?.textContent).toContain("3")
     expect(document.querySelector("[data-storage-field='warningCount']")?.textContent).toContain("2")
-    expect(document.querySelector("[data-storage-code='ok']")?.textContent).toContain("ok")
+    // #1593 AC6:状态行只说人话,不显示原始状态码。
+    expect(document.querySelector("[data-storage-code='ok']")?.textContent).toContain(zh["alpha.settings.storageOk"])
+    expect(document.querySelector("[data-storage-code='ok']")?.textContent).not.toContain("ok")
 
     click("[data-storage-collect]")
     await flush()
@@ -417,7 +424,9 @@ describe("Alpha Settings real Solid render", () => {
     click("[data-settings-section='storage']")
     await flush()
 
-    expect(document.body.textContent).toContain("fail-closed")
+    // #1593 AC6:状态行是人话(「未清理」),原始状态码不上屏。
+    expect(document.body.textContent).toContain(zh["alpha.settings.storageFailClosed"])
+    expect(document.body.textContent).not.toContain("fail-closed")
     expect(document.body.textContent).not.toContain(result.digest)
     expect(document.body.textContent).not.toContain(result.path)
     expect(document.body.textContent).not.toContain(result.warnings[0]!)
@@ -543,5 +552,104 @@ describe("Alpha Settings real Solid render", () => {
       new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
     )
     expect(document.activeElement).toBe(focusable.at(-1))
+  })
+})
+
+// ── #1593 设置页:快捷键照着就能填对,无效开关拿掉,状态不露原码 ─────────────────────────────
+
+async function openShortcuts() {
+  mount(api())
+  await flush()
+  click("[data-settings-section='shortcuts']")
+  await flush()
+}
+const shortcutRow = (id: string) => document.querySelector<HTMLElement>(`.alpha-settings-shortcut-row[data-shortcut='${id}']`)!
+const keycaps = (id: string) => Array.from(shortcutRow(id).querySelectorAll(".alpha-settings-kb-key")).map((el) => el.textContent)
+
+describe("#1593 快捷键", () => {
+  test("AC1 每行占位 = 命令注册时的默认组合(壳级读侧栏注册同一份,面板读上游默认);新建会话是 mod+shift+s", async () => {
+    await openShortcuts()
+    const placeholder = (id: string) => shortcutRow(id).querySelector<HTMLInputElement>("input")!.placeholder
+
+    expect(placeholder("settings.open")).toBe(runtime.SHELL_KEYBINDS["settings.open"])
+    expect(placeholder("project.open")).toBe(runtime.SHELL_KEYBINDS["project.open"])
+    expect(placeholder("session.new")).toBe(runtime.SHELL_KEYBINDS["session.new"])
+    expect(placeholder("session.new")).toBe("mod+shift+s")
+    expect(placeholder("command.palette")).toBe(runtime.DEFAULT_PALETTE_KEYBIND)
+    // 键帽画的也是这份默认组合:新建会话 = 修饰键 + Shift + S 三枚。
+    expect(keycaps("session.new")).toHaveLength(3)
+    expect(keycaps("session.new").at(-1)).toBe("S")
+    expect(keycaps("settings.open").at(-1)).toBe(",")
+  })
+
+  test("AC2 节说明里的示例写法经上游 parseKeybind 解析出的每个组合都有非空键;负对照:旧占位「⌘,」解析出空键", async () => {
+    await openShortcuts()
+    const detail = zh["alpha.settings.shortcutsDetail"]
+    expect(document.body.textContent).toContain(detail)
+    const example = detail.match(/[a-z]+(?:\+[a-z]+)+/)?.[0]
+    expect(example).toBe("mod+shift+s")
+    const parsed = runtime.parseKeybind(example!)
+    expect(parsed.length).toBeGreaterThan(0)
+    for (const keybind of parsed) expect(keybind.key).not.toBe("")
+    expect(runtime.parseKeybind("⌘,").some((keybind) => keybind.key === "")).toBe(true)
+  })
+
+  test("AC3 行上不显示内部命令名;「打开命令面板」改称「搜索会话」", async () => {
+    await openShortcuts()
+    const list = document.querySelector("[aria-label='" + zh["alpha.settings.shortcutList"] + "']")!.textContent ?? ""
+    for (const id of ["settings.open", "command.palette", "project.open", "session.new"]) expect(list).not.toContain(id)
+    expect(shortcutRow("command.palette").textContent).toContain("搜索会话")
+    expect(list).not.toContain("命令面板")
+  })
+})
+
+describe("#1593 通用", () => {
+  const RETIRED_LABELS = ["自动保存文件", "显示会话进度", "显示推理摘要", "文件树", "导航控件", "搜索入口", "状态信息", "终端入口"]
+
+  test("AC4 八个没有读取方的开关不在页面上;保存一次后这些已存值原样写回", async () => {
+    const seeded = value()
+    seeded.general.autoSave = false
+    seeded.general.showFileTree = true
+    seeded.general.showTerminal = true
+    const write = mock(
+      async (input: Parameters<SettingsSurfaceApi["settings"]["write"]>[0]) =>
+        ({ ok: true, changed: true, value: structuredClone(input.value), revision: "s1:saved" }) as const,
+    )
+    mount(api({ read: async () => ({ ok: true, value: structuredClone(seeded), revision: "s1:initial" }) as const, write }))
+    await flush()
+
+    const page = document.querySelector("[data-alpha-settings]")?.textContent ?? document.body.textContent ?? ""
+    for (const label of RETIRED_LABELS) expect(page, label).not.toContain(label)
+    // 页面仍在的一项改一下再保存:整份权威原样写回,那八个键的已存值不被改写。
+    const fontSize = document.querySelector<HTMLInputElement>("[data-setting='font-size']")!
+    fontSize.value = "15"
+    fontSize.dispatchEvent(new Event("input", { bubbles: true }))
+    click("[data-settings-save]")
+    await flush()
+
+    expect(write).toHaveBeenCalledTimes(1)
+    const written = write.mock.calls[0]![0].value
+    expect(written.general.autoSave).toBe(false)
+    expect(written.general.showFileTree).toBe(true)
+    expect(written.general.showTerminal).toBe(true)
+    expect(written.appearance.fontSize).toBe(15)
+  })
+
+  test("AC6 说明文字按批准稿对照表:不写「权威值」,通知开关不再共用一句说明", () => {
+    expect(zh["alpha.settings.loading"]).toBe("正在读取设置…")
+    expect(zh["alpha.settings.authorityStillActive"]).toBe("仍使用上次保存的设置")
+    expect(zh["alpha.settings.invalidStoredDetail"]).toBe("已显示默认设置,保存后替换")
+    expect(zh["alpha.settings.errorRead"]).toBe("读取失败,请重试")
+    expect(zh["alpha.settings.storageSafeCounts"]).toBe("只显示数量")
+    expect(zh["alpha.settings.storageFailClosed"]).toBe("未清理")
+    expect(zh["alpha.settings.storageWorkerFailed"]).toBe("检查未完成")
+    expect(zh["alpha.settings.toolsReasonInvalid"]).toBe("来源无法确认,已停用")
+    expect(zh["alpha.settings.toolsInherit"]).toBe("跟随上级")
+    expect(zh["alpha.settings.toolsNoBinding"]).toBe("服务设置无法确认,暂不能启用")
+    expect(zh["alpha.settings.toolsInvalidCount"]).toBe("{{count}} 项来源无法确认,已停用")
+    for (const key of Object.keys(zh).filter((k) => k.startsWith("alpha.settings.")) as Array<keyof typeof zh>) {
+      expect(zh[key], key).not.toContain("权威")
+    }
+    expect("alpha.settings.notifyDesc" in zh).toBe(false)
   })
 })

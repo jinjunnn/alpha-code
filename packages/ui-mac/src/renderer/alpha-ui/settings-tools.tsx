@@ -536,9 +536,10 @@ export function AlphaSettingsTools(props: {
       const r = reason()
       return r.kind === "binding-changed" ? r.level : undefined
     }
+    // #1593 AC5:只有真有计费数据的工具才挂徽标;不再给每行挂「计费:未知」(计费说法写在组说明里一次)。
     const billing = () =>
-      tr.cls === "alpha-cloud" || tr.cls === "third-party-mcp"
-        ? t("alpha.settings.toolsBilling", { value: tr.tool.billing?.class ?? t("alpha.settings.toolsBillingUnknown") })
+      (tr.cls === "alpha-cloud" || tr.cls === "third-party-mcp") && tr.tool.billing
+        ? t("alpha.settings.toolsBilling", { value: tr.tool.billing.class })
         : undefined
     // 重新启用:以**当前** digest 重写 enabled 记录,层级 = 失效的那条记录所在层(§3)。
     const reenable = () => {
@@ -627,7 +628,7 @@ export function AlphaSettingsTools(props: {
       const parts = [t("alpha.settings.toolsServiceSummary", { count: sr.service.tools.length })]
       if (sr.group.cls === "alpha-cloud" || sr.group.cls === "third-party-mcp") {
         const billed = sr.service.tools.find((item) => item.billing)?.billing?.class
-        parts.push(t("alpha.settings.toolsBilling", { value: billed ?? t("alpha.settings.toolsBillingUnknown") }))
+        if (billed) parts.push(t("alpha.settings.toolsBilling", { value: billed }))
       }
       parts.push(t("alpha.settings.toolsInherited", { value: inherited() }))
       return parts.join(" · ")
