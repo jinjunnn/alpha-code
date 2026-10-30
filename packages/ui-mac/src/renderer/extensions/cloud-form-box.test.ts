@@ -67,6 +67,8 @@ function mount(options: {
   recovering?: boolean
   picked?: string[]
   error?: string
+  /** `#1572`:main 的请求出口认出的网络层,与 `error: "network"` 一起回来。 */
+  netLayer?: string
   result?: unknown
 }) {
   const envelopes: CloudJobEnvelope[] = []
@@ -83,7 +85,8 @@ function mount(options: {
       cloud: {
         dispatch: async (envelope: CloudJobEnvelope) => {
           envelopes.push(envelope)
-          return options.error ? { error: options.error } : { ...accepted, kind: envelope.kind }
+          if (options.error) return options.netLayer ? { error: options.error, netLayer: options.netLayer } : { error: options.error }
+          return { ...accepted, kind: envelope.kind }
         },
         status: async (id: string) => {
           statusCalls.push(id)
@@ -278,5 +281,25 @@ describe("REQ-235 cloud form rendered from the catalog description", () => {
     button!.click()
     await flush()
     expect(harness.actions).toEqual([action])
+  })
+
+  // `#1572` AC5:派发因联网失败没送出去 ⇒ 说卡在哪一层(main 直连,拿不到云服务主机名,代入「对方服务器」);
+  // 认不出层的 `network` 逐字仍是原来那句。
+  test("dispatch network failure with a layer says which step failed; without a layer the copy is unchanged", async () => {
+    mount({ error: "network", netLayer: "tls-silent" })
+    fill("prompt", "Page")
+    submit().click()
+    await flush()
+    expect(document.querySelector(".alpha-ext-card-err")?.textContent).toBe(
+      zh["alpha.net.tlsSilent"].replace("{{host}}", zh["alpha.net.hostFallback"]),
+    )
+    expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudErrNetwork"])
+
+    document.body.replaceChildren()
+    mount({ error: "network" })
+    fill("prompt", "Page")
+    submit().click()
+    await flush()
+    expect(document.querySelector(".alpha-ext-card-err")?.textContent).toBe(zh["alpha.ext.cloudErrNetwork"])
   })
 })

@@ -34,7 +34,7 @@ review_after: 2027-01-30
   ③ 对「不 fork 的热应用」的约束不适用(§2.1)。
 - 网络 lane(`docs/design/req236-network-diagnosis.md` §2.2,修订 `8e23a22fb`):`classifyNetFailure(error: unknown):
   { layer: NetFailureLayer; code: string } | undefined`,`NetFailureLayer = "policy" | "dns" | "tcp" | "tls" | "tls-cert" |
-  "http" | "timeout"`,住在新文件 `packages/schema/src/alpha-net-failure.ts`,归网络 lane 的子票;本方案只消费(§2.2)。【更正:已由 `req236-network-diagnosis.md` §N1 取代:模块在 `packages/plugin/src/alpha-net-failure.ts`,层名为 `connect-timeout` / `tls-silent` / `tls-failed`】
+  "http" | "timeout"`,住在新文件 `packages/schema/src/alpha-net-failure.ts`,归网络 lane 的子票;本方案只消费(§2.2)。【更正:已由 `req236-network-diagnosis.md` §N1 取代:层名为 `connect-timeout` / `tls-silent` / `tls-failed`;模块最终落在 `packages/schema/src/alpha-net-failure.ts`,import 路径 `@opencode-ai/schema/alpha-net-failure`(`#1572`,2026-10-30)】
 - 权限 lane(`docs/design/req236-permissions-and-provenance.md`):每次请求的云 MCP 凭据**从 `ALPHA_CLOUD_MCP_DEF` 里的
   引用读取,不从已装载的条目读取**;云工具来源比较的修正(不再比较令牌值)归它的 C4。本方案不依赖来源比较结果。
 - 三档权限、来源分类、配置受控字段归权限 lane;附件与各文件类型的用户可见说明归生图/产物/附件 lane;改名归品牌 lane。
@@ -376,7 +376,7 @@ $ node v22.22.3 -e 'spawn("uv",["--version"],{cwd:"/nonexistent-dir-xyz",env:{PA
 | `opencode/test/mcp/lifecycle.test.ts`、`test/session/tools.test.ts`、`test/tool/code-mode.test.ts`、`test/tool/code-mode-integration.test.ts` | 已接管(`:164,189,179,178`) | 补桩与用例;新测试优先放 `test/mcp/alpha-*.test.ts`(ADR-043) |
 | `sdk/js/src/v2/gen/types.gen.ts`、`sdk/js/src/gen/types.gen.ts` | 已接管生成物(`:130,160`) | 只改这两份里的 MCP `Status`;同目录其它文件不在授权内 |
 | `sdk/openapi.json` | **不改**(不在例外表) | 先例:ADR-033 改了公开 schema(`fd357d58b`),该文件至今无 alpha 提交 |
-| `plugin/src/alpha-cloud-authority.ts`、新 `alpha-first-party-mcp.ts`;`schema/src/alpha-net-failure.ts`(网络 lane) | alpha 自有(ADR-043) | 无需例外【更正:已由 `req236-network-diagnosis.md` §N1 取代:模块在 `packages/plugin/src/alpha-net-failure.ts`,层名为 `connect-timeout` / `tls-silent` / `tls-failed`】 |
+| `plugin/src/alpha-cloud-authority.ts`、新 `alpha-first-party-mcp.ts`;`schema/src/alpha-net-failure.ts`(网络 lane) | alpha 自有(ADR-043) | 无需例外【更正:已由 `req236-network-diagnosis.md` §N1 取代:层名为 `connect-timeout` / `tls-silent` / `tls-failed`;模块最终落在 `packages/schema/src/alpha-net-failure.ts`,import 路径 `@opencode-ai/schema/alpha-net-failure`(`#1572`,2026-10-30)】 |
 | `opencode/src/provider/provider.ts`、`session/system.ts`、`config/variable.ts`、`session/prompt.ts` | **不改** | — |
 | `packages/opencode/AGENTS.md` | **不改** | §2.2 按其规则分解,不需要改写规则 |
 | `.github/workflows/sync-upstream.yml`、`scripts/north-star-guard.sh`、`docs/runbooks/ci.md` | alpha 自有 | 发布链,独立 PR |

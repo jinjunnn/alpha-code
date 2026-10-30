@@ -24,14 +24,25 @@
 //   403 unregistered      策略拒绝(唯一的「闸门说不」)
 //   400 bad-authority     CONNECT 行不是 `host:port`(缺端口 / 越界 / 带路径 …)—— 不猜默认端口
 //   405 method-not-connect 非 CONNECT 请求(绝对 URI 的明文 HTTP)—— 本代理只做隧道,不做明文转发
-//   502 dial-failed       登记了但拨不通(ENOTFOUND / ECONNREFUSED / 超时)—— 这**不是**策略拒绝,别混
+//   503 dial-failed       登记了但域名解析不了(ENOTFOUND / EAI_AGAIN / EAI_NONAME)
+//   502 dial-failed       登记了但拒连 / 不可达(ECONNREFUSED / EHOSTUNREACH …)
+//   504 dial-failed       登记了但拨号超时(dialTimeoutMs 内既不通也不拒)
+// 三种 dial-failed 都**不是**策略拒绝,别混。`#1572`:它们按层用不同状态码(@opencode-ai/schema/alpha-net-failure 的
+// EGRESS_DIAL_FAILURE_STATUS)—— node 的 undici 把 CONNECT 的非 200 正文丢掉、只留状态码,状态码本身就得把层分开。
 // 拒绝体带可识别前缀:bun 的 fetch 会把代理的 403 当目标响应返回(§4.2),正文是应用侧唯一的归因线索。
+//
+// ── 隧道开了不等于远端可达(`#1572`)──────────────────────────────────────────────────
+// 200 只证明「策略放行 + 本进程拨通了 TCP」;在 fake-IP(198.18.0.0/15)下连 TCP 都只是本机 TUN 接住的。
+// 放行记录因此带上游地址与 fakeIp,关闭记录带 firstDownMs(上游第一个字节,TLS Alert 也算,不是握手成功)。
+// 静默兜底:客户端字节流以 TLS 记录头开始、上游 tlsSilentMs(默认 15 s)内零字节 ⇒ 关掉两端并记 egress.tunnel-silent。
+// 它是产品期限,只会更早关闭、永不新建连接或改变授权;tlsSilentMs = 0 撤销。
 //
 // electron-free:日志、授权、拨号都可注入,默认值才是生产接线(authorize = 注册表,dial = net.connect)。
 // 这样 network-egress-proxy.test.ts 能在 bun 里对真 TCP 靶站跑正反两臂,并证明「换成恒答允许的替身,判据会红」。
 
 import * as http from "node:http"
 import * as net from "node:net"
+import { classifyNetFailure, EGRESS_DIAL_FAILURE_STATUS } from "@opencode-ai/schema/alpha-net-failure"
 import { egressDenialLine } from "../shared/egress-denial"
 import { isEgressAuthorizedForSidecar } from "./network-egress-derived"
 import { requestUserEgressGrant, type EgressGrantOutcome } from "./network-egress-grants"
@@ -67,10 +78,14 @@ export type EgressLogRecord =
       port?: number
       verdict: "allow" | "deny"
       reason?: EgressDenyReason
-      /** 回给客户端的状态码:200 隧道 / 403 / 400 / 405 / 502。 */
+      /** 回给客户端的状态码:200 隧道 / 403 / 400 / 405 / 503 / 502 / 504。 */
       status: number
       /** dial-failed 的错误码(ENOTFOUND / ECONNREFUSED / ETIMEDOUT …)。 */
       detail?: string
+      /** `#1572` 放行记录:上游 socket 的对端地址。 */
+      remote?: string
+      /** `#1572` 放行记录:对端地址落在 fake-IP 段(198.18.0.0/15)—— 这个 200 只说明本机 TUN 接了 TCP。 */
+      fakeIp?: boolean
     }
   | {
       event: "egress.tunnel-closed"
@@ -80,6 +95,21 @@ export type EgressLogRecord =
       port: number
       bytesUp: number
       bytesDown: number
+      /** `#1572`:200 之后第一个上游字节的毫秒数;上游一个字节都没回就不写。TLS Alert 也算,不是握手成功的证据。 */
+      firstDownMs?: number
+      /** `#1572`:200 到关闭的毫秒数。 */
+      durationMs: number
+    }
+  | {
+      /** `#1572`:客户端以 TLS 记录头开口、上游 tlsSilentMs 内零字节 ⇒ 代理关掉两端(产品期限)。 */
+      event: "egress.tunnel-silent"
+      id: number
+      at: string
+      host: string
+      port: number
+      remote?: string
+      fakeIp: boolean
+      bytesUp: number
     }
 
 export type EgressProxyDeps = {
@@ -97,6 +127,8 @@ export type EgressProxyDeps = {
   requestGrant?: (host: string, port: number) => Promise<EgressGrantOutcome>
   /** 拨号超时(默认 10 s):登记了但黑洞的目的地要快速、可读地失败,不能挂到客户端超时。 */
   dialTimeoutMs?: number
+  /** `#1572` 静默兜底期限(默认 15 s):TLS 隧道上游零字节多久就关。0 = 不设期限。 */
+  tlsSilentMs?: number
 }
 
 export type EgressProxyHandle = {
@@ -159,7 +191,26 @@ function denialBody(reason: EgressDenyReason, authority: string, detail?: string
   return egressDenialLine(authority, reason, why)
 }
 
-const STATUS_TEXT: Record<number, string> = { 400: "Bad Request", 403: "Forbidden", 405: "Method Not Allowed", 502: "Bad Gateway" }
+const STATUS_TEXT: Record<number, string> = {
+  400: "Bad Request",
+  403: "Forbidden",
+  405: "Method Not Allowed",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+  504: "Gateway Timeout",
+}
+
+/** `#1572` 拨号失败按层选状态码:解析不了 503、拨号超时 504、其余(拒连 / 不可达)502。是不是 DNS 由分类模块说了算。 */
+function dialFailureStatus(err: NodeJS.ErrnoException): number {
+  if (classifyNetFailure(err, { via: "other" })?.layer === "dns") return EGRESS_DIAL_FAILURE_STATUS.dns
+  if (err.code === "ETIMEDOUT") return EGRESS_DIAL_FAILURE_STATUS.timeout
+  return EGRESS_DIAL_FAILURE_STATUS.tcp
+}
+
+/** fake-IP 段 198.18.0.0/15(含 IPv4-mapped 写法)。 */
+function isFakeIp(address: string | undefined): boolean {
+  return /^(?:::ffff:)?198\.1[89]\./i.test(address ?? "")
+}
 
 function writeDenial(socket: net.Socket, status: number, body: string): void {
   const head = [
@@ -179,6 +230,7 @@ export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<Egr
   const requestGrant = deps.requestGrant ?? requestUserEgressGrant
   const dial = deps.dial ?? defaultDial
   const dialTimeoutMs = deps.dialTimeoutMs ?? 10_000
+  const tlsSilentMs = deps.tlsSilentMs ?? 15_000
   const log = deps.log
   let seq = 0
   const live = new Set<net.Socket>()
@@ -248,13 +300,42 @@ export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<Egr
       upstream.once("connect", () => {
         settled = true
         clearTimeout(timer)
-        log({ event: "egress.connect", id, at: new Date().toISOString(), method: "CONNECT", authority, host: parsed.host, port: parsed.port, verdict: "allow", status: 200 })
+        const remote = upstream.remoteAddress
+        const fakeIp = isFakeIp(remote)
+        log({ event: "egress.connect", id, at: new Date().toISOString(), method: "CONNECT", authority, host: parsed.host, port: parsed.port, verdict: "allow", status: 200, remote, fakeIp })
         clientSocket.write("HTTP/1.1 200 Connection Established\r\nProxy-Agent: alpha-egress-policy\r\n\r\n")
+        const openedAt = Date.now()
         // 字节计数自己数(bun 的 http 连接 socket 上 bytesRead/bytesWritten 实测恒 0)。
         let bytesUp = head.length
         let bytesDown = 0
-        clientSocket.on("data", (chunk: Buffer) => (bytesUp += chunk.length))
-        upstream.on("data", (chunk: Buffer) => (bytesDown += chunk.length))
+        let firstDownAt: number | undefined
+        // `#1572` 静默兜底:head 与之后的客户端 data 当一条连续字节流,前两个字节是 TLS 记录头(0x16 0x03,
+        // 允许跨块到达)才起计时;上游第一个字节、任一端关闭都清掉它。
+        const prefix: number[] = []
+        let silentTimer: ReturnType<typeof setTimeout> | undefined
+        const watchTlsHead = (chunk: Buffer) => {
+          if (prefix.length >= 2) return
+          prefix.push(...chunk.subarray(0, 2 - prefix.length))
+          if (prefix.length < 2 || prefix[0] !== 0x16 || prefix[1] !== 0x03) return
+          if (tlsSilentMs <= 0 || firstDownAt !== undefined) return
+          silentTimer = setTimeout(() => {
+            log({ event: "egress.tunnel-silent", id, at: new Date().toISOString(), host: parsed.host, port: parsed.port, remote, fakeIp, bytesUp })
+            clientSocket.destroy()
+            upstream.destroy()
+          }, tlsSilentMs)
+        }
+        watchTlsHead(head)
+        clientSocket.on("data", (chunk: Buffer) => {
+          bytesUp += chunk.length
+          watchTlsHead(chunk)
+        })
+        upstream.on("data", (chunk: Buffer) => {
+          if (firstDownAt === undefined) {
+            firstDownAt = Date.now()
+            clearTimeout(silentTimer)
+          }
+          bytesDown += chunk.length
+        })
         if (head.length > 0) upstream.write(head)
         clientSocket.pipe(upstream)
         upstream.pipe(clientSocket)
@@ -262,7 +343,19 @@ export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<Egr
         const onClose = () => {
           if (closed) return
           closed = true
-          log({ event: "egress.tunnel-closed", id, at: new Date().toISOString(), host: parsed.host, port: parsed.port, bytesUp, bytesDown })
+          clearTimeout(silentTimer)
+          const closedAt = Date.now()
+          log({
+            event: "egress.tunnel-closed",
+            id,
+            at: new Date(closedAt).toISOString(),
+            host: parsed.host,
+            port: parsed.port,
+            bytesUp,
+            bytesDown,
+            ...(firstDownAt === undefined ? {} : { firstDownMs: firstDownAt - openedAt }),
+            durationMs: closedAt - openedAt,
+          })
           clientSocket.destroy()
           upstream.destroy()
         }
@@ -273,7 +366,7 @@ export async function startEgressPolicyProxy(deps: EgressProxyDeps): Promise<Egr
         if (settled) return clientSocket.destroy()
         settled = true
         clearTimeout(timer)
-        deny(502, "dial-failed", parsed, err.code ?? err.message)
+        deny(dialFailureStatus(err), "dial-failed", parsed, err.code ?? err.message)
       })
       clientSocket.once("close", () => {
         if (!settled) {

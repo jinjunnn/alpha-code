@@ -18,6 +18,7 @@ import type {
 // #408:preload/index.ts 只许 import "./types"(ext-security-boundaries AC4③ 装载路径钉)—— wire 类型经此转口。
 export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
+import type { NetFailureLayer } from "@opencode-ai/schema/alpha-net-failure"
 import type { ToolPolicyApi } from "../shared/tool-policy-wire"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import type { OfficeRuntimeReadiness } from "../shared/office-advisories"
@@ -476,8 +477,9 @@ import type { CloudRunDeliveryFailure, CloudRunOrigin, CloudRunState } from "../
 export type { CloudRunDeliveryFailure, CloudRunManifest, CloudRunOrigin, CloudRunSaveFailure, CloudRunState }
 /** SSE 进度事件(job.snapshot / job.started / job.running / workflow.step.completed / job.completed|failed|cancelled / error)。 */
 export type CloudJobEvent = { event: string; data: unknown; id?: string }
-/** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
-export type CloudResult<T> = T | { error: string }
+/** Same shape as AccountResult; distinct alias for the cloud jobs surface.
+ *  `#1572`:`error: "network"` 时可带 `netLayer`(卡在哪一层,@opencode-ai/schema/alpha-net-failure),`error` 码集合不变。 */
+export type CloudResult<T> = T | { error: string; netLayer?: NetFailureLayer }
 export type UploadFindingKind = "contact" | "identity" | "credential" | "protected" | "unknown"
 export type UploadPreview = {
   pipeline: "code-review"
@@ -1366,10 +1368,11 @@ export type ElectronAPI = {
      * kebab 本地/传输码)。只有云档腿会带它;本地落盘失败一类没有分类码,故可选。renderer
      * 据 `code` 选人话文案,`reason` 只是 main 拼的日志串,不许被解析。
      */
-    save: (task: AutomationTask) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
-    /** [#994] 云端删不掉 / 停不掉时带 `code`(同 save 的结构槽);本地失败一类没有。 */
-    remove: (id: string) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
-    toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
+    save: (task: AutomationTask) => Promise<{ ok: true } | { ok: false; reason: string; code?: string; netLayer?: NetFailureLayer }>
+    /** [#994] 云端删不掉 / 停不掉时带 `code`(同 save 的结构槽);本地失败一类没有。
+     *  `#1572`:`code === "network"` 且认得出卡在哪一层时另带 `netLayer`。 */
+    remove: (id: string) => Promise<{ ok: true } | { ok: false; reason: string; code?: string; netLayer?: NetFailureLayer }>
+    toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string; code?: string; netLayer?: NetFailureLayer }>
     pauseAll: (paused: boolean) => Promise<{ ok: true }>
     /** A2:立即运行(不改 next-fire;占并发位;计日 cap)。 */
     /** [#1592] 被拒时带本地结构码 `code`(界面按它出文案);`reason` 只是日志串。 */

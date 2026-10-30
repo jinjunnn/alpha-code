@@ -27,6 +27,8 @@
 // DEBUG and LD_PRELOAD, which the old copy-everything implementation deleted case-by-case, now fall
 // out via default-deny like everything else.
 
+import { EGRESS_PROXY_MARKER_ENV } from "@opencode-ai/schema/alpha-net-failure"
+
 const EXACT = new Set([
   // POSIX/system basics the server, node, git and package managers need
   "PATH",
@@ -50,6 +52,9 @@ const EXACT = new Set([
   "https_proxy",
   "all_proxy",
   "no_proxy",
+  // `#1572`:出网代理的决定者标记(值 = 出网代理 URL,非密钥)。只由下面的 sidecarEgressProxyEnv 写;
+  // 引擎据它判断代理变量是不是出网代理(@opencode-ai/schema/alpha-net-failure 的 engineNetFailurePath)。
+  EGRESS_PROXY_MARKER_ENV,
   // node runtime knobs (non-secret)
   "NODE_ENV",
   "NODE_OPTIONS",
@@ -282,7 +287,11 @@ export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Recor
 
 export const SIDECAR_EGRESS_NO_PROXY = "127.0.0.1,localhost,::1"
 
-/** 给定策略代理端口,返回要**覆盖**进 sidecar env 的八个代理变量(纯函数;server.ts 在 fork 前 Object.assign)。 */
+/**
+ * 给定策略代理端口,返回要**覆盖**进 sidecar env 的八个代理变量(纯函数;server.ts 在 fork 前 Object.assign)。
+ * `#1572`:另写决定者标记 ALPHA_EGRESS_PROXY(同一 URL)—— 引擎只在代理变量等于它时才把失败归到本机出网代理;
+ * 非 darwin 不调本函数,代理变量是用户自己的,没有这个标记。
+ */
 export function sidecarEgressProxyEnv(port: number): Record<string, string> {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`sidecar egress proxy env: port must be an integer in 1..65535, got ${JSON.stringify(port)}`)
   const url = `http://127.0.0.1:${port}`
@@ -295,5 +304,6 @@ export function sidecarEgressProxyEnv(port: number): Record<string, string> {
     all_proxy: url,
     NO_PROXY: SIDECAR_EGRESS_NO_PROXY,
     no_proxy: SIDECAR_EGRESS_NO_PROXY,
+    [EGRESS_PROXY_MARKER_ENV]: url,
   }
 }

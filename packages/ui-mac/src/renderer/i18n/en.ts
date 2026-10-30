@@ -2204,4 +2204,16 @@ export const dict = {
   "alpha.ext.agentDocReadFailed": "The assistant text could not be read. Reopen its details.",
   "alpha.ext.skillDocMissing": "This version does not include the skill text, so it cannot be viewed.",
   "alpha.ext.agentDocMissing": "This version does not include the assistant text, so it cannot be viewed.",
+  // `#1572` 联网失败按层说出卡在哪一步(alpha-ui/net-failure-copy.ts)
+  "alpha.net.hostFallback": "the server",
+  "alpha.net.policy": "This computer's network policy did not allow {{host}}; approve the address and try again",
+  "alpha.net.dns": "Couldn't resolve {{host}}; check your network or proxy app and try again",
+  "alpha.net.tcp": "Couldn't reach {{host}}; try again later",
+  "alpha.net.connectTimeout": "Connecting to {{host}} timed out; try again later",
+  "alpha.net.tlsSilent": "{{host}} didn't answer the secure handshake; switch network or proxy node and try again",
+  "alpha.net.tlsFailed": "The secure handshake with {{host}} failed; switch network or proxy node and try again",
+  "alpha.net.tlsCert": "{{host}}'s certificate couldn't be verified; check the system clock and your network before continuing",
+  "alpha.net.http": "{{host}} returned an error",
+  "alpha.net.timeout": "Waiting for {{host}} timed out; try again later",
+  "alpha.net.unattributed": "The connection dropped partway",
 }

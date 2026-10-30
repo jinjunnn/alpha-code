@@ -8,6 +8,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import presetSolid from "babel-preset-solid"
 import { resolveObjectURL } from "node:buffer"
+import { dict as zhDict } from "../src/renderer/i18n/zh"
 
 // The image renderer's native URL.createObjectURL requires Bun's Blob, not happy-dom's Blob.
 const nativeBlob = Blob
@@ -1770,6 +1771,48 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(copied[2]).toBe("denied: Authorization: [已隐藏] (401)")
   })
 
+  // `#1572` AC5:引擎写进 ToolPart metadata 的 `alphaNetFailure` ⇒ 在原错误文字之上加一句,主机名取自调用的 URL
+  // (只要主机名,查询串里的令牌不进 DOM);认不出的(没有层 / 层名不认识)整块逐字不变、不多一行。
+  test("工具卡:webfetch 经出网代理失败且认出了层 ⇒ 原错误之上加一句分层文案;认不出 ⇒ 逐字不变", async () => {
+    const host = mount()
+    const raw = "Transport error ENOTREACHABLE-1572"
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_n1", "webfetch", {
+          status: "error",
+          input: { url: "https://docs.example.test/page?token=SECRET-NEEDLE-1572" },
+          error: "webfetch failed: tls",
+          metadata: { alphaNetFailure: { layer: "tls-silent", code: "UND_ERR_CONNECT_TIMEOUT" } },
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_n2", "grep", {
+          status: "error",
+          input: { pattern: "x" },
+          error: raw,
+          metadata: { alphaNetFailure: { layer: "transport", code: "x" } },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+    await openProcess(host)
+    await openAll(host)
+
+    const layered = host.querySelector("[data-alpha-tool-card][data-tool='webfetch'][data-status='error']")!
+    const line = layered.querySelector("[data-alpha-net-layer]")!
+    expect(line.getAttribute("data-alpha-net-layer")).toBe("tls-silent")
+    expect(line.textContent).toBe(zhDict["alpha.net.tlsSilent"].replace("{{host}}", "docs.example.test"))
+    expect(line.textContent).not.toContain("SECRET-NEEDLE-1572")
+    // 原错误文字仍在,分层那一句在它之上。
+    expect(layered.querySelector(".a-tc-error-body")!.textContent).toContain("webfetch failed: tls")
+    const order = Array.from(layered.querySelector(".a-tc-err")!.children).map((node) => node.className)
+    expect(order.indexOf("a-tc-net")).toBeLessThan(order.indexOf("a-tc-error-body"))
+
+    const unrecognised = host.querySelector("[data-alpha-tool-card][data-tool='grep'][data-status='error']")!
+    expect(unrecognised.querySelector("[data-alpha-net-layer]")).toBeNull()
+    expect(unrecognised.querySelector(".a-tc-error-body")!.textContent).toContain(raw)
+  })
+
   test("edit diff 视图:jsdiff 行渲染 ±行号与 +/− 行;write 显示预览与总行数;补丁卡出徽章行", async () => {
     const host = mount()
     runtime.setTimelineRows(
@@ -2117,7 +2160,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
 
   // `#1382` —— 最后一跳:归因真的被**渲染**出来。断源码文本不算(组件还在但渲染出空节点照样通过),
   // 所以两条用例都对真 DOM 断言,且第二条是同一张卡的控制臂:非围栏的失败一个字都不许变。
-  function errorRowFor(message: string, responseBody?: string) {
+  function errorRowFor(message: string, responseBody?: string, metadata?: Record<string, string>) {
     return model.projectTimelineRows({
       messages: [
         { id: "msg_u1", sessionID: "ses_1", role: "user", time: { created: 1000 }, agent: "build", model: { providerID: "deepseek", modelID: "deepseek-chat" } },
@@ -2134,7 +2177,10 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
           path: { cwd: "/tmp", root: "/tmp" },
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          error: { name: "APIError", data: responseBody === undefined ? { message } : { message, responseBody } },
+          error: {
+            name: "APIError",
+            data: { message, ...(responseBody === undefined ? {} : { responseBody }), ...(metadata ? { metadata } : {}) },
+          },
         },
       ] as never,
       partsOf: (messageID: string) =>
@@ -2192,6 +2238,33 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
         message,
         misattributed: false,
       })
+    }
+  })
+
+  // `#1572` AC5 —— 引擎结算时写进 APIError metadata 的网络层:同一张卡、同一位置换成分层那一句;
+  // 认不出的(没有 metadata / 层名不认识 / http)一个字都不变。期望值从字典原文代入「对方服务器」(回合级拿不到主机名)。
+  test("回合级错误卡:引擎认出了卡在哪一层 ⇒ 说那一层;没拿到任何应答 ⇒ 说连接中途断开;认不出 ⇒ 原文案逐字不变", async () => {
+    const host = mount()
+    const turnText = () => host.querySelector("[data-alpha-timeline-row='turn-error']")!.textContent ?? ""
+    const raw = "Cannot connect to API: Request was cancelled."
+
+    runtime.setTimelineRows(errorRowFor(raw, undefined, { alphaNetLayer: "dns", alphaNetCode: "503" }))
+    await flush()
+    expect(turnText()).toContain(zhDict["alpha.net.dns"].replace("{{host}}", zhDict["alpha.net.hostFallback"]))
+    expect(turnText()).toContain("解析不了")
+    expect(turnText()).not.toContain(raw)
+    expect(host.querySelector("[data-alpha-timeline-row='turn-error'] .a-turn-err-code")!.textContent).toBe("APIError")
+
+    runtime.setTimelineRows(errorRowFor(raw, undefined, { alphaNetCode: "unattributed" }))
+    await flush()
+    expect(turnText()).toContain(zhDict["alpha.net.unattributed"])
+    expect(turnText()).not.toContain(raw)
+
+    for (const metadata of [undefined, { alphaNetLayer: "transport", alphaNetCode: "x" }, { alphaNetLayer: "http", alphaNetCode: "400" }]) {
+      runtime.setTimelineRows(errorRowFor(raw, undefined, metadata))
+      await flush()
+      expect({ metadata, shown: turnText().includes(raw) }).toEqual({ metadata, shown: true })
+      expect({ metadata, layered: turnText().includes(zhDict["alpha.net.unattributed"]) }).toEqual({ metadata, layered: false })
     }
   })
 

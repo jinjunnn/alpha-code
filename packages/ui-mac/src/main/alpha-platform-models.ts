@@ -27,6 +27,7 @@ import { resolveEndpoints } from "./alpha-endpoints"
 import { httpErrorCode } from "./platform-error-code"
 import { ContractIncompatibleError, decodeJsonContract, isContractIncompatibleError } from "@alpha-code/contracts-consumer"
 import { getAccessToken, getAuthIdentityTag } from "./alpha-auth"
+import { classifyNetFailure, type NetFailure } from "@opencode-ai/schema/alpha-net-failure"
 import { getLogger } from "./logging"
 import { ALPHA_PATHS } from "../shared/alpha-config"
 import type { CloudResult, PlatformLiveModel } from "../preload/types"
@@ -66,6 +67,7 @@ async function fetchModels(attempt: number): Promise<PlatformModelsResult> {
   const started = Date.now()
   let status: number | undefined
   let exception: string | undefined
+  let net: NetFailure | undefined
   try {
     const token = getAccessToken("model.invoke") // /v1/models 不强制鉴权;持登录态带上 → 网关按租户 edition 收窄
     const res = await fetch(`${base}${ALPHA_PATHS.models}`, {
@@ -100,6 +102,8 @@ async function fetchModels(attempt: number): Promise<PlatformModelsResult> {
     }
   } catch (error) {
     exception = error instanceof Error ? error.name : "unknown"
+    // `#1572`:卡在哪一层(main 直连,路径恒为 other);只记层名与错误码。返回值仍是 timeout / network(`#1500` 契约)。
+    net = classifyNetFailure(error, { via: "other" })
     if (isContractIncompatibleError(error)) {
       // 上报走独立通道(alpha-contract-health → renderer Banner);目录读取路径不受影响。
       if (sequence === refreshSequence && identity === getAuthIdentityTag()) reportContractFailure(error)
@@ -116,6 +120,7 @@ async function fetchModels(attempt: number): Promise<PlatformModelsResult> {
       durationMs: Date.now() - started,
       ...(status === undefined ? {} : { status }),
       ...(exception === undefined ? {} : { exception }),
+      ...(net === undefined ? {} : { layer: net.layer, code: net.code }),
     })
   }
 }

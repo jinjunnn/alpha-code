@@ -59,6 +59,9 @@ import {
   isGovernedMcpEntry,
 } from "@opencode-ai/plugin/alpha-cloud-authority"
 import { declaredFirstPartyTools } from "./alpha-first-party-mcp"
+// #1572: the layered network classifier (REQ-236 network baseline §2.2 N1) and the engine's egress-proxy path judgment
+// live in one module; this file consumes both and keeps no copy of either.
+import { classifyNetFailure, engineNetFailurePath } from "@opencode-ai/schema/alpha-net-failure"
 import { ToolAliasLedger, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 const DEFAULT_TIMEOUT = 30_000
@@ -87,7 +90,8 @@ function describeError(error: Error) {
 // #1563 AC3: background reconnect waits 30 s, doubling per consecutive failure up to 10 min; a success resets it.
 const RECONNECT_BASE = 30_000
 const RECONNECT_CAP = 600_000
-// Remote failure codes that reconnect (`http` only on 5xx, see remoteFailure); every other failure stays failed.
+// Remote failure codes that reconnect (`http` only on 5xx, see remoteFailure); every other failure stays failed —
+// `policy`, `tls-cert`, `http` 4xx and `auth` are deterministic answers another attempt will not change (#1572 AC7).
 const RECONNECT_CODES = new Set([
   "transport",
   "dns",
@@ -99,41 +103,6 @@ const RECONNECT_CODES = new Set([
   "handshake_timeout",
 ])
 
-type NetFailureLayer =
-  | "policy"
-  | "dns"
-  | "tcp"
-  | "connect-timeout"
-  | "tls-silent"
-  | "tls-failed"
-  | "tls-cert"
-  | "http"
-  | "timeout"
-type NetFailurePath = { via: "egress-proxy"; proxyOrigin: string } | { via: "other" }
-
-/**
- * #1563 interface point. The layered network classifier belongs to the REQ-236 network baseline
- * (`classifyNetFailure(error, path)` in `@opencode-ai/plugin/alpha-net-failure`) and is not merged yet. Until it is,
- * nothing is recognised, so a remote network failure reports `transport` and reconnects; replace this body with
- * that import when it lands.
- */
-function classifyNetFailure(
-  _error: unknown,
-  _path: NetFailurePath,
-): { layer: NetFailureLayer; code: string } | undefined {
-  return undefined
-}
-
-// The engine's proxy variables always name the egress proxy (sidecar-env.ts); loopback targets bypass it (NO_PROXY).
-function netPath(url: URL): NetFailurePath {
-  const proxy =
-    url.protocol === "https:"
-      ? (process.env.HTTPS_PROXY ?? process.env.https_proxy)
-      : (process.env.HTTP_PROXY ?? process.env.http_proxy)
-  if (!proxy || !URL.canParse(proxy) || ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))
-    return { via: "other" }
-  return { via: "egress-proxy", proxyOrigin: new URL(proxy).origin }
-}
 const CLIENT_OPTIONS = {
   capabilities: {
     // https://github.com/anomalyco/opencode/issues/11948
@@ -274,12 +243,18 @@ function remoteFailure(error: Error, url: URL, timeout: number) {
     return new ConnectFailure({ status: failed("handshake_timeout", message), reconnect: true })
   if ((error instanceof StreamableHTTPError || error instanceof SseError) && (error.code === 401 || error.code === 403))
     return new ConnectFailure({ status: failed("auth", message), reconnect: false })
-  const net = classifyNetFailure(error, netPath(url))
+  const net = classifyNetFailure(error, engineNetFailurePath(url, process.env))
   if (!net) return new ConnectFailure({ status: failed("transport", message), reconnect: true })
   return new ConnectFailure({
     status: failed(net.layer, message),
     reconnect: RECONNECT_CODES.has(net.layer) || (net.layer === "http" && Number(net.code) >= 500),
   })
+}
+
+/** A failed attempt whose cause the classifier attributed to a network layer (not the unrecognised `transport`). */
+function attributed(failure: ConnectFailure | undefined) {
+  const status = failure?.status
+  return status?.status === "failed" && status.code !== undefined && status.code !== "transport"
 }
 
 interface AuthResult {
@@ -555,14 +530,16 @@ const layer = Layer.effect(
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
       let lastFailure: ConnectFailure | undefined
       let retryable = false
-      // StreamableHTTP's transport failure is the real cause; the SSE 405 that follows must not hide it.
+      // StreamableHTTP's failure is the real cause when it died on the wire or was attributed to a network layer: the SSE
+      // 405 that follows must not hide it, and the SSE fallback sees a network cause only as flattened text (eventsource
+      // 3.0.7 `flattenError`), so a `tls-cert` / `policy` answer would come back as an unattributed `transport` (#1572 AC7).
       let transportFailure: ConnectFailure | undefined
 
       for (const { name, create, retryAfter } of transports) {
         if (retryAfter !== undefined) {
           if (!retryable) continue
           yield* Effect.sleep(retryAfter)
-        } else if (retryable) transportFailure = lastFailure
+        } else if (retryable || attributed(lastFailure)) transportFailure = lastFailure
         retryable = false
         const transport = create()
         const client = yield* connectTransport(transport, connectTimeout).pipe(

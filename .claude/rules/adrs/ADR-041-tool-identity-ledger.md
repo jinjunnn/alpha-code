@@ -110,6 +110,11 @@ identity deny 判定，不扩大文件面。~~新增文件因 guard 的 DMR 策�
 >   不合约定，已各自写上 `north-star:alpha-owned` 一行；删掉那一行，对它们的每一次修改都会重新变红。
 > - `packages/plugin/src/alpha-cloud-authority.ts` 不在 `UPSTREAM_PATHS` 内（`packages/plugin`
 >   从来不在守卫辖区），与本条无关。
+>   【更正 · 2026-10-30 `alpha-code#1572`:「`packages/plugin` 从来不在守卫辖区」在 ADR-044(`#1247`)之后
+>   已不成立 —— 辖区改成整棵 `packages/` 减两张 carve-out,`plugin` 不在 carve-out 里。`alpha-cloud-authority.ts`
+>   本身仍按 ADR-043 谓词(上游镜像无此路径 ∧ `alpha-` 前缀)零登记;但同一次落地加进 `packages/plugin/package.json`
+>   的 `./alpha-cloud-authority` exports 一行改的是上游文件,今天再碰该文件守卫即红(`#1572` 实跑 exit 1),
+>   已登记为 `docs/architecture/constraints.md` 的已知偏离。】
 >
 > 本订正**不改变**本 ADR 的任何接管决定：下方「精确 L3 接管面」那张表一条未动，它仍是逐文件的、
 > 每条都受 `UPSTREAM_EXCLUDES` 与 ADR-029 §3 管辖。谓词管的是**从来不是上游的**文件，不是收编。

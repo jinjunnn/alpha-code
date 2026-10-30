@@ -26,13 +26,16 @@ import { cloudScheduleEnvelopeFor, cloudScheduleRegistrationFor } from "./cloud-
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 import { httpErrorCode } from "./platform-error-code"
+import { classifyNetFailure, type NetFailureLayer } from "@opencode-ai/schema/alpha-net-failure"
 
 // [#963] HTTP 拒绝的错误形状:`error` 是呈现槽(经 platform-error-code 咽喉的分类码或
 // http-<status>,进 UI),`status` 是结构槽(原始 HTTP status,给幂等一类的控制流判定用)。
 // 非 HTTP 失败(network / not-authenticated / no-cloud-endpoint / unauthorized)不带 status。
-type CloudErr = { error: string; status?: number }
+// `#1572`:`network` 另带可选 `netLayer`(卡在哪一层),`error` 码集合不变。
+type CloudErr = { error: string; status?: number; netLayer?: NetFailureLayer }
 type CloudResult<T> = T | CloudErr
 const isErr = (r: unknown): r is CloudErr => !!r && typeof r === "object" && "error" in (r as object)
+const layerOf = (r: CloudErr) => (r.netLayer ? { netLayer: r.netLayer } : {})
 
 async function authed<T>(path: string, init?: { method?: string; body?: unknown }): Promise<CloudResult<T>> {
   try {
@@ -56,8 +59,9 @@ async function authed<T>(path: string, init?: { method?: string; body?: unknown 
     if (!res.ok) return { error: await httpErrorCode(res), status: res.status }
     return (await res.json().catch(() => null)) as T
   } catch (error) {
-    getLogger().warn("alpha-cloud-schedules: fetch failed", error)
-    return { error: "network" }
+    const net = classifyNetFailure(error, { via: "other" })
+    getLogger().warn(`alpha-cloud-schedules: fetch failed layer=${net?.layer ?? "-"} code=${net?.code ?? "-"}`, error)
+    return { error: "network", ...(net ? { netLayer: net.layer } : {}) }
   }
 }
 
@@ -75,7 +79,8 @@ export type CloudScheduleView = {
 // [#969] 拒绝结果的**结构槽**。`reason` 是 main 自己拼的日志串(带中文前缀,main 无 i18n);
 // `code` 是呈现槽 —— 经 IPC 原样带到 renderer,由那里唯一有 i18n 的一层选文案。renderer
 // **不许**去解析 `reason` 的前缀:那是手写别人文法的替身,前缀一改呈现就静默退化成裸码。
-export type CloudScheduleRefusal = { ok: false; reason: string; code: string }
+// `#1572`:`netLayer` 只在 `code === "network"` 且认得出卡在哪一层时在场,renderer 据它说分层的那句话。
+export type CloudScheduleRefusal = { ok: false; reason: string; code: string; netLayer?: NetFailureLayer }
 
 /**
  * [#969] 桌面自铸的本地拒绝码。刻意用 **kebab**:平台分类码的文法是
@@ -99,7 +104,7 @@ export async function upsertCloudSchedule(task: AutomationTask): Promise<{ ok: t
   const r = task.cloudScheduleId
     ? await authed<CloudScheduleView>(`/v1/cloud/schedules/${encodeURIComponent(task.cloudScheduleId)}`, { method: "PATCH", body })
     : await authed<CloudScheduleView>("/v1/cloud/schedules", { method: "POST", body })
-  if (isErr(r)) return { ok: false, reason: `云端注册失败:${r.error}`, code: r.error }
+  if (isErr(r)) return { ok: false, reason: `云端注册失败:${r.error}`, code: r.error, ...layerOf(r) }
   return { ok: true, scheduleId: r.id }
 }
 
@@ -111,14 +116,14 @@ export async function deleteCloudSchedule(scheduleId: string): Promise<{ ok: tru
   // 上次删除超时后重试)= 已删即成功。旧写法 `r.error !== "http-404"` 拿呈现字符串比字面量,
   // 靠「平台不给 404 补分类码」才成立 —— 补上码用户就永远删不掉那条自动化。
   // 非 HTTP 失败(network 等)无 status ⇒ 仍 fail-closed,不删本地。
-  if (isErr(r) && r.status !== 404) return { ok: false, reason: `云端删除失败:${r.error}`, code: r.error }
+  if (isErr(r) && r.status !== 404) return { ok: false, reason: `云端删除失败:${r.error}`, code: r.error, ...layerOf(r) }
   return { ok: true }
 }
 
 // [#994] 开关也带 code:`automations-toggle` 把它原样交给面板,由面板给「开关没生效」的提示选人话。
 export async function setCloudScheduleEnabled(scheduleId: string, enabled: boolean): Promise<{ ok: true } | CloudScheduleRefusal> {
   const r = await authed<CloudScheduleView>(`/v1/cloud/schedules/${encodeURIComponent(scheduleId)}`, { method: "PATCH", body: { enabled } })
-  if (isErr(r)) return { ok: false, reason: `云端状态更新失败:${r.error}`, code: r.error }
+  if (isErr(r)) return { ok: false, reason: `云端状态更新失败:${r.error}`, code: r.error, ...layerOf(r) }
   return { ok: true }
 }
 

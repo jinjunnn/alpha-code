@@ -6,7 +6,8 @@
 //        (改回「实例闭包里等全部服务」⇒ 第一次读状态就卡到 30 s 连接超时)
 //   AC2  进行中报 pending(首次无 error),cwd 不存在 ⇒ workspace_missing,命令不在 PATH ⇒ dependency_missing
 //   AC3  远端网络失败按 30 s 起翻倍后台重连、重连那次的 pending 带上次失败、成功后复位;auth 不重连
-//        (时钟用 TestClock 注入;分类器未合入前网络失败记 transport)
+//        (时钟用 TestClock 注入;`#1572` 起网络失败按分层分类器记层,拒连记 tcp)
+//        `#1572` AC7:policy / tls-cert / http 4xx 是确定性失败,不重连
 //   AC4  实例销毁 / 查找未完成时换代:父进程与后代都退出,之后不写回、不发布
 //   AC5  6 台同时启动,观测到的并发启动 ≤ 4
 //   AC6  服务换代后定义变了的调用响亮失败、没变的走新连接(普通工具经真 SessionTools、Code Mode 经真 CodeModeTool)
@@ -220,7 +221,24 @@ function refused() {
   return new TypeError("fetch failed", { cause })
 }
 
-type Mode = "refuse" | "hold" | "serve" | "unauthorized"
+// `#1572` AC7 的两种确定性网络失败,形状来源:
+//  · policy —— 打包版实测 docs/verification/2026-09-10-req159-1334-packaged-network-fence/results/choke.json:1013 的三层包法
+//    (`TypeError: fetch failed` ← `Error: Request was cancelled.` ← undici `AbortError UND_ERR_ABORTED`);
+//  · tls-cert —— node 对过期证书的错误码与消息(`CERT_HAS_EXPIRED` / `certificate has expired`)。
+function proxyDenied() {
+  const inner = Object.assign(new Error("Proxy response (403) !== 200 when HTTP Tunneling"), {
+    name: "AbortError",
+    code: "UND_ERR_ABORTED",
+  })
+  return new TypeError("fetch failed", { cause: new Error("Request was cancelled.", { cause: inner }) })
+}
+function certExpired() {
+  return new TypeError("fetch failed", {
+    cause: Object.assign(new Error("certificate has expired"), { code: "CERT_HAS_EXPIRED" }),
+  })
+}
+
+type Mode = "refuse" | "hold" | "serve" | "unauthorized" | "policy" | "cert" | "not-found"
 
 /** 远端替身:替换全局 fetch(两种 SDK transport 都用它),按 mode 拒连 / 挂住 / 回 401 / 交给真 MCP server。 */
 function remoteStandIn() {
@@ -243,6 +261,9 @@ function remoteStandIn() {
           return dispatch(request)
         }
         if (net.mode === "refuse") throw refused()
+        if (net.mode === "policy") throw proxyDenied()
+        if (net.mode === "cert") throw certExpired()
+        if (net.mode === "not-found" && request.method === "POST") return new Response("not found", { status: 404 })
         if (net.mode === "unauthorized" && request.method === "POST")
           return new Response("unauthorized", { status: 401 })
         if (request.method === "GET") return new Response(null, { status: 405 })
@@ -287,7 +308,7 @@ it.instance("AC3: a remote network failure reconnects in the background — 30 s
 
     yield* mcp.add("cloud", cloud)
     const first = yield* statusOf("cloud")
-    expect(first).toMatchObject({ status: "failed", code: "transport" })
+    expect(first).toMatchObject({ status: "failed", code: "tcp" })
     const firstError = first?.status === "failed" ? first.error : ""
     const n1 = posts()
 
@@ -334,7 +355,7 @@ it.instance("AC3: a remote network failure reconnects in the background — 30 s
     // 成功后复位:再失败一次(用户发起的连接),下一次后台重连又是 30 s。
     net.mode = "refuse"
     yield* mcp.connect("cloud")
-    expect(yield* statusOf("cloud")).toMatchObject({ status: "failed", code: "transport" })
+    expect(yield* statusOf("cloud")).toMatchObject({ status: "failed", code: "tcp" })
     const n3 = posts()
     yield* TestClock.adjust("29 seconds")
     yield* quiet
@@ -348,7 +369,6 @@ it.instance("AC3: a remote network failure reconnects in the background — 30 s
 )
 
 // auth 是确定性失败:把 remoteFailure 里 auth 的 reconnect 改成 true ⇒ 30 s 后多出 POST。
-// (`policy` 臂要靠网络方案的分层分类器认出 `Proxy response (403)`;分类器未合入前它记 transport。)
 it.instance("AC3: an auth failure does not reconnect", () =>
   Effect.gen(function* () {
     const net = yield* remoteStandIn()
@@ -366,6 +386,44 @@ it.instance("AC3: an auth failure does not reconnect", () =>
     expect(yield* statusOf("cloud")).toMatchObject({ status: "failed", code: "auth" })
   }).pipe(Effect.provide(TestClock.layer())),
 )
+
+// `#1572` AC7:policy / tls-cert / http 4xx 是确定性失败 —— 记各自的层、之后 10 分钟以上零次后台重连。
+// 把它们任一加进 RECONNECT_CODES(或让 http 4xx 也重连)⇒ 30 s 处多出 POST;把 SSE 兜底前保留 StreamableHTTP 归因的那一句
+// 去掉 ⇒ tls-cert 只剩 SSE 的扁平文字,回落成 transport 并重连。policy 臂把引擎的代理变量与出网代理标记都指向出网代理
+// (同 sidecar);少了标记,用户自己的代理回 403 不算本机策略,这一臂就会记 transport。
+for (const [mode, code] of [
+  ["policy", "policy"],
+  ["cert", "tls-cert"],
+  ["not-found", "http"],
+] as const)
+  it.instance(`AC7 (#1572): a ${code} failure does not reconnect`, () =>
+    Effect.gen(function* () {
+      // policy 臂:引擎的代理变量与决定者标记同指出网代理(形状同 ui-mac sidecarEgressProxyEnv)。
+      const keys = ["HTTP_PROXY", "ALPHA_EGRESS_PROXY"] as const
+      const saved = keys.map((key) => process.env[key])
+      if (mode === "policy") for (const key of keys) process.env[key] = "http://127.0.0.1:61234"
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() =>
+          keys.forEach((key, index) => {
+            if (saved[index] === undefined) delete process.env[key]
+            else process.env[key] = saved[index]
+          }),
+        ),
+      )
+      const net = yield* remoteStandIn()
+      net.mode = mode
+      const mcp = yield* MCP.Service
+      yield* mcp.add("cloud", cloud)
+      expect(yield* statusOf("cloud")).toMatchObject({ status: "failed", code })
+      const n = net.posts
+      for (const step of ["30 seconds", "60 seconds", "10 minutes", "10 minutes"] as const) {
+        yield* TestClock.adjust(step)
+        yield* quiet
+      }
+      expect(net.posts).toBe(n)
+      expect(yield* statusOf("cloud")).toMatchObject({ status: "failed", code })
+    }).pipe(Effect.provide(TestClock.layer())),
+  )
 
 // ── AC4 ──────────────────────────────────────────────────────────────────────────────────────────────────────
 const hangPids = file("hang-pids")

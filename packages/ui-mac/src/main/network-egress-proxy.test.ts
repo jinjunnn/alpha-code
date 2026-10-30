@@ -4,7 +4,8 @@
 // 反臂(AC2 的判据本体,生产注册表、默认接线):CONNECT 到**未登记**的 loopback 靶站 ⇒ 403 + 可识别正文 +
 // 结构化记录 reason=unregistered,靶站 0 连接;而「代理确实收到了请求」由那条记录自证(空输出 ≠ 拦住)。
 // 控制臂:把注册表换成恒答「允许」的替身,**同一个判据函数**必须当场判红并说出为什么 —— 否则它不是闸门。
-// 其余:未登记的名字一次 DNS 都不发;非 CONNECT 405;坏 authority 400;登记了但拨不通 502(与 403 可辨)。
+// 其余:未登记的名字一次 DNS 都不发;非 CONNECT 405;坏 authority 400;登记了但拨不通 502 / 解析不了 503 / 拨号超时 504
+// (与 403 可辨,`#1572`);静默隧道兜底与放行 / 关闭记录的新字段(`#1572` AC2)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as net from "node:net"
@@ -181,12 +182,19 @@ describe("AC1 策略半场:授权目的地经隧道转发", () => {
 
     const allow = logs.find((r) => r.event === "egress.connect")
     expect(allow).toMatchObject({ event: "egress.connect", method: "CONNECT", authority: `localhost:${target.port}`, host: "localhost", port: target.port, verdict: "allow", status: 200 })
+    // `#1572` AC2:放行记录带上游地址与 fake-IP 判定(loopback 靶站不在 198.18.0.0/15)。
+    expect(allow).toMatchObject({ remote: "127.0.0.1", fakeIp: false })
 
     socket.end()
     await tick(80)
     expect(target.closedSockets, "upstream must be torn down when the client hangs up").toBe(1)
     const closed = logs.find((r) => r.event === "egress.tunnel-closed")
     expect(closed).toMatchObject({ event: "egress.tunnel-closed", host: "localhost", port: target.port, bytesUp: "hello-through-tunnel".length, bytesDown: "echo:hello-through-tunnel".length })
+    // `#1572` AC2:上游回过字节 ⇒ firstDownMs 在场且不晚于关闭;durationMs 总在场。
+    const timing = closed as { firstDownMs?: number; durationMs?: number }
+    expect(typeof timing.firstDownMs).toBe("number")
+    expect(typeof timing.durationMs).toBe("number")
+    expect(timing.firstDownMs!).toBeLessThanOrEqual(timing.durationMs!)
   })
 
   test("默认 authorize 就是注册表:不传 authorize 时 github.com:443(登记在案)走到拨号,同 host 别的端口走不到", async () => {
@@ -300,20 +308,21 @@ describe("其它失败形态各自可辨,且都不转发", () => {
     expect(logs[0]).toMatchObject({ verdict: "deny", reason: "dial-failed", status: 502, detail: "ECONNREFUSED", host: "127.0.0.1", port })
   })
 
-  test("登记了但解析不了(.invalid)⇒ 502 dial-failed ENOTFOUND:DNS 在代理进程里发生,失败也在这里可读", async () => {
+  // `#1572` AC1:解析不了 503、拨号超时 504 —— 与拒连的 502 分开,因为 node 的 undici 只把状态码交给引擎。
+  test("登记了但解析不了(.invalid)⇒ 503 dial-failed ENOTFOUND:DNS 在代理进程里发生,失败也在这里可读", async () => {
     const { proxy, logs } = await startProxy({ authorize: (h) => h === "ac1336-nxdomain.invalid" })
     const res = await rawRequest(proxy.port, "CONNECT ac1336-nxdomain.invalid:443 HTTP/1.1\r\nHost: ac1336-nxdomain.invalid:443\r\n\r\n")
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(503)
     expect(res.body).toContain("reason=dial-failed")
-    expect(logs[0]).toMatchObject({ verdict: "deny", reason: "dial-failed", status: 502, host: "ac1336-nxdomain.invalid", port: 443 })
+    expect(logs[0]).toMatchObject({ verdict: "deny", reason: "dial-failed", status: 503, host: "ac1336-nxdomain.invalid", port: 443 })
     expect((logs[0] as { detail?: string }).detail).toMatch(/^(ENOTFOUND|EAI_AGAIN|EAI_NONAME)$/)
   })
 
-  test("登记了但黑洞(拨号既不通也不拒)⇒ 在 dialTimeoutMs 内以 502 ETIMEDOUT 收尾,不挂到客户端超时", async () => {
+  test("登记了但黑洞(拨号既不通也不拒)⇒ 在 dialTimeoutMs 内以 504 ETIMEDOUT 收尾,不挂到客户端超时", async () => {
     const { proxy, logs } = await startProxy({ authorize: () => true, dialTimeoutMs: 50, dial: () => new net.Socket() })
     const res = await rawRequest(proxy.port, "CONNECT blackhole.example:443 HTTP/1.1\r\nHost: blackhole.example:443\r\n\r\n")
-    expect(res.status).toBe(502)
-    expect(logs[0]).toMatchObject({ verdict: "deny", reason: "dial-failed", status: 502, detail: "ETIMEDOUT" })
+    expect(res.status).toBe(504)
+    expect(logs[0]).toMatchObject({ verdict: "deny", reason: "dial-failed", status: 504, detail: "ETIMEDOUT" })
   })
 })
 
@@ -343,6 +352,139 @@ describe("拒绝正文的消费端契约(生产者 ↔ 渲染层识别器)", () 
     expect(dialRes.body.startsWith(EGRESS_DENIED_BODY_PREFIX)).toBe(true) // 同一个前缀 —— 只看前缀就会在这里说错
     console.log(`[#1382 生产者↔消费端] 502 body=${JSON.stringify(dialRes.body.trim())} ⇒ ${JSON.stringify(egressPolicyDenialOf(dialRes.body))}`)
     expect(egressPolicyDenialOf(dialRes.body)).toBeUndefined()
+  })
+})
+
+// ── `#1572` AC2:静默隧道兜底 + 放行 / 关闭记录的新字段 ──────────────────────────────
+//
+// 四臂(上限 50 ms 跑):TLS 头 + 黑洞上游 ⇒ tunnel-silent 且两端关闭;TLS 头两字节分两段到达仍触发;
+// 有回音上游不触发;明文首包慢回应不触发。另:tlsSilentMs = 0 撤销期限;fake-IP 段的上游地址记 fakeIp:true。
+const TLS_HELLO_HEAD = Buffer.from([0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00])
+
+type Upstream = { port: number; sockets: net.Socket[]; closed: number; close: () => Promise<void> }
+
+/** 上游靶站:`reply` 决定收到字节后怎么回 —— 不回(黑洞)、立刻回、隔一会儿回。 */
+async function startUpstream(reply: "never" | "echo" | { afterMs: number }): Promise<Upstream> {
+  const state = { sockets: [] as net.Socket[], closed: 0 }
+  const server = net.createServer((socket) => {
+    state.sockets.push(socket)
+    socket.on("error", () => {})
+    socket.on("close", () => (state.closed += 1))
+    socket.on("data", (chunk) => {
+      if (reply === "never") return
+      if (reply === "echo") return void socket.write(`echo:${chunk.length}`)
+      setTimeout(() => socket.writable && socket.write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"), reply.afterMs)
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const handle = {
+    port: (server.address() as net.AddressInfo).port,
+    sockets: state.sockets,
+    get closed() {
+      return state.closed
+    },
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const s of state.sockets) s.destroy()
+        server.close(() => resolve())
+      }),
+  }
+  cleanups.push(handle.close)
+  return handle
+}
+
+/** 等客户端这一端被关掉;1 s 内没关就判红(而不是挂到测试超时)—— 兜底的期限是 50 ms。 */
+const closedOf = (socket: net.Socket) =>
+  new Promise<void>((resolve, reject) => {
+    if (socket.destroyed) return resolve()
+    const timer = setTimeout(() => reject(new Error("tunnel was not closed within 1 s — the silent-tunnel deadline did not fire")), 1000)
+    socket.once("close", () => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
+
+describe("`#1572` AC2 静默隧道兜底(tlsSilentMs = 50 ms)", () => {
+  test("TLS 头 + 黑洞上游 ⇒ egress.tunnel-silent,客户端与上游两端都被关掉", async () => {
+    const upstream = await startUpstream("never")
+    const { proxy, logs } = await startProxy({ authorize: () => true, tlsSilentMs: 50 })
+    const { status, socket } = await connectThrough(proxy.port, `127.0.0.1:${upstream.port}`)
+    expect(status).toBe(200)
+    socket.on("error", () => {})
+    socket.write(TLS_HELLO_HEAD)
+    await closedOf(socket)
+    await tick(50)
+    const silent = logs.find((r) => r.event === "egress.tunnel-silent")
+    expect(silent).toMatchObject({ event: "egress.tunnel-silent", host: "127.0.0.1", port: upstream.port, remote: "127.0.0.1", fakeIp: false, bytesUp: TLS_HELLO_HEAD.length })
+    expect(upstream.closed, "upstream side must be closed too").toBe(1)
+    const closed = logs.find((r) => r.event === "egress.tunnel-closed") as { bytesDown: number; firstDownMs?: number; durationMs: number }
+    expect(closed.bytesDown).toBe(0)
+    expect("firstDownMs" in closed, "no upstream byte ⇒ firstDownMs must be absent").toBe(false)
+    expect(closed.durationMs).toBeGreaterThanOrEqual(40)
+  })
+
+  test("TLS 记录头的两个字节分两段到达 ⇒ 仍然触发", async () => {
+    const upstream = await startUpstream("never")
+    const { proxy, logs } = await startProxy({ authorize: () => true, tlsSilentMs: 50 })
+    const { socket } = await connectThrough(proxy.port, `127.0.0.1:${upstream.port}`)
+    socket.on("error", () => {})
+    socket.write(TLS_HELLO_HEAD.subarray(0, 1))
+    await tick(30)
+    socket.write(TLS_HELLO_HEAD.subarray(1))
+    await closedOf(socket)
+    await tick(30)
+    expect(logs.some((r) => r.event === "egress.tunnel-silent")).toBe(true)
+  })
+
+  test("上游回过字节 ⇒ 永不因此关闭", async () => {
+    const upstream = await startUpstream("echo")
+    const { proxy, logs } = await startProxy({ authorize: () => true, tlsSilentMs: 50 })
+    const { socket } = await connectThrough(proxy.port, `127.0.0.1:${upstream.port}`)
+    const echoed = new Promise<string>((resolve) => socket.once("data", (c: Buffer) => resolve(c.toString())))
+    socket.write(TLS_HELLO_HEAD)
+    expect(await echoed).toBe(`echo:${TLS_HELLO_HEAD.length}`)
+    await tick(150)
+    expect(socket.destroyed).toBe(false)
+    expect(logs.some((r) => r.event === "egress.tunnel-silent")).toBe(false)
+    socket.destroy()
+    await tick()
+    const closed = logs.find((r) => r.event === "egress.tunnel-closed") as { firstDownMs?: number }
+    expect(typeof closed.firstDownMs).toBe("number")
+  })
+
+  test("明文首包、上游慢于期限才回 ⇒ 不触发(非 TLS 隧道不受影响)", async () => {
+    const upstream = await startUpstream({ afterMs: 150 })
+    const { proxy, logs } = await startProxy({ authorize: () => true, tlsSilentMs: 50 })
+    const { socket } = await connectThrough(proxy.port, `127.0.0.1:${upstream.port}`)
+    const answered = new Promise<string>((resolve) => socket.once("data", (c: Buffer) => resolve(c.toString())))
+    socket.write("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+    expect(await answered).toStartWith("HTTP/1.1 200 OK")
+    expect(logs.some((r) => r.event === "egress.tunnel-silent")).toBe(false)
+    socket.destroy()
+  })
+
+  test("tlsSilentMs = 0 ⇒ 撤销期限:TLS 头 + 黑洞上游也不关", async () => {
+    const upstream = await startUpstream("never")
+    const { proxy, logs } = await startProxy({ authorize: () => true, tlsSilentMs: 0 })
+    const { socket } = await connectThrough(proxy.port, `127.0.0.1:${upstream.port}`)
+    socket.write(TLS_HELLO_HEAD)
+    await tick(150)
+    expect(socket.destroyed).toBe(false)
+    expect(logs.some((r) => r.event === "egress.tunnel-silent")).toBe(false)
+    socket.destroy()
+  })
+
+  test("上游地址落在 198.18.0.0/15 ⇒ 放行记录 fakeIp:true", async () => {
+    const upstream = await startUpstream("echo")
+    const { proxy, logs } = await startProxy({
+      authorize: () => true,
+      // 本机拿不到真的 fake-IP 上游;拨到 loopback 靶站,只把对端地址读成 TUN 会给的那种(方案 §1.5(b) 实测值)。
+      dial: (_h, p) => Object.defineProperty(net.connect(p, "127.0.0.1"), "remoteAddress", { value: "198.18.12.180" }),
+    })
+    const { socket } = await connectThrough(proxy.port, `nx-req236-probe.example.com:${upstream.port}`)
+    socket.destroy()
+    await tick()
+    expect(logs.find((r) => r.event === "egress.connect")).toMatchObject({ verdict: "allow", remote: "198.18.12.180", fakeIp: true })
   })
 })
 

@@ -5,6 +5,7 @@ import type { RenewalResult } from "./alpha-auth"
 // `code`(实读 alpha-web app/api)⇒ 行为零变化(仍 http-<status>);哪天它加了稳定分类码,
 // 这里自动呈现,不再各写一份压平逻辑。纯函数,不进 deps 注入面。
 import { httpErrorCode } from "./platform-error-code"
+import { classifyNetFailure } from "@opencode-ai/schema/alpha-net-failure"
 
 export function createAuthedGet(deps: {
   accountBase: () => string
@@ -70,7 +71,9 @@ export function createAuthedGet(deps: {
         deps.reportContractFailure(error)
         return { error: "contract-incompatible" }
       }
-      deps.warn("alpha-account: fetch failed", error)
+      // `#1572`:日志带上卡在哪一层(只有层名与错误码,main 直连路径恒为 other);本票不改上屏。
+      const net = classifyNetFailure(error, { via: "other" })
+      deps.warn(`alpha-account: fetch failed layer=${net?.layer ?? "-"} code=${net?.code ?? "-"}`, error)
       return { error: "network" }
     }
   }

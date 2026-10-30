@@ -23,13 +23,14 @@ import { setLocale, t } from "../i18n"
 import { resetAuthRecoveryForTests } from "../auth-recovery"
 import type { AuthState } from "../../preload/types"
 import type { AutomationTask } from "../../shared/automation-types"
+import type { NetFailureLayer } from "@opencode-ai/schema/alpha-net-failure"
 
 export { automationActionCopy, render, scheduleRefusalCopy, setLocale, t }
 
 /** `workspaceDefaultDir` 回给面板的目录 —— 表单的「项目」字段靠它填上,否则保存会早返。 */
 export const DEFAULT_DIR = "/Users/tester/proj-a"
 
-type SaveResult = { ok: true } | { ok: false; reason: string; code?: string }
+type SaveResult = { ok: true } | { ok: false; reason: string; code?: string; netLayer?: NetFailureLayer }
 /** [#994] 删除 / 开关的返回形状同 save。 */
 type MutationResult = SaveResult
 export type ListedTask = AutomationTask & { nextFireAt: number | null; running: boolean }

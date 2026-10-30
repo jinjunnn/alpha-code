@@ -25,7 +25,10 @@ import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { APICallError } from "ai"
+import { env } from "node:process"
 import { parseToolDisplaySnapshot, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
+import { classifyNetFailure, engineNetFailurePath } from "@opencode-ai/schema/alpha-net-failure"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -128,11 +131,25 @@ const layer = Layer.effect(
         ctx.toolDisplays[technicalId] = structuredClone(normalized)
       }
 
-      const parse = (e: unknown) =>
-        MessageV2.fromError(e, {
+      // #1572 AC4: settle the network layer here, while `e` still carries its cause chain — `fromError` keeps only a
+      // top-level message. A model request that failed as APIError gets `alphaNetLayer` / `alphaNetCode` in its existing
+      // string metadata; an AI SDK call error that never got an HTTP answer and whose layer is not recognised gets
+      // `alphaNetCode: "unattributed"` alone (the turn card says the connection dropped, nothing more).
+      const parse = (e: unknown) => {
+        const error = MessageV2.fromError(e, {
           providerID: input.model.providerID,
           aborted,
         })
+        if (error.name !== "APIError") return error
+        const url = (e as { url?: unknown } | undefined)?.url
+        const net = classifyNetFailure(e, engineNetFailurePath(typeof url === "string" ? url : undefined, env))
+        const noAnswer = APICallError.isInstance(e) && e.statusCode === undefined
+        if (!net && !noAnswer) return error
+        const tag: Record<string, string> = net
+          ? { alphaNetLayer: net.layer, alphaNetCode: net.code }
+          : { alphaNetCode: "unattributed" }
+        return { ...error, data: { ...error.data, metadata: { ...error.data.metadata, ...tag } } }
+      }
 
       const settleToolCall = Effect.fn("SessionProcessor.settleToolCall")(function* (toolCallID: string) {
         const done = ctx.toolcalls[toolCallID]?.done
@@ -200,6 +217,13 @@ const layer = Layer.effect(
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return false
+        // #1572 AC4: `errorMessage` below keeps only the top-level message (`Transport error (GET …)`); take the network
+        // layer from the original error first and keep it next to the streamed metadata. Only layer and code are stored.
+        const target = match.part.state.input.url
+        const net = classifyNetFailure(
+          error,
+          engineNetFailurePath(typeof target === "string" ? target : undefined, env),
+        )
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -207,7 +231,7 @@ const layer = Layer.effect(
             input: match.part.state.input,
             error: errorMessage(error),
             // Keep metadata streamed while running so failures retain progress detail (e.g. execute's child calls).
-            metadata: match.part.state.metadata,
+            metadata: net ? { ...match.part.state.metadata, alphaNetFailure: net } : match.part.state.metadata,
             time: { start: match.part.state.time.start, end: Date.now() },
           },
         })

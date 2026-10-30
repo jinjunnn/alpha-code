@@ -139,7 +139,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
     }
     const result = await window.api.cloud.dispatch(envelope)
     if ("error" in result) {
-      setState({ err: dispatchError(result.error), errAction: failureCopy(result.error)?.action ?? null, phase: "failed" })
+      setState({ err: dispatchError(result.error, undefined, result.netLayer), errAction: failureCopy(result.error)?.action ?? null, phase: "failed" })
       return
     }
     await beginJob(directory, result, envelope, false)
@@ -174,7 +174,7 @@ export function CloudDispatchBox(props: { entryId?: string; spec: CloudPipelineS
     }
     const result = await window.api.cloud.dispatch(envelope)
     if ("error" in result) {
-      setState({ phase: "failed", err: dispatchError(result.error), errAction: failureCopy(result.error)?.action ?? null })
+      setState({ phase: "failed", err: dispatchError(result.error, undefined, result.netLayer), errAction: failureCopy(result.error)?.action ?? null })
       return
     }
     await beginJob(directory, result, envelope, false)

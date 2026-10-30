@@ -9,6 +9,7 @@
 import type { ToolPart } from "@opencode-ai/sdk/v2/client"
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js"
 import { t } from "../../../i18n"
+import { netFailureCopy } from "../../net-failure-copy"
 import { routeArtifact } from "../../artifact-workbench/renderers/registry"
 import { CopyButton } from "../../CopyButton"
 import type { TimelineMediaSource, TimelineRow } from "../timeline-model"
@@ -698,6 +699,14 @@ export function ToolStepDetail(props: { part: ToolPart }) {
         {(err) => (
           <div class="a-tc-err" role="alert">
             <ToolErrorHead message={err().message} />
+            {/* `#1572`:认得出卡在哪一层就在原错误文字之上加一句;原文字不动(认不出时整块逐字不变)。 */}
+            <Show when={err().netLayer}>
+              {(layer) => (
+                <div class="a-tc-net" data-alpha-net-layer={layer()}>
+                  {netFailureCopy(layer(), err().host)}
+                </div>
+              )}
+            </Show>
             <div class="a-tc-error-body">
               {err().message}
               <Show when={err().truncated}>
@@ -809,6 +818,12 @@ export function TurnDiffSummaryRow(props: { row: Extract<TimelineRow, { kind: "d
 }
 
 // ── 回合级错误卡(全宽,纯文本,无动作) ────────────────────────────────────
+function turnNetCopy(row: Extract<TimelineRow, { kind: "turnError" }>): string | undefined {
+  if (row.netLayer) return netFailureCopy(row.netLayer)
+  if (row.netUnattributed) return t("alpha.net.unattributed")
+  return undefined
+}
+
 export function TurnErrorCard(props: { row: Extract<TimelineRow, { kind: "turnError" }> }) {
   return (
     <div class="a-tl-row a-turn-err" data-alpha-timeline-row="turn-error" role="alert">
@@ -822,11 +837,20 @@ export function TurnErrorCard(props: { row: Extract<TimelineRow, { kind: "turnEr
             标题 + 一段正文 + mono 错误码)。换掉而不是追加,是因为被换掉的那段正文正是
             `Forbidden: alpha egress policy: …` 这串英文工程话 —— 它今天就在这里,而用户读不出
             「是自己这台电脑拦的」。归因只在认出 reason=unregistered 时给;认不出一律走原文案。 */}
+        {/* `#1572`:不是策略拒绝、但引擎认出了卡在哪一层(或明确没拿到任何应答)⇒ 同一位置换成分层那一句;
+            认不出一律走原文案。 */}
         <Show
           when={props.row.egressDenied}
           fallback={
-            <Show when={props.row.message}>
-              <p>{props.row.message}</p>
+            <Show
+              when={turnNetCopy(props.row)}
+              fallback={
+                <Show when={props.row.message}>
+                  <p>{props.row.message}</p>
+                </Show>
+              }
+            >
+              {(copy) => <p data-alpha-net-layer={props.row.netLayer ?? "unattributed"}>{copy()}</p>}
             </Show>
           }
         >

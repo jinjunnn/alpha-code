@@ -427,6 +427,9 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       attempt: 1,
       durationMs: expect.any(Number),
       exception: "TimeoutError",
+      // `#1572`:完成记录在 exception 旁带上卡在哪一层(只有层名与错误码)。
+      layer: "timeout",
+      code: "TimeoutError",
     })
     expect(completed()[1]![1]).toEqual({
       origin: endpoint,

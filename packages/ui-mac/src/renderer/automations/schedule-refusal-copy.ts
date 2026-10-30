@@ -23,6 +23,7 @@
 //     (该码在 **dispatch** 面可达且已有文案,见 cloud-dispatch-box.tsx —— schedule 面到不了。)
 // 它们若真的出现,走下面的回落分支原样上屏 —— 那正是「我们的勘破错了」应该长的样子。
 
+import type { NetFailureLayer } from "@opencode-ai/schema/alpha-net-failure"
 import { t } from "../i18n"
 import {
   AUTOMATION_DEFAULTS,
@@ -31,6 +32,7 @@ import {
   type AutomationRunReasonCode,
   type AutomationStoreErrorCode,
 } from "../../shared/automation-types"
+import { netFailureCopy } from "../alpha-ui/net-failure-copy"
 
 /**
  * [#1001] 本地结构码 → 文案键。以类型为键:main 新增一个码而这里没跟上,typecheck 当场红
@@ -53,13 +55,14 @@ const LOCAL_STORE_COPY: Record<AutomationStoreErrorCode, Parameters<typeof t>[0]
  * main 的 platform-error-code 咽喉),以及桌面自铸的 kebab 码(`authed()` 的四个传输伪码 +
  * `SCHEDULE_FORM_UNSUPPORTED_CODE` + [#1001] 存储层的 `automation-*` 本地结构码)。
  */
-export function scheduleRefusalCopy(code: string): string {
+export function scheduleRefusalCopy(code: string, netLayer?: NetFailureLayer): string {
   // 本机存储层(桌面自铸,kebab,`automation-` 前缀)。
   if (Object.hasOwn(LOCAL_STORE_COPY, code)) return t(LOCAL_STORE_COPY[code as AutomationStoreErrorCode])
   // 传输腿(桌面自铸,kebab)。文案与 dispatch 面共用既有键 —— 同一件事只说一遍。
   if (code === "not-authenticated" || code === "unauthorized") return t("alpha.ext.cloudErrAuth")
   if (code === "no-cloud-endpoint") return t("alpha.ext.cloudErrEndpoint")
-  if (code === "network") return t("alpha.ext.cloudErrNetwork")
+  // `#1572`:认得出卡在哪一层就说那一层;认不出保持原文案。
+  if (code === "network") return netLayer ? netFailureCopy(netLayer) : t("alpha.ext.cloudErrNetwork")
   // 桌面自己的早返(请求根本没发出去,平台侧刻意无码)。
   if (code === "cloud-schedule-form-unsupported") return t("alpha.auto.cloudErrFormUnsupported")
   // 平台分类码里**桌面到得了**的那些(alpha-platform lib/schedules.ts 的 SCHEDULE_REFUSAL_CODES

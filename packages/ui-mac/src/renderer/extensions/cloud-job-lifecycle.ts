@@ -7,6 +7,8 @@ import { onCleanup } from "solid-js"
 import { t } from "../i18n"
 import type { CloudDispatchResult, CloudJobEnvelope } from "../../preload/types"
 import { failureCodeFromEvent, failureCopy } from "./cloud-failure-copy"
+import type { NetFailureLayer } from "@opencode-ai/schema/alpha-net-failure"
+import { netFailureCopy } from "../alpha-ui/net-failure-copy"
 
 export type CloudJobPhase = "idle" | "dispatching" | "running" | "done" | "failed"
 // #400(REQ-109 AC4 桌面半场)取消子状态。"cancelling" 只在拿到服务端可判定结果
@@ -32,11 +34,16 @@ export type CloudJobState = {
 // 后者告诉用户「作业没送出去,因为送出去也是白跑」。其它码只影响显示，保留原始返回值供诊断。
 // REQ-235:目录描述的能力与平台注册表不同步时(签名目录比注册表新或旧),平台拒收为
 // `unknown_pipeline_kind` / `pipeline_input_invalid` —— 用户能做的只有刷新或更新,照实说。
-export function dispatchError(code: string, fallback: Parameters<typeof t>[0] = "alpha.ext.cloudUnknownSend"): string {
+// `#1572`:`network` 且 main 认得出卡在哪一层(`netLayer`)时说那一层;认不出保持原文案。
+export function dispatchError(
+  code: string,
+  fallback: Parameters<typeof t>[0] = "alpha.ext.cloudUnknownSend",
+  netLayer?: NetFailureLayer,
+): string {
   const failure = failureCopy(code)
   if (failure) return failure.text
   if (code === "no-cloud-endpoint") return t("alpha.ext.cloudErrEndpoint")
-  if (code === "network") return t("alpha.ext.cloudErrNetwork")
+  if (code === "network") return netLayer ? netFailureCopy(netLayer) : t("alpha.ext.cloudErrNetwork")
   if (code === "denied_paths_unenforceable_for_execution_form") return t("alpha.ext.cloudErrDeniedPaths")
   if (code === "tools-not-declared") return t("alpha.ext.cloudErrToolsUndeclared")
   if (code === "pipeline_input_invalid" || code === "unknown_pipeline_kind") return t("alpha.ext.cloudErrRequirementsChanged")

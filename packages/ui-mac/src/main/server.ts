@@ -140,7 +140,8 @@ function ensureEgressPolicyProxy(): Promise<EgressProxyHandle> {
       // `#1412`:用户拒掉一个目的地,与代理自己拒掉一个目的地同级别 —— 两者都是「有东西没发出去」,
       // 都要在日志里显眼(「工具把数据发到未授权目的地时失败且可见」的可见就在这两行)。
       const denied = (record.event === "egress.connect" && record.verdict === "deny") || (record.event === "egress.grant" && record.decision === "refused")
-      if (denied) getLogger()?.warn(line)
+      // `#1572`:代理主动关掉一条上游零回应的 TLS 隧道 —— 正是「没人看见的静默隧道」,同样走 warn。
+      if (denied || record.event === "egress.tunnel-silent") getLogger()?.warn(line)
       else getLogger()?.log(line)
     }
     // `#1412`:第三个半场在这里接上 —— 装载盘上已批准的目的地,并把「问用户」与「记住」两条通道
