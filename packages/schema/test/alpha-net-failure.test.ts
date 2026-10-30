@@ -13,7 +13,7 @@
 import { describe, expect, test } from "bun:test"
 import { lookup } from "node:dns/promises"
 import { connect, createServer, type AddressInfo } from "node:net"
-import { HttpClientError, HttpClientRequest } from "effect/unstable/http"
+import { HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import {
   classifyNetFailure,
   EGRESS_DIAL_FAILURE_STATUS,
@@ -173,10 +173,15 @@ describe("AC3 映射表:经出网代理 / 其它路径两列", () => {
           path,
         ),
       ).toEqual({ layer: "http", code: "404" })
-      expect(classifyNetFailure({ message: "StatusCode: 503", response: { status: 503 } }, path)).toEqual({
-        layer: "http",
-        code: "503",
+      // Effect HTTP 的 StatusCodeError(装着的 effect 真构造,状态从 response 读)。
+      const request = HttpClientRequest.get("https://example.test/")
+      const statusError = new HttpClientError.HttpClientError({
+        reason: new HttpClientError.StatusCodeError({
+          request,
+          response: HttpClientResponse.fromWeb(request, new Response(null, { status: 503 })),
+        }),
       })
+      expect(classifyNetFailure(statusError, path)).toEqual({ layer: "http", code: "503" })
       // JSON-RPC 的负数错误码不是 HTTP 状态
       expect(
         classifyNetFailure(Object.assign(new Error("MCP error -32001: Request timed out"), { code: -32001 }), path),
