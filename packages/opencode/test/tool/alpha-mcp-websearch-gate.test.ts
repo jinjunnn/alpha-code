@@ -201,7 +201,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
         expect((yield* plugin.list()).some((hook) => typeof hook["tool.execute.before"] === "function")).toBe(true)
 
         const entry = tools[TOOL_ID]!
-        const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
+        const item = McpCatalog.convertTool(entry.def, entry.client!, entry.timeout)
         const exit = yield* Effect.gen(function* () {
           yield* plugin.trigger(
             "tool.execute.before",
@@ -236,7 +236,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
         const mcp = yield* MCP.Service
         const plugin = yield* Plugin.Service
         const entry = (yield* mcp.tools())[TOOL_ID]!
-        const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
+        const item = McpCatalog.convertTool(entry.def, entry.client!, entry.timeout)
 
         yield* plugin.trigger(
           "tool.execute.before",

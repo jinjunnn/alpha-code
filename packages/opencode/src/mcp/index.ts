@@ -1,4 +1,5 @@
 import path from "node:path"
+import { readFileSync } from "node:fs"
 import { readFile, stat } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
@@ -15,6 +16,7 @@ import {
   type CallToolResult,
   ListRootsRequestSchema,
   type LoggingMessageNotification,
+  ListToolsResultSchema,
   LoggingMessageNotificationSchema,
   type Tool as MCPToolDef,
   ToolListChangedNotificationSchema,
@@ -56,6 +58,8 @@ import {
   governedMcpEvidence,
   isGovernedMcpEntry,
 } from "@opencode-ai/plugin/alpha-cloud-authority"
+// #1565: relative, not `@opencode-ai/plugin/…` — a new subpath export would edit the upstream package.json.
+import { declaredFirstPartyTools } from "../../../plugin/src/alpha-first-party-mcp"
 import { ToolAliasLedger, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 const DEFAULT_TIMEOUT = 30_000
@@ -246,6 +250,17 @@ const failed = (code: string, error: string): Status => ({ status: "failed", err
 
 const digest = (def: MCPToolDef) => createHash("sha256").update(JSON.stringify(def)).digest("hex")
 
+/**
+ * #1565: a first-party Office server's bundled definitions, parsed the way `tools/list` parses a server's answer
+ * (so identity and digest match what the connection will list); none unless the entry is bound to the bundle.
+ */
+function declaredDefs(name: string, entry: ConfigMCPV1.Info): MCPToolDef[] | undefined {
+  const tools = declaredFirstPartyTools(name, entry, process.env, readFileSync)
+  if (!tools) return undefined
+  const parsed = ListToolsResultSchema.safeParse({ tools })
+  return parsed.success ? parsed.data.tools : undefined
+}
+
 function localFailure(error: Error, timeout: number): Status {
   if (error.message === `Operation timed out after ${timeout}ms`) return failed("handshake_timeout", error.message)
   // Preparing already proved the cwd exists, so a spawn ENOENT means the command itself is missing.
@@ -296,6 +311,10 @@ interface Server {
   retries: number
   /** A client that already finished OAuth: the next lookup adopts it instead of connecting. */
   handoff?: MCPClient
+  /** #1565: the generation whose tools were offered from the bundled declaration before it connected. */
+  declaredAt?: number
+  /** #1565: a connected definition contradicted the declaration; it is not offered again in this instance. */
+  refuted?: boolean
 }
 
 interface State {
@@ -321,7 +340,8 @@ export interface ServerInstructions {
 export interface McpTool {
   /** Shared cached definition; consumers must copy rather than mutate it. */
   readonly def: MCPToolDef
-  readonly client: MCPClient
+  /** Absent for a first-party tool offered from its bundled declaration before the server connected (#1565). */
+  readonly client?: MCPClient
   readonly timeout?: number
   readonly identity?: ToolIdentity
   readonly authority?: ToolAuthority
@@ -977,22 +997,34 @@ const layer = Layer.effect(
       const config = cfg.mcp ?? {}
       const defaultTimeout = cfg.experimental?.mcp_timeout
 
-      for (const { name: clientName, generation, connection } of yield* connected(s)) {
+      const offer = (
+        clientName: string,
+        generation: number,
+        defs: MCPToolDef[],
+        authority: ToolAuthority,
+        client?: MCPClient,
+      ) => {
         const timeout = requestTimeout(s, clientName, config[clientName], defaultTimeout)
-        for (const def of connection.defs) {
+        for (const def of defs) {
           const alias = McpCatalog.toolName(clientName, def.name)
           const identity = { source: "mcp", origin: clientName, name: def.name } as const
           aliases.add(alias, identity)
-          result[alias] = {
-            def,
-            client: connection.client,
-            timeout,
-            identity,
-            authority: connection.authority,
-            generation,
-            defDigest: digest(def),
-          }
+          result[alias] = { def, client, timeout, identity, authority, generation, defDigest: digest(def) }
         }
+      }
+
+      for (const { name: clientName, generation, connection } of yield* connected(s))
+        offer(clientName, generation, connection.defs, connection.authority, connection.client)
+
+      // #1565 AC2: a first-party Office server still starting is offered from its bundled declaration, under the same
+      // identity it lists once connected; `callTool` checks the declaration against that listing. A third-party server
+      // (or any entry not bound to the bundle) has no declaration and stays out until its first handshake (AC4).
+      for (const [clientName, server] of Object.entries(s.servers)) {
+        if (server.refuted || server.status.status !== "pending") continue
+        const declared = declaredDefs(clientName, server.entry)
+        if (!declared) continue
+        server.declaredAt = server.generation
+        offer(clientName, server.generation, declared, authorityForMcp(clientName, server.entry))
       }
       return result
     })
@@ -1004,7 +1036,8 @@ const layer = Layer.effect(
       options: CallToolOptions,
     ) {
       const s = yield* InstanceState.get(state)
-      if (!s.servers[origin]) return yield* Effect.fail(new Error(`MCP server "${origin}" is not configured`))
+      const server = s.servers[origin]
+      if (!server) return yield* Effect.fail(new Error(`MCP server "${origin}" is not configured`))
       const live = yield* connection(s, origin).pipe(
         Effect.mapError(
           (failure) =>
@@ -1014,12 +1047,23 @@ const layer = Layer.effect(
         ),
       )
       // A reconnect may have changed what this name means: a call planned against the old definition must not run.
-      if (live.generation !== options.generation) {
+      // #1565 AC3: nor may one planned against the bundled declaration when the server lists something else; that
+      // declaration is then dropped, so later requests are offered only what the server actually lists.
+      const declared = options.generation !== undefined && server.declaredAt === options.generation
+      if (live.generation !== options.generation || declared) {
         const def = live.connection.defs.find((item) => item.name === name)
-        if (!def || digest(def) !== options.defDigest)
+        if (!def || digest(def) !== options.defDigest) {
+          if (declared) {
+            server.refuted = true
+            yield* Effect.logWarning("first-party MCP declaration differs from the connected server", {
+              server: origin,
+              tool: name,
+            })
+          }
           return yield* Effect.fail(
             new Error(`MCP tool "${name}" on "${origin}" changed after this request was prepared; retry it`),
           )
+        }
       }
       return yield* Effect.tryPromise({
         try: () =>
