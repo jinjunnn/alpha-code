@@ -94,6 +94,13 @@ const connected = (name: string) =>
     "10 seconds",
   )
 
+const failedEventually = (name: string) =>
+  pollWithTimeout(
+    statusOf(name).pipe(Effect.map((status) => (status?.status === "failed" ? status : undefined))),
+    `${name} never failed`,
+    "10 seconds",
+  )
+
 // ── AC1 / AC2 ────────────────────────────────────────────────────────────────────────────────────────────────
 // 现码上红:实例闭包里 forEach 等全部服务 ⇒ 第一次 `status()` 卡到 hang 的 30 s 连接超时。
 it.instance(
@@ -367,6 +374,44 @@ it.instance(
       mcp: { hang: local({ ALPHA_MCP_HANG: "1", ALPHA_MCP_CHILD: "1", ALPHA_MCP_PID_FILE: stalePids }) },
     }),
   },
+)
+
+const queuedPids = file("queued-pids")
+
+// 审计 F1:排队等名额(或卡在 cwd 的 stat)时被换代的查找,scope 已关、finalizer 挂上即空跑 ——
+// 不先核当前代就照常 spawn、握手成功、成功分支只跳过写回 ⇒ 第 5 台的进程无人收。
+it.instance(
+  "AC4/AC5: a server replaced while it queues for a startup slot never leaves a process behind",
+  () =>
+    Effect.gen(function* () {
+      const mcp = yield* MCP.Service
+      // h1–h4 占满四个名额(各自握手到 1 s 超时才放手),queued 排在第五个。
+      expect((yield* mcp.status()).queued).toEqual({ status: "pending" })
+      yield* mcp.disconnect("queued")
+      for (const name of ["h1", "h2", "h3", "h4"]) yield* failedEventually(name)
+      // 名额已放开;没守住的话第 5 台此刻已经起进程并连上(fixture 起来约 0.2 s)。
+      yield* Effect.promise(() => Bun.sleep(1_500))
+      const started = fs.existsSync(queuedPids)
+        ? (JSON.parse(fs.readFileSync(queuedPids, "utf8")) as { parent: number })
+        : undefined
+      expect(started === undefined || !alive(started.parent)).toBe(true)
+      expect((yield* mcp.status()).queued).toEqual({ status: "disabled" })
+      // 名额照常释放:之后的服务还能起来。
+      yield* mcp.add("after", local())
+      expect((yield* mcp.status()).after).toEqual({ status: "connected" })
+    }),
+  {
+    config: () => ({
+      mcp: {
+        h1: local({ ALPHA_MCP_HANG: "1" }, { timeout: 1_000 }),
+        h2: local({ ALPHA_MCP_HANG: "1" }, { timeout: 1_000 }),
+        h3: local({ ALPHA_MCP_HANG: "1" }, { timeout: 1_000 }),
+        h4: local({ ALPHA_MCP_HANG: "1" }, { timeout: 1_000 }),
+        queued: local({ ALPHA_MCP_PID_FILE: queuedPids }),
+      },
+    }),
+  },
+  30_000,
 )
 
 // ── AC5 ──────────────────────────────────────────────────────────────────────────────────────────────────────

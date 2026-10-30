@@ -635,7 +635,6 @@ const layer = Layer.effect(
 
     /** One startup attempt of one generation: spawn or connect, initialize, then `tools/list` on its own budget (AC7). */
     const attempt = Effect.fnUntraced(function* (name: string, mcp: ConfigMCPV1.Info, handoff: MCPClient | undefined) {
-      if (handoff) yield* Effect.addFinalizer(() => release(handoff.transport))
       const client =
         handoff ??
         (mcp.type === "remote"
@@ -776,15 +775,34 @@ const layer = Layer.effect(
         if (!server) return yield* Effect.die(new Error(`MCP server ${name} is not configured`))
         const handoff = server.handoff
         server.handoff = undefined
+        // Owned by this key's scope from the start, so a replacement before adoption still closes it.
+        if (handoff) yield* Effect.addFinalizer(() => release(handoff.transport))
 
-        const exit = yield* startups.withPermit(attempt(name, server.entry, handoff)).pipe(Effect.exit)
+        // A replacement closes this key's scope but does not interrupt the lookup. Queued for a slot (or in the cwd
+        // stat) a replaced key must not spawn at all; past that point its late success is closed here (audit F1).
+        const exit = yield* startups
+          .withPermit(
+            Effect.suspend(() =>
+              isCurrent(s, name, generation)
+                ? attempt(name, server.entry, handoff)
+                : Effect.fail(
+                    new ConnectFailure({
+                      status: { status: "failed", error: "replaced before it started" },
+                      reconnect: false,
+                    }),
+                  ),
+            ),
+          )
+          .pipe(Effect.exit)
         if (Exit.isSuccess(exit)) {
-          if (isCurrent(s, name, generation)) {
-            server.status = { status: "connected" }
-            server.retries = 0
-            watch(s, name, generation, exit.value)
-            yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+          if (!isCurrent(s, name, generation)) {
+            yield* release(exit.value.client.transport)
+            return exit.value
           }
+          server.status = { status: "connected" }
+          server.retries = 0
+          watch(s, name, generation, exit.value)
+          yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
           return exit.value
         }
         if (Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
