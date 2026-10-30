@@ -16,6 +16,9 @@ import { join } from "node:path"
 const userData = mkdtempSync(join(tmpdir(), "catalog-refresher-"))
 let identity: string | undefined = "account-a"
 let identityThrows = false
+/** 存着的令牌是否已过期(冷启动 App 关了超过一个续期周期时为真);`tokenSuffix` 区分续期前后的令牌。 */
+let tokenExpired = false
+let tokenSuffix = ""
 
 mock.module("electron", () => ({
   app: {
@@ -58,7 +61,8 @@ mock.module("./logging", () => ({
 }))
 mock.module("./alpha-endpoints", () => ({ resolveEndpoints: () => ({ platform: "https://gateway.test" }) }))
 mock.module("./alpha-auth", () => ({
-  getAccessToken: () => (identity ? `token-${identity}` : undefined),
+  getAccessToken: () => (identity ? `token-${identity}${tokenSuffix}` : undefined),
+  isStoredTokenExpired: () => tokenExpired,
   getAuthIdentityTag: () => {
     if (identityThrows) throw new Error("identity read exploded")
     return identity
@@ -74,7 +78,7 @@ globalThis.setInterval = ((callback: () => void, ms: number) => {
 }) as typeof setInterval
 
 const { onDownloadedCatalogChanged, requestCatalogRefresh } = await import("./catalog-refresher")
-const { liveAllowlistPath } = await import("./alpha-live-allowlist")
+const { appliedCatalogPath, liveAllowlistPath, pinAppliedCatalog } = await import("./alpha-live-allowlist")
 const { getCatalogFailure } = await import("./alpha-catalog-health")
 
 const PRODUCER_FIXTURE = join(
@@ -124,6 +128,8 @@ afterEach(async () => {
   requests.length = 0
   identity = "account-a"
   identityThrows = false
+  tokenExpired = false
+  tokenSuffix = ""
 })
 
 describe("`#1555` AC2:只在四个触发点发起", () => {
@@ -236,6 +242,43 @@ describe("`#1555` AC3:单飞与身份仲裁", () => {
     requests[0]!.settle(new Response('{"error":{"message":"rate limited","code":"rate_limited"}}', { status: 429 }))
     await waitFor(() => requests.length === 2)
     expect(getCatalogFailure()).toEqual(before)
+  })
+})
+
+// 编排器裁决(#1555 续派):冷启动时令牌已过期,boot 那一轮若照发,网关对坏 bearer 回退默认 edition,
+// 而纯续期不再重拉 ⇒ 错的清单钉到下一个触发点。boot 改为等开机续期落定后按新令牌发。
+// 删掉修法(boot 照发),第一条转红:boot 当场发出一条带过期令牌的请求,续期之后也不再重拉。
+describe("`#1555` 冷启动过期令牌:boot 那一轮等开机续期落定", () => {
+  test("开机时令牌过期 → 续期成功 → 平台清单按新令牌重拉一次,下一次 fork 钉住的是新结果", async () => {
+    tokenExpired = true
+    requestCatalogRefresh("boot")
+    expect(requests).toHaveLength(0) // 过期令牌拉回来的是默认 edition 的清单,不发
+
+    // 开机续期成功:令牌换新、身份不变,续期链末尾照常走 onChanged。
+    tokenExpired = false
+    tokenSuffix = "-renewed"
+    requestCatalogRefresh("identity-change")
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.bearer).toBe("Bearer token-account-a-renewed")
+    requests[0]!.settle(okCatalog((catalog) => (catalog.data[0].pricing_multiplier = { input: 6, output: 7 })))
+    await waitFor(() => existsSync(liveAllowlistPath(userData)) && JSON.parse(readFileSync(liveAllowlistPath(userData), "utf8")).models[0].pricing.input === 6)
+
+    pinAppliedCatalog(userData, 42) // 下一次 fork
+    expect(JSON.parse(readFileSync(appliedCatalogPath(userData), "utf8")).platform.models[0].pricing).toEqual({ input: 6, output: 7 })
+
+    // 只补这一轮:之后的纯续期照旧不拉。
+    requestCatalogRefresh("identity-change")
+    await Bun.sleep(50)
+    expect(requests).toHaveLength(1)
+  })
+
+  test("开机续期失败(令牌仍过期)也照常补发这一轮,不让目录饿死", async () => {
+    tokenExpired = true
+    requestCatalogRefresh("boot")
+    expect(requests).toHaveLength(0)
+    requestCatalogRefresh("identity-change") // 续期以失败结束,同样走 onChanged
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.bearer).toBe("Bearer token-account-a")
   })
 })
 

@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test"
 import { join } from "node:path"
 
-test("catalog refresher: triggers, single flight, identity arbitration and interface shape (#1555)", () => {
+test("catalog refresher: triggers, single flight, identity arbitration, expired-token boot and interface shape (#1555)", () => {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "test", join(import.meta.dir, "catalog-refresher.cases.ts")],
     cwd: join(import.meta.dir, "../.."),
@@ -12,6 +12,6 @@ test("catalog refresher: triggers, single flight, identity arbitration and inter
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain("8 pass")
+  expect(output).toContain("10 pass")
   expect(output).toContain("0 fail")
 }, 120000)
