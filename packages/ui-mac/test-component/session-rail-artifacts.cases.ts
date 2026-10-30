@@ -467,6 +467,122 @@ describe("#660 retrieval and empty states (view harness)", () => {
   })
 })
 
+// #1591 产物右栏的警告与出错文字:一句话说状态,按钮说动作,技术原文只进「技术详情」。
+describe("#1591 产物右栏警告与出错文字(view harness)", () => {
+  const registry = () => import("../src/renderer/alpha-ui/artifact-workbench/renderers/renderer-views")
+  const textCtx = (card: ReturnType<typeof runtime.fakeCard>) =>
+    ({
+      directory: DIR,
+      runId: "job_1",
+      readRef: { id: "art-1" },
+      name: "a.md",
+      decision: { rendererId: "text", effectiveMime: "text/plain", source: "extension", reason: "test", warnings: [], externalOpen: "allowed" },
+      card,
+      officeStructure: null,
+    }) as never
+  const withZh = async (run: () => Promise<void>) => {
+    i18n.setLocale("zh")
+    try {
+      await run()
+    } finally {
+      i18n.setLocale("en")
+    }
+  }
+
+  test("AC1 六处文字与批准稿 #artifacts-copy 一致;不一致用警示色而不是错误色", async () => {
+    await withZh(async () => {
+      const harness = runtime.createArtifactsViewHarness()
+      harness.setCloudUnavailable(true)
+      harness.setCards([
+        runtime.fakeCard({ key: "m", name: "m.md", state: "mismatch" }),
+        runtime.fakeCard({ key: "d", name: "d.md", state: "cloud-only", downloadable: true, downloadPayload: { id: "d", name: "d.md", size: 1 } as never }),
+        runtime.fakeCard({ key: "x", name: "x.md", state: "missing" }),
+      ])
+      harness.setSelectedKey("m")
+      const host = mount(harness.View)
+      await flush()
+      expect(host.querySelector("[data-cloud-unavailable]")!.textContent).toBe("云端不可用 · 仅显示本机文件")
+      const banner = host.querySelector(".a-wb-notice[data-kind='warn']")!
+      expect(banner.textContent).toBe("文件与云端记录不一致")
+      expect(host.querySelector(".a-wb-notice[data-kind='error']")).toBeNull()
+      expect(host.querySelector(".alpha-wb-empty p")!.textContent).toBe("文件已不在本机")
+      harness.setSelectedKey("d")
+      await flush()
+      expect(host.querySelector(".alpha-wb-empty p")!.textContent).toBe("尚未下载")
+      expect(i18n.t("alpha.session.artifactsVerifyFailed")).toBe("文件校验未通过")
+      expect(i18n.t("alpha.wb.previewCrashed")).toBe("预览失败")
+      expect(i18n.t("alpha.wb.viewSource")).toBe("查看源文")
+      expect(i18n.t("alpha.wb.retry")).toBe("重试")
+    })
+  })
+
+  test("AC1/AC3 校验未通过:正文只有「文件校验未通过」+「重试」,原因只在技术详情", async () => {
+    await withZh(async () => {
+      const harness = runtime.createArtifactsViewHarness()
+      harness.setCards([runtime.fakeCard({ key: "a", name: "a.md" })])
+      harness.setSelectedKey("a")
+      harness.setVerifyFailure("sha256 mismatch: 0f3a")
+      const host = mount(harness.View)
+      await flush()
+      const failed = host.querySelector("[data-artifacts-verify-failed]")!
+      expect(failed.textContent).toBe("文件校验未通过重试")
+      expect(host.textContent).not.toContain("sha256 mismatch")
+      host.querySelector<HTMLButtonElement>("[data-artifacts-tech]")!.click()
+      await flush()
+      expect(host.querySelector("[data-artifacts-tech-body]")!.textContent).toContain("sha256 mismatch: 0f3a")
+      failed.querySelector<HTMLButtonElement>(".a-wb-btn")!.click()
+      expect(harness.calls.retry).toBe(1)
+    })
+  })
+
+  test("AC2/AC3 预览失败:正文只有「预览失败」+「查看源文」;点它切到同一文件的源文;报错原文只在技术详情", async () => {
+    const { RENDERER_COMPONENTS } = await registry()
+    const original = RENDERER_COMPONENTS.text
+    RENDERER_COMPONENTS.text = () => {
+      throw new Error("Cannot read properties of undefined (reading 'zz')")
+    }
+    installFakeRunArtifacts({}, undefined)
+    ;(window as never as { api: { runArtifacts: { read: unknown } } }).api.runArtifacts.read = async () => ({
+      ok: true,
+      kind: "text",
+      text: "SOURCE-OF-THE-SAME-FILE",
+      truncated: false,
+      totalBytes: 23,
+      readBytes: 23,
+      binary: false,
+    })
+    try {
+      await withZh(async () => {
+        const card = runtime.fakeCard({ key: "a", name: "a.md" })
+        const harness = runtime.createArtifactsViewHarness()
+        harness.setCards([card])
+        harness.setSelectedKey("a")
+        harness.setPreviewCtx(textCtx(card))
+        const host = mount(harness.View)
+        await flush()
+        const failed = host.querySelector("[data-artifacts-preview-failed]")!
+        expect(failed.textContent).toBe("预览失败")
+        expect(host.querySelector("[data-artifacts-preview]")!.textContent).not.toContain("Cannot read properties")
+        host.querySelector<HTMLButtonElement>("[data-artifacts-tech]")!.click()
+        await flush()
+        expect(host.querySelector("[data-artifacts-tech-body]")!.textContent).toContain("Cannot read properties")
+
+        host.querySelector<HTMLButtonElement>("[data-artifacts-view-source]")!.click()
+        await flushTimers()
+        await flushTimers()
+        expect(host.querySelector("[data-artifacts-preview-failed]")).toBeNull()
+        expect(host.querySelector("[data-artifacts-preview]")!.textContent).toContain("SOURCE-OF-THE-SAME-FILE")
+        // 回到预览页签:仍是失败态(预览渲染器没变好),原文仍只在技术详情。
+        host.querySelector<HTMLButtonElement>("[data-artifacts-view-preview]")!.click()
+        await flushTimers()
+        expect(host.querySelector("[data-artifacts-preview-failed]")).not.toBeNull()
+      })
+    } finally {
+      RENDERER_COMPONENTS.text = original
+    }
+  })
+})
+
 describe("REQ-125 C4 artifacts container in the real shell (fake preload channel)", () => {
   test("latest run loads, first card auto-selects, verify-before-open runs, focusArtifact links in, identity switch resets (I8)", async () => {
     const { calls } = installFakeRunArtifacts({
@@ -624,7 +740,11 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     // Failure is never stamped as done: honest notice, zero reads, no preview.
     const failed = host.querySelector("[data-artifacts-verify-failed]")
     expect(failed).not.toBeNull()
-    expect(failed!.textContent).toContain("digest failed")
+    // #1591 AC3: the raw reason is a technical detail — never in the body.
+    expect(failed!.textContent).not.toContain("digest failed")
+    host.querySelector<HTMLButtonElement>("[data-artifacts-tech]")!.click()
+    await flushTimers()
+    expect(host.querySelector("[data-artifacts-tech-body]")!.textContent).toContain("digest failed")
     expect(calls.read).toBe(0)
 
     failed!.querySelector<HTMLButtonElement>(".a-wb-btn")!.click()
@@ -655,7 +775,10 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     // failure notice on screen, not a preview, and not a single byte read.
     const failed = host.querySelector("[data-artifacts-verify-failed]")
     expect(failed).not.toBeNull()
-    expect(failed!.textContent).toContain("mismatch")
+    expect(failed!.textContent).not.toContain("mismatch")
+    host.querySelector<HTMLButtonElement>("[data-artifacts-tech]")!.click()
+    await flushTimers()
+    expect(host.querySelector("[data-artifacts-tech-body]")!.textContent).toContain("mismatch")
     expect(host.querySelector("[data-artifacts-verifying]")).toBeNull()
     expect(calls.read).toBe(0)
     expect(calls.verify).toEqual(["job_1:art-1"])

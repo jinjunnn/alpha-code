@@ -187,6 +187,8 @@ describe("#1551 runStateToast", () => {
 
   test("saved 才说已回流;任务失败但记录已落盘 → 说结束而非成功;交付未落定不弹", () => {
     expect(runStateToast(state({ status: "saved" }))).toMatchObject({ kind: "success", key: "alpha.cloud.runSaved" })
+    // #1591:界面文字不写目录名,路径由程序给出。
+    expect(`${zh["alpha.cloud.runSaved"]} ${runStateToast(state({ status: "saved" }))!.detail}`).not.toContain(".code-puppy")
     expect(runStateToast(state({ status: "saved" }, { status: "failed" }))).toMatchObject({ kind: "info", key: "alpha.cloud.runEnded" })
     expect(runStateToast(state({ status: "pending" }))).toBeNull()
     expect(runStateToast(state({ status: "downloading" }))).toBeNull()

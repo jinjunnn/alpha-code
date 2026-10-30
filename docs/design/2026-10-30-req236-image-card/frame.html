@@ -255,7 +255,7 @@ body[data-width="narrow"] .ig-stage{padding:20px 0}
           <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
           <div class="ig-media"><button class="ig-pic" aria-label="查看大图:黄昏时分的海边灯塔"><svg><use href="#scene"/></svg></button><span class="ig-zoom"><svg class="ic"><use href="#g-expand"/></svg>查看大图</span></div>
           <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
-          <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+          <div class="ig-facts">1024 × 1024</div>
           <div class="ig-actions">
             <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
             <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
@@ -328,7 +328,7 @@ body[data-width="narrow"] .ig-stage{padding:20px 0}
         <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
         <div class="ig-media"><button class="ig-pic" aria-label="查看大图:黄昏时分的海边灯塔"><svg><use href="#scene"/></svg></button><span class="ig-zoom show"><svg class="ic"><use href="#g-expand"/></svg>查看大图</span></div>
         <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
-        <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+        <div class="ig-facts">1024 × 1024</div>
         <div class="ig-actions">
           <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
           <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
@@ -346,7 +346,7 @@ body[data-width="narrow"] .ig-stage{padding:20px 0}
         <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
         <div class="ig-media"><button class="ig-pic" aria-label="查看大图"><svg><use href="#scene"/></svg></button></div>
         <div class="ig-prompt open">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
-        <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+        <div class="ig-facts">1024 × 1024</div>
         <div class="ig-actions">
           <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
           <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
@@ -379,7 +379,7 @@ artifact art_7f3c2a91e04b_0_3f9ac07d</pre></details>
         <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
         <div class="ig-media"><button class="ig-pic" aria-label="查看大图"><svg><use href="#scene"/></svg></button></div>
         <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
-        <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+        <div class="ig-facts">1024 × 1024</div>
         <div class="ig-actions">
           <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
           <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
@@ -496,6 +496,7 @@ artifact art_7f3c2a91e04b_0_3f9ac07d</pre></details>
     <tr><td>正文 ≥ 560px</td><td>固定 480px,靠左(助手一侧)</td><td>456 × 456</td><td>一行:三个按钮 + 右端「详情」</td></tr>
     <tr><td>正文 &lt; 560px</td><td>占满正文宽度</td><td>随宽度,最小约 404 × 404</td><td>按钮按需换行;「详情」始终在最后一个按钮之后靠右,不单独占一行(除非一行只放得下它)</td></tr>
   </table>
+  <div class="ig-note">图片下方那一行只显示像素(取自本机已核验图片的实际尺寸)。owner 要的「质量 · 像素」里的质量,云端结果(<code>contracts/v1/image-generation.ts</code>)只有 provider、model、width、height,没有质量字段,所以不显示;格式与大小也不再写在这一行。</div>
   <div class="ig-note">卡片宽度不随图片原始尺寸变化。平台今天每次只出一张 1024 × 1024 的图,1:1 画框正好装下;如果将来出现非方形的图,画框改按图片比例,宽度不变、高度最多 1.25 倍宽,超出部分按「完整显示、两侧留底色」处理 —— 这条是预留规则,不进本次验收。</div>
 
   <!-- ─────────── 5. 文案与原因对照 ─────────── -->

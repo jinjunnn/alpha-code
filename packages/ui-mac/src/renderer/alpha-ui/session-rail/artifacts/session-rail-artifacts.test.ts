@@ -29,7 +29,8 @@ describe("REQ-125 C4 artifacts panel real Solid mount", () => {
     if (result.exitCode !== 0) throw new Error(output)
     // `#906`:时间线第 N 行 → 面板选中第 N 个(联动两半都是生产实现)(21 → 22)。
     // REQ-236 #1552:tabs 用例改写为「结果优先 + 技术详情折叠」;+ 真容器的本次对话 / 项目全部(22 → 23)。
-    expect(output).toContain("23 pass")
+    // #1591:+ 产物右栏警告与出错文字三条(23 → 26)。
+    expect(output).toContain("26 pass")
     expect(output).toContain("0 fail")
   })
 })

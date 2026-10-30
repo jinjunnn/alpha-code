@@ -108,6 +108,6 @@ export function runStateToast(state: CloudRunState): {
     }
   if (state.delivery.status !== "saved") return null
   if (state.job.status === "completed")
-    return { kind: "success", key: "alpha.cloud.runSaved", detail: `${state.runId} → .code-puppy/runs` }
-  return { kind: "info", key: "alpha.cloud.runEnded", detail: `${state.runId} → .code-puppy/runs` }
+    return { kind: "success", key: "alpha.cloud.runSaved", detail: state.runId }
+  return { kind: "info", key: "alpha.cloud.runEnded", detail: state.runId }
 }

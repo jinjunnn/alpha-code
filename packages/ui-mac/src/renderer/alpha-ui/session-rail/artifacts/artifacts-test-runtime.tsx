@@ -55,6 +55,7 @@ export function createArtifactsViewHarness() {
   const [owners, setOwners] = createSignal<Record<string, RunOwner>>({})
   const [deliveries, setDeliveries] = createSignal<Record<string, RunDelivery>>({})
   const [saveReceipt, setSaveReceipt] = createSignal<ArtifactSaveReceipt | null>(null)
+  const [verifyFailure, setVerifyFailure] = createSignal<string | undefined>()
   const calls = {
     scope: [] as ArtifactsScope[],
     retryDelivery: 0,
@@ -116,6 +117,7 @@ export function createArtifactsViewHarness() {
         calls.retry += 1
       }}
       verifying={false}
+      verifyFailure={verifyFailure()}
       previewCtx={previewCtx()}
       focusSeq={focusSeq()}
       onEscape={() => {
@@ -150,6 +152,7 @@ export function createArtifactsViewHarness() {
     setOwners,
     setDeliveries,
     setSaveReceipt,
+    setVerifyFailure,
   }
 }
 
