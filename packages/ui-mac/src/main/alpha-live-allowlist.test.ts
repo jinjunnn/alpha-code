@@ -1,10 +1,10 @@
 // REQ-127 #681:catalog LKG(文件桥)+ 平台段唯一投影的单测。
 //
 // 契约:
-//   · 读侧 fail-open —— 缺失 / 坏 JSON / 形状不对 / **旧 V1 形状** / 任一行 pair 不可信 一律 null,
-//     调用方回退内置 snapshot 且不声称任何价格;
+//   · 读侧 fail-open —— 缺失 / 坏 JSON / 形状不对 / **旧 V1/V2 形状** / 任一行 pair 不可信 一律 null,
+//     平台段为空且不声称任何价格(`#1556` AC1:不再回退随包清单);
 //   · 写侧与读侧**共用同一个校验函数** —— 校验不过直接不写,合法 LKG 不被覆盖;
-//   · 投影里远端字段(id / pricing)本地覆盖不了。
+//   · 投影的每个字段都取自快照(`#1556`:名称 / 品牌 / 能力 / 档位随 V3 `display` 进快照)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
@@ -19,7 +19,6 @@ import {
   writeCatalogSnapshot,
   type CatalogSnapshot,
 } from "./alpha-live-allowlist"
-import type { PlatformModel } from "../shared/alpha-model-types"
 
 let tmp = ""
 beforeEach(() => {
@@ -34,8 +33,20 @@ const valid = (): CatalogSnapshot => ({
   edition: "cn",
   pricingBasisModelId: "deepseek-v4-flash",
   models: [
-    { id: "deepseek-v4-flash", provider: "deepseek", minPlan: "free", pricing: { input: 1, output: 1 } },
-    { id: "claude-sonnet-5", provider: "anthropic", minPlan: "member", pricing: { input: 21.4, output: 53.6 } },
+    {
+      id: "deepseek-v4-flash",
+      provider: "deepseek",
+      minPlan: "free",
+      pricing: { input: 1, output: 1 },
+      display: { name: "DeepSeek V4 Flash", brand: "deepseek" },
+    },
+    {
+      id: "claude-sonnet-5",
+      provider: "anthropic",
+      minPlan: "member",
+      pricing: { input: 21.4, output: 53.6 },
+      display: { name: "Claude Sonnet 5", brand: "anthropic", web: true },
+    },
   ],
 })
 
@@ -57,7 +68,7 @@ describe("isTrustedPair", () => {
 })
 
 describe("readCatalogSnapshot — fail-open 读侧", () => {
-  test("无缓存 → null(回退内置 snapshot)", () => {
+  test("无缓存 → null(平台段为空)", () => {
     expect(readCatalogSnapshot(tmp)).toBeNull()
   })
 
@@ -81,6 +92,10 @@ describe("readCatalogSnapshot — fail-open 读侧", () => {
       (s) => (s.pricingBasisModelId = ""),
       (s) => (s.models = []),
       (s) => (s.fetchedAt = ""),
+      // `#1556`:V2 时代的 LKG 没有 display —— 读回即无效,平台段如实为空,直到下一次 V3 刷新。
+      (s) => delete (s.models[0] as Partial<CatalogSnapshot["models"][number]>).display,
+      (s) => (s.models[0]!.display = { name: "", brand: "deepseek" }),
+      (s) => (s.models[0]!.display = { name: "x", brand: "deepseek", variants: { 高: "high" } as never }),
     ]
     for (const mutate of cases) {
       const snapshot = valid()
@@ -131,50 +146,42 @@ describe("write → read 回路(写侧与读侧共用同一个校验函数)", ()
   })
 })
 
-describe("projectPlatformModels —— 平台段的唯一投影", () => {
-  const local: PlatformModel[] = [
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
-    { id: "claude-opus-4.8", name: "Claude Opus 4.8", reasoning: true, variants: { 高: { x: 1 } } },
-  ]
-
-  test("无快照 → 原样本地目录,且**不声称任何价格**", () => {
-    const rows = projectPlatformModels(local, null)
-    expect(rows.map((m) => m.id)).toEqual(["deepseek-v4-flash", "claude-opus-4.8"])
-    expect(rows.every((m) => m.pricing === undefined)).toBe(true)
+describe("projectPlatformModels —— 平台段的唯一投影(`#1556` AC1:全部字段取自快照)", () => {
+  test("无快照 → 平台段为空,**不声称任何价格**,也不回退任何随包清单", () => {
+    expect(projectPlatformModels(null)).toEqual([])
   })
 
-  test("远端 authority:本地永远覆盖不了 pricing", () => {
-    const snapshot = valid()
-    snapshot.models = [{ id: "deepseek-v4-flash", pricing: { input: 9.9, output: 9.9 } }]
-    const [row] = projectPlatformModels(
-      [{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", pricing: { input: 1, output: 1 } }],
-      snapshot,
-    )
-    expect(row!.pricing).toEqual({ input: 9.9, output: 9.9 })
-  })
-
-  test("清单以远端为准:已知 id 补展示元数据,未知 id 诚实降级为 id 本名但保留平台 pair", () => {
+  test("清单与每个字段都以快照为准:名称 / 品牌 / 能力 / 档位取 display,价格取目录行", () => {
     const snapshot = valid()
     snapshot.models = [
-      { id: "claude-opus-4.8", pricing: { input: 35.7, output: 89.3 } },
-      { id: "brand-new-model", pricing: { input: 2.5, output: 7.5 } },
+      {
+        id: "claude-opus-4.8",
+        provider: "anthropic",
+        pricing: { input: 35.7, output: 89.3 },
+        display: { name: "Claude Opus 4.8", brand: "anthropic", reasoning: true, web: true, variants: { 高: { reasoning: { effort: "high" } } } },
+      },
+      {
+        id: "qwen3.7-max",
+        provider: "openrouter",
+        pricing: { input: 10.5, output: 15.8 },
+        display: { name: "Qwen3.7 Max", brand: "qwen" },
+      },
     ]
-    const rows = projectPlatformModels(local, snapshot)
-    expect(rows.map((m) => m.id)).toEqual(["claude-opus-4.8", "brand-new-model"])
-    expect(rows[0]).toEqual({
-      id: "claude-opus-4.8",
-      name: "Claude Opus 4.8",
-      reasoning: true,
-      variants: { 高: { x: 1 } },
-      pricing: { input: 35.7, output: 89.3 },
-    })
-    // #679:未知模型只降级 name(用 id 本名),**不再合成任何价格轴**。逐字段全等,所以
-    // 悄悄加回一个档位字段(哪怕默认值)在这里就是红的。
-    expect(rows[1]).toEqual({
-      id: "brand-new-model",
-      name: "brand-new-model",
-      pricing: { input: 2.5, output: 7.5 },
-    })
+    const rows = projectPlatformModels(snapshot)
+    expect(rows).toEqual([
+      {
+        id: "claude-opus-4.8",
+        name: "Claude Opus 4.8",
+        brand: "anthropic",
+        reasoning: true,
+        web: true,
+        variants: { 高: { reasoning: { effort: "high" } } },
+        pricing: { input: 35.7, output: 89.3 },
+      },
+      // 品牌来自 display.brand,不是路由腿 provider(qwen 经 OpenRouter 路由)。逐字段全等:悄悄加回
+      // 一个档位或价格轴字段(哪怕默认值)在这里就是红的(#679)。
+      { id: "qwen3.7-max", name: "Qwen3.7 Max", brand: "qwen", pricing: { input: 10.5, output: 15.8 } },
+    ])
   })
 })
 

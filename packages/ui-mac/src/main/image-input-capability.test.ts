@@ -20,6 +20,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { environmentMutableRoot } from "./alpha-environment"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
+import { pinAppliedCatalog, writeCatalogSnapshot } from "./alpha-live-allowlist"
 import { customProviderSecretName, secretFilePath } from "./alpha-secret-files"
 import { writeCustomProviderTruth } from "./custom-provider-truth-write"
 
@@ -60,7 +61,21 @@ beforeAll(() => {
   process.env.ALPHA_BASE_URL = "https://gateway.invalid/v1"
   for (const dir of [userData, process.env.ALPHA_GLOBAL_DIR, process.env.OPENCODE_CONFIG_DIR, path.join(root, "home"), path.join(root, "proj")])
     fs.mkdirSync(dir, { recursive: true })
-  for (const name of ["ALPHA_API_KEY", ...getModelCatalog().byokProviders.map((p) => p.keyEnv)]) plant(name)
+  for (const name of ["ALPHA_API_KEY", ...getModelCatalog(userData).byokProviders.map((p) => p.keyEnv)]) plant(name)
+  // `#1556` AC1:平台段只来自已应用快照 —— 用上游 V3 producer fixture 的 12 行写 LKG 并钉住(一次 fork)。
+  const v3 = JSON.parse(
+    fs.readFileSync(
+      path.join(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v3/fixtures/producer/model-catalog.json"),
+      "utf8",
+    ),
+  ).value
+  writeCatalogSnapshot(userData, {
+    fetchedAt: "2026-10-30T00:00:00Z",
+    edition: v3.edition,
+    pricingBasisModelId: v3.pricing_basis_model_id,
+    models: v3.data.map((row: any) => ({ id: row.id, provider: row.provider, minPlan: row.min_plan, pricing: row.pricing_multiplier, display: row.display })),
+  })
+  pinAppliedCatalog(userData, 1)
   // 两条自定义记录:一条用户声明了 vl-a 能看图;一条 id 恰好与 models.dev 的 provider 同名、没声明任何东西。
   writeCustomProviderTruth(
     path.join(stateRoot, "custom-providers", "dev.json"),

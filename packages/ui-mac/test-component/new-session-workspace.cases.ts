@@ -21,6 +21,7 @@ import type { MentionPart } from "../src/renderer/alpha-ui/composer-autocomplete
 import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../src/shared/alpha-config"
 // `#1374`:共享 `window.api` 桩(只 import 类型,运行期零依赖)。
 import { installPreloadStub } from "./preload-stub"
+import { effectiveCatalogFixture } from "./effective-catalog.fixture"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -162,12 +163,8 @@ const DEFAULT_WORKSPACE = "/Users/tester/Alpha"
 
 /* ── model chain fixture:composer 不 ready 就不肯提交,而本文件的判据里有两条要走真提交。
       形制照搬 alpha-composer-model.cases.ts:真出厂目录 + 已登录平台账户。 ────────────── */
-const catalog = {
-  ...(await Bun.file(new URL("../src/main/alpha-models.json", import.meta.url)).json()),
-  liveSync: { status: "static" },
-  // #681:平台段没有有效 V2/LKG 时 basis 为 null(该 stub 不带远端目录)。
-  pricingBasisModelId: null,
-}
+// `#1556`:已应用目录(上游 V3 producer 快照 + 随包 BYOK 首启引导)经生产投影装配,见 effective-catalog.fixture.ts。
+const catalog = effectiveCatalogFixture()
 const modelInfo = (providerID: string, id: string, name = id) => ({
   id,
   providerID,

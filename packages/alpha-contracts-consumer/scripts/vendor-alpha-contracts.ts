@@ -76,20 +76,25 @@ const UPSTREAMS = [
     // re-pin the V1 bundle. Same repo, separate commit / lock / vendor subtree / staged-source dir:
     // the loops below key on the entry, never on `repo`, so the two alpha-platform pins move apart.
     //
+    // `#1556` / platform#559(REQ-237):目录升 V3(每行必填 `display`,删 `byok_providers`)并新增 BYOK 预置目录
+    // `ByokCatalogV1`(`GET /v1/byok-catalog`)。两份同一个发布者、同一个消费者(catalog-refresher),所以 BYOK
+    // schema 骑这一条 pin,不动 V1 bundle。源:alpha-platform PR #562(分支 feat/559-catalog-v3)的 a154d1f。
     repo: "jinjunnn/alpha-platform",
-    commit: "7fd62d3edcb0d21f429ce06cadc2528fc5b0ab5c",
+    commit: "a154d1f4f45fc614798a16c1535f73a1b67483f9",
     lock: "alpha-platform-model-catalog.lock.json",
     vendor: "vendor/alpha-platform-model-catalog",
     sourceEnv: "ALPHA_PLATFORM_MODEL_CATALOG_SOURCE",
     sourceDefault: ".upstream-model-catalog-contracts",
-    // 第三份是上游发布的 **negative fixture**(V1 形状的目录,`expect: "invalid"`)。钉它是为了让
-    // 「拒绝 V1 形状」这条判据消费**上游自己的字节**,而不是我们手写一份别人文法的替身 ——
+    // 第三份是上游发布的 **negative fixture**(上一代(V2)形状的目录,`expect: "invalid"`)。钉它是为了让
+    // 「拒绝上一代形状」这条判据消费**上游自己的字节**,而不是我们手写一份别人文法的替身 ——
     // 手写替身是本仓最贵的返工来源(见 alpha-work CLAUDE.md「勘破先于闸门设计」第 2 条:
     // 要么消费对方的决定,要么直接拒绝该输入,不要解释它)。
     files: [
-      "contracts/v2/model-catalog.schema.json",
-      "contracts/v2/fixtures/producer/model-catalog.json",
-      "contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
+      "contracts/v3/model-catalog.schema.json",
+      "contracts/v3/fixtures/producer/model-catalog.json",
+      "contracts/v3/fixtures/invalid/v2-shaped-catalog.json",
+      "contracts/v1/byok-catalog.schema.json",
+      "contracts/v1/fixtures/producer/byok-catalog.json",
     ],
   },
   {

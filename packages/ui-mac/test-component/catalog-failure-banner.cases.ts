@@ -23,7 +23,7 @@ import { transformAsync } from "@babel/core"
 import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import presetSolid from "babel-preset-solid"
-import type { CatalogRefreshFailure } from "../src/shared/alpha-model-types"
+import type { CatalogRefreshFailure, CatalogRefreshHealth } from "../src/shared/alpha-model-types"
 import type { ContractFailure } from "../src/preload/types"
 // dict 是纯对象,静态 import 无害(index 会在求值期 import "solid-js",那条路要走动态)。
 import { dict as zh } from "../src/renderer/i18n/zh"
@@ -61,20 +61,25 @@ mock.module("../src/renderer/alpha-ui/providers", () => ({ useContractHealth: ()
 const { CatalogFailureBanner, ContractFailureBanner } = await import("../src/renderer/alpha-ui/Banner")
 const { setLocale } = await import("../src/renderer/i18n")
 
-/** preload 桥替身:renderer 侧拿刷新结局只有这两条路,生产组件走的就是它们。 */
-function bridge(initial: CatalogRefreshFailure | null) {
-  const listeners = new Set<(failure: CatalogRefreshFailure | null) => void>()
+/** preload 桥替身:renderer 侧拿刷新结局只有这两条路,生产组件走的就是它们。`#1556` 起两份目录各一格;
+ *  只给平台那一格的用例沿用旧写法(第二个参数缺省 = BYOK 那一份没失败)。 */
+const health = (platform: CatalogRefreshFailure | null, byok: CatalogRefreshFailure | null = null): CatalogRefreshHealth => ({ platform, byok })
+function bridge(initial: CatalogRefreshFailure | null, initialByok: CatalogRefreshFailure | null = null) {
+  const listeners = new Set<(value: CatalogRefreshHealth) => void>()
   const api = {
     models: {
-      refreshHealth: async () => initial,
-      subscribeRefreshHealth: (cb: (failure: CatalogRefreshFailure | null) => void) => {
+      refreshHealth: async () => health(initial, initialByok),
+      subscribeRefreshHealth: (cb: (value: CatalogRefreshHealth) => void) => {
         listeners.add(cb)
         return () => listeners.delete(cb)
       },
     },
   }
   ;(globalThis as unknown as { window: Record<string, unknown> }).window.api = api
-  return { push: (failure: CatalogRefreshFailure | null) => listeners.forEach((cb) => cb(failure)) }
+  return {
+    push: (failure: CatalogRefreshFailure | null, byok: CatalogRefreshFailure | null = null) =>
+      listeners.forEach((cb) => cb(health(failure, byok))),
+  }
 }
 
 let host: HTMLDivElement
@@ -132,12 +137,33 @@ describe("#1084 目录刷新失败到得了用户", () => {
     expect(banner()).toBeNull()
   })
 
+  // `#1556` AC6:两份目录各一格 —— 平台那份恢复后,自带 Key 那份仍在的失败接着显示(不被一并抹掉),
+  // 标题如实说是哪一份;两份都成功才收掉。摆放位置另由 alpha-code#1557 处理。
+  test("`#1556`:平台恢复后自带 Key 清单的失败仍可见,标题点名是哪一份;两份都成功才收掉", async () => {
+    const { push } = bridge({ code: "http-503", at: "2026-10-30T00:00:00.000Z" }, { code: "network", at: "2026-10-30T00:00:00.000Z" })
+    dispose = render(() => CatalogFailureBanner({}), host)
+    await flush()
+    expect(banner()?.dataset.alphaCatalogDoc).toBe("platform")
+    expect(banner()?.dataset.alphaCatalogFailure).toBe("http-503")
+
+    push(null, { code: "network", at: "2026-10-30T00:00:01.000Z" })
+    expect(banner()?.dataset.alphaCatalogDoc).toBe("byok")
+    expect(banner()?.dataset.alphaCatalogFailure).toBe("network")
+    expect(banner()?.querySelector(".a-banner-title")?.textContent).toBe(zh["alpha.model.byokRefreshFailedTitle"])
+    expect(banner()?.querySelector(".a-banner-detail")?.textContent).toBe(
+      zh["alpha.model.byokRefreshFailedDetail"].replace("{{code}}", "network"),
+    )
+
+    push(null, null)
+    expect(banner()).toBeNull()
+  })
+
   test("#1507 AC1:契约横幅显示 Code Puppy 并保留失败详情;目录横幅自抑制", async () => {
     setContractFailure({
       code: "contract-incompatible",
       surface: "model-catalog",
-      expected_version: 2,
-      received_version: 1,
+      expected_version: 3,
+      received_version: 2,
       reason: "schema-validation",
     })
     bridge({ code: "contract-incompatible", at: "2026-08-23T00:00:02.000Z" })
@@ -145,7 +171,7 @@ describe("#1084 目录刷新失败到得了用户", () => {
     await flush()
     expect(banner()).toBeNull()
     expect(host.querySelector(".a-contract-failure .a-banner-title")?.textContent).toBe("Code Puppy platform contract is incompatible")
-    expect(host.querySelector(".a-contract-failure .a-banner-detail")?.textContent).toBe("model-catalog: schema-validation (expected v2, received 1)")
+    expect(host.querySelector(".a-contract-failure .a-banner-detail")?.textContent).toBe("model-catalog: schema-validation (expected v3, received 2)")
 
     // 契约横幅撤下之后,同一份刷新结局仍然到得了用户 —— 抑制的是重叠,不是这条信息本身。
     setContractFailure(null)

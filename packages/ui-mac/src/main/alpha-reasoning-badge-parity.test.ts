@@ -51,6 +51,8 @@ import { buildModelPickerRows, type ModelPickerRow } from "../renderer/alpha-ui/
 import { buildPromptRequest } from "../renderer/alpha-ui/composer-state"
 import { byokModelMeta, isByokEngineId } from "../shared/alpha-model-types"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
+import { pinAppliedCatalog, writeCatalogSnapshot } from "./alpha-live-allowlist"
+import { v3Snapshot } from "../../test-component/effective-catalog.fixture"
 import { secretFilePath } from "./alpha-secret-files"
 
 const repoRoot = path.resolve(import.meta.dir, "../../../..")
@@ -121,7 +123,11 @@ beforeAll(async () => {
   }
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-reasoning-parity-")))
   userData = path.join(root, "userdata")
-  const secrets = ["ALPHA_API_KEY", ...getModelCatalog().byokProviders.map((provider) => provider.keyEnv)]
+  // `#1556` AC1:平台段只来自已应用快照 —— 上游 V3 producer fixture 的 12 行写成 LKG 并钉住(一次 fork)。
+  fs.mkdirSync(userData, { recursive: true })
+  writeCatalogSnapshot(userData, v3Snapshot())
+  pinAppliedCatalog(userData, 1)
+  const secrets = ["ALPHA_API_KEY", ...getModelCatalog(userData).byokProviders.map((provider) => provider.keyEnv)]
   for (const name of secrets) {
     fs.mkdirSync(path.dirname(secretFilePath(userData, name)), { recursive: true })
     fs.writeFileSync(secretFilePath(userData, name), `sk-fake-${name}`, { mode: 0o600 })
@@ -277,7 +283,7 @@ const rowKey = (row: ModelPickerRow) => `${row.model.providerID}:${row.model.id}
 
 /** 生产 picker 行:静态目录、全部 BYOK key 已配置、引擎清单 = 注入的那些模型(平台行的可用性需要它在册)。 */
 function pickerRows(): ModelPickerRow[] {
-  const base = getModelCatalog()
+  const base = getModelCatalog(userData)
   const cfg = buildAlphaModelConfig(userData)!
   const models: ModelV2Info[] = Object.entries(cfg.provider as Record<string, { models: Record<string, unknown> }>).flatMap(
     ([providerID, provider]) =>
@@ -298,7 +304,13 @@ function pickerRows(): ModelPickerRow[] {
         }),
       ),
   )
-  const catalog: EffectiveCatalog = { ...base, liveSync: { status: "static" }, pricingBasisModelId: null }
+  const catalog: EffectiveCatalog = {
+    ...base,
+    liveSync: { status: "cache" },
+    pricingBasisModelId: null,
+    applied: { platformFetchedAt: null, byokVersion: 1 },
+    downloaded: { platformFetchedAt: null, byokVersion: 1 },
+  }
   return buildModelPickerRows({
     catalog,
     models,
@@ -311,11 +323,11 @@ function pickerRows(): ModelPickerRow[] {
   })
 }
 
-/** 目录里该档位声明的 wire 值,与生产同一份派生:平台行读平台条目;BYOK 行经 byokModelMeta(平台同名条目或
- *  `modelMeta` 槽,#1267)。`reasoningEffort: x` → 请求体 `reasoning_effort: x`;`thinking: { type: t }` → 请求体
+/** 目录里该档位声明的 wire 值,与生产同一份派生:平台行读已应用平台快照的条目;BYOK 行经 byokModelMeta
+ *  (BYOK 目录自己的逐模型元数据,`#1556` 起不借平台同名条目)。`reasoningEffort: x` → 请求体 `reasoning_effort: x`;`thinking: { type: t }` → 请求体
  *  `thinking.type: t`(openai-compatible 原样透传,#1239 捕获实证);其它形状只判「有参数」。 */
 function declaredControl(row: ModelPickerRow, variant: string): { reasoningEffort?: string; thinkingType?: string } {
-  const catalog = getModelCatalog()
+  const catalog = getModelCatalog(userData)
   const declared = isByokEngineId(row.model.providerID)
     ? byokModelMeta(catalog, row.model.providerID, row.model.id).variants?.[variant]
     : catalog.platformModels.find((model) => model.id === row.model.id)?.variants?.[variant]

@@ -2,51 +2,44 @@
 // catalog via window.api.models.catalog()). Keeping these in src/shared avoids cross-bundle value
 // imports between main and preload — only the (erased) types travel.
 //
-// Single source of truth for the catalog DATA is main/alpha-models.json (ADR-014 "config-driven,
-// no hardcode"). Edit the JSON to add/retire models, retune 展示元数据(显示名 / reasoning / web /
-// variants), or change presets — no code.
+// REQ-237 `#1556`:目录数据有两个远程权威 —— 平台模型的名称 / 品牌 / 能力由网关 `GET /v1/models`(V3 `display`)
+// 下发;BYOK 预置目录由 `GET /v1/byok-catalog` 下发(main/alpha-models.json 只留它的首启引导副本)。端点 / Key 名 /
+// 协议适配器只在 App 内置适配器表 main/byok-adapters.ts。
 //
 // REQ-127 #679 / ADR-039:本地目录**没有价格轴**。平台代理的计价倍数只由网关 `GET /v1/models`
 // 下发(`PlatformModel.pricing` + `EffectiveCatalog.pricingBasisModelId`);此前那套本地写死的
 // `tiers`(标准/高级/旗舰)与逐模型 `tier` 是**第二个价格权威**,并且对未收录的线上模型一律合成
 // 最便宜的一档 —— 它已被删除,不得以任何形式回来。
 
-/** A BYOK (自带 Key) provider. `builtin` ones ride opencode's models.dev catalog (whitelist only);
- *  non-builtin ones are presets surfaced in the "添加节点" flow (provider.add writes a full def). */
+/** A BYOK (自带 Key) provider as the picker and the engine injection see it —— REQ-237 `#1556` 起是**投影**,
+ *  不是随包数据:provider 身份、名称、preset、模型与逐模型元数据来自已应用 BYOK 目录(远程 `GET /v1/byok-catalog`
+ *  或随包首启引导,ByokCatalogV1),`compat` / `baseURL` / `keyEnv` / `pico` 来自 App 内置适配器表
+ *  (main/byok-adapters.ts)。唯一的投影函数是 main/alpha-models.ts `projectByokProviders`。 */
 export type ByokProvider = {
   id: string
   name: string
-  /** opencode already knows this provider (models.dev) → inject whitelist + enable when key in env. */
-  builtin?: boolean
   /** show as a quick-preset card in the add-provider flow. */
-  preset?: boolean
+  preset: boolean
   compat: "openai" | "anthropic"
   baseURL: string
   keyEnv: string
   pico: { letter: string; color: string }
   models: string[]
-  /** REQ-153 #1267:BYOK-only id 的**逐模型元数据槽**(键 = `models` 里的 id)。此前 BYOK 目录只有 id 列表,
-   *  展示名 / 「推理」徽标 / 档位一律从平台**同名**条目派生;`glm-4.5-air` 平台侧没有同名条目,于是它无徽标、
-   *  零档,而上游 `transform.options()` 对 `zhipuai*` + openai-compatible **无条件**写 `thinking: enabled` ——
-   *  用户看到「不思考的快模型」,请求却锁在思考档。这个槽是 alpha 自有目录里给它徽标 + 开/关两档的唯一旋钮。
-   *  读它的只有 {@link byokModelMeta};键不在 `models` 里、或与平台同名条目重叠,alpha-models.test.ts 当场红。 */
-  modelMeta?: Record<string, ByokModelMeta>
-  /** REQ-228 #1420:这组模型的能力数据取自哪个 models.dev provider(与本条 `baseURL` 同一端点的那个 id,
-   *  如 `api.moonshot.cn` ⇒ `moonshotai-cn`)。只是出处,运行时不读 —— 打包的 sidecar 没有 models.dev 快照
-   *  (托管模式下 OPENCODE_MODELS_PATH 指向 alpha 自己的最小底表,alpha-config-injection.ts governedModelsBase)。 */
-  modelsDev?: string
-  /** REQ-228 #1420:逐模型「能不能看图」,值抄自 `modelsDev` 同名模型 `modalities.input` 是否含 `image`。
-   *  注入时落成引擎 config 的 `modalities.input`(→ `capabilities.input.image`);缺值 ⇒ 看不了图(fail-closed)。
-   *  出货目录必须对 `models` 里每个 id 显式给值,alpha-models.test.ts 判完备。 */
-  imageInput?: Record<string, boolean>
+  /** 逐模型元数据(键 = `models` 里每一个 id,来自 BYOK 目录)。读它的只有 {@link byokModelMeta}。
+   *  REQ-153 #1267 的教训(`glm-4.5-air` 无徽标却锁在思考档)仍成立:元数据必须是这个 provider 自己的,
+   *  `#1556` 起每个模型都有,不再借平台同名条目。 */
+  modelMeta: Record<string, ByokModelMeta>
+  /** REQ-228 #1420:逐模型「能不能看图」(BYOK 目录的 `image_input`,schema 必填)。注入时落成引擎 config 的
+   *  `modalities.input`(→ `capabilities.input.image`)。 */
+  imageInput: Record<string, boolean>
 }
 
-/** {@link ByokProvider.modelMeta} 的值:与 `PlatformModel` 的展示元数据同形(刻意没有 pricing —— 直连节点不经网关,
- *  没有平台计价倍数;REQ-127 #679 / ADR-039 不允许本地出现任何价格主张)。 */
+/** {@link ByokProvider.modelMeta} 的值:刻意没有 pricing —— 直连节点不经网关,没有平台计价倍数;REQ-127 #679 /
+ *  ADR-039 不允许本地出现任何价格主张。 */
 export type ByokModelMeta = {
-  name?: string
+  name: string
   reasoning?: boolean
-  /** 档名 → 引擎 request 参数,wire 形状按 `@ai-sdk/openai-compatible` 写(BYOK provider 全部 `compat: "openai"`)。
+  /** 档名 → 引擎 request 参数,wire 形状按 `@ai-sdk/openai-compatible` 写(BYOK 适配器全部 `compat: "openai"`)。
    *  `{ thinking: { type: "disabled" } }` 是**显式关闭**:智谱 2026-09-06 实打,`disabled` 真的不再回 `reasoning_content`,
    *  而 `type` 写错(如 `bogus`)会被上游**静默忽略并继续思考**(HTTP 仍 200)—— 值必须逐字是 `disabled`。 */
   variants?: Record<string, Record<string, unknown>>
@@ -70,36 +63,24 @@ export const byokEngineId = (id: string): string => `${id}-byok`
  *  it does not depend on platform login/entitlement or on the engine's model list being loaded". */
 export const isByokEngineId = (providerID: string): boolean => providerID.endsWith("-byok")
 
-/** BYOK 行的展示名、推理能力与**推理档位**的**唯一**派生函数。两个来源,显式优先:
- *  ① `ByokProvider.modelMeta[id]`(REQ-153 #1267,BYOK-only id 自己的元数据槽);
- *  ② 平台目录**同名条目**(`PlatformModel`),没有槽时的派生路径。
+/** BYOK 行的展示名、推理能力与**推理档位**的**唯一**派生函数,只读 BYOK 目录自己的逐模型元数据
+ *  (`ByokProvider.modelMeta`)。REQ-237 `#1556`:此前没有槽的模型借**平台同名条目**的 name/reasoning/variants ——
+ *  与目录自己的 `_variantsNote`「同一模型经直连与经 OpenRouter 形状不同,不得跨腿套用」矛盾;两类目录从此不互相借数据。
  *  REQ-153 #1236:picker 打「推理」徽标(renderer/model-picker-core.ts)与 sidecar 往引擎写
- *  `capabilities.reasoning`(main/alpha-models.ts)必须都走这一个函数。此前两边各查一次:picker 查
- *  平台目录、注入只写 `{name}` ⇒ 徽标亮着而引擎 `reasoning === false`,`transform.ts:712` 首行即
- *  `return {}` —— UI 对用户说了假话。传入的 `platformModels` 应是 `projectPlatformModels` 的产物
- *  (两边同一份投影),不是裸 JSON。
- *  REQ-153 #1266:`variants` 同样由这里派生,同一份数据同时进 sidecar 注入(config `models.<id>.variants`,
- *  引擎与自己派生的档位表 mergeDeep)与 picker 的 BYOK 行(档位 chip 的列表)、会话投影
- *  (`composerModelFromRef`)、自动默认(`model-default-core` 第③级)。档位表的 wire 形状
- *  (`reasoningEffort` → `reasoning_effort`、`thinking` 原样透传)按 `@ai-sdk/openai-compatible` 写,
- *  前提是目录里每个 BYOK provider 都是 `compat: "openai"` —— alpha-models.test.ts 钉着这条不变量。
- *  REQ-153 #1267:`engineProviderID` 是引擎侧 id(`<id>-byok`,{@link byokEngineId}),四个调用点手里都有它;
- *  槽与同名平台条目**不得同时存在**(alpha-models.test.ts 钉着),所以「显式优先」在出货目录上永远不被触发,
- *  只是给一个确定的读法。 */
+ *  `capabilities.reasoning`(main/alpha-models.ts)必须都走这一个函数 —— 两边各查一次就会出现徽标亮着而
+ *  引擎 `reasoning === false`。REQ-153 #1266:`variants` 同样由这里派生,同一份数据同时进 sidecar 注入、
+ *  picker 的 BYOK 行、会话投影(`composerModelFromRef`)与自动默认(`model-default-core` 第③级)。
+ *  `engineProviderID` 是引擎侧 id(`<id>-byok`,{@link byokEngineId});目录里没有这个模型 ⇒ 名称回落 id、无徽标无档。 */
 export function byokModelMeta(
-  catalog: {
-    platformModels: readonly Pick<PlatformModel, "id" | "name" | "reasoning" | "variants">[]
-    byokProviders: readonly Pick<ByokProvider, "id" | "modelMeta">[]
-  },
+  catalog: { byokProviders: readonly Pick<ByokProvider, "id" | "modelMeta">[] },
   engineProviderID: string,
   id: string,
 ): { name: string; reasoning: boolean; variants?: Record<string, Record<string, unknown>> } {
   const own = catalog.byokProviders.find((provider) => byokEngineId(provider.id) === engineProviderID)?.modelMeta?.[id]
-  const display = own ?? catalog.platformModels.find((model) => model.id === id)
   return {
-    name: display?.name ?? id,
-    reasoning: !!display?.reasoning,
-    ...(display?.variants ? { variants: display.variants } : {}),
+    name: own?.name ?? id,
+    reasoning: !!own?.reasoning,
+    ...(own?.variants ? { variants: own.variants } : {}),
   }
 }
 
@@ -108,22 +89,33 @@ export function byokModelMeta(
  *  不加权、不折叠成单一 scalar(折叠对至少一侧必然错)。 */
 export type PricingMultiplier = { input: number; output: number }
 
-/** A model fronted by the alpha-platform proxy (代理节点). Visible always (locked when logged-out). */
+/** REQ-237 `#1556`:网关 ModelCatalogV3 每行的 `display`(名称 / 品牌 / 能力 / 档位),网关 registry 是唯一权威。 */
+export type PlatformModelDisplay = {
+  name: string
+  brand: string
+  reasoning?: boolean
+  web?: boolean
+  variants?: Record<string, Record<string, unknown>>
+}
+
+/** A model fronted by the alpha-platform proxy (代理节点). Visible always (locked when logged-out).
+ *  REQ-237 `#1556`:每个字段都来自已应用的平台快照(id / pricing 来自目录行,其余来自该行的 `display`);
+ *  没有有效快照 ⇒ 平台段为空,不再回退任何随包清单。 */
 export type PlatformModel = {
   id: string
   name: string
-  /** #681:平台目录给的双倍数,**远端权威**;缺失 = 没有有效 V2/LKG,该行不得声称任何价格。
-   *  本地 alpha-models.json 永远不产出它(那正是 REQ-127 要消灭的本地价格主张)。 */
+  /** 品牌(`display.brand`),不是路由腿 `provider`(qwen 经 OpenRouter 路由,品牌仍是 qwen)。 */
+  brand: string
+  /** #681:平台目录给的双倍数,**远端权威**。 */
   pricing?: PricingMultiplier
   reasoning?: boolean
   web?: boolean
-  /** 推理档位表(alpha-models.json variants:档名 → 引擎 request 参数)。REQ-055:AlphaComposer 的
-   *  effort chip 以 Object.keys(variants) 为档位真源(本地状态,提交时作 variant 参数)。 */
+  /** 推理档位表(档名 → 引擎 request 参数)。REQ-055:AlphaComposer 的 effort chip 以 Object.keys(variants)
+   *  为档位真源(本地状态,提交时作 variant 参数)。 */
   variants?: Record<string, Record<string, unknown>>
 }
 
 export type AlphaModelCatalog = {
-  version: string
   /** default selection "<providerID>/<modelID>" or null (null = don't force a default).
    *  这是**引擎 config 的 `model` 字段**(opencode 原生契约),与下面的 `defaultPlatformModel`
    *  不是同一根轴 —— 别把两者混用。 */
@@ -134,10 +126,12 @@ export type AlphaModelCatalog = {
    *  绝不允许「挑一个便宜的」或「挑第一个」:客户端已经没有价格权威,任何挑选都是在重新发明它。 */
   defaultPlatformModel: string | null
   /** the alpha-platform gateway provider shell (models come from platformModels). */
-  platformProvider: { id: string; name: string; npm: string; pico: { letter: string; color: string } }
+  platformProvider: { id: string; name: string; npm: string }
+  /** 已应用平台快照的投影;没有有效快照 ⇒ 空(「平台模型清单尚未获取」)。 */
   platformModels: PlatformModel[]
+  /** 已应用 BYOK 目录 × 适配器表的投影。 */
   byokProviders: ByokProvider[]
-  /** ids (into byokProviders) shown as quick-preset cards in the add-provider flow. */
+  /** ids (into byokProviders) shown as quick-preset cards in the add-provider flow(= `preset` 为真者,目录顺序)。 */
   presetIds: string[]
 }
 
@@ -151,9 +145,9 @@ export type LiveSyncInfo = {
   edition?: string
 }
 
-/** window.api.models.catalog() 实际返回:catalog 的**平台段**经 edition 清单过滤后的视图 + 来源标注。
- *  platformModels 已按网关清单收窄(真实 registry id);**byokProviders 原样透出** —— REQ-109 #595
- *  撤销了 edition 收窄,BYOK 目录只由本地 alpha-models.json 决定(docs/contracts/byok-availability.md)。 */
+/** window.api.models.catalog() 实际返回:已应用目录 + 来源标注。platformModels 是网关 edition 清单(真实 registry id);
+ *  **byokProviders 从不按账户 / edition 收窄** —— REQ-109 #595;`#1556` 起它来自本机已应用 BYOK 目录
+ *  (docs/contracts/byok-availability.md)。 */
 export type EffectiveCatalog = AlphaModelCatalog & {
   liveSync: LiveSyncInfo
   /** #681 / ADR-039:`PlatformModel.pricing` 那些倍数相对的基准模型 id;`null` = 没有有效 V2/LKG,
@@ -168,10 +162,10 @@ export type EffectiveCatalog = AlphaModelCatalog & {
 }
 
 /** 两份目录各自的版本标识。`platformFetchedAt` = 平台快照的同步时刻,`null` = 没有有效快照;
- *  `byokVersion` = BYOK 目录版本(远程 BYOK 文档上线前恒为随包目录的 `version`)。 */
-export type CatalogVersions = { platformFetchedAt: string | null; byokVersion: string }
+ *  `byokVersion` = BYOK 目录的 `catalog_version`(远程或随包首启引导,取高者)。 */
+export type CatalogVersions = { platformFetchedAt: string | null; byokVersion: number }
 
-/** #1084:平台模型目录**刷新**的失败结局(main → renderer 的可观察出口)。
+/** #1084:一份模型目录**刷新**的失败结局(main → renderer 的可观察出口)。
  *  `code` 是 `fetchPlatformModels()` 已经算出来的稳定分类码(`rate_limited` / `unauthorized` /
  *  `http-503` / `network` / `contract-incompatible` …),或落盘侧的 `snapshot-rejected` /
  *  `cache-write-failed`。**不是散文** —— 散文槽随时会变、可能带租户信息,不进 UI。
@@ -181,6 +175,10 @@ export type CatalogRefreshFailure = {
   /** ISO 时间戳:同一个码连续失败时,用户仍看得出「刚刚又失败了一次」。 */
   at: string
 }
+
+/** REQ-237 `#1556`(方案 §2.1 / I10):两份目录的刷新结局**各自**保存 —— 一份成功只清它自己那一格,
+ *  另一份的失败仍可见。`alpha-catalog-health` invoke 与 `alpha-catalog-failure` 推送都发这个汇总。 */
+export type CatalogRefreshHealth = { platform: CatalogRefreshFailure | null; byok: CatalogRefreshFailure | null }
 
 // ── custom-provider add/test IPC (window.api.providers.*) ───────────────────────────────────────
 

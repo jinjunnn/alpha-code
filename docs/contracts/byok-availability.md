@@ -4,8 +4,8 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-24
-review_after: 2026-10-24
+last_reviewed: 2026-10-30
+review_after: 2027-01-30
 ---
 
 # BYOK 契约:两个独立谓词
@@ -24,8 +24,12 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 
 | 输入 | 真源 | 读取通道 |
 | --- | --- | --- |
-| 本地目录 | `packages/ui-mac/src/main/alpha-models.json` 的 `byokProviders[].models` | `models-catalog` IPC(main-only) |
-| 本地 KEY 状态 | alpha 加密钥匙库 / `keyEnv` / `opencode.jsonc` inline | `providers-key-status` IPC(main-only) |
+| 本机已应用 BYOK 目录 | `<userData>/alpha-applied-catalog.json` 的 `byok`(fork 前钉住:已下载的远程 BYOK 目录与安装包首启引导取版本高者;见下文「目录主权」) | `models-catalog` IPC(main-only) |
+| 本地 KEY 状态 | alpha 加密钥匙库 / `keyEnv`(Key 名只认 App 内置适配器表 `byok-adapters.ts`)/ `opencode.jsonc` inline | `providers-key-status` IPC(main-only) |
+
+「本机已应用 BYOK 目录」在读取时是本机文件,不是一次在线判断:拉取失败、平台不可达、未登录都只意味着继续用已采纳的
+版本(`#1556`)。远程退役一个模型的效果与 App 升级删掉它相同(谓词 1 变假,现有 `checkSelectedModel` 挂起选择),
+不是新的在线闸门。
 
 **禁止进入判据的输入(新增任何一项即为契约违反)**:
 
@@ -111,18 +115,25 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 
 ## 目录主权
 
-BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干预:
+BYOK 目录 = **远程发布 → 本机校验采纳 → 钉住应用**;安装包里的那份只作**首启引导**;**从不按账户 / edition 收窄**;
+**拉取失败从不移除条目**(REQ-237 `#1556`,方案 `docs/design/req236-catalog-and-model.md` §2.3;REQ-237 Scope 第 4 条的落实):
 
-- gateway `/v1/models` 的 `byok_providers` 字段在 alpha-code 侧**没有任何策略消费方**:
-  **不作策略消费、不缓存、不记录、不经 IPC 传播**(REQ-109 #595,owner 裁决 2026-07-24)。
-  **它仍被解码与校验** —— `ModelCatalogV2`(REQ-127 #681 / ADR-039 起的目录代际)同样把
-  `byok_providers` 列为 required,缺字段会判 `contract-incompatible`;`decodeJsonContract` 照旧解出
-  完整信封,只是本仓不再读取该字段。wire/schema 侧的字段删除另票处理,不影响本契约。
-- live allowlist 仍然收窄**平台代理模型清单**(edition-scoped),这一半不变。
-- 因此 BYOK 段没有远程 kill-switch。已接受的代价:供应商破坏性改鉴权/URL/协议、模型
-  下架或改名、供应商安全事故、法务/制裁要求下架、错误 baseURL 或计费语义变化,都只能
-  靠发版修正。**不得**为这些风险引入新的在线政策面(签名 denylist、TTL 阻断表等一律
-  不进门控)。
+- **远程发布**:alpha-platform 网关 `GET /v1/byok-catalog`(ByokCatalogV1,schema 在本仓
+  `packages/alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v1/byok-catalog.schema.json`)。
+  拉取**从不带凭据**,结构上无法按账户收窄;网关端点也不读凭据、账户或 edition。
+- **本机校验采纳**(`catalog-refresher.ts` `adoptByokCatalog`):信封不合 schema 即整份拒绝;`catalog_version` 不高于
+  本机已有版本(LKG 与首启引导取高者)不采纳;App 适配器表里没有的 provider 跳过;档位选项键越界的文档不采纳。
+  通过才原子写 `<userData>/alpha-byok-catalog.json`(已下载);拉取失败、校验失败、未登录都不写,已有条目不减。
+- **钉住应用**:每次 fork 前与平台快照一起钉进 `alpha-applied-catalog.json`;picker 与引擎配置只读钉住的那份。
+  已下载 ≠ 已应用:新目录在下一次引擎换代时生效。
+- **可执行字段不在远程数据里**:端点 `baseURL`、Key 名 `keyEnv`、协议适配器 `compat` 只来自 App 内置适配器表
+  (`packages/ui-mac/src/main/byok-adapters.ts`);远程文档出现这些字段即整份拒绝,远程目录也就**不能**重定向用户的 Key,
+  不能给引擎新增出网放行主机(放行集合从注入的 baseURL 派生)。新供应商仍需发版。
+- 平台模型目录 V3 已删 `byok_providers`(REQ-109 #595 后它本就没有策略消费方)。live allowlist 仍然收窄**平台代理模型清单**
+  (edition-scoped),这一半不变。
+- **不得引入在线政策面**:远程目录只能增删模型、改展示与三种推理选项键,不是 kill-switch。供应商破坏性改鉴权/URL/协议、
+  供应商安全事故、错误 baseURL 等仍只能靠发版修正;**不得**为这些风险引入新的在线政策面(签名 denylist、TTL 阻断表等
+  一律不进门控),也不得给谓词 1 加登录 / 会员 / 余额 / 网关在线前提。
 
 ## 失败域隔离
 
@@ -132,14 +143,15 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
   `reportContractFailure` 走独立通道上报(`alpha-contract-health` IPC +
   `alpha-contract-failure` 推送 → renderer `a-contract-failure` 面),**不得**让整个
   `models-catalog` 失败 —— 那会连本地 BYOK 一起阵亡。
-- 平台不可达 / 缓存缺失 / 缓存损坏 / **旧代 V1 缓存** → 平台段回退 last-known 或内置 snapshot
-  (`liveSync.status` 如实标 `cache` / `static`),BYOK 段原样返回。REQ-127 #681 起,平台段在没有
-  有效 V2 快照时**额外**放弃一切价格主张(`pricingBasisModelId` 为 `null`、每行无 `pricing`);
-  BYOK 段不受影响 —— 它本来就不经平台目录。
-- **失败域隔离 ≠ 失败静默**(#1084,#987 CHOICE=A / DECIDE #1078)。刷新失败只损失平台段,
-  但它必须**说出来**:`syncLiveAllowlist` 的每一条出路都经 `reportCatalogRefresh` 落到
-  `alpha-catalog-health` IPC + `alpha-catalog-failure` 推送,renderer 的 `CatalogFailureBanner`
-  以 warning 横幅(`.a-catalog-failure`)呈现那个稳定分类码;下一次刷新成功即清空。
+- 平台不可达 / 缓存缺失 / 缓存损坏 / **旧代缓存** → 平台段回退 last-known;没有 last-known 时平台段为空
+  (`liveSync.status` 如实标 `cache` / `static`,picker 写「平台模型清单尚未获取」,`#1556` 起不再回退任何随包平台清单),
+  且不声称任何价格(`pricingBasisModelId` 为 `null`);BYOK 段原样返回 —— 它本来就不经平台目录。BYOK 目录自己的
+  拉取失败同样只损失 BYOK 目录的新鲜度,已应用条目不减。
+- **失败域隔离 ≠ 失败静默**(#1084,#987 CHOICE=A / DECIDE #1078)。刷新失败只损失那一份目录的新鲜度,
+  但它必须**说出来**:`syncLiveAllowlist`(平台)与 BYOK 刷新轮的每一条出路都经 `reportCatalogRefresh(doc, code)` 落到
+  `alpha-catalog-health` IPC + `alpha-catalog-failure` 推送,两份目录**各一格**(`{ platform, byok }`,`#1556`):
+  一份成功只清它自己那一格,另一份的失败仍可见。renderer 的 `CatalogFailureBanner` 以 warning 横幅
+  (`.a-catalog-failure`)呈现失败的那一份及其稳定分类码。
   此前分类码只到 `fetchPlatformModels()` 的返回值为止 —— 三个刷新入口(启动、登录后 respawn 前、
   `models-platform-live` IPC)一个都不消费它,于是「失败处理」写得再好,用户永远看不到。
   横幅是 warning 而不是 error:BYOK 与上次成功的缓存目录照常可用,这是降级不是阻断。
@@ -160,7 +172,10 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 | home 恢复中的内存写豁免 / `canSend` 不豁免 | `packages/ui-mac/src/renderer/alpha-ui/alpha-composer.tsx` |
 | 谓词 2 的发送门约束(`byok-not-registered`) | `model-default-core.ts`(`preflightBlockReason`)+ `alpha-composer.tsx`(`canSend` / `submit` / 行内说明) |
 | 禁止引擎清单反向撤销已选本地 BYOK | `packages/ui-mac/src/renderer/alpha-ui/model-default-core.ts`(`checkSelectedModel`) |
-| 目录主权 + 失败域隔离 | `packages/ui-mac/src/main/alpha-platform-models.ts` |
+| 目录主权:BYOK 目录拉取(不带凭据)与采纳规则 | `packages/ui-mac/src/main/catalog-refresher.ts`(`adoptByokCatalog`) |
+| BYOK 已下载 / 已应用文件、首启引导取高者 | `packages/ui-mac/src/main/alpha-live-allowlist.ts` |
+| 端点 / Key 名 / 协议适配器 / 保留 id 的唯一来源 | `packages/ui-mac/src/main/byok-adapters.ts` |
+| 失败域隔离(平台段) | `packages/ui-mac/src/main/alpha-platform-models.ts` |
 | 刷新失败的用户可观察出口 | `packages/ui-mac/src/main/alpha-catalog-health.ts` + `renderer/alpha-ui/Banner.tsx`(`CatalogFailureBanner`) |
 | 注入不受 allowlist 收窄 | `packages/ui-mac/src/main/alpha-models.ts` |
 | 缓存不含 BYOK 策略面 | `packages/ui-mac/src/main/alpha-live-allowlist.ts` |
@@ -185,6 +200,11 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 | live allowlist 排除某供应商 / 平台不可达 → 仍在目录与注入中 | main | `alpha-models.test.ts`、`alpha-platform-catalog.cases.ts` |
 | 平台目录 contract-incompatible → 本地 BYOK 仍返回 | main | `alpha-platform-catalog.cases.ts` |
 | 平台目录刷新失败 → 分类码到达 renderer(不被吞掉),成功刷新清空 | main + renderer | `models-catalog-v2.wiring.cases.ts`、`test-component/catalog-failure-banner.cases.ts` |
+| 两份目录的刷新结局分别保存:一份成功不抹掉另一份的失败 | main + renderer | `catalog-refresher.cases.ts`(`#1556` AC6)、`test-component/catalog-failure-banner.cases.ts` |
+| BYOK 目录采纳规则 1–5;带 baseURL / keyEnv / compat 的文档被拒 | main | `byok-catalog-adopt.cases.ts` |
+| BYOK 拉取不带凭据;失败 / 校验失败 / 未登录不减少已应用条目 | main | `catalog-refresher.cases.ts`(`#1556` AC4) |
+| BYOK 端点 / Key 名 / npm 只来自适配器表;远程目录不能新增放行主机 | main | `alpha-models.test.ts`、`network-egress-derived.test.ts` |
+| 迁移前已存的 Key 仍物化、注入并真发出请求,密钥文件不被清理分支删 | main + 真引擎 | `byok-key-migration.test.ts` |
 | session recovering 下点击 → 零 `switchModel`,不呈现为已切换,行置灰且文案不说「可先选择」 | 点击层 + 呈现 | `test-component/alpha-composer-model.cases.ts` |
 | home 选中后发送门仍关闭 | 点击层 + 发送门 | 同上 |
 

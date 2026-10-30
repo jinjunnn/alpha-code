@@ -22,11 +22,9 @@ import { join } from "node:path"
 import { keychainBackend } from "./alpha-keychain-backend"
 import { computeByokEnvMutations } from "./alpha-byok-env"
 import { customProviderSecretName } from "./alpha-secret-files"
-import catalog from "./alpha-models.json"
-import type { AlphaModelCatalog } from "../shared/alpha-model-types"
+import { BYOK_ADAPTERS, byokAdapter } from "./byok-adapters"
 import { getLogger } from "./logging"
 
-const CATALOG = catalog as unknown as AlphaModelCatalog
 const FILE = "alpha-byok-keys.json"
 
 export type ByokStoreResult = { ok: true } | { ok: false; reason: string }
@@ -45,13 +43,15 @@ function filePath() {
   return join(userDataPath, FILE)
 }
 
-/** keyEnv for a catalog BYOK provider (e.g. deepseek -> DEEPSEEK_API_KEY). undefined for off-catalog ids. */
+/** keyEnv for a catalog BYOK provider (e.g. deepseek -> DEEPSEEK_API_KEY). undefined for off-catalog ids.
+ *  REQ-237 `#1556`:Key 名与预置身份只认 App 内置适配器表 —— 随包目录格式变了、远程目录增删了模型,
+ *  钥匙串里已存的 Key 照样映射到同一个 env、同一个密钥文件名。 */
 function keyEnvFor(id: string): string | undefined {
-  return CATALOG.byokProviders.find((p) => p.id === id)?.keyEnv
+  return byokAdapter(id)?.keyEnv
 }
 
 function isCatalogByokId(id: string): boolean {
-  return CATALOG.byokProviders.some((p) => p.id === id)
+  return BYOK_ADAPTERS.some((adapter) => adapter.id === id)
 }
 
 /** Encrypt + write the whole map. Refuses (no write at all) when the keychain is unavailable. */

@@ -9,7 +9,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { appliedCatalogPath, pinAppliedCatalog, projectPlatformModels, readCatalogSnapshot, writeCatalogSnapshot } from "./alpha-live-allowlist"
+import {
+  appliedCatalogPath,
+  pinAppliedCatalog,
+  writeByokCatalogLkg,
+  writeCatalogSnapshot,
+  type CatalogSnapshot,
+} from "./alpha-live-allowlist"
+import { BYOK_ADAPTERS } from "./byok-adapters"
+import bundledCatalog from "./alpha-models.json"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { buildModelPickerRows } from "../renderer/alpha-ui/model-picker-core"
@@ -71,6 +79,41 @@ const plantSecret = (varName: string, value: string) => {
   fs.writeFileSync(secretFilePath(userData, varName), value, { mode: 0o600 })
 }
 
+// REQ-237 `#1556`(AC1):平台段的一切字段只来自已应用快照。快照行取**上游 V3 producer fixture** 的行(display 原样,
+// 不手写替身);快照里要放一个 fixture 里没有的 id 时,display 显式写在用例里。
+type V3Row = { id: string; provider: string; min_plan: string; pricing_multiplier: { input: number; output: number }; display: CatalogSnapshot["models"][number]["display"] }
+const V3_ROWS: V3Row[] = JSON.parse(
+  fs.readFileSync(
+    path.join(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v3/fixtures/producer/model-catalog.json"),
+    "utf8",
+  ),
+).value.data
+/** 快照的一行:已知 id 用 V3 fixture 的 display,其余由调用方给 display。 */
+const snapRow = (id: string, pricing = { input: 1, output: 1 }, display?: CatalogSnapshot["models"][number]["display"]) => ({
+  id,
+  pricing,
+  display: display ?? V3_ROWS.find((row) => row.id === id)!.display,
+})
+/** 把整份 V3 producer 目录写成 LKG 并钉住(一次 fork)—— 平台段 = 12 个模型,display 与 V3 fixture 逐字相同。 */
+const seedPlatform = () => {
+  writeCatalogSnapshot(userData, {
+    fetchedAt: "2026-10-30T00:00:00Z",
+    edition: "intl",
+    pricingBasisModelId: "deepseek-v4-flash",
+    models: V3_ROWS.map((row) => ({ id: row.id, provider: row.provider, minPlan: row.min_plan, pricing: row.pricing_multiplier, display: row.display })),
+  })
+  pinAppliedCatalog(userData, 1)
+}
+type ByokDoc = typeof bundledCatalog.byokCatalog
+/** 钉住一份由随包首启引导改出来的 BYOK 目录(版本 +1,经 LKG → pinAppliedCatalog,与刷新器 + fork 同一条路)。 */
+const pinByok = (mutate: (doc: ByokDoc) => void) => {
+  const doc = structuredClone(bundledCatalog.byokCatalog)
+  doc.catalog_version += 1
+  mutate(doc)
+  expect(writeByokCatalogLkg(userData, doc as never)).toBe(true)
+  pinAppliedCatalog(userData, 1)
+}
+
 beforeEach(() => {
   for (const k of MANAGED) {
     saved[k] = process.env[k]
@@ -105,10 +148,40 @@ afterEach(() => {
 
 describe("getModelCatalog", () => {
   test("exposes the catalog with the expected shape", () => {
-    const c = getModelCatalog()
+    const c = getModelCatalog(userData)
     expect(c.platformProvider?.id).toBe("alpha")
     expect(Array.isArray(c.byokProviders)).toBe(true)
     expect(c.byokProviders.some((p) => p.id === "deepseek")).toBe(true)
+    // `#1556`:还没钉过 ⇒ BYOK 段 = 随包首启引导;preset 卡片由目录的 preset 标志按目录顺序派生。
+    expect(c.presetIds).toEqual(["deepseek", "zhipuai", "alibaba", "moonshot"])
+  })
+
+  // `#1556` AC1:随包平台清单与平台 pico 已删除;没有已应用快照 ⇒ 平台段为空(不回退、不声称价格)。
+  test("`#1556` AC1:平台注入只来自已应用快照 —— 无快照 ⇒ 平台段空;钉住后名称 / 品牌 / 能力逐字取 display", () => {
+    expect(Object.keys(bundledCatalog)).not.toContain("platformModels")
+    expect(Object.keys(bundledCatalog.platformProvider)).not.toContain("pico")
+    expect(getModelCatalog(userData).platformModels).toEqual([])
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+    expect((buildAlphaModelConfig(userData)!.provider.alpha as any).models).toEqual({})
+
+    seedPlatform()
+    const platform = getModelCatalog(userData).platformModels
+    expect(platform.map((m) => m.id)).toEqual(V3_ROWS.map((row) => row.id))
+    for (const row of V3_ROWS) {
+      const m = platform.find((model) => model.id === row.id)!
+      expect({ id: m.id, name: m.name, brand: m.brand, reasoning: m.reasoning, web: m.web, variants: m.variants }).toEqual({
+        id: row.id,
+        name: row.display.name,
+        brand: row.display.brand,
+        reasoning: row.display.reasoning,
+        web: row.display.web,
+        variants: row.display.variants,
+      })
+    }
+    const injected = (buildAlphaModelConfig(userData)!.provider.alpha as any).models
+    expect(injected["qwen3.7-max"].name).toBe("Qwen3.7 Max")
+    expect(injected["claude-opus-4.8"].variants).toEqual(V3_ROWS.find((row) => row.id === "claude-opus-4.8")!.display.variants)
   })
 })
 
@@ -157,10 +230,35 @@ describe("buildAlphaModelConfig — BYOK direct nodes (only when the key FILE ex
   // 200-wrapped depending on gateway). anthropic compat stays available for user-added custom
   // nodes only (their model list is exactly what they declare).
   test("every catalog BYOK provider is openai-compat with a clean https baseURL", () => {
-    for (const p of getModelCatalog().byokProviders) {
+    for (const p of getModelCatalog(userData).byokProviders) {
       expect({ id: p.id, compat: p.compat }).toEqual({ id: p.id, compat: "openai" })
       expect({ id: p.id, ok: /^https:\/\/.+[^/]$/.test(p.baseURL) }).toEqual({ id: p.id, ok: true })
     }
+  })
+
+  // `#1556` AC3:端点 / Key 名 / 协议适配器只来自 App 内置适配器表。远程文档带这些字段时在采纳那一步就整份拒绝
+  // (byok-catalog-adopt.test.ts);这里判注入层自己:哪怕已应用目录里混进了 baseURL / keyEnv / compat,或者一个
+  // 适配器表里没有的 provider,注入出来的端点、密钥引用、npm 仍逐字是适配器表的,陌生 provider 一个都不注入。
+  test("`#1556` AC3:BYOK 的 baseURL / Key 名 / npm 只来自适配器表 —— 已应用目录里的同名字段与陌生 provider 都不起作用", () => {
+    for (const adapter of BYOK_ADAPTERS) plantSecret(adapter.keyEnv, `sk-${adapter.id}`)
+    plantSecret("EVIL_API_KEY", "sk-evil")
+    pinByok((doc) => {
+      Object.assign(doc.providers[0]!, { baseURL: "https://evil.example/v1", keyEnv: "EVIL_API_KEY", compat: "anthropic" })
+      doc.providers.push({ id: "evil", name: "Evil", brand: "openai", preset: true, models: [{ id: "m", name: "m", image_input: false }] } as never)
+    })
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.provider["evil-byok"]).toBeUndefined()
+    expect(cfg.enabled_providers).not.toContain("evil-byok")
+    for (const adapter of BYOK_ADAPTERS) {
+      const p = cfg.provider[`${adapter.id}-byok`] as any
+      expect({ id: adapter.id, baseURL: p.options.baseURL, apiKey: p.options.apiKey, npm: p.npm }).toEqual({
+        id: adapter.id,
+        baseURL: adapter.baseURL,
+        apiKey: secretFileRef(userData, adapter.keyEnv),
+        npm: "@ai-sdk/openai-compatible",
+      })
+    }
+    expect(JSON.stringify(cfg)).not.toContain("evil.example")
   })
 
   test("an env var ALONE no longer activates a provider (the sidecar env carries no keys, A6)", () => {
@@ -190,6 +288,7 @@ describe("buildAlphaModelConfig — platform gateway (代发)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt-abc")
     plantSecret("DEEPSEEK_API_KEY", "sk-deepseek-123") // a BYOK node too, to prove ordering
+    seedPlatform()
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers[0]).toBe("alpha") // unshifted to the front
     const p = cfg.provider.alpha as any
@@ -510,7 +609,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
   test("#595 退出条件 4:live 清单只列 deepseek,zhipu 的 keyed 节点照样注入(平台无权收窄 BYOK)", () => {
     plantSecret("DEEPSEEK_API_KEY", "sk-1")
     plantSecret("ZHIPU_API_KEY", "sk-2")
-    writeCatalogSnapshot(userData, { ...liveBase, models: [{ id: "deepseek-v4-flash", pricing: pair }] })
+    writeCatalogSnapshot(userData, { ...liveBase, models: [snapRow("deepseek-v4-flash", pair)] })
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("deepseek-byok")
@@ -531,27 +630,27 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     expect(cfg.enabled_providers).toContain("zhipuai-byok")
   })
 
-  test("平台模型以 live 清单为准:snapshot 名称富化,未知 id 诚实用 id 本名", () => {
+  test("平台模型以已应用快照为准:清单与名称都来自网关(`#1556`:新模型不必等发版就有自己的名称)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
     writeCatalogSnapshot(userData, {
       ...liveBase,
       models: [
-        { id: "deepseek-v4-flash", pricing: pair },
-        { id: "brand-new-model", pricing: { input: 2.5, output: 7.5 } },
+        snapRow("deepseek-v4-flash", pair),
+        snapRow("brand-new-model", { input: 2.5, output: 7.5 }, { name: "Brand New Model", brand: "openai" }),
       ],
     })
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).sort()).toEqual(["brand-new-model", "deepseek-v4-flash"])
-    const snapshotName = getModelCatalog().platformModels.find((m) => m.id === "deepseek-v4-flash")!.name
-    expect(p.models["deepseek-v4-flash"].name).toBe(snapshotName)
-    expect(p.models["brand-new-model"].name).toBe("brand-new-model")
+    expect(p.models["deepseek-v4-flash"].name).toBe("DeepSeek V4 Flash")
+    expect(p.models["brand-new-model"].name).toBe("Brand New Model")
   })
 
   test("REQ-029:variants(推理档)随 snapshot 下发到 provider config(echo 实验实锤 wire 形状)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
+    seedPlatform()
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     const opus = p.models["claude-opus-4.8"]
     expect(opus.variants["高"]).toEqual({ reasoning: { effort: "high" } }) // OR 统一 reasoning 对象
@@ -563,16 +662,16 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     expect(p.models["deepseek-v4-flash"].variants).toBeUndefined()
   })
 
-  // #681:这条断言一字未改,而它现在证明的东西更强了 —— 空清单在**写侧**就被拒(合法 LKG 不被
-  // 覆盖),读侧因此看到「无快照」,于是引擎配置回退静态 snapshot。此前 picker 与 sidecar 各写一份
-  // 判据,空缓存时一边 0 行、一边静态 9 行;分叉被消灭后两侧同为静态全量。
-  test("live models 空数组 → 回退 snapshot(空白名单按坏配置处理,fail-open 不出空目录)", () => {
+  // #681:空清单在**写侧**就被拒(合法 LKG 不被覆盖),读侧因此看到「无快照」。`#1556` AC1 起「无快照」=
+  // 平台段为空(随包平台清单已删除,不再回退)—— picker 与 sidecar 同一份判据,两侧同为空。
+  test("live models 空数组 → 写侧拒绝 ⇒ 无快照 ⇒ 平台段为空(`#1556`:不回退随包清单)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
     writeCatalogSnapshot(userData, { ...liveBase, models: [] })
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
-    expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
+    expect(p.models).toEqual({})
+    expect(getModelCatalog(userData).platformModels).toEqual([])
   })
 
   test("用户自定义 provider 不受白名单约束(2026-07-03 拍板:目录跟随 edition,自定义不拦;`#1392` 起来自真源)", () => {
@@ -583,36 +682,36 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
   })
 
   // `#1555` AC4(方案 req236 I2):引擎配置**只**读 fork 前钉住的已应用目录。刷新器在钉住之后改写 LKG,
-  // 这一代引擎的模型配置也不得跟着变;没有钉住文件时回退内置 snapshot,而不是去读 LKG。
+  // 这一代引擎的模型配置也不得跟着变;没有钉住文件时平台段为空(`#1556`),而不是去读 LKG。
   // 把 alpha-models.ts 改回 readCatalogSnapshot(读 LKG),本条转红。
   test("`#1555` AC4:只读钉住的已应用目录 —— 钉住后 LKG 再变,引擎配置不变;无钉住文件不读 LKG", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
     const ids = () => Object.keys((buildAlphaModelConfig(userData)!.provider.alpha as any).models).sort()
-    writeCatalogSnapshot(userData, { ...liveBase, models: [{ id: "deepseek-v4-flash", pricing: pair }] })
+    writeCatalogSnapshot(userData, { ...liveBase, models: [snapRow("deepseek-v4-flash", pair)] })
     pinAppliedCatalog(userData, 7)
     writeCatalogSnapshot(userData, {
       ...liveBase,
       fetchedAt: "2026-07-04T00:00:00Z",
-      models: [{ id: "glm-5.2", pricing: pair }, { id: "brand-new-model", pricing: pair }],
+      models: [snapRow("glm-5.2", pair), snapRow("brand-new-model", pair, { name: "Brand New Model", brand: "openai" })],
     })
     expect(ids()).toEqual(["deepseek-v4-flash"])
     expect(JSON.parse(fs.readFileSync(appliedCatalogPath(userData), "utf8")).generation).toBe(7)
 
     fs.rmSync(appliedCatalogPath(userData))
-    expect(ids()).toEqual(getModelCatalog().platformModels.map((m) => m.id).sort())
+    expect(ids()).toEqual([])
 
     pinAppliedCatalog(userData, 8)
     expect(ids()).toEqual(["brand-new-model", "glm-5.2"])
   })
 
-  test("缓存损坏 → 视同无缓存(内置 snapshot,不 throw)", () => {
+  test("缓存损坏 → 视同无缓存(平台段为空,不 throw)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
     fs.writeFileSync(path.join(userData, "alpha-live-models.json"), "{corrupt")
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
-    expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
+    expect(p.models).toEqual({})
   })
 })
 
@@ -625,9 +724,10 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
   const liveBase = { fetchedAt: "2026-09-06T00:00:00Z", edition: "cn", pricingBasisModelId: "deepseek-v4-flash" }
   const pair = { input: 1, output: 1 }
   const keyEverything = () => {
-    for (const p of getModelCatalog().byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
+    for (const p of getModelCatalog(userData).byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
+    seedPlatform() // `#1556`:平台段只来自已应用快照(上游 V3 producer fixture)
   }
   /** 引擎会读到 `reasoning: true` 的 `<providerID>:<modelID>` 全集(providerID = 注入用的引擎 id)。 */
   const injectedReasoning = (cfg: NonNullable<ReturnType<typeof buildAlphaModelConfig>>) => {
@@ -642,16 +742,16 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
   test("平台段:JSON 标 reasoning:true 的每个模型注入后带 reasoning:true;未标的**缺席**(不是 false)", () => {
     keyEverything()
     const p = buildAlphaModelConfig(userData)!.provider.alpha as { models: Record<string, { reasoning?: boolean }> }
-    const flagged = getModelCatalog().platformModels.filter((m) => m.reasoning).map((m) => m.id)
+    const flagged = getModelCatalog(userData).platformModels.filter((m) => m.reasoning).map((m) => m.id)
     // 空集会让下面的逐项断言空转 —— 先钉住集合非空,且含本票实打确认「默认即思考」的 glm-5.2。
     expect(flagged.length).toBeGreaterThan(0)
     expect(flagged).toContain("glm-5.2")
-    for (const m of getModelCatalog().platformModels) {
+    for (const m of getModelCatalog(userData).platformModels) {
       expect({ id: m.id, reasoning: p.models[m.id]?.reasoning }).toEqual({ id: m.id, reasoning: m.reasoning ? true : undefined })
     }
   })
 
-  test("BYOK 段:同名平台条目标 reasoning 的模型注入后带 reasoning:true(与 picker 的 BYOK 徽标同一派生)", () => {
+  test("BYOK 段:BYOK 目录标 reasoning 的模型注入后带 reasoning:true(与 picker 的 BYOK 徽标同一派生)", () => {
     plantSecret("DEEPSEEK_API_KEY", "sk-1")
     plantSecret("ZHIPU_API_KEY", "sk-2")
     const cfg = buildAlphaModelConfig(userData)!
@@ -659,57 +759,79 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     const zhipu = (cfg.provider["zhipuai-byok"] as { models: Record<string, { reasoning?: boolean }> }).models
     // #1266 起同名条目的 variants 也一并派生(见下一条),这里只看 reasoning 与「未标即缺席」。
     expect(deepseek["deepseek-v4-pro"]).toMatchObject({ name: "deepseek-v4-pro", reasoning: true })
-    // #1352:BYOK 目录里是上游改名后的 `deepseek-flash`,平台段没有同名条目 ⇒ 无徽标、只有 name。
+    // #1352:BYOK 目录里是上游改名后的 `deepseek-flash`,目录没给它 reasoning ⇒ 无徽标、只有 name。
     // REQ-228 #1420:models.dev 标 deepseek-flash 能看图,但 2026-09-24 实测相反(OpenRouter deepseek-v4-flash 只收 text、
     // 带图 404),直连未实测 ⇒ fail-closed 取看不了(出处见 docs/runbooks/model-catalog-updates.md §B)。
     expect(deepseek["deepseek-flash"]).toEqual({ name: "deepseek-flash", modalities: { input: ["text"] } })
     expect(zhipu["glm-5.2"]).toMatchObject({ name: "glm-5.2", reasoning: true })
-    // #1267:BYOK-only 的 glm-4.5-air 没有平台同名条目,徽标来自目录自己的 modelMeta 槽(下一节逐字判)。
+    // #1267:glm-4.5-air 的徽标来自 BYOK 目录自己的元数据(下一节逐字判)。
     expect(zhipu["glm-4.5-air"]).toMatchObject({ name: "glm-4.5-air", reasoning: true })
   })
 
-  // REQ-153 #1266:BYOK 段的 `variants` 与平台同名条目逐字相同,且与 picker BYOK 行的档位列表同源。
+  // REQ-153 #1266:BYOK 段的 `variants` 逐字注入,且与 picker BYOK 行的档位列表同源(byokModelMeta)。
   // 此前注入不写 variants、picker 写死 `[]` ⇒ 直连 deepseek-v4-pro / glm-5.2 亮着徽标一档都选不到。
-  // 档位表的 wire 形状按平台 provider 的 npm 写,直连节点能复用的前提是每个 BYOK provider 都是
-  // openai-compat(上面「every catalog BYOK provider is openai-compat」那条钉着)——这里再钉 npm 逐字相等。
-  test("BYOK 段:同名平台条目的 variants 逐字注入;无同名条目的 BYOK-only id 只从自己的 modelMeta 槽拿;npm 与平台 provider 相同", () => {
+  // 档位表的 wire 形状按 openai-compatible 写,前提是每个 BYOK 适配器都是 openai-compat(上面那条钉着)——
+  // 这里再钉 npm 与平台 provider 逐字相等。`#1556`:元数据只来自 BYOK 目录自己(下一条判「不借平台同名条目」)。
+  test("BYOK 段:BYOK 目录自己的 variants 逐字注入;npm 与平台 provider 相同", () => {
     keyEverything()
     const cfg = buildAlphaModelConfig(userData)!
-    const platform = getModelCatalog().platformModels
-    const platformNpm = getModelCatalog().platformProvider.npm
-    let derived = 0
+    const platformNpm = getModelCatalog(userData).platformProvider.npm
     let own = 0
-    for (const provider of getModelCatalog().byokProviders) {
+    for (const provider of getModelCatalog(userData).byokProviders) {
       const injected = cfg.provider[`${provider.id}-byok`] as { npm: string; models: Record<string, { variants?: unknown }> }
       expect({ provider: provider.id, npm: injected.npm }).toEqual({ provider: provider.id, npm: platformNpm })
       for (const id of provider.models) {
-        const slot = provider.modelMeta?.[id]
-        const twin = platform.find((model) => model.id === id)
-        const expected = slot ? slot.variants : twin?.variants
+        const expected = provider.modelMeta[id]?.variants
         expect({ provider: provider.id, id, variants: injected.models[id]?.variants }).toEqual({ provider: provider.id, id, variants: expected })
-        if (slot?.variants) own++
-        else if (twin?.variants) derived++
+        if (expected) own++
       }
     }
-    // 空集会让上面的逐项断言空转:至少两个直连模型真的从平台同名条目派生到了档位,至少一个从自己的槽拿到。
-    expect(derived).toBeGreaterThanOrEqual(2)
-    expect(own).toBeGreaterThanOrEqual(1)
+    // 空集会让上面的逐项断言空转:deepseek-v4-pro / glm-5.2 / glm-4.5-air 三个直连模型真的拿到了自己的档位。
+    expect(own).toBeGreaterThanOrEqual(3)
   })
 
-  // REQ-153 #1267:BYOK-only id(平台无同名条目)的徽标 / 档位来自 `byokProviders[].modelMeta` 槽。上游
+  // `#1556` AC2:BYOK 模型元数据只来自 BYOK 目录,不再借平台同名条目(同一模型经直连与经 OpenRouter 形状不同,
+  // 不得跨腿套用)。把 BYOK 目录里 glm-5.2 的元数据撤掉,而平台快照里同名的 glm-5.2 带着徽标与档位:直连节点必须
+  // 名称回落 id、无徽标、无档 —— picker 行与注入同一份派生。把 byokModelMeta 的平台回落加回来,本条转红。
+  test("`#1556` AC2:BYOK 元数据只来自 BYOK 目录 —— 平台同名条目带着徽标与档位,也不借给直连节点", () => {
+    keyEverything()
+    pinByok((doc) => {
+      const zhipu = doc.providers.find((provider) => provider.id === "zhipuai")!
+      zhipu.models = zhipu.models.map((model) => (model.id === "glm-5.2" ? { id: "glm-5.2", name: "glm-5.2", image_input: false } : model)) as never
+    })
+    const catalog = getModelCatalog(userData)
+    const twin = catalog.platformModels.find((model) => model.id === "glm-5.2")!
+    expect(twin.reasoning).toBe(true)
+    expect(twin.variants).toBeDefined()
+    const injected = (buildAlphaModelConfig(userData)!.provider["zhipuai-byok"] as any).models["glm-5.2"]
+    expect(injected).toEqual({ name: "glm-5.2", modalities: { input: ["text"] } })
+    const rows = buildModelPickerRows({
+      catalog: { ...catalog, liveSync: { status: "cache" }, pricingBasisModelId: null, applied: { platformFetchedAt: null, byokVersion: 2 }, downloaded: { platformFetchedAt: null, byokVersion: 2 } },
+      models: [],
+      listState: "ready",
+      keyStatusState: "ready",
+      keyStatus: { zhipuai: { configured: true, source: "keychain" } },
+      accountState: "member",
+      sessionScoped: false,
+      query: "",
+    })
+    const row = rows.find((candidate) => candidate.key === "zhipuai:glm-5.2")!
+    expect({ name: row.model.name, reasoning: row.reasoning, variants: row.model.variants }).toEqual({ name: "glm-5.2", reasoning: false, variants: [] })
+  })
+
+  // REQ-153 #1267:glm-4.5-air 的徽标 / 档位来自 BYOK 目录自己的逐模型元数据(`byokProviders[].modelMeta`)。上游
   // transform.options() 对 zhipuai* + openai-compatible 无条件写 thinking:enabled,此前 glm-4.5-air 无徽标、
   // 零档,请求却锁在思考档;`关` 档(thinking.type=disabled)是用户关掉它的唯一途径,而它要被引擎查到就必须
   // 从这里逐字注入(engine provider.ts:1507 把 config variants 与自己派生的表 mergeDeep)。
-  // 槽的形状纪律(读它的只有 byokModelMeta,所以这里必须替它把关):
-  //   · 键 ∈ 该 provider 的 models —— 打错 id 的槽是静默 no-op,徽标不亮、档位不出、无人变红;
-  //   · 键不得与平台同名条目重叠 —— 一个 id 两处元数据 = 两份判据,「显式优先」不该在出货目录上被触发;
+  // 元数据的形状纪律(读它的只有 byokModelMeta,所以这里必须替它把关):
+  //   · 键恰好是该 provider 的 models(`#1556` 起每个模型都有自己的元数据,不再借平台同名条目);
   //   · 显式关闭档的 wire 值必须逐字 `disabled`:智谱 2026-09-06 实打,`type` 写错会被上游静默忽略并继续思考(HTTP 仍 200)。
-  test("#1267:glm-4.5-air 的 modelMeta 槽逐字注入(reasoning:true + 开/关);槽键 ∈ models 且不与平台同名条目重叠;关档 wire 值逐字 disabled", () => {
+  test("#1267:glm-4.5-air 的元数据逐字注入(reasoning:true + 开/关);元数据键恰好是 models;关档 wire 值逐字 disabled", () => {
     keyEverything()
     const cfg = buildAlphaModelConfig(userData)!
-    const catalog = getModelCatalog()
+    const catalog = getModelCatalog(userData)
     const zhipu = (cfg.provider["zhipuai-byok"] as { models: Record<string, { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }> }).models
-    const slot = catalog.byokProviders.find((provider) => provider.id === "zhipuai")!.modelMeta!["glm-4.5-air"]!
+    const slot = catalog.byokProviders.find((provider) => provider.id === "zhipuai")!.modelMeta["glm-4.5-air"]!
     expect(slot).toEqual({
       name: "GLM-4.5-Air",
       reasoning: true,
@@ -717,13 +839,11 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     })
     expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air", reasoning: true, variants: slot.variants, modalities: { input: ["text"] } })
 
-    const platformIds = new Set(catalog.platformModels.map((model) => model.id))
     let slots = 0
     for (const provider of catalog.byokProviders) {
-      for (const [id, meta] of Object.entries(provider.modelMeta ?? {})) {
+      expect({ provider: provider.id, keys: Object.keys(provider.modelMeta).sort() }).toEqual({ provider: provider.id, keys: [...provider.models].sort() })
+      for (const [id, meta] of Object.entries(provider.modelMeta)) {
         slots++
-        expect({ provider: provider.id, id, listed: provider.models.includes(id) }).toEqual({ provider: provider.id, id, listed: true })
-        expect({ provider: provider.id, id, overlapsPlatform: platformIds.has(id) }).toEqual({ provider: provider.id, id, overlapsPlatform: false })
         // 徽标 ⇒ 有档(#1266 的不变量对槽同样成立);每个显式关闭档的值逐字是 disabled。
         expect({ provider: provider.id, id, badgeImpliesVariants: !meta.reasoning || Object.keys(meta.variants ?? {}).length > 0 }).toEqual({ provider: provider.id, id, badgeImpliesVariants: true })
         for (const [label, options] of Object.entries(meta.variants ?? {})) {
@@ -741,22 +861,19 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     // 这里就会分叉。
     writeCatalogSnapshot(userData, {
       ...liveBase,
-      models: [
-        { id: "glm-5.2", pricing: pair },
-        { id: "deepseek-v4-pro", pricing: pair },
-        { id: "claude-fable-5", pricing: pair },
-      ],
+      models: [snapRow("glm-5.2", pair), snapRow("deepseek-v4-pro", pair), snapRow("claude-fable-5", pair)],
     })
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const cfg = buildAlphaModelConfig(userData)!
     const injected = injectedReasoning(cfg)
 
-    const base = getModelCatalog()
+    const base = getModelCatalog(userData)
     const catalog: EffectiveCatalog = {
       ...base,
-      platformModels: projectPlatformModels(base.platformModels, readCatalogSnapshot(userData)),
       liveSync: { status: "cache" },
       pricingBasisModelId: liveBase.pricingBasisModelId,
+      applied: { platformFetchedAt: liveBase.fetchedAt, byokVersion: 1 },
+      downloaded: { platformFetchedAt: liveBase.fetchedAt, byokVersion: 1 },
     }
     const rows = buildModelPickerRows({
       catalog,
@@ -780,7 +897,7 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     expect(badged).not.toContain("deepseek-byok:deepseek-flash")
     expect(badged).toContain("alpha:glm-5.2")
     expect(badged).toContain("zhipuai-byok:glm-5.2")
-    // #1267:BYOK-only 的槽也在同一集合里 —— 平台快照收窄不影响它(它根本不从平台派生)。
+    // BYOK 目录的元数据也在同一集合里 —— 平台快照收窄不影响它(它根本不从平台派生,`#1556`)。
     expect(badged).toContain("zhipuai-byok:glm-4.5-air")
   })
 })
@@ -790,8 +907,8 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
 // 网关曾整个丢掉推理字段(alpha-platform#423,已修),智谱直连对非 5.2 的 GLM 压根不校验 `reasoning_effort`
 // (`bogus-value` 照样 200、`none` 仍满额思考)。**受理 ≠ 有效**,且**同一模型经直连与经 OpenRouter 形状不同**。
 // 所以这里的判据不是「有没有档位」,是「每一个注入引擎的档位表,逐字等于那条腿实打出来的表」:
-//   · 表的键是**引擎侧** `<providerID>:<modelID>`,不是目录条目 —— byokModelMeta 会把平台同名条目的档位派生进
-//     直连节点,派生出来的那份走的是另一条腿(直连),必须单独入表;
+//   · 表的键是**引擎侧** `<providerID>:<modelID>`,不是目录条目 —— 直连节点的档位来自 BYOK 目录(`#1556` 起不再
+//     借平台同名条目),走的是另一条腿(直连),必须单独入表;
 //   · 每行的 evidence 只写读数支持的部分(alpha-platform docs/architecture/openai-wire-reasoning-controls.md §3
 //     的逐格读数;本票对 qwen 经 OR 的 N=3 复打记在 docs/architecture/2026-09-06-model-variant-reachability.md §8);
 //   · 本机无凭据、一格没打成的模型(qwen / kimi / minimax 直连)**显式**列入无档清单并断言它真的被注入且无档 ——
@@ -853,17 +970,17 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
       evidence: `${DOC} §3.4 + ${REACH} §8(同上):bogus-value → 400;none → 0(3/3);low/medium/high/max 268–347 与 baseline 315–340 无差别 ⇒ 只声明开/关`,
     },
     "deepseek-byok:deepseek-v4-pro": {
-      leg: "deepseek 直连(经平台同名条目派生,byokModelMeta)",
+      leg: "deepseek 直连(BYOK 目录自带,byokModelMeta)",
       variants: effort(["低", "low"], ["中", "medium"], ["高", "high"], ["最高", "max"]),
       evidence: `${DOC} §3.3:直连 bogus-value → 400、none 真关(与 alpha:deepseek-v4-pro 的直连腿同一格读数)`,
     },
     "zhipuai-byok:glm-5.2": {
-      leg: "zhipu 直连(经平台同名条目派生,byokModelMeta)",
+      leg: "zhipu 直连(BYOK 目录自带,byokModelMeta)",
       variants: effort(["高", "high"], ["最高", "max"]),
       evidence: `${DOC} §3.1:直连 bogus-value → 400(受理已验),none 仍思考、七值非单调(效果未证)—— #1266 已声明,本票不动;见 ${REACH} §8`,
     },
     "zhipuai-byok:glm-4.5-air": {
-      leg: "zhipu 直连(目录 modelMeta 槽,#1267)",
+      leg: "zhipu 直连(BYOK 目录自带,#1267)",
       variants: thinking(["关", "disabled"], ["开", "enabled"]),
       evidence: `${REACH} §5:disabled → 无 reasoning_content、completion 128 → 4;type 写错 → 200 且照常思考(上游不校验)。#1237 把「关」调到第一位:此前「开」在前 ⇒ 标题辅助调用带 thinking:enabled(本判官在未调序的目录上当场点名)`,
     },
@@ -909,9 +1026,10 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
     return failures
   }
   const keyEverything = () => {
-    for (const p of getModelCatalog().byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
+    for (const p of getModelCatalog(userData).byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
+    seedPlatform() // `#1556`:平台段只来自已应用快照(上游 V3 producer fixture)
   }
   const clone = (cfg: Injected): Injected => JSON.parse(JSON.stringify(cfg)) as Injected
 
@@ -985,17 +1103,19 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
 // 自定义节点的用户声明从 providers.add 一路落到真源与注入,声明一个不在清单里的 id 当场拒。
 describe("REQ-228 #1420:直连 / 平台 / 自定义三段的图片输入能力", () => {
   const keyEverything = () => {
-    for (const p of getModelCatalog().byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
+    for (const p of getModelCatalog(userData).byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
+    seedPlatform() // `#1556`:平台段只来自已应用快照(上游 V3 producer fixture)
   }
   type Models = Record<string, { modalities?: { input: string[] } }>
 
-  test("出货目录完备:每个直连 provider 都点名 models.dev 出处,imageInput 的键恰好是 models、值全是布尔(漏一个 = 新模型静默看不了图)", () => {
-    for (const p of getModelCatalog().byokProviders) {
-      expect({ provider: p.id, modelsDev: typeof p.modelsDev === "string" && p.modelsDev.length > 0 }).toEqual({ provider: p.id, modelsDev: true })
-      expect({ provider: p.id, keys: Object.keys(p.imageInput ?? {}).sort() }).toEqual({ provider: p.id, keys: [...p.models].sort() })
-      for (const [id, v] of Object.entries(p.imageInput ?? {})) expect({ provider: p.id, id, type: typeof v }).toEqual({ provider: p.id, id, type: "boolean" })
+  // `#1556`:能不能看图是 BYOK 目录每个模型的 `image_input`(schema 必填,缺一个 = 整份拒绝);出处(models.dev 快照 +
+  // deepseek-flash 实测)随首版内容记在随包 `_imageInputNote` 与 runbook §B,之后由 BYOK 目录发布维护。
+  test("出货目录完备:imageInput 的键恰好是 models、值全是布尔(漏一个 = 新模型静默看不了图)", () => {
+    for (const p of getModelCatalog(userData).byokProviders) {
+      expect({ provider: p.id, keys: Object.keys(p.imageInput).sort() }).toEqual({ provider: p.id, keys: [...p.models].sort() })
+      for (const [id, v] of Object.entries(p.imageInput)) expect({ provider: p.id, id, type: typeof v }).toEqual({ provider: p.id, id, type: "boolean" })
     }
   })
 
@@ -1019,21 +1139,15 @@ describe("REQ-228 #1420:直连 / 平台 / 自定义三段的图片输入能力",
     expect(Object.keys((cfg.provider.alpha as { models: Models }).models)).toContain("claude-sonnet-5")
   })
 
-  test("fail-closed:目录里某个直连模型缺值 ⇒ 注入为看不了图(不回落平台同名条目、不回落 models.dev)", () => {
+  test("注入逐字取已应用 BYOK 目录的 image_input(不回落平台同名条目、不回落 models.dev)", () => {
     keyEverything()
-    const moonshot = getModelCatalog().byokProviders.find((p) => p.id === "moonshot")!
-    const original = moonshot.imageInput
-    try {
-      moonshot.imageInput = { "kimi-k2.6": true }
-      const models = (buildAlphaModelConfig(userData)!.provider["moonshot-byok"] as { models: Models }).models
-      expect(models["kimi-k3"]!.modalities).toEqual({ input: ["text"] })
-      expect(models["kimi-k2.6"]!.modalities).toEqual({ input: ["text", "image"] })
-      delete moonshot.imageInput
-      const none = (buildAlphaModelConfig(userData)!.provider["moonshot-byok"] as { models: Models }).models
-      expect(Object.values(none).map((m) => m.modalities)).toEqual([{ input: ["text"] }, { input: ["text"] }])
-    } finally {
-      moonshot.imageInput = original
-    }
+    pinByok((doc) => {
+      const moonshot = doc.providers.find((p) => p.id === "moonshot")!
+      moonshot.models = moonshot.models.map((m) => ({ ...m, image_input: m.id === "kimi-k2.6" })) as never
+    })
+    const models = (buildAlphaModelConfig(userData)!.provider["moonshot-byok"] as { models: Models }).models
+    expect(models["kimi-k3"]!.modalities).toEqual({ input: ["text"] })
+    expect(models["kimi-k2.6"]!.modalities).toEqual({ input: ["text", "image"] })
   })
 
   test("自定义节点:providers.add 带 imageInput ⇒ 真源逐字记下(去空白去重)、注入只给声明的那个 image;不在 models 里的 id ⇒ 拒,钥匙与真源都不动", async () => {

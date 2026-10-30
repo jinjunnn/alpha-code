@@ -1,16 +1,16 @@
 // REQ-127 #681 / ADR-039 §4 —— **生产 wiring** 闸门(不是 schema 存在性,不是类型检查)。
 //
 // 判据从真实用户入口出发:调 `registerModelsIpcHandlers`,拿它注册到 `models-catalog` 上的**那个
-// handler**,让 V2 fetch → 严格 decoder → 原子 LKG → fork 前钉住 → effective projection 整条链真跑一遍,
+// handler**,让目录 fetch(`#1556` 起 V3)→ 严格 decoder → 原子 LKG → fork 前钉住 → effective projection 整条链真跑一遍,
 // 再看 IPC 返回了什么。`#1555` 删掉了零调用的 `models-platform-live` IPC:刷新侧的生产入口是
 // catalog-refresher 驱动的那一轮 `syncLiveAllowlist`(本文件直接驱动它,刷新器自己的触发点/单飞判据在
 // catalog-refresher.cases.ts),每轮之后按生产顺序调 `pinAppliedCatalog` 模拟下一次 fork。
 //
 // 三件事在这里落闸:
-//   1. **正向**:V2 响应经生产 IPC 后,basis 与逐行双倍数出现在 `models-catalog` 的返回里;
-//   2. **反向(持久 negative gate)**:同一入口喂 V1 响应 → basis 为 null、无任何 pricing、
+//   1. **正向**:V3 响应经生产 IPC 后,basis 与逐行双倍数出现在 `models-catalog` 的返回里;
+//   2. **反向(持久 negative gate)**:同一入口喂上一代(V2)响应 → basis 为 null、无任何 pricing、
 //      contract-health 亮 model-catalog 面。把 alpha-platform-models.ts 的
-//      `decodeJsonContract("ModelCatalogV2", …)` 改回 V1,本条即红 —— 那就是 ADR-039 §4 要求的
+//      `decodeJsonContract("ModelCatalogV3", …)` 改回上一代,本条即红 —— 那就是 ADR-039 §4 要求的
 //      那次 inversion,而它是**自动化**的,不依赖谁记得手工复原一次;
 //   3. **反分叉**:同一个 userData 下,sidecar 的 `buildAlphaModelConfig` 与 IPC 投影的 id 列表逐项
 //      相等 —— 含「合法但空的响应」与「从来没有缓存」两种退化态。此前两侧各写一份「什么算有效缓存」,
@@ -101,27 +101,28 @@ initAlphaEnvironment({ isPackaged: false, channel: "dev", appDataDir: join(envRo
 
 // ⚠️ stub 的响应体是 producer fixture 的 `value`,**不是** fixture 文件的完整字节:producer fixture
 // 是 `{kind,contract,expect,value}` 包装对象,整份喂给生产 decoder 会得到假红。
+// `#1556`:目录代际是 V3(每行带 display);文件名里的 v2 是历史名。
 const PRODUCER_FIXTURE = join(
   import.meta.dir,
-  "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v2/fixtures/producer/model-catalog.json",
+  "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v3/fixtures/producer/model-catalog.json",
 )
-const catalogV2 = (): any => structuredClone(JSON.parse(readFileSync(PRODUCER_FIXTURE, "utf8")).value)
+const catalogV3 = (): any => structuredClone(JSON.parse(readFileSync(PRODUCER_FIXTURE, "utf8")).value)
 // 本仓提交给平台 cutover gate 的 consumer pin。它必须能真的**跑通生产链路**,而不只是过 schema:
 // schema 表达不了「倍数落在 0.1 网格」,所以一份 5.45 这样的 pin 可以 schema 合法、被平台闸接受,
 // 却被 Desktop 的 isTrustedPair 整份拒绝 —— 那时闸就是假的。下面那条用例把它当 fetch body 走完整链。
 const CONSUMER_PIN = join(
   import.meta.dir,
-  "../../../alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json",
+  "../../../alpha-contracts-consumer/fixtures/consumers/alpha-code-1556/model-catalog-v3.json",
 )
 const consumerPin = (): any => structuredClone(JSON.parse(readFileSync(CONSUMER_PIN, "utf8")).value)
-// V1 wire 取自**上游发布的 negative fixture**(`expect: "invalid"`),不是本文件手写的替身:
+// 上一代(V2)wire 取自**上游发布的 negative fixture**(`expect: "invalid"`),不是本文件手写的替身:
 // 手写别人文法的替身是本仓最贵的返工来源,能消费对方的决定就不要解释它。
 // ⚠️ 同样是 `{kind,contract,expect,value}` 包装对象 —— 取 `.value` 再 stringify。
-const INVALID_V1_SHAPED = join(
+const INVALID_V2_SHAPED = join(
   import.meta.dir,
-  "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
+  "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v3/fixtures/invalid/v2-shaped-catalog.json",
 )
-const catalogV1 = (): any => structuredClone(JSON.parse(readFileSync(INVALID_V1_SHAPED, "utf8")).value)
+const catalogPrevGen = (): any => structuredClone(JSON.parse(readFileSync(INVALID_V2_SHAPED, "utf8")).value)
 
 const realFetch = globalThis.fetch
 let userData = ""
@@ -154,8 +155,10 @@ const fakeWindow = {
   webContents: { send: (channel: string, payload: unknown) => pushed.push({ channel, payload }) },
 }
 /** renderer 调 window.api.models.refreshHealth() 时跑的就是这个 handler。 */
-const invokeRefreshHealth = () => handlers.get("alpha-catalog-health")!() as { code: string; at: string } | null
-const lastPush = () => pushed.filter((p) => p.channel === "alpha-catalog-failure").at(-1)?.payload
+// `#1556`:两条口子发的是按文档分格的汇总 { platform, byok };本文件只关平台那一格。
+type Health = { platform: { code: string; at: string } | null; byok: { code: string; at: string } | null }
+const invokeRefreshHealth = () => (handlers.get("alpha-catalog-health")!() as Health).platform
+const lastPush = () => (pushed.filter((p) => p.channel === "alpha-catalog-failure").at(-1)?.payload as Health | undefined)?.platform
 
 beforeEach(() => {
   endpoint = "https://gateway.test"
@@ -207,14 +210,14 @@ const waitFor = async (ready: () => boolean, timeoutMs = 11000) => {
 
 const engineModelIds = () => Object.keys((buildAlphaModelConfig(userData)!.provider.alpha as any).models)
 
-describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持久化投影", () => {
-  test("production IPC refreshes through the V2 fetch decoder and returns the persisted projection", async () => {
+describe("#681 生产 wiring:models-catalog IPC 经真实目录 decoder(`#1556` 起 V3)返回持久化投影", () => {
+  test("production IPC refreshes through the V3 fetch decoder and returns the persisted projection", async () => {
     // 前提自检:刷新之前平台段没有任何价格主张(否则下面的断言可能是本地目录自带的)。
     const before = invokeCatalog()
     expect(before.pricingBasisModelId).toBeNull()
     expect(before.platformModels.every((model) => model.pricing === undefined)).toBe(true)
 
-    stubFetch(catalogV2())
+    stubFetch(catalogV3())
     const live = await refreshThenFork()
     expect(live.error).toBeUndefined()
     expect(live.pricingBasisModelId).toBe("deepseek-v4-flash")
@@ -231,7 +234,7 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
     // 双倍数没有被折叠成一个 scalar。
     expect(after.platformModels.some((m) => m.pricing!.input !== m.pricing!.output)).toBe(true)
     // BYOK 段照旧完整(#595 失败域隔离不因代际切换退化)。
-    expect(after.byokProviders.map((p) => p.id)).toEqual(getModelCatalog().byokProviders.map((p) => p.id))
+    expect(after.byokProviders.map((p) => p.id)).toEqual(getModelCatalog(userData).byokProviders.map((p) => p.id))
   })
 
   // 提交给平台 cutover gate 的那份 pin,必须**真的能被这台 Desktop 跑起来**。只断言它过 schema
@@ -254,30 +257,30 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
     for (const model of catalog.platformModels) expect(model.pricing, model.id).toEqual(wire.get(model.id))
   })
 
-  // ── 反向闸(持久 negative gate)。把生产入口改回 V1,这条必须红。 ──────────────────────
-  test("同一生产入口喂 V1 响应 → 无 basis、无 pricing、contract-health 亮 model-catalog", async () => {
-    stubFetch(catalogV1())
+  // ── 反向闸(持久 negative gate)。把生产入口改回上一代,这条必须红。 ──────────────────────
+  test("同一生产入口喂上一代(V2)响应 → 无 basis、无 pricing、contract-health 亮 model-catalog", async () => {
+    stubFetch(catalogPrevGen())
     expect(await refreshThenFork()).toEqual({ error: "contract-incompatible" })
 
     const failure = getContractFailure()
     expect(failure?.surface).toBe("model-catalog")
-    expect(failure?.expected_version).toBe(2)
-    expect(failure?.received_version).toBe(1)
+    expect(failure?.expected_version).toBe(3)
+    expect(failure?.received_version).toBe(2)
 
-    // V1 响应不得留下任何 LKG,IPC 也不得声称价格。
+    // 上一代响应不得留下任何 LKG,IPC 也不得声称价格(平台段为空,`#1556` AC1)。
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     const catalog = invokeCatalog()
     expect(catalog.pricingBasisModelId).toBeNull()
-    expect(catalog.platformModels.every((model) => model.pricing === undefined)).toBe(true)
+    expect(catalog.platformModels).toEqual([])
     expect(catalog.liveSync.status).toBe("static")
   })
 
-  test("已有合法 LKG 时,一次 V1 响应也不得把它降级(旧 pair 仍在,字节不变)", async () => {
-    stubFetch(catalogV2())
+  test("已有合法 LKG 时,一次上一代响应也不得把它降级(旧 pair 仍在,字节不变)", async () => {
+    stubFetch(catalogV3())
     await refreshThenFork()
     const bytes = readFileSync(liveAllowlistPath(userData))
 
-    stubFetch(catalogV1())
+    stubFetch(catalogPrevGen())
     expect(await refreshThenFork()).toEqual({ error: "contract-incompatible" })
     expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
 
@@ -292,30 +295,30 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
 
 describe("#681 反分叉:sidecar 引擎配置与 IPC 投影是同一份投影", () => {
   test("有效 LKG:两侧 id 列表逐项相等", async () => {
-    stubFetch(catalogV2())
+    stubFetch(catalogV3())
     await refreshThenFork()
     expect(engineModelIds()).toEqual(invokeCatalog().platformModels.map((m) => m.id))
     expect(engineModelIds().length).toBe(12)
   })
 
-  test("退化态「合法但空的响应」:两侧仍逐项相等(而不是 0 行 vs 静态全量)", async () => {
-    const empty = catalogV2()
+  test("退化态「合法但空的响应」:两侧仍逐项相等(`#1556`:两侧同为空,不回退随包清单)", async () => {
+    const empty = catalogV3()
     empty.data = []
     stubFetch(empty)
     await refreshThenFork()
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     expect(engineModelIds()).toEqual(invokeCatalog().platformModels.map((m) => m.id))
-    expect(engineModelIds().length).toBe(getModelCatalog().platformModels.length)
+    expect(engineModelIds()).toEqual([])
   })
 
-  test("退化态「从来没有缓存」:两侧仍逐项相等", () => {
+  test("退化态「从来没有缓存」:两侧仍逐项相等(都为空)", () => {
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     expect(engineModelIds()).toEqual(invokeCatalog().platformModels.map((m) => m.id))
-    expect(engineModelIds().length).toBe(getModelCatalog().platformModels.length)
+    expect(engineModelIds()).toEqual([])
   })
 
   test("引擎配置不携带 pricing(展示投影不进 opencode provider 契约)", async () => {
-    stubFetch(catalogV2())
+    stubFetch(catalogV3())
     await refreshThenFork()
     const models = (buildAlphaModelConfig(userData)!.provider.alpha as any).models
     expect(Object.values(models).every((m: any) => m.pricing === undefined)).toBe(true)
@@ -356,7 +359,7 @@ describe("#1084 目录刷新失败的用户可观察出口", () => {
   })
 
   test("契约不兼容同样进出口(main 侧「最后一次刷新结局」是单一真源)", async () => {
-    stubFetch(catalogV1())
+    stubFetch(catalogPrevGen())
     expect(await refreshThenFork()).toEqual({ error: "contract-incompatible" })
     expect(invokeRefreshHealth()).toMatchObject({ code: "contract-incompatible" })
   })
@@ -366,7 +369,7 @@ describe("#1084 目录刷新失败的用户可观察出口", () => {
     await refreshThenFork()
     expect(invokeRefreshHealth()).toMatchObject({ code: "rate_limited" })
 
-    stubFetch(catalogV2())
+    stubFetch(catalogV3())
     expect((await refreshThenFork()).error).toBeUndefined()
     expect(invokeRefreshHealth()).toBeNull()
     expect(lastPush()).toBeNull()
@@ -394,12 +397,12 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
     expect(lastPush()).toMatchObject({ code: "timeout" })
-    first.resolve(Response.json(catalogV2()))
+    first.resolve(Response.json(catalogV3()))
     await waitFor(() => requests.length === 2)
     expect(events).toEqual(["request-1", "first-returned", "request-2"])
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
-    retry.resolve(Response.json(catalogV2()))
+    retry.resolve(Response.json(catalogV3()))
     expect((await round).error).toBeUndefined()
     pinAppliedCatalog(userData, ++generation)
     expect(completed()).toHaveLength(2)
@@ -442,7 +445,7 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
         requests.push(request.method)
         return response.promise
       }
-      return Response.json(catalogV2())
+      return Response.json(catalogV3())
     })
     await refreshThenFork()
     const bytes = readFileSync(liveAllowlistPath(userData))
@@ -455,7 +458,7 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       expect.objectContaining({ attempt: 1, exception: "TimeoutError", durationMs: expect.any(Number) }),
       expect.objectContaining({ attempt: 2, exception: "TimeoutError", durationMs: expect.any(Number) }),
     ])
-    response.resolve(Response.json(catalogV2()))
+    response.resolve(Response.json(catalogV3()))
     await Bun.sleep(1300)
     expect(requests).toEqual(["GET", "GET"])
     expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
@@ -466,7 +469,7 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
     expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
   }, 30000)
 
-  test("AC3:安全完成日志可计数,真实 429 样本和 V1 拒绝保留原码且不补试", async () => {
+  test("AC3:安全完成日志可计数,真实 429 样本和旧代拒绝保留原码且不补试", async () => {
     // 429 字节沿用 alpha-platform-catalog.cases.ts 的真 worker 捕获样本(原第 276–286 行)。
     const rateLimited = '{"error":{"message":"rate limited: too many requests from this IP","code":"rate_limited"}}'
     let rejected = true
@@ -476,7 +479,7 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       expect(request.headers.get("authorization")).toBe("Bearer request-secret-1500")
       return rejected
         ? new Response(rateLimited, { status: 429, headers: { "set-cookie": "response-secret-1500" } })
-        : Response.json(catalogV1())
+        : Response.json(catalogPrevGen())
     })
     const origin = endpoint
     endpoint += "?token=query-secret-1500"
@@ -515,7 +518,7 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       "query-secret-1500",
       "response-secret-1500",
       rateLimited,
-      JSON.stringify(catalogV1()),
+      JSON.stringify(catalogPrevGen()),
     ]) {
       expect(JSON.stringify(logged)).not.toContain(secret)
     }
@@ -526,13 +529,13 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       identity = "account-a"
       let phase = "seed"
       const requests: number[] = []
-      const newer = catalogV2()
+      const newer = catalogV3()
       newer.data[0].pricing_multiplier = { input: 2, output: 3 }
       startTarget(async () => {
-        if (phase === "seed") return Response.json(catalogV2())
+        if (phase === "seed") return Response.json(catalogV3())
         requests.push(Date.now())
         if (phase === "first") await Bun.sleep(8500)
-        return Response.json(phase === "new" ? newer : catalogV2())
+        return Response.json(phase === "new" ? newer : catalogV3())
       })
       await refreshThenFork()
       phase = "first"
@@ -561,17 +564,17 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
     { change: "refresh", reply: "success" },
     { change: "refresh", reply: "429" },
     { change: "account", reply: "success" },
-    { change: "account", reply: "V1" },
+    { change: "account", reply: "旧代" },
   ] as const) {
     test(`AC4:补试在途时 ${race.change} 变化,旧 ${race.reply} 不覆盖快照或 health`, async () => {
       identity = "account-a"
       let seeded = false
       const requests: number[] = []
       const release = Promise.withResolvers<void>()
-      const newer = catalogV2()
+      const newer = catalogV3()
       newer.data[0].pricing_multiplier = { input: 2, output: 3 }
       startTarget(async () => {
-        if (!seeded) return Response.json(catalogV2())
+        if (!seeded) return Response.json(catalogV3())
         requests.push(Date.now())
         const attempt = requests.length
         if (attempt === 1) await Bun.sleep(8500)
@@ -582,9 +585,9 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
               '{"error":{"message":"rate limited: too many requests from this IP","code":"rate_limited"}}',
               { status: 429 },
             )
-          return Response.json(race.reply === "V1" ? catalogV1() : catalogV2())
+          return Response.json(race.reply === "旧代" ? catalogPrevGen() : catalogV3())
         }
-        return Response.json(attempt === 3 ? newer : catalogV2())
+        return Response.json(attempt === 3 ? newer : catalogV3())
       })
       await refreshThenFork()
       seeded = true

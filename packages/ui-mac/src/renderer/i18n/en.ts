@@ -1201,6 +1201,11 @@ export const dict = {
   "alpha.model.refreshFailedTitle": "Code Puppy models could not be refreshed",
   "alpha.model.refreshFailedDetail":
     "Showing the last known list. Your own API keys are unaffected. Reason: {{code}}",
+  "alpha.model.byokRefreshFailedTitle": "Own-key model list could not be refreshed",
+  "alpha.model.byokRefreshFailedDetail": "Using the last known list. Keys you already set up still work. Reason: {{code}}",
+  "alpha.model.platformNotLoaded": "Platform models not loaded yet",
+  "alpha.model.platformNotLoadedDetail": "They load automatically once you’re online. Your own-key models still work.",
+  "alpha.model.catalogPending": "Model list updated — takes effect next time the engine starts",
   "alpha.model.syncing": "Syncing…",
   "alpha.model.serverUnreachable": "Can't reach the server — retrying automatically",
   "alpha.model.pricingPair": "In {{input}}× · Out {{output}}×",

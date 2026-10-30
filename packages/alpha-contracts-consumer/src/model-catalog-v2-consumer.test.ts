@@ -1,10 +1,11 @@
-// #681 / ADR-039 —— ModelCatalogV2 的独立 pin + 严格 decoder 闸门。
+// #681 / ADR-039 —— 模型目录的独立 pin + 严格 decoder 闸门(`#1556` 起目录为 V3,并同 pin 带 BYOK 预置目录 v1;
+// 文件名保留 v2 是历史名,登记簿 scripts/gate-files.tsv 按路径钉它)。
 //
 // 这道闸保证三件删掉就没人守的事:
-//   1. V2 artifact 是**独立**钉住的(自己的 lock / vendor 子树 / 逐文件 sha256)——
+//   1. 目录 artifact 是**独立**钉住的(自己的 lock / vendor 子树 / 逐文件 sha256)——
 //      上游改写 schema 或 producer fixture,本仓在解码之前就红;
-//   2. 生产 decoder **不存在** ModelCatalogV1 —— 喂 V1 原文必须炸,且失败记录如实说
-//      「expected 2 / received 1」;这是 ADR-039 §1「一个 flow 只有一代」的机械保证;
+//   2. 生产 decoder **不存在** ModelCatalogV1 / V2 —— 喂上一代原文必须炸,且失败记录如实说
+//      「expected 3 / received 2」;这是 ADR-039 §1「一个 flow 只有一代」的机械保证;
 //   3. 本仓提交给平台 cutover gate 的 consumer pin,是被**出货 decoder** 真解过一遍的,
 //      不是一份声称兼容的散文。
 //
@@ -22,20 +23,24 @@ import { ContractIncompatibleError, decodeContract, decodeJsonContract, validate
 const root = resolve(import.meta.dir, "..")
 const vendor = resolve(root, "vendor/alpha-platform-model-catalog")
 const LOCK = "alpha-platform-model-catalog.lock.json"
-const PRODUCER = "contracts/v2/fixtures/producer/model-catalog.json"
-/** 上游发布的 V1 形状 negative fixture。**V1 wire 一律取自这份字节,本文件不手写 V1 样例** ——
+const PRODUCER = "contracts/v3/fixtures/producer/model-catalog.json"
+/** 上游发布的 V2 形状 negative fixture。**上一代 wire 一律取自这份字节,本文件不手写样例** ——
  *  手写一份别人文法的替身是本仓最贵的返工来源;要么消费对方的决定,要么直接拒绝该输入。 */
-const INVALID_V1_SHAPED = "contracts/v2/fixtures/invalid/v1-shaped-catalog.json"
+const INVALID_V2_SHAPED = "contracts/v3/fixtures/invalid/v2-shaped-catalog.json"
+const BYOK_SCHEMA = "contracts/v1/byok-catalog.schema.json"
+const BYOK_PRODUCER = "contracts/v1/fixtures/producer/byok-catalog.json"
+const CONSUMER_PIN = "consumers/alpha-code-1556/model-catalog-v3.json"
 
 const vendored = async (path: string) => Bun.file(resolve(vendor, path)).json()
 const authored = async (path: string) => Bun.file(resolve(root, "fixtures", path)).json()
 /** 生产响应体的形状:`decodeJsonContract` 收到的是 `value`,不是包装 fixture 的整份文件。 */
 const wire = (value: unknown) => JSON.stringify(value)
 const producerValue = async () => structuredClone((await vendored(PRODUCER)).value)
-/** 上游那份 V1 形状载荷本身(同样只取 `.value`,整份包装对象喂给生产 decoder 会得到假红)。 */
-const v1ShapedValue = async () => structuredClone((await vendored(INVALID_V1_SHAPED)).value)
+/** 上游那份 V2 形状载荷本身(同样只取 `.value`,整份包装对象喂给生产 decoder 会得到假红)。 */
+const v2ShapedValue = async () => structuredClone((await vendored(INVALID_V2_SHAPED)).value)
+const byokValue = async () => structuredClone((await vendored(BYOK_PRODUCER)).value)
 
-describe("ModelCatalogV2 的独立 immutable pin", () => {
+describe("模型目录(V3 + BYOK v1)的独立 immutable pin", () => {
   // 占位 pin 必须由**机器**拦住。此前这里断言 `commit === "pending-…"`,于是整条 CI 对着一个哨兵
   // 字符串报绿 —— 闸门正向接受了它要拦的东西,只剩 PR 描述里一句话防误合。判据因此反过来:pin 只
   // 接受 40 位 hex 的 immutable sha。
@@ -63,11 +68,9 @@ describe("ModelCatalogV2 的独立 immutable pin", () => {
       files: Array<{ path: string; sha256: string }>
     }
     expect(lock.repo).toBe("jinjunnn/alpha-platform")
-    expect(lock.files.map((file) => file.path).sort()).toEqual([
-      INVALID_V1_SHAPED,
-      PRODUCER,
-      "contracts/v2/model-catalog.schema.json",
-    ])
+    expect(lock.files.map((file) => file.path).sort()).toEqual(
+      [INVALID_V2_SHAPED, PRODUCER, "contracts/v3/model-catalog.schema.json", BYOK_SCHEMA, BYOK_PRODUCER].sort(),
+    )
     for (const file of lock.files) {
       const bytes = new Uint8Array(await Bun.file(resolve(vendor, file.path)).arrayBuffer())
       expect(createHash("sha256").update(bytes).digest("hex"), file.path).toBe(file.sha256)
@@ -84,55 +87,74 @@ describe("ModelCatalogV2 的独立 immutable pin", () => {
   })
 
   test("schema artifact 的 $id 是 pin 的锚点:改名即 decoder 失锚", async () => {
-    const schema = (await vendored("contracts/v2/model-catalog.schema.json")) as Record<string, unknown>
+    const schema = (await vendored("contracts/v3/model-catalog.schema.json")) as Record<string, unknown>
     expect(schema.$id).toBe("model-catalog.schema.json")
-    expect(schema.title).toBe("ModelCatalogV2")
+    expect(schema.title).toBe("ModelCatalogV3")
+    const byok = (await vendored(BYOK_SCHEMA)) as Record<string, unknown>
+    expect(byok.$id).toBe("byok-catalog.schema.json")
+    expect(byok.title).toBe("ByokCatalogV1")
   })
 })
 
-describe("生产 decoder 只认 V2", () => {
+describe("生产 decoder 只认 V3", () => {
   test("vendored 的两份 fixture 都经出货 decoder 判定,且与上游声明的 expect 一致", async () => {
     // producer:上游说 valid,我们的 decoder 必须解得开。
     expect(validateFixture(await vendored(PRODUCER))).toBe(true)
     // negative:上游说 invalid,我们的 decoder 必须拒。validateFixture 对 `expect:"invalid"` 的判据
     // 就是「校验器确实拒了」——所以这里同样是 true,而它证明的是**双方对同一份字节的判断一致**。
-    const invalid = await vendored(INVALID_V1_SHAPED)
-    expect(invalid.contract).toBe("ModelCatalogV2")
+    const invalid = await vendored(INVALID_V2_SHAPED)
+    expect(invalid.contract).toBe("ModelCatalogV3")
     expect(invalid.expect).toBe("invalid")
     expect(validateFixture(invalid)).toBe(true)
   })
 
-  test("validates the independently pinned V2 producer fixture and rejects V1", async () => {
-    const v2 = await producerValue()
-    expect(decodeJsonContract("ModelCatalogV2", wire(v2), "model-catalog").schema_version).toBe(2)
+  test("validates the independently pinned V3 producer fixture and rejects V2", async () => {
+    const v3 = await producerValue()
+    expect(decodeJsonContract("ModelCatalogV3", wire(v3), "model-catalog").schema_version).toBe(3)
 
-    // V1 wire 取自**上游发布的 negative fixture**,不是本文件手写的替身。
-    const v1 = await v1ShapedValue()
-    expect(v1.schema_version).toBe(1)
-    expect(() => decodeJsonContract("ModelCatalogV2", wire(v1), "model-catalog")).toThrow(ContractIncompatibleError)
+    // V2 wire 取自**上游发布的 negative fixture**,不是本文件手写的替身。
+    const v2 = await v2ShapedValue()
+    expect(v2.schema_version).toBe(2)
+    expect(() => decodeJsonContract("ModelCatalogV3", wire(v2), "model-catalog")).toThrow(ContractIncompatibleError)
     try {
-      decodeJsonContract("ModelCatalogV2", wire(v1), "model-catalog")
+      decodeJsonContract("ModelCatalogV3", wire(v2), "model-catalog")
       throw new Error("unreachable")
     } catch (error) {
       expect((error as ContractIncompatibleError).failure).toEqual({
         code: "contract-incompatible",
         surface: "model-catalog",
-        expected_version: 2,
-        received_version: 1,
+        expected_version: 3,
+        received_version: 2,
         reason: "schema-validation",
       })
     }
   })
 
-  test("ModelCatalogV1 这个 decoder 已经不存在(不是「还在但没人调」)", async () => {
-    // validateFixture 按名字查 validator 表;查不到即 false。这是「V1 catalog 解码器已从出货代码里
+  test("ModelCatalogV1 / V2 这两个 decoder 都已经不存在(不是「还在但没人调」)", async () => {
+    // validateFixture 按名字查 validator 表;查不到即 false。这是「旧代 catalog 解码器已从出货代码里
     // 消失」的机械证据 —— 恢复它就是 ADR-039 §4 要求的那次 inversion。
-    expect(validateFixture({ kind: "schema", contract: "ModelCatalogV1", expect: "valid", value: {} })).toBe(false)
-    // 载荷仍取自上游字节;这里唯一由本仓提供的是 `contract` 这个**注册表键名**(它本来就是我们自己的
-    // 类型注册表,不是上游文法的一部分)。
-    expect(
-      validateFixture({ kind: "schema", contract: "ModelCatalogV1", expect: "valid", value: await v1ShapedValue() }),
-    ).toBe(false)
+    for (const contract of ["ModelCatalogV1", "ModelCatalogV2"]) {
+      expect(validateFixture({ kind: "schema", contract, expect: "valid", value: {} })).toBe(false)
+      // 载荷仍取自上游字节;这里唯一由本仓提供的是 `contract` 这个**注册表键名**(它本来就是我们自己的
+      // 类型注册表,不是上游文法的一部分)。
+      expect(validateFixture({ kind: "schema", contract, expect: "valid", value: await v2ShapedValue() })).toBe(false)
+    }
+  })
+
+  test("`#1556` BYOK 预置目录:上游 producer 解得开;带端点 / Key 名 / 适配器字段的文档整份拒绝", async () => {
+    expect(validateFixture(await vendored(BYOK_PRODUCER))).toBe(true)
+    expect(decodeJsonContract("ByokCatalogV1", wire(await byokValue()), "byok-catalog").schema_version).toBe(1)
+    const reject = async (mutate: (value: any) => void, label: string) => {
+      const value = await byokValue()
+      mutate(value)
+      expect(() => decodeContract("ByokCatalogV1", value, "byok-catalog"), label).toThrow(ContractIncompatibleError)
+    }
+    await reject((v) => (v.providers[0].baseURL = "https://evil.example/v1"), "provider 带 baseURL")
+    await reject((v) => (v.providers[0].keyEnv = "OPENAI_API_KEY"), "provider 带 keyEnv")
+    await reject((v) => (v.providers[0].compat = "anthropic"), "provider 带 compat")
+    await reject((v) => (v.providers[0].models[0].npm = "@ai-sdk/anthropic"), "模型带 npm")
+    await reject((v) => (v.schema_version = 2), "schema_version 不是 1")
+    await reject((v) => (v.providers[1].models[0].variants["高"] = { temperature: 0 }), "档位选项键越界")
   })
 })
 
@@ -140,7 +162,7 @@ describe("变异一律整份拒绝(不逐行降级)", () => {
   const reject = async (mutate: (value: any) => void, label: string) => {
     const value = await producerValue()
     mutate(value)
-    expect(() => decodeContract("ModelCatalogV2", value, "model-catalog"), label).toThrow(ContractIncompatibleError)
+    expect(() => decodeContract("ModelCatalogV3", value, "model-catalog"), label).toThrow(ContractIncompatibleError)
   }
 
   test("缺 pricing_multiplier / 缺 basis / 缺一侧 / 多一个键 / 非正数,全部判不兼容", async () => {
@@ -153,7 +175,9 @@ describe("变异一律整份拒绝(不逐行降级)", () => {
     await reject((v) => (v.data[0].pricing_multiplier.input = -1), "input 为负")
     await reject((v) => (v.data[0].pricing_multiplier.input = "1"), "input 是字符串")
     await reject((v) => (v.data[0].provider = "DeepSeek"), "provider 枚举大小写漂移")
-    await reject((v) => (v.schema_version = 1), "版本号退回 1")
+    await reject((v) => (v.schema_version = 2), "版本号退回 2")
+    await reject((v) => delete v.data[0].display, "删掉 display")
+    await reject((v) => (v.data[0].display.brand = "Qwen"), "brand 枚举外")
   })
 
   test("落在 0.1 网格外的倍数是 schema 之外的语义问题,由消费侧 isTrustedPair 拒(schema 仍放行)", async () => {
@@ -162,19 +186,19 @@ describe("变异一律整份拒绝(不逐行降级)", () => {
     // 真正的拒绝发生在 main/alpha-live-allowlist.ts 的 isTrustedPair(见 models-catalog-v2 闸门)。
     const value = await producerValue()
     value.data[0].pricing_multiplier.input = 1.05
-    expect(() => decodeContract("ModelCatalogV2", value, "model-catalog")).not.toThrow()
+    expect(() => decodeContract("ModelCatalogV3", value, "model-catalog")).not.toThrow()
   })
 })
 
-describe("#681 consumer pin", () => {
+describe("#681 / `#1556` consumer pin", () => {
   test("consumer pin 经出货 decoder 解出真实 12 模型与真实倍数", async () => {
-    const pin = await authored("consumers/alpha-code-681/model-catalog-v2.json")
-    expect(pin.contract).toBe("ModelCatalogV2")
+    const pin = await authored(CONSUMER_PIN)
+    expect(pin.contract).toBe("ModelCatalogV3")
     expect(pin.consumer).toBe("alpha-code")
     expect(pin.expect).toBe("valid")
     expect(validateFixture(pin)).toBe(true)
 
-    const catalog = decodeJsonContract("ModelCatalogV2", wire(pin.value), "model-catalog")
+    const catalog = decodeJsonContract("ModelCatalogV3", wire(pin.value), "model-catalog")
     expect(catalog.data.length).toBe(12)
     expect(catalog.pricing_basis_model_id).toBe("deepseek-v4-flash")
     // 基准行本身是 1/1;最贵的一行必须逐字段全等地穿过 decoder —— 折叠成单一 scalar 或
@@ -188,7 +212,7 @@ describe("#681 consumer pin", () => {
   })
 
   test("consumer pin 声明的是出货桌面版本(cutover gate 据此判本仓是否已切)", async () => {
-    const pin = await authored("consumers/alpha-code-681/model-catalog-v2.json")
+    const pin = await authored(CONSUMER_PIN)
     const shipped = await Bun.file(resolve(root, "../ui-mac/package.json")).json()
     expect(pin.consumer_version).toBe(shipped.version)
   })

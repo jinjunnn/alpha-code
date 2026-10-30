@@ -1,305 +1,146 @@
 {
-  "version": "2026-09-06.2",
-  "_byokNote": "BYOK 目录一律用 OpenAI 兼容端点(compat:openai)。引擎机制(provider.ts apiNpm 链,S34 真机实锤):models.dev 合并进来的模型保留 models.dev 的 npm(@ai-sdk/openai-compatible),只有本目录 declared 的模型用我们的 npm——若目录配 anthropic 端点,合并模型会以 openai 拼法打 anthropic baseURL(四不像 URL)。anthropic compat 仅供用户自定义节点(自担模型清单)。",
-  "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune 展示元数据(显示名 / reasoning / web / variants), or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog). REQ-127 #679:平台代理的计价倍数由网关 GET /v1/models 下发(ADR-039),本文件不得出现任何价格主张。",
+  "_note": "Desktop model catalog bootstrap (ADR-014 config-driven). REQ-237 #1556:平台模型的名称 / 品牌 / 能力 / 档位只由网关 GET /v1/models(ModelCatalogV3 的 display)下发,本文件不再有平台模型清单;BYOK 段 `byokCatalog` 与远程 GET /v1/byok-catalog(ByokCatalogV1)同构,只作**首启引导**:远程 catalog_version 更高时远程胜出,App 升级带来更高的随包版本时随包胜出(catalog-refresher.ts adoptByokCatalog)。端点 / Key 名 / 协议适配器不在这里,在 App 内置适配器表 main/byok-adapters.ts。平台代理的计价倍数由网关下发(ADR-039),本文件不得出现任何价格主张。",
   "_variantsNote": "REQ-153 #1237:`variants` 只给 wire 形状**实打过**的 (引擎 provider, model) 声明,形状**逐腿**取自 alpha-platform docs/architecture/openai-wire-reasoning-controls.md(网关 VERIFIED_REASONING_WIRE 的对照物)与本仓 docs/architecture/2026-09-06-model-variant-reachability.md §8;同一模型经直连与经 OpenRouter 形状不同,不得跨腿套用。受理 ≠ 有效:每个档位都要对应一个实打观察到的上游行为。上游 smallOptions() 把档位表**第一项**喂给标题等辅助调用,所以有关闭档的模型一律把「关」放第一位。未实打的模型(qwen/kimi/minimax 直连:本机无凭据)显式保持无档;alpha-models.test.ts 的 #1237 节把已验表与无档清单都钉死 —— 想加一档,先照那份文档的方法实打,再把出处写进那张表。",
-  "_imageInputNote": "REQ-228 #1420:BYOK 模型能不能看图(引擎 capabilities.input.image)。每个 provider 的 `imageInput` 必须给 `models` 里**每一个** id 一个显式 true/false,值逐字抄自 models.dev(`modelsDev` = 与本目录 baseURL 同一端点的那个 models.dev provider id)同名模型的 `modalities.input` 是否含 image;2026-09-23 快照(https://models.dev/api.json,sha256 219bfd29…)。**唯一例外**:deepseek/deepseek-flash 在 models.dev 标能看图,但与实测证据相反(2026-09-24 协调方实测:OpenRouter 目录 deepseek/deepseek-v4-flash 的 input_modalities = [\"text\"];带图请求(含 provider.only=[\"deepseek\"] 官方端点)⇒ 404 `No endpoints found that support image input`(15 个端点全部不支持图片);能看图的是另一个型号 deepseek-v4-flash-vision-exp),本机无 DeepSeek 直连 key 实测这个直连 id ⇒ 按 fail-closed 取 false,直连实测后再定(见 runbook §B)。缺值 ⇒ 按看不了图注入(fail-closed),alpha-models.test.ts 对出货目录判完备。加模型时照 docs/runbooks/model-catalog-updates.md §B 重查一遍。平台代理模型一律看不了图(网关聊天入口拒收图片),不读本字段。",
+  "_imageInputNote": "REQ-228 #1420:BYOK 模型能不能看图(引擎 capabilities.input.image)取 `byokCatalog` 每个模型的 `image_input`(schema 必填布尔,缺一个 = 整份拒绝)。首版内容逐字承接 2026-09-23 models.dev 快照(https://models.dev/api.json,sha256 219bfd29…)与 2026-09-24 deepseek-flash 实测(取 false),出处见 docs/runbooks/model-catalog-updates.md §B;之后由 alpha-platform 的 BYOK 目录发布维护。平台代理模型一律看不了图(网关聊天入口拒收图片),不读本字段。",
   "defaultModel": null,
   "defaultPlatformModel": "deepseek-v4-flash",
   "platformProvider": {
     "id": "alpha",
     "name": "Code Puppy",
-    "npm": "@ai-sdk/openai-compatible",
-    "pico": {
-      "letter": "C",
-      "color": "#4f46e5"
-    }
+    "npm": "@ai-sdk/openai-compatible"
   },
-  "platformModels": [
-    {
-      "id": "claude-opus-4.8",
-      "name": "Claude Opus 4.8",
-      "reasoning": true,
-      "web": true,
-      "variants": {
-        "低": {
-          "reasoning": {
-            "effort": "low"
-          }
-        },
-        "中": {
-          "reasoning": {
-            "effort": "medium"
-          }
-        },
-        "高": {
-          "reasoning": {
-            "effort": "high"
-          }
-        }
-      }
-    },
-    {
-      "id": "claude-fable-5",
-      "name": "Claude Fable 5",
-      "web": true
-    },
-    {
-      "id": "claude-sonnet-5",
-      "name": "Claude Sonnet 5",
-      "web": true
-    },
-    {
-      "id": "claude-haiku-4.5",
-      "name": "Claude Haiku 4.5",
-      "web": true
-    },
-    {
-      "id": "gpt-5.4-mini",
-      "name": "GPT-5.4 Mini",
-      "reasoning": true,
-      "variants": {
-        "低": {
-          "reasoningEffort": "low"
-        },
-        "中": {
-          "reasoningEffort": "medium"
-        },
-        "高": {
-          "reasoningEffort": "high"
-        }
-      }
-    },
-    {
-      "id": "gpt-5.4-nano",
-      "name": "GPT-5.4 Nano",
-      "reasoning": true,
-      "variants": {
-        "低": {
-          "reasoningEffort": "low"
-        },
-        "中": {
-          "reasoningEffort": "medium"
-        },
-        "高": {
-          "reasoningEffort": "high"
-        }
-      }
-    },
-    {
-      "id": "deepseek-v4-pro",
-      "name": "DeepSeek V4 Pro",
-      "reasoning": true,
-      "variants": {
-        "低": {
-          "reasoningEffort": "low"
-        },
-        "中": {
-          "reasoningEffort": "medium"
-        },
-        "高": {
-          "reasoningEffort": "high"
-        },
-        "最高": {
-          "reasoningEffort": "max"
-        }
-      }
-    },
-    {
-      "id": "deepseek-v4-flash",
-      "name": "DeepSeek V4 Flash"
-    },
-    {
-      "id": "glm-5.2",
-      "name": "GLM-5.2",
-      "reasoning": true,
-      "variants": {
-        "高": {
-          "reasoningEffort": "high"
-        },
-        "最高": {
-          "reasoningEffort": "max"
-        }
-      }
-    },
-    {
-      "id": "glm-5-turbo",
-      "name": "GLM-5 Turbo",
-      "reasoning": true,
-      "variants": {
-        "关": {
-          "thinking": {
-            "type": "disabled"
-          }
-        },
-        "开": {
-          "thinking": {
-            "type": "enabled"
-          }
-        }
-      }
-    },
-    {
-      "id": "qwen3.7-max",
-      "name": "Qwen3.7 Max",
-      "reasoning": true,
-      "variants": {
-        "关": {
-          "reasoningEffort": "none"
-        },
-        "开": {
-          "reasoningEffort": "medium"
-        }
-      }
-    },
-    {
-      "id": "qwen3.7-plus",
-      "name": "Qwen3.7 Plus",
-      "reasoning": true,
-      "variants": {
-        "关": {
-          "reasoningEffort": "none"
-        },
-        "开": {
-          "reasoningEffort": "medium"
-        }
-      }
-    }
-  ],
-  "byokProviders": [
-    {
-      "id": "deepseek",
-      "name": "DeepSeek",
-      "builtin": true,
-      "preset": true,
-      "compat": "openai",
-      "baseURL": "https://api.deepseek.com/v1",
-      "keyEnv": "DEEPSEEK_API_KEY",
-      "pico": {
-        "letter": "D",
-        "color": "#2563eb"
-      },
-      "models": [
-        "deepseek-flash",
-        "deepseek-v4-pro"
-      ],
-      "modelsDev": "deepseek",
-      "imageInput": {
-        "deepseek-flash": false,
-        "deepseek-v4-pro": false
-      }
-    },
-    {
-      "id": "zhipuai",
-      "name": "智谱 GLM",
-      "builtin": true,
-      "preset": true,
-      "compat": "openai",
-      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
-      "keyEnv": "ZHIPU_API_KEY",
-      "pico": {
-        "letter": "智",
-        "color": "#16a34a"
-      },
-      "models": [
-        "glm-5.2",
-        "glm-4.5-air"
-      ],
-      "modelsDev": "zhipuai",
-      "imageInput": {
-        "glm-5.2": false,
-        "glm-4.5-air": false
-      },
-      "modelMeta": {
-        "glm-4.5-air": {
-          "name": "GLM-4.5-Air",
-          "reasoning": true,
-          "variants": {
-            "关": {
-              "thinking": {
-                "type": "disabled"
+  "byokCatalog": {
+    "schema_version": 1,
+    "catalog_version": 1,
+    "published_at": "2026-10-30T00:00:00Z",
+    "providers": [
+      {
+        "id": "deepseek",
+        "name": "DeepSeek",
+        "brand": "deepseek",
+        "preset": true,
+        "models": [
+          {
+            "id": "deepseek-flash",
+            "name": "deepseek-flash",
+            "image_input": false
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro",
+            "reasoning": true,
+            "variants": {
+              "低": {
+                "reasoningEffort": "low"
+              },
+              "中": {
+                "reasoningEffort": "medium"
+              },
+              "高": {
+                "reasoningEffort": "high"
+              },
+              "最高": {
+                "reasoningEffort": "max"
               }
             },
-            "开": {
-              "thinking": {
-                "type": "enabled"
-              }
-            }
+            "image_input": false
           }
-        }
-      }
-    },
-    {
-      "id": "minimax",
-      "name": "MiniMax",
-      "builtin": true,
-      "preset": false,
-      "compat": "openai",
-      "baseURL": "https://api.minimaxi.com/v1",
-      "keyEnv": "MINIMAX_API_KEY",
-      "pico": {
-        "letter": "M",
-        "color": "#dc2626"
+        ]
       },
-      "models": [
-        "MiniMax-M2"
-      ],
-      "modelsDev": "minimax-cn",
-      "imageInput": {
-        "MiniMax-M2": false
-      }
-    },
-    {
-      "id": "alibaba",
-      "name": "通义千问 Qwen",
-      "builtin": true,
-      "preset": true,
-      "compat": "openai",
-      "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "keyEnv": "DASHSCOPE_API_KEY",
-      "pico": {
-        "letter": "通",
-        "color": "#7c3aed"
+      {
+        "id": "zhipuai",
+        "name": "智谱 GLM",
+        "brand": "zhipu",
+        "preset": true,
+        "models": [
+          {
+            "id": "glm-5.2",
+            "name": "GLM-5.2",
+            "reasoning": true,
+            "variants": {
+              "高": {
+                "reasoningEffort": "high"
+              },
+              "最高": {
+                "reasoningEffort": "max"
+              }
+            },
+            "image_input": false
+          },
+          {
+            "id": "glm-4.5-air",
+            "name": "GLM-4.5-Air",
+            "reasoning": true,
+            "variants": {
+              "关": {
+                "thinking": {
+                  "type": "disabled"
+                }
+              },
+              "开": {
+                "thinking": {
+                  "type": "enabled"
+                }
+              }
+            },
+            "image_input": false
+          }
+        ]
       },
-      "models": [
-        "qwen3.8-max",
-        "qwen-plus",
-        "qwen3-coder-plus"
-      ],
-      "modelsDev": "alibaba-cn",
-      "imageInput": {
-        "qwen3.8-max": true,
-        "qwen-plus": false,
-        "qwen3-coder-plus": false
-      }
-    },
-    {
-      "id": "moonshot",
-      "name": "Kimi (Moonshot)",
-      "builtin": false,
-      "preset": true,
-      "compat": "openai",
-      "baseURL": "https://api.moonshot.cn/v1",
-      "keyEnv": "MOONSHOT_API_KEY",
-      "pico": {
-        "letter": "K",
-        "color": "#111317"
+      {
+        "id": "minimax",
+        "name": "MiniMax",
+        "brand": "minimax",
+        "preset": false,
+        "models": [
+          {
+            "id": "MiniMax-M2",
+            "name": "MiniMax-M2",
+            "image_input": false
+          }
+        ]
       },
-      "models": [
-        "kimi-k3",
-        "kimi-k2.6"
-      ],
-      "modelsDev": "moonshotai-cn",
-      "imageInput": {
-        "kimi-k3": true,
-        "kimi-k2.6": true
+      {
+        "id": "alibaba",
+        "name": "通义千问 Qwen",
+        "brand": "qwen",
+        "preset": true,
+        "models": [
+          {
+            "id": "qwen3.8-max",
+            "name": "qwen3.8-max",
+            "image_input": true
+          },
+          {
+            "id": "qwen-plus",
+            "name": "qwen-plus",
+            "image_input": false
+          },
+          {
+            "id": "qwen3-coder-plus",
+            "name": "qwen3-coder-plus",
+            "image_input": false
+          }
+        ]
+      },
+      {
+        "id": "moonshot",
+        "name": "Kimi (Moonshot)",
+        "brand": "moonshot",
+        "preset": true,
+        "models": [
+          {
+            "id": "kimi-k3",
+            "name": "kimi-k3",
+            "image_input": true
+          },
+          {
+            "id": "kimi-k2.6",
+            "name": "kimi-k2.6",
+            "image_input": true
+          }
+        ]
       }
-    }
-  ],
-  "presetIds": [
-    "deepseek",
-    "zhipuai",
-    "alibaba",
-    "moonshot"
-  ]
+    ]
+  }
 }

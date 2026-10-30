@@ -5,7 +5,7 @@
 import { createSignal, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { useContractHealth } from "./providers"
 import { t } from "../i18n"
-import type { CatalogRefreshFailure } from "../../shared/alpha-model-types"
+import type { CatalogRefreshHealth } from "../../shared/alpha-model-types"
 import "./banner.css"
 
 export type BannerKind = "info" | "success" | "warning" | "error"
@@ -67,19 +67,29 @@ export function ContractFailureBanner() {
  *  单一真源),而两条横幅是同一个 fixed 位,不抑制就会精确重叠。 */
 export function CatalogFailureBanner() {
   const contract = useContractHealth()
-  const [failure, setFailure] = createSignal<CatalogRefreshFailure | null>(null)
+  const [health, setHealth] = createSignal<CatalogRefreshHealth>({ platform: null, byok: null })
   onMount(() => {
-    void window.api.models.refreshHealth().then(setFailure)
-    onCleanup(window.api.models.subscribeRefreshHealth(setFailure))
+    void window.api.models.refreshHealth().then(setHealth)
+    onCleanup(window.api.models.subscribeRefreshHealth(setHealth))
   })
+  // `#1556`:两份目录的结局各一格,一份成功不会抹掉另一份的失败。同一个 fixed 位只放一条:平台那份在前
+  // (它决定平台段新鲜度),平台恢复后自带 Key 那份仍失败就接着显示它。摆放位置另由 alpha-code#1557 处理。
+  const shown = () => {
+    const current = health()
+    if (current.platform) return { doc: "platform" as const, failure: current.platform }
+    if (current.byok) return { doc: "byok" as const, failure: current.byok }
+    return null
+  }
   return (
-    <Show when={!contract() && failure()} keyed>
+    <Show when={!contract() && shown()} keyed>
       {(value) => (
-        <div class="a-catalog-failure" data-alpha-catalog-failure={value.code}>
+        <div class="a-catalog-failure" data-alpha-catalog-failure={value.failure.code} data-alpha-catalog-doc={value.doc}>
           <Banner
             kind="warning"
-            title={t("alpha.model.refreshFailedTitle")}
-            detail={t("alpha.model.refreshFailedDetail", { code: value.code })}
+            title={t(value.doc === "platform" ? "alpha.model.refreshFailedTitle" : "alpha.model.byokRefreshFailedTitle")}
+            detail={t(value.doc === "platform" ? "alpha.model.refreshFailedDetail" : "alpha.model.byokRefreshFailedDetail", {
+              code: value.failure.code,
+            })}
           />
         </div>
       )}

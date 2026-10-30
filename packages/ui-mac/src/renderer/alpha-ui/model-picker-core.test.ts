@@ -11,12 +11,10 @@ import {
   withModelVariant,
 } from "./model-picker-core"
 
-const catalog = {
-  ...(await Bun.file(new URL("../../main/alpha-models.json", import.meta.url)).json()),
-  liveSync: { status: "static" },
-  // #681:平台段没有有效 V2/LKG 时 basis 为 null(该 stub 不带远端目录)。
-  pricingBasisModelId: null,
-} as EffectiveCatalog
+import { effectiveCatalogFixture } from "../../../test-component/effective-catalog.fixture"
+
+// `#1556`:已应用目录 = 上游 V3 producer 快照(平台段)+ 随包首启引导(BYOK 段),经生产投影装配。
+const catalog = effectiveCatalogFixture()
 
 const info = (
   providerID: string,
@@ -63,9 +61,9 @@ const rows = (over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
     ...over,
   })
 
-describe("真实 alpha-models.json → picker 两组", () => {
+describe("已应用目录 → picker 两组", () => {
   // REQ-153 #1236:徽标与引擎注入同一派生(shared/alpha-model-types byokModelMeta)。
-  test("推理徽标:平台行按目录 reasoning;BYOK 行按平台同名条目派生(deepseek-v4-pro 亮、deepseek-flash 不亮)", () => {
+  test("推理徽标:平台行按快照 display.reasoning;BYOK 行按 BYOK 目录(deepseek-v4-pro 亮、deepseek-flash 不亮)", () => {
     const actual = rows()
     const platform = actual.filter((row) => row.group === "platform")
     expect(platform.filter((row) => row.reasoning).map((row) => row.model.id)).toEqual(
@@ -179,28 +177,27 @@ describe("真实 alpha-models.json → picker 两组", () => {
   })
 })
 
-// REQ-153 #1266:BYOK 行的档位与 sidecar 注入同一派生(byokModelMeta 取平台同名条目的 variants 键)。
+// REQ-153 #1266:BYOK 行的档位与 sidecar 注入同一派生(byokModelMeta)。
 // 此前这里写死 `variants: []` —— 直连 deepseek-v4-pro / glm-5.2 亮着徽标却一档都选不到。
-// REQ-153 #1267:没有平台同名条目的 BYOK-only id(glm-4.5-air)从目录自己的 `modelMeta` 槽拿徽标 / 档位 / 展示名。
-describe("BYOK 行的推理档位从平台同名条目或自己的 modelMeta 槽派生(#1266 / #1267)", () => {
-  test("有徽标的直连模型列出平台同名条目的档位;BYOK-only id 列出槽里的档位;未标推理的直连模型零档", () => {
+// REQ-237 `#1556`:徽标 / 档位 / 展示名只来自 BYOK 目录自己的逐模型元数据,不再借平台同名条目。
+describe("BYOK 行的推理档位只从 BYOK 目录派生(#1266 / #1267 / `#1556`)", () => {
+  test("有徽标的直连模型列出 BYOK 目录给的档位;未标推理的直连模型零档", () => {
     const actual = rows({
       keyStatus: Object.fromEntries(catalog.byokProviders.map((provider) => [provider.id, { configured: true, source: "keychain" as const }])),
     }).filter((row) => row.group === "byok")
-    const twin = (id: string) => Object.keys(catalog.platformModels.find((model) => model.id === id)?.variants ?? {})
-    const slot = (key: string) => {
+    const own = (key: string) => {
       const [providerID, id] = key.split(":")
-      return catalog.byokProviders.find((provider) => provider.id === providerID)?.modelMeta?.[id!]
+      return catalog.byokProviders.find((provider) => provider.id === providerID)?.modelMeta[id!]
     }
-    expect(twin("deepseek-v4-pro").length).toBeGreaterThan(0) // 夹具自证:平台条目真有档位,否则下面空对空
-    expect(Object.keys(slot("zhipuai:glm-4.5-air")?.variants ?? {}).length).toBeGreaterThan(0) // 夹具自证:槽真有档位
+    expect(Object.keys(own("deepseek:deepseek-v4-pro")?.variants ?? {}).length).toBeGreaterThan(0) // 夹具自证:目录真有档位
+    expect(Object.keys(own("zhipuai:glm-4.5-air")?.variants ?? {}).length).toBeGreaterThan(0)
     for (const row of actual) {
-      const expected = slot(row.key) ? Object.keys(slot(row.key)!.variants ?? {}) : twin(row.model.id)
+      const expected = Object.keys(own(row.key)?.variants ?? {})
       expect({ key: row.key, variants: row.model.variants }).toEqual({ key: row.key, variants: expected })
       // 徽标 ⇒ 有档;无档 ⇒ 无徽标(目录里徽标与档位同一个条目给出)。
       expect({ key: row.key, badgeImpliesVariants: !row.reasoning || row.model.variants.length > 0 }).toEqual({ key: row.key, badgeImpliesVariants: true })
     }
-    expect(actual.find((row) => row.key === "deepseek:deepseek-v4-pro")?.model.variants).toEqual(twin("deepseek-v4-pro"))
+    expect(actual.find((row) => row.key === "deepseek:deepseek-v4-pro")?.model.variants).toEqual(["低", "中", "高", "最高"])
     expect(actual.find((row) => row.key === "deepseek:deepseek-flash")?.model.variants).toEqual([])
     const air = actual.find((row) => row.key === "zhipuai:glm-4.5-air")!
     expect({ reasoning: air.reasoning, name: air.model.name, variants: air.model.variants, providerID: air.model.providerID }).toEqual({
@@ -213,12 +210,12 @@ describe("BYOK 行的推理档位从平台同名条目或自己的 modelMeta 槽
 
   test("会话投影(composerModelFromRef)对直连 BYOK ref 给出同一份档位,不再回到「不支持」", () => {
     const projected = composerModelFromRef({ providerID: byokEngineId("deepseek"), id: "deepseek-v4-pro", variant: "最高" }, catalog)
-    expect(projected.variants).toEqual(Object.keys(catalog.platformModels.find((model) => model.id === "deepseek-v4-pro")!.variants!))
+    expect(projected.variants).toEqual(Object.keys(catalog.byokProviders.find((provider) => provider.id === "deepseek")!.modelMeta["deepseek-v4-pro"]!.variants!))
     expect(projected.variant).toBe("最高")
     expect(withModelVariant(projected, "不存在").variant).toBeUndefined()
     // 无目录(冷启动首次投影)时仍是空档,不发明。
     expect(composerModelFromRef({ providerID: byokEngineId("deepseek"), id: "deepseek-v4-pro" }, null).variants).toEqual([])
-    // #1267:BYOK-only id 的会话投影从槽拿档位与展示名 —— 否则进会话后 chip 又变回「不支持」。
+    // #1267:glm-4.5-air 的会话投影从 BYOK 目录拿档位 —— 否则进会话后 chip 又变回「不支持」。
     expect(composerModelFromRef({ providerID: byokEngineId("zhipuai"), id: "glm-4.5-air", variant: "关" }, catalog)).toMatchObject({
       name: "glm-4.5-air",
       variants: ["关", "开"], // #1237:关在第一位 —— 上游 smallOptions() 把档位表第一项喂给标题辅助调用
@@ -401,8 +398,10 @@ describe("#679 平台计价二态:要么两个真倍数,要么明说不可用", 
             output: row.pricing.output.toFixed(1),
           })
         : t("alpha.model.pricingUnavailable")
-    // 静态目录(无 V2/LKG,逐行无 pricing)与有 pair 的目录一起过同一条判据。
-    const mixed = [...rows(), ...pricedRows()].filter((row) => row.group === "platform")
+    // 无 pair 的行与有 pair 的行一起过同一条判据。`#1556` 起目录本身不再产出无 pair 的平台行(没有快照 ⇒ 平台段为空),
+    // 这里把 pair 摘掉造一份,守住 pricingStatusText 对这一态的文案。
+    const unpriced = { ...catalog, platformModels: catalog.platformModels.map(({ pricing: _pricing, ...model }) => model) } as EffectiveCatalog
+    const mixed = [...rows({ catalog: unpriced }), ...pricedRows()].filter((row) => row.group === "platform")
     expect(mixed.length).toBeGreaterThan(0)
     try {
       for (const locale of ["zh", "en"] as const) {

@@ -47,7 +47,7 @@ review_after: 2026-10-14
 # ①a 同一个字面量还被抄在**另外三处**,必须同批抬(`#1255`:0.1.10 那次只抬了真源,于是两条
 #    consumer-pin 断言在 alpha 基线上恒红了两天,与任何人的改动无关,并诱发 `--no-verify`):
 #      · packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-640/ledger-page.json 的 consumer_version
-#      · packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json 的 consumer_version
+#      · packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-1556/model-catalog-v3.json 的 consumer_version
 #        (这两格是 alpha-platform 的 cutover gate 读的「本仓已切到哪一版」)
 #      · bun.lock 里 workspaces["packages/ui-mac"].version —— **不要手改**,在仓根跑一次
 #        `bun install` 让 bun 自己写回;漏掉它,之后每一次 bun install(含 worktree-bootstrap.sh)
@@ -202,7 +202,7 @@ grep -c "url: code-puppy-mac-" dist/latest-mac.yml       # 期望 4(两种架构
 > `alpha-platform` 的 cutover gate 读这一格判本仓是否已切:
 >
 > - `packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-640/ledger-page.json`
-> - `packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json`
+> - `packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-1556/model-catalog-v3.json`
 >
 > 不同步 ⇒ `packages/alpha-contracts-consumer/src/contracts.test.ts`
 > (`expect(pin.consumer_version).toBe(shipped.version)`)与

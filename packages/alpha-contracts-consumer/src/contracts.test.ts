@@ -333,11 +333,11 @@ describe("published byte limits", () => {
     const plusOne = await fixture("contracts/v1/fixtures/limits/payload-max-plus-one.json")
     expect(exact.wire_bytes).toBe(NON_STREAMING_PAYLOAD_MAX_BYTES)
     expect(plusOne.wire_bytes).toBe(NON_STREAMING_PAYLOAD_MAX_BYTES + 1)
-    expect(() => decodeJsonContract("ModelCatalogV2", " ".repeat(plusOne.wire_bytes), "model-catalog")).toThrow(
+    expect(() => decodeJsonContract("ModelCatalogV3", " ".repeat(plusOne.wire_bytes), "model-catalog")).toThrow(
       expect.objectContaining({
         // The size-limit branch must also report the contract's own generation — reporting "expected v1"
-        // for a V2 wire would send a maintainer looking at the wrong producer.
-        failure: expect.objectContaining({ reason: "size-limit", expected_version: 2 }),
+        // for a V3 wire would send a maintainer looking at the wrong producer.
+        failure: expect.objectContaining({ reason: "size-limit", expected_version: 3 }),
       }),
     )
   })

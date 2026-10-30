@@ -7,6 +7,8 @@ import { createSignal, type JSX } from "solid-js"
 import { researchTurn } from "../test-component/process-fold.fixture"
 import { installPreloadStub } from "../test-component/preload-stub"
 import catalogJson from "../src/main/alpha-models.json"
+import producer from "../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v3/fixtures/producer/model-catalog.json"
+import { BYOK_ADAPTERS } from "../src/main/byok-adapters"
 import type { EffectiveCatalog, ProviderKeyStatus } from "../src/shared/alpha-model-types"
 import type { AccountSummary } from "../src/preload/types"
 import { projectTimelineRows, type TimelineRow, type TimelineTurnWait } from "../src/renderer/alpha-ui/session-timeline/timeline-model"
@@ -27,7 +29,45 @@ const scene = params.get("scene") ?? "fold-collapsed"
 if (params.get("theme") === "dark") document.documentElement.dataset.colorScheme = "dark"
 
 // ── 数据桩 ─────────────────────────────────────────────────────────────────────
-const catalog = { ...(catalogJson as object), liveSync: { status: "static" }, pricingBasisModelId: null } as EffectiveCatalog
+// `#1556`:已应用目录 = 上游 V3 producer 快照(平台段)+ 随包 BYOK 首启引导 × 适配器表(BYOK 段)。生产投影
+// (main/alpha-live-allowlist.ts projectPlatformModels、main/alpha-models.ts projectByokProviders)所在模块引 node:fs,
+// 进不了浏览器 bundle;bun 测试用的是 test-component/effective-catalog.fixture.ts(走生产投影),这里只为画面照抄字段。
+const catalog = {
+  defaultModel: catalogJson.defaultModel,
+  defaultPlatformModel: catalogJson.defaultPlatformModel,
+  platformProvider: catalogJson.platformProvider,
+  platformModels: producer.value.data.map((row) => ({
+    id: row.id,
+    name: row.display.name,
+    brand: row.display.brand,
+    ...("reasoning" in row.display && row.display.reasoning ? { reasoning: true } : {}),
+    ...("variants" in row.display ? { variants: row.display.variants } : {}),
+    pricing: row.pricing_multiplier,
+  })),
+  byokProviders: catalogJson.byokCatalog.providers.flatMap((provider) => {
+    const adapter = BYOK_ADAPTERS.find((candidate) => candidate.id === provider.id)
+    if (!adapter) return []
+    return [
+      {
+        id: provider.id,
+        name: provider.name,
+        preset: provider.preset,
+        compat: adapter.compat,
+        baseURL: adapter.baseURL,
+        keyEnv: adapter.keyEnv,
+        pico: adapter.pico,
+        models: provider.models.map((model) => model.id),
+        modelMeta: Object.fromEntries(provider.models.map((model) => [model.id, { name: model.name }])),
+        imageInput: Object.fromEntries(provider.models.map((model) => [model.id, model.image_input])),
+      },
+    ]
+  }),
+  presetIds: catalogJson.byokCatalog.providers.filter((provider) => provider.preset).map((provider) => provider.id),
+  liveSync: { status: "cache" },
+  pricingBasisModelId: producer.value.pricing_basis_model_id,
+  applied: { platformFetchedAt: "2026-10-30T00:00:00Z", byokVersion: catalogJson.byokCatalog.catalog_version },
+  downloaded: { platformFetchedAt: "2026-10-30T00:00:00Z", byokVersion: catalogJson.byokCatalog.catalog_version },
+} as unknown as EffectiveCatalog
 const info = (providerID: string, id: string, name = id): ModelV2Info => ({
   id,
   providerID,

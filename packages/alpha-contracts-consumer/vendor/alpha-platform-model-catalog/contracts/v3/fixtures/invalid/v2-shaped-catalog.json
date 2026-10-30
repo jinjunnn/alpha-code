@@ -1,9 +1,7 @@
 {
   "kind": "schema",
-  "contract": "ModelCatalogV2",
-  "consumer": "alpha-code",
-  "consumer_version": "0.1.22",
-  "expect": "valid",
+  "contract": "ModelCatalogV3",
+  "expect": "invalid",
   "value": {
     "schema_version": 2,
     "object": "list",
@@ -22,7 +20,7 @@
         "id": "deepseek-v4-pro",
         "object": "model",
         "provider": "deepseek",
-        "min_plan": "member",
+        "min_plan": "free",
         "pricing_multiplier": {
           "input": 3.1,
           "output": 3.1
@@ -32,7 +30,7 @@
         "id": "glm-5.2",
         "object": "model",
         "provider": "zhipu",
-        "min_plan": "member",
+        "min_plan": "free",
         "pricing_multiplier": {
           "input": 5.4,
           "output": 8.5
@@ -42,7 +40,7 @@
         "id": "glm-5-turbo",
         "object": "model",
         "provider": "zhipu",
-        "min_plan": "member",
+        "min_plan": "free",
         "pricing_multiplier": {
           "input": 8.6,
           "output": 14.3
@@ -52,7 +50,7 @@
         "id": "qwen3.7-max",
         "object": "model",
         "provider": "openrouter",
-        "min_plan": "member",
+        "min_plan": "free",
         "pricing_multiplier": {
           "input": 10.5,
           "output": 15.8
@@ -102,7 +100,7 @@
         "id": "claude-sonnet-5",
         "object": "model",
         "provider": "anthropic",
-        "min_plan": "member",
+        "min_plan": "free",
         "pricing_multiplier": {
           "input": 21.4,
           "output": 53.6
@@ -112,7 +110,7 @@
         "id": "claude-fable-5",
         "object": "model",
         "provider": "anthropic",
-        "min_plan": "member",
+        "min_plan": "free",
         "pricing_multiplier": {
           "input": 71.4,
           "output": 178.6
@@ -122,7 +120,7 @@
         "id": "claude-opus-4.8",
         "object": "model",
         "provider": "anthropic",
-        "min_plan": "member",
+        "min_plan": "free",
         "pricing_multiplier": {
           "input": 35.7,
           "output": 89.3

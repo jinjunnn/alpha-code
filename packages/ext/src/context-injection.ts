@@ -467,7 +467,7 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   defineReference({ id: "ref.plugin", pointer: "/plugin", note: "@alpha-code/ext 自包含 bundle 的绝对路径(alpha-config-injection.ts:105-109);bundle 里 alpha 的字各自登记在本簿" }),
   defineReference({ id: "ref.enabled_providers", pointer: "/enabled_providers", note: "provider 白名单 id(alpha-models.ts,含用户 opencode.jsonc 里的 id);不进模型上下文" }),
   defineReference({ id: "ref.model", pointer: "/model", note: "默认模型 <providerID>/<modelID>(alpha-models.ts);引擎把选中模型的 id 原样写进 environment 段(session/system.ts:74),那是 catalog / 上游厂商的 id,不是 alpha 的字" }),
-  defineReference({ id: "ref.provider", pointer: "/provider", note: "模型菜单:npm / 展示名 / baseURL / {file:} 密钥引用 / 档位 options(alpha-models.ts,数据在 alpha-models.json);展示名只进 picker,不进模型上下文" }),
+  defineReference({ id: "ref.provider", pointer: "/provider", note: "模型菜单:npm / 展示名 / baseURL / {file:} 密钥引用 / 档位 options(alpha-models.ts;模型与展示数据在已应用目录,BYOK 的 baseURL 在 byok-adapters.ts);展示名只进 picker,不进模型上下文" }),
 ])
 
 const BY_ID: ReadonlyMap<string, ContextInjection> = new Map(CONTEXT_INJECTIONS.map((f) => [f.id, f]))

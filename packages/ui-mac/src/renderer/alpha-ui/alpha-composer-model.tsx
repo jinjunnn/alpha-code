@@ -434,6 +434,18 @@ export function ModelPickPop(props: {
     if (!current || !basis) return null
     return current.platformModels.find((model) => model.id === basis)?.name ?? basis
   })
+  // `#1556` AC1:没有已应用的平台快照 ⇒ 平台段为空,如实说「尚未获取」(不回退任何随包清单,也就没有价格可说)。
+  // 未登录时沿用既有 IA(统一登录入口),不铺这条空态。
+  const platformNotLoaded = createMemo(() => catalog()?.liveSync.status === "static" && accountState() !== "out")
+  // `#1556` AC9:「已下载」与「已应用」不同 ⇒ 新清单要等引擎下次启动才生效;选择器继续显示正在用的那份。
+  const catalogPending = createMemo(() => {
+    const current = catalog()
+    return (
+      !!current &&
+      (current.applied.platformFetchedAt !== current.downloaded.platformFetchedAt ||
+        current.applied.byokVersion !== current.downloaded.byokVersion)
+    )
+  })
   const memberPlanName = createMemo(() => {
     const current = summary()
     const plan = current.status === "ready" ? current.data?.plan : undefined
@@ -636,6 +648,13 @@ export function ModelPickPop(props: {
       </Show>
 
       <div class="a-mpp-scroll">
+        <Show when={platformNotLoaded()}>
+          <div class="a-pop-label">{t("alpha.model.platformGroup")}</div>
+          <div class="a-mpp-platform-empty" role="status">
+            <strong>{t("alpha.model.platformNotLoaded")}</strong>
+            <span>{t("alpha.model.platformNotLoadedDetail")}</span>
+          </div>
+        </Show>
         <Show when={platformRows().length}>
           <div class="a-pop-label">{t("alpha.model.platformGroup")}</div>
           <Show when={pricingBasisName()}>
@@ -704,6 +723,11 @@ export function ModelPickPop(props: {
           }}
           onSaved={retryAll}
         />
+      </Show>
+      <Show when={catalogPending()}>
+        <div class="a-mpp-foot" role="status">
+          {t("alpha.model.catalogPending")}
+        </div>
       </Show>
     </div>
   )

@@ -46,8 +46,9 @@ import type {
 } from "../shared/automation-types"
 import type {
   AlphaModelCatalog,
-  CatalogRefreshFailure,
+  CatalogRefreshHealth,
   EffectiveCatalog,
+  PlatformModelDisplay,
   PricingMultiplier,
   ProviderAddressRejection,
   ProviderInput,
@@ -56,7 +57,7 @@ import type {
   ProviderTestInput,
   ProviderTestResult,
 } from "../shared/alpha-model-types"
-export type { CatalogRefreshFailure } from "../shared/alpha-model-types"
+export type { CatalogRefreshFailure, CatalogRefreshHealth } from "../shared/alpha-model-types"
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -168,9 +169,17 @@ export type FatalRendererError = {
 // remain in @alpha-code/contracts-consumer; this type intentionally carries no producer payload.
 export type ContractFailure = {
   code: "contract-incompatible"
-  surface: "identity" | "endpoint-discovery" | "account" | "model-catalog" | "cloud-http" | "cloud-mcp" | "artifact"
-  /** #681:代际是**逐契约**的 —— `/v1/models` 期望 ModelCatalogV2,其余 wire 仍是第 1 代。 */
-  expected_version: 1 | 2
+  surface:
+    | "identity"
+    | "endpoint-discovery"
+    | "account"
+    | "model-catalog"
+    | "byok-catalog"
+    | "cloud-http"
+    | "cloud-mcp"
+    | "artifact"
+  /** #681:代际是**逐契约**的 —— `/v1/models` 期望 ModelCatalogV3(`#1556`),其余 wire 仍是第 1 代。 */
+  expected_version: 1 | 3
   received_version: number | "missing" | "unknown"
   reason: "schema-validation" | "size-limit" | "route-purpose-mismatch"
 }
@@ -504,7 +513,13 @@ export type CloudUploadResult =
 /** B gateway /v1/models 的一条 live 模型(真相源 allowlist)。 */
 /** #681 / ADR-039:`pricing` 是**必填**的 —— ModelCatalogV2 每一行都携带双倍数,一行没有 pair 的
  *  目录不是「少了点数据」,而是整份不兼容(fetch 侧就整份拒绝了,不会到这里)。 */
-export type PlatformLiveModel = { id: string; provider?: string; minPlan?: string; pricing: PricingMultiplier }
+export type PlatformLiveModel = {
+  id: string
+  provider?: string
+  minPlan?: string
+  pricing: PricingMultiplier
+  display: PlatformModelDisplay
+}
 
 // REQ-093(#185):run artifact manifest 只读查询面的共享形状。真源在 main 侧 electron-free 模块
 // (artifact-manifest / artifact-service);type-only 引入,renderer 拿到 descriptor + 本地状态
@@ -1361,10 +1376,10 @@ export type ElectronAPI = {
   // B 网关 edition 白名单收窄 + liveSync 来源标注;`#1555` 起平台段 = fork 前钉住的已应用目录)。
   models: {
     catalog: () => Promise<EffectiveCatalog>
-    /** #1084:最近一次目录刷新的失败结局(`null` = 成功)。启动那次刷新早于 renderer 挂载,
-     *  所以出口必须同时提供「当前值」与「后续变化」两条。 */
-    refreshHealth: () => Promise<CatalogRefreshFailure | null>
-    subscribeRefreshHealth: (cb: (failure: CatalogRefreshFailure | null) => void) => () => void
+    /** #1084:最近一次目录刷新的失败结局,`#1556` 起两份目录各一格(`null` = 那一份最近一次成功)。
+     *  启动那次刷新早于 renderer 挂载,所以出口必须同时提供「当前值」与「后续变化」两条。 */
+    refreshHealth: () => Promise<CatalogRefreshHealth>
+    subscribeRefreshHealth: (cb: (health: CatalogRefreshHealth) => void) => () => void
   }
   // custom provider add/test (writes alpha.jsonc provider[], respawns sidecar; 1-token probe).
   providers: {

@@ -42,7 +42,7 @@ const CONSUMER_PIN_DIR = "packages/alpha-contracts-consumer/fixtures/consumers"
 /** 今天已知的两份 pin。枚举退化成零命中时,这两条会当场红 —— 空输出不是结论。 */
 const KNOWN_CONSUMER_PINS = [
   "packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-640/ledger-page.json",
-  "packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json",
+  "packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-1556/model-catalog-v3.json",
 ]
 
 /**

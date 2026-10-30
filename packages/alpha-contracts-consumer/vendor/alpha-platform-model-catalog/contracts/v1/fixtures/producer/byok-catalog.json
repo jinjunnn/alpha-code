@@ -1,0 +1,139 @@
+{
+  "kind": "schema",
+  "contract": "ByokCatalogV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "catalog_version": 1,
+    "published_at": "2026-10-30T00:00:00Z",
+    "providers": [
+      {
+        "id": "deepseek",
+        "name": "DeepSeek",
+        "brand": "deepseek",
+        "preset": true,
+        "models": [
+          {
+            "id": "deepseek-flash",
+            "name": "deepseek-flash",
+            "image_input": false
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro",
+            "reasoning": true,
+            "variants": {
+              "低": {
+                "reasoningEffort": "low"
+              },
+              "中": {
+                "reasoningEffort": "medium"
+              },
+              "高": {
+                "reasoningEffort": "high"
+              },
+              "最高": {
+                "reasoningEffort": "max"
+              }
+            },
+            "image_input": false
+          }
+        ]
+      },
+      {
+        "id": "zhipuai",
+        "name": "智谱 GLM",
+        "brand": "zhipu",
+        "preset": true,
+        "models": [
+          {
+            "id": "glm-5.2",
+            "name": "GLM-5.2",
+            "reasoning": true,
+            "variants": {
+              "高": {
+                "reasoningEffort": "high"
+              },
+              "最高": {
+                "reasoningEffort": "max"
+              }
+            },
+            "image_input": false
+          },
+          {
+            "id": "glm-4.5-air",
+            "name": "GLM-4.5-Air",
+            "reasoning": true,
+            "variants": {
+              "关": {
+                "thinking": {
+                  "type": "disabled"
+                }
+              },
+              "开": {
+                "thinking": {
+                  "type": "enabled"
+                }
+              }
+            },
+            "image_input": false
+          }
+        ]
+      },
+      {
+        "id": "minimax",
+        "name": "MiniMax",
+        "brand": "minimax",
+        "preset": false,
+        "models": [
+          {
+            "id": "MiniMax-M2",
+            "name": "MiniMax-M2",
+            "image_input": false
+          }
+        ]
+      },
+      {
+        "id": "alibaba",
+        "name": "通义千问 Qwen",
+        "brand": "qwen",
+        "preset": true,
+        "models": [
+          {
+            "id": "qwen3.8-max",
+            "name": "qwen3.8-max",
+            "image_input": true
+          },
+          {
+            "id": "qwen-plus",
+            "name": "qwen-plus",
+            "image_input": false
+          },
+          {
+            "id": "qwen3-coder-plus",
+            "name": "qwen3-coder-plus",
+            "image_input": false
+          }
+        ]
+      },
+      {
+        "id": "moonshot",
+        "name": "Kimi (Moonshot)",
+        "brand": "moonshot",
+        "preset": true,
+        "models": [
+          {
+            "id": "kimi-k3",
+            "name": "kimi-k3",
+            "image_input": true
+          },
+          {
+            "id": "kimi-k2.6",
+            "name": "kimi-k2.6",
+            "image_input": true
+          }
+        ]
+      }
+    ]
+  }
+}

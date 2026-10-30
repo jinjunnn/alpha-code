@@ -65,8 +65,11 @@ for (const theme of ["dark", "light"] as const) {
           waitUntil: "networkidle",
         })
         const chip = page.locator(".a-chip-model")
-        const model = await Bun.file(resolve("src/main/alpha-models.json")).json()
-        const name = model.platformModels[0].name
+        // `#1556`:harness 的当前模型 = 已应用平台目录的第一个(上游 V3 producer fixture,见 test-visual/main.tsx)。
+        const producer = await Bun.file(
+          resolve("../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v3/fixtures/producer/model-catalog.json"),
+        ).json()
+        const name = producer.value.data[0].display.name
         await chip.locator(".a-chip-label").filter({ hasText: name }).waitFor()
         await page.evaluate(() =>
           document.querySelectorAll("style, link[rel='stylesheet']").forEach((node) => node.remove()),

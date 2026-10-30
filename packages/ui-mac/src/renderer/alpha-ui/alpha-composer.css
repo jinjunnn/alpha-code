@@ -442,6 +442,34 @@
   background: var(--a-accent);
   flex: none;
 }
+/* `#1556`:平台清单尚未获取的空态(批准稿 docs/design/2026-10-30-req236-model-picker/frame.html#versions)。 */
+.a-mpp-platform-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 6px 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--a-border);
+  border-radius: var(--a-radius-md);
+  font-size: var(--a-text-xs);
+  line-height: 1.5;
+  color: var(--a-text-secondary);
+}
+.a-mpp-platform-empty strong {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+/* `#1556`:弹层底部「新清单待生效」一行(中性色、无按钮)。 */
+.a-mpp-foot {
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+  font-size: var(--a-text-xs);
+  line-height: 1.5;
+  color: var(--a-text-secondary);
+}
 .a-mpp-empty {
   padding: 18px;
   text-align: center;

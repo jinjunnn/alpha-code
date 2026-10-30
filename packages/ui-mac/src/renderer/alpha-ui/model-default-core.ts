@@ -43,7 +43,7 @@ export type ModelResolveCtx = {
     defaultPlatformModel: string | null
     /** 刻意**不含** pricing:解析链根本不该看见价格 —— 看得见就迟早会拿它排序。 */
     platformModels: Array<{ id: string; name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }>
-    /** REQ-153 #1267:BYOK-only id 的元数据槽(`modelMeta`)也在这里派生档位;与 picker 行 / 注入同一函数。
+    /** BYOK 目录的逐模型元数据(`modelMeta`),第③级自动默认在这里派生档位;与 picker 行 / 注入同一函数。
      *  必填 —— 漏传它,glm-4.5-air 自动默认时会静默回到零档。 */
     byokProviders: Array<Pick<ByokProvider, "id" | "modelMeta">>
   } | null
@@ -107,7 +107,7 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
     if (pid === ctx.platformProviderId) continue
     const m = ctx.engineModels.find((e) => e.providerID === pid)
     if (!m) continue
-    // REQ-153 #1266:目录 BYOK 节点的档位与 picker 行同一份派生(平台同名条目);用户自定义节点仍无档
+    // REQ-153 #1266:目录 BYOK 节点的档位与 picker 行同一份派生(BYOK 目录自己的元数据,`#1556`);用户自定义节点仍无档
     // (它们的档位表只在引擎清单里,本解析链看不见)。
     const variants =
       isByokEngineId(m.providerID) && cat ? Object.keys(byokModelMeta(cat, m.providerID, m.id).variants ?? {}) : []
