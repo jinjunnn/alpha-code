@@ -161,6 +161,7 @@ import { awaitBootRenewalGrace, createAuthRenewalScheduler } from "./auth-renewa
 import {
   armRespawnGenerationTerminal,
   createSidecarRespawnQueue,
+  planUnhealthyForkRetry,
   type SidecarRespawnTrigger,
 } from "./sidecar-lifecycle"
 import { armBootGenerationTerminal, createSidecarGenerationState, type SidecarGenerationState } from "./sidecar-generation"
@@ -1385,6 +1386,21 @@ const main = Effect.gen(function* () {
     // 一经武装就独占发布权;它武装之前出错的路径由下面的 catch 兜住那唯一一个 failed。
     let announcedGeneration: number | null = null
     let terminal: Promise<boolean> | null = null
+    // REQ-236 `#1562`:credential-change 的 fork 没健康完成 ⇒ 经崩溃自愈同一阶梯排一次有界重试(planUnhealthyForkRetry)。
+    const retryUnhealthyFork = () => {
+      const plan = planUnhealthyForkRetry({ trigger, timerArmed: selfHealTimer !== null, selfHeal, now: Date.now() })
+      if (!plan) return
+      selfHeal = plan.state
+      if (plan.action === "give-up") {
+        writeLog("utility", "credential-change respawn keeps failing — self-heal gave up", { attempts: selfHeal.attempts }, "error")
+        return
+      }
+      writeLog("utility", "credential-change respawn unhealthy — retry scheduled", { delayMs: plan.delayMs, attempt: selfHeal.attempts }, "warn")
+      selfHealTimer = setTimeout(() => {
+        selfHealTimer = null
+        void requestSidecarRespawn?.(trigger)
+      }, plan.delayMs)
+    }
     try {
       logger.log("respawning sidecar", { reason: trigger })
       const lockedSweep = withConfigWriteLock(() => ({
@@ -1476,6 +1492,7 @@ const main = Effect.gen(function* () {
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
       const healthy = await terminal
       if (healthy) markTokenGenerationApplied(forkTokenGeneration)
+      else retryUnhealthyFork()
       // #564:respawn 侧与 boot 同判据 —— 只有健康且注入完好才武装 catalog-liveness 看门狗。
       if (healthy && !injectionFailure && spawnGen === sidecarGen) armCatalogLivenessWatchdog(spawnGen)
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {
@@ -1494,6 +1511,8 @@ const main = Effect.gen(function* () {
       // 这里补上那唯一一个 failed,绝不让 generation 停在 recovering。
       if (announcedGeneration !== null && !terminal)
         publishSidecarGeneration({ status: "failed", generation: announcedGeneration, reason: "structural" })
+      // fork 在子进程起来之前就失败(spawn reject)也走这里:server 仍为 null,handleSidecarExit 不会接手。
+      if (announcedGeneration !== null) retryUnhealthyFork()
       return false
     }
   }

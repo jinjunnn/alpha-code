@@ -180,7 +180,7 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     lines: 1,
   },
   "packages/ui-mac/src/main/sidecar-lifecycle.test.ts": {
-    why: "锚 index.ts 的 doRespawnSidecar:时间线 fork.start 写具名 trigger、捕获代 → kill → 健康终态 → markTokenGenerationApplied 的先后与唯一性。两个不会让它变红的变异:①在 healthy 判定前把 forkTokenGeneration 改写成 getTokenGeneration() 的新值;②给 markStartupTimeline 传一个被别处覆盖过的 trigger 变量(那一行文本逐字未变)。index.ts 结构上进不了 bun;行为判据在 credential-hot-apply.test.ts。",
+    why: "锚 index.ts 的 doRespawnSidecar:时间线 fork.start 写具名 trigger、捕获代 → kill → 健康终态 → markTokenGenerationApplied 的先后与唯一性,以及没健康 / fork 前失败两条路都接 planUnhealthyForkRetry。两个不会让它变红的变异:①在 healthy 判定前把 forkTokenGeneration 改写成 getTokenGeneration() 的新值;②给 markStartupTimeline 传一个被别处覆盖过的 trigger 变量(那一行文本逐字未变)。index.ts 结构上进不了 bun;行为判据在 credential-hot-apply.test.ts。",
     evidence: "#1562",
     lines: 1,
   },

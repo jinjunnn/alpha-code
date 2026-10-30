@@ -63,7 +63,8 @@ const { getAuthState, getTokenGeneration, initAuthEnv, markTokenGenerationApplie
 const { applyPlatformCredentialsHot, secretFilePath, syncSecretFiles, writeSecretFileAtomic } = await import(
   "./alpha-secret-files"
 )
-const { armRespawnGenerationTerminal, createSidecarRespawnQueue } = await import("./sidecar-lifecycle")
+const { armRespawnGenerationTerminal, createSidecarRespawnQueue, planUnhealthyForkRetry } = await import("./sidecar-lifecycle")
+const { initialSelfHealState, noteSpawn } = await import("./sidecar-self-heal")
 
 const PURPOSES = ["model.invoke", "cloud.dispatch", "cloud.read", "artifact.read", "account.read"] as const
 const MANAGED_ENV = ["ALPHA_API_KEY", "ALPHA_CLOUD_TOKEN", "ALPHA_MCP_TOKEN", "ALPHA_BASE_URL", "ALPHA_CLOUD_MCP_URL", "DEV_PLATFORM_TOKEN"]
@@ -166,6 +167,10 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // 用了假时钟的用例若中途断言失败,它挂着的有界等待(10 秒)要先走完,否则单飞的 refreshing 会把下一条用例卡住。
+  try {
+    vi.advanceTimersByTime(60_000)
+  } catch {}
   vi.useRealTimers()
   // 哨兵臂(每条用例都过):签出去的令牌一个都不进日志、不进推给 renderer 的 auth 状态。
   const surfaces = `${logged.join("\n")}\n${JSON.stringify(pushed)}`
@@ -201,21 +206,36 @@ describe("AC1 同身份普通续期热应用,不重启引擎", () => {
 })
 
 describe("AC4 凭据在场性改变或热写失败 ⇒ structural,只认捕获代 ≥ 本次续期代的健康 fork", () => {
-  /** index.ts 的 respawn 队列 + doRespawnSidecar 确认 glue(见文件头)。`forks` 依次给出每次 fork 的 spawning。 */
-  function structuralHarness(forked: Set<string>, forks: Array<() => Promise<{ health: { wait: Promise<unknown> } }>>) {
+  type Fork = () => Promise<{ health: { wait: Promise<unknown> } }>
+  const failingFork: Fork = () => Promise.reject(new Error("fork failed"))
+  /** index.ts 的 respawn 队列 + doRespawnSidecar 的确认与失败重试 glue(见文件头)。`forks` 依次给出每次 fork 的
+   *  spawning,用完之后一律是 `fallback`(缺省:fork 在子进程起来之前就失败)。 */
+  function structuralHarness(forked: Set<string>, forks: Fork[], fallback: Fork = failingFork) {
     const terminals: SidecarGenerationState[] = []
     let generation = 0
+    let selfHeal = initialSelfHealState()
+    let selfHealTimer: ReturnType<typeof setTimeout> | null = null
     const request = createSidecarRespawnQueue(async (trigger) => {
       respawns.push(trigger)
       const captured = getTokenGeneration()
+      selfHeal = noteSpawn(selfHeal, Date.now())
       const healthy = await armRespawnGenerationTerminal({
         generation: ++generation,
-        spawning: forks.shift()!(),
+        spawning: (forks.shift() ?? fallback)(),
         timeoutMs: RESPAWN_TERMINAL_MS,
         publish: (state) => terminals.push(state),
         logError: () => {},
       })
       if (healthy) markTokenGenerationApplied(captured)
+      else {
+        const plan = planUnhealthyForkRetry({ trigger, timerArmed: selfHealTimer !== null, selfHeal, now: Date.now() })
+        if (plan) selfHeal = plan.state
+        if (plan?.action === "heal")
+          selfHealTimer = setTimeout(() => {
+            selfHealTimer = null
+            void request(trigger)
+          }, plan.delayMs)
+      }
       return healthy
     })
     setAuthDeps({
@@ -262,15 +282,40 @@ describe("AC4 凭据在场性改变或热写失败 ⇒ structural,只认捕获�
     await flush()
     vi.advanceTimersByTime(ROTATION_WAIT_MS)
     expect(await pending).toMatchObject({ outcome: "refreshed", applied: false })
+    // 每一次 fork(含阶梯重试)都失败 ⇒ 没有一次确认。
+    expect(respawns.length).toBeGreaterThan(0)
+    expect(new Set(respawns)).toEqual(new Set(["credential-change"]))
+    expect(new Set(harness.terminals.map((state) => state.status))).toEqual(new Set(["failed"]))
+    expect(getAuthState().platformStatus).toBe("recovering")
+  })
+
+  test("fork 失败 ⇒ 经崩溃自愈阶梯到时自动重试一次;这次健康后确认,平台态回到 ready", async () => {
+    const forked = loginAndFork(false)
+    vi.useFakeTimers()
+    const harness = structuralHarness(forked, [failingFork, () => Promise.resolve({ health: { wait: Promise.resolve("ok") } })])
+    serveRenewal("SENTINEL-RETRY", true)
+    const pending = refreshTokens()
+    await flush()
     expect(respawns).toEqual(["credential-change"])
     expect(harness.terminals.map((state) => state.status)).toEqual(["failed"])
     expect(getAuthState().platformStatus).toBe("recovering")
+    // 阶梯第一级是 1 秒:不到时间不重试,到时间恰好重试一次。
+    vi.advanceTimersByTime(999)
+    await flush()
+    expect(respawns).toEqual(["credential-change"])
+    vi.advanceTimersByTime(1)
+    await flush()
+    expect(respawns).toEqual(["credential-change", "credential-change"])
+    expect(harness.terminals.map((state) => state.status)).toEqual(["failed", "ready"])
+    expect(await pending).toMatchObject({ outcome: "refreshed", applied: true })
+    expect(getAuthState().platformStatus).toBe("ready")
   })
 
   test("fork 20 秒不健康 ⇒ 超时终态 failed,不确认;平台态保持 recovering", async () => {
     const forked = loginAndFork(false)
     vi.useFakeTimers()
-    const harness = structuralHarness(forked, [() => Promise.resolve({ health: { wait: new Promise(() => {}) } })])
+    const neverHealthy: Fork = () => Promise.resolve({ health: { wait: new Promise(() => {}) } })
+    const harness = structuralHarness(forked, [neverHealthy], neverHealthy)
     serveRenewal("SENTINEL-TIMEOUT", true)
     const pending = refreshTokens()
     await flush()
@@ -279,7 +324,8 @@ describe("AC4 凭据在场性改变或热写失败 ⇒ structural,只认捕获�
     expect(harness.terminals).toEqual([])
     vi.advanceTimersByTime(RESPAWN_TERMINAL_MS)
     await flush()
-    expect(harness.terminals.map((state) => state.status)).toEqual(["failed"])
+    expect(harness.terminals.map((state) => state.status)[0]).toBe("failed")
+    expect(new Set(harness.terminals.map((state) => state.status))).toEqual(new Set(["failed"]))
     expect(getAuthState().platformStatus).toBe("recovering")
   })
 
@@ -313,7 +359,8 @@ describe("AC4 凭据在场性改变或热写失败 ⇒ structural,只认捕获�
     expect(getAuthState().platformStatus).toBe("recovering")
     vi.advanceTimersByTime(ROTATION_WAIT_MS)
     expect(await pending).toMatchObject({ outcome: "refreshed", applied: false })
-    expect(respawns).toEqual(["byok-change", "credential-change"])
+    expect(respawns.slice(0, 2)).toEqual(["byok-change", "credential-change"])
+    expect(new Set(respawns.slice(1))).toEqual(new Set(["credential-change"]))
     expect(getAuthState().platformStatus).toBe("recovering")
   })
 })

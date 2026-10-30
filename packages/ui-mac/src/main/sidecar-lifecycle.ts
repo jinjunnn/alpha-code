@@ -1,4 +1,5 @@
 import type { SidecarGenerationState } from "../preload/types"
+import { planSelfHeal, type SelfHealPlan, type SelfHealState } from "./sidecar-self-heal"
 
 /**
  * REQ-236 §2.6(`#1562`):引擎重启只由 main 按白名单决定,每一次都带一个具名原因写进
@@ -19,6 +20,23 @@ export const SIDECAR_RESPAWN_TRIGGERS = [
   "retry-engine",
 ] as const
 export type SidecarRespawnTrigger = (typeof SIDECAR_RESPAWN_TRIGGERS)[number]
+
+/**
+ * REQ-236 `#1562`:一次 `credential-change` 重启没能健康完成(fork 在子进程起来之前失败 / 健康失败 / 20 秒超时)之后,
+ * 要不要、多久之后再试。不再试的话:这次 fork 的 syncSecretFiles 已经把在场集合记成新的(server.ts forkedSecrets),
+ * 下一次续期判 `applied` 不再重启,而确认只认健康 fork ⇒ 平台态停在 recovering。
+ * 走崩溃自愈的同一个阶梯(planSelfHeal:1s → 16s,连续 5 次后放弃;健康运行满 60 秒才清零),所以有界,与崩溃共用一份计数;
+ * 崩溃路径(handleSidecarExit)已经排了定时器就不再排第二个。其它 trigger 的失败处理不变。
+ */
+export function planUnhealthyForkRetry(input: {
+  trigger: SidecarRespawnTrigger
+  timerArmed: boolean
+  selfHeal: SelfHealState
+  now: number
+}): SelfHealPlan | undefined {
+  if (input.trigger !== "credential-change" || input.timerArmed) return undefined
+  return planSelfHeal(input.selfHeal, input.now)
+}
 
 // #600 B1:respawn 一旦发出 recovering,终态必须可达 —— 与 boot 侧 armBootGenerationTerminal
 // 同构:从 spawn promise 起就活在普通 promise 链上,三条路(spawn 在返回 health 之前失败 /

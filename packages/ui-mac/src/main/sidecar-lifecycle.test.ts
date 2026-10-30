@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import { initialSelfHealState, noteSpawn, SELF_HEAL_MAX_ATTEMPTS } from "./sidecar-self-heal"
 import { join } from "node:path"
 import type { SidecarGenerationState } from "../preload/types"
 import {
   armRespawnGenerationTerminal,
   createSidecarRespawnQueue,
+  planUnhealthyForkRetry,
   SIDECAR_RESPAWN_TRIGGERS,
   type SidecarRespawnTrigger,
 } from "./sidecar-lifecycle"
@@ -45,6 +47,37 @@ describe("sidecar respawn triggers", () => {
     await active
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(runs).toEqual(["byok-change", "credential-change"])
+  })
+})
+
+// REQ-236 `#1562`:credential-change 的 fork 没健康 ⇒ 走崩溃自愈同一阶梯重试,有界;其它原因、或崩溃路径已排了定时器 ⇒ 不排。
+describe("unhealthy credential-change fork retry", () => {
+  test("only credential-change retries, and never on top of an armed self-heal timer", () => {
+    const selfHeal = noteSpawn(initialSelfHealState(), 1_000)
+    const others = SIDECAR_RESPAWN_TRIGGERS.filter((trigger) => trigger !== "credential-change")
+    expect(others.map((trigger) => planUnhealthyForkRetry({ trigger, timerArmed: false, selfHeal, now: 2_000 }))).toEqual(
+      others.map(() => undefined),
+    )
+    expect(planUnhealthyForkRetry({ trigger: "credential-change", timerArmed: true, selfHeal, now: 2_000 })).toBeUndefined()
+    expect(planUnhealthyForkRetry({ trigger: "credential-change", timerArmed: false, selfHeal, now: 2_000 })).toEqual({
+      action: "heal",
+      delayMs: 1_000,
+      state: { attempts: 1, lastSpawnAt: 1_000 },
+    })
+  })
+
+  test("consecutive unhealthy forks climb the self-heal ladder and give up after its bound", () => {
+    let selfHeal = initialSelfHealState()
+    const delays: number[] = []
+    for (let now = 1_000; ; now += 1_000) {
+      selfHeal = noteSpawn(selfHeal, now)
+      const plan = planUnhealthyForkRetry({ trigger: "credential-change", timerArmed: false, selfHeal, now: now + 500 })!
+      selfHeal = plan.state
+      if (plan.action === "give-up") break
+      delays.push(plan.delayMs)
+    }
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000])
+    expect(delays).toHaveLength(SELF_HEAL_MAX_ATTEMPTS)
   })
 })
 
@@ -207,6 +240,10 @@ test("ANCHOR (not a gate): #1562 respawn 时间线写具名原因,确认只挂�
   const kill = respawn.indexOf("await killSidecar()")
   const healthy = respawn.indexOf("const healthy = await terminal")
   const confirm = respawn.indexOf("if (healthy) markTokenGenerationApplied(forkTokenGeneration)")
+  // 没健康(健康失败 / 超时)与 fork 在子进程起来前就失败(catch)两条路都排有界重试。
+  expect(respawn).toContain("if (healthy) markTokenGenerationApplied(forkTokenGeneration)\n      else retryUnhealthyFork()")
+  expect(respawn).toContain("if (announcedGeneration !== null) retryUnhealthyFork()")
+  expect(respawn).toContain("planUnhealthyForkRetry({ trigger, timerArmed: selfHealTimer !== null, selfHeal, now: Date.now() })")
   expect(capture).toBeGreaterThan(-1)
   expect(kill).toBeGreaterThan(capture)
   expect(confirm).toBeGreaterThan(healthy)
