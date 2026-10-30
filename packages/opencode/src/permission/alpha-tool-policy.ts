@@ -186,12 +186,22 @@ export interface ResolveCapsInput {
   readonly hardDeny?: readonly string[]
 }
 
-/** 当轮 snapshot(§6:目录/预批/inventory 可用;executor 不得拿它替代 `resolve` 的重读)。 */
+/** 当轮 snapshot(§6:目录/预批/inventory 可用;executor 每次调用重新取一份,不缓存)。 */
 export interface ToolPolicySnapshot {
   readonly partition: ToolPolicyPartition
   readonly managed: ManagedPolicyResult
   readonly user: ToolPolicyUserLayer
   readonly load: PolicyLoadResult
+  /**
+   * REQ-236 C2(#1574):用户文档的修订号 —— 身份轴会话放行绑定它(`<bindingDigest>@<revision>`)。
+   * 分区按项目,所以同项目任一工作目录写策略,所有实例里的旧放行一起失效,不用枚举实例。
+   */
+  readonly revision: string
+}
+
+/** 已加载 records 的摘要;文档缺席 / 隔离时就是那个状态名。 */
+export function policyRevision(load: PolicyLoadResult): string {
+  return load.status === "ok" ? canonicalJsonDigest(load.doc.records) : load.status
 }
 
 export function userLayerFrom(load: PolicyLoadResult): ToolPolicyUserLayer {
@@ -248,7 +258,13 @@ export const layer = (options?: LayerOptions) =>
         const managed = yield* Effect.promise(managedRead)
         const part = yield* partition
         const loaded = loadPolicyDocument(baseDir, part)
-        return { partition: part, managed, user: userLayerFrom(loaded), load: loaded } satisfies ToolPolicySnapshot
+        return {
+          partition: part,
+          managed,
+          user: userLayerFrom(loaded),
+          load: loaded,
+          revision: policyRevision(loaded),
+        } satisfies ToolPolicySnapshot
       })
 
       const resolve = Effect.fn("AlphaToolPolicy.resolve")(function* (

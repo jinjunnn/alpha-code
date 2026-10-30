@@ -430,57 +430,59 @@ describe("后置 allow / approved 覆盖不了 kill-switch", () => {
 })
 
 // 上面那个骨架的前提是:钩子**无条件**先于传输执行,任何 permission 结论都插不进钩子与传输
-// 之间去改写它。#1129(#724 §6)把 identity ask 上移到钩子之前(E1/E3 在 register 的
-// identityGate、E4 在 invokeChildTool 顶部),钩子与传输之间从此不允许再出现任何 ask ——
-// 那正是旧形态里「once 被问两次 / permission 站在钩子之后」的位置。上游 sync 一旦把 trigger
-// 挪到传输之后、删掉、或把 ask 塞回钩子后面,这里必须立刻变红。
-describe("上游次序前提(#1129:identity ask 早于 trigger,trigger 早于传输)", () => {
+// 之间去改写它。#1574(REQ-236 C2,方案 §2.5)把身份轴拆成两段:`decide`(文档轴 deny)在钩子之前,
+// `confirm`(那一问 + 批准后复核)在钩子之后、传输之前 —— 问的是钩子改过的参数,而 kill-switch 钩子
+// 抛出时那一问根本不会发生。上游 sync 一旦把 trigger 挪到传输之后、删掉、或在 confirm 之外再塞一个
+// ask 进钩子与传输之间,这里必须立刻变红。
+describe("上游次序前提(#1574:decide 早于 trigger,trigger 早于 confirm,confirm 早于传输)", () => {
   const repoRoot = join(import.meta.dir, "..", "..", "..")
 
-  test("普通 MCP 链:identity 闸在 register 咽喉上,MCP 循环里 trigger 直达传输、其后再无 ask", () => {
+  test("普通链:register 咽喉的 wrapper 里 decide → trigger → confirm → 实现;MCP 循环里不再有钩子与 ask", () => {
     const body = readFileSync(join(repoRoot, "packages/opencode/src/session/tools.ts"), "utf8")
-    // ① register 咽喉上的 identity 闸在:闸在 wrapper、钩子在被包的 execute 内,
-    //    「ask 早于 trigger」是结构性的,不靠行序纪律。#1129 reopen 后 wrapper 里的载体
-    //    是共享 gate(gateToolExecution:文档轴 deny → 单次 Permission.ask),锚点随之换。
+    // ① register 咽喉上的 wrapper:次序在 wrapper 里是结构性的,五个分支共用。
     const gate = body.indexOf("const identityGate")
     expect(gate).toBeGreaterThanOrEqual(0)
     const registerFn = body.indexOf("const register =", gate)
     expect(registerFn).toBeGreaterThan(gate)
-    const gateCall = body.indexOf("AlphaToolPolicyGate.gateToolExecution(", gate)
-    expect(gateCall).toBeGreaterThan(gate)
-    expect(gateCall).toBeLessThan(registerFn)
+    const decide = body.indexOf("AlphaToolPolicyGate.decide(", gate)
+    const trigger = body.indexOf('"tool.execute.before"', gate)
+    const confirm = body.indexOf("AlphaToolPolicyGate.confirm(", gate)
+    const impl = body.indexOf("execute.call(value, args, options)", gate)
+    expect(decide).toBeGreaterThan(gate)
+    expect(trigger).toBeGreaterThan(decide)
+    expect(confirm).toBeGreaterThan(trigger)
+    expect(impl).toBeGreaterThan(confirm)
+    expect(impl).toBeLessThan(registerFn)
     expect(body.indexOf("identityGate(value, display)", registerFn)).toBeGreaterThan(registerFn)
-    // ①b gate 模块内部:deny 判定之后恰有一次 permission.ask(单一问询点;findLast 组合在其中)。
+    // ①b gate 模块内部:confirm 里恰有一次 permission.ask(单一问询点;findLast 组合在其中)。
     const gateBody = readFileSync(join(repoRoot, "packages/opencode/src/permission/alpha-tool-policy-gate.ts"), "utf8")
-    const gateFn = gateBody.indexOf("export const gateToolExecution")
-    expect(gateFn).toBeGreaterThanOrEqual(0)
-    const gateAsk = gateBody.indexOf("input.permission.ask(", gateFn)
-    expect(gateAsk).toBeGreaterThan(gateFn)
+    const confirmFn = gateBody.indexOf("export const confirm")
+    expect(confirmFn).toBeGreaterThanOrEqual(0)
+    const gateAsk = gateBody.indexOf("input.permission.ask(", confirmFn)
+    expect(gateAsk).toBeGreaterThan(confirmFn)
+    expect(gateBody.indexOf("input.permission.ask(")).toBe(gateAsk)
     expect(gateBody.indexOf("input.permission.ask(", gateAsk + 1)).toBe(-1)
-    // ② MCP 循环:trigger 之后直达传输,不许再有第二个 ask(旧的重复 canonical ask 位点)。
+    // ② MCP 循环:钩子在 wrapper 里,循环里直达传输,不许再有第二个钩子或 ask(旧的重复 canonical ask 位点)。
     const loop = body.indexOf("McpCatalog.convertTool(")
     expect(loop).toBeGreaterThanOrEqual(0)
-    const trigger = body.indexOf('"tool.execute.before"', loop)
-    expect(trigger).toBeGreaterThan(loop)
-    const transport = body.indexOf("Effect.promise(() => execute(args, opts))", trigger)
-    expect(transport).toBeGreaterThan(trigger)
-    const staleAsk = body.indexOf("ctx.ask(", trigger)
-    expect(staleAsk === -1 || staleAsk > transport).toBe(true)
-    const staleGate = body.indexOf("gateToolExecution(", trigger)
-    expect(staleGate === -1 || staleGate > transport).toBe(true)
+    const transport = body.indexOf("Effect.promise(() => execute(args, opts))", loop)
+    expect(transport).toBeGreaterThan(loop)
+    const loopBody = body.slice(loop, transport)
+    for (const stale of ['"tool.execute.before"', "ctx.ask(", "AlphaToolPolicyGate."]) expect(loopBody).not.toContain(stale)
   })
 
-  test("code-mode 链:invokeChildTool 里 ask 在 trigger 之前,trigger 在 callTool 之前", () => {
+  test("code-mode 链:invokeChildTool 里 decide → trigger → confirm → callTool", () => {
     const body = readFileSync(join(repoRoot, "packages/opencode/src/tool/code-mode.ts"), "utf8")
     const fn = body.indexOf("invokeChildTool = Effect.fn")
     expect(fn).toBeGreaterThanOrEqual(0)
-    // #1129 reopen:载体 = 共享 gate(文档轴 deny → 单次 Permission.ask),仍必须先于 trigger。
-    const ask = body.indexOf("AlphaToolPolicyGate.gateToolExecution(", fn)
+    const decide = body.indexOf("AlphaToolPolicyGate.decide(", fn)
     const trigger = body.indexOf('"tool.execute.before"', fn)
+    const confirm = body.indexOf("AlphaToolPolicyGate.confirm(", fn)
     const callTool = body.indexOf(".callTool(", fn)
-    expect(ask).toBeGreaterThan(fn)
-    expect(trigger).toBeGreaterThan(ask)
-    expect(callTool).toBeGreaterThan(trigger)
+    expect(decide).toBeGreaterThan(fn)
+    expect(trigger).toBeGreaterThan(decide)
+    expect(confirm).toBeGreaterThan(trigger)
+    expect(callTool).toBeGreaterThan(confirm)
   })
 
   test("Plugin.trigger 不吞钩子抛出的错(Effect.promise = 抛即 defect)", () => {

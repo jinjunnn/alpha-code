@@ -29,7 +29,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
-import { readRiskClassification } from "@/permission/alpha-risk-classification"
+import { classifyPermissionRequest, readRiskClassification } from "@/permission/alpha-risk-classification"
 import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
 import { Plugin } from "@/plugin"
 import type { Provider } from "@/provider/provider"
@@ -327,6 +327,14 @@ describe("#1285 AC1 供数缺口:远端 MCP 的授权提示上必须有目的地
       expect(risk).toMatchObject({ level: "critical", kind: "exfiltration" })
       expect(risk?.rules).toContain("mcp.remote+secret")
       expect(risk?.facts.destinations).toEqual([url, EXFIL])
+      // #1574 AC6 对照:身份轴 patterns 已不是旧的 `["*"]`(现为 `<bindingDigest>@<策略修订号>`);同一组事实换成旧
+      // patterns、或换成规则集逐次询问的 `call:<callID>`,重算的风险逐字相同 —— 分级只读事实,不读 patterns。
+      expect(pending[0]!.patterns).not.toEqual(["*"])
+      for (const [patterns, always] of [
+        [["*"], ["*"]],
+        [["call:m1"], []],
+      ])
+        expect(classifyPermissionRequest({ permission: ID_MCP_UPLOAD, patterns, always, metadata: md })).toEqual(risk!)
       expect(counts.call).toBe(0)
       yield* permission.reply({ requestID: pending[0]!.id, reply: "reject" })
       yield* Effect.promise(() => run.promise)

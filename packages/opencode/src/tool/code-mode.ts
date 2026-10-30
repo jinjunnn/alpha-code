@@ -146,17 +146,16 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
   callID: string
   ctx: Tool.Context
 }) {
-  // #1129 / #724 §6 E4:identity 三态在 `tool.execute.before` **之前**解析 —— 子工具不走
-  // register wrapper,这里是它唯一的 identity 闸。deny/ask 未放行前,插件钩子看不到这次
-  // 调用,MCP 传输一个字节都不发。主权 kill-switch 钩子仍无条件先于传输执行,
-  // 任何 ask 放行都跳不过它(ext 的 cloud-websearch-kill.test.ts 钉住这半边)。
-  // 与 E1-E3 同一 gate:策略文档轴在**每次子调用时重读**(§6 executor 重读),当前 binding
+  // #1129 / #724 §6 E4:子工具不走 register wrapper,这里是它唯一的 identity 闸,与 E1-E3 同一 gate、
+  // 同一次序(REQ-236 C2 / #1574):decide(文档轴 deny ⇒ 具名拒绝,插件钩子看不到这次调用)→
+  // `tool.execute.before` 钩子 → confirm(按钩子之后的 args 问,批准后复核停用与重绑)→ 传输。
+  // 主权 kill-switch 钩子仍无条件先于传输执行,任何 ask 放行都跳不过它(ext 的
+  // cloud-websearch-kill.test.ts 钉住这半边)。策略文档轴在**每次子调用时重读**,当前 binding
   // 也重新派生 —— 子工具全是 MCP,rebind 后旧的 service/tool enabled 回 ask。
   const identity = input.entry.tool.identity
   if (!identity) throw new Error(`MCP tool ${input.entry.key} is missing its source identity`)
-  yield* AlphaToolPolicyGate.gateToolExecution({
+  const gate = {
     policy: input.policy,
-    permission: input.permission,
     subject: Effect.gen(function* () {
       const facts = input.mcp.bindingFacts ? yield* input.mcp.bindingFacts(identity.origin) : undefined
       return {
@@ -168,17 +167,22 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
       }
     }),
     ruleset: input.ruleset,
-    sessionID: input.ctx.sessionID,
-    tool: { messageID: input.ctx.messageID, callID: input.callID },
-    metadata: {},
-    // #1285:载荷供数(与 E1-E3 同一口径)。
-    args: input.args,
-  }).pipe(Effect.orDie)
+  }
+  const decision = yield* AlphaToolPolicyGate.decide(gate).pipe(Effect.orDie)
   yield* input.plugin.trigger(
     "tool.execute.before",
     { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID },
     { args: input.args },
   )
+  yield* AlphaToolPolicyGate.confirm(decision, {
+    ...gate,
+    permission: input.permission,
+    sessionID: input.ctx.sessionID,
+    tool: { messageID: input.ctx.messageID, callID: input.callID },
+    metadata: {},
+    // #1285:载荷供数(与 E1-E3 同一口径;钩子之后的那一份)。
+    args: input.args,
+  }).pipe(Effect.orDie)
   const result: CallToolResult = yield* Effect.gen(function* () {
     // #1563 AC6: the MCP service's entry picks the server's *current* connection (the catalog's captured client is not
     // used to call); the isError projection deliberately mirrors McpCatalog.convertTool, keeping the service free of

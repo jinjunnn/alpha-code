@@ -164,17 +164,27 @@ const ability = (tier: Tier, permission: string, pattern: string) =>
       .pipe(Effect.exit)
   })
 
-/** 身份轴一问(session/tools.ts 的 identityGate 调的同一个闸)。 */
+/** 身份轴一问(session/tools.ts 的 identityGate 调的同一个闸:decide → 钩子 → confirm;规则层没有钩子)。 */
 const identity = (tier: Tier, subject: ToolPolicySubject) =>
   Effect.gen(function* () {
-    return yield* AlphaToolPolicyGate.gateToolExecution({
+    const permission = yield* Permission.Service
+    const gate = {
       policy: yield* AlphaToolPolicy.Service,
-      permission: yield* Permission.Service,
       subject: Effect.succeed(subject),
       ruleset: yield* ruleset(tier),
-      sessionID: sid(),
-      metadata: {},
-    }).pipe(Effect.exit)
+    }
+    return yield* AlphaToolPolicyGate.decide(gate).pipe(
+      Effect.flatMap((decision) =>
+        AlphaToolPolicyGate.confirm(decision, {
+          ...gate,
+          permission,
+          sessionID: sid(),
+          tool: { messageID: "msg_1573_matrix", callID: `call_1573_matrix_${seq}` },
+          metadata: {},
+        }),
+      ),
+      Effect.exit,
+    )
   })
 
 /** 内置/宿主工具一次调用:先身份轴(包在执行外层),再能力轴(工具体内)。 */

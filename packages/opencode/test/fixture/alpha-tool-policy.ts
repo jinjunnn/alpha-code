@@ -8,7 +8,7 @@
 // records 传**可变数组引用**:重读判据(#724 §6 executor 调用时重读)靠调用后改它。
 import { Effect, Layer } from "effect"
 import type { ToolPolicyRecord } from "@opencode-ai/schema/alpha-tool-policy"
-import { AlphaToolPolicy, resolveToolPolicy } from "../../src/permission/alpha-tool-policy"
+import { AlphaToolPolicy, policyRevision, resolveToolPolicy } from "../../src/permission/alpha-tool-policy"
 
 export function inMemoryToolPolicy(records: ToolPolicyRecord[]): AlphaToolPolicy.Interface {
   const managed = { status: "ok", ruleset: [], sources: [] } as const
@@ -24,12 +24,10 @@ export function inMemoryToolPolicy(records: ToolPolicyRecord[]): AlphaToolPolicy
         }),
       ),
     snapshot: () =>
-      Effect.sync(() => ({
-        partition,
-        managed,
-        user: user(),
-        load: { status: "ok" as const, doc: { version: 1 as const, partition, records: [...records] } },
-      })),
+      Effect.sync(() => {
+        const load = { status: "ok" as const, doc: { version: 1 as const, partition, records: [...records] } }
+        return { partition, managed, user: user(), load, revision: policyRevision(load) }
+      }),
     inspect: () => Effect.die(new Error("inMemoryToolPolicy: not wired in this rig")),
     setRecord: () => Effect.die(new Error("inMemoryToolPolicy: not wired in this rig")),
     removeRecord: () => Effect.die(new Error("inMemoryToolPolicy: not wired in this rig")),
