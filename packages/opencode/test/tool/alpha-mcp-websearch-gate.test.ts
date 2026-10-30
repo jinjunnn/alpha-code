@@ -7,8 +7,9 @@
 //     { "mcp": { "exa": { "type": "remote", "url": "https://mcp.exa.ai/mcp" } } }
 //
 // 引擎经 `src/mcp/index.ts` 建**通用** MCP 传输,产生 `exa_web_search_exa`。普通模式经
-// `session/tools.ts` → `McpCatalog.convertTool()` → `client.callTool()`,code-mode 经
-// `tool/code-mode.ts` 的 `invokeChildTool` 直接 `client.callTool()` —— 两条都不经过那两道传输闸。
+// `session/tools.ts` → `McpCatalog.convertTool()`(其 client 是委托 `MCP.callTool` 的适配器,#1563)→
+// 该服务当前连接的 `client.callTool()`;code-mode 经 `tool/code-mode.ts` 的 `invokeChildTool` →
+// `MCP.callTool` → 同一处 —— 两条都不经过那两道传输闸。
 //
 // 唯一同时钳制这两条链的点是 `plugin.trigger("tool.execute.before", …)`,也就是 @alpha-code/ext
 // 的钩子。本文件把那份 exa 配置当**真实配置**跑:真 streamable-HTTP MCP server、真 `mcp` 配置段、
