@@ -478,6 +478,10 @@ function isDisabled(info: unknown): boolean {
 function needsAuth(info: unknown): boolean {
   return statusTag(info) === "needs_auth"
 }
+/** `#1563`:引擎还在后台启动这台服务(`pending`)—— 判等,与上面一样不靠子串。 */
+function isPending(info: unknown): boolean {
+  return statusTag(info) === "pending"
+}
 function statusError(info: unknown): string | undefined {
   if (!info || typeof info !== "object") return undefined
   const o = info as Record<string, unknown>
@@ -637,6 +641,7 @@ export function useExtensions(
           connected: isConnected(info),
           enabled: !isDisabled(info),
           needsAuth: needsAuth(info),
+          pending: isPending(info),
           error: statusError(info),
         }
       }
