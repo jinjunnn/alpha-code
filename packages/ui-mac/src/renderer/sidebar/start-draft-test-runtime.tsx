@@ -309,6 +309,9 @@ export function installPreloadStub() {
     // `#1557`:输入框与选择器读两份目录的刷新结局;缺省 Proxy 回 undefined 会让读 `.platform` 当场 throw。
     "models.refreshHealth": async () => ({ platform: null, byok: null }),
     "providers.keyStatus": async () => ({}),
+    // #1590:新对话页也挂全局配置健康提示条;main 的 `configHealth()` 恒回一个对象
+    // (ext-config.ts),通配桩的 `undefined` 不是它能到的形状。
+    "ext.configHealth": async () => ({ broken: false }),
   }
   const node = (path: string[]): unknown => {
     const call = (...args: unknown[]) => {
