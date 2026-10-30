@@ -41,11 +41,13 @@ export type DetailTarget =
 
 // mcp.cloud 的 4 个工具(B 侧 MCP facade;alpha-platform docs/contracts/cloud-jobs-v1.md)。
 // 引擎无 tools 查询路由 → 与 MCP 条目一样用精选元数据展示(REQ-019 T3 同约束)。
+// #1595 AC3:行首是自然语言名 —— 取对话里工具卡同一份命名(`alpha.timeline.cloud.*`,
+// tool-card-model.ts 的标题表),技术名只进「开发者详情」。
 const CLOUD_TOOLS = [
-  { name: "cloud_dispatch", key: "alpha.ext.cloudToolDispatch" },
-  { name: "cloud_status", key: "alpha.ext.cloudToolStatus" },
-  { name: "cloud_await", key: "alpha.ext.cloudToolAwait" },
-  { name: "cloud_artifacts", key: "alpha.ext.cloudToolArtifacts" },
+  { name: "cloud_dispatch", titleKey: "alpha.timeline.cloud.dispatch", key: "alpha.ext.cloudToolDispatch" },
+  { name: "cloud_status", titleKey: "alpha.timeline.cloud.status", key: "alpha.ext.cloudToolStatus" },
+  { name: "cloud_await", titleKey: "alpha.timeline.cloud.await", key: "alpha.ext.cloudToolAwait" },
+  { name: "cloud_artifacts", titleKey: "alpha.timeline.cloud.artifacts", key: "alpha.ext.cloudToolArtifacts" },
 ] as const
 
 function mcpSpec(e: CatalogEntry): McpInstallSpec | undefined {
@@ -86,6 +88,11 @@ const Section = (p: { title: string; children: JSX.Element }) => (
     {p.children}
   </section>
 )
+
+/** #1595 AC2:目录里的秒数换算成「约 N 分钟」(至少 1 分钟)。 */
+export function cloudMaxRunMinutes(seconds: number): number {
+  return Math.max(1, Math.round(seconds / 60))
+}
 
 const FactRow = (p: { label: string; children: JSX.Element }) => (
   <div class="alpha-ext-dfact">
@@ -1139,41 +1146,51 @@ export function ExtensionDetail(props: {
                   </Show>
                 </div>
               </Show>
-              {/* 云 pipeline:输入契约 / 预算 / 上行数据与直接派发入口。 */}
+              {/* 云 pipeline:#1595 AC2 首屏只说最长运行 / 发送内容 / 结果 / 费用;任务类型、运行环境、
+                  轮次与 token 额度、输入字段收进「开发者详情」。 */}
               <Show when={cloudSpec(e())}>
                 {(spec) => {
                   const fmtBudget = (b: { max_iter: number; max_tokens: number; max_wall_clock_sec: number }) =>
                     `${b.max_iter} iter · ${b.max_tokens.toLocaleString()} tokens · ${b.max_wall_clock_sec}s`
                   return (
                     <>
-                      <FactRow label={t("alpha.ext.cloudPipelineKind")}>
-                        <code class="alpha-ext-dcode">{spec().pipelineKind}</code>
-                      </FactRow>
-                      <FactRow label={t("alpha.ext.cloudTier")}>{spec().tier}</FactRow>
-                      <FactRow label={t("alpha.ext.cloudBudget")}>{fmtBudget(spec().budgetDefaults)}</FactRow>
-                      <FactRow label={t("alpha.ext.cloudBudgetLimits")}>{fmtBudget(spec().budgetLimits)}</FactRow>
-                      <div class="alpha-ext-dsub">
-                        <div class="alpha-ext-dsub-t">{t("alpha.ext.cloudInputContract")}</div>
-                        <div class="alpha-ext-dtools">
-                          <For each={spec().inputContract}>
-                            {(f) => (
-                              <div class="alpha-ext-dtool">
-                                <code>
-                                  {f.field}
-                                  {f.required ? " *" : ""}
-                                </code>
-                                <span>{f.description}</span>
-                              </div>
-                            )}
-                          </For>
+                      <div data-alpha-cloud-task-facts>
+                        <FactRow label={t("alpha.ext.cloudMaxRun")}>
+                          {t("alpha.ext.cloudMaxRunValue", { min: cloudMaxRunMinutes(spec().budgetDefaults.max_wall_clock_sec) })}
+                        </FactRow>
+                        <FactRow label={t("alpha.ext.cloudSends")}>
+                          <ul class="alpha-ext-dlist">
+                            <For each={spec().upstreamData}>{(line) => <li>{line}</li>}</For>
+                          </ul>
+                        </FactRow>
+                        <FactRow label={t("alpha.ext.cloudResult")}>{t("alpha.ext.cloudResultValue")}</FactRow>
+                        <FactRow label={t("alpha.ext.cloudCost")}>{t("alpha.ext.cloudCostValue")}</FactRow>
+                      </div>
+                      <details class="alpha-ext-dprompt" data-alpha-cloud-task-dev>
+                        <summary>{t("alpha.timeline.devDetails")}</summary>
+                        <FactRow label={t("alpha.ext.cloudPipelineKind")}>
+                          <code class="alpha-ext-dcode">{spec().pipelineKind}</code>
+                        </FactRow>
+                        <FactRow label={t("alpha.ext.cloudTier")}>{spec().tier}</FactRow>
+                        <FactRow label={t("alpha.ext.cloudBudget")}>{fmtBudget(spec().budgetDefaults)}</FactRow>
+                        <FactRow label={t("alpha.ext.cloudBudgetLimits")}>{fmtBudget(spec().budgetLimits)}</FactRow>
+                        <div class="alpha-ext-dsub">
+                          <div class="alpha-ext-dsub-t">{t("alpha.ext.cloudInputContract")}</div>
+                          <div class="alpha-ext-dtools">
+                            <For each={spec().inputContract}>
+                              {(f) => (
+                                <div class="alpha-ext-dtool">
+                                  <code>
+                                    {f.field}
+                                    {f.required ? " *" : ""}
+                                  </code>
+                                  <span>{f.description}</span>
+                                </div>
+                              )}
+                            </For>
+                          </div>
                         </div>
-                      </div>
-                      <div class="alpha-ext-dsub">
-                        <div class="alpha-ext-dsub-t">{t("alpha.ext.cloudUpstream")}</div>
-                        <ul class="alpha-ext-dlist">
-                          <For each={spec().upstreamData}>{(line) => <li>{line}</li>}</For>
-                        </ul>
-                      </div>
+                      </details>
                       <p class="alpha-ext-dnote">{t("alpha.ext.cloudEnableNote")}</p>
                       {/* `#624`:恢复中也禁用,但理由不同 —— 不能说「需登录」。 */}
                       <Show when={!cloudReady()}>
@@ -1325,18 +1342,18 @@ export function ExtensionDetail(props: {
           <Show when={!cloudReady() && props.onLogin}>
             <div class="alpha-ext-dsub">
               <button class="alpha-ext-add" data-variant="primary" onClick={() => props.onLogin!()}>
-                {t("alpha.ext.cloudLoginCta")}
+                {t("alpha.auth.signIn")}
               </button>
             </div>
           </Show>
-          <div class="alpha-ext-dsub">
+          <div class="alpha-ext-dsub" data-alpha-cloud-tools>
             <div class="alpha-ext-dsub-t">{t("alpha.ext.detailTools")}</div>
             <div class="alpha-ext-dtools">
               <For each={CLOUD_TOOLS}>
                 {(tool) => (
                   <div class="alpha-ext-dtool">
-                    <code>{tool.name}</code>
-                    <span>{t(tool.key as never)}</span>
+                    <b>{t(tool.titleKey)}</b>
+                    <span>{t(tool.key)}</span>
                   </div>
                 )}
               </For>
@@ -1347,6 +1364,19 @@ export function ExtensionDetail(props: {
             <b>{t("alpha.ext.cloudInjectTitle")}</b>
             <p>{t("alpha.ext.cloudInjectNote")}</p>
           </div>
+          <details class="alpha-ext-dprompt" data-alpha-cloud-tools-dev>
+            <summary>{t("alpha.timeline.devDetails")}</summary>
+            <div class="alpha-ext-dtools">
+              <For each={CLOUD_TOOLS}>
+                {(tool) => (
+                  <div class="alpha-ext-dtool">
+                    <code>{tool.name}</code>
+                    <span>{t(tool.titleKey)}</span>
+                  </div>
+                )}
+              </For>
+            </div>
+          </details>
         </Show>
       </Section>
 

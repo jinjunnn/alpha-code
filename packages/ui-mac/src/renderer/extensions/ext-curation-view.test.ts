@@ -2,11 +2,15 @@
 import { describe, expect, test } from "bun:test"
 import { curationBlobUrl, type CurationStatus } from "../../shared/catalog-curation"
 import type { Catalog, CatalogEntry } from "./catalog-types"
+import bundledCatalog from "./alpha-catalog.json"
+import { dict as zh } from "../i18n/zh"
+import { dict as en } from "../i18n/en"
 import {
   CAPABILITY_LABEL_KEYS,
   SHELF_CHIP_KEYS,
   SHELF_ORDER,
   buildShelves,
+  confirmNoteKey,
   curationMapOf,
   downloadPresentation,
   foldDomains,
@@ -150,5 +154,30 @@ describe("词汇与折叠(v6 稿词汇表)", () => {
     expect(downloadPresentation(unknown as never)).toEqual({ kind: "unknown" })
     expect(formatBytesApprox(5652480)).toBe("5.4 MB")
     expect(formatBytesApprox(14336)).toBe("14 KB")
+  })
+})
+
+// #1595 AC1:添加确认框只说一句 —— 条目取自内置目录快照(alpha-catalog.json,2026-10-27.2)。
+describe("#1595 AC1 添加确认框的一句话", () => {
+  const catalog = bundledCatalog as unknown as Catalog
+  const entry = (id: string) => catalog.entries.find((e) => e.id === id)!
+  const now = "2026-10-30T00:00:00.000Z"
+
+  test("未审核的第三方连接器(mcp:fetch,official、无 curation)⇒「未经审核,装好后默认关闭」", () => {
+    expect(confirmNoteKey(entry("mcp:fetch"), catalog, now)).toBe("alpha.ext.confirmNoteUnreviewed")
+    expect(zh["alpha.ext.confirmNoteUnreviewed"]).toBe("未经审核,装好后默认关闭")
+  })
+
+  test("装好即启用的条目(skill:safe-refactor,Code Puppy 自产)⇒「保存后立即生效」", () => {
+    expect(confirmNoteKey(entry("skill:safe-refactor"), catalog, now)).toBe("alpha.ext.confirmNote")
+    expect(zh["alpha.ext.confirmNote"]).toBe("保存后立即生效")
+  })
+
+  test("两句都不出现配置文件路径", () => {
+    for (const dict of [zh, en]) {
+      for (const key of ["alpha.ext.confirmNote", "alpha.ext.confirmNoteUnreviewed"] as const) {
+        expect(dict[key]).not.toMatch(/opencode|\.jsonc|~\/|\.code-puppy/)
+      }
+    }
   })
 })

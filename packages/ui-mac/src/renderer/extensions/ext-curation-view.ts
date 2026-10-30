@@ -8,6 +8,7 @@
 //   · 词汇映射(tier/能力 token → 用户语言 i18n key;未知 token 原样 mono,不猜翻译)。
 
 import {
+  curationActivationFacts,
   decodeEntryCuration,
   isReviewExpired,
   type Curation,
@@ -15,6 +16,7 @@ import {
   type CurationTier,
 } from "../../shared/catalog-curation"
 import type { Catalog, CatalogEntry } from "./catalog-types"
+import { initialDesiredState } from "../../shared/ext-install-policy"
 
 /** 货架固定序(v6 稿:核心 → 精选 → 接入 → 实验室)。 */
 export const SHELF_ORDER: readonly CurationTier[] = ["core", "precache", "connector", "labs"]
@@ -136,4 +138,24 @@ export function formatBytesApprox(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
   return `${bytes} B`
+}
+
+/**
+ * #1595 AC1:添加确认框的那一句。装好后是不是关着的,由 main 落账同一个分类器决定
+ * (`initialDesiredState`,与 hub 的「已安装但未启用」提示同一组入参)—— 关着的就是还没审核过的
+ * 第三方条目:「未经审核,装好后默认关闭」;其余「保存后立即生效」。
+ */
+export function confirmNoteKey(
+  entry: CatalogEntry,
+  catalog: Catalog,
+  nowIso: string,
+): "alpha.ext.confirmNote" | "alpha.ext.confirmNoteUnreviewed" {
+  const disabled =
+    initialDesiredState({
+      origin: "catalog",
+      source: entry.source,
+      kind: entry.type,
+      ...curationActivationFacts(curationOf(curationMapOf(catalog), entry.id), nowIso),
+    }) === "disabled"
+  return disabled ? "alpha.ext.confirmNoteUnreviewed" : "alpha.ext.confirmNote"
 }

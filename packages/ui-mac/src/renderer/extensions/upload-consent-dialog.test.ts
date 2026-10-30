@@ -487,3 +487,118 @@ describe("#1509 customization center cloud entries", () => {
     expect(document.querySelector("[data-cloud-result]")).toBeNull()
   })
 })
+
+// ── #1595 定制中心详情页说人话(批准稿 docs/design/2026-10-30-req236-ux-config-pages #cloud-task / #cloud-connector)──
+
+function mountDetail(target: Parameters<typeof ExtensionDetail>[0]["target"], options: { cloudReady?: boolean; onLogin?: () => void } = {}) {
+  Object.defineProperty(window, "api", { configurable: true, value: { openDirectoryPicker: async () => [], cloud: {} } })
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(runtime.render(() => runtime.createComponent(runtime.ExtensionDetail, {
+    target,
+    ext: { store: { mcp: {}, receipts: [] }, isInstalled: () => false } as unknown as Parameters<typeof ExtensionDetail>[0]["ext"],
+    catalogVersion: bundledCatalog.version, byId: () => undefined, busy: () => null, crumb: "Cloud",
+    onBack: () => {}, onInstall: () => {}, onUninstall: () => {}, onOpenEntry: () => {},
+    onPackageAction: async () => undefined, cloudReady: () => options.cloudReady ?? true, onLogin: options.onLogin,
+    curationStatus: () => ({ kind: "uncurated" }), nowIso: () => "2026-10-30T00:00:00Z",
+    onToggleState: async () => {}, sessionViewFor: () => ({ on: false, textKey: "alpha.ext.sessionOffRow", tone: "muted" }),
+    sessionAvailable: () => false, sessionBusyFor: () => false, onSessionToggle: async () => {},
+  }), host))
+}
+
+describe("#1595 AC2 云端任务详情首屏:最长运行 / 发送内容 / 结果 / 费用,技术参数进开发者详情", () => {
+  const research = () => bundledCatalog.entries.find((entry) => entry.id === "cloud:research")! as unknown as CatalogEntry
+
+  test("首屏是人话,不渲染 iter / tokens / Tier / 任务类型;这些只在「开发者详情」里", async () => {
+    mountDetail({ kind: "entry", entry: research() })
+    await flush()
+
+    const facts = document.querySelector("[data-alpha-cloud-task-facts]")?.textContent ?? ""
+    for (const label of [zh["alpha.ext.cloudMaxRun"], zh["alpha.ext.cloudSends"], zh["alpha.ext.cloudResult"], zh["alpha.ext.cloudCost"]]) {
+      expect(facts).toContain(label)
+    }
+    expect(facts).toContain("约 10 分钟")
+    expect(facts).toContain("存到所选文件夹")
+    expect(facts).toContain("按用量结算")
+    expect(facts).not.toMatch(/iter|tokens|Tier|research/)
+
+    const dev = document.querySelector<HTMLDetailsElement>("details[data-alpha-cloud-task-dev]")
+    expect(dev !== null).toBe(true)
+    expect(dev!.open).toBe(false)
+    expect(dev!.querySelector("summary")?.textContent).toBe(zh["alpha.timeline.devDetails"])
+    expect(dev!.textContent).toContain("research")
+    expect(dev!.textContent).toContain("tokens")
+    expect(dev!.textContent).toContain("input.question")
+  })
+
+  test("最长运行由目录里的秒数换算(1800 秒 ⇒ 约 30 分钟),不是写死的数", async () => {
+    const entry = research()
+    const spec = entry.installSpec as CloudPipelineSpec
+    mountDetail({
+      kind: "entry",
+      entry: { ...entry, installSpec: { ...spec, budgetDefaults: { ...spec.budgetDefaults, max_wall_clock_sec: 1800 } } } as CatalogEntry,
+    })
+    await flush()
+    expect(document.querySelector("[data-alpha-cloud-task-facts]")?.textContent).toContain("约 30 分钟")
+  })
+})
+
+describe("#1595 AC3 云连接器详情:人话标题、状态、登录入口与自动连接;函数名只在开发者详情", () => {
+  test("未登录 ⇒「未连接 · 需登录」+「登录」;工具行首是自然语言名,cloud_* 只出现在开发者详情", async () => {
+    let logins = 0
+    mountDetail({ kind: "cloud-connector" }, { cloudReady: false, onLogin: () => logins++ })
+    await flush()
+
+    expect(document.body.textContent).toContain("云连接器")
+    expect(document.body.textContent).not.toContain("云连接器(cloud)")
+    expect(document.body.textContent).toContain("未连接 · 需登录")
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudInjectTitle"])
+    const login = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === zh["alpha.auth.signIn"])
+    expect(login !== undefined).toBe(true)
+    login!.click()
+    expect(logins).toBe(1)
+
+    const tools = document.querySelector("[data-alpha-cloud-tools]")!
+    const heads = [...tools.querySelectorAll(".alpha-ext-dtool b")].map((el) => el.textContent)
+    expect(heads).toEqual([
+      zh["alpha.timeline.cloud.dispatch"],
+      zh["alpha.timeline.cloud.status"],
+      zh["alpha.timeline.cloud.await"],
+      zh["alpha.timeline.cloud.artifacts"],
+    ])
+    expect(tools.textContent).not.toContain("cloud_")
+    const dev = document.querySelector("details[data-alpha-cloud-tools-dev]")!
+    expect(dev.textContent).toContain("cloud_dispatch")
+    expect(dev.textContent).toContain("cloud_artifacts")
+  })
+})
+
+describe("#1595 AC4 发送框、结果、生效状态、npm 导入与云端错误的文字按批准稿对照表", () => {
+  test("zh 文案逐条对照,且不写 .code-puppy/runs 一类目录名", () => {
+    const expected: Partial<Record<keyof typeof zh, string>> = {
+      "alpha.ext.hubStatePending": "待生效",
+      "alpha.ext.hubReasonWaiting": "对话空闲后自动生效",
+      "alpha.ext.hubReasonFailed": "上次未能生效",
+      "alpha.ext.hubReloadNow": "立即生效",
+      "alpha.ext.hubReloadNowHint": "会打断正在输出的回答",
+      "alpha.ext.hubReloadNowRefused": "未能生效,请重启应用",
+      "alpha.cloud.runSaved": "结果已存到本机",
+      "alpha.ext.importNpmHint": "输入 npm 包名,如 pkg@1.2.3",
+      "alpha.ext.cloudConnRecovering": "正在恢复登录",
+      "alpha.ext.cloudConnectorTitle": "云连接器",
+      "alpha.ext.cloudConnNeedLogin": "未连接 · 需登录",
+      "alpha.ext.cloudInjectTitle": "自动连接",
+      "alpha.ext.cloudInputHint": "离开本页后不再自动保存",
+      "alpha.ext.cloudDiffSource": "审查范围",
+      "alpha.ext.cloudDiffWorktree": "未提交的改动",
+      "alpha.ext.cloudDiffLastCommit": "最近一次提交",
+      "alpha.ext.cloudDone": "已完成",
+      "alpha.ext.cloudSaved": "已保存",
+      "alpha.ext.cloudErrConsentDeclined": "未同意上传,未发送",
+    }
+    for (const [key, value] of Object.entries(expected)) expect(zh[key as keyof typeof zh], key).toBe(value)
+    for (const key of ["alpha.cloud.runSaved", "alpha.ext.cloudSub", "alpha.ext.cloudInputHint"] as const) {
+      expect(zh[key]).not.toContain(".code-puppy")
+    }
+  })
+})

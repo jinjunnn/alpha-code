@@ -21,6 +21,7 @@ import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
 import { isAlphaOfficeCatalogId } from "../../shared/office-advisories"
 import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
 import { packageSkipReasonKey } from "./ext-package-presentation"
+import { confirmNoteKey } from "./ext-curation-view"
 import { catalog } from "./catalog-source"
 import type { CatalogEntry } from "./catalog-types"
 import { ExtAuthzView, authzIsEscalation, buildAuthzConfirmation } from "./ext-authz"
@@ -409,6 +410,8 @@ export function InstallConfirmBody(props: { confirm: InstallConfirm }) {
                 <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
               </div>
             </Show>
+            {/* #1595 AC1:不写配置文件路径。包确认屏沿用「保存后立即生效」(包内组件的启用态由 main 的
+                admission 逐件决定,这一层没有可据以改口的事实)。 */}
             <p class="alpha-ext-confirm-note">{t("alpha.ext.confirmNote")}</p>
           </div>
         )}
@@ -527,14 +530,8 @@ export function InstallConfirmBody(props: { confirm: InstallConfirm }) {
                 <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
               </div>
             </Show>
-            <p class="alpha-ext-confirm-note">
-              {entry().type === "mcp"
-                ? t(
-                    c.installScope() === "project"
-                      ? "alpha.ext.confirmNoteProjectMcp"
-                      : "alpha.ext.confirmNoteGlobalMcp",
-                  )
-                : t("alpha.ext.confirmNote")}
+            <p class="alpha-ext-confirm-note" data-alpha-confirm-note>
+              {t(confirmNoteKey(entry(), catalog(), new Date().toISOString()))}
             </p>
           </div>
         )}
