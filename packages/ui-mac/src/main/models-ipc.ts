@@ -13,7 +13,10 @@
 
 import { ipcMain } from "electron"
 import { getEffectiveCatalog } from "./alpha-platform-models"
+import { requestCatalogRefresh } from "./catalog-refresher"
 
 export function registerModelsIpcHandlers(userDataPath: string) {
   ipcMain.handle("models-catalog", () => getEffectiveCatalog(userDataPath))
+  // #1557:清单失败提示上的「重试」—— 显式的手动触发,经同一个单飞入口;结局走 alpha-catalog-health 推送回来。
+  ipcMain.handle("models-catalog-refresh", () => requestCatalogRefresh("manual"))
 }

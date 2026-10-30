@@ -326,9 +326,9 @@ describe("ac#962:平台拒绝的分类码穿过生产 fetchPlatformModels()", ()
   })
 })
 // [#1084,取代上面那条「到不了用户」的诚实标注] 分类码现在有出口了:syncLiveAllowlist 的每一条
-// 出路都经 reportCatalogRefresh 落到 alpha-catalog-health,renderer 的 CatalogFailureBanner 渲染它。
+// 出路都经 reportCatalogRefresh 落到 alpha-catalog-health,renderer 在输入框提示槽 / 模型选择器里呈现(#1557)。
 // 本文件仍只断言**生产函数的返回值**(它测的是分类,不是出口);出口那一跳的闸在
-// models-catalog-v2.wiring.cases.ts(main 半场)与 test-component/catalog-failure-banner.cases.ts
+// models-catalog-v2.wiring.cases.ts(main 半场)与 test-component/alpha-composer-model.cases.ts 的 #1557 组
 // (renderer 半场,真 DOM)。
 
 // 「sidecar 引擎配置与 IPC 投影不再分叉」的闸在 models-catalog-v2.wiring.cases.ts —— 那里从**真实**

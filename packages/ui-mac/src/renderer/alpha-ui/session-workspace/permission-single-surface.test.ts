@@ -120,7 +120,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
-      models: { catalog: neverSettle },
+      models: { catalog: neverSettle, refreshHealth: neverSettle, subscribeRefreshHealth: () => () => {} },
       providers: { keyStatus: neverSettle },
       auth: { getState: neverSettle, subscribe: () => () => {} },
     },

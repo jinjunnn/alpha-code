@@ -100,6 +100,7 @@ import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
 import { subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
 import { reconcileAuthSnapshot, subscribeAuthState } from "../auth-recovery"
+import { catalogFailureReason, createCatalogRefreshHealth, retryCatalogRefresh } from "./catalog-refresh-health"
 import "./alpha-composer.css"
 
 /* ── 单开注册表(全部 chips 共享;开新的自动关旧的)──────────────────────────── */
@@ -110,8 +111,19 @@ let chipSeq = 0
 let homeModelListMarkCount = 0
 let homeModelRetryMarkCount = 0
 let homeAccountMarkCount = 0
-/** #881:目录真就绪标的预算,与上面三个同构(每次主进程运行封顶 25 条)。 */
+/** #881:目录真就绪标的预算,与上面三个同构(每代引擎封顶 25 条,见下)。 */
 let homeCatalogReadyMarkCount = 0
+let homeMarkGeneration: number | undefined
+/** #1557 AC4:上面四类时序标记的 25 条上限按**每代引擎**计 —— 每进程一份预算在长会话里很快触顶
+ *  (实测 25 条已用完,之后的复发没有记录)。引擎换代(不论原因)即整批归零。 */
+const budgetHomeMarksForGeneration = (generation: number) => {
+  if (generation === homeMarkGeneration) return
+  homeMarkGeneration = generation
+  homeModelListMarkCount = 0
+  homeModelRetryMarkCount = 0
+  homeAccountMarkCount = 0
+  homeCatalogReadyMarkCount = 0
+}
 export const closeChips = () => {
   setOpenChipId(null)
   releaseOverlay(CHIP_OVERLAY)
@@ -1003,7 +1015,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
      会永久留下一条自己跑的探针循环。`seq !== chainSeq` 只在 promise settle 之后才判得到,
      对一个不会自己 settle 的等待毫无作用。 */
   let chainAbort = new AbortController()
+  /* #1557(方案 req236 §2.5「状态行与出口」):本轮第一次读取请求发出的时刻,跨重试累计;链成功 / 失败 /
+     被取代时清零。只挂在 `recovering` 上的出口会漏掉最长的那种等待 —— 首轮屏障一直不答时 `list()` 不落定,
+     链停在 `loading`。`clock` 每秒推进一次,只用来算「已等待 N 秒」。 */
+  const [waitSince, setWaitSince] = createSignal<number | null>(null)
+  const [clock, setClock] = createSignal(Date.now())
+  const startWaitClock = () => {
+    if (untrack(waitSince) !== null) return
+    const at = Date.now()
+    setClock(at)
+    setWaitSince(at)
+  }
   const supersedeChain = () => {
+    // #1557:等待计时随链走 —— 被取代即清零,接替的链从它自己的第一条读取重新计。
+    setWaitSince(null)
     chainSeq++
     chainAbort.abort(new Error("model chain superseded"))
     chainAbort = new AbortController()
@@ -1123,6 +1148,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const currentPromise = sessionID ? readState(modelContract.current(sessionID)) : undefined
     let modelAttempt = 0
     const readModels = () => {
+      startWaitClock()
       const attempt = ++modelAttempt
       const markModelList = props.mode === "home" && homeModelListMarkCount < 25
       const started = markModelList ? performance.now() : 0
@@ -1396,6 +1422,40 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     setModelRetryEpoch((value) => value + 1)
   }
 
+  createEffect(() => {
+    const state = modelChainState()
+    if (state === "ready" || state === "error") setWaitSince(null)
+    // 引擎换代把已就绪的链打回 recovering 时不发新请求(换代完成才重建链),这段等待从进入 recovering 起计。
+    else if (state === "recovering") startWaitClock()
+  })
+  createEffect(() => {
+    if (waitSince() === null) return
+    const timer = setInterval(() => setClock(Date.now()), 1_000)
+    onCleanup(() => clearInterval(timer))
+  })
+  /** 状态行:10s 内只说正在读;满 10s 说卡点并给「重试」;满 30s 加「重启引擎」。 */
+  const modelWait = createMemo(() => {
+    const since = waitSince()
+    const state = modelChainState()
+    if (since === null || (state !== "loading" && state !== "recovering")) return null
+    const seconds = Math.max(0, Math.floor((clock() - since) / 1_000))
+    return { seconds, restarting: runtimeUnavailable() }
+  })
+
+  /* #1557 AC5:平台目录**从未获取成功**(已应用版本为空)且最近一次刷新失败 ⇒ 输入框提示槽。有已应用旧版本时
+     只在选择器弹层底部说明,输入框里什么都不出现。已应用版本只在有失败时才去读。 */
+  const catalogFailure = createCatalogRefreshHealth()
+  const [platformAppliedAt, setPlatformAppliedAt] = createSignal<string | null | undefined>(undefined)
+  createEffect(() => {
+    if (!catalogFailure().platform) return
+    void window.api.models.catalog().then(
+      (current) => !disposed && setPlatformAppliedAt(current.applied.platformFetchedAt),
+      () => {},
+    )
+  })
+  // 自带 Key 那份不进输入框:随包清单本身可用,只在选择器的自带 Key 分组头提示(AC5)。
+  const catalogSlotFailure = createMemo(() => (platformAppliedAt() === null ? catalogFailure().platform : null))
+
   onMount(() => {
     // 登录态变化递增 epoch；路由 directory/sessionID 由上面的 effect 直接跟踪。
     let receivedInitialAuth = false
@@ -1419,6 +1479,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     })
     let receivedRuntimeState = false
     const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
+      budgetHomeMarksForGeneration(state.generation)
       if (!receivedRuntimeState) {
         receivedRuntimeState = true
         if (state.status === "ready") return
@@ -1858,42 +1919,88 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         onCompositionStart={() => setComposing(true)}
         onCompositionEnd={() => setComposing(false)}
       />
-      <Show when={modelChainState() === "error"}>
-        <div class="a-comp-model-alert" role="alert">
-          <span>{t("alpha.composer.modelChainFailed")}</span>
-          <button type="button" onClick={retryCurrentModel}>
-            {t("alpha.common.retry")}
-          </button>
-        </div>
-      </Show>
-      <Show when={modelChainState() === "recovering"}>
-        <div class="a-comp-model-alert" role="status">
-          <span>{t("alpha.model.syncing")}</span>
-        </div>
-      </Show>
-      {/* #595:发送门因「引擎没有这个直连节点」而关闭时,必须常驻如实说明 ——
-          按钮已 disabled,toast 点不出来,不说等于静默失败。选择本身照旧保留。 */}
-      {/* #686:不再在这里补一道 ready —— 判据自己就不会在未就绪时给出这个结论。 */}
-      <Show when={byokNotRegistered()}>
-        <div class="a-comp-model-alert" role="status">
-          <span>{t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" })}</span>
-          <span>{t("alpha.composer.modelNotLoadedDetail")}</span>
-          <button type="button" onClick={retryCurrentModel}>
-            {t("alpha.common.retry")}
-          </button>
-        </div>
-      </Show>
-      {/* REQ-160 AC2(`#1353`)· 已批稿 2026-09-19-req160-send-blocked-notice/frame.html:
-          与上面三条同槽(文字区之下、工具栏之上),琥珀而不是红 —— 红在这条槽里已经有确定的
-          含义(系统这会儿不行、请重试),而这一条不是系统坏了,是这句话要改一下。
-          无图标(琥珀图标落在这块底色上浅色主题只有 2.81:1,低于非文本图形的 3:1)、无按钮、
-          无关闭叉:两句话已经把事情说完,而出路是回到上面那段文字里改,不是再点一次。 */}
-      <Show when={sendBlocked()}>
-        <div class="a-comp-send-blocked" role="alert" data-alpha-composer-blocked="true">
-          <span class="a-comp-send-blocked-fact">{t("alpha.composer.sendBlocked")}</span>
-          <span class="a-comp-send-blocked-why">{t("alpha.composer.sendBlockedWhy")}</span>
-        </div>
-      </Show>
+      {/* #1557 AC6:文字区之下、工具栏之上这一槽一次只放一条,按序取第一条成立的:
+          发送被拦 > 模型状态行(含失败的红色一句)> 自带 Key 节点未加载 > 平台目录未获取。 */}
+      <Switch>
+        {/* REQ-160 AC2(`#1353`)· 已批稿 2026-09-19-req160-send-blocked-notice/frame.html:
+            琥珀而不是红 —— 红在这条槽里已经有确定的含义(系统这会儿不行、请重试),而这一条不是
+            系统坏了,是这句话要改一下。无图标、无按钮、无关闭叉。 */}
+        <Match when={sendBlocked()}>
+          <div class="a-comp-send-blocked" role="alert" data-alpha-composer-blocked="true">
+            <span class="a-comp-send-blocked-fact">{t("alpha.composer.sendBlocked")}</span>
+            <span class="a-comp-send-blocked-why">{t("alpha.composer.sendBlockedWhy")}</span>
+          </div>
+        </Match>
+        <Match when={modelChainState() === "error"}>
+          <div class="a-comp-model-alert" role="alert">
+            <span>{t("alpha.composer.modelChainFailed")}</span>
+            <button type="button" onClick={retryCurrentModel}>
+              {t("alpha.common.retry")}
+            </button>
+          </div>
+        </Match>
+        {/* #1557 AC1/AC2/AC4 · 批准稿 2026-10-30-req236-model-status §一:等待不是错误,用中性色。
+            秒数 aria-hidden —— 读屏只在说明与按钮变化时播报,不每秒播报。 */}
+        <Match when={modelWait()}>
+          {(wait) => (
+            <div class="a-comp-model-status" role="status" data-alpha-model-wait={wait().seconds >= 10 ? "stuck" : "reading"}>
+              <span class="a-comp-model-spin" aria-hidden="true" />
+              <span class="a-comp-model-status-tx">
+                <Show when={wait().seconds >= 10} fallback={t("alpha.composer.modelStatusReading")}>
+                  <b>{wait().restarting ? t("alpha.composer.engineRestarting") : t("alpha.composer.engineNotResponding")}</b>
+                  <span class="a-comp-model-status-n" aria-hidden="true">
+                    {t("alpha.composer.waitedSeconds", { seconds: wait().seconds })}
+                  </span>
+                </Show>
+              </span>
+              <Show when={wait().seconds >= 10}>
+                <span class="a-comp-model-status-acts">
+                  <button type="button" onClick={retryCurrentModel}>
+                    {t("alpha.common.retry")}
+                  </button>
+                  <Show when={wait().seconds >= 30}>
+                    {/* 恢复页「重试本地引擎」(RECOVERY_ACTIONS.retryEngine)的同一组效果。 */}
+                    <button type="button" onClick={() => void window.api.recovery.retryEngine()}>
+                      {t("alpha.composer.restartEngine")}
+                    </button>
+                  </Show>
+                </span>
+              </Show>
+            </div>
+          )}
+        </Match>
+        {/* #595:发送门因「引擎没有这个直连节点」而关闭时,必须常驻如实说明 ——
+            按钮已 disabled,toast 点不出来,不说等于静默失败。选择本身照旧保留。
+            #686:不再在这里补一道 ready —— 判据自己就不会在未就绪时给出这个结论。 */}
+        <Match when={byokNotRegistered()}>
+          <div class="a-comp-model-alert" role="status">
+            <span>{t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" })}</span>
+            <span>{t("alpha.composer.modelNotLoadedDetail")}</span>
+            <button type="button" onClick={retryCurrentModel}>
+              {t("alpha.common.retry")}
+            </button>
+          </div>
+        </Match>
+        {/* #1557 AC5 · 批准稿 §二 A:中性色 —— 发送没有被拦,自带 Key 的模型照常能发。 */}
+        <Match when={catalogSlotFailure()}>
+          {(failure) => (
+            <div class="a-comp-model-status" role="status" data-alpha-catalog-unavailable={failure().code}>
+              <svg class="a-comp-model-status-ic" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.25" />
+                <path d="M8 7.25v3.5M8 5.25v.01" />
+              </svg>
+              <span class="a-comp-model-status-tx">
+                <b>{t("alpha.model.catalogUnavailable")}</b> · {catalogFailureReason(failure().code)}
+              </span>
+              <span class="a-comp-model-status-acts">
+                <button type="button" onClick={retryCatalogRefresh}>
+                  {t("alpha.common.retry")}
+                </button>
+              </span>
+            </div>
+          )}
+        </Match>
+      </Switch>
       <div class="a-comp-bar">
         <AddButton expanded={auto.assembleOpen()} onOpen={() => auto.toggleAssemble()} />
         <PermChip />

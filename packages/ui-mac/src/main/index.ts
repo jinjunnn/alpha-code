@@ -8,7 +8,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, dialog, powerMonitor } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, powerMonitor } from "electron"
 
 import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
@@ -1051,6 +1051,12 @@ const main = Effect.gen(function* () {
   const recovery = recoveryService
   if (!recovery) throw new Error("Recovery service is unavailable")
   const recoveryIpc = registerRecoveryIpcHandlers(recovery)
+  // #1557:输入框状态行的「重启引擎」= 恢复页「重试本地引擎」(RECOVERY_ACTIONS.retryEngine)的同一组效果;
+  // 等待中的模型读取没有 incident 可交,所以不经 recovery-submit。
+  ipcMain.handle("recovery-retry-engine", async () => {
+    selfHeal = initialSelfHealState()
+    return (await requestSidecarRespawn?.("structural")) ?? false
+  })
   // REQ-084/090:surface 选择与 crash admission 共用 main-owned Recovery incident registry。
   registerSurfaceIpc(app.getPath("userData"), recovery)
   void updater.start()
