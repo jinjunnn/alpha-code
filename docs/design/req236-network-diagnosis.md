@@ -217,10 +217,13 @@ TLS 握手与 HTTP 回应是端到端的,只有发起它的客户端知道 —�
 
 ### 2.2 选定:一个分类模块,三处产出,在信息丢失前结算,一路带到屏幕
 
-**N1 分类模块(单一权威)。** 新文件 `packages/plugin/src/alpha-net-failure.ts`,在 `packages/plugin/package.json` 的 `exports`
-加一行 `"./alpha-net-failure"`。先例是同包的 `./alpha-cloud-authority`(提交 `19bdae9ff` 同样只加一个文件与一行 export;
-引擎 `opencode/src/mcp/index.ts:38` 与 `packages/ext` 都从这里 import)。模块零运行期依赖(不 import 任何 node 模块),
-renderer 只 import 它的类型与文案键。**不放 `packages/schema`**:该包只承载可序列化的线上/存储合同(`packages/schema/AGENTS.md:3`)。导出:
+**N1 分类模块(单一权威)。** 新文件 `packages/schema/src/alpha-net-failure.ts`,经 schema 包既有的 `./*` 通配导出以
+`@opencode-ai/schema/alpha-net-failure` 被 import,不改任何上游文件(同包先例 `alpha-tool-policy.ts`;`alpha-` 前缀、上游镜像里
+没有的路径按 ADR-043 不算上游改动)。模块零运行期依赖(不 import 任何 node 模块、不读进程环境),renderer 只 import 它的类型与文案键。
+【更正 · 2026-10-30 `#1572`:本节原写「放 `packages/plugin` 并在其 `package.json` 加一行 `exports`,先例 `19bdae9ff`」。
+那个先例落地时 `packages/plugin` 还不在 north-star 守卫辖区内;ADR-044(`#1247`)把辖区改成整棵 `packages/` 之后,改
+`packages/plugin/package.json` 守卫当场判红(实跑 exit 1),而该文件随上游发版高频改动、登记成接管文件代价持续 ——
+编排器裁决改放 schema 包(`#1572` 续派 r1)。】导出:
 
 - `NetFailureLayer = "policy" | "dns" | "tcp" | "connect-timeout" | "tls-silent" | "tls-failed" | "tls-cert" | "http" | "timeout"`;
 - `EGRESS_DIAL_FAILURE_STATUS`:出网代理拨号失败按层用的状态码 —— 域名解析 `503`、拒连/不可达 `502`、拨号超时 `504`;策略 `403` 不变;
@@ -325,7 +328,7 @@ loopback(本机引擎不应答)的文案归目录 lane C3a;远端 MCP 的状态�
 | 只在引擎里按错误串分类、不改代理 | 引擎拿到的三种拨号失败是同一个 502,DNS 与 TCP 在引擎侧无从区分 |
 | `UND_ERR_CONNECT_TIMEOUT` 一律判握手无回应 | main 直连 TCP 黑洞也产生同一个码(undici 的连接计时器同时覆盖 TCP 与 TLS),会制造错误归因 |
 | 压缩出网代理拨号期限以免与客户端赛跑 | 不存在赛跑:CONNECT 应答与目标 TLS 是两个计时器(§1.4) |
-| 分类模块放 `packages/schema` | 该包只放可序列化合同,运行期解析逻辑留在运行期共享层(`packages/schema/AGENTS.md:3`) |
+| 分类模块放 `packages/schema` | 该包只放可序列化合同,运行期解析逻辑留在运行期共享层(`packages/schema/AGENTS.md:3`)【更正 · 2026-10-30 `#1572`:此条已撤回 —— 唯一的替代落点 `packages/plugin` 要改上游 `package.json`,north-star 守卫判红;模块是纯数据与纯函数,不是服务实现或运行期注册表,改放 schema 包(§2.2 N1)】 |
 | 去掉 15 s 主动断连,本票退回纯诊断(M) | owner 日志里已有没被任何客户端期限收掉的 12 分钟静默隧道;保留并给出一键关闭(`tlsSilentMs = 0`) |
 | 在显示层用 renderer 解析工具卡里的错误串 | 串在 `processor.ts` 已被压成 `Transport error (…)`,cause 不在了,解析什么都认不出 |
 | 在桌面侧给云 MCP 单独做重连 | 会在生命周期 #2 的状态机之外再造一个恢复所有者 |
@@ -359,13 +362,13 @@ loopback(本机引擎不应答)的文案归目录 lane C3a;远端 MCP 的状态�
 | --- | --- |
 | 标题 · 仓 | `[REQ-236][CODE] 联网失败按层说出原因:本机拦截、解析不了、连不上、握手无回应、服务端拒绝各自可辨` · alpha-code |
 | 覆盖 | 父 AC7(T20:分层诊断、不以 CONNECT 200 或泛化网络错误代替握手证据)。不覆盖 AC2 的「正在同步」(目录 lane) |
-| 边界 | 新 `packages/plugin/src/alpha-net-failure.ts` + `packages/plugin/package.json` 一行 export;`packages/ui-mac/src/main/network-egress-proxy.ts`;`packages/opencode/src/session/processor.ts:131-135,200-214`(或其替代落点 `session/tools.ts`,二选一);main:`alpha-platform-models.ts:92-110`、`alpha-account-request.ts:72-74`、`alpha-cloud-schedules.ts:58-60,78,102,114,121`、`automation-ipc.ts:42,51,60,73,88`、`alpha-cloud-jobs.ts:95-110,160-168`;renderer:`automations/automation-panel.tsx:301,321,501`、`automations/schedule-refusal-copy.ts:56`、`extensions/cloud-form-box.tsx:75`、`extensions/cloud-job-lifecycle.ts:35-39`、`alpha-ui/session-timeline/timeline-model.ts:882-899,1213-1222`、`cards/tool-cards.tsx:788-800`、`cards/tool-card-model.ts:962-967` 及其错误 body JSX、新 `alpha-ui/net-failure-copy.ts`、`i18n/{zh,en}.ts`;`scripts/gate-files.tsv` 登记真栈用例 |
+| 边界 | 新 `packages/schema/src/alpha-net-failure.ts`(schema 包 `./*` 通配导出,零上游改动;【更正 · 2026-10-30:原写 `packages/plugin/src/` + 一行 export,见 §2.2 N1】);`packages/ui-mac/src/main/network-egress-proxy.ts`;`packages/opencode/src/session/processor.ts:131-135,200-214`(或其替代落点 `session/tools.ts`,二选一);main:`alpha-platform-models.ts:92-110`、`alpha-account-request.ts:72-74`、`alpha-cloud-schedules.ts:58-60,78,102,114,121`、`automation-ipc.ts:42,51,60,73,88`、`alpha-cloud-jobs.ts:95-110,160-168`;renderer:`automations/automation-panel.tsx:301,321,501`、`automations/schedule-refusal-copy.ts:56`、`extensions/cloud-form-box.tsx:75`、`extensions/cloud-job-lifecycle.ts:35-39`、`alpha-ui/session-timeline/timeline-model.ts:882-899,1213-1222`、`cards/tool-cards.tsx:788-800`、`cards/tool-card-model.ts:962-967` 及其错误 body JSX、新 `alpha-ui/net-failure-copy.ts`、`i18n/{zh,en}.ts`;`scripts/gate-files.tsv` 登记真栈用例 |
 | out-of-scope | `packages/opencode/src/mcp/index.ts`(生命周期 #2 的文件,它消费本模块);`alpha-artifact-download.ts` 与云运行交付合同(delivery lane);放行判定与名单;目录刷新器;状态行(目录 C3a);「网络诊断」页 |
-| 退出条件 | §2.2 N1–N4 落地;§3 I1–I8 各有测试;`bun test src` 对 base 失败集不新增;north-star 守卫绿(`packages/plugin/package.json` 一行 export 的先例为 `19bdae9ff`,合并前以守卫实跑为准) |
+| 退出条件 | §2.2 N1–N4 落地;§3 I1–I8 各有测试;`bun test src` 对 base 失败集不新增;north-star 守卫绿(【更正 · 2026-10-30:原以 `packages/plugin/package.json` 一行 export 为先例 `19bdae9ff`;守卫实跑判红,模块改放 schema 包,不再改任何上游文件】) |
 | 尺寸 · 难度 | L(主动断连碰出网围栏 = 安全面)· 难(要用真栈钉住 undici 与 Effect HTTP 的错误形状,静默兜底要证明不误伤非 TLS 隧道) |
 | 依赖 | 无前置。生命周期 #2 的「远端失败码按层拆」与 delivery lane 的 `netLayer` 是**它们消费本票**,由编排器在那两张票上连依赖 |
 | 独立 PR | 是(碰出网围栏 = 安全面) |
-| 将来拿什么证明 | `network-egress-proxy.test.ts` 两条现断言 502 的用例**先红**:`:303-308`(`.invalid` ENOTFOUND ⇒ 改为 503)与 `:312-316`(黑洞 ETIMEDOUT ⇒ 改为 504);拒连三处(`:195-207`、`:293-300`、`:334-342`,ECONNREFUSED)仍断言 502,作不变对照。静默兜底四臂(上限设 50 ms 跑):TLS 头 + 黑洞上游 ⇒ `tunnel-silent` 并关闭;TLS 头两字节分两段到达仍触发;有回音的上游永不触发;明文首包慢回应不触发。新 `packages/plugin/test/alpha-net-failure.test.ts` 逐行覆盖映射表(含两列路径差异)。新 `packages/ui-mac/src/main/net-failure-real-stack.test.ts`:Electron 内嵌 Node(与 `#1412` 勘破 §3.3 同一接线:`sidecarEgressProxyEnv` + `setGlobalProxyFromEnv`)经真出网代理对 403 / `.invalid` / 拒连 / 黑洞 / TLS 静默五种靶,**从真 `webfetch` 工具入口走到持久化 ToolPart**,断言 `metadata.alphaNetFailure.layer` 分别为 `policy/dns/tcp/tcp/tls-silent`;同一文件对 main 直连 TCP 黑洞断言 `connect-timeout`(不是 `tls-silent`)。该文件登记进 `scripts/gate-files.tsv`,`[平台:darwin]`:**darwin 上缺 Electron 运行时即 throw「本次测量作废」**(同 `network-egress-fence.test.ts:100`),只有非 darwin 才自报 skip;它由 alpha-code 本机 `gate run` 的 `bun test src`(ui-mac)必跑。可见文案:`automation-refusal-test-runtime.tsx` 渲染面板断言 `network` + `netLayer:"dns"` 显示「解析不了」;`cloud-form-box` 组件测试断言派发失败显示分层文案;`timeline-model` / `tool-cards` 渲染断言回合错误卡与工具卡出现分层文案,认不出的错误文案逐字不变 |
+| 将来拿什么证明 | `network-egress-proxy.test.ts` 两条现断言 502 的用例**先红**:`:303-308`(`.invalid` ENOTFOUND ⇒ 改为 503)与 `:312-316`(黑洞 ETIMEDOUT ⇒ 改为 504);拒连三处(`:195-207`、`:293-300`、`:334-342`,ECONNREFUSED)仍断言 502,作不变对照。静默兜底四臂(上限设 50 ms 跑):TLS 头 + 黑洞上游 ⇒ `tunnel-silent` 并关闭;TLS 头两字节分两段到达仍触发;有回音的上游永不触发;明文首包慢回应不触发。新 `packages/schema/test/alpha-net-failure.test.ts` 逐行覆盖映射表(含两列路径差异)。新 `packages/ui-mac/src/main/net-failure-real-stack.test.ts`:Electron 内嵌 Node(与 `#1412` 勘破 §3.3 同一接线:`sidecarEgressProxyEnv` + `setGlobalProxyFromEnv`)经真出网代理对 403 / `.invalid` / 拒连 / 黑洞 / TLS 静默五种靶,**从真 `webfetch` 工具入口走到持久化 ToolPart**,断言 `metadata.alphaNetFailure.layer` 分别为 `policy/dns/tcp/tcp/tls-silent`;同一文件对 main 直连 TCP 黑洞断言 `connect-timeout`(不是 `tls-silent`)。该文件登记进 `scripts/gate-files.tsv`,`[平台:darwin]`:**darwin 上缺 Electron 运行时即 throw「本次测量作废」**(同 `network-egress-fence.test.ts:100`),只有非 darwin 才自报 skip;它由 alpha-code 本机 `gate run` 的 `bun test src`(ui-mac)必跑。可见文案:`automation-refusal-test-runtime.tsx` 渲染面板断言 `network` + `netLayer:"dns"` 显示「解析不了」;`cloud-form-box` 组件测试断言派发失败显示分层文案;`timeline-model` / `tool-cards` 渲染断言回合错误卡与工具卡出现分层文案,认不出的错误文案逐字不变 |
 | UI 稿 | 否 —— 只在既有错误位置换文字或在原错误文字上加一行;文案表(§2.2)交 T19 文案评审 |
 
 **表二:T23 共享 RC 回归里要加的格**(不另开票;网页/搜索格的结果回写 `#1414`)
@@ -424,7 +427,7 @@ loopback(本机引擎不应答)的文案归目录 lane C3a;远端 MCP 的状态�
 | Q3 12 分钟隧道 | §1.5(c) 改为「未归属的静默隧道」;§1.7;「仍是推断」 |
 | Q4 恢复放生命周期 #2 | §0 第 3 条;§1.6 恢复条(「缺少自动恢复」);§2.3 恢复列(间隔有界、总次数无界、单飞、取消、`tls-cert` 不重连);§4 依赖列 |
 | Q5 状态码与子进程重试 | §2.2 N2 第 1 条保留;「仍是推断」写明已读与未读的客户端 |
-| ARCH-NOTE 分类模块落点 | §2.2 N1 改放 `packages/plugin`;§2.4 新增否决 |
+| ARCH-NOTE 分类模块落点 | §2.2 N1 改放 `packages/plugin`;§2.4 新增否决(【更正 · 2026-10-30 `#1572`:实现时守卫判红,已改回 schema 包,见 §2.2 N1】) |
 
 ## 附录:本文用到的两段只读探测
 
