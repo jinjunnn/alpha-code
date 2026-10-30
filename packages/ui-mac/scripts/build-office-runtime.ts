@@ -13,11 +13,11 @@
 //      (不加 --no-deps:哈希模式下闭包缺一个依赖 pip 就拒装)+ `pip check`;
 //   3. 已装发行包的版本与 Requires-Dist(按本解释器求值 marker)必须与 lock 逐项相同 —— 依赖图是
 //      office-runtime-lock.test.ts 判 lock 闭包完整的依据,这里保证那份图不是手写的替身;
-//   4. 删掉 test/、tkinter、idlelib、ensurepip、pip;compileall 预编译(unchecked-hash:拷贝改了 mtime 也照用,
+//   4. 删掉 test/、tkinter、idlelib、ensurepip、pip 与 pip 写进 bin/ 的脚本;compileall 预编译(unchecked-hash:拷贝改了 mtime 也照用,
 //      运行时 `-B` 不写回包里);
 //   5. 验证真实能力(AC2):随包解释器 `-I` 逐个 import 闭包内每个发行包的顶层模块;再按生产命令形状经 stdio
 //      驱动 server.py,四种格式各「写一个样例文件再读回」并比对内容 —— 只握手不算;
-//   6. 每个 Mach-O 含目标架构片(与 beforePack 同一判据),打印本架构的实际体积。
+//   6. 每个 Mach-O 含目标架构片(与 beforePack 同一判据),没有任何文件带着构建机的 staging 路径,打印本架构的实际体积。
 // lock 与本脚本都没变时跳过 1–4(产物戳记),5–6 每次都跑。
 //
 // x64 产物在 arm64 宿主上用 `arch -x86_64`(Rosetta)执行同样的安装与验证;解释器跑不起来就响亮失败,不跳过。
@@ -143,7 +143,9 @@ function install(input: {
     run("tar", ["-xzf", download(input.lock.python[input.arch]), "-C", staging])
     const root = join(staging, "python")
     const python = [...interpreter(input.arch), join(root, "bin", "python3"), "-I"]
-    const pipInstall = [...python, "-m", "pip", "--isolated", "install", "--disable-pip-version-check", "--no-input", "--require-hashes", "--only-binary=:all:", "-r", input.requirementsPath]
+    // pip 往 bin/ 写的控制台脚本把 staging 解释器路径写进 shebang,包里也用不到 —— 装完只留运行时原包的 bin/。
+    const shippedBin = new Set(readdirSync(join(root, "bin")))
+    const pipInstall = [...python, "-m", "pip", "--isolated", "install", "--disable-pip-version-check", "--no-input", "--no-compile", "--require-hashes", "--only-binary=:all:", "-r", input.requirementsPath]
     retry(3, () => run(pipInstall[0]!, pipInstall.slice(1)))
     run(python[0]!, [...python.slice(1), "-m", "pip", "--isolated", "check"])
     assertInstalledMatchesLock(python, input.locked, input.lock.requires)
@@ -151,8 +153,10 @@ function install(input: {
     for (const name of TRIMMED) rmSync(join(stdlib, name), { recursive: true, force: true })
     for (const entry of readdirSync(join(stdlib, "site-packages")))
       if (entry === "pip" || /^pip-.*\.dist-info$/.test(entry)) rmSync(join(stdlib, "site-packages", entry), { recursive: true, force: true })
-    for (const entry of readdirSync(join(root, "bin"))) if (/^pip(3(\.\d+)?)?$/.test(entry)) rmSync(join(root, "bin", entry))
-    run(python[0]!, [...python.slice(1), "-m", "compileall", "-q", "-j", "0", "--invalidation-mode", "unchecked-hash", stdlib])
+    for (const entry of readdirSync(join(root, "bin")))
+      if (!shippedBin.has(entry) || /^pip(3(\.\d+)?)?$/.test(entry)) rmSync(join(root, "bin", entry), { recursive: true, force: true })
+    // -f:全部重编(含运行时原包自带的几个 .pyc);-s:co_filename 去掉 staging 前缀,包里不留构建机路径。
+    run(python[0]!, [...python.slice(1), "-m", "compileall", "-q", "-f", "-j", "0", "-s", root, "--invalidation-mode", "unchecked-hash", stdlib])
     writeFileSync(join(root, STAMP), input.stamp)
     rmSync(input.dir, { recursive: true, force: true })
     renameSync(root, input.dir)
@@ -197,6 +201,11 @@ function assertInstalledMatchesLock(python: string[], locked: Map<string, { vers
 function verify(dir: string, arch: TargetArch, locked: Map<string, unknown>): string[] {
   const slices = checkOfficeRuntime(dir, arch)
   if (slices.length) throw new Error(`office runtime ${arch} has wrong slices:\n  - ${slices.join("\n  - ")}`)
+  // 构建机路径不进包:安装与预编译发生在 `<dir>.staging`,那个路径若写进任何文件(控制台脚本的 shebang、
+  // `.pyc` 的 co_filename),就是把本机目录带给每个用户。逐个文件按字节查(grep 对 .pyc 会漏)。
+  const leaked = filesContaining(dir, Buffer.from(`${dir}.staging`))
+  if (leaked.length)
+    throw new Error(`office runtime ${arch}: ${leaked.length} file(s) carry the build machine's staging path, e.g.\n  - ${leaked.slice(0, 5).join("\n  - ")}`)
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), "alpha-office-runtime-verify-")))
   try {
     // 干净环境:没有用户的 PATH / HOME,证明不靠本机装的 python、uv 或缓存。
@@ -287,6 +296,14 @@ function download(pin: { url: string; sha256: string }): string {
     renameSync(partial, file)
   }
   return file
+}
+
+function filesContaining(dir: string, needle: Buffer): string[] {
+  return readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name))
+    .filter((file) => readFileSync(file).includes(needle))
+    .map((file) => file.slice(dir.length + 1))
 }
 
 function measure(dir: string) {
