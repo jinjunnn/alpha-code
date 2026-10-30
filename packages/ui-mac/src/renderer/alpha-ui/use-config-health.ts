@@ -8,7 +8,10 @@ import { extIpc } from "../extensions/ext-ipc"
 export type ConfigHealth = { broken: boolean; reason?: string; path?: string }
 
 const [health, setHealth] = createSignal<ConfigHealth>({ broken: false })
-let started = false
+// 按订阅计数:首页与新对话页都挂这条提示,第一个挂载的开始轮询,最后一个卸载才停 ——
+// 「谁先挂载谁清理」会在先挂的那页卸载时把还在显示的另一页的刷新一起停掉。
+let subscribers = 0
+let timer: ReturnType<typeof setInterval> | undefined
 
 export async function refreshConfigHealth(): Promise<void> {
   try {
@@ -20,13 +23,16 @@ export async function refreshConfigHealth(): Promise<void> {
 
 export function useConfigHealth(): Accessor<ConfigHealth> {
   onMount(() => {
-    if (started) return
-    started = true
-    void refreshConfigHealth()
-    const timer = setInterval(() => void refreshConfigHealth(), 5 * 60_000)
+    subscribers += 1
+    if (subscribers === 1) {
+      void refreshConfigHealth()
+      timer = setInterval(() => void refreshConfigHealth(), 5 * 60_000)
+    }
     onCleanup(() => {
+      subscribers -= 1
+      if (subscribers > 0) return
       clearInterval(timer)
-      started = false
+      timer = undefined
     })
   })
   return health

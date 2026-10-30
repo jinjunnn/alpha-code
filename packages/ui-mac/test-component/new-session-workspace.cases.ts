@@ -559,6 +559,63 @@ describe("#1590 新对话页:配置失效提示、标题与准备中占位", () 
     expect(host.textContent).not.toContain(zh["alpha.home.configBroken"])
   })
 
+  test("两页共用健康信号:先挂首页再挂新对话页,卸掉首页后新对话页仍在定时刷新;最后一个卸载才停", async () => {
+    // 只接管 5 分钟那一条轮询(按周期认),其余定时器照常走真的。
+    const realSet = globalThis.setInterval
+    const realClear = globalThis.clearInterval
+    const polls = new Map<unknown, () => void>()
+    globalThis.setInterval = ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (ms !== 5 * 60_000) return realSet(fn, ms, ...rest)
+      const id = Symbol("config-health-poll")
+      polls.set(id, fn)
+      return id
+    }) as typeof setInterval
+    globalThis.clearInterval = ((id: unknown) => {
+      if (polls.delete(id)) return
+      realClear(id as never)
+    }) as typeof clearInterval
+    try {
+      let calls = 0
+      installConfigHealth({ broken: false })
+      const ext = (window as unknown as { api: { ext: { configHealth: () => Promise<unknown> } } }).api.ext
+      const original = ext.configHealth
+      ext.configHealth = async () => {
+        calls += 1
+        return original()
+      }
+      const homeHost = document.createElement("div")
+      document.body.append(homeHost)
+      const disposeHome = render(
+        () => createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a")]), serverKey: () => STORE_SERVER_KEY }) as never,
+        homeHost,
+      )
+      const sessionHost = document.createElement("div")
+      document.body.append(sessionHost)
+      const disposeSession = render(
+        () => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }) as never,
+        sessionHost,
+      )
+      await flush()
+      expect(polls.size).toBe(1)
+
+      disposeHome()
+      await flush()
+      // 新对话页还挂着:轮询必须还在,并且真的去问了一次。
+      expect(polls.size).toBe(1)
+      const before = calls
+      for (const poll of polls.values()) poll()
+      await flush()
+      expect(calls).toBe(before + 1)
+
+      disposeSession()
+      await flush()
+      expect(polls.size).toBe(0)
+    } finally {
+      globalThis.setInterval = realSet
+      globalThis.clearInterval = realClear
+    }
+  })
+
   test("AC2:标题为「新对话 — <工作区名>」", async () => {
     const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
     await flush()
