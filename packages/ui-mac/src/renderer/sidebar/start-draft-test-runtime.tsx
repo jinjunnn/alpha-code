@@ -306,6 +306,8 @@ export function installPreloadStub() {
       applied: { platformFetchedAt: null, byokVersion: 1 },
       downloaded: { platformFetchedAt: null, byokVersion: 1 },
     }),
+    // `#1557`:输入框与选择器读两份目录的刷新结局;缺省 Proxy 回 undefined 会让读 `.platform` 当场 throw。
+    "models.refreshHealth": async () => ({ platform: null, byok: null }),
     "providers.keyStatus": async () => ({}),
   }
   const node = (path: string[]): unknown => {

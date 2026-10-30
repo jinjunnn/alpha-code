@@ -322,6 +322,8 @@ export function installPreloadStub() {
       applied: { platformFetchedAt: null, byokVersion: 1 },
       downloaded: { platformFetchedAt: null, byokVersion: 1 },
     }),
+    // `#1557`:输入框与选择器读两份目录的刷新结局;缺省 Proxy 回 undefined 会让读 `.platform` 当场 throw。
+    "models.refreshHealth": async () => ({ platform: null, byok: null }),
     "providers.keyStatus": async () => ({}),
     // AlphaHome 的 useConfigHealth 走 extIpc.configHealth;缺省 Proxy 会回 undefined,
     // `configHealth().broken` 当场 throw → 整个 home surface 被边界吞掉(实测)。
