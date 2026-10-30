@@ -121,7 +121,7 @@ describe("输入框附件条", () => {
     await flush()
     const card = (name: string) => [...host.querySelectorAll(".a-comp-att")].find((el) => el.textContent?.includes(name))!
     expect(card("素材包.zip").textContent).toContain(zh["alpha.attach.failType"])
-    expect(card("扫描件合集.pdf").textContent).toContain(zh["alpha.attach.failDocumentSize"])
+    expect(card("扫描件合集.pdf").textContent).toContain(zh["alpha.attach.failDocumentSize"].replace("{{size}}", "20 MB"))
     expect(card("素材包.zip").querySelector(".a-att-link")).toBeNull()
     expect(card("年度审计报告.pdf").textContent).toContain(zh["alpha.attach.failStage"])
     card("年度审计报告.pdf").querySelector<HTMLButtonElement>(".a-att-link")!.click()

@@ -4,9 +4,8 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { attachmentAbsolutePath } from "../shared/attachment-path"
+import { attachmentAbsolutePath, MAX_ATTACHMENT_BYTES } from "../shared/attachment-path"
 import { PROJECT_HIDDEN_DIR } from "../shared/project-hidden-dir"
-import { MAX_ATTACHMENT_BYTES } from "./attachment-picker"
 import { stageComposerAttachment } from "./composer-attachment-stage"
 
 const temps: string[] = []

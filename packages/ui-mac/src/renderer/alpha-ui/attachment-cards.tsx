@@ -7,7 +7,15 @@
 // 「已读取」只陈述打开过,不转述读懂了什么(卡上不显示摘要 / 页数)。
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { t } from "../i18n"
-import { fileRouteOf, type AttachmentFailure, type ComposerAttachment, type ImageRoute } from "./composer-attachments-core"
+import { MAX_ATTACHMENT_BYTES } from "../../shared/attachment-path"
+import {
+  fileRouteOf,
+  IMAGE_MAX_BYTES,
+  TEXT_MAX_BYTES,
+  type AttachmentFailure,
+  type ComposerAttachment,
+  type ImageRoute,
+} from "./composer-attachments-core"
 import type { TimelineAttachment, TimelineAttachmentRead } from "./session-timeline/timeline-attachments"
 import "./attachment-cards.css"
 
@@ -32,6 +40,19 @@ const FAILURE_KEY: Record<AttachmentFailure, Parameters<typeof t>[0]> = {
   "not-project": "alpha.attach.failStage",
   "write-failed": "alpha.attach.failStage",
   invalid: "alpha.attach.failStage",
+}
+
+/** 超限说法里的上限读同一份常量(改上限,文案跟着变)。 */
+const FAILURE_LIMIT: Partial<Record<AttachmentFailure, number>> = {
+  "image-size": IMAGE_MAX_BYTES,
+  "text-size": TEXT_MAX_BYTES,
+  "document-size": MAX_ATTACHMENT_BYTES,
+  "too-large": MAX_ATTACHMENT_BYTES,
+}
+const failureText = (reason: AttachmentFailure) => {
+  const limit = FAILURE_LIMIT[reason]
+  if (limit === undefined) return t(FAILURE_KEY[reason])
+  return t(FAILURE_KEY[reason], { size: limit >= 1024 * 1024 ? `${limit / 1024 / 1024} MB` : `${limit / 1024} KB` })
 }
 
 const IMAGE_ROUTE_KEY: Record<ImageRoute, Parameters<typeof t>[0]> = {
@@ -236,7 +257,7 @@ export function ComposerAttachmentStrip(props: {
                         >
                           {(failed) => (
                             <>
-                              <span class="a-att-fail">{t(FAILURE_KEY[failed().reason])}</span>
+                              <span class="a-att-fail">{failureText(failed().reason)}</span>
                               <Show when={failed().file}>
                                 <button type="button" class="a-att-link" onClick={() => props.onRetry(a.id)}>
                                   {t("alpha.attach.retry")}

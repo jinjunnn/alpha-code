@@ -9,13 +9,13 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import {
   ATTACHMENT_READ_TOOL,
+  MAX_ATTACHMENT_BYTES,
   attachmentReaderExtension,
   attachmentRelPath,
   type AttachmentReader,
   type AttachmentStageResult,
 } from "../shared/attachment-path"
 import { ensureAlphaScaffold, safeResolveInAlpha, sanitizeArtifactName } from "./alpha-workdir"
-import { MAX_ATTACHMENT_BYTES } from "./attachment-picker"
 
 /** 净化后仍以读取工具要求的扩展名结尾(超长截断、dotfile 回退都不能把扩展名弄丢,否则读取工具拒收)。 */
 function stagedFileName(name: string, extension: string): string {

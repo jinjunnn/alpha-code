@@ -3,13 +3,12 @@
 // 发送前的读取路径标签(图片随引擎能力与登录状态变化)。
 
 import { describe, expect, test } from "bun:test"
-import { ATTACHMENT_METADATA_KEY, stagedAttachmentOf } from "../../shared/attachment-path"
+import { ATTACHMENT_METADATA_KEY, MAX_ATTACHMENT_BYTES, stagedAttachmentOf } from "../../shared/attachment-path"
 import {
   ATTACH_ACCEPT,
   ATTACH_MAX_COUNT,
   buildAttachmentParts,
   classifyAttachment,
-  DOCUMENT_MAX_BYTES,
   fileRouteOf,
   IMAGE_MAX_BYTES,
   imageRouteOf,
@@ -61,8 +60,8 @@ describe("classifyAttachment — 逐类路径与体积闸门", () => {
     expect(classifyAttachment({ name: "A.DOCX", type: "", size: 10 })).toMatchObject({ ok: true, kind: "document", reader: "word" })
     expect(classifyAttachment({ name: "b.xlsx", type: "", size: 10 })).toMatchObject({ ok: true, kind: "document", reader: "excel" })
     expect(classifyAttachment({ name: "c.pptx", type: "", size: 10 })).toMatchObject({ ok: true, kind: "document", reader: "powerpoint" })
-    expect(classifyAttachment({ name: "a.pdf", type: "application/pdf", size: DOCUMENT_MAX_BYTES }).ok).toBe(true)
-    expect(classifyAttachment({ name: "a.pdf", type: "application/pdf", size: DOCUMENT_MAX_BYTES + 1 })).toEqual({ ok: false, reason: "document-size" })
+    expect(classifyAttachment({ name: "a.pdf", type: "application/pdf", size: MAX_ATTACHMENT_BYTES }).ok).toBe(true)
+    expect(classifyAttachment({ name: "a.pdf", type: "application/pdf", size: MAX_ATTACHMENT_BYTES + 1 })).toEqual({ ok: false, reason: "document-size" })
   })
   test("AC6 不支持的类型与超限图片如实拒绝(码交给卡片说明,不静默吞)", () => {
     expect(classifyAttachment({ name: "a.zip", type: "application/zip", size: 10 })).toEqual({ ok: false, reason: "type" })

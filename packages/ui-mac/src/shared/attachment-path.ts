@@ -27,6 +27,9 @@ export type AttachmentStageResult =
   | { ok: true; path: string }
   | { ok: false; reason: "too-large" | "not-project" | "write-failed" | "invalid" }
 
+/** 一个附件(选择器读盘 / 文档暂存)的字节上限;main 的 attachment-picker 与暂存、renderer 的分类共读这一份。 */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
 const ATTACHMENTS_DIR = "attachments"
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

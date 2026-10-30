@@ -9,10 +9,12 @@
 //     消息里只带一个 synthetic 空文本 part + metadata 记录;二进制**永不**以 file part 进入模型请求。读取指令由 ext 写。
 import {
   ATTACHMENT_METADATA_KEY,
+  MAX_ATTACHMENT_BYTES,
   type AttachmentReader,
   type AttachmentStageResult,
   type StagedAttachmentMeta,
 } from "../../shared/attachment-path"
+import { ALPHA_OFFICE_CONNECTORS } from "../../shared/office-advisories"
 
 export type AttachmentKind = "image" | "text" | "document"
 
@@ -53,13 +55,9 @@ export type PendingAttachmentRead = Promise<AttachmentReadResult>
 
 export const IMAGE_MIME: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
 
-/** 扩展名 → 本机读取工具(server.py 按扩展名校验路径,所以文档类只认扩展名)。 */
-const DOCUMENT_READERS: Readonly<Record<string, { reader: AttachmentReader; mime: string }>> = {
-  pdf: { reader: "pdf", mime: "application/pdf" },
-  docx: { reader: "word", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
-  xlsx: { reader: "excel", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-  pptx: { reader: "powerpoint", mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
-}
+/** 扩展名 → 本机读取工具:从第一方 Office 登记表派生(server.py 按扩展名校验路径,所以文档类只认扩展名)。 */
+const documentReaderOf = (ext: string): AttachmentReader | undefined =>
+  ALPHA_OFFICE_CONNECTORS.find((connector) => connector.extension === `.${ext}`)?.format
 
 /** 按扩展名认作文本(浏览器给 .md / .ts 的 type 常是空串或 video/mp2t,不能只看 type)。内容另要过 UTF-8 校验。 */
 const TEXT_EXTENSIONS = new Set(
@@ -72,15 +70,14 @@ const TEXT_EXTENSIONS = new Set(
 /** <input accept> 值(选择器预过滤;真闸门是 classifyAttachment —— 拖拽/粘贴不经 accept)。 */
 export const ATTACH_ACCEPT = [
   ...IMAGE_MIME,
-  ...Object.keys(DOCUMENT_READERS).map((ext) => `.${ext}`),
+  ...ALPHA_OFFICE_CONNECTORS.map((connector) => connector.extension),
   ...[...TEXT_EXTENSIONS].map((ext) => `.${ext}`),
   "text/*",
 ].join(",")
 
-/** 图片按 Anthropic API 单图 5MB 收;文本 256 KiB;PDF / Office 20 MiB(与 main attachment-picker 同值)。超限如实拒绝。 */
+/** 图片按 Anthropic API 单图 5MB 收;文本 256 KiB;PDF / Office 用共享的 MAX_ATTACHMENT_BYTES(main 暂存同一份)。超限如实拒绝。 */
 export const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 export const TEXT_MAX_BYTES = 256 * 1024
-export const DOCUMENT_MAX_BYTES = 20 * 1024 * 1024
 export const ATTACH_MAX_COUNT = 8
 
 const extensionOf = (name: string) => {
@@ -98,8 +95,11 @@ export type AttachmentClass =
 export function classifyAttachment(f: { name: string; type: string; size: number }): AttachmentClass {
   const ext = extensionOf(f.name)
   if (IMAGE_MIME.has(f.type)) return f.size > IMAGE_MAX_BYTES ? { ok: false, reason: "image-size" } : { ok: true, kind: "image" }
-  const document = DOCUMENT_READERS[ext]
-  if (document) return f.size > DOCUMENT_MAX_BYTES ? { ok: false, reason: "document-size" } : { ok: true, kind: "document", ...document }
+  const reader = documentReaderOf(ext)
+  if (reader)
+    return f.size > MAX_ATTACHMENT_BYTES
+      ? { ok: false, reason: "document-size" }
+      : { ok: true, kind: "document", reader, mime: f.type || "application/octet-stream" }
   if (TEXT_EXTENSIONS.has(ext) || f.type.startsWith("text/") || f.type === "application/json")
     return f.size > TEXT_MAX_BYTES ? { ok: false, reason: "text-size" } : { ok: true, kind: "text" }
   return { ok: false, reason: "type" }
