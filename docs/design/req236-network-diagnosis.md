@@ -285,7 +285,7 @@ renderer 只 import 它的类型与文案键。**不放 `packages/schema`**:该�
   (并入 `rev`);`tool-cards.tsx:788-800` 在非策略拒绝且有 `netLayer` 时换成分层文案;工具卡 `tool-card-model.ts:962-967` 读
   `part.state.metadata.alphaNetFailure`,错误 body 增 `netLayer`,其 JSX 在原错误文字之上加一行分层文案。
 
-**文案(下一步)表**,键归 N3/N4 同一组,措辞交 T19 文案评审,不改任何布局:
+**文案(下一步)表**。唯一入口 `netFailureCopy(layer, host?)`,新文件 `packages/ui-mac/src/renderer/alpha-ui/net-failure-copy.ts`(键在 `renderer/i18n/{zh,en}.ts`);N3/N4 的全部上屏点与目录 C3a、生命周期 #2 的状态呈现都调它。措辞交 T19 文案评审,不改任何布局:
 
 | layer | 说什么 | 下一步 |
 | --- | --- | --- |
@@ -359,7 +359,7 @@ loopback(本机引擎不应答)的文案归目录 lane C3a;远端 MCP 的状态�
 | --- | --- |
 | 标题 · 仓 | `[REQ-236][CODE] 联网失败按层说出原因:本机拦截、解析不了、连不上、握手无回应、服务端拒绝各自可辨` · alpha-code |
 | 覆盖 | 父 AC7(T20:分层诊断、不以 CONNECT 200 或泛化网络错误代替握手证据)。不覆盖 AC2 的「正在同步」(目录 lane) |
-| 边界 | 新 `packages/plugin/src/alpha-net-failure.ts` + `packages/plugin/package.json` 一行 export;`packages/ui-mac/src/main/network-egress-proxy.ts`;`packages/opencode/src/session/processor.ts:131-135,200-214`(或其替代落点 `session/tools.ts`,二选一);main:`alpha-platform-models.ts:92-110`、`alpha-account-request.ts:72-74`、`alpha-cloud-schedules.ts:58-60,78,102,114,121`、`automation-ipc.ts:42,51,60,73,88`、`alpha-cloud-jobs.ts:95-110,160-168`;renderer:`automations/automation-panel.tsx:301,321,501`、`automations/schedule-refusal-copy.ts:56`、`extensions/cloud-form-box.tsx:75`、`extensions/cloud-job-lifecycle.ts:35-39`、`alpha-ui/session-timeline/timeline-model.ts:882-899,1213-1222`、`cards/tool-cards.tsx:788-800`、`cards/tool-card-model.ts:962-967` 及其错误 body JSX、`i18n/{zh,en}.ts`;`scripts/gate-files.tsv` 登记真栈用例 |
+| 边界 | 新 `packages/plugin/src/alpha-net-failure.ts` + `packages/plugin/package.json` 一行 export;`packages/ui-mac/src/main/network-egress-proxy.ts`;`packages/opencode/src/session/processor.ts:131-135,200-214`(或其替代落点 `session/tools.ts`,二选一);main:`alpha-platform-models.ts:92-110`、`alpha-account-request.ts:72-74`、`alpha-cloud-schedules.ts:58-60,78,102,114,121`、`automation-ipc.ts:42,51,60,73,88`、`alpha-cloud-jobs.ts:95-110,160-168`;renderer:`automations/automation-panel.tsx:301,321,501`、`automations/schedule-refusal-copy.ts:56`、`extensions/cloud-form-box.tsx:75`、`extensions/cloud-job-lifecycle.ts:35-39`、`alpha-ui/session-timeline/timeline-model.ts:882-899,1213-1222`、`cards/tool-cards.tsx:788-800`、`cards/tool-card-model.ts:962-967` 及其错误 body JSX、新 `alpha-ui/net-failure-copy.ts`、`i18n/{zh,en}.ts`;`scripts/gate-files.tsv` 登记真栈用例 |
 | out-of-scope | `packages/opencode/src/mcp/index.ts`(生命周期 #2 的文件,它消费本模块);`alpha-artifact-download.ts` 与云运行交付合同(delivery lane);放行判定与名单;目录刷新器;状态行(目录 C3a);「网络诊断」页 |
 | 退出条件 | §2.2 N1–N4 落地;§3 I1–I8 各有测试;`bun test src` 对 base 失败集不新增;north-star 守卫绿(`packages/plugin/package.json` 一行 export 的先例为 `19bdae9ff`,合并前以守卫实跑为准) |
 | 尺寸 · 难度 | L(主动断连碰出网围栏 = 安全面)· 难(要用真栈钉住 undici 与 Effect HTTP 的错误形状,静默兜底要证明不误伤非 TLS 隧道) |
