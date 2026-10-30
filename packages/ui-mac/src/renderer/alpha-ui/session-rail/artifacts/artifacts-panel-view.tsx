@@ -23,6 +23,7 @@ import {
 } from "../../artifact-workbench/workbench-core"
 import { RENDERER_COMPONENTS, type PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
 import type { OfficeStructurePresentation } from "../../artifact-workbench/renderers/office-structure"
+import { rovingKey, rovingTabIndex } from "../../roving-focus"
 import { formatTurnElapsed } from "../../session-timeline/timeline-model"
 import {
   shortRunId,
@@ -154,13 +155,11 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
       )}
     </Show>
   )
-  const onScopeKey = (event: KeyboardEvent) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
-    event.preventDefault()
-    const next = props.scope === "session" ? "project" : "session"
-    props.onScope(next)
-    document.getElementById(`a-rart-scope-${next}`)?.focus()
-  }
+  const onScopeKey = (event: KeyboardEvent) =>
+    rovingKey(event, "horizontal-tabs", SCOPES, props.scope, (next) => {
+      props.onScope(next)
+      document.getElementById(`a-rart-scope-${next}`)?.focus()
+    })
   const cardEls = new Map<string, HTMLElement>()
   const selectedCard = createMemo(() => props.cards.find((card) => card.key === props.selectedKey) ?? null)
   const barRow = createMemo(() => props.runs.find((row) => row.runId === props.selectedRunId))
@@ -367,7 +366,7 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                   role="tab"
                   id={`a-rart-scope-${scope}`}
                   aria-selected={props.scope === scope}
-                  tabIndex={props.scope === scope ? 0 : -1}
+                  tabIndex={rovingTabIndex(props.scope === scope)}
                   data-scope={scope}
                   onClick={() => props.onScope(scope)}
                 >
