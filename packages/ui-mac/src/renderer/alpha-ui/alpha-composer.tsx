@@ -94,7 +94,9 @@ import { ModelPickPop } from "./alpha-composer-model"
 import { identityKey } from "./session-workspace/session-workspace-core"
 import { createModelContract, type ModelContract } from "./model-contract"
 import { byokEngineId, isByokEngineId } from "../../shared/alpha-model-types"
-import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
+import type { EffectiveCatalog } from "../../shared/alpha-model-types"
+import { composerModelFromRef, modelBrandOf, modelRefOf, withModelVariant } from "./model-picker-core"
+import { BrandIcon } from "./brand-icon"
 import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resolveAccountWithRetry } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
@@ -456,6 +458,8 @@ function ModelChip(props: {
   modelChainReady: () => boolean
   onNeedWorkspace?: () => void
   hasWorkspace: () => boolean
+  /** alpha-code#1558:当前所选模型的品牌;缺省 = 中性图形(未选 / 自定义节点 / 目录未到)。 */
+  brand: () => string | undefined
 }) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
@@ -483,9 +487,8 @@ function ModelChip(props: {
             toggle()
           }}
         >
-          <span class="a-pico" style={{ background: "var(--a-accent)" }}>
-            α
-          </span>
+          {/* 图标跟着标签走:读取中 / 读取失败时标签不是模型名,图标也不是品牌。 */}
+          <BrandIcon brand={composerModelProjection().status === "ready" ? props.brand() : undefined} size="sm" />
           <span class="a-chip-label">{label()}</span>
           <Chevron />
         </button>
@@ -1000,6 +1003,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [lastAuth, setLastAuth] = createSignal<AuthState | null>(null)
   const [platformId, setPlatformId] = createSignal<string | null>(null)
   const [hasConfiguredByok, setHasConfiguredByok] = createSignal(false)
+  /* alpha-code#1558:模型按钮的品牌图标读解析链最近一次读到的已应用目录(与选择器行同一份事实)。 */
+  const [modelCatalog, setModelCatalog] = createSignal<EffectiveCatalog | null>(null)
   const [platformPermission, setPlatformPermission] = createSignal<"out" | "recovering" | "ready" | "failed">(
     "recovering",
   )
@@ -1225,6 +1230,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       setModelChainState("error")
       return
     }
+    setModelCatalog(cat.data)
     if (sessionID && currentRead?.status === "ready") {
       projectSession(currentRead.data ? composerModelFromRef(currentRead.data, cat.data) : null)
     }
@@ -2029,6 +2035,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           modelChainReady={() => modelChainState() === "ready" && !runtimeUnavailable()}
           onNeedWorkspace={props.onNeedWorkspace}
           hasWorkspace={hasWorkspace}
+          brand={() => modelBrandOf(composerModel(), modelCatalog())}
         />
         <EffortChip
           contract={modelContract}

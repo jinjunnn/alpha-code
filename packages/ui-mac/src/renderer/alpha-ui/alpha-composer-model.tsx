@@ -22,6 +22,7 @@ import {
   type ModelPickerRow,
 } from "./model-picker-core"
 import { AddProvider } from "./model-picker-add"
+import { BrandIcon } from "./brand-icon"
 import { accountResultState } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
@@ -834,9 +835,7 @@ function ModelRow(props: {
       disabled={disabled()}
       onClick={() => void props.onPick(props.row)}
     >
-      <span class="a-pico" style={{ background: props.row.pico.color }}>
-        {props.row.pico.letter}
-      </span>
+      <BrandIcon brand={props.row.brand} />
       <span class="a-mpp-name">
         {props.row.model.name}
         <small>

@@ -6,3 +6,9 @@
 # detectLocale() override, covering both the inlined per-bundle i18n instances and the
 # subprocess in alpha-composer-model.component.test.ts (it inherits process.env).
 preload = ["./scripts/test-preload.ts"]
+
+# alpha-code#1558:选择器 / 输入框的品牌图标经上游 ProviderIcon 引用 `provider-icons/sprite.svg`。生产构建(vite)把
+# `import sprite from "*.svg"` 解析成资源 URL;bun 没有 .svg 的默认 loader,会把它当 JSX 解析而整份组件套件挂掉。
+# `file` = 与 vite 同义:默认导出是该资源的路径字符串。
+[loader]
+".svg" = "file"

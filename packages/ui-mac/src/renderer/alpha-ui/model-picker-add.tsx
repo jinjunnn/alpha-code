@@ -20,6 +20,7 @@
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaModelCatalog, ByokProvider, ProviderAddressRejection, ProviderKeyStatus, ProviderResult } from "../../shared/alpha-model-types"
 import { t } from "../i18n"
+import { BrandIcon } from "./brand-icon"
 
 /** main 拒绝地址时带的类别 → 用户语言的原因(与出网围栏同一个判据函数给出的类别,`#1392`)。无类别 ⇒ undefined,用原文。 */
 const ADDRESS_REJECTION_KEY: Record<ProviderAddressRejection, Parameters<typeof t>[0]> = {
@@ -236,9 +237,7 @@ export function AddProvider(props: {
           <For each={presets()}>
             {(p) => (
               <button class="a-mpa-preset" onClick={() => openPreset(p)}>
-                <span class="a-pico" style={{ background: p.pico.color }}>
-                  {p.pico.letter}
-                </span>
+                <BrandIcon brand={p.brand} size="lg" />
                 <span class="a-mpa-pn">
                   <span class="nm">{p.name}</span>
                   <span class="sb">{t("alpha.provider.presetHint", { compat: p.compat === "anthropic" ? t("alpha.provider.anthropicCompatible") : t("alpha.provider.openaiCompatible") })}</span>
@@ -251,7 +250,7 @@ export function AddProvider(props: {
             )}
           </For>
           <button class="a-mpa-preset custom" data-alpha-custom-endpoint-entry="" onClick={openCustom}>
-            <span class="a-mpa-plus">+</span>
+            <BrandIcon size="lg" />
             <span class="a-mpa-pn">
               <span class="nm">{t("alpha.provider.otherEndpoint")}</span>
               <span class="sb">{t("alpha.provider.compatibleSummary")}</span>

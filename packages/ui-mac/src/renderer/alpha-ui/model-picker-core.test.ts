@@ -3,13 +3,17 @@ import type { ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, ProviderKeyStatus } from "../../shared/alpha-model-types"
 import { byokEngineId } from "../../shared/alpha-model-types"
 import { setLocale, t } from "../i18n"
+import { iconNames } from "@opencode-ai/ui/icons/provider"
 import {
+  brandIconId,
   buildModelPickerRows,
   composerModelFromRef,
+  modelBrandOf,
   modelRefOf,
   pricingStatusText,
   withModelVariant,
 } from "./model-picker-core"
+import { V3_PRODUCER_CATALOG } from "../../../test-component/effective-catalog.fixture"
 
 import { effectiveCatalogFixture } from "../../../test-component/effective-catalog.fixture"
 
@@ -454,5 +458,84 @@ describe("#679 平台计价二态:要么两个真倍数,要么明说不可用", 
         expect(pricingStatusText(row), `${listState} ${row.model.id}`).not.toBeNull()
       }
     }
+  })
+})
+
+// alpha-code#1558(方案 req236 §2.6 / I7):行首图标按模型真实品牌出图。
+describe("品牌图标:品牌从目录来,经固定映射落到现有图标集(#1558)", () => {
+  test("AC1 平台行品牌取已应用快照的 display.brand,不取路由腿 provider:经 openrouter 路由的 qwen 行仍是 qwen", () => {
+    const qwenRoute = V3_PRODUCER_CATALOG.data.find((row) => row.id === "qwen3.7-max")!
+    expect(qwenRoute.provider).toBe("openrouter") // 前提:上游 fixture 里这一行确实经 OpenRouter 路由
+    const platform = rows().filter((row) => row.group === "platform")
+    expect(platform.map((row) => [row.model.id, row.brand])).toEqual(
+      V3_PRODUCER_CATALOG.data.map((row) => [row.id, row.display.brand]),
+    )
+    const qwen = platform.find((row) => row.model.id === "qwen3.7-max")!
+    expect(qwen.brand).toBe("qwen")
+    expect(brandIconId(qwen.brand)).toBe("alibaba")
+    expect(brandIconId(platform.find((row) => row.model.id === "claude-opus-4.8")!.brand)).toBe("anthropic")
+  })
+
+  test("AC2 BYOK 行品牌取 BYOK 目录 provider 的 brand(可选行、需 KEY 行、KEY 状态未知行同源)", () => {
+    const brandOf = (providerID: string) => catalog.byokProviders.find((provider) => provider.id === providerID)!.brand
+    expect(brandOf("zhipuai")).toBe("zhipu") // 目录 brand 与 provider id 不同名,防止退化成拿 id 当品牌
+    const byok = rows().filter((row) => row.group === "byok")
+    for (const row of byok) {
+      const providerID = row.availability === "needs-key" ? row.model.providerID : row.model.providerID.replace(/-byok$/, "")
+      expect(row.brand, row.key).toBe(brandOf(providerID))
+    }
+    expect(byok.find((row) => row.model.providerID === "zhipuai")?.brand).toBe("zhipu")
+    expect(brandIconId(byok.find((row) => row.model.providerID === "zhipuai")?.brand)).toBe("zhipuai")
+    expect(rows({ keyStatusState: "loading", keyStatus: {} }).find((row) => row.key === "moonshot:key-status")?.brand).toBe(
+      brandOf("moonshot"),
+    )
+  })
+
+  test("AC2 自定义节点不按名字猜品牌:名字里带 qwen / deepseek 也只给中性图形", () => {
+    const custom = info("office-gateway", "qwen2.5-72b-instruct")
+    const named = info("deepseek-proxy", "deepseek-chat")
+    const actual = rows({
+      keyStatus: {
+        ...keys,
+        "office-gateway": { configured: true, source: "config" },
+        "deepseek-proxy": { configured: true, source: "config" },
+      },
+      models: [...platformModels, custom, named],
+    }).filter((row) => row.model.providerID === "office-gateway" || row.model.providerID === "deepseek-proxy")
+    expect(actual).toHaveLength(2)
+    for (const row of actual) {
+      expect(row.brand, row.key).toBeUndefined()
+      expect(brandIconId(row.brand), row.key).toBe("synthetic")
+    }
+  })
+
+  test("AC3 品牌 → 图标是固定七项映射,全部落在上游图标集里;表外品牌(即使图标集里恰好有同名图形)回落通用图形", () => {
+    const table = {
+      anthropic: "anthropic",
+      openai: "openai",
+      deepseek: "deepseek",
+      zhipu: "zhipuai",
+      qwen: "alibaba",
+      moonshot: "moonshotai",
+      minimax: "minimax",
+    }
+    for (const [brand, icon] of Object.entries(table)) {
+      expect(brandIconId(brand), brand).toBe(icon)
+      expect(iconNames as readonly string[], icon).toContain(icon) // 不新增图形资源:只用已有 sprite id
+    }
+    expect(iconNames as readonly string[]).toContain("synthetic")
+    expect(iconNames as readonly string[]).toContain("google")
+    for (const outside of ["google", "openrouter", "zhipuai", "alibaba", "constructor", "", undefined]) {
+      expect(brandIconId(outside), String(outside)).toBe("synthetic")
+    }
+  })
+
+  test("AC4 模型按钮的品牌与行同源:平台 / 直连 BYOK 取目录品牌,自定义节点 / 未选 / 目录未到为中性", () => {
+    expect(modelBrandOf({ providerID: catalog.platformProvider.id, id: "qwen3.7-max" }, catalog)).toBe("qwen")
+    expect(modelBrandOf({ providerID: byokEngineId("zhipuai"), id: "glm-5.2" }, catalog)).toBe("zhipu")
+    expect(modelBrandOf({ providerID: "office-gateway", id: "qwen2.5-72b-instruct" }, catalog)).toBeUndefined()
+    expect(modelBrandOf({ providerID: "zhipuai", id: "glm-5.2" }, catalog)).toBeUndefined()
+    expect(modelBrandOf(null, catalog)).toBeUndefined()
+    expect(modelBrandOf({ providerID: catalog.platformProvider.id, id: "qwen3.7-max" }, null)).toBeUndefined()
   })
 })

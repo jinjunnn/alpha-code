@@ -9,9 +9,6 @@
 // (alpha-secret-files.ts,含会删「不在 wanted 集」旧文件的清理分支)、Key 状态(alpha-provider-status.ts)、
 // 保留 id(ext-config.ts)。加一个新供应商 = 发版(方案 §2.9 第 1 条)。
 //
-// `pico` 是过渡期的字母图标,随 alpha-code#1558 换成按品牌出图后删除;它不是可执行字段,放在这里只因为本表是
-// 唯一随包、按 provider 的位置。
-//
 // electron-free:sidecar 经 alpha-models.ts 读。
 
 export type ByokAdapter = {
@@ -19,7 +16,6 @@ export type ByokAdapter = {
   compat: "openai" | "anthropic"
   baseURL: string
   keyEnv: string
-  pico: { letter: string; color: string }
 }
 
 export const BYOK_ADAPTERS: readonly ByokAdapter[] = [
@@ -28,35 +24,30 @@ export const BYOK_ADAPTERS: readonly ByokAdapter[] = [
     compat: "openai",
     baseURL: "https://api.deepseek.com/v1",
     keyEnv: "DEEPSEEK_API_KEY",
-    pico: { letter: "D", color: "#2563eb" },
   },
   {
     id: "zhipuai",
     compat: "openai",
     baseURL: "https://open.bigmodel.cn/api/paas/v4",
     keyEnv: "ZHIPU_API_KEY",
-    pico: { letter: "智", color: "#16a34a" },
   },
   {
     id: "minimax",
     compat: "openai",
     baseURL: "https://api.minimaxi.com/v1",
     keyEnv: "MINIMAX_API_KEY",
-    pico: { letter: "M", color: "#dc2626" },
   },
   {
     id: "alibaba",
     compat: "openai",
     baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     keyEnv: "DASHSCOPE_API_KEY",
-    pico: { letter: "通", color: "#7c3aed" },
   },
   {
     id: "moonshot",
     compat: "openai",
     baseURL: "https://api.moonshot.cn/v1",
     keyEnv: "MOONSHOT_API_KEY",
-    pico: { letter: "K", color: "#111317" },
   },
 ]
 
