@@ -43,6 +43,8 @@ tool.hub_status.description                         text      tool-description  
 vision.system-note-offline                          text      system                   251    1024   25%
 vision.tool.input-omitted                           text      vision-block              23    1024    2%
 vision.tool.refused                                 text      vision-block              24    1024    2%
+attachment.unavailable.failed                       template  attachment-block         227    1024   22%
+attachment.unavailable.missing                      template  attachment-block         289    1024   28%
 command.factory-denied.template                     template  command-template          81    1024    8%
 vision.failure.credential                           template  vision-block             108    1024   11%
 vision.failure.image-rejected                       template  vision-block              89    1024    9%
@@ -54,6 +56,7 @@ vision.failure.rate-limited                         template  vision-block      
 vision.failure.refused                              template  vision-block              44    1024    4%
 vision.failure.unsupported-format                   template  vision-block             117    1024   11%
 vision.system-note                                  template  system                   460    1024   45%
+attachment.read                                     wrapper   attachment-block         242    1024   24%
 vision.transcript                                   wrapper   vision-block             119    1024   12%
 rebrand.docs-guidance-anthropic                     rebrand   system                   302     512   59%
 rebrand.docs-guidance-default                       rebrand   system                   237     512   46%
@@ -67,7 +70,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 67; injected bytes: 26869; declared limits total: 126976
+fragments: 70; injected bytes: 27627; declared limits total: 130048
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)

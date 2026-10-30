@@ -14,6 +14,7 @@ import type { CloudArtifactMeta, CloudArtifactList, CloudJobEnvelope, CloudJobSt
 import type { ArtifactDownloadOutcome } from "./alpha-artifact-download"
 import { validateArtifactDescriptor, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import { parsePrefs, type ProjectPrefs } from "./alpha-cloud-consent"
+import { PROJECT_HIDDEN_DIR } from "../shared/project-hidden-dir"
 
 /** REQ-236(#1551):一次交付里没落成的那一段 —— 列表、某件下载、或某件登记。 */
 export type CloudRunSaveFailure = { scope: "list" | "download" | "register"; artifactId?: string; code: string; detail?: string }
@@ -140,7 +141,7 @@ export function resolveProjectAlphaRoot(projectDir: string, homeDir: string = os
     }
   })()
   if (!retired.ok) return { status: "unknown", reason: "retired global root identity cannot be confirmed" }
-  const root = path.join(project, ".code-puppy")
+  const root = path.join(project, PROJECT_HIDDEN_DIR)
   if (sameOrInside(project, retired.path) || related(root, retiredLexical) || related(root, retired.path))
     return { status: "retired-home", reason: "project Code Puppy root is related to the retired global root" }
 
@@ -165,7 +166,7 @@ export function alphaRoot(projectDir: string): string | null {
 
 /** Recovery gate 的 project-root 复验：root 必须仍是同一 canonical 项目的已验证 `.code-puppy` endpoint。 */
 export function assertProjectAlphaRootIdentity(root: string): void {
-  if (!path.isAbsolute(root) || path.basename(root) !== ".code-puppy") throw new Error("invalid project alpha root")
+  if (!path.isAbsolute(root) || path.basename(root) !== PROJECT_HIDDEN_DIR) throw new Error("invalid project alpha root")
   const resolved = resolveProjectAlphaRoot(path.dirname(root))
   if (resolved.status !== "project" || resolved.root !== path.normalize(root))
     throw new Error("project alpha root identity cannot be confirmed")

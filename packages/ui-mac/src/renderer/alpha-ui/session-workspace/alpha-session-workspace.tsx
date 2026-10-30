@@ -25,7 +25,9 @@ import {
   discardStaleEditRequest,
 } from "./session-edit-user-message"
 import { sessionSlashOriginsFor } from "./session-slash-origin"
-import { createComposerFocusChannel, sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
+import { createComposerFocusChannel, identityKey, sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
+import type { StagedAttachmentMeta } from "../../../shared/attachment-path"
+import { stagedComposerAttachment } from "../composer-attachments-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
 import "./session-workspace.css"
 
@@ -72,17 +74,32 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
     const info = identity ? serverSync().session.data.info[identity.sessionID] : undefined
     return canEditUserMessageForSession(identity, info)
   })
+  // 编辑重发与附件「重新读取」共用一个预填通道;修订号由这里统一发,两种请求不会撞号而被当成同一次。
+  let composerRequestRevision = 0
   const editUserMessage = createSessionEditUserMessageHandler({
     current,
     accepts: live.accepts,
     canEdit: (identity) => canEditUserMessageForSession(identity, serverSync().session.data.info[identity.sessionID]),
     session: () => serverSDK().client.session,
-    apply: setEditRequest,
+    apply: (request) => setEditRequest({ ...request, revision: ++composerRequestRevision }),
     reject: (error) => {
       console.warn("[alpha] edit resend revert failed", error)
       pushToast({ kind: "error", title: t("alpha.timeline.editResendFailed") })
     },
   })
+  // REQ-236 `#1553` AC4:附件卡「重新读取」—— 输入框里以同一个暂存附件(metadata 原样,不重新暂存)预填一句读取请求,
+  // 由用户自己发出(看得到这条消息);不在后台悄悄重读。目录取当前会话身份 —— 暂存路径相对的就是它。
+  const readAttachment = (staged: StagedAttachmentMeta) => {
+    const identity = current()?.identity
+    const key = identityKey(identity)
+    if (!identity || !key) return
+    setEditRequest({
+      identityKey: key,
+      revision: ++composerRequestRevision,
+      text: t("alpha.attach.readRequest", { name: staged.name }),
+      attachments: [stagedComposerAttachment(staged, identity.directory)],
+    })
+  }
   // REQ-236 `#1552` AC4:产物面板「本次对话」的后代判定沿 v1 `session.get` 的 parentID 上溯 —— 冷启动 renderer
   // 只有根会话,不能拿已加载的会话列表判。查不到(信封带 error / 抛错)= 失败,由面板按「不属于」处理。
   const sessionParentOf = (sessionID: string) =>
@@ -135,6 +152,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
               rail={rail}
               slashOriginsFor={sessionSlashOriginsFor}
               onEditUserMessage={canEditUserMessage() ? editUserMessage : undefined}
+              onReadAttachment={canEditUserMessage() ? readAttachment : undefined}
               turnWait={turnWait}
               onFocusPrompt={composerFocus.focus}
             />

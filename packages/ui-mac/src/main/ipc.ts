@@ -21,6 +21,7 @@ import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-work
 import { resolveAppPath } from "./apps"
 import { editorCliName } from "./platform"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
+import { stageComposerAttachment } from "./composer-attachment-stage"
 import { getStore } from "./store"
 import { GLOBAL_RENDERER_STORE, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
@@ -241,6 +242,11 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("release-picked-files", (event: IpcMainInvokeEvent, token: string) => {
     pickedFiles.release(event.sender.id, token)
   })
+
+  // REQ-236 `#1553` AC2:PDF / Office 附件在用户选择、拖入、粘贴时存进会话实例目录的隐藏目录(composer-attachment-stage.ts)。
+  ipcMain.handle("composer-attachment-stage", (_event, directory: unknown, name: unknown, reader: unknown, bytes: unknown) =>
+    stageComposerAttachment(directory, name, reader, bytes),
+  )
 
   ipcMain.handle(
     "save-file-picker",

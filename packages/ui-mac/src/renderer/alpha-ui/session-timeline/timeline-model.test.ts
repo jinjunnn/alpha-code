@@ -37,6 +37,7 @@ import {
   TURN_ERROR_MAX_CHARS,
   USER_TEXT_MAX_CHARS,
 } from "./timeline-model"
+import { PROJECT_HIDDEN_DIR } from "../../../shared/project-hidden-dir"
 
 describe("#863 reasoning 折叠头安全摘要", () => {
   test("只提取显式标题并清理展示标记；普通正文不猜摘要", () => {
@@ -1546,5 +1547,108 @@ describe("REQ-236 #1552 生图卡:派发调用事实 → cloudImage 行与显示
     expect(artifactRows).toHaveLength(1)
     if (artifactRows[0]!.kind !== "artifacts") throw new Error("expected artifacts")
     expect(artifactRows[0]!.links[0]!.runId).toBe("job_other")
+  })
+})
+
+// ── REQ-236 `#1553` AC4:用户气泡上方附件卡的读取结果 ────────────────────────────────────────
+describe("#1553 附件卡读取结果:只按会话里的真实读取调用与逐服务状态派生", () => {
+  const DIR = "/Users/me/proj"
+  const UUID = "0b8c7f9e-1d2a-4c3b-9e8f-7a6b5c4d3e2f"
+  const docMeta = { v: 1, name: "需求说明 v3.docx", mime: "application/x-docx", size: 942_080, path: `attachments/${UUID}/需求说明 v3.docx`, reader: "word" }
+  const pdfMeta = { v: 1, name: "合同.pdf", mime: "application/pdf", size: 10, path: `attachments/${UUID}/合同.pdf`, reader: "pdf" }
+  const staged = (id: string, messageID: string, meta: object) =>
+    textPart(id, messageID, "", { synthetic: true, metadata: { "codepuppy.attachment": meta } })
+  const readCall = (id: string, messageID: string, path: string, over: { origin?: string; name?: string; state?: object } = {}) =>
+    toolPart(id, messageID, "alpha-word_read_docx", {
+      display: { identity: { source: "mcp", origin: over.origin ?? "alpha-word", name: over.name ?? "read_docx" }, technicalId: "alpha-word_read_docx", authority: { kind: "not-asserted" } },
+      state: { status: "completed", input: { path }, output: '{"paragraphs":["x"]}', title: "", metadata: {}, time: { start: 0, end: 1 }, ...over.state },
+    } as Partial<ToolPart>)
+  const absolute = `${DIR}/${PROJECT_HIDDEN_DIR}/attachments/${UUID}/需求说明 v3.docx`
+  const readsOf = (rows: readonly TimelineRow[], index = 0) => {
+    const user = rows.filter((row) => row.kind === "user")[index]
+    if (!user || user.kind !== "user") throw new Error("expected user row")
+    return user.attachments.map((a) => (a.read?.kind === "failed" ? `failed:${a.read.reason}` : (a.read?.kind ?? "-")))
+  }
+  const run = (parts: Record<string, Part[]>, opts: { status?: string; services?: Record<string, unknown>; messages?: Message[] } = {}) =>
+    projectTimelineRows({
+      messages: opts.messages ?? [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")],
+      partsOf: (id) => parts[id] ?? [],
+      status: opts.status ?? "idle",
+      attachments: { directory: DIR, services: opts.services },
+    })
+  const connected = { "alpha-word": { status: "connected" }, "alpha-pdf": { status: "connected" } }
+
+  test("「已读取」⇔ 同会话有该读取工具的成功调用且路径经同一规范化后相等;路径不同 / 第三方同名工具 / 别名同名都不算", () => {
+    const base = { msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", docMeta)] }
+    expect(readsOf(run({ ...base, msg_a1: [readCall("prt_t", "msg_a1", absolute.replace("/attachments/", "//attachments/./"))] }, { services: connected }))).toEqual(["read"])
+    expect(readsOf(run({ ...base, msg_a1: [readCall("prt_t", "msg_a1", absolute.replace("需求说明", "别的"))] }, { services: connected }))).toEqual(["not-read"])
+    expect(readsOf(run({ ...base, msg_a1: [readCall("prt_t", "msg_a1", absolute, { origin: "my-word" })] }, { services: connected }))).toEqual(["not-read"])
+    expect(readsOf(run({ ...base, msg_a1: [readCall("prt_t", "msg_a1", absolute, { name: "write_docx" })] }, { services: connected }))).toEqual(["not-read"])
+    const alias = toolPart("prt_t", "msg_a1", "alpha-word_read_docx", { state: { status: "completed", input: { path: absolute }, output: "", title: "", metadata: {}, time: { start: 0, end: 1 } } })
+    expect(readsOf(run({ ...base, msg_a1: [alias] }, { services: connected }))).toEqual(["not-read"])
+  })
+
+  test("同一会话后面的回合(「重新读取」发出的那条)读成功了,先前那张卡也是「已读取」", () => {
+    const messages = [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1"), userMsg("msg_u2", 2000), assistantMsg("msg_a2", "msg_u2")]
+    const parts = {
+      msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", docMeta)],
+      msg_a1: [textPart("prt_x", "msg_a1", "没读")],
+      msg_u2: [textPart("prt_u2", "msg_u2", "请读取附件"), staged("prt_s2", "msg_u2", docMeta)],
+      msg_a2: [readCall("prt_t", "msg_a2", absolute)],
+    }
+    const rows = run(parts, { messages, services: connected })
+    expect([readsOf(rows, 0), readsOf(rows, 1)]).toEqual([["read"], ["read"]])
+  })
+
+  test("工具报错 ⇒ 读取失败(超时单列);read_pdf 每页空串 ⇒ 读到 0 字,有字 ⇒ 已读取", () => {
+    const base = { msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", docMeta)] }
+    const failed = (error: string) => readCall("prt_t", "msg_a1", absolute, { state: { status: "error", input: { path: absolute }, error, time: { start: 0, end: 1 } } })
+    expect(readsOf(run({ ...base, msg_a1: [failed("File is not a zip file")] }, { services: connected }))).toEqual(["failed:unreadable"])
+    expect(readsOf(run({ ...base, msg_a1: [failed("MCP error -32001: Request timed out")] }, { services: connected }))).toEqual(["failed:timeout"])
+    const pdfPath = `${DIR}/${PROJECT_HIDDEN_DIR}/attachments/${UUID}/合同.pdf`
+    const pdfCall = (output: string) =>
+      readCall("prt_t", "msg_a1", pdfPath, { origin: "alpha-pdf", name: "read_pdf", state: { output } })
+    const pdfBase = { msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", pdfMeta)] }
+    expect(readsOf(run({ ...pdfBase, msg_a1: [pdfCall(JSON.stringify({ path: pdfPath, pages: ["", " \n"] }))] }, { services: connected }))).toEqual(["empty"])
+    expect(readsOf(run({ ...pdfBase, msg_a1: [pdfCall(JSON.stringify({ path: pdfPath, pages: ["", "第 2 页"] }))] }, { services: connected }))).toEqual(["read"])
+  })
+
+  test("没有读取调用:读取工具不可用 ⇒ 读取失败(没有启动);回合在跑 ⇒ 准备中 / 等助手读取;回合结束 ⇒ 这一轮没有读取", () => {
+    const parts = { msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", docMeta)] }
+    const running = [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { time: { created: 10 } })]
+    expect(readsOf(run(parts, { services: {} }))).toEqual(["failed:not-running"])
+    expect(readsOf(run(parts, { services: { "alpha-word": { status: "failed", error: "spawn ENOENT" } }, status: "busy", messages: running }))).toEqual(["failed:not-running"])
+    expect(readsOf(run(parts, { services: { "alpha-word": { status: "disabled" } } }))).toEqual(["failed:not-running"])
+    expect(readsOf(run(parts, { services: { "alpha-word": { status: "pending" } }, status: "busy", messages: running }))).toEqual(["waiting"])
+    expect(readsOf(run(parts, { services: connected, status: "busy", messages: running }))).toEqual(["saved"])
+    expect(readsOf(run(parts, { services: connected }))).toEqual(["not-read"])
+    // 状态还没取到:不下「失败」的结论。
+    expect(readsOf(run(parts, { services: undefined }))).toEqual(["not-read"])
+    expect(readsOf(run(parts, { services: undefined, status: "busy", messages: running }))).toEqual(["saved"])
+  })
+
+  test("文本「已随消息发出」、图片带缩略图源;重载(从持久化的 JSON 再投影一次)状态不变;读取结果变了行的 rev 跟着变", () => {
+    const parts: Record<string, Part[]> = {
+      msg_u1: [
+        textPart("prt_u", "msg_u1", "看看"),
+        filePart("prt_i", "msg_u1"),
+        filePart("prt_m", "msg_u1", { mime: "text/plain", filename: "纪要.md", url: "data:text/plain;base64,aGVsbG8=" }),
+        staged("prt_s", "msg_u1", docMeta),
+      ],
+      msg_a1: [readCall("prt_t", "msg_a1", absolute)],
+    }
+    const rows = run(parts, { services: connected })
+    const user = rows[0]!
+    if (user.kind !== "user") throw new Error("expected user row")
+    expect(user.attachments.map((a) => [a.name, a.media, a.read?.kind ?? "-", a.url ?? "-", a.size])).toEqual([
+      ["screenshot.png", "image", "-", "data:image/png;base64,xxxx", 3],
+      ["纪要.md", "file", "sent", "-", 5],
+      ["需求说明 v3.docx", "file", "read", "-", 942_080],
+    ])
+    expect(user.attachments[2]!.staged).toEqual(docMeta as never)
+    const reloaded = JSON.parse(JSON.stringify(parts)) as Record<string, Part[]>
+    expect(readsOf(run(reloaded, { services: connected }))).toEqual(["-", "sent", "read"])
+    const unread = run({ msg_u1: parts.msg_u1! }, { services: connected })[0]!
+    expect(unread.kind === "user" && unread.rev !== user.rev).toBe(true)
   })
 })

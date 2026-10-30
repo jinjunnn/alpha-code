@@ -27,10 +27,11 @@ import {
   type McpOwnership,
 } from "./cloud-websearch-kill"
 import { createCloudVisionHooks } from "./cloud-vision-hooks"
+import { createAttachmentReaderHooks } from "./attachment-reader-hooks"
 import { cloudAccessState } from "./cloud-access"
 import { createHubBridge, processParentPort } from "./hub-bridge"
 import { createHubTools, pinHubInstallPermission } from "./hub-tools"
-import { createReloadScheduler, inProcessReloadClient } from "./reload-scheduler"
+import { createReloadScheduler, inProcessEngineRequest, inProcessReloadClient } from "./reload-scheduler"
 import { inProcessEngine } from "../../ui-mac/src/main/in-process-engine"
 
 // REQ-234 `#1531`:一个引擎进程一份(插件模块被 import 缓存)—— 定制中心的 parentPort 桥与重载调度器(唯一执行者)。
@@ -96,9 +97,19 @@ export const AlphaExt: Plugin = async (input) => {
     error: (m) => console.error(m),
   })
 
+  // `#1553`(REQ-236):暂存附件 ⇒ 追加读取指令(本机读取工具可用时叫模型去读,不可用时如实说明)。逐服务状态走进程内引擎
+  // (同 reloadClient 的理由:围栏下 input.client 的 TCP 连不上自己);没有交接(CLI / 测试宿主)才退回 input.client。
+  const engineRequest = engine ? inProcessEngineRequest(engine, input.directory) : undefined
+  const attachments = createAttachmentReaderHooks({
+    directory: input.directory,
+    mcpStatus: async () => (engineRequest ? engineRequest("GET", "/mcp") : input.client.mcp.status()),
+    error: (m) => console.error(m),
+  })
+
   const ownHooks: Awaited<ReturnType<Plugin>> = {
     "chat.message": async (hookInput, output) => {
       await vision.chatMessage(hookInput, output)
+      await attachments.chatMessage(hookInput, output)
     },
     "tool.execute.before": async (hookInput, output) => {
       // #223 R3→R5:web search 主权判决在 **MCP 工具**一侧的最终闸,必须是本钩子的第一句 ——

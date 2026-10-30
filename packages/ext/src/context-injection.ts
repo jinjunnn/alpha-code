@@ -88,6 +88,7 @@ export type ContextSink =
   | "tool-output" // 本机只读工具给模型的登录入口文字
   | "instruction" // ui-mac 写进 cfg.instructions 的文件:引擎 session/instruction.ts:135-150 读盘,request.ts:63-70 拼进 system 段
   | "vision-block" // `#1419` 云端识图结果块:用户消息里紧跟图片 part 的 synthetic text part(chat.message)/ Read 工具输出尾部(tool.execute.after)/ 回放历史时 cloud_vision 出错部件的替换文本与被省略的 input.image(messages.transform)
+  | "attachment-block" // `#1553` 附件读取指令:用户消息里紧跟暂存附件记录的 synthetic text part(chat.message,attachment-reader-hooks.ts)
 
 export type TextFragment = {
   readonly kind: "text"
@@ -412,6 +413,32 @@ function visionFragments(): (TextFragment | TemplateFragment | WrapperFragment)[
   ]
 }
 
+// ── attachment-reader-hooks.ts:暂存附件的读取指令(`#1553`,REQ-236 §2.6)────────────────────────────
+// 读取工具可用(或状态未知)⇒ 外框 wrapper:`{label}` = 读取工具在引擎里的 id(mcpEngineToolId 推导,不写死)、`{body}` =
+// attachmentAbsolutePath 算出的绝对路径(用户的文件名在里面)—— 两者都不是 alpha 的字,只量外框。
+// 读取工具不可用 ⇒ 按原因一句 template,`{name}` = 暂存文件名(已净化,≤128 字符),整句是 alpha 的字。
+export const ATTACHMENT_READ_ID = "attachment.read"
+export const ATTACHMENT_READ_TEMPLATE =
+  "〔用户附上的文件已存到本机。回答之前请先调用工具 {label} 读取它,参数 path 填写:{body}\n读到内容后再回答;读取失败或读到的内容为空时,如实告诉用户没有读到以及原因,不要猜测文件内容。〕"
+export const ATTACHMENT_UNAVAILABLE_KINDS = ["missing", "failed"] as const
+export type AttachmentUnavailableKind = (typeof ATTACHMENT_UNAVAILABLE_KINDS)[number]
+export const attachmentUnavailableId = (kind: AttachmentUnavailableKind) => `attachment.unavailable.${kind}`
+export const ATTACHMENT_UNAVAILABLE_TEXT: Readonly<Record<AttachmentUnavailableKind, string>> = Object.freeze({
+  missing:
+    "〔用户附上了文件 {name},已存到本机,但读取它所需的本机文档工具没有安装或已停用,这一轮读不到它的内容。请如实告诉用户没有读取这个文件以及原因(可在定制中心安装或启用文档工具后再试),不要猜测文件内容。〕",
+  failed:
+    "〔用户附上了文件 {name},已存到本机,但读取它所需的本机文档工具没有启动成功,这一轮读不到它的内容。请如实告诉用户没有读取这个文件以及原因,不要猜测文件内容。〕",
+})
+
+function attachmentFragments(): (TemplateFragment | WrapperFragment)[] {
+  return [
+    defineWrapper({ id: ATTACHMENT_READ_ID, sink: "attachment-block", template: ATTACHMENT_READ_TEMPLATE, maxBytes: CAP_DESCRIPTION }),
+    ...ATTACHMENT_UNAVAILABLE_KINDS.map((kind) =>
+      defineTemplate({ id: attachmentUnavailableId(kind), sink: "attachment-block", template: ATTACHMENT_UNAVAILABLE_TEXT[kind], maxBytes: CAP_DESCRIPTION }),
+    ),
+  ]
+}
+
 // rebrand 规则本体(from/to/file)住在 prompt-rebrand.ts —— drift 锁按 file 断言 from 仍在上游原文。
 // 这里只给每条 `to` 声明上限;两边 id 集合 1:1 由 context-injection.test.ts 钉住(多一条少一条都红)。
 function rebrandFragments(): RebrandFragment[] {
@@ -439,6 +466,8 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   ...rebrandFragments(),
   // ── cloud-vision.ts:识图结果块 + 看不了图的模型的系统说明(`#1419`)────────────────
   ...visionFragments(),
+  // ── attachment-reader-hooks.ts:暂存附件的读取指令(`#1553`)──────────────────────────────
+  ...attachmentFragments(),
   // ── ui-mac alpha-config-injection.ts:cfg.instructions 文件(`#1296`)────────────────
   defineText({ id: BEHAVIOR_FRAGMENT_ID, sink: "instruction", text: ALPHA_BEHAVIOR_MD, maxBytes: CAP_BODY }),
   ...identityFragments(),
@@ -509,8 +538,17 @@ export type Explanation = { ok: true; id: string; kind: ContextInjection["kind"]
  * 或是某条同 sink 外框的渲染实例(head 起、tail 止、mid 在两者之间且不与 head 重叠)。其它 sink 的字不串格。
  */
 export function explainVisionBlock(value: string): Explanation {
+  return explainBlock(value, "vision-block")
+}
+
+/** chat.message 咽喉对附件读取指令的判官(`#1553`):同 explainVisionBlock 的三种解释,只认 sink=attachment-block。 */
+export function explainAttachmentBlock(value: string): Explanation {
+  return explainBlock(value, "attachment-block")
+}
+
+function explainBlock(value: string, sink: "vision-block" | "attachment-block"): Explanation {
   for (const f of CONTEXT_INJECTIONS) {
-    if (f.kind === "reference" || f.sink !== "vision-block") continue
+    if (f.kind === "reference" || f.sink !== sink) continue
     if (f.kind === "text" && f.text === value) return { ok: true, id: f.id, kind: f.kind }
     if (f.kind === "template") {
       const [head, tail] = f.template.split(TEMPLATE_PARAM)
