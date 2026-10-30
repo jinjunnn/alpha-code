@@ -9,7 +9,7 @@ import { injectAlphaConfig, type AlphaConfigInjectionResult } from "./alpha-conf
 // #613 R1:ready 消息构造抽成 bun 可真执行的单元 —— 文本锚锁不住「值真的上车」,运行时闸门
 // 在 sidecar-ready-message.test.ts;本文件不得字面量构造 ready 消息(接线锚断言其不存在)。
 import { buildReadyMessage, type SidecarReadyMessage } from "./sidecar-ready-message"
-// #858:停止命令的形状与「关不关活动连接」的决定住在 sidecar-stop.ts —— 本文件顶层的
+// #858:停止命令的形状与执行住在 sidecar-stop.ts —— 本文件顶层的
 // registerHooks / getParentPort() 让它无法被测试 import(与 #607 同因),真判据必须在可 import
 // 的模块里跑(见 sidecar-stop.test.ts)。
 import {
@@ -118,7 +118,7 @@ parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
   if (!command) return
   if (command.type === "stop") {
-    void stop(command)
+    void stop()
     return
   }
   if (command.type === "write-probe") {
@@ -189,9 +189,9 @@ async function start(command: StartCommand) {
   }
 }
 
-async function stop(command: StopCommand) {
+async function stop() {
   try {
-    await stopSidecarListener(listener, command)
+    await stopSidecarListener(listener)
   } finally {
     listener = undefined
     parentPort.postMessage({ type: "stopped" })

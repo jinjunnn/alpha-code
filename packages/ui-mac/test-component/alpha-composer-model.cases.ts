@@ -955,7 +955,7 @@ describe("AlphaComposer production model seam", () => {
     send.click()
     window.dispatchEvent(
       new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "recovering", generation: 7, reason: "token-only" },
+        detail: { status: "recovering", generation: 7, reason: "structural" },
       }),
     )
     started.resolve("session-new")
@@ -965,66 +965,6 @@ describe("AlphaComposer production model seam", () => {
     expect(submitted).toBe(0)
     mounted.dispose()
     toasts.dispose()
-  })
-
-  test("idle token-only 换血只关闭执行门且不闪动;换代失败则如实回到 Syncing", async () => {
-    let submissions = 0
-    installApi({ auth: async () => loggedOut })
-    const mounted = mount(() =>
-      createComponent(AlphaComposerRuntime, {
-        mode: "home",
-        projects: {
-          ...projects,
-          startChat: async () => {
-            submissions++
-            return "session-new"
-          },
-        },
-        directory: () => "/workspace",
-        command,
-        modelContract: {
-          list: async () => [info("deepseek-byok", "deepseek-v4-flash")],
-          current: async () => undefined,
-          switch: async () => {},
-        },
-        initialText: "保留稳定布局",
-      }),
-    )
-
-    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
-    await waitFor(() => expect(send.disabled).toBe(false))
-
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "recovering", generation: 8, reason: "token-only" },
-      }),
-    )
-    await waitFor(() => expect(send.disabled).toBe(true))
-    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
-    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留稳定布局")
-
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "ready", generation: 8, reason: "token-only" },
-      }),
-    )
-    await waitFor(() => expect(send.disabled).toBe(false))
-    expect(submissions).toBe(0)
-
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "recovering", generation: 9, reason: "token-only" },
-      }),
-    )
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "failed", generation: 9, reason: "token-only" },
-      }),
-    )
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelStatusReading"]))
-    expect(send.disabled).toBe(true)
-    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留稳定布局")
-    mounted.dispose()
   })
 
   test("KEY 读取失败由外层失败态呈现并阻止提交；picker 重试会重跑整条链", async () => {
@@ -1276,10 +1216,10 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
-  test("已打开 picker 的 token-only 换血:recovering 静默,成功腿 ready + SSE 重连仍静默且不重拉 list", async () => {
-    // #1022 B1(AC1 主路径):成功续期会再发 auth ready、同代 generation ready、SSE 重连 ——
-    // 三路都不得把已渲染的账户/模型打回「正在同步…」/「正在连接引擎」。listReads 是承重断言:
-    // 任何一路走了 loadAll / retryImmediately 都会多打一次 list。
+  test("已打开 picker 的同身份 auth recovering → ready:两次都静默,不重拉 list", async () => {
+    // #1022 B1:续期走结构性重启(凭据在场性变化,REQ-236 `#1562`)时 main 发一对同身份 auth 事件
+    // (recovering → ready),它们不得把已渲染的账户/模型打回「正在同步…」。listReads 是承重断言:
+    // 走了 loadAll 就会多打一次 list。(普通续期热应用不发任何 auth 事件;引擎换代由 generation 事件管。)
     resetComposerModelProjection()
     const account = { email: "quiet@alpha.dev", plan: "pro" }
     let authNow: AuthState = {
@@ -1328,28 +1268,17 @@ describe("ModelPickPop production component", () => {
     const readsBeforeRecovering = authReads
     authListener?.(authNow)
     await waitFor(() => expect(authReads).toBeGreaterThan(readsBeforeRecovering))
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "recovering", generation: 11, reason: "token-only" },
-      }),
-    )
     await flush()
     expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
     expect(mounted.host.textContent).not.toContain(zh["alpha.model.engineConnecting"])
     expect(mounted.host.textContent).toContain("Pro")
     expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
 
-    // 成功腿三路:auth 回 ready、同代 generation ready、SSE 重连 —— 全部静默,一次 list 都不多打。
+    // 成功腿:auth 回 ready —— 静默,一次 list 都不多打。
     authNow = { ...authNow, platformStatus: "ready" }
     const readsBeforeReady = authReads
     authListener?.(authNow)
     await waitFor(() => expect(authReads).toBeGreaterThan(readsBeforeReady))
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "ready", generation: 11, reason: "token-only" },
-      }),
-    )
-    window.dispatchEvent(new Event("alpha:sse-reconnected"))
     await flush()
     await flush()
     expect(listReads).toBe(settledListReads)
@@ -1357,56 +1286,6 @@ describe("ModelPickPop production component", () => {
     expect(mounted.host.textContent).not.toContain(zh["alpha.model.engineConnecting"])
     expect(mounted.host.textContent).toContain("Pro")
     expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
-    mounted.dispose()
-  })
-
-  test("token-only 换血失败终态:如实回到 Syncing 并真的重拉 list(只改文案不重试必须红)", async () => {
-    // #1022 闸 2:同代 failed 除了呈现恢复语义,还必须真的走 retryImmediately —— 只断文案的话,
-    // 删掉 retryImmediately 照样绿(setListState("recovering") 也会让行显示「正在同步…」)。
-    resetComposerModelProjection()
-    installApi()
-    let listReads = 0
-    let holdRetry = false
-    const held = deferred<ModelV2Info[]>()
-    const mounted = mount(() =>
-      createComponent(ModelPickPop, {
-        contract: {
-          list: async () => {
-            listReads++
-            if (holdRetry) return held.promise
-            return platformModels
-          },
-          current: async () => undefined,
-          switch: async () => {},
-        },
-        directory: () => "/workspace",
-        selected: () => null,
-        onSelect: async () => {},
-        onPicked: () => {},
-      }),
-    )
-
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"]))
-    await flush()
-    expect(listReads).toBe(1)
-
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "recovering", generation: 12, reason: "token-only" },
-      }),
-    )
-    await flush()
-    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
-
-    holdRetry = true
-    window.dispatchEvent(
-      new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "failed", generation: 12, reason: "token-only" },
-      }),
-    )
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
-    await waitFor(() => expect(listReads).toBe(2))
-    held.resolve(platformModels)
     mounted.dispose()
   })
 
@@ -1515,8 +1394,8 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
-  test("#577 负向:从未进入静默窗口的 failed(structural / 代不匹配)不得触发额外 list 重拉", async () => {
-    // 静默腿的「同代 failed 立即重试」若回流到所有 failed,就推翻 #577 的终态语义。
+  test("#577 负向:failed 终态(structural / 代不匹配)不得触发额外 list 重拉", async () => {
+    // failed 若唤醒立即重试,就推翻 #577 的终态语义。
     resetComposerModelProjection()
     installApi()
     let listReads = 0
@@ -1541,7 +1420,7 @@ describe("ModelPickPop production component", () => {
     await flush()
     expect(listReads).toBe(1)
 
-    // structural recovering → failed:非 token-only,从未静默 —— failed 不得唤醒立即重试。
+    // structural recovering → failed —— failed 不得唤醒立即重试。
     window.dispatchEvent(
       new CustomEvent("alpha:runtime-recovery", {
         detail: { status: "recovering", generation: 5, reason: "structural" },
@@ -1556,10 +1435,10 @@ describe("ModelPickPop production component", () => {
     await flush()
     expect(listReads).toBe(1)
 
-    // token-only 静默窗口开着,但 failed 的 generation 对不上 —— 同样不得重试。
+    // 新一代 recovering 之后来了一个代对不上的 failed —— 同样不得重试。
     window.dispatchEvent(
       new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "recovering", generation: 6, reason: "token-only" },
+        detail: { status: "recovering", generation: 6, reason: "structural" },
       }),
     )
     window.dispatchEvent(

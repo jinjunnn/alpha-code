@@ -1,6 +1,6 @@
 // #565(REQ-109 第四闪机制)「收敛不重挂 composer」闸门。
 //
-// 保证(删掉本文件会失去什么):surface/服务器收敛与 token-only 换血重新变成「路由树重建 →
+// 保证(删掉本文件会失去什么):surface/服务器收敛重新变成「路由树重建 →
 // composer 全量 remount → epoch/草稿全重置」这件事将不再有任何东西能在真机之前发现。那正是
 // T1 定案的第四闪机制(#528 评论、docs/verification/2026-07-24-req109-110-pr3-longrun.md):
 // 旧 `resolvedSurfaces` 异步 admission 已被 REQ-089(#638)删除,但「删了驱动」≠「命题被钉住」——
@@ -189,35 +189,6 @@ describe("#565 surface 收敛不重挂 composer(REQ-109 第四闪机制回归闸
     expect(runtime.composerMountCount()).toBe(1)
     expect(composerRoot()).toBe(composerBefore)
     expect(composerTextarea().value).toBe("这句草稿不应随收敛蒸发")
-  })
-
-  test("token-only 换血 ×2:composer 不重挂,草稿与节点保持,数据层真的换过血", async () => {
-    await bootToHome()
-    const composerBefore = composerRoot()
-    typeDraft("换血期间的草稿")
-
-    for (const round of [1, 2]) {
-      const generation = runtime.nextGeneration()
-      runtime.emitSidecarGeneration({ generation, status: "recovering", reason: "token-only" })
-      await settle()
-      runtime.emitSidecarGeneration({ generation, status: "ready", reason: "token-only" })
-      // 事件真的被生产 runtime-recovery 收下并放行(recovering + ready 各一条),不是空转:
-      await waitFor(
-        () => runtime.generationsReceived().filter((g) => g === generation).length === 2,
-        `第 ${round} 次换血的 recovering/ready 均被生产代码接收`,
-      )
-      await settle()
-    }
-
-    // 换血作用在活的数据层上:生产 use-projects 仍连着、无错、项目还在。
-    const store = runtime.projectsApi()!.store
-    expect(store.error).toBe(false)
-    expect(store.ready).toBe(true)
-    expect(store.projects.some((p) => p.worktree === runtime.PROJECT_DIRECTORY)).toBe(true)
-
-    expect(runtime.composerMountCount()).toBe(1)
-    expect(composerRoot()).toBe(composerBefore)
-    expect(composerTextarea().value).toBe("换血期间的草稿")
   })
 })
 

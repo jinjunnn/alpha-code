@@ -802,28 +802,3 @@ test("#1560 首发:显式选择的模型随首条消息与斜杠命令发出(含
     variant: "高",
   })
 })
-
-test("#858 idle token-only rotation keeps the SDK identity stable, but a failed generation falls back to probing", async () => {
-  healthReachable = false
-  healthProbes = 0
-  currentState = { status: "ready", generation: 20, reason: "boot" }
-  await replayRuntimeRecoveryState()
-  const { api } = mountHook(5)
-  await waitFor(() => expect(api.sdk()).toBeDefined())
-  const stable = api.sdk()
-
-  bridgeCb!({ status: "recovering", generation: 21, reason: "token-only" })
-  await tick(20)
-  expect(api.sdk()).toBe(stable)
-  expect(healthProbes).toBe(0)
-
-  bridgeCb!({ status: "ready", generation: 21, reason: "token-only" })
-  await tick(20)
-  expect(api.sdk()).toBe(stable)
-  expect(healthProbes).toBe(0)
-
-  bridgeCb!({ status: "recovering", generation: 22, reason: "token-only" })
-  bridgeCb!({ status: "failed", generation: 22, reason: "token-only" })
-  await waitFor(() => expect(healthProbes).toBeGreaterThan(0))
-  expect(api.sdk()).toBeUndefined()
-})

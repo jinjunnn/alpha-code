@@ -50,8 +50,8 @@ describe("model recovery state semantics", () => {
 
 describe("sidecar generation ordering", () => {
   test("accepts recovering to ready and rejects stale snapshot regressions", () => {
-    const recovering = { status: "recovering", generation: 4, reason: "token-only" } as const
-    const ready = { status: "ready", generation: 4, reason: "token-only" } as const
+    const recovering = { status: "recovering", generation: 4, reason: "structural" } as const
+    const ready = { status: "ready", generation: 4, reason: "structural" } as const
 
     expect(shouldApplySidecarState(undefined, recovering)).toBe(true)
     expect(shouldApplySidecarState(recovering, ready)).toBe(true)

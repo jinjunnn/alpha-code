@@ -1488,10 +1488,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         setRuntimeUnavailable(true)
         runtimeGenerationEpoch++
         const interrupted = running() || sending()
-        // An idle token-only renewal changes credentials, not the catalog or selected model.
-        // Preserve the ready projection and silently close the execution gate; structural
-        // recovery and an interrupted response still rebuild the chain and surface recovery.
-        if (state.reason !== "token-only" || interrupted) setModelChainState("recovering")
+        // Every respawn is structural (token renewal hot-applies credentials without one, REQ-236 `#1562`):
+        // rebuild the chain and surface recovery.
+        setModelChainState("recovering")
         // C7:引擎运行态是 typed live 通道的派生值(sessionDock.running),重启后随
         // session_status 自行归位 —— 本地只需复位在途提交并如实播报中断。
         if (interrupted) {

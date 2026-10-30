@@ -79,7 +79,7 @@ export type ServerReadyData = {
   password: string | null
 }
 
-export type SidecarGenerationReason = "boot" | "token-only" | "structural"
+export type SidecarGenerationReason = "boot" | "structural"
 
 /** REQ-159 `#1322`:工作区写探针的回答(合同本体在 main/workspace-write-probe.ts,这里是 renderer 可见的形状)。 */
 export type WorkspaceWriteProbeResult = {

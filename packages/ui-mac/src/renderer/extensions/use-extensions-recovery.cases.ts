@@ -33,7 +33,7 @@ async function until(check: () => boolean | Promise<boolean>) {
 
 function emit(status: SidecarGenerationState["status"]) {
   if (status === "recovering") generation++
-  listeners.forEach((listener) => listener({ generation, status, reason: "token-only" }))
+  listeners.forEach((listener) => listener({ generation, status, reason: "structural" }))
 }
 
 function closedPort() {

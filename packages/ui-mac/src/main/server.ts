@@ -35,7 +35,7 @@ import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
 import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 import { markStartupTimeline } from "./startup-timeline"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
-import { buildSidecarStopCommand, type SidecarStopMode } from "./sidecar-stop"
+import { SIDECAR_STOP_COMMAND } from "./sidecar-stop"
 import type { AlphaSidecarOutbound } from "./alpha-sidecar-messages"
 import { consumeDanglingSweepCredit } from "./dangling-sweep-latch"
 // REQ-159 `#1321`:进程围栏计划 —— fork 之前渲染 + 试编译可写集、解析原生模块路径,经 StartCommand 交给
@@ -81,11 +81,8 @@ type SidecarMessage =
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
-// 形状与两侧的读写都住在 ./sidecar-stop(sidecar.ts 消费同一份);此处只做再导出,
-// 让既有 `import { SidecarStopMode } from "./server"` 的调用点不必改。
-export type { SidecarStopMode }
 export type SidecarListener = {
-  stop: (mode?: SidecarStopMode) => Promise<void>
+  stop: () => Promise<void>
   kill: () => void
   /**
    * REQ-159 `#1322`:让**被围栏的 sidecar** 在 `directory` 真写一次再删,回答 writable / denied / unknown。
@@ -97,15 +94,6 @@ export type SidecarListener = {
 const SIDECAR_SERVICE_NAME = "opencode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
-// #858:token-only 换血已经会如实中断活动流并保留 renderer/draft。给旧请求
-// 一个很短的收口机会,但不能让它阻塞新 token 的 sidecar 整整 6s。结构换血和退出
-// 仍用上面的完整 graceful 预算。
-//
-// 这个数是**兜底**,不是正常路径:正常路径下停止命令带着 `closeActiveConnections`,
-// sidecar 主动关掉活动连接后自己退出,远早于此。它只在 sidecar 连强关都做不完(引擎卡死)
-// 时才到期,而到期意味着 SIGTERM —— 把 sidecar 自己的 finalizer 砍在半路。
-// 换句话说:主动关连接是修法,这个 timer 是安全网;别把安全网当修法。
-const SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT = 500
 
 type SpawnLocalServerOptions = {
   userDataPath: string
@@ -745,16 +733,13 @@ export async function spawnLocalServer(
         if (!exited) child.kill()
       },
       probeWrite: (directory: string) => writeProbes.request(directory),
-      stop: (mode: SidecarStopMode = "graceful") => {
+      stop: () => {
         if (stopping) return stopping
         if (exited) return Promise.resolve()
-        // #858:停止原因必须过进程边界 —— 关不关活动连接的开关在 sidecar 那一侧的
-        // `listener.stop(close)` 上,main 这边只有 timer,而 timer 到期 = SIGTERM,不是"关连接"。
-        child.postMessage(buildSidecarStopCommand(mode))
-        const timeoutMs = mode === "token-rotation" ? SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT : SIDECAR_STOP_TIMEOUT
+        child.postMessage(SIDECAR_STOP_COMMAND)
         stopping = Promise.race([
           exit.promise.then(() => undefined),
-          delay(timeoutMs).then(() => {
+          delay(SIDECAR_STOP_TIMEOUT).then(() => {
             if (!exited) child.kill()
           }),
         ])

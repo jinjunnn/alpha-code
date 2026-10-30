@@ -622,7 +622,7 @@ describe("keyless baseline vs the real login-shell import (#223 Major 3)", () =>
 })
 
 describe("spawnLocalServer", () => {
-  test("token rotation bounds graceful stop at 500ms while the default keeps the 6s budget", async () => {
+  test("a stop that never drains is bounded by the 6s graceful budget", async () => {
     class HangingStopChild extends FakeChild {
       kills = 0
 
@@ -637,7 +637,7 @@ describe("spawnLocalServer", () => {
       }
     }
 
-    const run = async (mode: "token-rotation" | "graceful", beforeKillMs: number) => {
+    const run = async (beforeKillMs: number) => {
       creditDanglingSweepForSpawn()
       const child = new HangingStopChild()
       const result = await spawnLocalServer("127.0.0.1", 4098, "password", {
@@ -648,7 +648,7 @@ describe("spawnLocalServer", () => {
       })
       await result.health.wait
 
-      const stopping = result.listener.stop(mode)
+      const stopping = result.listener.stop()
       vi.advanceTimersByTime(beforeKillMs)
       await Promise.resolve()
       expect(child.kills).toBe(0)
@@ -659,8 +659,7 @@ describe("spawnLocalServer", () => {
 
     vi.useFakeTimers()
     try {
-      await run("token-rotation", 499)
-      await run("graceful", 5_999)
+      await run(5_999)
     } finally {
       vi.useRealTimers()
     }

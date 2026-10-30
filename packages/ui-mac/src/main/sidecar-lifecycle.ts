@@ -59,7 +59,7 @@ export function armRespawnGenerationTerminal(opts: {
       opts.publish({
         status: healthy ? (injectionFailure ? "injection-failed" : "ready") : "failed",
         generation: opts.generation,
-        // 续期不再重启引擎(`#1562`),于是每一次 respawn 都是结构性的;线上形状的 `"token-only"` 不再由 main 发出。
+        // 续期不再重启引擎(`#1562`),于是每一次 respawn 都是结构性的。
         reason: "structural",
         // REQ-159 `#1322`:围栏字段只随引擎在线的终态上车(与 boot 侧 settleBootHealth 同构)。
         ...(healthy && fence ? { fence } : {}),

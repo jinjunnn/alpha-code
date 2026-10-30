@@ -251,5 +251,5 @@ test("ANCHOR (not a gate): #1562 respawn 时间线写具名原因,确认只挂�
   // 确认只有这一处;boot 路与续期路都不确认,令牌续期也不再经任何 latch 驱动重启。
   expect(source.match(/markTokenGenerationApplied\(/g)).toHaveLength(1)
   expect(source).not.toMatch(/tokenRotation|onRenewed|token-only|"structural"\)/)
-  expect(source).toContain('await current.stop("graceful")')
+  expect(source).toContain("await current.stop()")
 })
