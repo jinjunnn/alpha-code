@@ -225,7 +225,7 @@ describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence",
     if (root) rmSync(root, { recursive: true, force: true })
   })
 
-  async function exchange(format: AlphaOfficeFormat, childEnv = env, template = commands.get(format)!) {
+  async function exchange(format: AlphaOfficeFormat, childEnv = env, template = commands.get(format)!, calls: Array<[string, Record<string, unknown>]> = []) {
     const command = template.map((argument) => argument.replace("{workspace}", workspace))
     const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile, ...command], {
       cwd: workspace, env: childEnv, stdin: "pipe", stdout: "pipe", stderr: "pipe", timeout: 120_000,
@@ -234,7 +234,8 @@ describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence",
     child.stdin.write([
       JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } }),
       JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
-      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }), "",
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      ...calls.map(([name, args], index) => JSON.stringify({ jsonrpc: "2.0", id: 3 + index, method: "tools/call", params: { name, arguments: args } })), "",
     ].join("\n"))
     child.stdin.end()
     const [stdout, stderr, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
@@ -292,8 +293,9 @@ describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence",
   }, 180_000)
 
   // #1564 AC1:main 模板(随包解释器 `-I -B` + 随包 server)在同一道生产围栏、同一份 sidecar env 里起得来,
-  // PATH 上没有 uv 也一样;没有任何出网(策略代理一条记录都没有),也不往 uv 缓存写东西。
-  test("#1564: the four bundled-runtime commands initialize inside the production fence with no uv on PATH and no egress", async () => {
+  // PATH 上没有 uv 也一样;四种格式各写一个文件再读回(原生扩展 lxml / Pillow 在沙箱里真被加载,不只是握手);
+  // 没有任何出网(策略代理一条记录都没有),也不往 uv 缓存写东西。
+  test("#1564: the four bundled-runtime commands write and read a file inside the production fence with no uv on PATH and no egress", async () => {
     const runtime = buildOfficeRuntime({ arch: process.arch === "x64" ? "x64" : "arm64" }).dir
     const withoutUv = { ...env, PATH: "/usr/bin:/bin" }
     for (const connector of ALPHA_OFFICE_CONNECTORS) {
@@ -301,7 +303,19 @@ describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence",
         argument.replace("{alphaResources}/office-runtime", runtime).replace("{alphaResources}", resolve(import.meta.dir, "../../resources")),
       )
       expect(template.slice(0, 3)).toEqual([join(runtime, "bin", "python3"), "-I", "-B"])
-      connected(connector.format, await exchange(connector.format, withoutUv, template))
+      const file = join(workspace, `fenced${connector.extension}`)
+      const write: Record<string, unknown> = {
+        word: { path: file, paragraphs: ["fenced 1564"] },
+        excel: { path: file, sheets: [{ name: "S", cells: { A1: "fenced 1564" } }] },
+        powerpoint: { path: file, slides: [{ title: "fenced 1564", body: ["x"] }] },
+        pdf: { path: file, pages: ["fenced 1564"] },
+      }[connector.format] as Record<string, unknown>
+      const extension = connector.extension.slice(1)
+      const result = await exchange(connector.format, withoutUv, template, [[`write_${extension}`, write], [`read_${extension}`, { path: file }]])
+      connected(connector.format, result)
+      const messages = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as { id?: number; result?: { isError?: boolean; content?: Array<{ text: string }> } })
+      for (const id of [3, 4]) expect(messages.find((message) => message.id === id)?.result?.isError, JSON.stringify(messages)).not.toBe(true)
+      expect(messages.find((message) => message.id === 4)?.result?.content?.[0]?.text).toContain("fenced 1564")
     }
     expect(proxyLog).toEqual([])
     expect(fs.existsSync(join(root, "userData", "uv-cache"))).toBe(false)

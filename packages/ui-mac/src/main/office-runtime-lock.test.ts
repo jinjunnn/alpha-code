@@ -8,7 +8,8 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { OFFICE_RUNTIME_LOCK_DIR, lockClosureProblems, parseRequirementsLock, readOfficeRuntimeLock } from "../../scripts/build-office-runtime"
+import { homedir } from "node:os"
+import { OFFICE_RUNTIME_DOWNLOAD_CACHE, OFFICE_RUNTIME_LOCK_DIR, lockClosureProblems, parseRequirementsLock, readOfficeRuntimeLock } from "../../scripts/build-office-runtime"
 
 const read = (name: string) => readFileSync(join(OFFICE_RUNTIME_LOCK_DIR, name), "utf8")
 const requirementsIn = read("requirements.in")
@@ -70,5 +71,8 @@ describe("#1564 AC2 bundled Office runtime locks", () => {
       expect(pin.sha256).toMatch(/^[0-9a-f]{64}$/)
     }
     expect(lock.python.arm64.sha256).not.toBe(lock.python.x64.sha256)
+    // 下载缓存本机所有 worktree 共用,不在任何一个 checkout 里(新 worktree 不必再经代理下载一遍)。
+    expect(OFFICE_RUNTIME_DOWNLOAD_CACHE).toBe(join(homedir(), "Library", "Caches", "codepuppy", "office-runtime"))
+    expect(OFFICE_RUNTIME_DOWNLOAD_CACHE.startsWith(join(OFFICE_RUNTIME_LOCK_DIR, "..", ".."))).toBe(false)
   })
 })

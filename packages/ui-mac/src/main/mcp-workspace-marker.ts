@@ -2,18 +2,17 @@
 // opencode instance. Older installs persisted the Hub-selected directory in alpha.jsonc; this boot
 // reconcile restores only exact catalog command templates to the literal {workspace} marker before
 // the first sidecar fork. Receipt identity plus byte-exact argv matching keeps custom MCPs and
-// catalog version drift outside this migration.
+// catalog version drift outside this migration. The four first-party Office entries are not this
+// module's: since #1564 their whole command (workspace marker included) is main's template, and
+// alpha-office-instance.ts migrates the older uv form.
 
-import { readFileSync, realpathSync } from "node:fs"
-import { isAbsolute, join, win32 } from "node:path"
+import { readFileSync } from "node:fs"
+import { isAbsolute, win32 } from "node:path"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
-import { ALPHA_OFFICE_CONNECTORS, WORKSPACE_MARKER, alphaOfficeInstallCommand } from "../shared/office-advisories"
+import { WORKSPACE_MARKER } from "../shared/office-advisories"
 import { alphaGlobalRoot, readLedger } from "./alpha-installs"
 import { mcpPluginTargetPath, writeConfigTextAtomic } from "./ext-config"
-import { resourcesRoot } from "./ext-fs-installer"
-
-const ALPHA_OFFICE_SERVER_MARKER = "{alphaResources}/office-mcp/server.py"
 
 const BUNDLED_WORKSPACE_MCPS = [
   {
@@ -31,7 +30,6 @@ const BUNDLED_WORKSPACE_MCPS = [
 type ReconcileOptions = {
   configPath?: string
   ledgerRoot?: string
-  alphaOfficeServerPath?: string | null
   logError?: (message: string) => void
 }
 
@@ -43,33 +41,15 @@ export type WorkspaceMarkerReconcileOutcome = {
 /** Return the marker-restored command only when catalog identity and the complete pinned template
  * match. The workspace slot must contain one concrete absolute path; embedded marker substrings are
  * deliberately not interpreted. A null result means leave the command byte-for-byte untouched. */
-export function restoreWorkspaceMarker(
-  catalogId: string,
-  name: string,
-  command: unknown,
-  alphaOfficeServerPath?: string | null,
-): string[] | null {
+export function restoreWorkspaceMarker(catalogId: string, name: string, command: unknown): string[] | null {
   if (!Array.isArray(command) || !command.every((argument) => typeof argument === "string")) return null
 
   const bundled = BUNDLED_WORKSPACE_MCPS.find(
     (candidate) => candidate.catalogId === catalogId && candidate.name === name,
   )
-  const office = ALPHA_OFFICE_CONNECTORS.find(
-    (candidate) => candidate.catalogId === catalogId && candidate.name === name,
-  )
-  if (!bundled && !office) return null
+  if (!bundled) return null
 
-  const officeServer = office
-    ? alphaOfficeServerPath === undefined
-      ? resolveAlphaOfficeServerPath()
-      : alphaOfficeServerPath
-    : null
-  if (office && !officeServer) return null
-  const template = bundled
-    ? [...bundled.command]
-    : alphaOfficeInstallCommand(office!.format).map((argument) =>
-        argument === ALPHA_OFFICE_SERVER_MARKER ? officeServer! : argument,
-      )
+  const template = [...bundled.command]
   const workspaceIndex = template.indexOf(WORKSPACE_MARKER)
   if (workspaceIndex < 0 || command.length !== template.length) return null
   if (template.some((argument, index) => index !== workspaceIndex && command[index] !== argument)) return null
@@ -137,7 +117,7 @@ export function reconcileMcpWorkspaceMarkers(options: ReconcileOptions = {}): Wo
     if (!isRecord(value) || value.type !== "local") return []
     const catalogId = owned.get(name)
     if (!catalogId) return []
-    const command = restoreWorkspaceMarker(catalogId, name, value.command, options.alphaOfficeServerPath)
+    const command = restoreWorkspaceMarker(catalogId, name, value.command)
     return command ? [{ name, command }] : []
   })
   if (restored.length === 0) return { migrated: [], warnings }
@@ -158,14 +138,6 @@ export function reconcileMcpWorkspaceMarkers(options: ReconcileOptions = {}): Wo
     return { migrated: [], warnings }
   }
   return { migrated: restored.map((entry) => entry.name), warnings }
-}
-
-function resolveAlphaOfficeServerPath(): string | null {
-  try {
-    return realpathSync(join(resourcesRoot(), "office-mcp", "server.py"))
-  } catch {
-    return null
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

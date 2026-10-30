@@ -190,10 +190,10 @@ Word / Excel / PowerPoint / PDF 四个文档工具的命令是 `<Resources>/offi
   (完整传递闭包 + sha256,文件头记着生成命令 `uv pip compile … --python-platform <triple> --generate-hashes`;
   升级任何一个包就重跑这两条)、`office-runtime.lock`(python-build-standalone CPython 的 URL + sha256,以及闭包的依赖图)。
   闭包是否完整由 `src/main/office-runtime-lock.test.ts` 判。
-- 构建:下载并校验运行时 → `pip install --require-hashes --only-binary=:all:` → `pip check` → 已装版本与依赖图逐项对 lock →
-  删 `test/`、`tkinter`、`idlelib`、`ensurepip`、`pip` → `compileall`(unchecked-hash)。lock 与脚本都没变时复用上次产物。
-  下载缓存在 `native/office-runtime/cache/`(运行时)与 pip 自己的缓存(轮子)。
-- 验证(每次构建都跑,任何一项不过即失败):每个 Mach-O 含目标架构片、随包解释器 `-I` 逐个 import 闭包里的顶层模块、
+- 构建:下载并校验运行时 → `pip install --no-compile --require-hashes --only-binary=:all:` → `pip check` → 已装版本与依赖图逐项对 lock →
+  删 `test/`、`tkinter`、`idlelib`、`ensurepip`、`pip` 与 pip 写进 `bin/` 的脚本 → `compileall -f -s <staging>`(unchecked-hash;`.pyc` 里不留构建机路径)。lock 与脚本都没变时复用上次产物。
+  下载缓存在 `~/Library/Caches/codepuppy/office-runtime/`(运行时,本机所有 worktree 共用,命中仍按 sha256 核验)与 pip 自己的缓存(轮子)。
+- 验证(每次构建都跑,任何一项不过即失败):每个 Mach-O 含目标架构片、没有任何文件带着构建机的 staging 路径、随包解释器 `-I` 逐个 import 闭包里的顶层模块、
   按生产命令形状驱动 `server.py` 四种格式各写一个样例文件再读回。x64 在 arm64 打包机上经 Rosetta(`arch -x86_64`)
   执行同样的安装与验证;没装 Rosetta 时构建直接失败(`softwareupdate --install-rosetta`),不会跳过。
 - beforePack 同样核对 `office-runtime/` 下每个 Mach-O 含目标架构片;签名时 electron-builder 把它们与其它内嵌二进制

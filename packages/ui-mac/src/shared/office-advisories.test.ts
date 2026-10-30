@@ -140,6 +140,9 @@ describe("REQ-133 Alpha Office connector registry and stdio safety", () => {
       ).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { MCP_TRANSPORT: "sse" } }, workspace, resources).ok).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { PYTHONPATH: "/tmp/inject" } }, workspace, resources).ok).toBe(false)
+      // #1564:随包运行时不下载任何东西,uv 时代的包索引变量不再放行。
+      for (const key of ["UV_DEFAULT_INDEX", "PIP_INDEX_URL"])
+        expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { [key]: "https://pypi.tuna.tsinghua.edu.cn/simple" } }, workspace, resources).ok).toBe(false)
     }
   })
 })

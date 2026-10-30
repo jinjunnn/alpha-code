@@ -25,7 +25,7 @@
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -36,7 +36,8 @@ const scriptPath = fileURLToPath(import.meta.url)
 const packageDir = resolve(dirname(scriptPath), "..")
 export const OFFICE_RUNTIME_LOCK_DIR = join(packageDir, "resources", "office-runtime")
 const SERVER = join(packageDir, "resources", "office-mcp", "server.py")
-const CACHE_DIR = join(packageDir, "native", "office-runtime", "cache")
+/** 运行时下载缓存,本机所有 worktree 共用(新 worktree 第一次构建不必再经代理下载);命中仍按 lock 的 sha256 核验。 */
+export const OFFICE_RUNTIME_DOWNLOAD_CACHE = join(homedir(), "Library", "Caches", "codepuppy", "office-runtime")
 const STAMP = ".office-runtime-stamp"
 const TRIMMED = ["test", "tkinter", "idlelib", "ensurepip"]
 
@@ -282,8 +283,8 @@ function interpreter(arch: TargetArch): string[] {
 }
 
 function download(pin: { url: string; sha256: string }): string {
-  mkdirSync(CACHE_DIR, { recursive: true })
-  const file = join(CACHE_DIR, `${pin.sha256}.tar.gz`)
+  mkdirSync(OFFICE_RUNTIME_DOWNLOAD_CACHE, { recursive: true })
+  const file = join(OFFICE_RUNTIME_DOWNLOAD_CACHE, `${pin.sha256}.tar.gz`)
   if (!existsSync(file) || sha256(file) !== pin.sha256) {
     const partial = `${file}.partial`
     rmSync(partial, { force: true })

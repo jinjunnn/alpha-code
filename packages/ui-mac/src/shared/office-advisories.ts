@@ -147,7 +147,8 @@ export function retiredCommunityOfficeFor(
 export type OfficeSafetyVerdict = { ok: true } | { ok: false; reason: string }
 
 const ALPHA_OFFICE_BANNED_ENV = new Set(["HOST", "PORT", "MCP_HOST", "MCP_PORT", "MCP_TRANSPORT", "FASTMCP_HOST", "FASTMCP_PORT"])
-const ALPHA_OFFICE_ALLOWED_ENV = new Set(["UV_DEFAULT_INDEX", "PIP_INDEX_URL", "npm_config_registry"])
+// #1564: the bundled runtime downloads nothing, so the uv-era package-index variables are no longer allowed.
+const ALPHA_OFFICE_ALLOWED_ENV = new Set(["npm_config_registry"])
 
 function alphaOfficeConnector(name: string, command: readonly string[]) {
   const named = ALPHA_OFFICE_CONNECTORS.find((connector) => connector.name === name)
