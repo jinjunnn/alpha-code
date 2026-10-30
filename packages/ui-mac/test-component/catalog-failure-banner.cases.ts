@@ -1,20 +1,16 @@
-// #1084(#987 CHOICE=A,DECIDE #1078)—— 平台目录刷新失败在 renderer 的**可观察出口**。
+// #1557(方案 req236 §2.5「模型目录刷新失败提示的位置与语义」· 批准稿 2026-10-30-req236-model-status §二/§四)——
+// 全局层**不再**承载模型目录的刷新失败。#1084 起它是 index.tsx 里一条 fixed 横幅(`CatalogFailureBanner`),
+// 窄窗口下压住导航与设置入口,而且设置 / 定制中心 / 自动化 / 产物页这些根本不消费模型目录的页面也看得到它。
+// 现在提示跟着使用点走(输入框提示槽、选择器分组头 / 弹层底部),判据在 alpha-composer-model.cases.ts 的
+// 「#1557 模型状态行与清单失败提示」组;本文件只钉全局层这一半:
 //
-// main 侧那半场的闸在 src/main/models-catalog-v2.wiring.cases.ts(分类码经生产 IPC 到达
-// alpha-catalog-health / alpha-catalog-failure)。本文件接着往下走一跳:renderer 拿到那两个
-// 口子之后,**真的把它渲染成一条用户看得见的横幅**。
+//   · 全局层剩下的唯一一条契约横幅(`ContractFailureBanner`)对 `surface === "model-catalog"` 不渲染 ——
+//     那种情况 main 同时记成目录 health 的 `contract-incompatible`,走上面同一位置(原因「需要更新 Code Puppy」);
+//   · 其他契约面的全局横幅照旧(不在本票范围,作控制组);
+//   · Banner 模块不再导出全局目录横幅,页面上不存在 `.a-catalog-failure`。
 //
-// 判据全部是可观察结果:真挂载生产组件 `CatalogFailureBanner`(不是这里重写一份等价物),
-// 喂一个只实现那两个方法的 preload 桥替身,对**真 DOM** 断言。不断言源码文本 —— 源码文本
-// 断言对「组件还在但渲染出空节点」照样通过(ADR-037 决策 4)。
-//
-// 反向验证(#1084 退出条件,已实跑):
-//   · 把 Banner.tsx 里 `void window.api.models.refreshHealth().then(setFailure)` 删掉
-//     ⇒ 「启动那次失败」组转红(启动刷新早于 renderer 挂载,只有推送时它到不了用户);
-//   · 把 `onCleanup(window.api.models.subscribeRefreshHealth(setFailure))` 删掉
-//     ⇒ 「运行期新失败」组转红;
-//   · 把 `<Show when={!contract() && failure()}>` 的 `!contract() &&` 去掉
-//     ⇒ 「契约横幅在场时自抑制」转红(两条横幅同一个 fixed 位,会精确重叠)。
+// 反向验证:把 Banner.tsx 的 `failure()?.surface !== "model-catalog" &&` 去掉 ⇒ 第一条转红;
+// 恢复 `CatalogFailureBanner` 导出 ⇒ 第三条转红。
 //
 // 独立进程运行:`mock.module("solid-js", …)` 会污染同进程其它测试文件。宿主见
 // src/renderer/alpha-ui/catalog-failure-banner.component.test.ts。
@@ -23,10 +19,8 @@ import { transformAsync } from "@babel/core"
 import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import presetSolid from "babel-preset-solid"
-import type { CatalogRefreshFailure, CatalogRefreshHealth } from "../src/shared/alpha-model-types"
+import type { CatalogRefreshHealth } from "../src/shared/alpha-model-types"
 import type { ContractFailure } from "../src/preload/types"
-// dict 是纯对象,静态 import 无害(index 会在求值期 import "solid-js",那条路要走动态)。
-import { dict as zh } from "../src/renderer/i18n/zh"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -54,38 +48,22 @@ Bun.plugin({
 })
 
 // providers 转口 `@opencode-ai/app`(整棵冻结前端);本闸只用到 useContractHealth,替身即可。
-// 契约横幅的在场与否是本组件的**输入**,所以它必须能被用例摆布。
 const [contractFailure, setContractFailure] = createSignal<ContractFailure | null>(null)
 mock.module("../src/renderer/alpha-ui/providers", () => ({ useContractHealth: () => contractFailure }))
 
-const { CatalogFailureBanner, ContractFailureBanner } = await import("../src/renderer/alpha-ui/Banner")
-const { setLocale } = await import("../src/renderer/i18n")
+const BannerModule = await import("../src/renderer/alpha-ui/Banner")
+const { ContractFailureBanner } = BannerModule
 
-/** preload 桥替身:renderer 侧拿刷新结局只有这两条路,生产组件走的就是它们。`#1556` 起两份目录各一格;
- *  只给平台那一格的用例沿用旧写法(第二个参数缺省 = BYOK 那一份没失败)。 */
-const health = (platform: CatalogRefreshFailure | null, byok: CatalogRefreshFailure | null = null): CatalogRefreshHealth => ({ platform, byok })
-function bridge(initial: CatalogRefreshFailure | null, initialByok: CatalogRefreshFailure | null = null) {
-  const listeners = new Set<(value: CatalogRefreshHealth) => void>()
-  const api = {
-    models: {
-      refreshHealth: async () => health(initial, initialByok),
-      subscribeRefreshHealth: (cb: (value: CatalogRefreshHealth) => void) => {
-        listeners.add(cb)
-        return () => listeners.delete(cb)
-      },
-    },
-  }
-  ;(globalThis as unknown as { window: Record<string, unknown> }).window.api = api
-  return {
-    push: (failure: CatalogRefreshFailure | null, byok: CatalogRefreshFailure | null = null) =>
-      listeners.forEach((cb) => cb(health(failure, byok))),
+/** preload 桥替身:目录刷新结局一直是失败 —— 旧的全局横幅在这时一定会出现。`#1556` 起两份目录各一格。 */
+function bridge(initial: CatalogRefreshHealth) {
+  ;(globalThis as unknown as { window: Record<string, unknown> }).window.api = {
+    models: { refreshHealth: async () => initial, subscribeRefreshHealth: () => () => {}, refresh: async () => {} },
   }
 }
 
 let host: HTMLDivElement
 let dispose: (() => void) | undefined
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
-const banner = () => host.querySelector<HTMLElement>("[data-alpha-catalog-failure]")
 
 beforeEach(() => {
   setContractFailure(null)
@@ -93,72 +71,14 @@ beforeEach(() => {
   document.body.appendChild(host)
 })
 afterEach(() => {
-  setLocale("zh")
   dispose?.()
   dispose = undefined
   host.remove()
 })
 
-describe("#1084 目录刷新失败到得了用户", () => {
-  test("#1506 AC2/AC3:刷新失败横幅使用 Code Puppy 模型,保留旧清单/BYOK/原因码说明", async () => {
-    bridge({ code: "rate_limited", at: "2026-08-23T00:00:00.000Z" })
-    dispose = render(() => CatalogFailureBanner({}), host)
-    await flush()
-
-    const node = banner()
-    expect(node?.dataset.alphaCatalogFailure).toBe("rate_limited")
-    // 文案走 i18n(不是组件里写死的字面量),且分类码真的贴在用户读得到的那行上。
-    expect(node?.textContent).toContain(zh["alpha.model.refreshFailedTitle"])
-    expect(node?.textContent).toContain("rate_limited")
-    expect(node?.querySelector(".a-banner-title")?.textContent).toBe("Code Puppy 模型清单刷新失败")
-    expect(node?.querySelector(".a-banner-detail")?.textContent).toBe(
-      "当前显示的是上次拿到的清单;自带 KEY 的节点不受影响。原因:rate_limited",
-    )
-    setLocale("en")
-    expect(node?.querySelector(".a-banner-title")?.textContent).toBe("Code Puppy models could not be refreshed")
-    expect(node?.querySelector(".a-banner-detail")?.textContent).toBe(
-      "Showing the last known list. Your own API keys are unaffected. Reason: rate_limited",
-    )
-    // 降级不是阻断:BYOK 与上次缓存照常可用,所以是 warning 而不是 error/alert。
-    expect(node?.querySelector(".a-banner")?.className).toContain("warning")
-    expect(node?.querySelector(".a-banner")?.getAttribute("role")).toBe("status")
-  })
-
-  test("运行期新失败经推送到达;下一次成功刷新把横幅收掉", async () => {
-    const { push } = bridge(null)
-    dispose = render(() => CatalogFailureBanner({}), host)
-    await flush()
-    expect(banner()).toBeNull()
-
-    push({ code: "http-503", at: "2026-08-23T00:00:01.000Z" })
-    expect(banner()?.dataset.alphaCatalogFailure).toBe("http-503")
-
-    push(null)
-    expect(banner()).toBeNull()
-  })
-
-  // `#1556` AC6:两份目录各一格 —— 平台那份恢复后,自带 Key 那份仍在的失败接着显示(不被一并抹掉),
-  // 标题如实说是哪一份;两份都成功才收掉。摆放位置另由 alpha-code#1557 处理。
-  test("`#1556`:平台恢复后自带 Key 清单的失败仍可见,标题点名是哪一份;两份都成功才收掉", async () => {
-    const { push } = bridge({ code: "http-503", at: "2026-10-30T00:00:00.000Z" }, { code: "network", at: "2026-10-30T00:00:00.000Z" })
-    dispose = render(() => CatalogFailureBanner({}), host)
-    await flush()
-    expect(banner()?.dataset.alphaCatalogDoc).toBe("platform")
-    expect(banner()?.dataset.alphaCatalogFailure).toBe("http-503")
-
-    push(null, { code: "network", at: "2026-10-30T00:00:01.000Z" })
-    expect(banner()?.dataset.alphaCatalogDoc).toBe("byok")
-    expect(banner()?.dataset.alphaCatalogFailure).toBe("network")
-    expect(banner()?.querySelector(".a-banner-title")?.textContent).toBe(zh["alpha.model.byokRefreshFailedTitle"])
-    expect(banner()?.querySelector(".a-banner-detail")?.textContent).toBe(
-      zh["alpha.model.byokRefreshFailedDetail"].replace("{{code}}", "network"),
-    )
-
-    push(null, null)
-    expect(banner()).toBeNull()
-  })
-
-  test("#1507 AC1:契约横幅显示 Code Puppy 并保留失败详情;目录横幅自抑制", async () => {
+describe("#1557 模型目录刷新失败不在全局层", () => {
+  test("AC5 模型目录契约不兼容:全局契约横幅不渲染(走输入框 / 选择器同一位置)", async () => {
+    bridge({ platform: { code: "contract-incompatible", at: "2026-10-30T00:00:00.000Z" }, byok: null })
     setContractFailure({
       code: "contract-incompatible",
       surface: "model-catalog",
@@ -166,15 +86,36 @@ describe("#1084 目录刷新失败到得了用户", () => {
       received_version: 2,
       reason: "schema-validation",
     })
-    bridge({ code: "contract-incompatible", at: "2026-08-23T00:00:02.000Z" })
-    dispose = render(() => [CatalogFailureBanner({}), ContractFailureBanner({})], host)
+    dispose = render(() => ContractFailureBanner(), host)
     await flush()
-    expect(banner()).toBeNull()
-    expect(host.querySelector(".a-contract-failure .a-banner-title")?.textContent).toBe("Code Puppy platform contract is incompatible")
-    expect(host.querySelector(".a-contract-failure .a-banner-detail")?.textContent).toBe("model-catalog: schema-validation (expected v3, received 2)")
+    expect(host.querySelector("[data-alpha-contract-failure]")).toBeNull()
+    expect(host.textContent).toBe("")
+  })
 
-    // 契约横幅撤下之后,同一份刷新结局仍然到得了用户 —— 抑制的是重叠,不是这条信息本身。
-    setContractFailure(null)
-    expect(banner()?.dataset.alphaCatalogFailure).toBe("contract-incompatible")
+  test("其他契约面的全局横幅照旧(控制组)", async () => {
+    setContractFailure({
+      code: "contract-incompatible",
+      surface: "account",
+      expected_version: 1,
+      received_version: 2,
+      reason: "schema-validation",
+    })
+    dispose = render(() => ContractFailureBanner(), host)
+    await flush()
+    expect(host.querySelector("[data-alpha-contract-failure]")?.getAttribute("data-alpha-contract-failure")).toBe("account")
+    expect(host.querySelector(".a-contract-failure .a-banner-title")?.textContent).toBe(
+      "Code Puppy platform contract is incompatible",
+    )
+  })
+
+  test("AC5 设置 / 定制中心 / 自动化 / 产物页不显示:全局层没有目录横幅,页面上不存在 .a-catalog-failure", async () => {
+    bridge({
+      platform: { code: "network", at: "2026-10-30T00:00:00.000Z" },
+      byok: { code: "http-503", at: "2026-10-30T00:00:00.000Z" },
+    })
+    expect(Object.keys(BannerModule).sort()).toEqual(["Banner", "ContractFailureBanner"])
+    dispose = render(() => ContractFailureBanner(), host)
+    await flush()
+    expect(document.querySelector(".a-catalog-failure, [data-alpha-catalog-failure]")).toBeNull()
   })
 })

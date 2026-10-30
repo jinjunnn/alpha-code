@@ -8,7 +8,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, dialog, powerMonitor } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, powerMonitor } from "electron"
 
 import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
@@ -256,6 +256,12 @@ let catalogLiveness = initialCatalogLivenessState()
 let catalogLivenessTimer: NodeJS.Timeout | null = null
 let catalogLivenessProbeInFlight = false
 let requestSidecarRespawn: ((reason: SidecarRespawnReason) => Promise<boolean>) | null = null
+/** 「重试本地引擎」(RECOVERY_ACTIONS.retryEngine)的公共效果:清掉自愈阶梯,结构性换代。
+ *  恢复页三处 incident 与输入框状态行的「重启引擎」(#1557)共用这一份;各 incident 自己的闸门复位留在调用点。 */
+async function retryEngineRespawn(): Promise<boolean> {
+  selfHeal = initialSelfHealState()
+  return (await requestSidecarRespawn?.("structural")) ?? false
+}
 let recoveryService: RecoveryService | null = null
 const sidecarGeneration = createSidecarGenerationState()
 
@@ -345,8 +351,7 @@ function handleSidecarExit(gen: number, code: number) {
       senderID: mainWindow.webContents.id,
       effects: {
         [RECOVERY_ACTIONS.retryEngine]: async () => {
-          selfHeal = initialSelfHealState()
-          const applied = await requestSidecarRespawn?.("structural")
+          const applied = await retryEngineRespawn()
           return applied ? { applied: true } : { applied: false, retryable: true }
         },
       },
@@ -428,8 +433,7 @@ function armEngineRunawayMeter(gen: number) {
       effects: {
         [RECOVERY_ACTIONS.retryEngine]: async () => {
           engineRunawayGuard = resetEngineRunawayGuard()
-          selfHeal = initialSelfHealState()
-          const applied = await requestSidecarRespawn?.("structural")
+          const applied = await retryEngineRespawn()
           return applied ? { applied: true } : { applied: false, retryable: true }
         },
       },
@@ -1051,6 +1055,9 @@ const main = Effect.gen(function* () {
   const recovery = recoveryService
   if (!recovery) throw new Error("Recovery service is unavailable")
   const recoveryIpc = registerRecoveryIpcHandlers(recovery)
+  // #1557:输入框状态行的「重启引擎」= 恢复页「重试本地引擎」(RECOVERY_ACTIONS.retryEngine)的同一组效果;
+  // 等待中的模型读取没有 incident 可交,所以不经 recovery-submit。
+  ipcMain.handle("recovery-retry-engine", retryEngineRespawn)
   // REQ-084/090:surface 选择与 crash admission 共用 main-owned Recovery incident registry。
   registerSurfaceIpc(app.getPath("userData"), recovery)
   void updater.start()
@@ -1233,8 +1240,7 @@ const main = Effect.gen(function* () {
           effects: {
             [RECOVERY_ACTIONS.retryEngine]: async () => {
               catalogLiveness = resetCatalogLiveness()
-              selfHeal = initialSelfHealState()
-              const applied = await requestSidecarRespawn?.("structural")
+              const applied = await retryEngineRespawn()
               return applied ? { applied: true } : { applied: false, retryable: true }
             },
           },

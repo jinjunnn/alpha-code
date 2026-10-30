@@ -32,7 +32,7 @@ import "./sidebar/account-popover.css"
 import "./alpha-ui/composer-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { installHomeDraftDiscardNotice } from "./alpha-ui/home-draft-discard-notice"
-import { CatalogFailureBanner, ContractFailureBanner } from "./alpha-ui/Banner"
+import { ContractFailureBanner } from "./alpha-ui/Banner"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ContractHealthProvider } from "./alpha-ui/providers"
 import { PermissionWatcher } from "./alpha-ui/permission-watcher"
@@ -585,11 +585,7 @@ render(() => {
               <AlphaBoundary name="ContractFailureBanner">
                 <ContractFailureBanner />
               </AlphaBoundary>
-              {/* #1084:平台目录刷新失败(分类码)的出口。与契约横幅同一个 fixed 位,
-                  由组件自身在契约横幅在场时自抑制。 */}
-              <AlphaBoundary name="CatalogFailureBanner">
-                <CatalogFailureBanner />
-              </AlphaBoundary>
+              {/* #1557:平台目录刷新失败不再是全局横幅 —— 提示随使用点出现在输入框提示槽与模型选择器里。 */}
               <RecoverySurface />
               <DevSurfaceMapInspector />
             </AppInterface>

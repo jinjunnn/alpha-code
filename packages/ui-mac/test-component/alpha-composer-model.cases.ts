@@ -1,5 +1,5 @@
 // 独立进程运行：隔离仓内其他测试预先缓存的 Solid server 条件导出。
-import { afterAll, afterEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, mock, setSystemTime, test } from "bun:test"
 import { transformAsync } from "@babel/core"
 import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
@@ -9,7 +9,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { AccountSummary, AuthState } from "../src/preload/types"
-import type { EffectiveCatalog, ProviderInput, ProviderKeyStatus } from "../src/shared/alpha-model-types"
+import type {
+  CatalogRefreshFailure,
+  CatalogRefreshHealth,
+  EffectiveCatalog,
+  ProviderInput,
+  ProviderKeyStatus,
+} from "../src/shared/alpha-model-types"
 import type { AlphaProjectsApi } from "../src/renderer/sidebar/use-projects"
 import type { AlphaComposerRuntimeProps } from "../src/renderer/alpha-ui/alpha-composer"
 import type { ComposerModel } from "../src/renderer/alpha-ui/composer-state"
@@ -100,6 +106,7 @@ const {
   "../src/renderer/alpha-ui/composer-state"
 )
 const { ALPHA_V2_CATALOG_READY_PROVIDER_ID } = await import("../src/shared/alpha-config")
+const { createModelContract } = await import("../src/renderer/alpha-ui/model-contract")
 const { byokEngineId } = await import("../src/shared/alpha-model-types")
 const { resetAuthRecoveryForTests } = await import("../src/renderer/auth-recovery")
 const { setLocale } = await import("../src/renderer/i18n")
@@ -171,6 +178,12 @@ type ApiFixture = {
   onAuthSubscribe?: (listener: (state: AuthState) => void) => void
   /** REQ-160 AC2(`#1353`):composer 发送前问 main「这句话要不要拦」。默认不拦。 */
   moderation?: (text: string) => Promise<boolean>
+  /** `#1557`:目录刷新结局与「重试」落点。默认 `null` = 最近一次刷新成功。 */
+  refreshHealth?: () => Promise<CatalogRefreshHealth>
+  subscribeRefreshHealth?: (cb: (health: CatalogRefreshHealth) => void) => () => void
+  catalogRefresh?: () => Promise<void>
+  /** `#1557`:状态行「重启引擎」/ 时序标记 —— 共享桩刻意不提供的键,需要的用例自己注入。 */
+  extras?: Parameters<typeof installPreloadStub>[2]
 }
 
 // `#1374`:`window.api` 的**形状**归共享桩(`./preload-stub`);本文件只留自己的数据夹具与
@@ -191,7 +204,11 @@ function installApi(fixture: ApiFixture = {}) {
       providerAdd: fixture.add,
       providerSetKey: fixture.setKey,
       moderationCheck: fixture.moderation,
+      refreshHealth: fixture.refreshHealth,
+      subscribeRefreshHealth: fixture.subscribeRefreshHealth,
+      catalogRefresh: fixture.catalogRefresh,
     },
+    fixture.extras,
   )
 }
 
@@ -1004,7 +1021,7 @@ describe("AlphaComposer production model seam", () => {
         detail: { status: "failed", generation: 9, reason: "token-only" },
       }),
     )
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelStatusReading"]))
     expect(send.disabled).toBe(true)
     expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留稳定布局")
     mounted.dispose()
@@ -3461,7 +3478,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     )
 
     const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelStatusReading"]))
     expect(send.disabled).toBe(true)
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
@@ -3503,7 +3520,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     )
 
     const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelStatusReading"]))
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
     click(byokRows(openPicker())[0])
@@ -3543,7 +3560,7 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
       }),
     )
 
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelStatusReading"]))
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
     click(byokRows(openPicker())[0])
@@ -4402,6 +4419,396 @@ describe("#1353 发送前按已同步的关键词拦截并提示", () => {
     // 抛出不得被折成「这条消息没有发出去」;当前实现走 catch 的既有发送失败路径,正文保留。
     expect(sdk.promptAsyncCalls.length + 1).toBeGreaterThan(0)
     expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("带我去赌博")
+    mounted.dispose()
+  })
+})
+
+
+// ── #1557 等待有出口、清单失败提示跟着使用点走 ───────────────────────────────────────────────
+// 批准稿 docs/design/2026-10-30-req236-model-status/frame.html;方案 req236 §2.5。
+describe("#1557 模型状态行与清单失败提示", () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  async function eventually(assertion: () => void, ms = 3_000) {
+    const deadline = performance.now() + ms
+    for (;;) {
+      try {
+        assertion()
+        return
+      } catch (error) {
+        if (performance.now() > deadline) throw error
+        await sleep(25)
+      }
+    }
+  }
+  /** 槽里的提示(四类各自的根节点)。AC6:任何时刻至多一条。 */
+  const slotNotices = (host: HTMLElement) =>
+    [...host.querySelectorAll<HTMLElement>(".a-comp-send-blocked, .a-comp-model-alert, .a-comp-model-status")]
+  const buttonsOf = (element: Element | undefined) =>
+    [...(element?.querySelectorAll("button") ?? [])].map((button) => button.textContent)
+  const failure = (code: string): CatalogRefreshFailure => ({ code, at: "2026-10-30T02:00:00.000Z" })
+  /** `#1556` 的按文档结局:平台一格、自带 Key 一格。 */
+  const health = (platform: string | null, byok: string | null = null): CatalogRefreshHealth => ({
+    platform: platform ? failure(platform) : null,
+    byok: byok ? failure(byok) : null,
+  })
+  // 从未获取成功 = 没有已应用 / 已下载的平台快照(生产 getEffectiveCatalog 此时平台段为空、liveSync static)。
+  const neverFetched: EffectiveCatalog = {
+    ...catalog,
+    platformModels: [],
+    pricingBasisModelId: null,
+    liveSync: { status: "static" },
+    applied: { ...catalog.applied, platformFetchedAt: null },
+    downloaded: { ...catalog.downloaded, platformFetchedAt: null },
+  }
+  const fetchedAt = new Date(2026, 9, 29, 22, 17).toISOString()
+  const fetchedBefore: EffectiveCatalog = {
+    ...catalog,
+    applied: { ...catalog.applied, platformFetchedAt: fetchedAt },
+    downloaded: { ...catalog.downloaded, platformFetchedAt: fetchedAt },
+  }
+  const readyHome = (): ModelContract => ({
+    list: async () => [info("deepseek-byok", "deepseek-v4-flash")],
+    current: async () => undefined,
+    switch: async () => {},
+  })
+
+  afterEach(() => setSystemTime())
+
+  test("AC1/AC2/AC4 屏障真实连续到期、链仍在 loading:10s 前中性一句,满 10s 说卡点+重试,满 30s 加重启引擎", async () => {
+    let probes = 0
+    const restarts: string[] = []
+    // 引擎接受连接但永远不答 —— 只有 abort 能让这一轮结束(与真 fetch 一样)。屏障自己的单探针期限
+    // 因此真的一次次到期;contract 是生产实现,不是替身。
+    const client = {
+      v2: {
+        provider: {
+          get: (_input: unknown, options?: { signal?: AbortSignal }) => {
+            probes++
+            return new Promise((resolve) => {
+              options?.signal?.addEventListener("abort", () => resolve({ error: options.signal?.reason }), {
+                once: true,
+              })
+            })
+          },
+        },
+        model: { list: async () => ({ data: { data: [] } }) },
+      },
+    }
+    installApi({
+      auth: async () => loggedOut,
+      extras: { recovery: { retryEngine: async () => (restarts.push("retry-engine"), true) } },
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: createModelContract(() => client as never, { probeTimeoutMs: 5 }),
+        initialText: "hello",
+      }),
+    )
+    const status = () => mounted.host.querySelector<HTMLElement>(".a-comp-model-status")
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
+
+    // ① 0–10s:中性色、只说正在读、没有按钮。链仍在 loading(从未进过 recovering):屏障在自己重探。
+    await eventually(() => expect(probes).toBeGreaterThan(3))
+    expect(status()?.dataset.alphaModelWait).toBe("reading")
+    expect(status()?.textContent).toBe(zh["alpha.composer.modelStatusReading"])
+    expect(buttonsOf(status()!)).toEqual([])
+    // AC4:等待态不用错误样式(红色那一类是 .a-comp-model-alert)。
+    expect(status()?.classList.contains("a-comp-model-alert")).toBe(false)
+    expect(mounted.host.querySelector(".a-comp-model-alert")).toBeNull()
+    expect(send.disabled).toBe(true)
+
+    // ② 满 10s:本机引擎暂未响应(已等待 N 秒)+「重试」。
+    setSystemTime(new Date(Date.now() + 10_500))
+    await eventually(() => expect(status()?.dataset.alphaModelWait).toBe("stuck"))
+    expect(status()?.textContent).toContain(zh["alpha.composer.engineNotResponding"])
+    expect(status()?.textContent).toMatch(/已等待 1\d 秒/)
+    expect(buttonsOf(status()!)).toEqual([zh["alpha.common.retry"]])
+    expect(mounted.host.querySelector(".a-comp-model-alert")).toBeNull()
+
+    // ③ 引擎换代中:同一位置、同一形态,只换卡点说明;计时不清零。
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", { detail: { status: "recovering", generation: 41, reason: "structural" } }),
+    )
+    await eventually(() => expect(status()?.textContent).toContain(zh["alpha.composer.engineRestarting"]))
+    expect(status()?.textContent).toMatch(/已等待 1\d 秒/)
+
+    // ④ 满 30s:再加「重启引擎」,点下去走恢复页的同一个动作。
+    setSystemTime(new Date(Date.now() + 20_000))
+    await eventually(() =>
+      expect(buttonsOf(status()!)).toEqual([zh["alpha.common.retry"], zh["alpha.composer.restartEngine"]]),
+    )
+    click([...status()!.querySelectorAll("button")][1]!)
+    expect(restarts).toEqual(["retry-engine"])
+
+    // 「重试」= 重新读取(计时清零重来)。
+    click([...status()!.querySelectorAll("button")][0]!)
+    await eventually(() => expect(status()?.dataset.alphaModelWait).toBe("reading"))
+    expect(buttonsOf(status()!)).toEqual([])
+    mounted.dispose()
+  }, 20_000)
+
+  test("AC4 四类时序标记的 25 条上限按每代引擎计:换代后计数归零", async () => {
+    const marks: string[] = []
+    installApi({
+      auth: async () => loggedOut,
+      extras: { startupTimeline: { mark: (name: string) => marks.push(name) } },
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: readyHome(),
+      }),
+    )
+    const send = () => mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!
+    const starts = () => marks.filter((name) => name === "renderer.home.model_list.start").length
+    // 结构性换代 = 链重建 = 一条新的 model_list.start。
+    const cycle = async (generation: number) => {
+      window.dispatchEvent(
+        new CustomEvent("alpha:runtime-recovery", { detail: { status: "recovering", generation, reason: "structural" } }),
+      )
+      window.dispatchEvent(
+        new CustomEvent("alpha:runtime-recovery", { detail: { status: "ready", generation, reason: "structural" } }),
+      )
+      await eventually(() => expect(starts()).toBe(before + 1), 500).catch(() => {})
+    }
+    let before = 0
+    const generation = 9_000 + Math.floor(Math.random() * 1_000)
+    // 第一轮换代把预算归零并记一条;之后同代再换 30 轮,总数封顶 25(新增 24)。
+    await cycle(generation)
+    marks.length = 0
+    for (let index = 0; index < 30; index++) {
+      before = starts()
+      await cycle(generation)
+    }
+    expect(starts()).toBe(24)
+    before = starts()
+    await cycle(generation + 1)
+    expect(starts()).toBe(25)
+    expect(send()).toBeDefined()
+    mounted.dispose()
+  }, 20_000)
+
+  test("AC5 平台目录从未获取 + 刷新失败:输入框提示槽(中性、原因、重试)+ 选择器分组头", async () => {
+    const refreshes: string[] = []
+    installApi({
+      auth: async () => loggedOut,
+      catalog: async () => neverFetched,
+      refreshHealth: async () => health("network"),
+      catalogRefresh: async () => void refreshes.push("manual"),
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: readyHome(),
+        initialText: "hello",
+      }),
+    )
+    const slot = () => mounted.host.querySelector<HTMLElement>("[data-alpha-catalog-unavailable]")
+    await eventually(() => expect(slot()?.textContent).toBe(
+      `${zh["alpha.model.catalogUnavailable"]} · ${zh["alpha.model.catalogReasonNetwork"]}${zh["alpha.common.retry"]}`,
+    ))
+    // 降级不是阻断:中性样式、role=status,发送键照常可用。
+    expect(slot()?.classList.contains("a-comp-model-status")).toBe(true)
+    expect(slot()?.getAttribute("role")).toBe("status")
+    expect(mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!.disabled).toBe(false)
+    click(slot()!.querySelector("button"))
+    expect(refreshes).toEqual(["manual"])
+
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    const picker = () => document.body.querySelector<HTMLElement>('[data-alpha-picker-owner="alpha.composer-model"]')
+    await eventually(() => expect(picker()?.querySelector(".a-mpp-gh-note")).not.toBeNull())
+    const head = picker()!.querySelector<HTMLElement>(".a-mpp-ghead")!
+    expect(head.textContent).toBe(`${zh["alpha.model.platformGroup"]}${zh["alpha.model.catalogGroupUnavailable"]}${zh["alpha.common.retry"]}`)
+    // 从未获取 ⇒ 没有「正在使用某时同步的版本」那一行。
+    expect(picker()!.querySelector(".a-mpp-foot")).toBeNull()
+    mounted.dispose()
+  })
+
+  test("AC5 有已应用旧版本 + 刷新失败:输入框什么都不出现,只在选择器弹层底部一行;成功后收掉", async () => {
+    const listeners = new Set<(value: CatalogRefreshHealth) => void>()
+    installApi({
+      auth: async () => loggedOut,
+      catalog: async () => fetchedBefore,
+      refreshHealth: async () => health("http-503"),
+      subscribeRefreshHealth: (cb) => (listeners.add(cb), () => listeners.delete(cb)),
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: readyHome(),
+        initialText: "hello",
+      }),
+    )
+    await eventually(() =>
+      expect(mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!.disabled).toBe(false),
+    )
+    await sleep(50)
+    expect(slotNotices(mounted.host)).toEqual([])
+
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    const foot = () => document.body.querySelector<HTMLElement>(".a-mpp-foot")
+    await eventually(() => expect(foot()).not.toBeNull())
+    expect(foot()!.textContent).toBe(
+      `${zh["alpha.model.catalogStale"].replace("{{time}}", "10月29日 22:17")} · ${zh["alpha.model.catalogReasonServer"]}${zh["alpha.common.retry"]}`,
+    )
+    expect(document.body.querySelector(".a-mpp-gh-note")).toBeNull()
+
+    listeners.forEach((cb) => cb(health(null)))
+    await eventually(() => expect(foot()).toBeNull())
+    mounted.dispose()
+  })
+
+  test("AC5 模型目录契约不兼容走同一位置,原因写「需要更新 Code Puppy」", async () => {
+    installApi({
+      auth: async () => loggedOut,
+      catalog: async () => neverFetched,
+      refreshHealth: async () => health("contract-incompatible"),
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: readyHome(),
+      }),
+    )
+    await eventually(() =>
+      expect(mounted.host.querySelector("[data-alpha-catalog-unavailable]")?.textContent).toContain(
+        zh["alpha.model.catalogReasonUpdate"],
+      ),
+    )
+    mounted.dispose()
+  })
+
+  test("AC5 自带 Key 清单刷新失败:只在选择器的自带 Key 分组头提示,不进输入框;平台恢复后它仍可见,两份都成功才收掉", async () => {
+    const listeners = new Set<(value: CatalogRefreshHealth) => void>()
+    const refreshes: string[] = []
+    installApi({
+      auth: async () => loggedOut,
+      catalog: async () => fetchedBefore,
+      refreshHealth: async () => health("http-503", "network"),
+      subscribeRefreshHealth: (cb) => (listeners.add(cb), () => listeners.delete(cb)),
+      catalogRefresh: async () => void refreshes.push("manual"),
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: readyHome(),
+        initialText: "hello",
+      }),
+    )
+    await eventually(() =>
+      expect(mounted.host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')!.disabled).toBe(false),
+    )
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    const picker = () => document.body.querySelector<HTMLElement>('[data-alpha-picker-owner="alpha.composer-model"]')!
+    const heads = () =>
+      [...picker().querySelectorAll<HTMLElement>(".a-mpp-ghead")].map((head) => ({
+        group: head.firstChild?.textContent,
+        note: head.querySelector<HTMLElement>(".a-mpp-gh-note")?.dataset.alphaCatalogUnavailable ?? null,
+      }))
+    const byokHead = { group: zh["alpha.model.byokGroup"], note: "network" }
+    await eventually(() => expect(heads().find((head) => head.group === zh["alpha.model.byokGroup"])).toEqual(byokHead))
+    // 平台那份有已应用旧版本 ⇒ 平台组头不提示,只在底部一行;自带 Key 那份不进底部、不进输入框。
+    // (未登录时平台组头本身按既有 IA 不出现;出现与否都不该带提示。)
+    expect(heads().filter((head) => head.note !== null)).toEqual([byokHead])
+    expect(picker().querySelector("[data-alpha-catalog-stale]")?.getAttribute("data-alpha-catalog-stale")).toBe("http-503")
+    expect(picker().querySelectorAll("[data-alpha-catalog-stale]")).toHaveLength(1)
+    expect(slotNotices(mounted.host)).toEqual([])
+    click(picker().querySelector(".a-mpp-ghead .a-mpp-gh-note button"))
+    expect(refreshes).toEqual(["manual"])
+
+    // 平台恢复:底部那行收掉,自带 Key 那份的失败仍在组头(一份成功不替另一份报平安)。
+    listeners.forEach((cb) => cb(health(null, "network")))
+    await eventually(() => expect(picker().querySelector("[data-alpha-catalog-stale]")).toBeNull())
+    expect(heads().find((head) => head.group === zh["alpha.model.byokGroup"])).toEqual(byokHead)
+
+    listeners.forEach((cb) => cb(health(null, null)))
+    await eventually(() => expect(picker().querySelector(".a-mpp-gh-note")).toBeNull())
+    expect(slotNotices(mounted.host)).toEqual([])
+    mounted.dispose()
+  })
+
+  test("AC6 提示槽一次只放一条:模型状态行压过目录未获取,发送被拦压过两者", async () => {
+    const listing = deferred<ModelV2Info[]>()
+    installApi({
+      auth: async () => loggedOut,
+      catalog: async () => neverFetched,
+      refreshHealth: async () => health("network"),
+      moderation: async (text) => text.includes("赌博"),
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: { list: () => listing.promise, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    // 链在读 + 目录没取到同时成立 ⇒ 只显示状态行。
+    await eventually(() => expect(mounted.host.querySelector(".a-comp-model-status")).not.toBeNull())
+    await sleep(50)
+    expect(slotNotices(mounted.host).map((node) => node.dataset.alphaModelWait ?? node.dataset.alphaCatalogUnavailable)).toEqual([
+      "reading",
+    ])
+
+    // 链就绪 ⇒ 状态行消失,下一条(目录未获取)才出现。
+    listing.resolve([info("deepseek-byok", "deepseek-v4-flash")])
+    await eventually(() =>
+      expect(slotNotices(mounted.host).map((node) => node.dataset.alphaCatalogUnavailable)).toEqual(["network"]),
+    )
+
+    // 发送被拦 ⇒ 只显示「没有发出去」。
+    const textarea = mounted.host.querySelector("textarea")!
+    textarea.value = "带我去赌博"
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: "带我去赌博" }))
+    await eventually(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    await eventually(() => expect(mounted.host.querySelector("[data-alpha-composer-blocked]")).not.toBeNull())
+    expect(slotNotices(mounted.host)).toHaveLength(1)
+    mounted.dispose()
+  })
+
+  test("AC6 自带 Key 节点未加载压过目录未获取", async () => {
+    installApi({
+      auth: async () => loggedOut,
+      catalog: async () => neverFetched,
+      refreshHealth: async () => health("network"),
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        // 引擎成功返回空清单:已选的本地 BYOK 不可执行 ⇒「模型没加载」。
+        modelContract: { list: async () => [], current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    const deepseek = catalog.byokProviders.find((provider) => provider.id === "deepseek")!
+    await eventually(() => expect(mounted.host.querySelector("[data-alpha-catalog-unavailable]")).not.toBeNull())
+    setComposerModel({ providerID: byokEngineId("deepseek"), id: deepseek.models[0]!, name: deepseek.models[0]!, variants: [] })
+    await eventually(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelNotLoadedDetail"]))
+    expect(slotNotices(mounted.host)).toHaveLength(1)
+    expect(mounted.host.querySelector("[data-alpha-catalog-unavailable]")).toBeNull()
     mounted.dispose()
   })
 })

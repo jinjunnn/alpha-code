@@ -27,6 +27,7 @@ import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
 import { replayRuntimeRecoveryState, subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
 import { reconcileAuthSnapshot, subscribeAuthState } from "../auth-recovery"
+import { catalogFailureReason, catalogSyncedAt, createCatalogRefreshHealth, retryCatalogRefresh } from "./catalog-refresh-health"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
 type LoadState<T> =
@@ -423,6 +424,20 @@ export function ModelPickPop(props: {
     })
   })
   const platformRows = createMemo(() => rows().filter((row) => row.group === "platform"))
+  /* #1557 AC5(批准稿 2026-10-30-req236-model-status §二):两份目录各按自己的结局呈现(`#1556` 的 `{ platform, byok }`)。
+     平台那份最近一次刷新失败:从未获取成功(已应用版本为空)⇒ 平台分组头「暂时取不到 · 重试」;有已应用旧版本 ⇒
+     只在弹层底部一行。自带 Key 那份失败 ⇒ 只在自带 Key 分组头(随包清单本身可用)。 */
+  const catalogFailure = createCatalogRefreshHealth()
+  const platformNeverFetched = createMemo(() => {
+    const failure = catalogFailure().platform
+    const current = catalog()
+    return failure && current && current.applied.platformFetchedAt === null ? failure : null
+  })
+  const staleCatalog = createMemo(() => {
+    const failure = catalogFailure().platform
+    const at = failure ? catalog()?.applied.platformFetchedAt : null
+    return failure && at ? { failure, at } : null
+  })
   const byokRows = createMemo(() => rows().filter((row) => row.group === "byok"))
   // #679:倍数是**相对量**,不说清相对谁就是半句话。基准由平台下发(pricingBasisModelId),
   // 客户端不硬编码 —— 平台换基准,这行字跟着变才是诚实的。基准模型可能被 edition 白名单筛掉
@@ -648,15 +663,21 @@ export function ModelPickPop(props: {
       </Show>
 
       <div class="a-mpp-scroll">
-        <Show when={platformNotLoaded()}>
-          <div class="a-pop-label">{t("alpha.model.platformGroup")}</div>
-          <div class="a-mpp-platform-empty" role="status">
-            <strong>{t("alpha.model.platformNotLoaded")}</strong>
-            <span>{t("alpha.model.platformNotLoadedDetail")}</span>
+        {/* `#1556` 的平台空态与 `#1557` 的分组头提示共用这一个分组头:没有已应用平台快照 ⇒ 空态(未登录沿用登录 IA,不铺);
+            最近一次平台刷新失败且从未获取成功 ⇒ 组头右侧「暂时取不到 · 重试」。 */}
+        <Show when={platformRows().length || platformNotLoaded() || platformNeverFetched()}>
+          <div class="a-pop-label a-mpp-ghead">
+            {t("alpha.model.platformGroup")}
+            <Show when={platformNeverFetched()}>
+              {(failure) => <CatalogGroupNote code={failure().code} />}
+            </Show>
           </div>
-        </Show>
-        <Show when={platformRows().length}>
-          <div class="a-pop-label">{t("alpha.model.platformGroup")}</div>
+          <Show when={platformRows().length === 0 && platformNotLoaded()}>
+            <div class="a-mpp-platform-empty" role="status">
+              <strong>{t("alpha.model.platformNotLoaded")}</strong>
+              <span>{t("alpha.model.platformNotLoadedDetail")}</span>
+            </div>
+          </Show>
           <Show when={pricingBasisName()}>
             {(basis) => <div class="a-mpp-basis">{t("alpha.model.pricingBasisNote", { model: basis() })}</div>}
           </Show>
@@ -672,8 +693,11 @@ export function ModelPickPop(props: {
             )}
           </For>
         </Show>
-        <Show when={byokRows().length}>
-          <div class="a-pop-label">{t("alpha.model.byokGroup")}</div>
+        <Show when={byokRows().length || catalogFailure().byok}>
+          <div class="a-pop-label a-mpp-ghead">
+            {t("alpha.model.byokGroup")}
+            <Show when={catalogFailure().byok}>{(failure) => <CatalogGroupNote code={failure().code} />}</Show>
+          </div>
           <For each={byokRows()}>
             {(row) => (
               <ModelRow
@@ -724,12 +748,40 @@ export function ModelPickPop(props: {
           onSaved={retryAll}
         />
       </Show>
-      <Show when={catalogPending()}>
+      {/* 弹层底部状态槽(批准稿 §二 B:与「已下载、待生效」同槽,一行一件事)。 */}
+      <Show when={catalogPending() || staleCatalog()}>
         <div class="a-mpp-foot" role="status">
-          {t("alpha.model.catalogPending")}
+          <Show when={catalogPending()}>
+            <div class="a-mpp-fl">{t("alpha.model.catalogPending")}</div>
+          </Show>
+          <Show when={staleCatalog()}>
+            {(stale) => (
+              <div class="a-mpp-fl" data-alpha-catalog-stale={stale().failure.code}>
+                <span>
+                  {t("alpha.model.catalogStale", { time: catalogSyncedAt(stale().at) })} ·{" "}
+                  {catalogFailureReason(stale().failure.code)}
+                </span>
+                <button type="button" onClick={retryCatalogRefresh}>
+                  {t("alpha.common.retry")}
+                </button>
+              </div>
+            )}
+          </Show>
         </div>
       </Show>
     </div>
+  )
+}
+
+/** #1557:分组头右侧「暂时取不到 · 重试」(批准稿 §五「分组头」)。 */
+function CatalogGroupNote(props: { code: string }) {
+  return (
+    <span class="a-mpp-gh-note" data-alpha-catalog-unavailable={props.code}>
+      {t("alpha.model.catalogGroupUnavailable")}
+      <button type="button" onClick={retryCatalogRefresh}>
+        {t("alpha.common.retry")}
+      </button>
+    </span>
   )
 }
 

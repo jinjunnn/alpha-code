@@ -23,7 +23,7 @@
 // 上面几处的分支从「没有这个能力」翻成「有」,悄悄改掉四个文件里已经绿着的用例。
 // 未提供的键一律保持 `undefined`;需要它在场的 cases 文件自己经 `extras` 注入。
 import type { AccountSummary, AuthState, ElectronAPI } from "../src/preload/types"
-import type { EffectiveCatalog, ProviderKeyStatus } from "../src/shared/alpha-model-types"
+import type { CatalogRefreshHealth, EffectiveCatalog, ProviderKeyStatus } from "../src/shared/alpha-model-types"
 
 /** 只约束**顶层键名**属于真面,不约束各成员形状 —— 桩在成员一级本来就是残缺的。 */
 type PreloadSurfaceShape = { [Key in keyof ElectronAPI]?: unknown }
@@ -49,6 +49,10 @@ export type PreloadStubOverrides = {
   providerSetKey?: (id: string, key: string) => Promise<{ ok: true } | { ok: false; reason: string }>
   /** REQ-160 AC2(`#1353`):composer 发送前问 main「这句话要不要拦」。默认不拦。 */
   moderationCheck?: (text: string) => Promise<boolean>
+  /** `#1557`:目录刷新结局(输入框提示槽 / 选择器读它;`#1556` 起两份目录各一格)。默认两格都是 `null` = 都成功。 */
+  refreshHealth?: () => Promise<CatalogRefreshHealth>
+  subscribeRefreshHealth?: (cb: (health: CatalogRefreshHealth) => void) => () => void
+  catalogRefresh?: () => Promise<void>
 }
 
 function createBaseStub(data: PreloadStubData, overrides: PreloadStubOverrides) {
@@ -56,7 +60,12 @@ function createBaseStub(data: PreloadStubData, overrides: PreloadStubOverrides) 
     endpoints: async () => null,
     openLink: () => {},
     moderation: { check: overrides.moderationCheck ?? (async () => false) },
-    models: { catalog: overrides.catalog ?? (async () => data.catalog) },
+    models: {
+      catalog: overrides.catalog ?? (async () => data.catalog),
+      refreshHealth: overrides.refreshHealth ?? (async () => ({ platform: null, byok: null })),
+      subscribeRefreshHealth: overrides.subscribeRefreshHealth ?? (() => () => {}),
+      refresh: overrides.catalogRefresh ?? (async () => {}),
+    },
     auth: {
       getState: overrides.authGetState ?? (async () => data.auth),
       subscribe: overrides.authSubscribe ?? (() => () => {}),
@@ -100,9 +109,10 @@ export type AbsentOnPurposeKey =
   | "openDirectoryPicker"
   | "openPath"
   | "contracts"
+  // `#1557`:composer 状态行的「重启引擎」走 recovery.retryEngine;需要它的用例自己注入并记录调用。
+  | "recovery"
   // ③ 这四个文件到不了的面
   | "killSidecar"
-  | "recovery"
   | "installCli"
   | "awaitInitialization"
   | "wslServers"

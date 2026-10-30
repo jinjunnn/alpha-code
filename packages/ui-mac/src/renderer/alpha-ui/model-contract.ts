@@ -47,6 +47,26 @@ type ModelContractOptions = {
    * 静态 import 会把本模块的组件测试整文件拖进 server 构建 —— 本仓点名过的形态)。
    */
   onCatalogReady?: (fact: CatalogReadyFact) => void
+  /**
+   * #1557(方案 req236 §2.5「在途阶段由屏障自己发布」):首轮屏障一直不答时 `list()` 既不 resolve 也不 reject,
+   * 只看 `ModelContractError` 传不出这段在途状态。进入屏障、每次单探针到期、屏障通过后发出 `model.list`
+   * 时各报一次 —— 不是每轮探针一条(理由同 `onCatalogReady`)。与 `onCatalogReady` 同一注入通道。
+   */
+  onProgress?: (progress: ModelReadProgress) => void
+}
+
+/** #1557:一次 `list()` 的在途阶段。`since` = 进入屏障的时刻(与 `now` 同一时钟)。 */
+export type ModelReadProgress = {
+  stage: "barrier" | "list"
+  probes: number
+  probeTimeouts: number
+  since: number
+}
+
+/** #1557:失败发生在哪一段、是哪一类。`no-answer` = 期限内没答;`http` = 引擎答了非 2xx;`network` = 连不上。 */
+export type ModelContractFailure = {
+  stage: "barrier" | "list"
+  kind: "no-answer" | "http" | "network"
 }
 
 /**
@@ -81,13 +101,25 @@ const wait = (delayMs: number, signal?: AbortSignal) =>
   })
 
 export class ModelContractError extends Error {
+  readonly stage?: ModelContractFailure["stage"]
+  readonly kind?: ModelContractFailure["kind"]
   constructor(
     readonly operation: "list" | "get" | "switch",
     readonly cause?: unknown,
+    failure?: ModelContractFailure,
   ) {
     super(`model contract ${operation} failed`)
     this.name = "ModelContractError"
+    this.stage = failure?.stage
+    this.kind = failure?.kind
   }
+}
+
+/** #1557:把一次真实失败归类。有 HTTP 状态 = 引擎答了;期限/预算掐断 = 没答;其余(`TypeError` 等)= 连不上。 */
+const failureKind = (error: unknown, status: number | undefined): ModelContractFailure["kind"] => {
+  if (status !== undefined) return "http"
+  const name = typeof error === "object" && error !== null && "name" in error ? error.name : undefined
+  return name === "TimeoutError" || name === "AbortError" ? "no-answer" : "network"
 }
 
 /**
@@ -176,6 +208,13 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
   const waitForNextProbe = options.wait ?? wait
   const now = options.now ?? (() => performance.now())
   const onCatalogReady = options.onCatalogReady
+  const report = (progress: ModelReadProgress) => {
+    try {
+      options.onProgress?.(progress)
+    } catch {
+      // 观测绝不扰动被观测对象(同 onCatalogReady)。
+    }
+  }
 
   /**
    * 目录就绪屏障。#857 的保证一字不动:marker 探针是**唯一**的就绪证明,绕过它会把未治理的
@@ -207,6 +246,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
     let pollWaits = 0
     let probeTimeouts = 0
     let wakeSource: CatalogReadyFact["wake"] = "first"
+    report({ stage: "barrier", probes, probeTimeouts, since: startedAt })
     while (true) {
       if (signal?.aborted) throw new ModelContractError("list", signal.reason)
       // 先武装唤醒、再发探针:提交若落在探针在途期间,事件不能丢 —— 否则屏障会白等一个兜底
@@ -231,6 +271,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
         let ready = false
         let failed = false
         let failure: unknown
+        let failureStatus: number | undefined
         try {
           probes++
           const result = await client.v2.provider.get(
@@ -246,6 +287,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           else if (!catalogNotReady(result.error, result.response?.status)) {
             failed = true
             failure = result.error
+            failureStatus = result.response?.status
           }
         } catch (error) {
           if (signal?.aborted) throw new ModelContractError("list", signal.reason)
@@ -261,7 +303,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           } catch {
             // 观测绝不扰动被观测对象:上报抛出不得把屏障变成一次失败(= 用户停在 recovering)。
           }
-          return
+          return { probes, probeTimeouts, since: startedAt }
         }
         // #882 R2:**真实失败先判,`landed` 后判**。反过来时,「引擎这一轮已经答了 503、而
         // `catalog.updated` 恰好同时到达」会被短路成「目录尚未收敛,继续等」——那份 503 既不
@@ -275,9 +317,10 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           if (deadline.signal.aborted) {
             probeTimeouts++
             wakeSource = "timeout"
+            report({ stage: "barrier", probes, probeTimeouts, since: startedAt })
             continue
           }
-          throw new ModelContractError("list", failure)
+          throw new ModelContractError("list", failure, { stage: "barrier", kind: failureKind(failure, failureStatus) })
         }
         // 事件已落地(含「本轮探针正是被它取消的」那一支):立刻重探,不进等待,也不把这次
         // 主动中断当成故障 —— 取消是我们自己发的。
@@ -316,16 +359,21 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
       // committed, then settle to 37 models on the hot path. The injected, unavailable provider
       // marker appears only in that same local batched commit, so this probe prevents the oversized
       // first response without waiting on account summary, bearer state, or any remote service.
-      await waitForCatalogReady(client, directory, signal)
+      const barrier = await waitForCatalogReady(client, directory, signal)
+      report({ stage: "list", ...barrier })
       // #882:请求预算与就绪屏障是两件事,不能共用一个 signal。屏障等的是「目录还没收敛」
       // (冷启动实测十几秒,那不是故障);请求等的是「引擎该答了」(悬挂防御)。旧实现让调用方
       // 的 10s 预算同时管住两者 —— 那正是本票的数据模型病灶,别在别处复制它。
       const result = await client.v2.model
         .list({ location: { directory } }, { signal: requestBudget(signal) })
         .catch((cause) => {
-          throw new ModelContractError("list", cause)
+          throw new ModelContractError("list", cause, { stage: "list", kind: failureKind(cause, undefined) })
         })
-      if (result.error || !result.data) throw new ModelContractError("list", result.error)
+      if (result.error || !result.data)
+        throw new ModelContractError("list", result.error, {
+          stage: "list",
+          kind: failureKind(result.error, result.response?.status),
+        })
       return result.data.data
     },
 

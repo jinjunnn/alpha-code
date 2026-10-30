@@ -61,6 +61,7 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener("alpha-recovery-incident", handler)
     },
     submit: (request) => ipcRenderer.invoke("recovery-submit", request),
+    retryEngine: () => ipcRenderer.invoke("recovery-retry-engine"),
   },
   installCli: () => ipcRenderer.invoke("install-cli"),
   awaitInitialization: () => ipcRenderer.invoke("await-initialization"),
@@ -398,6 +399,7 @@ const api: ElectronAPI = {
     // #1084:目录刷新的最后结局。invoke 取当前值(启动那次刷新早于 renderer 挂载),
     // subscribe 收后续变化;`#1556` 起两份目录各一格,`null` = 那一份最近一次刷新成功。
     refreshHealth: () => ipcRenderer.invoke("alpha-catalog-health"),
+    refresh: () => ipcRenderer.invoke("models-catalog-refresh"),
     subscribeRefreshHealth: (cb) => {
       const handler = (_: unknown, health: CatalogRefreshHealth) => cb(health)
       ipcRenderer.on("alpha-catalog-failure", handler)

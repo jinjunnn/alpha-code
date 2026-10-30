@@ -688,6 +688,8 @@ export type ElectronAPI = {
   recovery: {
     onIncident: (cb: (incident: RecoveryIncidentWire) => void) => () => void
     submit: (request: { incident: string; action: RecoveryAction }) => Promise<RecoveryActionResult>
+    /** #1557:不经 incident 执行「重试本地引擎」的同一组效果(输入框状态行的「重启引擎」)。 */
+    retryEngine: () => Promise<boolean>
   }
   installCli: () => Promise<string>
   awaitInitialization: () => Promise<ServerReadyData>
@@ -1380,6 +1382,8 @@ export type ElectronAPI = {
      *  启动那次刷新早于 renderer 挂载,所以出口必须同时提供「当前值」与「后续变化」两条。 */
     refreshHealth: () => Promise<CatalogRefreshHealth>
     subscribeRefreshHealth: (cb: (health: CatalogRefreshHealth) => void) => () => void
+    /** #1557:手动请求一次目录刷新(单飞;结局经 refreshHealth 的推送回来)。 */
+    refresh: () => Promise<void>
   }
   // custom provider add/test (writes alpha.jsonc provider[], respawns sidecar; 1-token probe).
   providers: {

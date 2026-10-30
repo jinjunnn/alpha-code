@@ -66,6 +66,60 @@
   cursor: pointer;
 }
 
+/* ── #1557:等待中的模型状态行 / 平台清单没取到 ─────────────────────────────
+   批准稿 docs/design/2026-10-30-req236-model-status/frame.html 的 `.ms-slot.wait`:沿用槽的几何(外边距 0 12 4、
+   内边距 7 9、圆角),但用中性底 —— 等待不是错误,红色在这条槽里只留给「这次没成、当前不会提交」。
+   文字 --a-text-secondary(6.65:1,深色 6.99:1),卡点短语 500 --a-text;按钮 600 --a-accent 靠右,
+   放不下时整组换到第二行靠右,说明句不截断。 */
+.a-comp-model-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 12px 4px;
+  padding: 7px 9px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+  line-height: 1.45;
+}
+.a-comp-model-status-tx { flex: 1 1 auto; min-width: 0; }
+.a-comp-model-status-tx b { font-weight: var(--a-weight-medium); color: var(--a-text); }
+.a-comp-model-status-n { font-variant-numeric: tabular-nums; }
+.a-comp-model-status-acts { flex: none; display: flex; gap: 12px; margin-left: auto; }
+.a-comp-model-status button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-accent);
+  border-radius: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.a-comp-model-status button:focus-visible { outline: none; box-shadow: var(--a-ring-focus); }
+.a-comp-model-spin {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--a-border-strong);
+  border-top-color: var(--a-text-secondary);
+  animation: a-comp-model-spin 0.9s linear infinite;
+}
+@keyframes a-comp-model-spin { to { transform: rotate(360deg); } }
+.a-comp-model-status-ic {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--a-text-tertiary);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
 /* ── REQ-160 AC2(`#1353`):发送被本机词表拦下时的提示 ──────────────────────
    已批稿 docs/design/2026-09-19-req160-send-blocked-notice/frame.html 的 `.sb-notice`。
    与上面三条同槽同边距,差别只有两处:琥珀左边框 + 琥珀底(不是红),以及没有按钮。
@@ -460,8 +514,23 @@
   font-size: var(--a-text-sm);
   font-weight: var(--a-weight-medium);
 }
-/* `#1556`:弹层底部「新清单待生效」一行(中性色、无按钮)。 */
+/* #1557 · 批准稿 2026-10-30-req236-model-status §二:清单刷新失败跟着选择器走。
+   分组头右侧 11.5 常规字重「暂时取不到」+ 文字按钮。 */
+.a-mpp-ghead { display: flex; align-items: center; gap: 8px; }
+.a-mpp-gh-note {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: var(--a-weight-normal);
+  text-transform: none;
+  letter-spacing: normal;
+}
+/* 弹层底部状态槽:`#1556` 的「新清单待生效」与 `#1557` 的「更新失败,正在使用某时的版本」同槽,一行一件事(中性色、流内)。 */
 .a-mpp-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 4px;
   padding: 6px 12px;
   border-top: 1px solid var(--a-border-faint);
@@ -470,6 +539,20 @@
   line-height: 1.5;
   color: var(--a-text-secondary);
 }
+.a-mpp-fl { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.a-mpp-ghead button,
+.a-mpp-foot button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-accent);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.a-mpp-ghead button:focus-visible,
+.a-mpp-foot button:focus-visible { outline: none; box-shadow: var(--a-ring-focus); }
 .a-mpp-empty {
   padding: 18px;
   text-align: center;
@@ -897,4 +980,5 @@
   .a-mpa * {
     transition-duration: 0ms !important;
   }
+  .a-comp-model-spin { animation: none; }
 }
