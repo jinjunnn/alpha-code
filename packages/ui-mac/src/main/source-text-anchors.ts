@@ -180,9 +180,9 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     lines: 1,
   },
   "packages/ui-mac/src/main/sidecar-lifecycle.test.ts": {
-    why: "两处都锚 index.ts:boot token 代的捕获/结算位置,以及 killSidecar 的收口预算分支。两个不会让它变红的变异:①在 bootForkTokenGeneration = forkTokenGeneration 之后再覆盖一次;②把 current.stop(…) 前面的 await 去掉(那一行文本逐字未变)。index.ts 结构上进不了 bun。",
-    evidence: "#600",
-    lines: 2,
+    why: "锚 index.ts 的 doRespawnSidecar:时间线 fork.start 写具名 trigger、捕获代 → kill → 健康终态 → markTokenGenerationApplied 的先后与唯一性。两个不会让它变红的变异:①在 healthy 判定前把 forkTokenGeneration 改写成 getTokenGeneration() 的新值;②给 markStartupTimeline 传一个被别处覆盖过的 trigger 变量(那一行文本逐字未变)。index.ts 结构上进不了 bun;行为判据在 credential-hot-apply.test.ts。",
+    evidence: "#1562",
+    lines: 1,
   },
   "packages/ui-mac/src/main/sidecar-location-prewarm.test.ts": {
     why: "锚 sidecar.ts 里 prewarm → listen → settle → ready 四段的下标先后。两个不会让它变红的变异:①把 await prewarm 的结果丢掉;②把 prewarmInitialLocation 换成立刻 resolve 的空实现。sidecar.ts 顶层有副作用,import 不得。",

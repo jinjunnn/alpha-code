@@ -141,8 +141,22 @@ inactive-plan payloads.
 8. An expired token at cold start begins refresh immediately. The first
    sidecar fork waits at most 1.2 seconds for that same request, then starts
    local/BYOK availability while a slow refresh continues. A successful late
-   result may rotate the running sidecar once for its token generation.
-   Transient or invalid-grant results never enter a token-rotation loop.
+   result is hot-applied like any other refresh (item 9); it never restarts
+   the running sidecar. Transient or invalid-grant results change nothing.
+9. A same-identity refresh does not restart the engine (REQ-236, `#1562`).
+   Main atomically rewrites the model and cloud-connector credential files
+   (same-directory temp file, fsync, rename), and the engine reads them at each
+   request boundary: platform model requests through the extension's
+   `chat.headers` hook (`ALPHA_PLATFORM_AUTH_REF`), the governed cloud
+   connector through a per-request `fetch` that resolves the reference in
+   `ALPHA_CLOUD_MCP_DEF`. The injected platform provider carries only a fixed
+   non-credential placeholder key. A credential that cannot be read fails that
+   request as an authentication error before it is sent; no cached or loaded
+   value is used. If the set of present credentials changed since the last
+   fork, or the hot write fails, main requests a `credential-change` restart
+   and keeps the platform `recovering` until a fork that captured that token
+   generation (or a newer one) becomes healthy. Every engine restart records a
+   named reason in the startup timeline (`main.sidecar.respawn.fork.start`).
 
 ## Runtime seams
 

@@ -1,6 +1,5 @@
 import type { RenewalResult } from "./alpha-auth"
 import { MIN_USABLE_TOKEN_LIFETIME_MS, refreshDueAt } from "./alpha-auth-clock"
-import type { SidecarRespawnReason } from "./sidecar-lifecycle"
 
 export const BOOT_RENEWAL_GRACE_MS = 1_200
 // 调度器的唤醒地板 = 「可用寿命」的下界,同一个常量派生,两者不可能漂移
@@ -10,8 +9,6 @@ export const AUTH_RENEWAL_MIN_INTERVAL_MS = MIN_USABLE_TOKEN_LIFETIME_MS
  *  重刷会把一个给不出可用有效期的签发端变成永久重刷循环;降频续跑既不进无定时器终局,
  *  也不制造风暴(③′3)。 */
 export const AUTH_RENEWAL_DEGRADED_INTERVAL_MS = 15 * 60_000
-/** #600:换血失败后重试同一 pending generation 的封顶低频节奏(降频续跑,不自旋、不进无定时器终局)。 */
-export const TOKEN_ROTATION_RETRY_MS = 60_000
 
 type Timer = ReturnType<typeof setTimeout>
 type SetTimer = (run: () => void, delayMs: number) => Timer
@@ -181,137 +178,5 @@ export function createAuthRenewalScheduler(deps: {
       if (timer) clearTimer(timer)
       timer = undefined
     },
-  }
-}
-
-export function createTokenRotationLatch(deps: {
-  forkedGeneration: () => number
-  /** 已经被某个 fork 捕获、但尚未通过 health 的 token 代。它只能抑制同代重复换血,
-   *  绝不能参与 applied 判定;health 终态必须再次 flush。 */
-  pendingForkGeneration?: () => number
-  canRespawn: () => boolean
-  respawn: (reason: SidecarRespawnReason) => Promise<boolean>
-  mark?: (result: RenewalResult, trigger: string, outcome: string) => void
-  /** 通知「当前活着的 sidecar 实际携带的那一代」—— 平台面「恢复中 → ready」的唯一解除点。
-   *  参数必须是 `forkedGeneration()`(实际健康 fork 的代),不是本次请求的 target:
-   *  respawn 队列合并时,一次 composite 可能实际 fork 了比 target 更新的代,报 target 会让
-   *  更新的那代永远等不到解除(rev2c ③″2-4:owner 不得静默退场)。 */
-  onApplied?: (generation: number) => void
-  setTimer?: SetTimer
-  clearTimer?: ClearTimer
-}) {
-  const setTimer = deps.setTimer ?? setTimeout
-  const clearTimer = deps.clearTimer ?? clearTimeout
-  let requestedGeneration = 0
-  let handledGeneration = 0
-  let active: Promise<boolean> | null = null
-  let retryTimer: Timer | undefined
-  let retryingGeneration = 0
-
-  const clearRetry = () => {
-    if (retryTimer) clearTimer(retryTimer)
-    retryTimer = undefined
-  }
-
-  /** 「请求的代已经在效力中」——三条路都要走它:换血成功、accept 时已是当前代、
-   *  flush 时发现外部(boot fork / 队列 follow-up)已经带上了。消费方回调抛出不得
-   *  derail latch(Minor2:auth publish 仍可能抛)。 */
-  const notifyApplied = () => {
-    try {
-      deps.onApplied?.(deps.forkedGeneration())
-    } catch (error) {
-      deps.mark?.(
-        { outcome: "transient-failure", generation: deps.forkedGeneration() },
-        "rotation",
-        `applied-notify-threw:${String(error)}`,
-      )
-    }
-  }
-  const inEffect = () => requestedGeneration <= Math.max(handledGeneration, deps.forkedGeneration())
-
-  // #600 B1:失败不是终局。保留单飞、保留 pending generation,用封顶低频 timer 重试
-  // (③′3:不得进入无定时器终局;也不得同步自旋 —— timer 独占下一次尝试)。
-  const scheduleRetry = () => {
-    if (retryTimer) return
-    retryTimer = setTimer(() => {
-      retryTimer = undefined
-      void flush()
-    }, TOKEN_ROTATION_RETRY_MS)
-    retryTimer.unref?.()
-  }
-
-  const flush = (): Promise<boolean> => {
-    if (active) return active
-    if (inEffect()) {
-      clearRetry()
-      // 曾经 pending、现在已在效力中(boot fork 抢先采用 / 队列 follow-up 带上了更新的代)
-      // ⇒ 它就是「已应用」。少了这一步,平台面会永远停在 recovering。
-      if (requestedGeneration > 0) {
-        notifyApplied()
-        return Promise.resolve(true)
-      }
-      return Promise.resolve(false)
-    }
-    // #859:boot fork 已经携带目标代但尚未健康时,不能为了同一代再杀一次 sidecar。
-    // pending 只是一条去重信号,不进入 inEffect()/notifyApplied;health 失败后由接线清掉
-    // pending 并再次 flush,成功后则先提交健康代再 flush。
-    if (requestedGeneration > 0 && requestedGeneration <= (deps.pendingForkGeneration?.() ?? 0))
-      return Promise.resolve(false)
-    // 失败后由 timer 独占重试该代:重复 accept / 其它触发不得就地再试(否则退化成自旋);
-    // 更新的 generation 允许立刻尝试。
-    if (retryTimer && requestedGeneration <= retryingGeneration) return Promise.resolve(false)
-    // 没有可换血的 sidecar(spawn 失败后 server 为 null)恰恰是必须继续重试的时刻:
-    // 只回 false 会让 pending generation 永远等一个不会到来的外部触发。
-    if (!deps.canRespawn()) {
-      scheduleRetry()
-      return Promise.resolve(false)
-    }
-
-    active = (async () => {
-      while (requestedGeneration > Math.max(handledGeneration, deps.forkedGeneration())) {
-        const target = requestedGeneration
-        // respawn 入口自身抛出(publish 异常等)必须收敛成一次失败,否则 latch 连同重试
-        // 定时器一起被 rejection 带走 —— 那正是 ③′3 禁止的无定时器终局。
-        const healthy = await deps.respawn("token-only").catch((error: unknown) => {
-          deps.mark?.({ outcome: "transient-failure", generation: target }, "rotation", `threw:${String(error)}`)
-          return false
-        })
-        if (!healthy) {
-          // handledGeneration 只在健康换血成功后推进 —— 旧接线在 respawn 之前就推进,
-          // 失败即把该代标记为「已处理」,同代永不再试(#600 的悬崖)。
-          retryingGeneration = target
-          scheduleRetry()
-          return false
-        }
-        handledGeneration = Math.max(handledGeneration, target)
-        notifyApplied()
-      }
-      clearRetry()
-      return true
-    })().finally(() => {
-      active = null
-    })
-    return active
-  }
-
-  return {
-    accept(result: RenewalResult, trigger: string) {
-      if (result.outcome !== "refreshed") {
-        deps.mark?.(result, trigger, "kept")
-        return Promise.resolve(false)
-      }
-      // 已经是当前代(boot fork 直接带上了 / 上一次换血已覆盖)⇒ 这一代**就是已应用**,
-      // 不是「什么都没发生」。返回 false 会让调用方(refreshTokens)判 applied:false,
-      // 平台面永远停在 recovering。accept 的布尔语义 = 「请求的代现在是否在效力中」。
-      if (result.generation <= Math.max(handledGeneration, deps.forkedGeneration())) {
-        deps.mark?.(result, trigger, "already-current")
-        notifyApplied()
-        return Promise.resolve(true)
-      }
-      requestedGeneration = Math.max(requestedGeneration, result.generation)
-      deps.mark?.(result, trigger, deps.canRespawn() ? "requested" : "pending")
-      return flush()
-    },
-    flush,
   }
 }

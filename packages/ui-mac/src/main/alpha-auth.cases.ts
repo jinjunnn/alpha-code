@@ -3,7 +3,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ContractIncompatibleError, type RoutePurpose } from "@alpha-code/contracts-consumer"
-import { createTokenRotationLatch } from "./auth-renewal"
 import { createAuthedGet } from "./alpha-account-request"
 import { deepLinkFor } from "../shared/route-manifest"
 
@@ -202,7 +201,11 @@ beforeEach(() => {
     respawn: () => {
       structuralRespawns++
     },
-    onRenewed: (result) => renewedGenerations.push(result.generation),
+    // REQ-236 `#1562`:续期提交后同步热应用;renewedGenerations = 被热应用的 token 代。
+    applyCredentials: () => {
+      renewedGenerations.push(getTokenGeneration())
+      return "applied"
+    },
   })
   MANAGED_ENV.forEach((key) => {
     savedEnv[key] = process.env[key]
@@ -660,13 +663,11 @@ describe("refresh bundle rotation", () => {
     expect(renewedGenerations).toEqual([])
   })
 
-  // #600 M1(R1 Blocker1 + Minor2 重写):此前本条**接受**「换血失败仍返回 refreshed」,
-  // 且用 getWindow:null 绕开了正要验证的 platform-ready 发布 —— 假闸门。正确行为三条:
-  // ① 换血落定之前绝不发布 platformStatus:"ready";② 换血失败 ⇒ 结果 applied:false 且平台面
-  // 保持 recovering;③ 低频重试真正应用后才转 ready。
-  test.each([true, false] as const)(
-    "platform ready is published only after the rotation applied (rotation healthy=%p)",
-    async (rotationHealthy) => {
+  // #600 M1 → REQ-236 `#1562`:续期需要结构性重启(凭据在场性变化 / 热写失败)时,ready 只在捕获代 ≥ 本次续期代的
+  // fork 健康完成后发布。两臂:直接确认;先来一个迟到的旧 fork(捕获旧代)—— 它不得确认,随后新 fork 才确认。
+  test.each([false, true] as const)(
+    "a structural renewal publishes ready only once a fork that captured it is confirmed (late old fork first=%p)",
+    async (lateOldForkFirst) => {
       const newBundle = tokenBundle("new")
       storeAuth({
         platformAccessTokens: tokenBundle(),
@@ -676,34 +677,13 @@ describe("refresh bundle rotation", () => {
       })
       const events: string[] = []
       const published: (string | undefined)[] = []
-      let releaseRotation!: () => void
-      const rotationGate = new Promise<void>((resolve) => {
-        releaseRotation = resolve
-      })
-      let forkedGeneration = getTokenGeneration()
-      const rotation = createTokenRotationLatch({
-        forkedGeneration: () => forkedGeneration,
-        canRespawn: () => true,
-        respawn: async () => {
-          events.push("rotation:start")
-          published.push(`during-rotation:${getAuthState().platformStatus}`)
-          await rotationGate
-          if (!rotationHealthy) {
-            events.push("rotation:failed")
-            return false
-          }
-          forkedGeneration = getTokenGeneration()
-          events.push("rotation:applied")
-          return true
-        },
-        onApplied: (generation) => markTokenGenerationApplied(generation),
-      })
       setAuthDeps({
         getWindow: () => fakeWindow([], published),
-        respawn: () => {
-          structuralRespawns++
+        respawn: (trigger) => {
+          events.push(`respawn:${trigger}`)
+          published.push(`during-respawn:${getAuthState().platformStatus}`)
         },
-        onRenewed: (result) => rotation.accept(result, "renewal"),
+        applyCredentials: () => "needs-structural",
       })
       globalThis.fetch = (async () =>
         jsonResponse({
@@ -716,31 +696,33 @@ describe("refresh bundle rotation", () => {
         events.push("renewal:reported")
         return result
       })
-      for (let tick = 0; tick < 200 && !events.includes("rotation:start"); tick++)
+      for (let tick = 0; tick < 200 && !events.includes("respawn:credential-change"); tick++)
         await new Promise((resolve) => setTimeout(resolve, 1))
-      // 换血在途:续期尚未回报,且此刻的平台态是「恢复中」——即便 main 已经握着新 token。
-      expect(events).toEqual(["rotation:start"])
+      // 重启在途:续期尚未回报,平台态是「恢复中」——即便 main 已经握着新 token。
+      expect(events).toEqual(["respawn:credential-change"])
       expect(getAuthState().platformStatus).toBe("recovering")
       expect(published).not.toContain("ready")
-      expect(published).toContain("during-rotation:recovering")
+      expect(published).toContain("during-respawn:recovering")
 
-      releaseRotation()
+      const renewed = getTokenGeneration()
+      if (lateOldForkFirst) {
+        markTokenGenerationApplied(renewed - 1)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        expect(events).toEqual(["respawn:credential-change"])
+        expect(getAuthState().platformStatus).toBe("recovering")
+      }
+      markTokenGenerationApplied(renewed)
       const result = await pending
-      expect(events).toEqual(
-        rotationHealthy
-          ? ["rotation:start", "rotation:applied", "renewal:reported"]
-          : ["rotation:start", "rotation:failed", "renewal:reported"],
-      )
-      expect(result).toMatchObject({ outcome: "refreshed", applied: rotationHealthy })
-      expect(getAuthState().platformStatus).toBe(rotationHealthy ? "ready" : "recovering")
-      // ready 一次都不能出现在换血落定之前
-      if (rotationHealthy) expect(published.indexOf("ready")).toBeGreaterThan(published.indexOf("recovering"))
-      else expect(published).not.toContain("ready")
+      expect(events).toEqual(["respawn:credential-change", "renewal:reported"])
+      expect(result).toMatchObject({ outcome: "refreshed", applied: true, generation: renewed })
+      expect(getAuthState().platformStatus).toBe("ready")
+      expect(published.indexOf("ready")).toBeGreaterThan(published.indexOf("recovering"))
+      expect(renewedGenerations).toEqual([])
     },
   )
 
-  // 换血失败后不是终局:latch 的低频重试真正应用该代时,平台面才从 recovering 转 ready。
-  test("a later successful rotation retry is what clears the recovering platform state", async () => {
+  // 结构性确认不是终局:有界等待超时后如实回 applied:false,此后那次 fork 健康完成仍会把平台面带回 ready。
+  test("a confirmation that lands after the bounded wait still clears the recovering platform state", async () => {
     const newBundle = tokenBundle("new")
     storeAuth({
       platformAccessTokens: tokenBundle(),
@@ -748,30 +730,12 @@ describe("refresh bundle rotation", () => {
       expiresAt: 1,
       lifetimeMs: 1000,
     })
-    const timers: Array<() => void> = []
-    let healthy = false
-    let forkedGeneration = getTokenGeneration()
-    const rotation = createTokenRotationLatch({
-      forkedGeneration: () => forkedGeneration,
-      canRespawn: () => true,
-      respawn: async () => {
-        if (!healthy) return false
-        forkedGeneration = getTokenGeneration()
-        return true
-      },
-      onApplied: (generation) => markTokenGenerationApplied(generation),
-      setTimer: (run) => {
-        timers.push(run)
-        return setTimeout(() => {}, 0)
-      },
-      clearTimer: (timer) => clearTimeout(timer),
-    })
     setAuthDeps({
       getWindow: () => null,
       respawn: () => {
         structuralRespawns++
       },
-      onRenewed: (result) => rotation.accept(result, "renewal"),
+      applyCredentials: () => "needs-structural",
     })
     globalThis.fetch = (async () =>
       jsonResponse({
@@ -780,13 +744,18 @@ describe("refresh bundle rotation", () => {
         expires_in: 3600,
       })) as typeof fetch
 
-    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed", applied: false })
+    vi.useFakeTimers()
+    const pending = refreshTokens()
+    for (let tick = 0; tick < 50 && structuralRespawns === 0; tick++) await Promise.resolve()
+    expect(structuralRespawns).toBe(1)
+    for (let tick = 0; tick < 50; tick++) await Promise.resolve()
+    vi.advanceTimersByTime(10_000)
+    const result = await pending
+    vi.useRealTimers()
+    expect(result).toMatchObject({ outcome: "refreshed", applied: false })
     expect(getAuthState().platformStatus).toBe("recovering")
-    expect(timers).toHaveLength(1)
 
-    healthy = true
-    timers[0]()
-    await rotation.flush()
+    markTokenGenerationApplied(result.generation)
     expect(getAuthState().platformStatus).toBe("ready")
   })
 
@@ -808,7 +777,7 @@ describe("refresh bundle rotation", () => {
       respawn: () => {
         structuralRespawns++
       },
-      onRenewed: (result) => markTokenGenerationApplied(result.generation),
+      applyCredentials: () => "applied",
     })
     // 尚未失败过:恢复中,但不是「续不上」。
     expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
@@ -873,8 +842,9 @@ describe("refresh compare-and-set before commit", () => {
       respawn: () => {
         structuralRespawns++
       },
-      onRenewed: (result) => {
-        renewedGenerations.push(result.generation)
+      applyCredentials: () => {
+        renewedGenerations.push(getTokenGeneration())
+        return "applied"
       },
     })
     let release!: () => void
@@ -1135,7 +1105,7 @@ describe("DEV_PLATFORM_TOKEN is a non-packaged override only", () => {
 // R1 Major5:换血链最坏含 allowlist 8s + stop 6s + ready IPC 60s + health 20s ≈ 94s。
 // 让 account 401 路径悬那么久不可接受 —— 等待必须有界,超时如实报 applied:false。
 describe("the rotation wait is bounded", () => {
-  test("a rotation that never settles releases the renewal as not-applied", async () => {
+  test("a structural renewal whose fork never confirms releases the renewal as not-applied", async () => {
     const newBundle = tokenBundle("new")
     storeAuth({
       platformAccessTokens: tokenBundle(),
@@ -1147,12 +1117,9 @@ describe("the rotation wait is bounded", () => {
     setAuthDeps({
       getWindow: () => null,
       respawn: () => {
-        structuralRespawns++
+        rotationStarted = true // 结构性重启已请求,但它的 fork 永远不健康完成(不调 markTokenGenerationApplied)
       },
-      onRenewed: () =>
-        new Promise<boolean>(() => {
-          rotationStarted = true
-        }),
+      applyCredentials: () => "needs-structural",
     })
     globalThis.fetch = (async () =>
       jsonResponse({
@@ -1164,7 +1131,7 @@ describe("the rotation wait is bounded", () => {
     const result = await refreshTokens()
 
     expect(rotationStarted).toBe(true)
-    // 「有界」的结构性证据就是这一行落定了、且换血仍悬着(onRenewed 永不返回):等待若无界,
+    // 「有界」的结构性证据就是这一行落定了、且重启仍悬着(确认永不到来):等待若无界,
     // refreshTokens 永不返回,由用例自己的 40s 超时判红。不再另断 `waited < 30_000`(`#1300`:
     // 那是墙钟上界,满载下会假红,而它只多排除「ROTATION_WAIT_MS 被改到 30s–40s 之间」这一格)。
     expect(result).toMatchObject({ outcome: "refreshed", applied: false })
@@ -1174,10 +1141,10 @@ describe("the rotation wait is bounded", () => {
 })
 
 // R1 Minor1:#601 退出条件② 此前只在 createAuthedGet 的单测里数了几次调用 —— 既没跨过那个
-// 已退役的 30 秒窗口,也没经过生产 composition。这条走真实链路:真 refreshTokens + 真 latch +
-// 真 createAuthedGet,并把系统时钟真的推过 30 秒窗口若干轮。
+// 已退役的 30 秒窗口,也没经过生产 composition。这条走真实链路:真 refreshTokens + 真 createAuthedGet,
+// 并把系统时钟真的推过 30 秒窗口若干轮。REQ-236 `#1562` 起续期热应用,引擎重启恰好 0 次。
 describe("a persistently 401 account endpoint (production composition)", () => {
-  test("drives exactly one refresh and one token-only rotation across a span well past the retired 30s window", async () => {
+  test("drives exactly one refresh, one hot apply and zero engine restarts across a span well past the retired 30s window", async () => {
     storeAuth({
       platformAccessTokens: tokenBundle(),
       refreshToken: "refresh-old",
@@ -1186,25 +1153,6 @@ describe("a persistently 401 account endpoint (production composition)", () => {
     })
     let tokenPosts = 0
     let accountRequests = 0
-    const rotations: string[] = []
-    let forkedGeneration = getTokenGeneration()
-    const rotation = createTokenRotationLatch({
-      forkedGeneration: () => forkedGeneration,
-      canRespawn: () => true,
-      respawn: async (reason) => {
-        rotations.push(reason)
-        forkedGeneration = getTokenGeneration()
-        return true
-      },
-      onApplied: (generation) => markTokenGenerationApplied(generation),
-    })
-    setAuthDeps({
-      getWindow: () => null,
-      respawn: () => {
-        structuralRespawns++
-      },
-      onRenewed: (result) => rotation.accept(result, "renewal"),
-    })
     globalThis.fetch = (async (input: unknown) => {
       if (String(input).includes("account.invalid")) {
         accountRequests++
@@ -1238,36 +1186,26 @@ describe("a persistently 401 account endpoint (production composition)", () => {
     setSystemTime()
 
     expect(tokenPosts).toBe(1)
-    expect(rotations).toEqual(["token-only"])
+    expect(renewedGenerations).toHaveLength(1)
+    expect(structuralRespawns).toBe(0)
     expect(accountRequests).toBe(7) // 首轮 401 + 续期后重试 401,其后 5 轮各一次(锁住,不再续期)
   })
 })
 
-// R2 新 Major2 / Minor2 的 composition 侧:换血落定的通知与 auth 发布必须真的把平台面
+// R2 新 Major2 / Minor2 的 composition 侧:结构性确认与 auth 发布必须真的把平台面
 // 从 recovering 带回 ready,而且不能被「报了更旧的代」或「一次 IPC 抛出」永久卡住。
 describe("clearing the recovering platform state", () => {
-  const rotationHarness = (adopt: (current: number) => number) => {
-    let forked = getTokenGeneration()
-    const rotation = createTokenRotationLatch({
-      forkedGeneration: () => forked,
-      canRespawn: () => true,
-      respawn: async () => {
-        forked = adopt(getTokenGeneration())
-        return true
-      },
-      onApplied: (generation) => markTokenGenerationApplied(generation),
-    })
+  const structuralHarness = (confirm: () => void) =>
     setAuthDeps({
       getWindow: () => null,
       respawn: () => {
         structuralRespawns++
+        confirm()
       },
-      onRenewed: (result) => rotation.accept(result, "renewal"),
+      applyCredentials: () => "needs-structural",
     })
-    return rotation
-  }
 
-  test("a rotation that adopts a newer generation than the request still clears recovering", async () => {
+  test("a fork that captured a newer generation than the renewal still clears recovering", async () => {
     const newBundle = tokenBundle("new")
     storeAuth({
       platformAccessTokens: tokenBundle(),
@@ -1275,8 +1213,8 @@ describe("clearing the recovering platform state", () => {
       expiresAt: 1,
       lifetimeMs: 1000,
     })
-    // 队列 follow-up 让本次换血实际带上了比 target 更新的一代。
-    rotationHarness((current) => current + 5)
+    // 队列 follow-up 让这次 fork 实际捕获了比本次续期更新的一代,且在续期回报之前就健康完成。
+    structuralHarness(() => queueMicrotask(() => markTokenGenerationApplied(getTokenGeneration() + 5)))
     globalThis.fetch = (async () =>
       jsonResponse({
         platform_access_tokens: newBundle,
@@ -1296,13 +1234,7 @@ describe("clearing the recovering platform state", () => {
       expiresAt: 1,
       lifetimeMs: 1000,
     })
-    setAuthDeps({
-      getWindow: () => null,
-      respawn: () => {
-        structuralRespawns++
-      },
-      onRenewed: () => false, // 换血失败:该代仍未应用
-    })
+    structuralHarness(() => {}) // 重启已请求,确认由下面手动给出
     globalThis.fetch = (async () =>
       jsonResponse({
         platform_access_tokens: newBundle,
@@ -1310,15 +1242,17 @@ describe("clearing the recovering platform state", () => {
         expires_in: 3600,
       })) as typeof fetch
 
-    const result = await refreshTokens()
-    expect(result).toMatchObject({ outcome: "refreshed", applied: false })
+    const pending = refreshTokens()
+    for (let tick = 0; tick < 200 && structuralRespawns === 0; tick++) await new Promise((resolve) => setTimeout(resolve, 1))
     expect(getAuthState().platformStatus).toBe("recovering")
 
-    markTokenGenerationApplied(result.generation - 1)
+    const renewed = getTokenGeneration()
+    markTokenGenerationApplied(renewed - 1)
     expect(getAuthState().platformStatus).toBe("recovering")
 
-    markTokenGenerationApplied(result.generation)
+    markTokenGenerationApplied(renewed)
     expect(getAuthState().platformStatus).toBe("ready")
+    expect(await pending).toMatchObject({ outcome: "refreshed", applied: true })
   })
 
   test("an auth-state push that throws is not recorded, so the next publish still delivers it", () => {

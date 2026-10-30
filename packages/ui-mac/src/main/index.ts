@@ -60,12 +60,14 @@ import { createDbMenuActions, runDbPreflightBoot } from "./db-safety-boot"
 import { createDataClearAction } from "./data-clear-boot"
 import { createMenu } from "./menu"
 import {
+  forkedSecretNames,
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
   spawnLocalServer,
   type SidecarListener,
 } from "./server"
+import { applyPlatformCredentialsHot } from "./alpha-secret-files"
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
   createMainWindow,
@@ -155,18 +157,11 @@ import { createChatArchiveUploader } from "./chat-archive-uploader"
 import { initModerationKeywords, notifyModerationAuthChanged } from "./moderation-keywords"
 import { registerModerationIpcHandlers } from "./moderation-ipc"
 import { errorOutcome, initStartupTimeline, markStartupTimeline } from "./startup-timeline"
-import {
-  awaitBootRenewalGrace,
-  createAuthRenewalScheduler,
-  createTokenRotationLatch,
-} from "./auth-renewal"
+import { awaitBootRenewalGrace, createAuthRenewalScheduler } from "./auth-renewal"
 import {
   armRespawnGenerationTerminal,
-  commitForkedTokenGeneration,
   createSidecarRespawnQueue,
-  shouldReloadRenderer,
-  shouldRetryRespawn,
-  type SidecarRespawnReason,
+  type SidecarRespawnTrigger,
 } from "./sidecar-lifecycle"
 import { armBootGenerationTerminal, createSidecarGenerationState, type SidecarGenerationState } from "./sidecar-generation"
 
@@ -187,23 +182,10 @@ let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
 let rendererReloadCount = 0
-// 「活着的 sidecar 已被健康确认携带的 token 代」——latch 的 forkedGeneration() 读它。
-// R3 新 Major:只有健康确认才提交(规则在 sidecar-lifecycle.commitForkedTokenGeneration,
-// boot 与 respawn 两条路共用),否则「fork 出去但从未健康」会被 latch 当成已应用。
-let sidecarTokenGeneration = 0
-const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
-  sidecarTokenGeneration = commitForkedTokenGeneration(sidecarTokenGeneration, forked, healthy)
-}
 // 「首个 fork **启动时**继承的 token 代」——只用于 boot 后那次「登录发生在 fork 之前吗」的
-// 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
+// 判断(它问的是继承事实,不是健康事实)。
 let bootForkTokenGeneration = 0
-// #859:boot fork 已捕获但尚未通过 health 的 token 代。与 sidecarTokenGeneration 分离:
-// 前者只阻止 latch 为同一代重复换血,后者才是可以发布 applied/ready 的健康事实。
-// 它是**抑制信号**,所以释放必须有上界 —— 见 BOOT_GENERATION_TERMINAL_MS 与 boot 处的结算接线。
-let pendingBootForkTokenGeneration = 0
-/** boot generation 终态的上界。#577 起它是「等健康 → 发终态」的兜底;#859 起它同时是
- *  pendingBootForkTokenGeneration 的释放上界 —— 两者必须是同一个数,否则会出现
- *  「终态已判 failed,而 latch 仍被 in-flight 抑制」的空窗。 */
+/** boot generation 终态的上界(#577:「等健康 → 发终态」的兜底)。 */
 const BOOT_GENERATION_TERMINAL_MS = 30_000
 
 function useEnvProxy() {
@@ -216,7 +198,7 @@ function useEnvProxy() {
   }
 }
 
-async function killSidecar(reason?: SidecarRespawnReason) {
+async function killSidecar() {
   stopEngineRunawayMeter()
   stopCatalogLivenessWatchdog()
   if (!server) return
@@ -225,7 +207,7 @@ async function killSidecar(reason?: SidecarRespawnReason) {
   // #408:蓄意停止 = 会话结束 —— 在任何 await 之前推栅栏(endSession 先撤 active 标记再清 Map),
   // 此后一切在途 grant 授权的迟到 commit 都被拒,复活窗口闭合(Codex 裁决 Q3 竞态不变量)。
   endSessionGrants("sidecar-stop")
-  await current.stop(reason === "token-only" ? "token-rotation" : "graceful")
+  await current.stop("graceful")
 }
 
 // #408:会话结束的统一收口(蓄意 kill = "sidecar-stop";崩溃 = "sidecar-exit")。幂等:无活跃
@@ -255,12 +237,13 @@ let engineRunawayTimer: NodeJS.Timeout | null = null
 let catalogLiveness = initialCatalogLivenessState()
 let catalogLivenessTimer: NodeJS.Timeout | null = null
 let catalogLivenessProbeInFlight = false
-let requestSidecarRespawn: ((reason: SidecarRespawnReason) => Promise<boolean>) | null = null
+let requestSidecarRespawn: ((trigger: SidecarRespawnTrigger) => Promise<boolean>) | null = null
 /** 「重试本地引擎」(RECOVERY_ACTIONS.retryEngine)的公共效果:清掉自愈阶梯,结构性换代。
- *  恢复页三处 incident 与输入框状态行的「重启引擎」(#1557)共用这一份;各 incident 自己的闸门复位留在调用点。 */
+ *  恢复页三处 incident 与输入框状态行的「重启引擎」(#1557)共用这一份;各 incident 自己的闸门复位留在调用点。
+ *  时间线原因是 `retry-engine`(REQ-236 §2.6:renderer 只发意图,引擎停摆走 retry-engine)。 */
 async function retryEngineRespawn(): Promise<boolean> {
   selfHeal = initialSelfHealState()
-  return (await requestSidecarRespawn?.("structural")) ?? false
+  return (await requestSidecarRespawn?.("retry-engine")) ?? false
 }
 let recoveryService: RecoveryService | null = null
 const sidecarGeneration = createSidecarGenerationState()
@@ -281,40 +264,6 @@ function publishSidecarGeneration(next: SidecarGenerationState) {
   } catch (error) {
     logger.warn("sidecar generation publish failed", error)
   }
-}
-
-const tokenRotation = createTokenRotationLatch({
-  forkedGeneration: () => sidecarTokenGeneration,
-  pendingForkGeneration: () => pendingBootForkTokenGeneration,
-  // #600:sidecar 已死(换血的 spawn 失败后 server 为 null)恰恰是必须允许再换血的时刻 ——
-  // 旧的 `server &&` 让「换血失败 ⇒ 无 sidecar」变成永久不可用:低频重试永远进不了 respawn 入口。
-  canRespawn: () => Boolean(requestSidecarRespawn && !quittingApp),
-  respawn: (reason) => requestSidecarRespawn?.(reason) ?? Promise.resolve(false),
-  // #600 M1:换血真正落地时解除平台面的「恢复中」——低频重试成功也走这条。
-  onApplied: (generation) => markTokenGenerationApplied(generation),
-  mark: (result, trigger, outcome) =>
-    markStartupTimeline("main.auth.rotation", {
-      generation: result.generation,
-      reason: trigger,
-      renewal: result.outcome,
-      outcome,
-    }),
-})
-
-// boot fork 的 token 代结算(唯一驱动方 = boot generation 终态,见 spawn 处的接线)。
-// R3 新 Major 保留:boot 也 capture-then-commit —— 只有**健康线通过**才把这一代记成
-// 「活着的 sidecar 携带的代」,否则 latch 的 inEffect 路径会为一个从未健康的 fork 清掉重试
-// 并发布 ready(#600 M1 的反面)。#859 只改「谁来宣布结论、多久之内必须宣布」,不放宽这条门:
-// 不健康时**只**释放 in-flight 抑制并重放 latch,代照旧不提交。
-function settleBootForkTokenGeneration(forked: number, healthy: boolean) {
-  if (pendingBootForkTokenGeneration !== forked) return
-  // fail-closed 的判定整条交给那唯一的规则(commitForkedTokenGeneration:不健康即不推进),
-  // 这里不再自己分一次支 —— 分了就等于把判定搬进 index.ts,而它是本仓唯一跑不进单测的文件,
-  // 判定住在这里就只剩源码锚看得见(实测:把那条规则改成忽略 healthy,竞态用例仍然全绿,
-  // 只有规则自己的纯函数单测转红)。行为完全等价:不健康时规则原样返回 current。
-  commitSidecarTokenGeneration(forked, healthy)
-  pendingBootForkTokenGeneration = 0
-  void tokenRotation.flush()
 }
 
 function recordDanglingSweep(context: "boot" | "respawn", outcome: DanglingSweepOutcome) {
@@ -363,7 +312,7 @@ function handleSidecarExit(gen: number, code: number) {
   if (selfHealTimer) clearTimeout(selfHealTimer)
   selfHealTimer = setTimeout(() => {
     selfHealTimer = null
-    void requestSidecarRespawn?.("structural")
+    void requestSidecarRespawn?.("crash-self-heal")
   }, plan.delayMs)
 }
 
@@ -716,20 +665,20 @@ const main = Effect.gen(function* () {
   // 过 sidecar env 白名单;密钥不进 sidecar env,由 spawnLocalServer 在 fork 时经 syncSecretFiles
   // 落入 {file:} 通道(alpha-secret-files.ts)。
   initAuthEnv(app.getPath("userData"))
-  // 续期换血入口必须在任何网络续期开始前安装。冷启动时 structural 变化先记账；首 fork 若已
-  // 采用当前 generation 则自然消解，否则 respawn 入口建成后补一次 structural 换血。
+  // auth 依赖必须在任何网络续期开始前安装。冷启动时 structural 变化先记账;首 fork 若已
+  // 采用当前 generation 则自然消解,否则 respawn 入口建成后补一次 structural respawn。
   setAuthDeps({
     getWindow: () => mainWindow,
-    respawn: () => {
+    respawn: (trigger) => {
       if (requestSidecarRespawn) {
-        void requestSidecarRespawn("structural")
+        void requestSidecarRespawn(trigger)
         return
       }
       pendingAuthStructuralRespawn = true
     },
-    // #600 M1:返回换血 Promise —— refreshTokens 等它落定后才回报恢复,account 401 路径
-    // 因此不会在 sidecar 仍握旧 token 时就把平台当成已恢复。
-    onRenewed: (result) => tokenRotation.accept(result, "renewal"),
+    // REQ-236 §2.1(`#1562`):同身份续期把新凭据原子写进引擎现读的文件,不重启引擎;在场性变了或写失败
+    // ⇒ needs-structural,alpha-auth 自己请求 credential-change 重启并等它确认。
+    applyCredentials: () => applyPlatformCredentialsHot(app.getPath("userData"), process.env, forkedSecretNames()),
     onChanged: () => {
       authScheduler?.rearm("auth-change")
       // `#1387`:违规词表只在启动同步一次 + 每 15 分钟一次,而冷启动那一次常常跑在令牌换好
@@ -971,7 +920,7 @@ const main = Effect.gen(function* () {
     registryChannel,
     () => Effect.runPromise(Deferred.await(serverReady)),
     homedir(),
-    { stop: () => killSidecar("structural"), refresh: () => requestSidecarRespawn?.("structural") ?? Promise.resolve(false) },
+    { stop: () => killSidecar(), refresh: () => requestSidecarRespawn?.("connector-change") ?? Promise.resolve(false) },
   )
   // REQ-234 `#1529`:「待重载」原因变了(重载请求 / ext 报告 / sidecar 连上或断开)⇒ 定制中心重读三档视图。
   alphaSidecar.onViewChanged(() => {
@@ -1273,22 +1222,13 @@ const main = Effect.gen(function* () {
     ensureLoopbackNoProxy()
     useEnvProxy()
 
-    // 快路径拿新 token 单 fork；慢路径先让 local-dir/BYOK 起服务，续期在后台完成后只经 token
-    // generation latch 请求一次换血。
+    // 快路径拿新 token 单 fork;慢路径先让 local-dir/BYOK 起服务,续期在后台完成后热应用凭据文件
+    // (fork 之前完成则由这次 fork 的 syncSecretFiles 带上),不再为它重启引擎(REQ-236 `#1562`)。
     if (bootRenewalRace) {
       const race = yield* Effect.promise(() => bootRenewalRace)
       markStartupTimeline("main.auth.boot.grace", {
         outcome: race.completed ? race.result.outcome : "timeout",
       })
-      if (!race.completed)
-        void race.pending.then(
-          (result) => tokenRotation.accept(result, "boot-grace"),
-          (error) =>
-            markStartupTimeline("main.auth.rotation", {
-              reason: "boot-grace",
-              outcome: errorOutcome(error),
-            }),
-        )
     }
 
     const communityExcel = yield* Effect.promise(() => communityExcelRetirement)
@@ -1348,9 +1288,7 @@ const main = Effect.gen(function* () {
     const spawnGen = ++sidecarGen
     publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason: "boot" })
     selfHeal = noteSpawn(selfHeal, Date.now())
-    const forkTokenGeneration = getTokenGeneration()
-    bootForkTokenGeneration = forkTokenGeneration
-    pendingBootForkTokenGeneration = forkTokenGeneration
+    bootForkTokenGeneration = getTokenGeneration()
     const { listener } = yield* Effect.promise(() => {
       const started = performance.now()
       markStartupTimeline("main.sidecar.boot.fork.start", { generation: spawnGen })
@@ -1392,25 +1330,13 @@ const main = Effect.gen(function* () {
         log: (message) => logger.log(message),
         logError: (message) => logger.error(message),
       }).then(
-        // #859:boot fork 的 token 代结算由**终态独家驱动**,因为终态是这条路上唯一有上界的
-        // 事实源(BOOT_GENERATION_TERMINAL_MS)。不能再直接挂在 `health.wait` 上:那个 promise
-        // 结构上可能永不落定 —— server.ts 的 health 只有「探到健康」或「子进程先退出」两种
-        // 结束方式,而 pollUntilHealthy 是无限轮询,所以「进程活着但永远不健康」(MCP 风暴、
-        // 引擎卡死)会让它一直 pending。以它作唯一结算源时 pendingBootForkTokenGeneration
-        // 被永久钉住,而 latch 的 in-flight 抑制分支是**不排重试定时器**的(还会让先前
-        // !canRespawn 排下的那只定时器自然消亡)⇒ 那一代永远等不到换血,正是 ③′3 禁止的
-        // 无定时器终局。R3 的 fail-closed 不变:只有健康线真的通过才提交代。
-        // ready 与 injection-failed 都算通过(token 随 fork 物化,{file:} 通道不经注入 ——
-        // 与 respawn 侧 armRespawnGenerationTerminal 的返回值语义同构);failed(健康失败、
-        // 30s 超时、spawn 在握手前失败)只释放抑制、绝不提交。
         (terminal) => {
-          settleBootForkTokenGeneration(forkTokenGeneration, terminal !== "failed")
           // #564:看门狗只在干净 ready 终态时武装(injection-failed 不武装:配置整份丢失是
           // 确定性缺失,respawn 修不了,武装只会白撞 strike 上界;它已有自己的 loud 终态)。
           if (terminal === "ready" && spawnGen === sidecarGen) armCatalogLivenessWatchdog(spawnGen)
         },
-        // 终态生产者自身 rejected 也必须结算,否则抑制照样永久化(它已是全函数,这里是兜底)。
-        () => settleBootForkTokenGeneration(forkTokenGeneration, false),
+        // 终态生产者已是全函数,这里只是不让一个意外 rejection 变成 main 进程的 unhandled rejection。
+        () => {},
       )
       return spawning
     })
@@ -1450,18 +1376,17 @@ const main = Effect.gen(function* () {
       .catch((error) => logger.warn("[req063] global ecosystem gate failed (non-fatal)", error))
   }
 
-  // In-place sidecar respawn — NOT a full app relaunch. Both reasons re-fork on the same
-  // host/port/password and refresh fork-time {file:} materialization. Structural changes keep the
-  // historical renderer reload; token-only rotation relies on generation notification + surgical
-  // SDK/SSE reconnection so the renderer tree remains mounted.
-  const doRespawnSidecar = async (reason: SidecarRespawnReason) => {
+  // In-place sidecar respawn — NOT a full app relaunch. Re-forks on the same host/port/password,
+  // refreshes fork-time {file:} materialization and reloads the renderer once healthy. Only the named
+  // triggers in SidecarRespawnTrigger reach here (REQ-236 §2.6); token renewal hot-applies instead.
+  const doRespawnSidecar = async (trigger: SidecarRespawnTrigger) => {
     if (quittingApp) return false
     // #600:发出 recovering 之后必须恰好发布一个终态。终态生产者(armRespawnGenerationTerminal)
     // 一经武装就独占发布权;它武装之前出错的路径由下面的 catch 兜住那唯一一个 failed。
     let announcedGeneration: number | null = null
     let terminal: Promise<boolean> | null = null
     try {
-      logger.log("respawning sidecar", { reason })
+      logger.log("respawning sidecar", { reason: trigger })
       const lockedSweep = withConfigWriteLock(() => ({
         acquired: true as const,
         outcome: sweepEngineConfigDanglingUnlocked({
@@ -1471,10 +1396,6 @@ const main = Effect.gen(function* () {
         }),
       }))
       if (!("acquired" in lockedSweep)) {
-        if (!shouldRetryRespawn(reason)) {
-          logger.error(`[req053-dangling-sweep] token rotation sweep skipped; keeping degraded state: ${lockedSweep.reason}`)
-          return false
-        }
         const retryDelayMs = Math.min(1000 * 2 ** selfHeal.attempts, SELF_HEAL_MAX_DELAY_MS)
         logger.error(
           `[req053-dangling-sweep] respawn sweep skipped; retrying this spawn in ${retryDelayMs}ms: ${lockedSweep.reason}`,
@@ -1482,7 +1403,7 @@ const main = Effect.gen(function* () {
         if (selfHealTimer) clearTimeout(selfHealTimer)
         selfHealTimer = setTimeout(() => {
           selfHealTimer = null
-          void requestSidecarRespawn?.(reason)
+          void requestSidecarRespawn?.(trigger)
         }, retryDelayMs)
         return false
       }
@@ -1496,19 +1417,19 @@ const main = Effect.gen(function* () {
       // `#982`: gap-free respawn sweep credits the next spawnLocalServer fork.
       creditDanglingSweepForSpawn()
       const spawnGen = ++sidecarGen
-      // #600:「当前 sidecar 携带的 token 代」只能在健康换血成功后记账。旧接线在 fork 前就记,
-      // 失败后 latch 误判该代已应用(同代永不再试),而此刻根本没有活着的 sidecar。
+      // REQ-236 §2.1-2(`#1562`):这次 fork 捕获的 token 代。只在**这次** fork 健康完成后交给
+      // markTokenGenerationApplied;失败、20 秒超时都不交,迟到完成的旧 fork 捕获的是旧代 ⇒ 不确认新代。
       const forkTokenGeneration = getTokenGeneration()
       // R1 Major3:先记账再发布 —— 反过来的话,recovering 发布自身抛出时 catch 认不出
       // 「这一代已经宣告过」,补不上那个 failed。
       announcedGeneration = spawnGen
-      publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason })
-      await killSidecar(reason)
+      publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason: "structural" })
+      await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()
       selfHeal = noteSpawn(selfHeal, Date.now())
       const started = performance.now()
-      markStartupTimeline("main.sidecar.respawn.fork.start", { generation: spawnGen, reason })
+      markStartupTimeline("main.sidecar.respawn.fork.start", { generation: spawnGen, reason: trigger })
       const spawning = spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
@@ -1523,14 +1444,14 @@ const main = Effect.gen(function* () {
           markStartupTimeline("main.sidecar.respawn.fork.end", {
             durationMs: performance.now() - started,
             generation: spawnGen,
-            reason,
+            reason: trigger,
             outcome: "ok",
           }),
         (error) =>
           markStartupTimeline("main.sidecar.respawn.fork.end", {
             durationMs: performance.now() - started,
             generation: spawnGen,
-            reason,
+            reason: trigger,
             outcome: errorOutcome(error),
           }),
       )
@@ -1540,7 +1461,6 @@ const main = Effect.gen(function* () {
       // 永久停在 recovering,而 renderer 探不出一个不存在的 sidecar。
       terminal = armRespawnGenerationTerminal({
         generation: spawnGen,
-        reason,
         spawning,
         timeoutMs: 20000,
         publish: publishSidecarGeneration,
@@ -1555,26 +1475,17 @@ const main = Effect.gen(function* () {
       sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
       const healthy = await terminal
-      commitSidecarTokenGeneration(forkTokenGeneration, healthy)
+      if (healthy) markTokenGenerationApplied(forkTokenGeneration)
       // #564:respawn 侧与 boot 同判据 —— 只有健康且注入完好才武装 catalog-liveness 看门狗。
       if (healthy && !injectionFailure && spawnGen === sidecarGen) armCatalogLivenessWatchdog(spawnGen)
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {
-        if (shouldReloadRenderer(reason)) {
-          markStartupTimeline("main.renderer.reload", {
-            candidate: "C",
-            count: ++rendererReloadCount,
-            trigger: "sidecar-respawn",
-          })
-          mainWindow.webContents.reload()
-          logger.log("sidecar respawned + renderer reloaded")
-        } else {
-          markStartupTimeline("main.renderer.reload.skipped", {
-            generation: spawnGen,
-            reason,
-            outcome: "continuity",
-          })
-          logger.log("sidecar token rotated without renderer reload")
-        }
+        markStartupTimeline("main.renderer.reload", {
+          candidate: "C",
+          count: ++rendererReloadCount,
+          trigger: "sidecar-respawn",
+        })
+        mainWindow.webContents.reload()
+        logger.log("sidecar respawned + renderer reloaded")
       }
       return healthy
     } catch (error) {
@@ -1582,25 +1493,24 @@ const main = Effect.gen(function* () {
       // 终态生产者已武装 ⇒ 由它发布(spawn reject 也走那条路);尚未武装但已发出 recovering ⇒
       // 这里补上那唯一一个 failed,绝不让 generation 停在 recovering。
       if (announcedGeneration !== null && !terminal)
-        publishSidecarGeneration({ status: "failed", generation: announcedGeneration, reason })
+        publishSidecarGeneration({ status: "failed", generation: announcedGeneration, reason: "structural" })
       return false
     }
   }
-  // 单飞 + 一轮排队合并；排队中的 token-only 遇 structural 必升级，不能把需要 reload 的
-  // 配置/身份变化误吞成连续性换血。
+  // 单飞 + 一轮排队合并(排队期间的请求由同一次 follow-up fork 覆盖)。
   const respawnSidecar = createSidecarRespawnQueue(doRespawnSidecar)
 
   requestSidecarRespawn = respawnSidecar // B5:崩溃自愈复用同一互斥/合并入口
   if (pendingAuthStructuralRespawn && bootForkTokenGeneration !== getTokenGeneration())
-    void respawnSidecar("structural")
+    void respawnSidecar("identity-change")
   pendingAuthStructuralRespawn = false
-  setProviderLifecycleDeps({ refreshRuntime: () => respawnSidecar("structural") })
+  setProviderLifecycleDeps({ refreshRuntime: () => respawnSidecar("provider-change") })
   // B21:BYOK 改键/删键即时生效 —— 持久化成功后重注 env(自有注入权威覆盖/清除,用户值不动)+
   // respawn(fork 时 A6 syncSecretFiles 把新 env 镜像进 {file:} 通道 → 新 sidecar 即用新 key)。
   setByokKeyDeps({
     onChanged: () => {
       injectByokKeysIntoEnv()
-      void respawnSidecar("structural")
+      void respawnSidecar("byok-change")
     },
   })
   authScheduler = createAuthRenewalScheduler({
@@ -1620,7 +1530,6 @@ const main = Effect.gen(function* () {
   const onResume = () => authScheduler?.rearm("resume")
   powerMonitor.on("resume", onResume)
   authScheduler.rearm("startup")
-  void tokenRotation.flush()
   app.once("will-quit", () => {
     powerMonitor.removeListener("resume", onResume)
     authScheduler?.stop()

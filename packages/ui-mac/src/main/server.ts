@@ -15,7 +15,7 @@ import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
-import { syncSecretFiles } from "./alpha-secret-files"
+import { secretFileRef, syncSecretFiles } from "./alpha-secret-files"
 import { customProviderSecretValues } from "./alpha-byok-keys"
 import { ignoredConfigProviderBlocks, ignoredConfigRemoteMcpEntries } from "./ext-config"
 import { readCustomProviderRecords } from "./custom-provider-records"
@@ -467,6 +467,14 @@ export function preferAppEnv(userDataPath: string) {
   applyWebSearchSovereignty()
 }
 
+// REQ-236 §2.1-1(`#1562`):最近一次 fork 时写进 {file:} 通道的凭据名。续期热应用据它判「凭据在场性
+// 变没变」(alpha-secret-files.applyPlatformCredentialsHot);还没 fork 过 = undefined。
+let forkedSecrets: ReadonlySet<string> | undefined
+
+export function forkedSecretNames(): ReadonlySet<string> | undefined {
+  return forkedSecrets
+}
+
 export async function spawnLocalServer(
   hostname: string,
   port: number,
@@ -495,6 +503,7 @@ export async function spawnLocalServer(
         : {}
     logIgnoredConfigRecordsOnce()
     const sync = syncSecretFiles(options.userDataPath, process.env, customSecrets)
+    forkedSecrets = new Set(sync.written)
     getLogger()?.log(`alpha-secrets sync: wrote [${sync.written.join(", ")}] removed [${sync.removed.join(", ")}]`)
     // REQ-076 T2(ADR-026 §5,C28 反 placebo):0600/0700 在 NTFS 近乎 no-op —— 密钥文件的
     // owner-only 保证在 Windows 缺位(icacls ACL 待 T3 拍板)。loud,不静默装样子。
@@ -545,6 +554,9 @@ export async function spawnLocalServer(
   // REQ-159:围栏计划在 fork **之前**做(试编译失败 / 模块缺失 / 默认工作区不在 ⇒ 抛 ⇒ 这一代被拒,
   // 与上面 alpha-secrets sync 失败同一条 fail-closed 路径)。env 先算好:计划要读的 XDG_* / HOME
   // 必须是 sidecar 将拿到的那一份,不是 main 自己的 process.env。
+  // REQ-236 §2.1-4(`#1562`):平台模型请求的凭据只从这份文件现读(ext `chat.headers`),注入的 provider
+  // 配置只有占位值。值是 `{file:}` 引用,不是凭据;经 sidecar env 白名单(sidecar-env.ts)进引擎进程。
+  process.env.ALPHA_PLATFORM_AUTH_REF = secretFileRef(options.userDataPath, "ALPHA_API_KEY")
   const sidecarEnv = createSidecarEnv()
   // uv's default ~/.cache/uv is outside the fence; keep Office dependencies under the existing W3 root.
   sidecarEnv.UV_CACHE_DIR = join(options.userDataPath, "uv-cache")

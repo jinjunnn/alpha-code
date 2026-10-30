@@ -9,8 +9,9 @@
 //   ③ 消费   applyAuthEnv(): 据 purpose-keyed token bundle+mode 写 process.env(ALPHA_BASE_URL/ALPHA_API_KEY →
 //            alpha-models.ts 的模型代理 provider;ALPHA_MCP_TOKEN → 云 MCP 的 {file:} header 通道,#1195;
 //            ALPHA_CLOUD_MCP_URL/ALPHA_CLOUD_TOKEN →
-//            sidecar.ts 的 mcp.cloud)。env 在 sidecar fork 前算一次(server.ts 注释),所以运行时
-//            变化通过同 host/port/password 的受控 sidecar respawn 继承。
+//            sidecar.ts 的 mcp.cloud)。env 在 sidecar fork 前算一次(server.ts 注释),身份/在场性变化
+//            通过同 host/port/password 的受控 sidecar respawn 继承;同身份续期只原子重写凭据文件,
+//            引擎在请求边界现读(REQ-236 `#1562`,applyCredentials)。
 //
 // dev:DEV_PLATFORM_TOKEN 把"已登录 + platform"静态短路,跳过 ①②(doc §A,不等 web)。
 
@@ -33,6 +34,8 @@ import { decodeEndpointDiscovery, resolveEndpoints, setDiscoveredEndpoints } fro
 import { reportContractFailure } from "./alpha-contract-health"
 import { parseAccessTokenIdentity } from "./alpha-auth-identity"
 import { errorOutcome, markStartupTimeline } from "./startup-timeline"
+import type { HotApplyOutcome } from "./alpha-secret-files"
+import type { SidecarRespawnTrigger } from "./sidecar-lifecycle"
 
 export { parseAccessTokenIdentity } from "./alpha-auth-identity"
 
@@ -81,7 +84,8 @@ export type RenewalResult = {
   outcome: RenewalOutcome
   generation: number
   expiresAt?: number
-  /** #600 M1:`refreshed` 时新 token 是否已被 sidecar 换血采用。false = 平台仍恢复中。 */
+  /** `refreshed` 时新 token 是否已在引擎生效:热应用成功即 true;走结构性重启时只有捕获代 ≥ 本次续期代的
+   *  fork 健康完成才 true(REQ-236 `#1562`)。false = 平台仍恢复中。 */
   applied?: boolean
 }
 
@@ -129,8 +133,10 @@ const webBase = () => resolveEndpoints().web
 
 let userDataPath = ""
 let getWindow: () => BrowserWindow | null = () => null
-let respawnSidecar: (reason: "structural") => void = () => {}
-let onRenewed: (result: RenewalResult) => void | Promise<unknown> = () => {}
+let respawnSidecar: (trigger: SidecarRespawnTrigger) => void = () => {}
+// REQ-236 §2.1-2(`#1562`):续期提交后同步热应用凭据文件。缺省 = 还没有引擎可应用(setAuthDeps 之前),
+// 与「还没 fork 过」同一结论:下一次 fork 的 syncSecretFiles 自然带上 env 里的新值。
+let applyCredentials: () => HotApplyOutcome = () => "applied"
 let onAuthChanged: () => void = () => {}
 let stored: StoredAuth = { mode: "byok" }
 let pkce: { verifier: string; state: string } | null = null
@@ -138,14 +144,17 @@ let tokenGeneration = 0
 // #601:身份代 —— 只有登入/登出推进,token 轮换不算。账户驱动刷新的 401 锁据此解锁,
 // 所以「持续 401」不会因为一次普通续期就重新获得驱动 respawn 的资格。
 let authIdentityEpoch = 0
-// #600 M1:续期提交后、换血落定前(以及换血失败后),sidecar 仍握旧 token 或已不存在 ——
-// 平台面必须保持 recovering,绝不能因为 main 手里有了新 token 就先报 ready。
+// #600 M1 / REQ-236 `#1562`:续期需要结构性重启(凭据在场性变化或热写失败)时置位,直到捕获代 ≥ 它的
+// fork 健康完成(markTokenGenerationApplied)—— 其间引擎仍握旧凭据或不存在,平台面保持 recovering。
+// 普通续期热应用成功时从不置位。
 let unappliedRenewalGeneration: number | null = null
+// waitForApplied 的等待者:markTokenGenerationApplied(g) 解掉所有 generation ≤ g 的。
+let appliedWaiters: Array<{ generation: number; resolve: (applied: boolean) => void }> = []
 // #1543:最近一次续期因网络错误失败时所在的 token 代。只在仍是当前代时对外报 `refreshUnreachable`
 // —— 续期成功 / 登录 / 登出 / 重新装载都推进 tokenGeneration,标记随之自然失效,不另设清除点。
 let refreshUnreachableGeneration: number | null = null
-/** 等换血落定的上界。超时不取消换血(它自带封顶低频重试),只是不再让调用方(account 401
- *  路径)继续悬着:如实报 applied:false,平台面维持 recovering,直到 latch 真正应用。 */
+/** 结构性续期等确认的上界。超时不取消重启(它有自愈阶梯),只是不再让调用方(account 401 路径)
+ *  继续悬着:如实报 applied:false,平台面维持 recovering,直到那次 fork 健康完成。 */
 const ROTATION_WAIT_MS = 10_000
 
 // dev-only 静态短路。R1 Major4:此前任何构建读到 DEV_PLATFORM_TOKEN 都会把一个未知/过期的
@@ -230,7 +239,7 @@ function deriveState(): AuthState {
   const devToken = Boolean(devPlatformToken())
   const loggedIn = hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || devToken
   // #602 M2:有效期未知/已过期 ⇒ recovering(isTokenExpired 已 fail-closed)。
-  // #600 M1:续期后未完成换血同样是 recovering —— sidecar 还握着旧 token。
+  // #600 M1:续期走结构性重启、尚未确认时同样是 recovering —— sidecar 还握着旧凭据(普通续期热应用不置位)。
   // devPlatformToken() 只在非 packaged 构建返回值(见该函数),是没有续期手段的静态短路,
   // 按 fail-closed 会永久停在 recovering(违反 ③′2「fail-closed 必须有有界自证路径」),
   // 故 dev 短路报 ready;生产一律按 expiresAt + 换血结果判定。
@@ -344,14 +353,15 @@ export function initAuthEnv(dataPath: string) {
 // Called after the main window exists, so state pushes have a target + login can respawn the sidecar.
 export function setAuthDeps(deps: {
   getWindow: () => BrowserWindow | null
-  respawn: (reason: "structural") => void
-  /** #600 M1:返回 Promise 时 refreshTokens 会等它 —— 换血是「恢复了」的真实完成点。 */
-  onRenewed?: (result: RenewalResult) => void | Promise<unknown>
+  respawn: (trigger: SidecarRespawnTrigger) => void
+  /** REQ-236 §2.1-2(`#1562`):把 `applyAuthEnv` 刚写进 env 的凭据热应用到引擎读的文件。同步;
+   *  `needs-structural` ⇒ 本次续期走结构性重启并等它确认。 */
+  applyCredentials: () => HotApplyOutcome
   onChanged?: () => void
 }) {
   getWindow = deps.getWindow
   respawnSidecar = deps.respawn
-  onRenewed = deps.onRenewed ?? (() => {})
+  applyCredentials = deps.applyCredentials
   onAuthChanged = deps.onChanged ?? (() => {})
   publish()
 }
@@ -553,7 +563,7 @@ async function completeAuth(parsed: URL) {
   }
   tokenGeneration++
   authIdentityEpoch++
-  // 登录自带 structural respawn(下方),不走续期换血闩;清掉上一身份留下的未应用标记,
+  // 登录自带 structural respawn(下方);清掉上一身份留下的未应用标记,
   // 否则新身份会挂在旧身份的 recovering 上。
   unappliedRenewalGeneration = null
   persist()
@@ -565,7 +575,7 @@ async function completeAuth(parsed: URL) {
   // ADR-017) so the new fork inherits ALPHA_BASE_URL/ALPHA_API_KEY → provider.alpha appears with no
   // "启用代理" click and no restart. The composition-root callback coalesces a cold-start callback
   // with the first fork generation; a live sidecar takes the structural path below.
-  respawnSidecar("structural")
+  respawnSidecar("identity-change")
 }
 
 async function exchangeCode(code: string, verifier: string): Promise<TokenResponse> {
@@ -730,11 +740,11 @@ export function refreshTokens(): Promise<RenewalResult> {
       onAuthChanged()
       return result
     }
-    // #600 M1:换血才是「平台恢复」的完成点。doRefresh 提交时置了 unappliedRenewalGeneration,
-    // 所以此刻发布出去的是 recovering —— ready 只可能在下面换血落定之后发布。
-    const applied = await awaitRotation(result)
-    if (applied) markTokenGenerationApplied(result.generation)
-    // 换血落定后才发布最终平台态:成功 → ready;失败/超时 → 仍 recovering(latch 低频重试中)。
+    // REQ-236 §2.1-2(`#1562`)两种完成合同:热应用成功时 doRefresh 不置 unapplied ⇒ 当场 applied;
+    // 结构性时等捕获代 ≥ 本次续期代的 fork 健康完成(markTokenGenerationApplied),有界。
+    const applied =
+      unappliedRenewalGeneration === null ? true : await waitForApplied(result.generation, ROTATION_WAIT_MS)
+    // 失败/超时 ⇒ 仍 recovering(结构性自愈阶梯在跑,或等用户在恢复面上重试引擎)。
     publish()
     onAuthChanged()
     return { ...result, applied }
@@ -759,35 +769,34 @@ export function refreshTokens(): Promise<RenewalResult> {
   return refreshing
 }
 
-/** 等换血落定,但有界(R1 Major5:换血链最坏含 allowlist 8s + stop 6s + ready IPC 60s +
- *  health 20s ≈ 94s,让 account 401 路径悬那么久不可接受)。超时按「尚未应用」如实回报,
- *  换血本身继续跑,应用成功时经 markTokenGenerationApplied 补发 ready。 */
-async function awaitRotation(result: RenewalResult): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const applied = await Promise.race([
-    (async () => {
-      try {
-        return (await onRenewed(result)) !== false
-      } catch (error) {
-        warn("alpha-auth: token rotation application failed", error)
-        return false
-      }
-    })(),
-    new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => {
-        warn("alpha-auth: token rotation still pending — reporting the platform as recovering")
-        resolve(false)
-      }, ROTATION_WAIT_MS)
-      timer.unref?.()
-    }),
-  ])
-  clearTimeout(timer)
-  return applied
+/** 结构性续期的确认:为真当且仅当 `markTokenGenerationApplied(g)` 以 `g ≥ generation` 被调用,且在
+ *  `timeoutMs` 之内。超时如实回 false,不取消那次重启;它之后健康完成仍会经 markTokenGenerationApplied 补发 ready。 */
+function waitForApplied(generation: number, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      appliedWaiters = appliedWaiters.filter((waiter) => waiter !== entry)
+      warn("alpha-auth: structural credential apply still pending — reporting the platform as recovering")
+      resolve(false)
+    }, timeoutMs)
+    timer.unref?.()
+    const entry = {
+      generation,
+      resolve: (applied: boolean) => {
+        clearTimeout(timer)
+        resolve(applied)
+      },
+    }
+    appliedWaiters.push(entry)
+  })
 }
 
-/** 换血入口在该 generation 真正被 sidecar 采用时回调(含 latch 的低频重试路径)。
- *  这是「平台恢复中 → ready」的唯一解除点。 */
+/** 平台面「恢复中 → ready」的唯一解除点(REQ-236 `#1562`):只由 main 的 doRespawnSidecar 在**那次** fork
+ *  健康完成后调用,参数是那次 fork 捕获的 token 代。fork 失败、20 秒超时都不调用;迟到完成的旧 fork 捕获的是
+ *  旧代,`g < unapplied` 不动作。 */
 export function markTokenGenerationApplied(generation: number): void {
+  const settled = appliedWaiters.filter((waiter) => waiter.generation <= generation)
+  appliedWaiters = appliedWaiters.filter((waiter) => waiter.generation > generation)
+  settled.forEach((waiter) => waiter.resolve(true))
   if (unappliedRenewalGeneration === null || generation < unappliedRenewalGeneration) return
   unappliedRenewalGeneration = null
   publish()
@@ -902,14 +911,18 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     lifetimeMs: refreshedExpiresAt - refreshedNow,
   }
   tokenGeneration++
-  // #600 M1 / R1 Blocker1:ready 不得先于换血发布。置位后 deriveState 判 recovering,
-  // 所以下面这次 publish 发出的是「恢复中」;ready 只可能由 markTokenGenerationApplied
-  // 或 refreshTokens 在换血落定后发出。
-  unappliedRenewalGeneration = tokenGeneration
   persist()
   applyAuthEnv()
+  // REQ-236 §2.1-2(`#1562`):同一个同步块里把新凭据原子写进引擎现读的文件 —— 与上面两次 CAS 之间
+  // 没有 await,登出 / 换号(它们先推进 tokenGeneration)不可能插进来,续期写入不会晚于撤权生效。
+  // 热应用成功:不置 unapplied、不重启,平台面直接 ready,在途回答与会话授权都不动。
+  // 凭据在场性变化或热写失败:置 unapplied ⇒ 下面这次 publish 发出 recovering,请求结构性重启,
+  // ready 只可能在捕获代 ≥ 本代的 fork 健康完成后由 markTokenGenerationApplied 发出。
+  const hot = applyCredentials()
+  if (hot === "needs-structural") unappliedRenewalGeneration = tokenGeneration
   publish()
-  log("alpha-auth: tokens refreshed", { expiresAt: stored.expiresAt })
+  log("alpha-auth: tokens refreshed", { expiresAt: stored.expiresAt, apply: hot })
+  if (hot === "needs-structural") respawnSidecar("credential-change")
   return "refreshed"
 }
 
@@ -989,7 +1002,7 @@ export async function logout(): Promise<void> {
   // app.relaunch() (which closed the window / quit on ad-hoc-signed builds — the reason a full relaunch
   // was ruled out); it re-forks on the same host/port + reloads the renderer, so the new fork inherits
   // the now-cleared env → provider.alpha goes dark this session, not just on the next launch.
-  respawnSidecar("structural")
+  respawnSidecar("identity-change")
 }
 
 // Switch BYOK ↔ platform-pays. The sidecar reads proxy env at fork time, so this uses the structural
@@ -1003,7 +1016,7 @@ export async function setAuthMode(mode: AuthMode): Promise<void> {
   publish()
   onAuthChanged()
   log("alpha-auth: mode changed", { mode })
-  respawnSidecar("structural")
+  respawnSidecar("identity-change")
 }
 
 // One-click "activate the ALPHA proxy in THIS running session". Login already defaults mode → platform
@@ -1018,5 +1031,5 @@ export function enableProxy() {
   }
   applyAuthEnv()
   onAuthChanged()
-  respawnSidecar("structural")
+  respawnSidecar("identity-change")
 }
