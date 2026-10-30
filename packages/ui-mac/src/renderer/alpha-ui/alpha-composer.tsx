@@ -74,6 +74,7 @@ import {
   setComposerPerm,
   slashSourceOf,
   suspendComposerModel,
+  tierAgent,
   type PermMode,
   type SlashCommandSource,
 } from "./composer-state"
@@ -1610,6 +1611,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         const id = await props.projects.startChat(dir, body, req.parts.slice(1), {
           model: req.model,
           agent: req.agent,
+          perm: submittedPerm,
           existingSessionID: reuseSessionID,
           onSessionCreated: (createdId) => {
             homePendingSession = { directory: dir, sessionID: createdId }
@@ -1665,11 +1667,14 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         if (interrupted()) return
         const matched = Array.isArray(cmds) ? cmds.find((x: any) => x?.name === slash.name) : undefined
         if (matched) {
+          // REQ-236 E5:命令带档位 agent(与普通发送同一张表);缺席时引擎以默认助手运行,档位被绕过。
+          const tier = tierAgent(submittedPerm)
           const { data: commanded, error } = await c.session.command({
             sessionID: sid,
             directory: dir,
             command: slash.name,
             arguments: slash.args,
+            ...(tier ? { agent: tier } : {}),
           } as any)
           if (interrupted()) return
           if (error) {

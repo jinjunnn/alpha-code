@@ -25,6 +25,7 @@ import {
 } from "../runtime-recovery"
 import { markStartupTimeline } from "../startup-timeline"
 import { nextEngineRetryDelay } from "../alpha-ui/model-picker-logic"
+import { tierAgent, type PermMode } from "../alpha-ui/composer-state"
 
 export interface ServerInfo {
   baseUrl: string
@@ -85,6 +86,8 @@ export interface AlphaProjectsApi {
     opts?: {
       model?: ModelRef
       agent?: string
+      /** 本条消息的权限档;斜杠命令只带它强制的 agent(`tierAgent`,与普通发送同一张表)。 */
+      perm?: PermMode
       existingSessionID?: string
       onSessionCreated?: (id: string) => void
     },
@@ -447,6 +450,8 @@ export function useAlphaProjects(
     opts?: {
       model?: ModelRef
       agent?: string
+      /** 本条消息的权限档;斜杠命令只带它强制的 agent(`tierAgent`,与普通发送同一张表)。 */
+      perm?: PermMode
       existingSessionID?: string
       onSessionCreated?: (id: string) => void
     },
@@ -482,8 +487,15 @@ export function useAlphaProjects(
             .catch(() => ({ data: undefined, error: true }) as const)
           if (!cmdErr && Array.isArray(cmds) && cmds.some((x: any) => x?.name === name)) {
             ranCommand = true
+            // REQ-236 E5:命令带档位 agent;缺席时引擎以默认助手运行,「只读」「请求审批」被绕过。
+            const tier = opts?.perm ? tierAgent(opts.perm) : undefined
             const command = await c.session
-              .command({ sessionID: id, command: name, arguments: tail.join(" ") } as any)
+              .command({
+                sessionID: id,
+                command: name,
+                arguments: tail.join(" "),
+                ...(tier ? { agent: tier } : {}),
+              } as any)
               .catch(() => null)
             if (!command || command.error) return undefined
           }
