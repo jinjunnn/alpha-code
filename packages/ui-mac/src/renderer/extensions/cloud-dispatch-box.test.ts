@@ -62,7 +62,7 @@ const allowance =
   "会员额度已用完。默认不会自动扣钱包余额,充值也不能恢复;可以等额度窗口重置,或到网站账户页打开「额度用完后用余额付」。"
 const wallet = "钱包余额不够这次任务要预留的金额。请先充值,或等在途任务结算后再试。"
 
-async function mount(error?: string, failureCode?: string) {
+async function mount(error?: string, failureCode?: string, netLayer?: string) {
   const actions: string[] = []
   const statusCalls: string[] = []
   let event: ((payload: { jobId: string } & CloudJobEvent) => void) | undefined
@@ -76,7 +76,7 @@ async function mount(error?: string, failureCode?: string) {
         },
       },
       cloud: {
-        dispatch: async () => (error ? { error } : accepted),
+        dispatch: async () => (error ? (netLayer ? { error, netLayer } : { error }) : accepted),
         status: async (id: string) => {
           statusCalls.push(id)
           return { ...status, result: failureCode ? { failure_code: failureCode } : {} }
@@ -122,6 +122,19 @@ async function flush() {
 }
 const action = () => document.querySelector<HTMLButtonElement>("[data-cloud-error-action]")
 const text = () => document.querySelector(".alpha-ext-card-err")?.textContent
+
+// `#1572` AC5:旧式云卡片(extension-detail 仍在用)与 cloud-form-box 同一分层文案 —— main 认出层就说那一层,
+// 认不出的 network 逐字仍是原来那句。期望值是独立字面量(界面拿不到云服务主机名,代入「对方服务器」)。
+describe("`#1572` dispatch network failure says which step failed", () => {
+  test("network + netLayer:dns ⇒ 「解析不了」那一句;没有层 ⇒ 原文案逐字不变", async () => {
+    await mount("network", undefined, "dns")
+    expect(text()).toBe("解析不了 对方服务器,检查网络或代理软件后重试")
+    disposers.splice(0).forEach((dispose) => dispose())
+    document.body.replaceChildren()
+    await mount("network")
+    expect(text()).toBe("网络错误 —— 云端点不可达")
+  })
+})
 
 describe("REQ-232 AC5 cloud refusal reasons and actions", () => {
   test.each(["live", "replay"])(
