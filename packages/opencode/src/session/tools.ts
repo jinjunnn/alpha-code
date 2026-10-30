@@ -479,9 +479,29 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   for (const [key, entry] of Object.entries(yield* mcp.tools())) {
     if (!entry.identity || !entry.authority) throw new Error(`MCP tool ${key} is missing its source identity`)
-    const identity = entry.identity
-    const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
-    if (!item.execute) continue
+    const origin = entry.identity.origin
+    // #1563 AC6:convertTool 的 execute 只用 client.callTool —— 给它一个委托给 MCP 服务入口的适配器:执行取该服务的
+    // **当前**连接(换代后定义变了就响亮失败),结果投影仍是 McpCatalog.convertTool 那唯一一份。
+    const viaEntry = {
+      callTool: (
+        params: { name: string; arguments?: Record<string, unknown> },
+        _schema?: unknown,
+        options?: { signal?: AbortSignal; timeout?: number },
+      ) =>
+        mcp.callTool
+          ? run.promise(
+              mcp.callTool(origin, params.name, params.arguments ?? {}, {
+                generation: entry.generation,
+                defDigest: entry.defDigest,
+                timeout: options?.timeout,
+                signal: options?.signal,
+              }),
+            )
+          : Promise.reject(new Error(`MCP tool ${key} has no execution entry`)),
+    } as unknown as Parameters<typeof McpCatalog.convertTool>[1]
+    const item = McpCatalog.convertTool(entry.def, viaEntry, entry.timeout)
+    const execute = item.execute
+    if (!execute) continue
 
     // `#793`:`convertTool` 无条件给根戴上 `additionalProperties:false`,而根上的这顶帽子
     // 看不见 `oneOf`/`anyOf` 分支里的字段 ⇒ 分支型 MCP 工具广播给模型的是一份自相矛盾的
@@ -504,30 +524,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           // #1129 / #724 §6 E3:这里原有一条 hook 之后的 canonical identity ask。它已并入
           // register() 的 identityGate(在 hook **之前**问)—— 留着会把同一次调用问两遍,
           // `once` 放行第一问后第二问再挂起,用户一次批准走不完一次调用。
-          const result: Awaited<ReturnType<NonNullable<typeof item.execute>>> = yield* Effect.gen(function* () {
-            // #1563 AC6:经服务入口取**当前**连接执行(convertTool 只剩 schema 来源,它捕获的 client 不再用于调用);
-            // 下面的结果投影与 McpCatalog.convertTool 的 execute 逐字同形。
-            if (!mcp.callTool) return yield* Effect.die(new Error(`MCP tool ${key} has no execution entry`))
-            const raw = yield* mcp
-              .callTool(identity.origin, entry.def.name, (args || {}) as Record<string, unknown>, {
-                generation: entry.generation,
-                defDigest: entry.defDigest,
-                timeout: entry.timeout,
-                signal: opts.abortSignal,
-              })
-              .pipe(Effect.orDie)
-            if (raw.isError)
-              return yield* Effect.die(
-                new Error(
-                  raw.content
-                    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-                    .filter((text) => text.trim())
-                    .join("\n\n") || "MCP tool returned an error",
-                ),
-              )
-            if (raw.content.length > 0 || raw.structuredContent === undefined || raw.structuredContent === null)
-              return raw
-            return { ...raw, content: [{ type: "text" as const, text: JSON.stringify(raw.structuredContent) }] }
+          const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
+            return yield* Effect.promise(() => execute(args, opts))
           }).pipe(
             Effect.withSpan("Tool.execute", {
               attributes: {
