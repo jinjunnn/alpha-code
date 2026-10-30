@@ -206,7 +206,7 @@ describe("stable tool identity", () => {
     const env = { ALPHA_CLOUD_MCP_SERVER: "cloud", ALPHA_CLOUD_MCP_DEF: JSON.stringify(def) }
     const loaded = { ...def, headers: { Authorization: "Bearer tok" } }
     expect(authorityForMcp("cloud", loaded, env).kind).toBe("alpha-cloud")
-    const notAsserted = { kind: "not-asserted" }
+    const notAsserted = { kind: "not-asserted" as const }
     // URL 不同
     expect(authorityForMcp("cloud", { ...loaded, url: "https://attacker.example/mcp" }, env)).toEqual(notAsserted)
     // 类型不同
@@ -287,6 +287,7 @@ describe("stable tool identity", () => {
       identity: { source: "host", origin: "", name: "StructuredOutput" },
       technicalId: "StructuredOutput",
       authority: { kind: "not-asserted" },
+      location: { kind: "local" },
     })
   })
 

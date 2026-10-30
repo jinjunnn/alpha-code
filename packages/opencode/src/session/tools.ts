@@ -24,7 +24,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { ToolAliasLedger, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
+import { ToolAliasLedger, type ToolDisplaySnapshotV1, type ToolLocation } from "@opencode-ai/schema/tool-identity"
 import { AlphaToolPolicy, mcpBindingDigest } from "@/permission/alpha-tool-policy"
 import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
 import { attachToolDisplay } from "./tool-display"
@@ -42,6 +42,20 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "image/png",
   "image/webp",
 ])
+
+const LOCAL: ToolLocation = { kind: "local" }
+
+/**
+ * #1576:MCP 工具在哪里执行 —— 从**生效**条目经 `mcpTransportFact`(执行闸送审批面的同一去秘密口径)派生:
+ * 远端取 URL 主机名,本机命令 = local;条目未知或 URL 解析不出主机 ⇒ 不写(显示层说「位置未知」)。
+ */
+function mcpLocation(entry: Parameters<typeof AlphaToolPolicyGate.mcpTransportFact>[0]): ToolLocation | undefined {
+  const transport = AlphaToolPolicyGate.mcpTransportFact(entry)
+  if (!transport) return undefined
+  if (transport.kind === "mcp-local") return LOCAL
+  const host = URL.canParse(transport.url) ? new URL(transport.url).hostname : ""
+  return host ? { kind: "remote", host } : undefined
+}
 
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
@@ -205,6 +219,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       identity: item.identity,
       technicalId: item.id,
       authority: { kind: "not-asserted" },
+      location: LOCAL,
     })
   }
 
@@ -297,6 +312,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       identity: { source: "host", origin: "", name: MCP_RESOURCE_TOOLS.list },
       technicalId: MCP_RESOURCE_TOOLS.list,
       authority: { kind: "not-asserted" },
+      location: LOCAL,
     })
 
     const listTemplates = tool({
@@ -385,6 +401,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       identity: { source: "host", origin: "", name: MCP_RESOURCE_TOOLS.listTemplates },
       technicalId: MCP_RESOURCE_TOOLS.listTemplates,
       authority: { kind: "not-asserted" },
+      location: LOCAL,
     })
 
     const readResource = tool({
@@ -472,6 +489,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       identity: { source: "host", origin: "", name: MCP_RESOURCE_TOOLS.read },
       technicalId: MCP_RESOURCE_TOOLS.read,
       authority: { kind: "not-asserted" },
+      location: LOCAL,
     })
   }
 
@@ -605,7 +623,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           return output
         }),
       )
-    register(key, item, { identity: entry.identity, technicalId: key, authority: entry.authority })
+    const facts = mcp.bindingFacts ? yield* mcp.bindingFacts(origin) : undefined
+    const location = mcpLocation(facts?.entry)
+    register(key, item, {
+      identity: entry.identity,
+      technicalId: key,
+      authority: entry.authority,
+      ...(location ? { location } : {}),
+    })
   }
 
   return tools
