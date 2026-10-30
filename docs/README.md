@@ -11,6 +11,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | System structure and upstream boundary                               | [`architecture/`](architecture/)                                     |
 | Code Puppy product authority, token renewal, independent MCP startup, and upstream takeover design | [`design/codepuppy-runtime-authority.md`](design/codepuppy-runtime-authority.md) |
+| REQ-236 T07–T10/§2.4 + REQ-237 baseline: catalog refresh off the respawn path, picker and engine on one applied catalog, remote platform display and BYOK presets, brand icons, update prompt, explicit model selection | [`design/req236-catalog-and-model.md`](design/req236-catalog-and-model.md) |
 | Host extension package contract/host decision boundary               | [`architecture/host-extension-package-contract-boundary.md`](architecture/host-extension-package-contract-boundary.md) |
 | Alpha Connection record lifetime and handler allowlist               | [`architecture/alpha-connection-lifetime.md`](architecture/alpha-connection-lifetime.md) |
 | Package MCP OAuth ownership boundary (engine protocol / main attempt) | [`architecture/package-mcp-oauth-boundary.md`](architecture/package-mcp-oauth-boundary.md) |
