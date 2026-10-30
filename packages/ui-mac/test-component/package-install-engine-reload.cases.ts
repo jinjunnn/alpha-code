@@ -429,7 +429,7 @@ async function installBundleThroughUi(name: string): Promise<void> {
   // package 授权屏与套件确认框共用同一个 Dialog 宿主,且前者优先渲染 —— 它没关干净时,
   // 下面点到的会是**另一条路径**的按钮。这条前置断言把那种串味变成一句明白话。
   expect(q("[data-package-authorization]"), "a package authorization dialog is still open").toBeNull()
-  setHubSection("bundles")
+  setHubSection("connectors") // `#1594`:套件是连接器页的一组
   await waitFor(() => expect(entryCard(name)).toBeInstanceOf(HTMLElement))
   click(entryCard(name).querySelector(".alpha-ext-add"))
   await waitFor(() => expect(confirmInstallButton()).toBeInstanceOf(HTMLElement))
@@ -443,7 +443,7 @@ async function installBundleThroughUi(name: string): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════════════════════════
 
 test("① 入口一 `runPackageAction`:卡片「安装」经收口方法出站,而 authorize 臂**不**重扫", async () => {
-  setHubSection("featured")
+  setHubSection("connectors") // `#1594`:扩展包是连接器页的一组
   await waitFor(() => expect(q(`[data-package-card="${MIXED_BUNDLE_PACKAGE_ID}"]`)).toBeInstanceOf(HTMLElement))
   const reloadsBefore = reloadRequests.length
   click(q(`[data-package-card="${MIXED_BUNDLE_PACKAGE_ID}"] .alpha-ext-add`))
@@ -515,18 +515,26 @@ test("④ `#1529` AC3:ext 报告重载失败 ⇒ 已安装列表如实「待重�
       { type: "alpha.reload.report", generation: request.generation, scope: "global", outcome: "failed", directories: [], error: "dispose refused (fixture)" },
       () => {},
     )
-  setHubSection("installed")
-  // 夹具自检:列表上真的有没核验通过的已装行(引擎替身答不出技能 / agent / 命令清单),否则下面那条恒成立。
+  // `#1594`:已装行分在三页各自的「已安装」组(技能、命令进技能页,助手进助手页,其余进连接器页)。
+  // 夹具自检:列表上真的有没核验通过的已装行(引擎替身答不出技能 / agent / 命令清单),否则下面那几条恒成立。
+  setHubSection("skills")
   await waitFor(() => expect(qa("[data-hub-state='reload-pending']").length).toBeGreaterThan(0))
-  await waitFor(() => {
-    for (const node of qa("[data-hub-state='reload-pending']")) {
-      expect(node.textContent ?? "").toContain(zh["alpha.ext.hubStatePending"])
-      expect(node.textContent ?? "").toContain(zh["alpha.ext.hubReasonFailed"])
-    }
-  })
-  // 没核验过的东西不许说「可以使用」;待重载的行各有一颗「现在重载」。
-  for (const node of qa("[data-hub-state='reload-pending']")) expect(node.textContent ?? "").not.toContain(zh["alpha.ext.hubStateAvailable"])
-  expect(qa("[data-hub-reload-now]").length).toBe(qa("[data-hub-state='reload-pending']").length)
+  let pendingRows = 0
+  for (const page of ["connectors", "skills", "agents"] as const) {
+    setHubSection(page)
+    await flush()
+    await waitFor(() => {
+      for (const node of qa("[data-hub-state='reload-pending']")) {
+        expect(node.textContent ?? "").toContain(zh["alpha.ext.hubStatePending"])
+        expect(node.textContent ?? "").toContain(zh["alpha.ext.hubReasonFailed"])
+      }
+    })
+    // 没核验过的东西不许说「可以使用」;待重载的行各有一颗「立即生效」。
+    for (const node of qa("[data-hub-state='reload-pending']")) expect(node.textContent ?? "").not.toContain(zh["alpha.ext.hubStateAvailable"])
+    expect(qa("[data-hub-reload-now]").length).toBe(qa("[data-hub-state='reload-pending']").length)
+    pendingRows += qa("[data-hub-state='reload-pending']").length
+  }
+  expect(pendingRows).toBeGreaterThan(0)
   expect(disposeCalls).toBe(0)
 })
 

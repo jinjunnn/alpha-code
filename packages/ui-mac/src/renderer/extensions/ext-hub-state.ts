@@ -7,21 +7,12 @@ import { createSignal } from "solid-js"
 
 const [open, setOpen] = createSignal(false)
 
-// REQ-019 T1:hub 顶部横向 tab 分区(用户拍板 2026-07-04:横向导航 + 详情面包屑,不做纵向左栏
-// ——应用侧栏旁再叠一条竖栏是双侧栏)。有更新并入「已安装」、导入并入「创建」。模块级 =
-// session 内记住上次分区,重开 hub 回到原处;不落盘(下次启动回「推荐」)。
-export type HubSection =
-  | "featured"
-  | "connectors"
-  | "skills"
-  | "agents"
-  | "plugins"
-  | "bundles"
-  | "installed"
-  | "create"
-  | "cloud"
+// REQ-019 T1:hub 顶部横向 tab 分区(横向导航 + 详情面包屑)。`#1594`(REQ-236 批准稿 `#hub-tabs`):
+// 九个页签收成连接器 / 技能 / 助手三页 —— 推荐、套件、云能力成了连接器页的分组,已安装成了每页顶部一组,
+// 导入收进每页的「添加」下拉。模块级 = session 内记住上次分区,重开 hub 回到原处;不落盘(下次启动回「连接器」)。
+export type HubSection = "connectors" | "skills" | "agents"
 
-const [section, setSection] = createSignal<HubSection>("featured")
+const [section, setSection] = createSignal<HubSection>("connectors")
 
 export function hubSection(): HubSection {
   return section()

@@ -176,7 +176,7 @@ const click = (element: Element | null) => {
 }
 
 test("live stable catalog 的 package:alpha-first 走到生产 ExtensionHub 卡片与 ExtensionDetail 详情页", async () => {
-  setHubSection("featured")
+  setHubSection("connectors")
   const root = document.createElement("div")
   root.id = "root"
   root.className = "a-ui"

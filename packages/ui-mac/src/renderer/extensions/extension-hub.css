@@ -99,19 +99,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-text);
   border-bottom-color: var(--a-accent);
 }
-/* 已安装 tab 上的「可更新」琥珀角标(REQ-019 T1) */
-.alpha-ext-tab-badge {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: var(--a-radius-full);
-  background: var(--a-warning-subtle);
-  color: var(--a-warning);
-  font-size: 10px;
-  font-weight: var(--a-weight-semibold);
-  font-family: var(--a-font-mono);
-  transform: translateY(-1px);
-}
 .alpha-ext-close {
   position: absolute;
   top: 8px;
@@ -146,9 +133,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   margin-inline: auto;
 }
 
-.alpha-ext-hero {
-  margin-bottom: 4px;
-}
 .alpha-ext-title {
   font-size: var(--a-text-2xl);
   font-weight: var(--a-weight-bold);
@@ -256,41 +240,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   background: var(--a-accent-subtle);
 }
 
-/* ── Installed chip strip (Featured tab) ────────────────────────────────────── */
-.alpha-ext-chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.alpha-ext-chip-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 11px;
-  background: var(--a-bg-subtle);
-  border: 1px solid var(--a-border-faint);
-  border-radius: var(--a-radius-md);
-  font-size: var(--a-text-sm);
-  font-weight: var(--a-weight-medium);
-}
-.alpha-ext-chip-d {
-  width: 16px;
-  height: 16px;
-  border-radius: 5px;
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  font-weight: 700;
-  color: #fff;
-}
-.alpha-ext-chip-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--a-success);
-}
-
 /* ── Card grid (responsive via container query) ─────────────────────────────── */
 .alpha-ext-grid {
   display: grid;
@@ -302,73 +251,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
     grid-template-columns: 1fr;
   }
 }
-.alpha-ext-card {
-  display: flex;
-  flex-direction: column;
-  padding: 14px;
-  border: 1px solid var(--a-border);
-  border-radius: var(--a-radius-lg);
-  background: var(--a-surface);
-  box-shadow: var(--a-edge-light);
-  transition: border-color var(--a-dur-fast) var(--a-ease-out), box-shadow var(--a-dur-fast) var(--a-ease-out),
-    transform var(--a-dur-fast) var(--a-ease-out);
-}
-.alpha-ext-card:hover {
-  border-color: var(--a-border-strong);
-  box-shadow: var(--a-shadow-sm);
-  transform: translateY(-1px);
-}
-.alpha-ext-card-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-}
-.alpha-ext-card-ic {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--a-radius-md);
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 700;
-  color: #fff;
-  flex: none;
-  box-shadow: var(--a-shadow-xs);
-}
-.alpha-ext-card-hd {
-  min-width: 0;
-  flex: 1;
-  padding-top: 1px;
-}
-.alpha-ext-card-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.alpha-ext-card-name b {
-  font-size: var(--a-text-md);
-  font-weight: var(--a-weight-semibold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.alpha-ext-card-desc {
-  font-size: var(--a-text-sm);
-  color: var(--a-text-secondary);
-  margin: 9px 0 0;
-  line-height: var(--a-leading-snug);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 34px;
-}
-.alpha-ext-card-foot {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 13px;
-}
+
 .alpha-ext-meta {
   display: inline-flex;
   align-items: center;
@@ -382,12 +265,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-weight: var(--a-weight-medium);
   white-space: nowrap;
 }
-.alpha-ext-card-foot .alpha-ext-add {
-  margin-left: auto;
-}
-[data-package-card] .alpha-ext-card-foot {
-  flex-wrap: wrap;
-}
+
 .alpha-ext-package-state {
   display: inline-flex;
   align-items: center;
@@ -508,41 +386,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.alpha-ext-kit-n {
-  color: var(--a-text-tertiary);
-}
-
-/* ── Category subheader (connectors) ────────────────────────────────────────── */
-.alpha-ext-grp {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 24px 0 11px;
-  font-size: var(--a-text-sm);
-  font-weight: var(--a-weight-semibold);
-  color: var(--a-text-secondary);
-}
-.alpha-ext-grp-ct {
-  font-size: var(--a-text-2xs);
-  font-weight: var(--a-weight-medium);
-  color: var(--a-text-tertiary);
-  background: var(--a-bg-muted);
-  padding: 1px 7px;
-  border-radius: var(--a-radius-full);
-}
-
-/* ── Callout (plugin note) ──────────────────────────────────────────────────── */
-.alpha-ext-callout {
-  margin: 18px 0 4px;
-  padding: 11px 14px;
-  background: var(--a-bg-canvas);
-  border: 1px solid var(--a-border);
-  border-left: 3px solid var(--a-warning);
-  border-radius: var(--a-radius-md);
-  font-size: var(--a-text-sm);
-  color: var(--a-text-secondary);
-  line-height: var(--a-leading-snug);
-}
 
 /* ── Empty state ────────────────────────────────────────────────────────────── */
 .alpha-ext-empty-state {
@@ -593,18 +436,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   background: var(--a-surface);
   box-shadow: var(--a-edge-light);
 }
-.alpha-ext-man-ic {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--a-radius-md);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  flex: none;
-  box-shadow: var(--a-shadow-xs);
-}
+
 .alpha-ext-man-body {
   min-width: 0;
   flex: 1;
@@ -632,12 +464,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   padding: 1px 7px;
   border-radius: 999px;
 }
-.alpha-ext-ver {
-  flex: none;
-  font-family: var(--a-font-mono);
-  font-size: 11px;
-  color: var(--a-text-tertiary);
-}
+
 /* T3:存量迁移条 */
 .alpha-ext-migrate {
   display: flex;
@@ -682,32 +509,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-text-tertiary);
   margin-top: 1px;
 }
-.alpha-ext-man-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--a-text-disabled);
-  flex: none;
-}
-.alpha-ext-man-dot[data-on] {
-  background: var(--a-success);
-}
-.alpha-ext-man-dot[data-err] {
-  background: var(--a-error);
-}
-/* REQ-103(#195):健康点三态色(governance health → 运行健康/上游归档·事务未落定/隔离/未知)。 */
-.alpha-ext-man-dot[data-tone="ok"] {
-  background: var(--a-success);
-}
-.alpha-ext-man-dot[data-tone="warn"] {
-  background: var(--a-warning);
-}
-.alpha-ext-man-dot[data-tone="err"] {
-  background: var(--a-error);
-}
-.alpha-ext-man-dot[data-tone="muted"] {
-  background: var(--a-text-disabled);
-}
+
 /* REQ-103(#195):已安装 scope 分组小标题(全局 / 本项目,AC5 同名并存的分区)。 */
 .alpha-ext-scopeh {
   margin: 18px 0 8px;
@@ -733,25 +535,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-text-tertiary);
   font-size: var(--a-text-sm);
   line-height: var(--a-leading-snug);
-}
-.alpha-ext-iconbtn {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--a-radius-md);
-  border: 1px solid var(--a-border);
-  background: var(--a-surface);
-  color: var(--a-text-tertiary);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  flex: none;
-  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out),
-    border-color var(--a-dur-fast) var(--a-ease-out);
-}
-.alpha-ext-iconbtn:hover {
-  background: var(--a-bg-muted);
-  color: var(--a-error);
-  border-color: var(--a-border-strong);
 }
 
 /* ── Toggle switch (manage rows) ────────────────────────────────────────────── */
@@ -796,10 +579,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 }
 
 /* ── Create / import form ───────────────────────────────────────────────────── */
-.alpha-ext-form {
-  max-width: 560px;
-  margin-top: 18px;
-}
+
 .alpha-ext-seg {
   display: inline-flex;
   padding: 3px;
@@ -866,43 +646,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   margin-top: 30px;
   padding-top: 8px;
   border-top: 1px solid var(--a-border-faint);
-}
-.alpha-ext-import-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.alpha-ext-import-card {
-  flex: 1;
-  min-width: 150px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--a-border);
-  border-radius: var(--a-radius-lg);
-  background: var(--a-surface);
-  color: var(--a-text);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--a-dur-fast) var(--a-ease-out), background var(--a-dur-fast) var(--a-ease-out);
-}
-.alpha-ext-import-card:hover {
-  border-color: var(--a-border-strong);
-  background: var(--a-bg-subtle);
-}
-.alpha-ext-import-card .alpha-ic {
-  color: var(--a-text-tertiary);
-}
-.alpha-ext-import-card b {
-  font-size: var(--a-text-sm);
-  font-weight: var(--a-weight-medium);
-  display: block;
-}
-.alpha-ext-import-card small {
-  font-size: var(--a-text-2xs);
-  color: var(--a-text-tertiary);
-  display: block;
 }
 
 /* ── Toast ──────────────────────────────────────────────────────────────────── */
@@ -1042,7 +785,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 }
 
 /* ── REQ-019 T2:详情页(hub 内二级页) ─────────────────────────────────────── */
-.alpha-ext-card[data-clickable],
 .alpha-ext-kit[data-clickable],
 .alpha-ext-man[data-clickable] {
   cursor: pointer;
@@ -1503,44 +1245,9 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-error);
   line-height: var(--a-leading-snug);
 }
-.alpha-ext-import-card:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
 
 /* ── T7:筛选 chips / 卡片行内错误 / 骨架屏 ─────────────────────────────────── */
-.alpha-ext-filters {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin: 14px 0 4px;
-}
-.alpha-ext-filters-l {
-  font-size: 11px;
-  color: var(--a-text-tertiary);
-  margin-right: 2px;
-}
-.alpha-ext-fchip {
-  border: 1px solid var(--a-border);
-  background: var(--a-surface);
-  color: var(--a-text-secondary);
-  font-family: var(--a-font-sans);
-  font-size: var(--a-text-xs);
-  font-weight: var(--a-weight-medium);
-  border-radius: var(--a-radius-full);
-  padding: 3px 10px;
-  cursor: pointer;
-  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
-}
-.alpha-ext-fchip:hover {
-  background: var(--a-bg-muted);
-}
-.alpha-ext-fchip[data-on] {
-  background: var(--a-accent-subtle);
-  border-color: var(--a-accent-border);
-  color: var(--a-accent);
-}
+
 .alpha-ext-card-err {
   margin: 8px 0 0;
   font-size: var(--a-text-xs);
@@ -1567,27 +1274,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 }
 
 /* ── REQ-020 M3:云分区(门控条 / 灰显 / 连接状态 / 派发盒) ─────────────────────── */
-/* 门控条:未登录/BYOK 的诚实说明 + CTA(样式随迁移条 .alpha-ext-migrate 的形制) */
-.alpha-ext-cloudgate {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  background: var(--a-bg-muted);
-  border: 1px solid var(--a-border-faint);
-  border-radius: 10px;
-}
-.alpha-ext-cloudgate-t {
-  font-size: var(--a-text-md);
-  font-weight: var(--a-weight-medium);
-}
-.alpha-ext-cloudgate-sub {
-  font-size: var(--a-text-sm);
-  color: var(--a-text-secondary);
-  line-height: var(--a-leading-snug);
-}
 /* 灰显 = 真实不可用态(REQ-020 T2):整块降透明,仍可点进详情看原因 */
 [data-dim] {
   opacity: 0.55;
@@ -1839,29 +1525,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-warning);
 }
 
-/* 推荐页货架组头(标题 + 一句用户语言副标题) */
-.alpha-ext-shelf-h {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 24px 0 4px;
-}
-.alpha-ext-shelf-h b {
-  font-size: var(--a-text-md);
-  font-weight: var(--a-weight-semibold);
-}
-.alpha-ext-shelf-h span {
-  font-size: var(--a-text-xs);
-  color: var(--a-text-tertiary);
-}
-
-/* 「未分级」尾组的诚实说明行 */
-.alpha-ext-group-note {
-  font-size: var(--a-text-xs);
-  color: var(--a-text-tertiary);
-  margin: 4px 0 8px;
-}
-
 /* 未分级卡的 ghost 安装按钮(可装但不促装) */
 .alpha-ext-add[data-variant="ghost"] {
   background: transparent;
@@ -1949,46 +1612,8 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   background: var(--a-overlay-hover);
 }
 
-/* ── REQ-128 Phase 3 `#784`:已装扩展包区块 + 单独移除被拒的行内呈现 ──────────────────────
-   控件版式全部现役(.alpha-ext-man / .alpha-ext-sw / .alpha-ext-add),这里只给「一个包
-   是一件东西」这层容器:包头 + 引导条 + 包内技能行。 */
-.alpha-ext-pack {
-  border: 1px solid var(--a-border);
-  border-radius: var(--a-radius-lg);
-  background: var(--a-surface);
-  box-shadow: var(--a-edge-light);
-  padding: 13px 15px;
-  margin-bottom: 10px;
-}
-.alpha-ext-pack-h {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-}
-/* 装完默认全关是产品裁决 ⇒「什么都没发生」是默认路径,这条引导条是它唯一的解释位。 */
-.alpha-ext-pack-lead {
-  margin: 10px 0 0;
-  padding: 8px 11px;
-  border-radius: var(--a-radius-md);
-  background: var(--a-bg-subtle);
-  color: var(--a-text-secondary);
-  font-size: var(--a-text-sm);
-}
-.alpha-ext-pack-cs {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.alpha-ext-pack-c {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 9px 11px;
-  border: 1px solid var(--a-border-faint);
-  border-radius: var(--a-radius-md);
-  background: var(--a-bg-subtle);
-}
+/* ── REQ-128 Phase 3 `#784`:单独移除被拒的行内呈现 ─────────────────────────────────────── */
+
 /* 第 8 跳:单独移除被拒 —— 拒绝 + 正确的下一步,留在行上而不是只飞一条 toast。 */
 .alpha-ext-man-refusal {
   display: flex;
@@ -2034,14 +1659,6 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
     display: none;
   }
 }
-/* 卡片上的「这是谁做的」。 */
-.alpha-ext-card-sub {
-  font-size: var(--a-text-xs);
-  color: var(--a-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* 截图条:横向滚动,单张有界 —— 发布者给多大都不许把详情页撑开。 */
 .alpha-ext-package-shots {
   display: flex;
@@ -2058,4 +1675,138 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   border: 1px solid var(--a-border-faint);
   background: var(--a-bg-inset);
   object-fit: contain;
+}
+
+/* ── `#1594` 三页结构(REQ-236 批准稿 `docs/design/2026-10-30-req236-ux-config-pages/frame.html#hub`)──
+   页头 = 标题 + 一行副标题 + 本页搜索 +「添加 ▾」;列表行复用 `.alpha-ext-kit`(批准稿 `.kit`)放进双列
+   `.alpha-ext-grid`;「添加 ▾」与行上的「…」是同一种下拉(批准稿 `.set-card` + `--a-shadow-lg`)。 */
+.alpha-ext-pagehd {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.alpha-ext-pagehd-t {
+  flex: 1;
+  min-width: 0;
+}
+.alpha-ext-pagehd .alpha-ext-search {
+  margin: 0;
+  height: 34px;
+  width: 180px;
+  flex: none;
+}
+.alpha-ext-pagehd .alpha-ext-more > .alpha-ext-add {
+  height: 34px;
+  padding: 0 14px;
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-grid > .alpha-ext-kit {
+  margin-bottom: 0;
+  min-width: 0;
+  gap: 14px;
+  padding: 15px 16px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+}
+.alpha-ext-kit[data-clickable] {
+  cursor: pointer;
+}
+.alpha-ext-kit-ttl b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-ext-kit-desc[data-err] {
+  color: var(--a-error);
+}
+.alpha-ext-kit .alpha-ext-card-err,
+.alpha-ext-kit .alpha-ext-man-refusal {
+  margin: 6px 0 0;
+}
+.alpha-ext-more {
+  position: relative;
+  flex: none;
+}
+.alpha-ext-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-lg);
+  overflow: hidden;
+}
+.alpha-ext-menu-item {
+  padding: 11px 15px;
+  border: none;
+  border-bottom: 1px solid var(--a-border-faint);
+  background: transparent;
+  color: var(--a-text);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.alpha-ext-menu-item:last-child {
+  border-bottom: none;
+}
+.alpha-ext-menu-item:hover:not(:disabled) {
+  background: var(--a-bg-muted);
+}
+.alpha-ext-menu-item:disabled {
+  color: var(--a-text-disabled);
+  cursor: default;
+}
+.alpha-ext-menu-item[data-variant="danger"] {
+  color: var(--a-error);
+}
+/* 技能 / 助手页的「推荐 / 系统」分段(批准稿 `.form-types`) */
+.alpha-ext-seg {
+  display: inline-flex;
+  gap: 2px;
+  margin: 26px 0 4px;
+  padding: 3px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-muted);
+}
+.alpha-ext-seg button {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+.alpha-ext-seg button[data-on] {
+  background: var(--a-surface);
+  color: var(--a-text);
+  box-shadow: var(--a-shadow-xs);
+}
+.alpha-gov-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 12px;
+  font-size: var(--a-text-sm);
+}
+.alpha-gov .alpha-gov-bar .alpha-gov-mode {
+  margin-left: 0;
+}
+.alpha-gov .alpha-ext-grid + .alpha-gov-editor,
+.alpha-ext-grid + .alpha-gov {
+  margin-top: 12px;
 }
