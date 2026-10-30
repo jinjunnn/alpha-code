@@ -687,3 +687,54 @@ describe("#1247 辖区覆盖上游镜像里的每一个包", () => {
     expect(forged.output, `红了,但没点名是哪个包被冒领了:\n${forged.output}`).toContain("packages/plugin")
   })
 })
+
+// `#1566`:只读模式 `--print-takeover` —— 每日上游同步的接管清单只有本脚本这一份。
+// 同步工作流从合并前的可信树取本脚本跑这个模式(行为闸在 sync-upstream-takeover-isolation.test.ts);
+// 这里钉两件事:①输出与 UPSTREAM_EXCLUDES 同源(删一条即变,杀掉「印一份写死的表」);
+// ②工作流文件里没有任何字面接管路径(有人往 workflow 里手抄一份 ⇒ 红)。
+const SYNC_WORKFLOW = resolve(REPO_ROOT, ".github/workflows/sync-upstream.yml")
+
+function printTakeover(script: string = GUARD): string[] {
+  const r = Bun.spawnSync(["bash", script, "--print-takeover"], { cwd: REPO_ROOT, env: GIT_ENV })
+  if (r.exitCode !== 0) throw new Error(`--print-takeover 退出码 ${r.exitCode}:${r.stderr.toString()} —— 本次测量作废`)
+  return r.stdout
+    .toString()
+    .split("\n")
+    .filter((l) => l.length > 0)
+}
+
+function excludesFromSource(source: string): string[] {
+  const block = /^UPSTREAM_EXCLUDES=\(\n([\s\S]*?)^\)$/m.exec(source)
+  if (!block) throw new Error("守卫脚本里找不到 UPSTREAM_EXCLUDES=( … ) —— 本次测量作废")
+  return [...block[1].matchAll(/^\s+':\(exclude\)([^']+)'/gm)].map((m) => m[1])
+}
+
+function literalTakeoverPaths(workflowText: string, takeover: string[]): string[] {
+  return takeover.filter((p) => workflowText.includes(p))
+}
+
+describe("#1566 --print-takeover:接管清单只有守卫这一份", () => {
+  test("逐行打印 UPSTREAM_EXCLUDES 的路径(去掉 :(exclude) 前缀),与数组逐条相同", () => {
+    const printed = printTakeover()
+    const expected = excludesFromSource(readFileSync(GUARD, "utf8"))
+    expect(expected.length, "白名单解析退化 —— 本次测量作废").toBeGreaterThanOrEqual(20)
+    expect(printed).toEqual(expected)
+    expect(printed.filter((p) => p.startsWith(":(")), "输出里残留 pathspec 前缀").toEqual([])
+  })
+
+  test("控制组:守卫复制品删掉一条白名单 ⇒ 打印的清单跟着少那一条", () => {
+    const full = printTakeover()
+    const victim = "packages/opencode/src/session/llm/request.ts"
+    expect(full, "前提:那条接管路径在生产清单里").toContain(victim)
+    const trimmed = printTakeover(mutatedGuard("takeover-minus-one", (s) => s.replace(`  ':(exclude)${victim}'\n`, "")))
+    expect(trimmed).toEqual(full.filter((p) => p !== victim))
+  })
+
+  test("sync-upstream.yml 里没有任何字面接管路径(控制组:手抄一条进去即被点名)", () => {
+    const takeover = printTakeover()
+    const text = readFileSync(SYNC_WORKFLOW, "utf8")
+    expect(literalTakeoverPaths(text, takeover)).toEqual([])
+    const copied = `${text}\n# paths: ${takeover[0]}\n`
+    expect(literalTakeoverPaths(copied, takeover)).toContain(takeover[0])
+  })
+})
