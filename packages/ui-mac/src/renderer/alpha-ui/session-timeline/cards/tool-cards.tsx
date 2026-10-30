@@ -25,9 +25,12 @@ import {
   toolCardBodyOf,
   toolCardHeadOf,
   toolDevDetailsOf,
+  toolProvenanceOf,
   toolStepSourceOf,
   type ToolCardBody,
   type ToolCardHead,
+  type ToolProvenance,
+  type ToolProvenanceLocation,
   type ToolStepSourceKind,
 } from "./tool-card-model"
 import { diffViewOf } from "./tool-diff"
@@ -161,6 +164,25 @@ export function stepSourceIcon(kind: ToolStepSourceKind): JSX.Element {
   }
 }
 
+const PROVENANCE_SOURCE_KEYS = {
+  builtin: "alpha.timeline.sourceBuiltin",
+  "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
+  "third-party": "alpha.timeline.sourceThirdParty",
+} as const
+
+/** `#1576` 执行位置的人话:本机 / 云端 / 主机名 / 位置未知。 */
+export function provenanceLocationText(location: ToolProvenanceLocation): string {
+  if (location.kind === "local") return t("alpha.timeline.locationLocal")
+  if (location.kind === "cloud") return t("alpha.timeline.locationCloud")
+  if (location.kind === "remote") return location.host
+  return t("alpha.timeline.locationUnknown")
+}
+
+/** `#1576` 步骤行尾的位置:「内置」步骤不写(本机不标;旧记录缺位置时由列表底部一句代替)。 */
+export function stepLocationText(provenance: ToolProvenance): string | undefined {
+  return provenance.source === "builtin" ? undefined : provenanceLocationText(provenance.location)
+}
+
 function chevron() {
   return (
     <svg class="a-tc-chev" viewBox="0 0 24 24" aria-hidden="true">
@@ -180,11 +202,9 @@ function safeSentence(head: ToolCardHead): string {
     return source.label
       ? t("alpha.timeline.stepHiddenMcp", { origin: source.label })
       : t("alpha.timeline.stepHiddenMcpAnon")
-  if (source?.kind === "plugin")
-    return source.label
-      ? t("alpha.timeline.stepHiddenPlugin", { origin: source.label })
-      : t("alpha.timeline.stepHiddenPluginAnon")
-  if (source?.kind === "unknown") return t("alpha.timeline.stepHiddenUnknown")
+  // #1576:插件一律不带名字(包名 / 路径只进开发者详情);无快照按第三方说(来源只有三类)。
+  if (source?.kind === "plugin") return t("alpha.timeline.stepHiddenPluginAnon")
+  if (source?.kind === "unknown") return t("alpha.timeline.stepHiddenMcpAnon")
   return t("alpha.timeline.stepHiddenOwn")
 }
 
@@ -581,6 +601,8 @@ export function ToolStepDetail(props: { part: ToolPart }) {
   const diag = createMemo(() => diagnosticsOf(props.part))
   // #587 开发者详情:快照在场才有(无快照历史行没有可信 identity 可陈列)。
   const dev = createMemo(() => toolDevDetailsOf(props.part))
+  // `#1576` 详情底部的「来源 · 位置」:每一步都有(只读持久化快照)。
+  const provenance = createMemo(() => toolProvenanceOf(props.part))
   // `#1475` AC6:审批超时只说人话,不再显示引擎原文(所有 kind 同一句)。
   const errorBody = () => {
     const value = body()
@@ -701,9 +723,15 @@ export function ToolStepDetail(props: { part: ToolPart }) {
           </Show>
         </div>
       </Show>
+      <div class="a-tc-prov" data-alpha-step-provenance>
+        {t("alpha.timeline.stepProvenance", {
+          source: t(PROVENANCE_SOURCE_KEYS[provenance().source]),
+          location: provenanceLocationText(provenance().location),
+        })}
+      </div>
       {/* #587 开发者详情(AC3/AC4):technical-id / canonical identity / authority 证明只在这里,
           且只在详情底部;默认折叠(原生 details 无 open 属性),纯文本、已限长,不参与任何
-          授权/策略/计费判定(cards-contract 的 import 面棘轮钉着)。 */}
+          授权/策略/计费判定(cards-contract 的 import 面棘轮钉着)。#1576 加 location / origin。 */}
       <Show when={dev()}>
         {(info) => (
           <details class="a-tc-dev" data-alpha-dev-details>
@@ -712,6 +740,8 @@ export function ToolStepDetail(props: { part: ToolPart }) {
               <div>{info().canonical}</div>
               <div>technical-id: {info().technicalId}</div>
               <div>authority: {info().authority}</div>
+              <div>location: {info().location}</div>
+              <Show when={info().origin}>{(origin) => <div>origin: {origin()}</div>}</Show>
             </div>
           </details>
         )}

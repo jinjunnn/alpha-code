@@ -495,11 +495,21 @@ export type ToolBillingFact = {
   evidenceId: string
 }
 
+export type ToolLocation =
+  | {
+      kind: "local"
+    }
+  | {
+      kind: "remote"
+      host: string
+    }
+
 export type ToolDisplaySnapshotV1 = {
   identity: ToolIdentity
   technicalId: string
   authority: ToolAuthority
   billing?: ToolBillingFact
+  location?: ToolLocation
 }
 
 export type ToolStatePending = {

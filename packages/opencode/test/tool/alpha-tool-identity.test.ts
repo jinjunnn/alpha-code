@@ -15,8 +15,61 @@ import { workflowPreapprovedToolNames } from "../../src/session/llm"
 import { attachToolDisplay, getToolDisplay } from "../../src/session/tool-display"
 import type { Tool as AITool } from "ai"
 import { SessionPrompt } from "../../src/session/prompt"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
+import { governedMcpEvidence } from "@opencode-ai/plugin/alpha-cloud-authority"
+import { ConfigVariable } from "../../src/config/variable"
+import { ConfigParse } from "../../src/config/parse"
+import { materializeCloudMcpConfig } from "../../../ui-mac/src/main/cloud-sidecar-config"
+import { installCloudMcp } from "../../../ext/src/cloud-websearch-kill"
+
+const INJECTION_MODULE = path.resolve(import.meta.dir, "..", "..", "..", "ui-mac", "src", "main", "alpha-config-injection.ts")
+const { injectAlphaConfig } = (await import(INJECTION_MODULE)) as {
+  injectAlphaConfig: (userDataPath: string) => { ok: boolean }
+}
 
 const identity = (origin: string, name: string): ToolIdentity => ({ source: "mcp", origin, name })
+
+/**
+ * #1576 AC1:生产注入形状 —— 真 `injectAlphaConfig` 写出 `OPENCODE_CONFIG_CONTENT` 与同次的
+ * `ALPHA_CLOUD_MCP_DEF`,再经引擎真 `ConfigVariable.substitute`(`{file:}` 在文本阶段换成令牌)、
+ * 真 jsonc 解析与 MCP 条目 schema 得到装载后的 `cloud` 条目;kill-switch 分支则由 ext 的真
+ * `installCloudMcp` 写回。返回装载条目与那一刻的 env 快照。整个 process.env 在调用前后还原。
+ */
+async function productionCloudEntry(input: { killSwitch: boolean; token: string; tmp: string }) {
+  const saved = { ...process.env }
+  try {
+    process.env.ALPHA_GLOBAL_DIR = path.join(input.tmp, "alpha-code-state", "env", "dev")
+    process.env.XDG_CONFIG_HOME = path.join(input.tmp, "xdg")
+    process.env.ALPHA_OPENCODE_HOME = path.join(input.tmp, "opencode-home")
+    process.env.XDG_DATA_HOME = path.join(input.tmp, "xdg-data")
+    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+    delete process.env.OPENCODE_CONFIG_CONTENT
+    delete process.env.ALPHA_CLOUD_MCP_ARM
+    if (input.killSwitch) process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    else delete process.env.ALPHA_WEBSEARCH_DISABLE
+    const userData = path.join(input.tmp, "userdata")
+    fs.mkdirSync(path.join(userData, "alpha-secrets"), { recursive: true })
+    fs.writeFileSync(path.join(userData, "alpha-secrets", "ALPHA_MCP_TOKEN"), `${input.token}\n`)
+    expect(injectAlphaConfig(userData).ok).toBe(true)
+    const env = { ...process.env }
+    const text = await ConfigVariable.substitute({
+      text: env.OPENCODE_CONFIG_CONTENT!,
+      type: "virtual",
+      source: "OPENCODE_CONFIG_CONTENT",
+      dir: input.tmp,
+    })
+    const cfg = ConfigParse.jsonc(text, "OPENCODE_CONFIG_CONTENT") as { mcp: Record<string, unknown> }
+    if (input.killSwitch) expect(installCloudMcp(cfg, env)).toBe("cloud")
+    const entry = Schema.decodeUnknownSync(ConfigMCPV1.Info)(cfg.mcp.cloud)
+    return { entry, env }
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
+    Object.assign(process.env, saved)
+  }
+}
 
 describe("stable tool identity", () => {
   test("canonical form is injective and reversible across the wildcard grammar", () => {
@@ -121,6 +174,76 @@ describe("stable tool identity", () => {
     }
   })
 
+  test("#1576 AC1: the production injected shape (file-referenced Authorization, token literal after load) is alpha-cloud", () => {
+    const ref = "{file:/x/alpha-secrets/ALPHA_MCP_TOKEN}"
+    const def = materializeCloudMcpConfig("https://cloud.example/mcp", ref)
+    const env = { ALPHA_CLOUD_MCP_SERVER: "cloud", ALPHA_CLOUD_MCP_DEF: JSON.stringify(def) }
+    const loaded = { ...def, headers: { Authorization: "Bearer tok-literal-1" } }
+    expect(authorityForMcp("cloud", loaded, env)).toEqual({
+      kind: "alpha-cloud",
+      bindingId: "mcp:cloud",
+      evidenceDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    })
+  })
+
+  test("#1576 AC1: real injectAlphaConfig → real ConfigVariable.substitute → authorityForMcp is alpha-cloud (production and kill-switch)", async () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-1576-inject-")))
+    try {
+      for (const killSwitch of [false, true]) {
+        const { entry, env } = await productionCloudEntry({ killSwitch, token: "tok-wired-1", tmp })
+        // 对照:装载后的条目确实带着令牌字面量(否则这条用例测的不是断点)。
+        expect(entry.type === "remote" && entry.headers?.Authorization).toBe("Bearer tok-wired-1")
+        expect(env.ALPHA_CLOUD_MCP_DEF).toContain("{file:")
+        expect(authorityForMcp("cloud", entry, env).kind).toBe("alpha-cloud")
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  test("#1576 AC2: URL, type, other header, key-set or non-reference header mismatch is not-asserted", () => {
+    const def = materializeCloudMcpConfig("https://cloud.example/mcp", "{file:/x/ALPHA_MCP_TOKEN}")
+    const env = { ALPHA_CLOUD_MCP_SERVER: "cloud", ALPHA_CLOUD_MCP_DEF: JSON.stringify(def) }
+    const loaded = { ...def, headers: { Authorization: "Bearer tok" } }
+    expect(authorityForMcp("cloud", loaded, env).kind).toBe("alpha-cloud")
+    const notAsserted = { kind: "not-asserted" as const }
+    // URL 不同
+    expect(authorityForMcp("cloud", { ...loaded, url: "https://attacker.example/mcp" }, env)).toEqual(notAsserted)
+    // 类型不同
+    expect(authorityForMcp("cloud", { type: "local", command: ["cloud"] }, env)).toEqual(notAsserted)
+    // 多一个 header
+    expect(
+      authorityForMcp("cloud", { ...loaded, headers: { Authorization: "Bearer tok", "X-Extra": "1" } }, env),
+    ).toEqual(notAsserted)
+    // 被引用的 header 不是字符串 / 缺席
+    expect(authorityForMcp("cloud", { ...loaded, headers: {} }, env)).toEqual(notAsserted)
+    // 键集合不同(多一个 timeout)
+    expect(authorityForMcp("cloud", { ...loaded, timeout: 30_000 }, env)).toEqual(notAsserted)
+    // 注入定义的 header 不是文件引用:值不同就不成立,值相同才成立
+    const literalDef = { ...def, headers: { Authorization: "Bearer pinned" } }
+    const literalEnv = { ...env, ALPHA_CLOUD_MCP_DEF: JSON.stringify(literalDef) }
+    expect(authorityForMcp("cloud", loaded, literalEnv)).toEqual(notAsserted)
+    expect(authorityForMcp("cloud", literalDef, literalEnv).kind).toBe("alpha-cloud")
+  })
+
+  test("#1576 AC2: evidence carries no token value; bindingId and evidenceDigest survive token rotation", async () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-1576-rotate-")))
+    try {
+      const before = await productionCloudEntry({ killSwitch: false, token: "tok-before-rotation", tmp })
+      const after = await productionCloudEntry({ killSwitch: false, token: "tok-after-rotation", tmp })
+      expect(before.entry).not.toEqual(after.entry)
+      const evidence = governedMcpEvidence("cloud", before.entry, before.env)
+      expect(evidence).toBeDefined()
+      expect(evidence).not.toContain("tok-before-rotation")
+      const a = authorityForMcp("cloud", before.entry, before.env)
+      const b = authorityForMcp("cloud", after.entry, after.env)
+      expect(a.kind).toBe("alpha-cloud")
+      expect(b).toEqual(a)
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
   test("identity-axis deny removes the exact tool without falling back to its alias", () => {
     const subject = { technicalId: "search", identity: { source: "plugin", origin: "acme", name: "search" } as const }
     expect(
@@ -164,6 +287,7 @@ describe("stable tool identity", () => {
       identity: { source: "host", origin: "", name: "StructuredOutput" },
       technicalId: "StructuredOutput",
       authority: { kind: "not-asserted" },
+      location: { kind: "local" },
     })
   })
 

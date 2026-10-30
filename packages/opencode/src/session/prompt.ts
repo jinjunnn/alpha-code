@@ -90,6 +90,7 @@ const STRUCTURED_OUTPUT_TOOL_DISPLAY = {
   identity: { source: "host", origin: "", name: "StructuredOutput" },
   technicalId: "StructuredOutput",
   authority: { kind: "not-asserted" },
+  location: { kind: "local" },
 } satisfies ToolDisplaySnapshotV1
 
 function mcpResourceBase64Size(value: string) {
@@ -395,6 +396,7 @@ const layer = Layer.effect(
           identity: taskTool.identity,
           technicalId: TaskTool.id,
           authority: { kind: "not-asserted" },
+          location: { kind: "local" },
         },
         state: {
           status: "running",
@@ -612,6 +614,7 @@ const layer = Layer.effect(
                 identity: { source: "builtin", origin: "", name: ShellID.ToolID },
                 technicalId: ShellID.ToolID,
                 authority: { kind: "not-asserted" },
+                location: { kind: "local" },
               },
               callID: ulid(),
               state: {

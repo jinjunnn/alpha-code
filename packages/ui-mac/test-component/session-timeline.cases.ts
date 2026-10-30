@@ -985,7 +985,9 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(mcpCard.textContent).not.toContain("solid")
 
     const legacy = host.querySelector("[data-alpha-tool-card][data-category='unknown']")!
-    expect(legacy.querySelector(".a-tl-pf-v")!.textContent).toBe("来源不明")
+    // #1576:无快照按第三方处理 —— 只有问号图标 + 名称,不再写「来源不明」这第四类。
+    expect(legacy.querySelector(".a-tl-pf-v")).toBeNull()
+    expect(legacy.querySelector(".a-tl-pf-o")!.textContent).toBe("cloud_dispatch")
     expect(legacy.querySelector("[data-alpha-step-source='unknown']")).not.toBeNull()
     expect(legacy.getAttribute("data-status")).toBe("error")
     expect(legacy.querySelector("[data-alpha-step-failure]")!.textContent).toBe("没成功")
@@ -994,7 +996,8 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
 
     const impostor = host.querySelector("[data-alpha-tool-card][data-category='plugin']")!
     expect(impostor.getAttribute("data-kind")).toBe("unknown")
-    expect(impostor.querySelector(".a-tl-pf-v")!.textContent).toBe("evil-pack")
+    // #1576:插件一律「第三方插件」,包名只进开发者详情。
+    expect(impostor.querySelector(".a-tl-pf-v")!.textContent).toBe("第三方插件")
     expect(impostor.querySelector("[data-alpha-step-source='plugin']")).not.toBeNull()
     expect(impostor.textContent).not.toContain("curl")
     expect(impostor.textContent).not.toContain("uid=0(root)")
@@ -1150,9 +1153,10 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(mcpSafe.textContent).toBe("这个工具来自第三方(context7),我们不显示它收到和返回的内容。")
 
     const unknownCard = host.querySelector("[data-alpha-tool-card][data-category='unknown']")!
-    expect(unknownCard.querySelector(".a-tl-pf-v")!.textContent).toBe("来源不明")
+    // #1576:无快照按第三方说,来源只有三类。
+    expect(unknownCard.querySelector(".a-tl-pf-v")).toBeNull()
     const unknownSafe = unknownCard.querySelector("[data-alpha-safe-card]")!
-    expect(unknownSafe.textContent).toBe("这个工具来源不明,我们不显示它收到和返回的内容。")
+    expect(unknownSafe.textContent).toBe("这个工具来自第三方,我们不显示它收到和返回的内容。")
     // 失败只写「没成功」(行尾),不显示错误原文。
     expect(unknownCard.querySelector("[data-alpha-step-failure]")!.textContent).toBe("没成功")
     expect(unknownCard.textContent).not.toContain("boom-secret")
@@ -1160,15 +1164,131 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(unknownCard.querySelector("[data-alpha-dev-details]")).toBeNull()
 
     const pluginCard = host.querySelector("[data-alpha-tool-card][data-category='plugin']")!
-    expect(pluginCard.querySelector(".a-tl-pf-v")!.textContent).toBe("sample-plugin")
+    // #1576:插件不写包名;包名只在开发者详情。
+    expect(pluginCard.querySelector(".a-tl-pf-v")!.textContent).toBe("第三方插件")
     expect(pluginCard.querySelector("[data-alpha-step-source='plugin']")).not.toBeNull()
     expect(pluginCard.querySelector("[data-alpha-safe-card]")!.textContent).toBe(
-      "这个工具来自插件(sample-plugin),我们不显示它收到和返回的内容。",
+      "这个工具来自第三方插件,我们不显示它收到和返回的内容。",
     )
+    expect(pluginCard.querySelector(".a-tl-pf-step")!.textContent).not.toContain("sample-plugin")
     // 降级卡的开发者详情仍保留排障能力(AC4):快照在场即陈列,默认折叠。
     const pluginDev = pluginCard.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!
     expect(pluginDev.open).toBe(false)
     expect(pluginDev.textContent).toContain("plugin:sample-plugin:bash")
+  })
+
+  test("#1576 来源 × 位置:「内置 · 本机」步骤行尾不标;其余行尾写位置;每一步详情底部写「来源 · 位置」;开发者详情带 location", async () => {
+    const host = mount()
+    const done = (input: Record<string, unknown> = {}, metadata: Record<string, unknown> = {}) => ({
+      status: "completed",
+      input,
+      output: "ok",
+      title: "t",
+      metadata,
+      time: { start: 0, end: 1 },
+    })
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_l1", "bash", done({ command: "bun install" }, { exit: 0 }), {
+          identity: { source: "builtin", origin: "", name: "bash" },
+          technicalId: "bash",
+          authority: { kind: "not-asserted" },
+          location: { kind: "local" },
+        }),
+        toolPartFixture("prt_l2", "cloud_cloud_dispatch", done({ kind: "research" }), {
+          identity: { source: "mcp", origin: "cloud", name: "cloud_dispatch" },
+          technicalId: "cloud_cloud_dispatch",
+          authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
+          location: { kind: "remote", host: "cloud.example" },
+        }),
+        toolPartFixture("prt_l3", "notion_search_pages", done(), {
+          identity: { source: "mcp", origin: "notion", name: "search_pages" },
+          technicalId: "notion_search_pages",
+          authority: { kind: "not-asserted" },
+          location: { kind: "remote", host: "mcp.notion.com" },
+        }),
+        toolPartFixture("prt_l4", "lint_project", done(), {
+          identity: { source: "plugin", origin: "/Applications/Code Puppy.app/x/plugin.js", name: "lint_project" },
+          technicalId: "lint_project",
+          authority: { kind: "not-asserted" },
+          location: { kind: "local" },
+        }),
+      ]),
+    )
+    await flush()
+    await openAll(host)
+    const item = (id: string) => host.querySelector(`[data-alpha-tool-card][data-tool='${id}']`)!
+    const endOf = (el: Element) => el.querySelector(":scope > .a-tl-pf-step [data-alpha-step-location]")?.textContent
+    const footOf = (el: Element) => el.querySelector("[data-alpha-step-provenance]")!.textContent
+
+    const own = item("bash")
+    expect(endOf(own)).toBeUndefined()
+    expect(footOf(own)).toBe("Code Puppy 内置 · 本机")
+
+    const cloud = item("cloud_cloud_dispatch")
+    expect(endOf(cloud)).toBe("云端")
+    expect(footOf(cloud)).toBe("Code Puppy 云 · 云端")
+
+    const notion = item("notion_search_pages")
+    expect(endOf(notion)).toBe("mcp.notion.com")
+    expect(footOf(notion)).toBe("第三方 · mcp.notion.com")
+
+    const plug = item("lint_project")
+    expect(endOf(plug)).toBe("本机")
+    expect(footOf(plug)).toBe("第三方 · 本机")
+    // 插件路径不进正常界面,只进开发者详情。
+    expect(plug.querySelector(".a-tl-pf-step")!.textContent).not.toContain("plugin.js")
+    expect(plug.querySelector("[data-alpha-step-provenance]")!.textContent).not.toContain("plugin.js")
+
+    // AC6:开发者详情保留 identity、authority 种类、bindingId、evidenceDigest 与 location(插件另有 origin)。
+    const cloudDev = cloud.querySelector("[data-alpha-dev-details] .a-tc-dev-body")!.textContent!
+    for (const needle of ["mcp:cloud:cloud_dispatch", "alpha-cloud", "mcp:cloud", `sha256:${"a".repeat(25)}`, "location: remote · cloud.example"])
+      expect({ needle, present: cloudDev.includes(needle) }).toEqual({ needle, present: true })
+    const plugDev = plug.querySelector("[data-alpha-dev-details] .a-tc-dev-body")!.textContent!
+    expect(plugDev).toContain("location: local")
+    expect(plugDev).toContain("origin: /Applications/Code Puppy.app/x/plugin.js")
+    // 开发者详情仍是详情的最后一项。
+    expect(cloud.querySelector("[data-alpha-step-detail]")!.lastElementChild!.hasAttribute("data-alpha-dev-details")).toBe(true)
+    // 每个内置步骤都有位置 ⇒ 列表底部没有「内置步骤位置未知」。
+    expect(host.querySelector("[data-alpha-builtin-location-unknown]")).toBeNull()
+  })
+
+  test("#1576 旧记录:内置步骤不逐行写位置,列表底部一句「内置步骤位置未知」;非内置缺位置逐行写「位置未知」", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_o1", "read", {
+          status: "completed",
+          input: { filePath: "/w/message.ts" },
+          output: "",
+          title: "read",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture(
+          "prt_o2",
+          "notion_search_pages",
+          { status: "completed", input: {}, output: "", title: "t", metadata: {}, time: { start: 0, end: 1 } },
+          {
+            identity: { source: "mcp", origin: "notion", name: "search_pages" },
+            technicalId: "notion_search_pages",
+            authority: { kind: "not-asserted" },
+          },
+        ),
+      ]),
+    )
+    await flush()
+    await openAll(host)
+    const read = host.querySelector("[data-alpha-tool-card][data-tool='read']")!
+    expect(read.querySelector(":scope > .a-tl-pf-step [data-alpha-step-location]")).toBeNull()
+    expect(read.querySelector("[data-alpha-step-provenance]")!.textContent).toBe("Code Puppy 内置 · 位置未知")
+    const notion = host.querySelector("[data-alpha-tool-card][data-tool='notion_search_pages']")!
+    expect(notion.querySelector(":scope > .a-tl-pf-step [data-alpha-step-location]")!.textContent).toBe("位置未知")
+    expect(notion.querySelector("[data-alpha-dev-details] .a-tc-dev-body")!.textContent).toContain("location: —")
+    const foot = host.querySelectorAll("[data-alpha-builtin-location-unknown]")
+    expect(foot).toHaveLength(1)
+    expect(foot[0]!.textContent).toBe("内置步骤位置未知")
+    expect(foot[0]!.parentElement!.lastElementChild).toBe(foot[0]!)
   })
 
   test("#1214 AC2 审批超时呈现:mcp 降级卡出「审批已超时,未获批准」而非通用隐藏文案;错误原文零泄漏;普通错误不受影响", async () => {
@@ -3538,12 +3658,13 @@ describe("#1473 工作过程折叠(design ⑧ #process-fold)", () => {
       "搜索 2 次",
       "思考 6 秒",
     ])
-    // 只有超过 10 秒的那组写用时;两次打开网页都失败写人话;其余行尾空。
+    // 只有超过 10 秒的那组写用时;两次打开网页都失败写人话;云端搜索行尾写位置「云端」(#1576),思考行尾空。
     const ends = lines.map((line) => line.querySelector(".a-tl-pf-end")?.textContent ?? "")
-    expect(ends[8]).toBe("2 分 15 秒")
+    expect(ends[8]).toBe("云端2 分 15 秒")
     expect(ends[3]).toBe("都没成功")
     expect(lines[3]!.getAttribute("data-tone")).toBe("warn")
-    expect(ends.filter((end, index) => index !== 3 && index !== 8).every((end) => end === "")).toBe(true)
+    expect(ends.filter((_, index) => [1, 4, 6, 10].includes(index)).every((end) => end === "云端")).toBe(true)
+    expect(ends.filter((_, index) => [0, 2, 5, 7, 9, 11].includes(index)).every((end) => end === "")).toBe(true)
     expect(list.textContent).not.toContain("完成")
     expect(list.textContent).not.toContain("条结果")
 
@@ -3704,7 +3825,8 @@ describe("#1475 步骤行:动作名 · 对象 · 行尾 / 行内来源 / 提问 
     expect(own!.querySelector("[data-alpha-step-source]")).toBeNull()
 
     expect(mcpItem!.querySelector("[data-alpha-step-source]")!.getAttribute("data-alpha-step-source")).toBe("mcp")
-    expect(lineText(mcpItem!)).toEqual({ verb: "fs-srv", object: "read", end: "" })
+    // #1576:快照没有 location ⇒ 非内置步骤行尾写「位置未知」。
+    expect(lineText(mcpItem!)).toEqual({ verb: "fs-srv", object: "read", end: "位置未知" })
     expect(mcpItem!.querySelector("[data-alpha-safe-card]")!.textContent).toBe(
       "这个工具来自第三方(fs-srv),我们不显示它收到和返回的内容。",
     )
@@ -3712,7 +3834,7 @@ describe("#1475 步骤行:动作名 · 对象 · 行尾 / 行内来源 / 提问 
     expect(mcpItem!.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!.open).toBe(false)
 
     expect(pluginItem!.querySelector("[data-alpha-step-source]")!.getAttribute("data-alpha-step-source")).toBe("plugin")
-    expect(lineText(pluginItem!)).toEqual({ verb: "evil-pack", object: "bash", end: "没成功" })
+    expect(lineText(pluginItem!)).toEqual({ verb: "第三方插件", object: "bash", end: "位置未知没成功" })
     expect(pluginItem!.querySelector(".a-tc-term")).toBeNull()
     expect(pluginItem!.querySelector(".a-tc-err")).toBeNull()
 
@@ -3774,7 +3896,7 @@ describe("#1475 步骤行:动作名 · 对象 · 行尾 / 行内来源 / 提问 
 
     // 冒名的插件 question:来源标记 + 名称,问题与回答一个字都不显示。
     expect(spoof!.getAttribute("data-kind")).toBe("unknown")
-    expect(lineText(spoof!)).toEqual({ verb: "qa-pack", object: "question", end: "" })
+    expect(lineText(spoof!)).toEqual({ verb: "第三方插件", object: "question", end: "位置未知" })
     expect(spoof!.querySelector("[data-alpha-question-detail]")).toBeNull()
     expect(spoof!.textContent).not.toContain("导出成哪种格式")
   })

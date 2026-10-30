@@ -19,11 +19,14 @@ const cloudSearch = {
   identity: { source: "mcp", origin: "cloud", name: "cloud_web_search" },
   technicalId: "cloud_cloud_web_search",
   authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` },
+  // #1576:引擎注册时写的执行位置(远端 MCP = 条目 URL 的主机名)。
+  location: { kind: "remote", host: "cloud.example" },
 }
 const webfetch = {
   identity: { source: "builtin", origin: "", name: "webfetch" },
   technicalId: "webfetch",
   authority: { kind: "not-asserted" },
+  location: { kind: "local" },
 }
 
 type Script = { reason: string; ms: number } | { search: string; ms?: number } | { fetch: string } | { answer: string }

@@ -59,10 +59,30 @@ function canonicalJson(value: unknown): string {
   return encoded
 }
 
+const FILE_REF = /\{file:[^}]+\}/
+
+/**
+ * #1576:the engine resolves `{file:}` references while it parses config text (production branch) and
+ * `installCloudMcp` resolves them itself (kill-switch branch), so the loaded entry carries the token
+ * literal where the definition carries the reference. For a header whose definition value is a file
+ * reference, only require that the entry has the same header as a string; the value is a credential,
+ * not provenance. Every other field (and every header key set) still has to match exactly.
+ */
+function withDefinitionFileRefs(entry: unknown, definition: unknown): unknown {
+  const defHeaders = (definition as { headers?: unknown } | null)?.headers
+  const entryHeaders = (entry as { headers?: unknown } | null)?.headers
+  if (!defHeaders || typeof defHeaders !== "object" || !entryHeaders || typeof entryHeaders !== "object") return entry
+  const headers: Record<string, unknown> = { ...(entryHeaders as Record<string, unknown>) }
+  for (const [key, value] of Object.entries(defHeaders as Record<string, unknown>))
+    if (typeof value === "string" && FILE_REF.test(value) && typeof headers[key] === "string") headers[key] = value
+  return { ...(entry as Record<string, unknown>), headers }
+}
+
 /**
  * Display authority is stricter than the legacy web-search sovereignty owner
  * check: the complete invocation config must equal the verified definition,
- * not merely share its endpoint.
+ * not merely share its endpoint. The evidence is the definition itself (file
+ * references, never token values), so token rotation keeps the digest stable.
  */
 export function governedMcpEvidence(
   name: string,
@@ -74,7 +94,7 @@ export function governedMcpEvidence(
   if (!raw) return undefined
   try {
     const definition: unknown = JSON.parse(raw)
-    if (canonicalJson(entry) !== canonicalJson(definition)) return undefined
+    if (canonicalJson(withDefinitionFileRefs(entry, definition)) !== canonicalJson(definition)) return undefined
     return canonicalJson({ kind: "alpha-cloud-mcp", name, definition })
   } catch {
     return undefined

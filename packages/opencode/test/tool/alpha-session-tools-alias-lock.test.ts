@@ -345,3 +345,24 @@ describe("跨来源别名碰撞在 session 装配时 fail-closed (#972)", () => 
     }),
   )
 })
+
+// #1576 AC4:执行位置在**注册咽喉**写进显示快照(随首个 ToolPart 持久化),不读工具返回内容,也不等审批请求带事实。
+// 期望值是手写字面量:远端主机名取自 MCP 条目 URL(测试服务器的 `http://localhost:<port>/`)。
+describe("#1576 注册处写执行位置", () => {
+  it.instance("内置 / 插件 / 宿主资源工具 = 本机;远端 MCP = 条目 URL 的主机名", () =>
+    Effect.gen(function* () {
+      yield* writeCustomTool("weather", "current")
+      const server = yield* testServer(["current"], { resources: true })
+      const mcp = yield* MCP.Service
+      yield* mcp.add("notion", remote(server.url))
+
+      const processor = testProcessor()
+      yield* resolveTools(processor.handle)
+
+      expect(processor.snapshots.get("notion_current")?.location).toEqual({ kind: "remote", host: "localhost" })
+      expect(processor.snapshots.get("weather_current")?.location).toEqual({ kind: "local" })
+      expect(processor.snapshots.get("read")?.location).toEqual({ kind: "local" })
+      expect(processor.snapshots.get("list_mcp_resources")?.location).toEqual({ kind: "local" })
+    }),
+  )
+})

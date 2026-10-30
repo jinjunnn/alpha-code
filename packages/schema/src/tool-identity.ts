@@ -29,11 +29,20 @@ export const ToolBillingFact = Schema.Struct({
 }).annotate({ identifier: "ToolBillingFact" })
 export type ToolBillingFact = Types.DeepMutable<Schema.Schema.Type<typeof ToolBillingFact>>
 
+// #1576:工具在哪里执行,注册时由宿主写(内置 / host / 插件 = local;MCP 由生效条目的去秘密传输事实派生,
+// 远端取 URL 主机名)。可选:历史行与事实缺席时不写,显示层说「位置未知」;不回填。
+export const ToolLocation = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("local") }),
+  Schema.Struct({ kind: Schema.Literal("remote"), host: Schema.String.check(Schema.isPattern(/[\s\S]+/)) }),
+]).annotate({ discriminator: "kind", identifier: "ToolLocation" })
+export type ToolLocation = Types.DeepMutable<Schema.Schema.Type<typeof ToolLocation>>
+
 export const ToolDisplaySnapshotV1 = Schema.Struct({
   identity: ToolIdentity,
   technicalId: Schema.String.check(Schema.isPattern(/[\s\S]+/)),
   authority: ToolAuthority,
   billing: Schema.optional(ToolBillingFact),
+  location: Schema.optional(ToolLocation),
 }).annotate({ identifier: "ToolDisplaySnapshotV1" })
 export type ToolDisplaySnapshotV1 = Types.DeepMutable<Schema.Schema.Type<typeof ToolDisplaySnapshotV1>>
 

@@ -983,6 +983,13 @@ button.a-tl-cmd-chip:focus-visible {
   font-size: var(--a-text-xs);
 }
 
+/* 1576:旧记录内置步骤的位置说明(列表底部一句) */
+.a-tl-pf-foot {
+  margin: 4px 0 0;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
 .a-tl-pf-end {
   display: inline-flex;
   flex: none;
