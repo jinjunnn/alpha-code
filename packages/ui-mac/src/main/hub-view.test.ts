@@ -60,7 +60,7 @@ const record = (root: string, over: Partial<UpsertInput> & Pick<UpsertInput, "id
 }
 
 type Engine = {
-  mcp: Record<string, { status: string }>
+  mcp: Record<string, { status: string; error?: string }>
   skills: Array<{ name: string; location: string }>
   agents: Array<Record<string, unknown>>
   commands: Array<{ name: string }>
@@ -278,6 +278,36 @@ describe("hub-view 三档状态(§2.5)", () => {
     expect(row((await w.service.view(w.projectDir)).rows, "plugin:legacy")).toMatchObject({
       state: "installed",
       stateReason: { code: "not-loaded", detail: 'no verification for kind "plugin"' },
+    })
+  })
+
+  // `#1563`:引擎在后台启动 MCP 时报 pending。它是准备中,不是失败 —— 落 installed、不出重载入口、不取在途重载
+  // 的原因(重载修不好「还没连上」);后台重连的那次带着上一次失败,细节里附上。对照:failed 仍是待重载。
+  test("#1563:pending 的 MCP / 云条目 ⇒ installed(准备中),不出重载入口;后台重连附上次失败", async () => {
+    const w = world("pending")
+    w.coordinator.request({ scope: "global", items: [], reason: "x" })
+    w.engine.mcp.files = { status: "pending" }
+    expect(row((await w.service.view(w.projectDir)).rows, "mcp:files")).toMatchObject({
+      installed: true,
+      enabled: true,
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: "MCP pending" },
+    })
+    w.engine.mcp.files = { status: "pending", error: "fetch failed: connect ECONNREFUSED 127.0.0.1:443" }
+    expect(row((await w.service.view(w.projectDir)).rows, "mcp:files").stateReason).toEqual({
+      code: "not-loaded",
+      detail: "MCP pending (last failure: fetch failed: connect ECONNREFUSED 127.0.0.1:443)",
+    })
+    w.engine.cloudDispatch = "enabled"
+    w.engine.mcp.cloud = { status: "pending" }
+    expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
+      state: "installed",
+      stateReason: { code: "not-loaded", detail: "cloud MCP pending" },
+    })
+    w.engine.mcp.files = { status: "failed" }
+    expect(row((await w.service.view(w.projectDir)).rows, "mcp:files")).toMatchObject({
+      state: "reload-pending",
+      stateReason: { code: "reload-waiting" },
     })
   })
 

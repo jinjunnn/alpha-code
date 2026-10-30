@@ -462,7 +462,8 @@ describe("上游次序前提(#1129:identity ask 早于 trigger,trigger 早于传
     expect(loop).toBeGreaterThanOrEqual(0)
     const trigger = body.indexOf('"tool.execute.before"', loop)
     expect(trigger).toBeGreaterThan(loop)
-    const transport = body.indexOf("Effect.promise(() => execute(args, opts))", trigger)
+    // #1563:传输改经 MCP 服务入口(`mcp.callTool`,取当前连接),不再调 convertTool 捕获 client 的 execute。
+    const transport = body.indexOf(".callTool(", trigger)
     expect(transport).toBeGreaterThan(trigger)
     const staleAsk = body.indexOf("ctx.ask(", trigger)
     expect(staleAsk === -1 || staleAsk > transport).toBe(true)

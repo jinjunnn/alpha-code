@@ -479,9 +479,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   for (const [key, entry] of Object.entries(yield* mcp.tools())) {
     if (!entry.identity || !entry.authority) throw new Error(`MCP tool ${key} is missing its source identity`)
+    const identity = entry.identity
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
-    const execute = item.execute
-    if (!execute) continue
+    if (!item.execute) continue
 
     // `#793`:`convertTool` 无条件给根戴上 `additionalProperties:false`,而根上的这顶帽子
     // 看不见 `oneOf`/`anyOf` 分支里的字段 ⇒ 分支型 MCP 工具广播给模型的是一份自相矛盾的
@@ -504,8 +504,30 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           // #1129 / #724 §6 E3:这里原有一条 hook 之后的 canonical identity ask。它已并入
           // register() 的 identityGate(在 hook **之前**问)—— 留着会把同一次调用问两遍,
           // `once` 放行第一问后第二问再挂起,用户一次批准走不完一次调用。
-          const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
-            return yield* Effect.promise(() => execute(args, opts))
+          const result: Awaited<ReturnType<NonNullable<typeof item.execute>>> = yield* Effect.gen(function* () {
+            // #1563 AC6:经服务入口取**当前**连接执行(convertTool 只剩 schema 来源,它捕获的 client 不再用于调用);
+            // 下面的结果投影与 McpCatalog.convertTool 的 execute 逐字同形。
+            if (!mcp.callTool) return yield* Effect.die(new Error(`MCP tool ${key} has no execution entry`))
+            const raw = yield* mcp
+              .callTool(identity.origin, entry.def.name, (args || {}) as Record<string, unknown>, {
+                generation: entry.generation,
+                defDigest: entry.defDigest,
+                timeout: entry.timeout,
+                signal: opts.abortSignal,
+              })
+              .pipe(Effect.orDie)
+            if (raw.isError)
+              return yield* Effect.die(
+                new Error(
+                  raw.content
+                    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+                    .filter((text) => text.trim())
+                    .join("\n\n") || "MCP tool returned an error",
+                ),
+              )
+            if (raw.content.length > 0 || raw.structuredContent === undefined || raw.structuredContent === null)
+              return raw
+            return { ...raw, content: [{ type: "text" as const, text: JSON.stringify(raw.structuredContent) }] }
           }).pipe(
             Effect.withSpan("Tool.execute", {
               attributes: {

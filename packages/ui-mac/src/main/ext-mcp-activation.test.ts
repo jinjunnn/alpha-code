@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { probeProjectMcpActivation } from "./ext-mcp-activation"
+import { probeProjectMcpActivation, verifyInstalledMcp } from "./ext-mcp-activation"
 
 let tmp: string
 let project: string
@@ -194,5 +194,31 @@ describe("project MCP activation provenance probe (REQ-136 C5)", () => {
     expect(verdict).toBe("unverifiable")
     expect(requests.at(-1)?.pathname).toBe("/mcp")
     expect(requests.at(-1)?.searchParams.get("directory")).toBe(project)
+  })
+})
+
+// `#1563`:引擎后台启动 MCP,进行中报 `pending`(后台重连时带上一次失败的 `error`)。它是「准备中」,不能被核验
+// 读成 failed —— 读成 failed 时定制中心会把一台正在连的服务当失败、给出只会打断会话的「现在重载」。
+describe("installed MCP verification reads the engine's pending phase (#1563)", () => {
+  const verify = (body: unknown) =>
+    verifyInstalledMcp("demo", project, ready, fetchFor(() => Response.json(body), []), { awaitServer: 1_000, status: 1_000 })
+
+  test("pending stays pending (准备中), first attempt without a last failure", async () => {
+    expect(await verify({ demo: { status: "pending" } })).toEqual({ reference: "demo", status: "pending" })
+  })
+
+  test("a background reconnect carries the previous failure", async () => {
+    expect(await verify({ demo: { status: "pending", error: "fetch failed: connect ECONNREFUSED" } })).toEqual({
+      reference: "demo",
+      status: "pending",
+      lastFailure: "fetch failed: connect ECONNREFUSED",
+    })
+  })
+
+  test("control: a failed server is still failed", async () => {
+    expect(await verify({ demo: { status: "failed", error: "boom", code: "spawn_failed" } })).toEqual({
+      reference: "demo",
+      status: "failed",
+    })
   })
 })

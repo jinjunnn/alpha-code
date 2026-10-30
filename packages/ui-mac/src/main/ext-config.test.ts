@@ -69,20 +69,19 @@ function writeAlphaConfig(value: unknown): void {
 }
 
 describe("ensureGovernedMcpConnectTimeouts — boot reconcile", () => {
-  test("local definition without timeout gets 5000 in the live alpha.jsonc", () => {
+  // #1563 AC7:启动不再给本机 MCP 统一写 5 秒 —— 那一个字段同时卡住了连接、tools/list 与每一次工具调用。
+  test("#1563: boot no longer writes timeout 5000 into a local definition without timeout", () => {
     writeAlphaConfig({
       mcp: {
         local: { type: "local", command: ["uvx", "cold-package"] },
       },
     })
+    const before = fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")
 
     ensureGovernedMcpConnectTimeouts()
 
-    expect(readAlphaConfig().mcp.local).toEqual({
-      type: "local",
-      command: ["uvx", "cold-package"],
-      timeout: 5_000,
-    })
+    expect(readAlphaConfig().mcp.local).toEqual({ type: "local", command: ["uvx", "cold-package"] })
+    expect(fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")).toBe(before)
   })
 
   test("explicit timeout is preserved; remote, disabled local, and lone disabled leaf are untouched", () => {
@@ -101,15 +100,15 @@ describe("ensureGovernedMcpConnectTimeouts — boot reconcile", () => {
     expect(readAlphaConfig()).toEqual(before)
   })
 
-  test("missing and unparseable alpha.jsonc are loud no-ops", () => {
+  // #1563:这道 reconcile 已退役,不再读 alpha.jsonc —— 缺失或解析不了都既不写盘也不报错。
+  test("#1563: the retired reconcile neither reads nor writes alpha.jsonc, missing or unparseable", () => {
     const logs: string[] = []
     const target = path.join(alphaTmp, "alpha.jsonc")
 
     ensureGovernedMcpConnectTimeouts({ logError: (message) => logs.push(message) })
 
     expect(fs.existsSync(target)).toBe(false)
-    expect(logs).toHaveLength(1)
-    expect(logs[0]).toContain("config unreadable")
+    expect(logs).toEqual([])
 
     fs.mkdirSync(alphaTmp, { recursive: true })
     fs.writeFileSync(target, '{"mcp":{"broken":')
@@ -117,8 +116,7 @@ describe("ensureGovernedMcpConnectTimeouts — boot reconcile", () => {
     ensureGovernedMcpConnectTimeouts({ logError: (message) => logs.push(message) })
 
     expect(fs.readFileSync(target, "utf8")).toBe(malformed)
-    expect(logs).toHaveLength(2)
-    expect(logs[1]).toContain("config unparseable")
+    expect(logs).toEqual([])
   })
 
   test("second run is byte-identical after the first atomic reconcile", () => {

@@ -1646,6 +1646,11 @@ export type McpStatusConnected = {
   status: "connected"
 }
 
+export type McpStatusPending = {
+  status: "pending"
+  error?: string
+}
+
 export type McpStatusDisabled = {
   status: "disabled"
 }
@@ -1653,6 +1658,7 @@ export type McpStatusDisabled = {
 export type McpStatusFailed = {
   status: "failed"
   error: string
+  code?: string
 }
 
 export type McpStatusNeedsAuth = {
@@ -1666,6 +1672,7 @@ export type McpStatusNeedsClientRegistration = {
 
 export type McpStatus =
   | McpStatusConnected
+  | McpStatusPending
   | McpStatusDisabled
   | McpStatusFailed
   | McpStatusNeedsAuth

@@ -179,8 +179,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export type McpVerification = {
   reference: string
-  /** `needs_auth` / `needs_client_registration` 原样透传(`#1531`):重载修不好它们,呈现面据此不出「现在重载」。 */
-  status: "connected" | "disabled" | "failed" | "needs_auth" | "needs_client_registration" | "unverifiable"
+  /**
+   * `needs_auth` / `needs_client_registration` 原样透传(`#1531`):重载修不好它们,呈现面据此不出「现在重载」。
+   * `pending`(`#1563`,与上游 v2 同名):引擎在后台启动这台服务,是「准备中」而不是失败,同样不出「现在重载」。
+   */
+  status: "connected" | "pending" | "disabled" | "failed" | "needs_auth" | "needs_client_registration" | "unverifiable"
+  /** `pending` 时引擎带出的上一次失败原因(只在后台重连时有,`#1563`)。 */
+  lastFailure?: string
 }
 
 export async function verifyInstalledMcp(
@@ -214,8 +219,15 @@ export async function verifyInstalledMcp(
       "timed out reading directory-scoped MCP status",
     )
     if ((status as { error?: unknown }).error) return { reference: name, status: "unverifiable" }
-    const state = (status as { data?: Record<string, { status?: unknown }> }).data?.[name]?.status
+    const entry = (status as { data?: Record<string, { status?: unknown; error?: unknown }> }).data?.[name]
+    const state = entry?.status
     if (state === "connected") return { reference: name, status: "connected" }
+    if (state === "pending")
+      return {
+        reference: name,
+        status: "pending",
+        ...(typeof entry?.error === "string" ? { lastFailure: entry.error } : {}),
+      }
     if (state === "disabled") return { reference: name, status: "disabled" }
     if (state === "needs_auth" || state === "needs_client_registration") return { reference: name, status: state }
     return { reference: name, status: "failed" }

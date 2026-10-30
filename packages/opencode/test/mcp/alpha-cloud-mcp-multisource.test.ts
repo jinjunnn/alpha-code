@@ -50,7 +50,7 @@ import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { TestInstance } from "../fixture/fixture"
-import { it as plainIt, testEffect } from "../lib/effect"
+import { it as plainIt, pollWithTimeout, testEffect } from "../lib/effect"
 
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -259,7 +259,12 @@ describe("#223 R6 Major:项目源的继承定义被中和后,真实 MCP 生命�
     () =>
       Effect.gen(function* () {
         const tmp = yield* TestInstance
-        expect(yield* statusOf(tmp.directory, CLOUD)).toBe("connected")
+        // #1563:读状态不再等启动 —— 第一次读把它在后台启动起来,随后它自己连上。
+        expect(yield* statusOf(tmp.directory, CLOUD)).toBe("pending")
+        yield* pollWithTimeout(
+          statusOf(tmp.directory, CLOUD).pipe(Effect.map((status) => (status === "connected" ? status : undefined))),
+          "inherited cloud definition never connected",
+        )
         expect(control.requests.length).toBeGreaterThan(0)
       }),
     { config: () => ({ mcp: { [CLOUD]: inheritedCloud(control.url) } }) },

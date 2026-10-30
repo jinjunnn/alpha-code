@@ -6,6 +6,7 @@ import { Agent } from "@/agent/agent"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
 import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
+import { callToolVia } from "../fixture/alpha-mcp-call-tool"
 import { Plugin } from "@/plugin"
 import { Session } from "@/session/session"
 import { Tool } from "@/tool/tool"
@@ -84,6 +85,8 @@ function harness(input: {
       tools: () => Effect.succeed(mcpTools),
       clients: () => Effect.succeed(Object.fromEntries(input.servers.map((name) => [name, {} as any]))),
       bindingFacts: () => Effect.succeed(undefined),
+      // alpha #1563:child calls go through the MCP service entry; the rig hands them to the entry's own client.
+      callTool: callToolVia(mcpTools),
     }),
   )
 }
