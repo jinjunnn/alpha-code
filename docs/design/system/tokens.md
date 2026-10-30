@@ -33,6 +33,21 @@ the `prefers-color-scheme` block if color) — never inlined at the call site.
 | **Motion** | `--a-dur-instant/fast/base/slow`, `--a-ease-out/in-out/spring` | `80/130/190/280`ms; `prefers-reduced-motion` → all 0 |
 | **Z-index** | `--a-z-base/sticky/dropdown/overlay/modal/toast` | `0/100/400/800/900/1000` |
 
+## Pending — proposed by the 2026-10-30 drafts (not yet in `tokens.css`)
+
+Two values the image card and attachment drafts need that no token covers yet.
+They become real tokens only when those drafts are approved and the
+implementation adds them to `tokens.css`; until then this table is the single
+place they are named, and the drafts reference these names.
+
+| Token | Value (light and dark alike) | Use | Contrast |
+| --- | --- | --- | --- |
+| `--a-media-scrim` | `rgba(15,17,21,.62)` | the translucent backing behind a label or icon laid **over an image** (「查看大图」 hover chip, attachment route badge, 「+N」 overflow tile) | — |
+| `--a-text-on-media` | `#ffffff` | text and icons on `--a-media-scrim` | 5.33:1 even when the image underneath is pure white |
+
+Drafts: [`2026-10-30-req236-image-card/`](../2026-10-30-req236-image-card/frame.html),
+[`2026-10-30-req236-attachments/`](../2026-10-30-req236-attachments/frame.html).
+
 ## Theming
 
 Dark is keyed off `document.documentElement.dataset.colorScheme`

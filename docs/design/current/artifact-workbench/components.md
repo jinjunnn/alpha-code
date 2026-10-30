@@ -22,3 +22,4 @@ review_after: 2027-01-16
 | 组件 | 锚 | 增量稿 | 设计定稿 | 实现票 | 落地 | 代码入口 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Office 到站占位文案(现在时口径) | `#switcher` | [`2026-08-28-req108-rail-file-viewer/`](../../2026-08-28-req108-rail-file-viewer/frame.html)(§诚实性) | — | 待立(诚实性窄票,主 session 另立) | — | 现状:`renderers/renderer-views.tsx:676-681` · i18n `zh.ts:914-915` 及 en/zht 对应键(将来时,待改) | 设计中 |
+| 产物右栏结果优先(本次对话 / 项目全部切换、主结果预览置顶 + 动作排、技术详情折叠、未完成那一次的状态、本次对话空态) | `#results-first` | [`2026-10-30-req236-results-rail/`](../../2026-10-30-req236-results-rail/frame.html) | — | ac#1552 | — | 现状:`session-rail/artifacts/artifacts-panel-view.tsx`(运行条 + 卡片列表 + 预览)· `session-rail-artifacts.tsx`(项目级数据) | 设计中 |
