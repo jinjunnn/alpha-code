@@ -183,7 +183,7 @@ body{padding:0 0 96px}
 
   <!-- ════════════════ 一、自动化 ════════════════ -->
   <h2 class="ux-h2" id="automation">一、自动化</h2>
-  <p class="ux-sub">一句话说清本机和云端各在什么时候跑、用谁的额度;云端任务的「立即运行」说实话;选云端时不再展示云端不看的字段;没登录平台账户时不让选云端,而不是保存时才报错。</p>
+  <p class="ux-sub">一句话说清本机和云端各在什么时候跑、用谁的额度;云端任务的「立即运行」说实话;选云端时不再展示云端不看的字段;没登录 Code Puppy 账户时提前说明并禁用云端,而不是保存时才报错。</p>
 
   <h3 class="ux-h3" id="auto-list">1.1 任务列表</h3>
   <div class="ux-pair">
@@ -212,7 +212,7 @@ body{padding:0 0 96px}
           <div class="ux-new"><div class="ux-inp">一句话描述:每天早上 9 点,检查本项目未处理的 TODO 并生成清单</div><span class="ux-btn primary">创建</span></div>
           <span class="ux-tpl">用模板:每日总结</span>
           <div class="ux-row"><span class="ux-dot ok"></span><div class="ux-rb"><div class="ux-rn"><b>每日总结</b><span class="ux-pill">每天 21:00</span><span class="ux-pill muted">code-puppy</span></div><div class="ux-rs">下次 今天 21:00 · 上次成功 · 今天完成 3 件事,遗留 1 项</div></div><span class="ux-btn sm" title="现在跑一次,不改下次时间;计入每天最多 24 次。">立即运行</span><span class="ux-sw"></span></div>
-          <div class="ux-row"><span class="ux-dot err"></span><div class="ux-rb"><div class="ux-rn"><b>竞品周报</b><span class="ux-pill">每周一 09:00</span><span class="ux-pill muted">research</span><span class="ux-pill">☁ 云端</span></div><div class="ux-rs">下次 11/3 09:00 · 上次失败 · 应用还没准备好,这次没有运行</div></div><span class="ux-btn sm" title="云端按计划运行;这里只在你的电脑上跑一次,计入每天最多 24 次。">在本机试跑</span><span class="ux-sw"></span></div>
+          <div class="ux-row"><span class="ux-dot err"></span><div class="ux-rb"><div class="ux-rn"><b>竞品周报</b><span class="ux-pill">每周一 09:00</span><span class="ux-pill muted">research</span><span class="ux-pill">☁ 云端</span></div><div class="ux-rs">下次 11/3 09:00 · 上次失败 · 应用还没准备好,这次没有运行</div></div><span class="ux-btn sm" title="在这台电脑上按当前设置跑一次,不改云端排程;计入每天最多 24 次。">在本机试跑</span><span class="ux-sw"></span></div>
           <div class="ux-row"><span class="ux-dot"></span><div class="ux-rb"><div class="ux-rn"><b>依赖检查</b><span class="ux-pill">每 60 分钟</span><span class="ux-pill muted">app</span></div><div class="ux-rs">连续失败 3 次,已暂停。打开任务看最近一次的原因,改好后重新打开开关。</div></div><span class="ux-btn sm">立即运行</span><span class="ux-sw off"></span></div>
         </div>
       </div>
@@ -254,7 +254,7 @@ body{padding:0 0 96px}
     </div>
   </div>
 
-  <h3 class="ux-h3" id="auto-cloud-locked">1.3 没登录平台账户时的执行位置 · 选「可改文件」时的确认</h3>
+  <h3 class="ux-h3" id="auto-cloud-locked">1.3 没登录 Code Puppy 账户时的执行位置 · 选「可改文件」时的确认</h3>
   <div class="ux-pair">
     <div>
       <p class="ux-cap"><b>现状</b>「云端」随时可选,保存才报「尚未登录或登录已过期」;「可写」保存时弹系统原生确认框</p>
@@ -267,17 +267,17 @@ body{padding:0 0 96px}
       </div>
     </div>
     <div>
-      <p class="ux-cap"><b class="after">改后</b>非平台模式时「云端」置灰并给出下一步;确认放进表单,用界面上已有的词</p>
+      <p class="ux-cap"><b class="after">改后</b>没登录 Code Puppy 账户时「云端」置灰并提前说明;确认放进表单,用界面上已有的词</p>
       <div class="ux-screen">
         <div class="ux-body">
           <div class="ux-field"><label>执行位置</label><div class="ux-seg"><span class="on">本机</span><span class="dis">云端</span></div>
-            <p class="ux-pre">云端运行需要登录平台账户并使用平台模式。 <span class="ux-link">登录平台账户</span></p></div>
+            <p class="ux-pre">云端任务需要登录 Code Puppy 账户。 <span class="ux-link">去登录</span></p></div>
           <div class="ux-field"><label>权限</label><div class="ux-seg"><span>只读</span><span class="on">可改文件</span></div>
             <p class="ux-pre">可改文件:无人看着时,助手可以修改项目文件、运行常规命令。删除、系统级和发布类命令会被拦下,但拦不全 —— 只给你信任的重复任务用。</p></div>
           <div class="ux-confirm"><span>这个任务会在无人看着时修改文件、运行命令。删除、系统级和发布类命令会被拦下,但拦不全。确定让它可改文件吗?</span><span class="ux-btn sm primary">确定</span><span class="ux-btn sm">改回只读</span></div>
         </div>
       </div>
-      <p class="ux-ann"><b>帧外标注</b>:已登录但用自带密钥时,按钮换成「切换到平台模式」(沿用定制中心云能力的同一对按钮与文案)。确认条只在「从只读改成可改文件」并点保存时出现一次,样式沿用设置页工具节的行内确认。</p>
+      <p class="ux-ann"><b>帧外标注</b>:禁用只看是否登录了 Code Puppy 账户;已登录、正在用自带 Key 的用户照常可选「云端」。确认条只在「从只读改成可改文件」并点保存时出现一次,样式沿用设置页工具节的行内确认。</p>
     </div>
   </div>
 
@@ -490,7 +490,7 @@ body{padding:0 0 96px}
   <table class="ux-spec">
     <tr><th>项</th><th>规则</th></tr>
     <tr><td>自动化 · 云端条件块</td><td>执行位置为云端时出现,替代权限 / 单次最长 / 完成后通知三项;底 <code>--a-bg-subtle</code>,边 <code>--a-border</code>,正文 12 / <code>--a-text-secondary</code></td></tr>
-    <tr><td>自动化 · 云端置灰</td><td>非平台模式时「云端」段用 <code>--a-text-disabled</code>,不可点;下方一行原因 + 文字按钮(登录平台账户 / 切换到平台模式),与定制中心云能力同一套</td></tr>
+    <tr><td>自动化 · 云端置灰</td><td>没登录 Code Puppy 账户时「云端」段用 <code>--a-text-disabled</code>,不可点;下方一行原因 + 文字按钮「去登录」。按账户登录状态判,不按是否在用自带 Key 判</td></tr>
     <tr><td>自动化 · 可改文件确认</td><td>表单内,保存按钮上方;左边框 3px <code>--a-warning</code>,底 <code>--a-warning-subtle</code>;主按钮「确定」,次按钮「改回只读」;取代系统原生确认框</td></tr>
     <tr><td>自动化 · 云端行按钮</td><td>文字「在本机试跑」,悬停说明逐字见 1.1;本机行仍为「立即运行」</td></tr>
     <tr><td>设置 · 快捷键行</td><td>删除内部名小字;右侧按键帽(11px,边 <code>--a-border</code>,下边 2px)显示当前生效组合;输入框占位 = 注册默认值的文字写法</td></tr>
@@ -502,9 +502,9 @@ body{padding:0 0 96px}
   <table class="ux-spec" style="margin-top:12px">
     <tr><th>文案</th><th>中文</th><th>English</th></tr>
     <tr><td>页头说明</td><td>本机任务只在 Code Puppy 开着时运行,错过的不会补跑;云端任务不受影响。</td><td>Local tasks run only while Code Puppy is open, and missed runs are not made up. Cloud tasks are not affected.</td></tr>
-    <tr><td>云端行按钮</td><td>在本机试跑</td><td>Try on this Mac</td></tr>
+    <tr><td>云端行按钮</td><td>在本机试跑 / 在这台电脑上按当前设置跑一次,不改云端排程。</td><td>Try on this Mac / Runs once on this computer with the current settings; the cloud schedule is unchanged.</td></tr>
     <tr><td>云端条件</td><td>在云端运行时 / 应用关着也按时运行。/ 云端只做联网调研:只发送上面的「执行内容」,看不到这个项目的文件,也不会改文件或运行命令。/ 结果在你下次打开应用时存进项目的结果文件夹。/ 每次运行有时长和用量上限,到了就停。</td><td>When it runs in the cloud / Runs on schedule even when the app is closed. / The cloud only does web research: it receives the instructions above and cannot see this project's files, change files or run commands. / Results are saved to the project's results folder the next time you open the app. / Each run has a time and usage limit and stops when it reaches it.</td></tr>
-    <tr><td>云端置灰</td><td>云端运行需要登录平台账户并使用平台模式。</td><td>Running in the cloud needs a platform account in platform mode.</td></tr>
+    <tr><td>云端置灰</td><td>云端任务需要登录 Code Puppy 账户。</td><td>Cloud tasks need you to sign in to your Code Puppy account.</td></tr>
     <tr><td>快捷键说明</td><td>用 + 连接按键,例如 mod+shift+s(mod 在 Mac 上是 ⌘);多个组合用逗号隔开。留空恢复默认。</td><td>Join keys with +, for example mod+shift+s (mod is ⌘ on Mac). Separate alternatives with commas. Leave empty to restore the default.</td></tr>
     <tr><td>生效状态</td><td>待生效 / 所有对话停下后自动生效 / 现在生效</td><td>Pending / Takes effect when all chats are idle / Apply now</td></tr>
   </table>
