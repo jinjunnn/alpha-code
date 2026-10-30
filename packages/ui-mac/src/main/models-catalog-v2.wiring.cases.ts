@@ -82,7 +82,12 @@ mock.module("./logging", () => ({
 mock.module("./alpha-endpoints", () => ({
   resolveEndpoints: () => ({ platform: endpoint }),
 }))
-mock.module("./alpha-auth", () => ({ getAccessToken: () => accessToken, getAuthIdentityTag: () => identity }))
+// `#1557`:models-ipc 现在也挂手动刷新入口(catalog-refresher),它在模块装载时就绑定 isStoredTokenExpired。
+mock.module("./alpha-auth", () => ({
+  getAccessToken: () => accessToken,
+  getAuthIdentityTag: () => identity,
+  isStoredTokenExpired: () => false,
+}))
 
 const { registerModelsIpcHandlers } = await import("./models-ipc")
 const { syncLiveAllowlist } = await import("./alpha-platform-models")
