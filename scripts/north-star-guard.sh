@@ -55,11 +55,17 @@ cd "$(git rev-parse --show-toplevel)"
 # 让度量步自己再写一份 = `#637` 那个已经咬过我们一次的形状:两份清单各自漂移,而没有任何
 # 东西会变红。所以这里开一个只读模式:打印这些值然后退出,**一个 git 命令都不跑、一个字节
 # 都不判**。无参数时的行为逐字不变(CI 与 alpha-check 都不带参数)。
+#
+# `#1566`:第二个只读模式 `--print-takeover` —— 逐行打印 UPSTREAM_EXCLUDES 里的路径(去掉
+# `:(exclude)` 前缀),给每日上游同步(`.github/workflows/sync-upstream.yml` 的
+# `Takeover intake check`)当接管清单用。同步从**合并前的可信树**取本文件执行这个模式,
+# 工作流里不另抄一份路径。与上一个模式同样不跑 git、不判字节。
 GUARD_MODE=guard
 case "${1:-}" in
   '') ;;
   --print-jurisdiction) GUARD_MODE=print-jurisdiction; shift ;;
-  *) echo "✗ 未知参数:$1(本脚本只接受 --print-jurisdiction)" >&2; exit 2 ;;
+  --print-takeover) GUARD_MODE=print-takeover; shift ;;
+  *) echo "✗ 未知参数:$1(本脚本只接受 --print-jurisdiction / --print-takeover)" >&2; exit 2 ;;
 esac
 [ "$#" -eq 0 ] || { echo "✗ 多余参数:$*" >&2; exit 2; }
 
@@ -237,6 +243,12 @@ if [ "$GUARD_MODE" = print-jurisdiction ]; then
   printf 'ROUNDTRIP_PACKAGES\t%s\n' "$ROUNDTRIP_PACKAGES"
   printf 'UPSTREAM_MIRROR\t%s\n' "$UPSTREAM_MIRROR"
   printf 'UPSTREAM_EXCLUDES_COUNT\t%s\n' "${#UPSTREAM_EXCLUDES[@]}"
+  exit 0
+fi
+if [ "$GUARD_MODE" = print-takeover ]; then
+  for spec in "${UPSTREAM_EXCLUDES[@]}"; do
+    printf '%s\n' "${spec#:(exclude)}"
+  done
   exit 0
 fi
 

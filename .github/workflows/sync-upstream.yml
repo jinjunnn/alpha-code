@@ -2,8 +2,18 @@
 #
 # alpha only ADDS files, so the ONLY expected merge conflict is `bun.lock`
 # (adding workspace packages necessarily updates it). That case is auto-resolved
-# by taking upstream's lockfile and re-running `bun install`. Any OTHER conflict
-# means the "only-add" discipline was broken — the job fails loudly so a human looks.
+# by taking upstream's lockfile and re-running `bun install`.
+#
+# `#1566`: the exception is the takeover list — upstream files alpha deliberately
+# edits, registered once in `scripts/north-star-guard.sh` (`UPSTREAM_EXCLUDES`).
+# `Takeover intake check` reads that list from the pre-merge alpha tree and, when
+# the upstream candidate touches any of those paths, fails BEFORE merging (no
+# bundle) and reports each path for a human upgrade review; the reviewed port
+# lands as a real merge commit (second parent = the reviewed `dev` SHA, never
+# squash/rebase — docs/runbooks/ci.md §4), which moves the merge-base so the
+# next run no longer sees the same paths. After the merge, `Takeover paths
+# unchanged by merge` asserts no listed path changed. Any other conflict is an
+# unregistered deviation (ADR-029: register or revert) — the job fails loudly.
 #
 # `#899`(SEC): this job used to also hold `contents: write` + a repo-push token in
 # `.git/config` for its whole duration WHILE running code fetched from the untrusted
@@ -106,6 +116,80 @@ jobs:
             echo "No upstream prompt/agent base changes this sync."
           fi
 
+      # `#1566`(I11):接管清单只有一份 —— scripts/north-star-guard.sh 的 UPSTREAM_EXCLUDES。
+      # 这一步从**合并前的可信树**(`$OLD_ALPHA`)取守卫脚本、只跑它的只读模式 `--print-takeover`;
+      # 此刻工作树是上游 `dev`(上一步 checkout 的),所以**不许**执行工作树里的任何脚本(`#899`)。
+      # 本文件里不写任何字面接管路径。上游候选(merge-base..NEW_DEV)触及清单 ⇒ 不合并、不出 bundle,
+      # 把每条路径的上游提交与双方差异写进运行摘要与产物,以「需要升级审查」失败。
+      # 行为闸:packages/ui-mac/src/main/sync-upstream-takeover-isolation.test.ts。
+      - name: Takeover intake check
+        id: takeover
+        run: |
+          guard="$(mktemp)"
+          git show "$OLD_ALPHA:scripts/north-star-guard.sh" > "$guard"
+          takeover="$(bash "$guard" --print-takeover)"
+          if [ -z "$takeover" ]; then
+            echo "::error::接管清单为空 —— $OLD_ALPHA 的 scripts/north-star-guard.sh --print-takeover 没给出任何路径,无法判断上游候选是否触及接管文件。Aborting sync."
+            exit 1
+          fi
+          paths=()
+          while IFS= read -r p; do paths+=("$p"); done <<< "$takeover"
+          MB="$(git merge-base "$OLD_ALPHA" "$NEW_DEV")"
+          touched="$(git diff --name-only --no-renames "$MB" "$NEW_DEV" -- "${paths[@]}")"
+          if [ -z "$touched" ]; then
+            echo "Upstream candidate $MB..$NEW_DEV touches none of the ${#paths[@]} takeover paths."
+            exit 0
+          fi
+          review="$RUNNER_TEMP/takeover-review"
+          mkdir -p "$review"
+          report="$review/report.md"
+          {
+            echo "## 需要升级审查:上游候选触及接管文件(\`#1566\`)"
+            echo ""
+            echo "上游候选 \`$MB..$NEW_DEV\` 改了下面这些我们已接管的文件(清单:\`$OLD_ALPHA:scripts/north-star-guard.sh\` 的 \`UPSTREAM_EXCLUDES\`)。本次**没有合并、没有产出推送包**。"
+            echo ""
+            echo "处置:人工把上游改动移植进我方版本,落在一个**真合并提交**上(第二父 = \`$NEW_DEV\`),该 PR 用 \`gh pr merge --merge\` 合入,**禁止 squash / rebase**(docs/runbooks/ci.md §4)。这样 merge-base 前移,下一次同步不再命中这一批路径。"
+            echo ""
+            while IFS= read -r p; do
+              echo "### \`$p\`"
+              echo ""
+              echo "相关上游提交:"
+              echo ""
+              git log --format='- `%h` %s' "$MB..$NEW_DEV" -- "$p"
+              echo ""
+              echo "上游差异(\`$MB..$NEW_DEV\`):"
+              echo ""
+              echo '```diff'
+              git diff --no-renames "$MB" "$NEW_DEV" -- "$p"
+              echo '```'
+              echo ""
+              echo "我方差异(\`$MB..$OLD_ALPHA\`):"
+              echo ""
+              echo '```diff'
+              git diff --no-renames "$MB" "$OLD_ALPHA" -- "$p"
+              echo '```'
+              echo ""
+            done <<< "$touched"
+          } > "$report"
+          # 运行摘要单步上限 1 MiB;超出时截断,完整报告在产物 takeover-review 里。
+          head -c 900000 "$report" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(wc -c < "$report")" -gt 900000 ]; then
+            printf '\n\n…(摘要已截断,完整报告见本次 run 的产物 `takeover-review`)\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "review=true" >> "$GITHUB_OUTPUT"
+          echo "::error title=takeover upgrade review required::需要升级审查:上游候选触及 $(printf '%s\n' "$touched" | wc -l | tr -d ' ') 条接管路径,未合并、未产出推送包 —— 逐条路径、上游提交与双方差异见运行摘要与产物 takeover-review:"
+          echo "$touched"
+          exit 1
+
+      - name: Upload takeover review report
+        if: failure() && steps.takeover.outputs.review == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: takeover-review
+          path: ${{ runner.temp }}/takeover-review/
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Merge `dev` into `alpha` (local only, no push)
         run: |
           git checkout alpha
@@ -197,11 +281,34 @@ jobs:
               git commit -m "chore(sync): regenerate bun.lock after conflict resolution (B: pin+patch)"
             fi
           else
-            echo "::error::Unexpected merge conflicts — the only-add discipline was broken:"
+            # `#1566`:走到这里时 Takeover intake check 已证明上游候选没碰接管清单,所以剩下的冲突
+            # 路径既不是干净上游、也不是登记过的接管 —— 是未登记的偏离。
+            echo "::error title=unregistered deviation::未登记的偏离:按 ADR-029 登记或还原 —— 下列冲突路径不在接管清单(scripts/north-star-guard.sh UPSTREAM_EXCLUDES)里,alpha 却改过它们:"
             echo "$unexpected"
             git merge --abort
             exit 1
           fi
+
+      # `#1566`(I11)合并后第二次核对:接管路径相对合并前(`$OLD_ALPHA`)必须一个字节都没变。
+      # 清单与上一次核对同源:从合并前的可信树取守卫脚本跑 `--print-takeover`,不读合并后的树。
+      - name: Takeover paths unchanged by merge
+        run: |
+          guard="$(mktemp)"
+          git show "$OLD_ALPHA:scripts/north-star-guard.sh" > "$guard"
+          takeover="$(bash "$guard" --print-takeover)"
+          if [ -z "$takeover" ]; then
+            echo "::error::接管清单为空 —— 无法核对合并是否改动了接管路径。Aborting sync."
+            exit 1
+          fi
+          paths=()
+          while IFS= read -r p; do paths+=("$p"); done <<< "$takeover"
+          changed="$(git diff --name-only --no-renames "$OLD_ALPHA" alpha -- "${paths[@]}")"
+          if [ -n "$changed" ]; then
+            echo "::error title=takeover changed by merge::合并改动了接管路径(相对合并前 $OLD_ALPHA)—— 接管内容不许被自动改写。Aborting sync:"
+            echo "$changed"
+            exit 1
+          fi
+          echo "Merge left all ${#paths[@]} takeover paths unchanged."
 
       # REQ-012 前端锚点 tripwire(镜像上面的 ADR-015 prompt tripwire):reskin 挂的上游 data-* 锚点
       # 是非公开契约,sync 改名/删除不产生 git 冲突 → file-diff 守卫测不出(546-sync 静默回归实锤,
