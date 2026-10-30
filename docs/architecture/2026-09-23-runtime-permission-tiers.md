@@ -559,3 +559,4 @@ it.instance("真 Permission.ask:build(=「请求审批」档)对 bash/edit 是�
   真 `Permission.ask`;§7 的两份探针由它接替,探针本身仍不进 main)。renderer 层:`composer-state.test.ts`
   (三份请求体逐字节不同)、`shell-commands.test.ts`(真壳逐档点选,提交层 agent 三个互不相同)。
 - §8 第 1 条(Settings 的「自动批准权限」总闸)与 §10 的「打包版真机端到端」**本轮仍未处置 / 未跑**。
+- **现状更正(`alpha-code#1573`)**:本文 §3 表与 §11 说 `alpha-readonly` 的 `task` 是 allow、`alpha-ask` 与 `build` 只在 edit / bash 上不同,而那时模型派子任务、点名助手、斜杠命令换助手、直接子任务四条委派路径都绕过两档(子会话只继承父会话的 deny);现状(只读拒、请求审批先问、第三方与云工具在只读档每次询问)以方案基线 [`docs/design/req236-permissions-and-provenance.md`](../design/req236-permissions-and-provenance.md) §1.3 与 §2.3 为准。

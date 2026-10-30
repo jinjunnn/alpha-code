@@ -225,8 +225,12 @@ export function injectAlphaConfig(
     }
 
     //   2b. REQ-028:交互只读 agent(composer「只读」档的真载体)。与 alpha-automation 的差异:
-    //       交互场景有人在场 → question/task 允许(追问/委托子任务不破只读:子 agent 权限独立,
-    //       且 plan 类子任务本身只读);写/执行仍静态 deny —— 「真被 deny」而非 UI 文案。
+    //       交互场景有人在场 → question 允许;写/执行仍静态 deny —— 「真被 deny」而非 UI 文案。
+    //       委派**会**破只读:子会话只继承父**会话**的 deny(上游 agent/subagent-permissions.ts),
+    //       不继承本 agent 的规则,`general` 子任务照样能改文件、跑命令(REQ-236 方案 §1.3 F1)。
+    //       所以 `task` 只放行同档自身(如以只读档运行的 `/review`),委派给其它助手一律 deny;
+    //       点名助手 / 命令换助手 / 直接子任务三条入口在引擎 session/prompt.ts 按同一条规则问或拒。
+    //       第三方 MCP 与插件工具每次询问(方案 §2.0 D1):身份轴闸用本规则集求值,设置里启用了也问。
     //       逃生:ALPHA_READONLY_DISABLE。治理保护名单同 alpha-automation(X2,alpha-governance.ts)。
     if (!process.env.ALPHA_READONLY_DISABLE) {
       config.agent = {
@@ -248,6 +252,9 @@ export function injectAlphaConfig(
             edit: "deny",
             bash: "deny",
             external_directory: "deny",
+            task: { "*": "deny", "alpha-readonly": "allow" },
+            "mcp:*": "ask",
+            "plugin:*": "ask",
           },
         },
       }
@@ -257,10 +264,15 @@ export function injectAlphaConfig(
     //       此前该档提交时**不带 agent**,落到引擎默认 agent `build`,而 build 的规则集基底是 `"*": "allow"` ——
     //       真 `Permission.ask` 实测 edit/bash 直接放行不弹框,「逐次询问」这个副标题是假的
     //       (docs/architecture/2026-09-23-runtime-permission-tiers.md §3)。
-    //       语义 = build + edit/bash 改成 ask,**别的一格都不动**:引擎对 config agent 的合成是
+    //       语义 = build + edit/bash/task(派给其它助手)改成 ask,**别的一格都不动**:引擎对 config agent 的合成是
     //       `merge(defaults, user) + fromConfig(这里的 permission)`(agent/agent.ts config-agent 分支),
     //       而 build = `merge(defaults, {question: allow, plan_enter: allow}, user)`;所以这里要把 build 对 defaults
     //       的两条覆盖原样带上,否则「请求审批」会比「全部批准」少掉 question 工具。
+    //       REQ-236(方案 §2.3):委派给其它助手(模型派子任务 / 点名 / 命令换助手 / 直接子任务)派出前
+    //       也问一次 —— 子会话不继承本 agent 的 ask,不问就等于整段跳过「逐次询问」;同档自身不问。
+    //       另把 defaults 里 `doom_loop` 与 `read *.env*` 的 ask **原样重写一遍**:agent 自己的键排在
+    //       配置顶层 `permission` 之后,项目配置放宽不了它们(`*.env.example` 照 defaults 仍放行)。
+    //       刻意不写 `external_directory`:追加 `{"*":"ask"}` 会压掉 defaults 的临时/技能目录白名单。
     //       没有 prompt(见 alpha-agents.ts 抬头:给了 prompt 就会顶掉整份底座)。
     //       不设逃生 env:composer 选了这档就发 `agent: "alpha-ask"`,agent 缺席 = 引擎具名报错(fail-closed),
     //       不是静默回到全放行。治理保护名单同 alpha-readonly(ALPHA_INJECTED_AGENTS)。
@@ -279,6 +291,9 @@ export function injectAlphaConfig(
           websearch: "allow",
           edit: "ask",
           bash: "ask",
+          task: { "*": "ask", "alpha-ask": "allow" },
+          doom_loop: "ask",
+          read: { "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
         },
       },
     }

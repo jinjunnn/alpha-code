@@ -96,6 +96,11 @@ const engine = {
   v1Prompts: [] as Array<Record<string, unknown>>,
   v2Prompts: [] as Array<Record<string, unknown>>,
   createdSessions: [] as string[],
+  /** REQ-236 AC3:引擎登记的斜杠命令(`command.list`)与收到的 `session.command` 请求体。 */
+  commands: [] as Array<Record<string, unknown>>,
+  commandRequests: [] as Array<Record<string, unknown>>,
+  /** 首页入口交给 startChat 的 opts(档位随它走到 use-projects 的命令发送)。 */
+  startChatOpts: [] as Array<Record<string, unknown> | undefined>,
   seq: 0,
 }
 
@@ -111,6 +116,9 @@ function resetEngine() {
   engine.v1Prompts = []
   engine.v2Prompts = []
   engine.createdSessions = []
+  engine.commands = []
+  engine.commandRequests = []
+  engine.startChatOpts = []
   engine.seq = 0
 }
 resetEngine()
@@ -169,7 +177,7 @@ function v2Admit(sessionID: string, delivery: string) {
 }
 
 const sdkClient = {
-  command: { list: async () => ({ data: [] }) },
+  command: { list: async () => ({ data: engine.commands }) },
   session: {
     create: async () => {
       engine.createdSessions.push(SESSION_ID)
@@ -182,7 +190,10 @@ const sdkClient = {
       v1Admit(sessionID, (args["parts"] as Array<Record<string, unknown>>) ?? [], args["agent"] as string | undefined)
       return {}
     },
-    command: async () => ({ data: {} }),
+    command: async (args: Record<string, unknown>) => {
+      engine.commandRequests.push(args)
+      return { data: {} }
+    },
     abort: async () => ({}),
   },
   v2: {
@@ -245,9 +256,14 @@ Bun.plugin({
 
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
 const { AlphaSessionTimeline } = await import("../src/renderer/alpha-ui/session-timeline/session-timeline")
-const { composerModel, resetComposerModelProjection, setComposerAgent, setComposerModel } = await import(
-  "../src/renderer/alpha-ui/composer-state"
-)
+const {
+  composerModel,
+  resetComposerModelProjection,
+  setComposerAgent,
+  setComposerModel,
+  setComposerPerm,
+  DEFAULT_PERM,
+} = await import("../src/renderer/alpha-ui/composer-state")
 const { createComposerFocusChannel } = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-core")
 
 /* ── composer 的模型链前置(与既有 composer 组件用例同一套 fixture)────────────── */
@@ -309,7 +325,8 @@ const projects = {
   createSession: async () => undefined,
   /** 首页入口:与生产 use-projects.startChat 同样的两步(v1 session.create + v1 promptAsync)。
    *  第一条消息走的就是这条 —— #652 里它一直是好的,坏的只有会话页那条。 */
-  startChat: async (_directory: string, text: string, extraParts?: unknown[]) => {
+  startChat: async (_directory: string, text: string, extraParts?: unknown[], opts?: Record<string, unknown>) => {
+    engine.startChatOpts.push(opts)
     const created = await sdkClient.session.create()
     const id = created.data.id
     const prompted = await sdkClient.session.promptAsync({
@@ -398,6 +415,7 @@ afterEach(() => {
   document.body.replaceChildren()
   setComposerModel(null)
   setComposerAgent(null)
+  setComposerPerm(DEFAULT_PERM)
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -469,6 +487,37 @@ describe("#652 会话内连发三条:每一条都必须渲染出来", () => {
 
     expect(host.querySelector("textarea")!.value).toBe("会被拒绝的一条")
     expect(engine.message[SESSION_ID]).toHaveLength(2)
+  })
+})
+
+/* ── REQ-236 AC3(`#1573`):composer 发出的斜杠命令请求带档位 agent ——
+   缺席时引擎以默认助手(build,`*: allow`)运行命令,「只读」「请求审批」被整段绕过(方案 §1.3)。
+   判据是**生产 composer 真发出去的请求体**:会话内那一处直接读 `session.command` 的入参;首页那一处
+   把档位交给 `startChat`,它的 `session.command` 请求体由 use-projects.cases.ts 驱动真 startChat 断言。
+   变异验证:把 alpha-composer.tsx 命令请求里的 `agent` 删掉,本用例「请求审批」「只读」两格转红。 */
+describe("REQ-236 AC3:斜杠命令带档位 agent(与普通发送同一张档位表)", () => {
+  test("会话内 /review:全部批准不带、请求审批 alpha-ask、只读 alpha-readonly;首页 /review 把档位交给 startChat", async () => {
+    engine.commands = [{ name: "review", source: "command" }]
+    const host = mountSessionSurface(() => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    const seen: Record<string, unknown> = {}
+    for (const perm of ["allow", "ask", "readonly"] as const) {
+      setComposerPerm(perm)
+      engine.commandRequests = []
+      await send(host, "session", "/review")
+      await waitFor(() => expect(engine.commandRequests).toHaveLength(1))
+      const request = engine.commandRequests[0]!
+      expect(request["command"]).toBe("review")
+      seen[perm] = "agent" in request ? request["agent"] : "<absent>"
+
+      engine.startChatOpts = []
+      await send(host, "home", "/review")
+      await waitFor(() => expect(engine.startChatOpts).toHaveLength(1))
+      expect(engine.startChatOpts[0]?.["perm"]).toBe(perm)
+    }
+    // 「全部批准」不带 agent 键(改动前的请求逐字不变),另两档带各自的载体。
+    expect(seen).toEqual({ allow: "<absent>", ask: "alpha-ask", readonly: "alpha-readonly" })
   })
 })
 

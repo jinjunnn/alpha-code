@@ -152,11 +152,26 @@ const jsonResponse = (body: unknown, headers?: Record<string, string>) =>
     headers: { "content-type": "application/json", ...headers },
   })
 
-globalThis.fetch = ((input: unknown) => {
+/** REQ-236 AC3:首页斜杠命令场景 —— `/command` 登记一条 review,`/session/:id/command` 记下真请求体。 */
+let commandScenario = false
+const commandBodies: Array<Record<string, unknown>> = []
+
+globalThis.fetch = ((input: unknown, init?: RequestInit) => {
   const url = String(input instanceof URL ? input.href : ((input as { url?: string })?.url ?? input))
   if (url.includes("/global/health")) {
     healthProbes++
     return Promise.resolve(new Response("{}", { status: healthReachable ? 200 : 503 }))
+  }
+  if (commandScenario) {
+    const parsed = new URL(url)
+    if (parsed.pathname === "/command") return Promise.resolve(jsonResponse([{ name: "review", source: "command" }]))
+    if (/^\/session\/[^/]+\/command$/.test(parsed.pathname)) {
+      const text = input instanceof Request ? input.text() : Promise.resolve(String(init?.body ?? ""))
+      return text.then((body) => {
+        commandBodies.push(JSON.parse(body) as Record<string, unknown>)
+        return jsonResponse({ info: { id: "msg_1573" }, parts: [] })
+      })
+    }
   }
   if (sidebarScenario) {
     const parsed = new URL(url)
@@ -297,6 +312,8 @@ afterEach(() => {
   activeDisposals.splice(0).forEach((dispose) => dispose())
   document.body.replaceChildren()
   sidebarScenario = false
+  commandScenario = false
+  commandBodies.splice(0)
   experimentalPageRequests = 0
   projectSessionDirectories.splice(0)
   globalEventController = undefined
@@ -571,6 +588,31 @@ test("REQ-126 不变量5:默认目录**查询**桥炸了不得连坐 —— 普�
   expect(outcome).toBe(pending)
 
   defaultDirReply = DEFAULT_WORKSPACE_DIR
+})
+
+// REQ-236 AC3(`#1573`):首页斜杠命令经**真** startChat → 真 SDK client → fetch 的请求体带档位 agent。
+// 缺席时引擎以默认助手运行命令,「只读」「请求审批」被整段绕过(方案 §1.3)。会话内那一处的请求体在
+// session-second-send.cases.ts 断言;首页 composer 把档位交给 startChat 也在那里断言。
+// 变异验证:把 use-projects.ts 命令请求里的 `agent` 删掉,本用例「请求审批」「只读」两格转红。
+test("REQ-236 AC3:首页斜杠命令的 session.command 请求体 —— 全部批准不带 agent、请求审批 alpha-ask、只读 alpha-readonly", async () => {
+  healthReachable = true
+  commandScenario = true
+  const { api } = mountHook(0)
+  bridgeCb!({ status: "recovering", generation: 1, reason: "boot" })
+  await waitFor(() => expect(api.sdk()).toBeDefined())
+
+  const seen: Record<string, unknown> = {}
+  for (const perm of ["allow", "ask", "readonly"] as const) {
+    commandBodies.splice(0)
+    // existingSessionID:跳过建会话,直接走命令分支(与「重试复用孤儿会话」同一条路径)。
+    const id = await api.startChat("/repos/alpha-code", "/review HEAD~1", [], { perm, existingSessionID: "ses_1573" })
+    expect(id).toBe("ses_1573")
+    expect(commandBodies).toHaveLength(1)
+    expect(commandBodies[0]!["command"]).toBe("review")
+    expect(commandBodies[0]!["arguments"]).toBe("HEAD~1")
+    seen[perm] = "agent" in commandBodies[0]! ? commandBodies[0]!["agent"] : "<absent>"
+  }
+  expect(seen).toEqual({ allow: "<absent>", ask: "alpha-ask", readonly: "alpha-readonly" })
 })
 
 test("#692 非 Git 会话冷加载与 SSE 新建都进入真实目录项目,且从不实例化或显示根目录", async () => {

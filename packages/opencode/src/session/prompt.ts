@@ -264,6 +264,31 @@ const layer = Layer.effect(
         .pipe(Effect.catchCause((cause) => Effect.logError("failed to generate title", { error: Cause.squash(cause) })))
     })
 
+    // REQ-236(方案 §2.3 E3/E4):把活交给**另一个**助手之前,按发起方档位(它的 agent 规则 + 会话规则)
+    // 问一次 `task`。子会话只继承父**会话**的 deny(上游 agent/subagent-permissions.ts),而三档写在 agent
+    // 上 —— 不在派出前问,「只读」「请求审批」就被委派整段绕过。deny ⇒ 具名拒绝;ask ⇒ 挂起等批准
+    // (拒绝/超时 fail-closed);allow ⇒ 静默通过(「全部批准」的 `*: allow`,行为不变)。同一助手不问。
+    // `always: []`:这一问不产生会话放行。
+    const askDelegation = Effect.fn("SessionPrompt.askDelegation")(function* (input: {
+      from: string
+      to: string
+      session: Session.Info
+      description: string
+    }) {
+      if (input.to === input.from) return
+      const from = yield* agents.get(input.from)
+      yield* permission
+        .ask({
+          permission: TaskTool.id,
+          patterns: [input.to],
+          always: [],
+          sessionID: input.session.id,
+          metadata: { description: input.description, subagent_type: input.to },
+          ruleset: Permission.merge(from?.permission ?? [], input.session.permission ?? []),
+        })
+        .pipe(Effect.orDie)
+    })
+
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
       task: SessionV1.SubtaskPart
       model: Provider.Model
@@ -286,26 +311,64 @@ const layer = Layer.effect(
         throw error
       }
       const taskRuleset = Permission.merge(taskAgent.permission, session.permission ?? [])
-      if (
-        Permission.disabled([{ technicalId: TaskTool.id, identity: taskTool.identity }], taskRuleset).has(TaskTool.id)
+      // REQ-236(#1573 r1):派出前的三道闸任一拒绝(含询问被拒 / 超时)⇒ 先把这条子任务写成一条已结束、
+      // 带 error 的助手消息,再抛。否则子任务 part 之后没有已结束的助手消息,MessageV2.latest 仍把它当待办,
+      // 下一条消息的 loop 又把它交回这里 —— 发起方已换成新消息的档位,旧子任务被重问或重派。
+      yield* Effect.gen(function* () {
+        // REQ-236 E3:直接子任务(`subtask:true` 或 subagent 模式的命令)派给与本轮发起方不同的助手 ⇒
+        // 先按发起方档位问。下面的闸用的是**目标**助手的规则集,父档位在那里不参与。
+        yield* askDelegation({ from: lastUser.agent, to: task.agent, session, description: task.description })
+        if (
+          Permission.disabled([{ technicalId: TaskTool.id, identity: taskTool.identity }], taskRuleset).has(TaskTool.id)
+        )
+          return yield* Effect.die(new PermissionV1.DeniedError({ ruleset: taskRuleset }))
+        // #1129 / #724 §6 E6:direct subtask 绕过 SessionTools,上面的 disabled 检查只完成
+        // deny;identity=ask 必须同样成立。在任何副作用(消息/part 持久化、plugin hook、
+        // subsession/Task execute)之前走与 E1-E4 同一个 gate:ruleset 轴 + 策略**文档轴**
+        // (调用时重读;task 是 builtin 类,binding 为应用常量)。deny ⇒ 具名拒绝(与上面
+        // 同型,双保险)、ask ⇒ 挂起等批准(reject/超时即 fail-closed,只写下面那条已结束的拒绝消息)、
+        // allow ⇒ 静默通过(builtin 类默认 enabled,agent 默认 `*: allow` 底保持现状)。
+        yield* AlphaToolPolicyGate.gateToolExecution({
+          policy: toolPolicy,
+          permission,
+          subject: Effect.succeed(AlphaToolPolicyGate.builtinSubject(taskTool.identity, { kind: "not-asserted" })),
+          ruleset: taskRuleset,
+          sessionID,
+          metadata: { agent: task.agent, description: task.description },
+        }).pipe(Effect.orDie)
+      }).pipe(
+        Effect.catchCause((cause) => {
+          const refusal = Cause.squash(cause)
+          if (
+            !(
+              refusal instanceof PermissionV1.DeniedError ||
+              refusal instanceof PermissionV1.RejectedError ||
+              refusal instanceof PermissionV1.CorrectedError
+            )
+          )
+            return Effect.failCause(cause)
+          const now = Date.now()
+          return sessions
+            .updateMessage({
+              id: MessageID.ascending(),
+              role: "assistant",
+              parentID: task.messageID,
+              sessionID,
+              mode: task.agent,
+              agent: task.agent,
+              variant: lastUser.model.variant,
+              path: { cwd: ctx.directory, root: ctx.worktree },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              modelID: taskModel.id,
+              providerID: taskModel.providerID,
+              time: { created: now, completed: now },
+              finish: "error",
+              error: MessageV2.fromError(refusal, { providerID: taskModel.providerID }),
+            })
+            .pipe(Effect.andThen(Effect.failCause(cause)))
+        }),
       )
-        return yield* Effect.die(new PermissionV1.DeniedError({ ruleset: taskRuleset }))
-      // #1129 / #724 §6 E6:direct subtask 绕过 SessionTools,上面的 disabled 检查只完成
-      // deny;identity=ask 必须同样成立。在任何副作用(消息/part 持久化、plugin hook、
-      // subsession/Task execute)之前走与 E1-E4 同一个 gate:ruleset 轴 + 策略**文档轴**
-      // (调用时重读;task 是 builtin 类,binding 为应用常量)。deny ⇒ 具名拒绝(与上面
-      // 同型,双保险)、ask ⇒ 挂起等批准(reject/超时即 fail-closed,什么都没写盘)、
-      // allow ⇒ 静默通过(builtin 类默认 enabled,agent 默认 `*: allow` 底保持现状)。
-      yield* AlphaToolPolicyGate.gateToolExecution({
-        policy: toolPolicy,
-        permission,
-        subject: Effect.succeed(
-          AlphaToolPolicyGate.builtinSubject(taskTool.identity, { kind: "not-asserted" }),
-        ),
-        ruleset: taskRuleset,
-        sessionID,
-        metadata: { agent: task.agent, description: task.description },
-      }).pipe(Effect.orDie)
       const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",
@@ -1262,7 +1325,13 @@ const layer = Layer.effect(
 
           const outcome: "break" | "continue" = yield* Effect.gen(function* () {
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
-            const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+            // REQ-236 E2:用户点名助手(agent part)只在本轮档位对**每个**被点名的助手求值 allow 时才跳过
+            // task 工具的询问;否则 task 工具照常问(「请求审批」问、「只读」拒)。「全部批准」`*: allow` 不变。
+            const named = lastUserMsg?.parts.filter((p): p is SessionV1.AgentPart => p.type === "agent") ?? []
+            const delegationRuleset = Permission.merge(agent.permission, session.permission ?? [])
+            const bypassAgentCheck =
+              named.length > 0 &&
+              named.every((p) => Permission.evaluate(TaskTool.id, p.name, delegationRuleset).action === "allow")
             const promptOps = yield* ops()
 
             const tools = yield* SessionTools.resolve({
@@ -1481,6 +1550,15 @@ const layer = Layer.effect(
         (part) => part.type !== "file" || !inputFiles.has(fileURLToPath(part.url)),
       )
       const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
+      // REQ-236 E4:非子任务命令自带了与发起档位不同的助手 ⇒ 先按发起档位问;被拒则命令不执行。
+      // 子任务命令在 handleSubtask 的 E3 问(同一规则),这里不重复 —— 每条入口只问一次。
+      if (!isSubtask && input.agent)
+        yield* askDelegation({
+          from: input.agent,
+          to: agent.name,
+          session: yield* sessions.get(input.sessionID).pipe(Effect.orDie),
+          description: cmd.description ?? input.command,
+        })
       const parts = isSubtask
         ? [
             {

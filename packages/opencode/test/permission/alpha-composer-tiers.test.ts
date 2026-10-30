@@ -19,8 +19,8 @@
 //        反样本 alpha-readonly + bash ⇒ `DeniedError`(readonly 是 deny 不是 ask,行为逐字不变 = AC3);
 //        正样本 build + external_directory ⇒ `UnansweredError`(证明探针连 build 的 ask 也读得出来)。
 //   AC1' 批了就走:alpha-ask + bash,`reply: once` 之后 Exit 成功 —— 「问」不是「拒」。
-//   矩阵 alpha-ask 与 build 对每一把内置权限键的 `evaluate` 结果**只在 edit / bash 上不同**,工具表(`disabled`)
-//        逐字相同 —— 「请求审批」= 默认档 + 多问一句,不多不少;alpha-ask 没有 prompt(有就顶掉底座)。
+//   矩阵 alpha-ask 与 build 对每一把内置权限键的 `evaluate` 结果**只在 edit / bash / task 上不同**(task 是 REQ-236
+//        `#1573` 加的:派给其它助手前也问),工具表(`disabled`)逐字相同;alpha-ask 没有 prompt(有就顶掉底座)。
 //
 // 变异实测(交付时实跑,结论写进 PR):把 alpha-config-injection.ts 里 alpha-ask 的 `bash: "ask"` 改成
 // `"allow"` ⇒ AC1 的 bash 臂与矩阵臂当场红;删掉 `question: "allow"` ⇒ 矩阵臂红(question 从工具表消失)。
@@ -242,7 +242,7 @@ it.instance(
 )
 
 it.instance(
-  "矩阵:alpha-ask 与 build 只在 edit / bash 上不同(其余每一把键逐字相同、工具表逐字相同、没有 prompt);alpha-readonly 仍是 deny",
+  "矩阵:alpha-ask 与 build 只在 edit / bash / task 上不同(其余每一把键逐字相同、工具表逐字相同、没有 prompt);alpha-readonly 仍是 deny",
   () =>
     Effect.gen(function* () {
       const ask = yield* rulesetOf("alpha-ask")
@@ -253,11 +253,14 @@ it.instance(
       const askRow = row(ask)
       const buildRow = row(build)
       const diff = PERMISSION_KEYS.filter((k) => askRow[k] !== buildRow[k]).sort()
-      expect(diff).toEqual(["bash", "edit"])
+      // REQ-236(`#1573`,方案 §2.3):「请求审批」派给其它助手前也问 —— task 是第三把不同的键。
+      expect(diff).toEqual(["bash", "edit", "task"])
       expect(askRow.bash).toBe("ask")
       expect(askRow.edit).toBe("ask")
+      expect(askRow.task).toBe("ask")
       expect(buildRow.bash).toBe("allow")
       expect(buildRow.edit).toBe("allow")
+      expect(buildRow.task).toBe("allow")
       // 「请求审批」不许比默认档少工具:question 在 build 上是 allow,alpha-ask 也必须是。
       expect(askRow.question).toBe("allow")
       // 出厂仍会问的三类不因本票放宽(边界:「全部批准」是给默认行为一个诚实的名字,不是新增权限)。

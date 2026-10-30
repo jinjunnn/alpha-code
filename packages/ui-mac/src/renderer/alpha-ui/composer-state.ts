@@ -48,6 +48,13 @@ export const PERM_AGENT: Record<PermMode, string | null> = {
   readonly: READONLY_AGENT,
 }
 
+/** 该档**强制**的 agent;`undefined` = 不压。普通发送(`buildPromptRequest`)与两处斜杠命令发送
+ *  (会话内 `alpha-composer`、首页 `use-projects.startChat`)共用这一问 —— 命令请求只带它、不带手选档位,
+ *  所以「全部批准」下命令请求与改动前逐字相同(REQ-236 方案 §2.3 E5)。 */
+export function tierAgent(mode: PermMode): string | undefined {
+  return PERM_AGENT[mode] ?? undefined
+}
+
 /** 该档是否压过手选档位(计划 chip 置灰、Shift+Tab 不切、装配弹窗计划行禁用都读这一问)。 */
 export function permLocksAgent(mode: PermMode): boolean {
   return PERM_AGENT[mode] !== null
@@ -350,7 +357,7 @@ export function buildPromptRequest(input: {
       providerID: input.model.providerID,
       ...(input.effort && input.model.variants.includes(input.effort) ? { variant: input.effort } : {}),
     }
-  const forced = PERM_AGENT[input.perm]
+  const forced = tierAgent(input.perm)
   if (forced) req.agent = forced
   else if (input.agent) req.agent = input.agent
   return req
