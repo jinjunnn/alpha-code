@@ -68,7 +68,10 @@ const cfg = {
 }
 
 function proxyTunnelFailure(status: number) {
-  const inner = Object.assign(new Error(`Proxy response (${status}) !== 200 when HTTP Tunneling`), { name: "AbortError", code: "UND_ERR_ABORTED" })
+  const inner = Object.assign(new Error(`Proxy response (${status}) !== 200 when HTTP Tunneling`), {
+    name: "AbortError",
+    code: "UND_ERR_ABORTED",
+  })
   return new TypeError("fetch failed", { cause: new Error("Request was cancelled.", { cause: inner }) })
 }
 
@@ -77,7 +80,11 @@ const URL_WITH_SECRET = `https://docs.example.test/page?token=${SECRET}`
 
 const summary = Layer.succeed(
   SessionSummary.Service,
-  SessionSummary.Service.of({ summarize: () => Effect.void, diff: () => Effect.succeed([]), computeDiff: () => Effect.succeed([]) }),
+  SessionSummary.Service.of({
+    summarize: () => Effect.void,
+    diff: () => Effect.succeed([]),
+    computeDiff: () => Effect.succeed([]),
+  }),
 )
 const root = LayerNode.group([
   SessionProcessor.node,
@@ -95,7 +102,9 @@ const replacements = [
 ] as const
 
 function withLLM(stream: () => Stream.Stream<LLMEvent, unknown>) {
-  return testEffect(LayerNode.compile(root, [...replacements, [LLM.node, Layer.succeed(LLM.Service, LLM.Service.of({ stream }))]]))
+  return testEffect(
+    LayerNode.compile(root, [...replacements, [LLM.node, Layer.succeed(LLM.Service, LLM.Service.of({ stream }))]]),
+  )
 }
 
 /** 工具那一格:webfetch 调用,随后一次带原错误的 tool-error。 */
@@ -112,7 +121,12 @@ function toolFailure(error: unknown) {
     )
 }
 
-const agent: Agent.Info = { name: "build", mode: "primary", options: {}, permission: [{ permission: "*", pattern: "*", action: "allow" }] }
+const agent: Agent.Info = {
+  name: "build",
+  mode: "primary",
+  options: {},
+  permission: [{ permission: "*", pattern: "*", action: "allow" }],
+}
 
 /** 跑一轮生产 processor,返回落库后的助手消息与 parts。 */
 const runTurn = (dir: string) =>
@@ -129,7 +143,13 @@ const runTurn = (dir: string) =>
       model: ref,
       time: { created: Date.now() },
     })
-    yield* session.updatePart({ id: PartID.ascending(), messageID: parent.id, sessionID: chat.id, type: "text", text: "go" })
+    yield* session.updatePart({
+      id: PartID.ascending(),
+      messageID: parent.id,
+      sessionID: chat.id,
+      type: "text",
+      text: "go",
+    })
     const msg: SessionV1.Assistant = {
       id: MessageID.ascending(),
       role: "assistant",
@@ -149,7 +169,14 @@ const runTurn = (dir: string) =>
     const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
     const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
     yield* handle.process({
-      user: { id: parent.id, sessionID: chat.id, role: "user", time: parent.time, agent: "build", model: ref } satisfies SessionV1.User,
+      user: {
+        id: parent.id,
+        sessionID: chat.id,
+        role: "user",
+        time: parent.time,
+        agent: "build",
+        model: ref,
+      } satisfies SessionV1.User,
       sessionID: chat.id,
       model: mdl,
       agent,
@@ -160,10 +187,13 @@ const runTurn = (dir: string) =>
     return { message: handle.message, parts: yield* MessageV2.parts(msg.id) }
   })
 
-const toolOf = (parts: readonly SessionV1.Part[]) => parts.find((part): part is SessionV1.ToolPart => part.type === "tool")
+const toolOf = (parts: readonly SessionV1.Part[]) =>
+  parts.find((part): part is SessionV1.ToolPart => part.type === "tool")
 
 const effectTransport = (cause: unknown) =>
-  new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request: HttpClientRequest.get(URL_WITH_SECRET), cause }) })
+  new HttpClientError.HttpClientError({
+    reason: new HttpClientError.TransportError({ request: HttpClientRequest.get(URL_WITH_SECRET), cause }),
+  })
 
 withLLM(toolFailure(effectTransport(proxyTunnelFailure(503)))).live(
   "AC4 tool: a webfetch transport failure keeps metadata.alphaNetFailure on the persisted ToolPart",

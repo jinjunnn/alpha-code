@@ -226,11 +226,16 @@ function refused() {
 //    (`TypeError: fetch failed` ← `Error: Request was cancelled.` ← undici `AbortError UND_ERR_ABORTED`);
 //  · tls-cert —— node 对过期证书的错误码与消息(`CERT_HAS_EXPIRED` / `certificate has expired`)。
 function proxyDenied() {
-  const inner = Object.assign(new Error("Proxy response (403) !== 200 when HTTP Tunneling"), { name: "AbortError", code: "UND_ERR_ABORTED" })
+  const inner = Object.assign(new Error("Proxy response (403) !== 200 when HTTP Tunneling"), {
+    name: "AbortError",
+    code: "UND_ERR_ABORTED",
+  })
   return new TypeError("fetch failed", { cause: new Error("Request was cancelled.", { cause: inner }) })
 }
 function certExpired() {
-  return new TypeError("fetch failed", { cause: Object.assign(new Error("certificate has expired"), { code: "CERT_HAS_EXPIRED" }) })
+  return new TypeError("fetch failed", {
+    cause: Object.assign(new Error("certificate has expired"), { code: "CERT_HAS_EXPIRED" }),
+  })
 }
 
 type Mode = "refuse" | "hold" | "serve" | "unauthorized" | "policy" | "cert" | "not-found"

@@ -114,7 +114,8 @@ function classifyNode(node: ErrorNode, path: NetFailurePath): NetFailure | undef
   if (code === "UND_ERR_CONNECT_TIMEOUT") return { layer: connectTimeoutLayer(message, path), code }
   if (code.startsWith("ERR_SSL_")) return { layer: "tls-failed", code }
   if (code === "ECONNRESET" && message.includes("before secure TLS connection")) return { layer: "tls-failed", code }
-  if (code.startsWith("CERT_") || code.includes("SELF_SIGNED") || CERT_CODES.has(code)) return { layer: "tls-cert", code }
+  if (code.startsWith("CERT_") || code.includes("SELF_SIGNED") || CERT_CODES.has(code))
+    return { layer: "tls-cert", code }
   const status = httpStatusOf(node)
   if (status !== undefined) return { layer: "http", code: String(status) }
   if (node.name === "TimeoutError") return { layer: "timeout", code: "TimeoutError" }
@@ -147,7 +148,10 @@ function httpStatusOf(node: ErrorNode): number | undefined {
  * sidecarEgressProxyEnv),NO_PROXY 里的名字直连。这里读的就是 sidecar 写进来的那两份值,不另持一份清单;
  * NO_PROXY 只按逐项精确名字匹配 —— 那是 sidecar 写的唯一形状。main 侧的请求一律按 `{ via: "other" }`。
  */
-export function engineNetFailurePath(target: string | URL | undefined, env: Record<string, string | undefined>): NetFailurePath {
+export function engineNetFailurePath(
+  target: string | URL | undefined,
+  env: Record<string, string | undefined>,
+): NetFailurePath {
   const url = typeof target === "string" ? (URL.canParse(target) ? new URL(target) : undefined) : target
   if (!url) return { via: "other" }
   const proxy = url.protocol === "https:" ? (env.HTTPS_PROXY ?? env.https_proxy) : (env.HTTP_PROXY ?? env.http_proxy)

@@ -145,7 +145,9 @@ const layer = Layer.effect(
         const net = classifyNetFailure(e, engineNetFailurePath(typeof url === "string" ? url : undefined, env))
         const noAnswer = APICallError.isInstance(e) && e.statusCode === undefined
         if (!net && !noAnswer) return error
-        const tag: Record<string, string> = net ? { alphaNetLayer: net.layer, alphaNetCode: net.code } : { alphaNetCode: "unattributed" }
+        const tag: Record<string, string> = net
+          ? { alphaNetLayer: net.layer, alphaNetCode: net.code }
+          : { alphaNetCode: "unattributed" }
         return { ...error, data: { ...error.data, metadata: { ...error.data.metadata, ...tag } } }
       }
 
@@ -218,7 +220,10 @@ const layer = Layer.effect(
         // #1572 AC4: `errorMessage` below keeps only the top-level message (`Transport error (GET …)`); take the network
         // layer from the original error first and keep it next to the streamed metadata. Only layer and code are stored.
         const target = match.part.state.input.url
-        const net = classifyNetFailure(error, engineNetFailurePath(typeof target === "string" ? target : undefined, env))
+        const net = classifyNetFailure(
+          error,
+          engineNetFailurePath(typeof target === "string" ? target : undefined, env),
+        )
         yield* session.updatePart({
           ...match.part,
           state: {
