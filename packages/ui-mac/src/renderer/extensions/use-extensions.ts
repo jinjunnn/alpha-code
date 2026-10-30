@@ -225,6 +225,14 @@ export function projectMcpStatusView(state: ProjectMcpState | undefined) {
       tone: "warn" as const,
       textKey: "alpha.ext.projectMcpShadowed" as const,
     }
+  // `#1563`:引擎还在后台启动它(准备中)。复用定制中心三档视图给同一状态的文案键,不新造文案(定稿归 T19)。
+  if (state === "pending")
+    return {
+      state,
+      connected: false,
+      tone: "muted" as const,
+      textKey: "alpha.ext.hubReasonNotLoaded" as const,
+    }
   return {
     state: "unverifiable" as const,
     connected: false,

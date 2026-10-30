@@ -21,7 +21,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 import type { ServerReadyData } from "../preload/types"
 
-export type ProjectMcpActivationVerdict = "active" | "shadowed" | "unverifiable"
+export type ProjectMcpActivationVerdict = "active" | "shadowed" | "pending" | "unverifiable"
 
 /**
  * Prove that a live MCP status belongs to D's durable project leaf before consulting the
@@ -115,7 +115,10 @@ export async function probeProjectMcpActivation(
     )
     if (!statusResponse.ok || !isRecord(statusResponse.data)) return "unverifiable"
     const status = statusResponse.data[name]
-    return isRecord(status) && status.status === "connected" ? "active" : "unverifiable"
+    if (isRecord(status) && status.status === "connected") return "active"
+    // `#1563`:引擎还在后台启动这台服务 —— 准备中,不是「核验不了」。
+    if (isRecord(status) && status.status === "pending") return "pending"
+    return "unverifiable"
   } catch {
     return "unverifiable"
   }

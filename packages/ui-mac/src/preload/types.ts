@@ -272,6 +272,7 @@ export type ProjectMcpState =
   | "reload-pending"
   | "active"
   | "shadowed"
+  | "pending"
   | "unverifiable"
 export type InstallReceipt = {
   /** catalog entry id (e.g. "mcp:markitdown") or "user:<name>" for created/imported items */

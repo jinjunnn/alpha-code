@@ -176,13 +176,15 @@ describe("REQ-136 project MCP activation projection", () => {
     ).toEqual(connectedByName)
   })
 
-  test("awaiting, denied, disabled, reload-pending, shadowed, and unverifiable stay distinct", () => {
+  test("awaiting, denied, disabled, reload-pending, shadowed, pending, and unverifiable stay distinct", () => {
     const states = [
       "awaiting-consent",
       "consent-denied",
       "disabled",
       "reload-pending",
       "shadowed",
+      // #1563:引擎还在后台启动它(准备中)
+      "pending",
       "unverifiable",
     ] as const
     const views = states.map(projectMcpStatusView)
@@ -192,6 +194,7 @@ describe("REQ-136 project MCP activation projection", () => {
       "disabled",
       "reload-pending",
       "shadowed",
+      "pending",
       "unverifiable",
     ])
     expect(views.every((view) => !view.connected)).toBe(true)

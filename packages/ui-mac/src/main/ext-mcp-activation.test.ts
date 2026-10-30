@@ -67,6 +67,21 @@ describe("project MCP activation provenance probe (REQ-136 C5)", () => {
     expect(JSON.stringify(verdict)).not.toContain("demo-mcp")
   })
 
+  // 审计 F2:引擎还在后台启动这台项目 MCP(pending)—— 判据给独立的 pending,不折成「核验不了」。
+  test("#1563: a provenance-proven D leaf whose engine status is pending is pending, not unverifiable", async () => {
+    const verdict = await probeProjectMcpActivation("demo", project, ready, {
+      configuredGlobalNames: emptyGlobalNames,
+      fetch: fetchFor((url) => {
+        if (url.pathname === "/global/config") return Response.json({})
+        if (url.pathname === "/config") return Response.json({ mcp: { demo: durableLeaf } })
+        if (url.pathname === "/mcp") return Response.json({ demo: { status: "pending" } })
+        return new Response("not found", { status: 404 })
+      }, []),
+    })
+
+    expect(verdict).toBe("pending")
+  })
+
   test("accepts JSONC trailing commas in both the durable project file and injected global config", async () => {
     writeFileSync(
       join(project, ".code-puppy", "alpha.jsonc"),

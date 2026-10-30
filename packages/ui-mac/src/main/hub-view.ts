@@ -283,7 +283,10 @@ export function createHubViewService(deps: HubViewDeps): HubViewService {
       if (row.scope === "project") {
         if (!project) return { ok: false, detail: "project MCP outside its project" }
         const state = await deps.projectMcpState(row.name, project.projectDir)
-        return state === "active" ? { ok: true } : { ok: false, detail: `project MCP ${state}` }
+        if (state === "active") return { ok: true }
+        // `#1563`:pending = 引擎还在后台启动它(准备中);重载修不好「还没连上」,不出重载入口。
+        if (state === "pending") return { ok: false, detail: "project MCP pending", reloadable: false }
+        return { ok: false, detail: `project MCP ${state}` }
       }
       const status = await verifyInstalledMcp(row.name, directory, deps.awaitServer, fetchImpl, { awaitServer: timeoutMs, status: timeoutMs })
       if (status.status === "connected") return { ok: true }
