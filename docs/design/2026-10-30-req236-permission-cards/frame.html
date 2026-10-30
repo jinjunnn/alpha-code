@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>确认卡与工具来源 · 组件增量</title>
+<link rel="stylesheet" href="../current/capability-authorize/design.css" />
+<link rel="stylesheet" href="../current/composer/design.css" />
+<link rel="stylesheet" href="../current/conversation-timeline/design.css" />
+<style>
+/* 只给改动的那几块加样式,只用 --a-* token。其余标记原样取自三份活稿:
+   确认卡外壳 = conversation-timeline §8.6 ③(.pf-ask),卡内行 = capability-authorize(.alpha-ext-authz-*),
+   运行权限菜单 = composer(tpl-perm),步骤行与详情 = conversation-timeline §8.5(.pf-*)。 */
+.pc-box{margin:0 0 12px}
+.pf-ask .alpha-ext-authz-box{background:var(--a-surface)}
+.pc-err{color:var(--a-error)}
+.pc-tiers .menu-item{flex-wrap:wrap;align-items:flex-start;row-gap:2px}
+.pc-tiers .menu-item .desc{flex-basis:100%;margin-left:26px;line-height:1.5}
+.pc-foot{margin:4px 0 0;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.pc-dev{padding:0 12px 10px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></symbol>
+  <symbol id="i-web" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></symbol>
+  <symbol id="i-read" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-task" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19a4.5 4.5 0 0 0 .8-8.94 6 6 0 0 0-11.7 1.4A3.75 3.75 0 0 0 7 19z"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M4 7l8-4 8 4-8 4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M4 8h4V6a2 2 0 1 1 4 0v2h4v4h-2a2 2 0 1 0 0 4h2v4H4z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14M12 17.5h.01"/></symbol>
+  <symbol id="i-mark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
+</defs></svg>
+
+<div class="topbar">
+  <div class="brand">Code Puppy · 确认卡与工具来源(组件增量)</div>
+  <div class="spacer"></div>
+  <nav><a href="#approval-states">确认卡</a><a href="#delegation">委派</a><a href="#tier-menu">运行权限</a><a href="#source-location">来源与位置</a><a href="#first-party-plugin">随包工具</a><a href="#developer-details">开发者详情</a><a href="#copy">文案</a></nav>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+  <h2 class="t">确认卡写清记住什么;每一步标出来源和位置</h2>
+
+  <div class="pf-rel" id="relation">
+    <h3>与上一稿的关系</h3>
+    <ul>
+      <li><b>继承</b>:批准面板外壳、标题、按钮排布与焦点(<code>current/conversation-timeline</code> §8.6 ③);卡内行沿用能力授权框的行样式(<code>current/capability-authorize</code>);运行权限菜单(<code>current/composer</code> 的 tpl-perm);工作过程三层与第三方不显示内容的规则(§8.5)。</li>
+      <li><b>改了</b>:确认卡中间按钮按请求种类变化,多一个「记住」框;运行权限菜单每档的说明与底部一句;来源收成三类(内置 / 云 / 第三方);非「内置 · 本机」的步骤行尾写位置,详情底部写来源与位置;卡上去掉技术参数;开发者详情多 location 一行,随包扩展的安装路径只在这里。</li>
+      <li><b>去掉</b>:「始终允许会为当前项目创建永久授权」、「不过期」、永远灰着的「始终允许」;「本机工具 / 宿主工具 / 插件工具 / 来源不明」;步骤行上的安装路径。</li>
+    </ul>
+  </div>
+
+  <!-- ═══════════ 一、确认卡 ═══════════ -->
+  <h2 class="pf-h" id="approval-states">一、确认卡五态</h2>
+  <p class="pf-sub">面板位置不变:停在输入框之上,宽度跟输入框。</p>
+  <div class="pf-grid">
+    <div id="state-session">
+      <div class="pf-tag">A · 本次会话内允许</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>运行命令</p>
+          <code>bun test src/session</code>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-item">本次会话内允许</div>
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-mark"/></svg></span><span class="alpha-ext-authz-nm"><b>将记住:以 bun test 开头的命令</b><small>本次会话 · 重启后失效</small></span></div>
+          </div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">改文件、运行命令、访问外部文件夹、派子任务。</p>
+    </div>
+
+    <div id="state-session-dir">
+      <div class="pf-tag">A · 同一态,外部文件夹</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>访问项目以外的文件夹</p>
+          <code>/Users/zian/codepuppy-test<br>/var/folders/bn/…/T/opencode</code>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-item">本次会话内允许</div>
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-mark"/></svg></span><span class="alpha-ext-authz-nm"><b>将记住:这两个文件夹及其子文件夹</b><small>本次会话 · 重启后失效</small></span></div>
+          </div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">今天截图里那一张。</p>
+    </div>
+
+    <div id="state-project">
+      <div class="pf-tag">B · 在此项目中始终允许</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>使用工具</p>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-cloud"/></svg></span><span class="alpha-ext-authz-nm"><b>下发云端任务</b><small>Code Puppy 云</small></span></div>
+            <div class="alpha-ext-authz-item">在此项目中始终允许</div>
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-mark"/></svg></span><span class="alpha-ext-authz-nm"><b>将记住:在此项目使用这个工具</b><small>当前项目 · 当前账户 · 可在设置里撤回</small></span></div>
+          </div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button">在此项目中始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">外部与云端工具,由「设置 → 工具」要求询问时。点了存进设置,可在那里撤回。没登录时范围写「当前项目 · 未登录」。</p>
+    </div>
+
+    <div id="state-every-time">
+      <div class="pf-tag">C · 只能允许一次</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>使用工具</p>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-plug"/></svg></span><span class="alpha-ext-authz-nm"><b>search_pages</b><small>第三方 · mcp.notion.com</small></span></div>
+          </div>
+          <div class="alpha-ext-confirm-note pc-box">只读模式下每次都要确认</div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">「只读」下的外部与云端工具:设置里启用了、本会话允许过,也照样这样问。</p>
+    </div>
+
+    <div id="delegation">
+      <div class="pf-tag">D · 委派</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>派出子任务</p>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-task"/></svg></span><span class="alpha-ext-authz-nm"><b>交给助手 general</b><small>调研三家竞品的公开定价</small></span></div>
+            <div class="alpha-ext-authz-item">本次会话内允许</div>
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-mark"/></svg></span><span class="alpha-ext-authz-nm"><b>将记住:本会话派出的所有子任务</b><small>本次会话 · 重启后失效</small></span></div>
+          </div>
+          <div class="alpha-ext-confirm-risk pc-box">子任务里不再逐项询问</div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">「请求审批」档。消息里点名助手走同一张卡。</p>
+    </div>
+
+    <div id="delegation-once">
+      <div class="pf-tag">D · 同一态,命令换了助手</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>派出子任务</p>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-task"/></svg></span><span class="alpha-ext-authz-nm"><b>交给助手 reviewer</b><small>命令 /review</small></span></div>
+          </div>
+          <div class="alpha-ext-confirm-risk pc-box">子任务里不再逐项询问</div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">请求没带可记住的范围,只给两个按钮。「只读」档下直接拒绝,不弹卡。</p>
+    </div>
+
+    <div id="state-write-failed">
+      <div class="pf-tag">E · 没存上</div>
+      <div class="frame"><div class="pf-ov-stage">
+        <div class="pf-ask">
+          <h4><svg class="pf-i"><use href="#i-pause"/></svg>允许这次操作吗?</h4>
+          <p>使用工具</p>
+          <div class="alpha-ext-authz-box pc-box">
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-cloud"/></svg></span><span class="alpha-ext-authz-nm"><b>下发云端任务</b><small>Code Puppy 云</small></span></div>
+            <div class="alpha-ext-authz-item">在此项目中始终允许</div>
+            <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-mark"/></svg></span><span class="alpha-ext-authz-nm"><b>将记住:在此项目使用这个工具</b><small>当前项目 · 当前账户 · 可在设置里撤回</small></span></div>
+          </div>
+          <div class="alpha-ext-confirm-risk pc-err pc-box" role="alert">没能保存,这次未放行</div>
+          <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button">重试「在此项目中始终允许」</button><button class="pf-btn pri" type="button">允许一次</button></div>
+        </div>
+      </div></div>
+      <p class="pf-cap">接 B。卡片留在原地;重试按钮沿用现有写法。</p>
+    </div>
+  </div>
+
+  <table class="pf-table">
+    <thead><tr><th>请求</th><th>中间按钮</th><th>记住框</th></tr></thead>
+    <tbody>
+      <tr><td>改文件、运行命令、外部文件夹、子任务</td><td>本次会话内允许</td><td>本次会话 · 重启后失效</td></tr>
+      <tr><td>同上,请求不带可记住的范围</td><td>无</td><td>无</td></tr>
+      <tr><td>外部与云端工具,设置要求询问</td><td>在此项目中始终允许</td><td>当前项目 · 当前账户 · 可在设置里撤回</td></tr>
+      <tr><td>外部与云端工具,当前模式要求每次确认</td><td>无</td><td>无;写「只读模式下每次都要确认」</td></tr>
+      <tr><td>自带可保存资源的新式请求</td><td>始终允许(不变)</td><td>不变</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ═══════════ 二、运行权限菜单 ═══════════ -->
+  <h2 class="pf-h" id="tier-menu">二、运行权限菜单</h2>
+  <p class="pf-sub">只改每档的说明(折到第二行)和底部一句;菜单宽 300。</p>
+  <div class="pf-grid">
+    <div>
+      <div class="pf-tag">改后</div>
+      <div class="frame"><div class="pf-ov-stage" style="flex-direction:column">
+        <div class="pop up static perm-menu pc-tiers" style="min-width:300px;width:300px">
+          <div class="menu-label">运行权限</div>
+          <div class="menu-item" data-pm="全部批准"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件、运行命令不再询问。项目外文件夹、.env、外部与云端工具仍询问。</span></div>
+          <div class="menu-item is-on" data-pm="请求审批"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">改文件、运行命令、交给其它助手前询问。外部与云端工具按设置执行。</span></div>
+          <div class="menu-item" data-pm="只读"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件、运行命令、交给其它助手。项目外文件夹不可访问;外部与云端工具每次询问。</span></div>
+          <div class="pf-msep"></div>
+          <div class="pf-mnote">任何档都越不过:已停用的工具、未获准的网址、项目外写入。</div>
+        </div>
+        <button class="chip perm" data-mode="ask"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div></div>
+    </div>
+    <div>
+      <div class="pf-tag">今天</div>
+      <div class="frame"><div class="pf-ov-stage" style="flex-direction:column">
+        <div class="pop up static perm-menu" style="min-width:230px">
+          <div class="menu-label">运行权限</div>
+          <div class="menu-item" data-pm="全部批准"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件/执行命令不再询问</span></div>
+          <div class="menu-item is-on" data-pm="请求审批"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">逐次询问</span></div>
+          <div class="menu-item" data-pm="只读"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件/执行命令</span></div>
+        </div>
+        <button class="chip perm" data-mode="ask"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 三、来源 × 位置 ═══════════ -->
+  <h2 class="pf-h" id="source-location">三、来源 × 位置</h2>
+  <p class="pf-sub">「内置 · 本机」不标。其余步骤行尾只写位置;来源写在详情底部,完整证据在开发者详情。</p>
+  <div class="pf-grid">
+    <div>
+      <div class="pf-tag">第二层 · 每步一行</div>
+      <div class="frame"><div class="tl">
+        <div class="pf" data-open>
+          <button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>运行 1 次</span><span class="pf-dot"></span><span>搜索 1 次</span><span class="pf-dot"></span><span>其他 9 步</span><span class="pf-dot"></span><span class="pf-num">1 分 12 秒</span></button>
+          <div class="pf-list">
+            <div class="pf-step"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">安装依赖</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">Code Puppy 内置</span><span class="pf-o mono">lsp</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">检查云端登录</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-cloud"/></svg><span class="pf-v">下发云端任务</span><span class="pf-o">生成季度报告</span><span class="pf-end">云端<span class="pf-dot"></span>已等 2:10</span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索</span><span class="pf-o">竞品定价 2026</span><span class="pf-end">云端<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end">mcp.notion.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">filesystem</span><span class="pf-v">read_file</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">obsidian-tools</span><span class="pf-v">open_note</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-v">lint_project</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">codepuppy</span><span class="pf-v">dispatch</span><span class="pf-end">mcp.example.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-help"/></svg><span class="pf-v">fetch_data</span><span class="pf-end">位置未知<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div>
+      <div class="pf-tag">逐行</div>
+      <table class="pf-table" style="margin-top:0">
+        <thead><tr><th>行</th><th>来源 · 位置</th></tr></thead>
+        <tbody>
+          <tr><td>运行</td><td>内置 · 本机,不标</td></tr>
+          <tr><td>Code Puppy 内置 lsp</td><td>内置 · 本机;没有展示规则的我方工具,取代「本机工具」「宿主工具」</td></tr>
+          <tr><td>检查云端登录</td><td>内置 · 本机;随包扩展、清单证明过的工具</td></tr>
+          <tr><td>下发云端任务、搜索</td><td>Code Puppy 云 · 云端</td></tr>
+          <tr><td>Notion</td><td>第三方 · 远端主机</td></tr>
+          <tr><td>filesystem、obsidian-tools</td><td>第三方 · 本机</td></tr>
+          <tr><td>lint_project</td><td>第三方 · 本机;项目插件合并进扩展的工具,来源记录是安装路径,不写名字</td></tr>
+          <tr><td>codepuppy dispatch</td><td>第三方 · 远端主机;名字像我们的,没有证明就是第三方</td></tr>
+          <tr><td>fetch_data</td><td>第三方 · 位置未知;记录没有来源快照</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="pf-grid" style="margin-top:22px">
+    <div>
+      <div class="pf-tag">第三层 · 详情底部写来源与位置</div>
+      <div class="frame"><div class="tl">
+        <div class="pf" data-open><div class="pf-list">
+          <div class="pf-step" data-open><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">安装依赖</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-detail"><pre class="pf-detail-out">$ bun install
+ 1284 packages installed [3.1s]</pre><div class="pf-detail-foot"><span>Code Puppy 内置 · 本机</span><span class="pf-grow"></span><a href="#">复制输出</a><a href="#developer-details">› 开发者详情</a></div></div>
+          <div class="pf-step" data-open><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end">mcp.notion.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-detail"><div class="pf-detail-txt">这个工具来自第三方(Notion),我们不显示它收到和返回的内容。</div><div class="pf-detail-foot"><span>第三方 · mcp.notion.com</span><span class="pf-grow"></span><a href="#developer-details">› 开发者详情</a></div></div>
+        </div></div>
+      </div></div>
+    </div>
+    <div>
+      <div class="pf-tag">更新之前的旧对话</div>
+      <div class="frame"><div class="tl">
+        <div class="pf" data-open>
+          <button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>读取 3 个文件</span><span class="pf-dot"></span><span>其他 2 步</span><span class="pf-dot"></span><span class="pf-num">48 秒</span></button>
+          <div class="pf-list">
+            <div class="pf-step"><svg class="pf-i"><use href="#i-read"/></svg><span class="pf-v">读取 3 个文件</span><span class="pf-o">message.ts 等</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end">位置未知<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">cloud</span><span class="pf-v">cloud_dispatch</span><span class="pf-end">位置未知<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+            <p class="pc-foot">内置步骤位置未知</p>
+          </div>
+        </div>
+      </div></div>
+      <p class="pf-cap">旧记录没有位置,也没有云端证明,不补。内置步骤不逐行标,底部一句。</p>
+    </div>
+  </div>
+
+  <h3 class="pf-h" id="first-party-plugin" style="font-size:var(--a-text-lg)">随包扩展的工具 · 项目插件带进来的工具</h3>
+  <p class="pf-sub">两者挂在同一个扩展下。清单证明过的显示 Code Puppy 内置;项目插件合并进来的仍是第三方。安装路径只进开发者详情。</p>
+  <div class="pf-grid3">
+    <div>
+      <div class="pf-tag">今天</div>
+      <div class="frame"><div class="tl">
+        <div class="pf" data-open><div class="pf-list">
+          <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src"><s>/Applications/Code Puppy.app/Contents/Resources/…/plugin.js</s></span><span class="pf-v">codepuppy_access</span></div>
+        </div></div>
+      </div></div>
+    </div>
+    <div>
+      <div class="pf-tag">清单证明过</div>
+      <div class="frame"><div class="tl">
+        <div class="pf" data-open><div class="pf-list">
+          <div class="pf-step" data-open><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">检查云端登录</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-detail"><div class="pf-detail-txt">这一步的输入和结果不在这里显示。</div><div class="pf-detail-foot"><span>Code Puppy 内置 · 本机</span><span class="pf-grow"></span><a href="#dev-bundled">› 开发者详情</a></div></div>
+        </div></div>
+      </div></div>
+      <div class="alpha-ext-authz-box" style="margin-top:12px;background:var(--a-surface)">
+        <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-box"/></svg></span><span class="alpha-ext-authz-nm"><b>检查云端登录</b><small>Code Puppy 内置</small></span></div>
+      </div>
+      <p class="pf-cap">下面一行是它在确认卡上的样子。</p>
+    </div>
+    <div>
+      <div class="pf-tag">项目插件合并进来</div>
+      <div class="frame"><div class="tl">
+        <div class="pf" data-open><div class="pf-list">
+          <div class="pf-step" data-open><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-v">lint_project</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-detail"><div class="pf-detail-txt">这个工具来自第三方插件,我们不显示它收到和返回的内容。</div><div class="pf-detail-foot"><span>第三方 · 本机</span><span class="pf-grow"></span><a href="#dev-project-plugin">› 开发者详情</a></div></div>
+        </div></div>
+      </div></div>
+      <div class="alpha-ext-authz-box" style="margin-top:12px;background:var(--a-surface)">
+        <div class="alpha-ext-authz-cap"><span class="alpha-ext-authz-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-puzzle"/></svg></span><span class="alpha-ext-authz-nm"><b>lint_project</b><small>第三方 · 本机</small></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 四、开发者详情 ═══════════ -->
+  <h2 class="pf-h" id="developer-details">四、开发者详情</h2>
+  <p class="pf-sub">默认收起。今天的三行照旧,加 location;插件工具加 origin(安装路径)。</p>
+  <div class="pf-grid">
+    <div id="dev-cloud">
+      <div class="pf-tag">Code Puppy 云</div>
+      <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>Code Puppy 云 · 云端</span><span class="pf-grow"></span><a href="#">⌄ 开发者详情</a></div>
+        <div class="prov-dev pc-dev">mcp:codepuppy:dispatch<br>technical-id: codepuppy_dispatch<br>authority: codepuppy-cloud · mcp:codepuppy · sha256:4a9343bc11b3f417a2a254ab32b8d1d6<br>location: remote · mcp.codepuppy.cn</div></div>
+    </div>
+    <div id="dev-third">
+      <div class="pf-tag">第三方 · 远端</div>
+      <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>第三方 · mcp.notion.com</span><span class="pf-grow"></span><a href="#">⌄ 开发者详情</a></div>
+        <div class="prov-dev pc-dev">mcp:notion:search_pages<br>technical-id: notion_search_pages<br>authority: not-asserted<br>location: remote · mcp.notion.com</div></div>
+    </div>
+    <div id="dev-bundled">
+      <div class="pf-tag">Code Puppy 内置 · 随包扩展</div>
+      <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>Code Puppy 内置 · 本机</span><span class="pf-grow"></span><a href="#">⌄ 开发者详情</a></div>
+        <div class="prov-dev pc-dev">plugin:%2FApplications%2FCode Puppy.app%2FContents%2FResources%2Fcodepuppy-ext%2Fplugin.js:codepuppy_access<br>technical-id: codepuppy_access<br>authority: codepuppy-bundled · plugin:codepuppy-ext · sha256:5873d53028c643604bc3f4d4c6904d58<br>location: local<br>origin: /Applications/Code Puppy.app/Contents/Resources/codepuppy-ext/plugin.js</div></div>
+    </div>
+    <div id="dev-project-plugin">
+      <div class="pf-tag">第三方 · 项目插件</div>
+      <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>第三方 · 本机</span><span class="pf-grow"></span><a href="#">⌄ 开发者详情</a></div>
+        <div class="prov-dev pc-dev">plugin:%2FApplications%2FCode Puppy.app%2FContents%2FResources%2Fcodepuppy-ext%2Fplugin.js:lint_project<br>technical-id: lint_project<br>authority: not-asserted<br>location: local<br>origin: /Applications/Code Puppy.app/Contents/Resources/codepuppy-ext/plugin.js</div></div>
+    </div>
+    <div id="dev-history">
+      <div class="pf-tag">更新之前的记录</div>
+      <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>第三方 · 位置未知</span><span class="pf-grow"></span><a href="#">⌄ 开发者详情</a></div>
+        <div class="prov-dev pc-dev">mcp:notion:search_pages<br>technical-id: notion_search_pages<br>authority: not-asserted<br>location: —</div></div>
+    </div>
+  </div>
+  <p class="pf-cap">技术名按命名规范的新名写;数值为示意。</p>
+
+  <!-- ═══════════ 五、文案 ═══════════ -->
+  <h2 class="pf-h" id="copy">五、新文案</h2>
+  <table class="pf-table">
+    <thead><tr><th>位置</th><th>中文</th><th>English</th></tr></thead>
+    <tbody>
+      <tr><td>按钮</td><td>本次会话内允许 / 在此项目中始终允许</td><td>Allow for this session / Always allow in this project</td></tr>
+      <tr><td>要做什么</td><td>运行命令 / 访问项目以外的文件夹 / 使用工具 / 派出子任务 / 交给助手 {{名字}}</td><td>Run a command / Open a folder outside the project / Use a tool / Start a subtask / Hand to {{name}}</td></tr>
+      <tr><td>记住框</td><td>将记住:{{内容}} / {{范围}} · {{期限}}</td><td>Remembers: {{what}} / {{scope}} · {{until}}</td></tr>
+      <tr><td>将记住</td><td>以 {{前缀}} 开头的命令 / 这两个文件夹及其子文件夹 / 本会话派出的所有子任务 / 在此项目使用这个工具 / 本会话所有{{动作}}</td><td>Commands starting with {{prefix}} / These folders and their subfolders / All subtasks this session / This tool in this project / All {{action}} this session</td></tr>
+      <tr><td>范围</td><td>本次会话 / 当前项目 · 当前账户 / 当前项目 · 未登录</td><td>This session / This project · this account / This project · signed out</td></tr>
+      <tr><td>期限</td><td>重启后失效 / 可在设置里撤回</td><td>Until restart / Undo in Settings</td></tr>
+      <tr><td>只能一次</td><td>只读模式下每次都要确认</td><td>Read-only asks every time</td></tr>
+      <tr><td>委派</td><td>子任务里不再逐项询问</td><td>The subtask won't ask step by step</td></tr>
+      <tr><td>没存上</td><td>没能保存,这次未放行</td><td>Not saved. This action wasn't allowed.</td></tr>
+      <tr><td>菜单 · 全部批准</td><td>改文件、运行命令不再询问。项目外文件夹、.env、外部与云端工具仍询问。</td><td>Edits files and runs commands without asking. Still asks for outside folders, .env, external and cloud tools.</td></tr>
+      <tr><td>菜单 · 请求审批</td><td>改文件、运行命令、交给其它助手前询问。外部与云端工具按设置执行。</td><td>Asks before editing files, running commands or handing off to another assistant. External and cloud tools follow Settings.</td></tr>
+      <tr><td>菜单 · 只读</td><td>不能改文件、运行命令、交给其它助手。项目外文件夹不可访问;外部与云端工具每次询问。</td><td>Can't edit files, run commands or hand off. No folders outside the project; external and cloud tools ask every time.</td></tr>
+      <tr><td>菜单 · 底部</td><td>任何档都越不过:已停用的工具、未获准的网址、项目外写入。</td><td>No mode gets past: disabled tools, unapproved addresses, writes outside the project.</td></tr>
+      <tr><td>来源</td><td>Code Puppy 内置 / Code Puppy 云 / 第三方</td><td>Code Puppy built-in / Code Puppy Cloud / Third-party</td></tr>
+      <tr><td>位置</td><td>本机 / 云端 / {{主机名}} / 位置未知</td><td>This computer / Cloud / {{host}} / Location unknown</td></tr>
+      <tr><td>步骤行行尾</td><td>{{位置}}(只给非「内置 · 本机」)</td><td>{{location}}</td></tr><tr><td>详情底部</td><td>{{来源}} · {{位置}}</td><td>{{source}} · {{location}}</td></tr>
+      <tr><td>旧对话</td><td>内置步骤位置未知</td><td>Built-in steps: location unknown</td></tr>
+      <tr><td>详情隐藏句</td><td>这个工具来自第三方插件,我们不显示它收到和返回的内容。(取代「来自插件」)</td><td>This tool comes from a third-party plugin. We don't show what it receives or returns.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement,seg=document.getElementById('themeSeg');
+  function mark(v){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===v)});}
+  var q=new URLSearchParams(location.search);
+  var dark=q.get('theme')?q.get('theme')==='dark':(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  root.setAttribute('data-theme',dark?'dark':'light');mark(dark?'dark':'light');
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){root.setAttribute('data-theme',b.dataset.theme);mark(b.dataset.theme);};});
+})();
+</script>
+</body>
+</html>
