@@ -20,7 +20,7 @@ const ROOT = fs.mkdtempSync(join(os.tmpdir(), "alpha-1353-"))
 const PROJECT = fs.mkdtempSync(join(os.tmpdir(), "alpha-1353-project-"))
 
 /** 引擎侧被调用过什么。断言的核心是它**空着**。 */
-const engine: { created: unknown[]; prompted: unknown[] } = { created: [], prompted: [] }
+const engine: { created: unknown[]; prompted: unknown[]; down: boolean } = { created: [], prompted: [], down: false }
 /** 落盘的 run 文件:`status.json` 的内容就是本票在自动化侧的用户可观察面。 */
 const runFiles: Array<{ runId: string; files: Record<string, string> }> = []
 
@@ -45,6 +45,8 @@ mock.module("@opencode-ai/sdk/v2/client", () => ({
   createOpencodeClient: () => ({
     session: {
       create: async (args: unknown) => {
+        // [#1592] 引擎建不出临时会话(SDK 非 2xx 的真实形状:`{ error }`、无 data)。
+        if (engine.down) return { error: { name: "UnknownError" } }
         engine.created.push(args)
         return { data: { id: `sess-${engine.created.length}` } }
       },
@@ -60,7 +62,7 @@ mock.module("@opencode-ai/sdk/v2/client", () => ({
 const { initModerationKeywords, resetModerationKeywordsForTests, MODERATION_BLOCKED_REASON } = await import(
   "./moderation-keywords"
 )
-const { saveAutomation, getAutomation } = await import("./alpha-automations")
+const { saveAutomation, getAutomation, readAutomationState, writeAutomationState } = await import("./alpha-automations")
 const { startAutomationScheduler, runAutomationNow } = await import("./automation-scheduler")
 const { initAutomationLlm, llmParseAutomation } = await import("./automation-llm")
 
@@ -163,6 +165,7 @@ test("一句话解析:命中即不发给模型,用这条路径既有的失败形
 
   expect(await llmParseAutomation("每天提醒我去赌博", PROJECT)).toEqual({
     ok: false,
+    code: "automation-parse-blocked",
     reason: MODERATION_BLOCKED_REASON,
   })
   expect(engine.created).toEqual([])
@@ -178,4 +181,48 @@ test("一句话解析反向:未命中照常走到模型那一步", async () => {
   await llmParseAutomation("每天九点提醒我写日报", PROJECT)
   expect(engine.created).toHaveLength(1)
   expect(engine.prompted).toHaveLength(1)
+})
+
+// ── [#1592 AC6] 「立即运行」与「用 AI 解析」的失败给界面结构码,原因串只进日志 ──────────────────
+
+test("#1592 立即运行:任务不存在 ⇒ automation-run-not-found", async () => {
+  expect(await runAutomationNow("no-such-task")).toMatchObject({ ok: false, code: "automation-run-not-found" })
+})
+
+test("#1592 立即运行:今日已达上限 ⇒ automation-run-daily-cap,不再执行", async () => {
+  resetModerationKeywordsForTests()
+  engine.created.length = 0
+  expect(saveAutomation(makeTask("cap-1", "每天把测试跑一遍")).ok).toBe(true)
+  const d = new Date()
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  const state = readAutomationState()
+  writeAutomationState({ ...state, runCount: { date: today, count: 24 } })
+
+  expect(await runAutomationNow("cap-1")).toMatchObject({ ok: false, code: "automation-run-daily-cap" })
+  expect(engine.created).toEqual([])
+  writeAutomationState({ ...state, runCount: { date: today, count: 0 } })
+})
+
+test("#1592 用 AI 解析:模型没给出 JSON ⇒ automation-parse-no-schedule", async () => {
+  resetModerationKeywordsForTests()
+  initAutomationLlm({ awaitServer: async () => ({ url: "http://127.0.0.1:1/", username: null, password: null }) })
+  // 引擎替身回「done」—— 没有任何 {...} 块。
+  expect(await llmParseAutomation("饭点前提醒我喝水", PROJECT)).toMatchObject({
+    ok: false,
+    code: "automation-parse-no-schedule",
+  })
+})
+
+test("#1592 用 AI 解析:临时会话建不出来 ⇒ automation-parse-unavailable", async () => {
+  resetModerationKeywordsForTests()
+  initAutomationLlm({ awaitServer: async () => ({ url: "http://127.0.0.1:1/", username: null, password: null }) })
+  engine.down = true
+  try {
+    expect(await llmParseAutomation("饭点前提醒我喝水", PROJECT)).toMatchObject({
+      ok: false,
+      code: "automation-parse-unavailable",
+    })
+  } finally {
+    engine.down = false
+  }
 })

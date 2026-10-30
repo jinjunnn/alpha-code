@@ -3,7 +3,7 @@
 // 不污染会话列表。执行链只走 SDK(ADR-002);预览确认流不变 —— LLM 产物只是填表,存前仍过
 // 存储层硬校验(interval 下限/档位白名单)。
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import type { AutomationSchedule } from "../shared/automation-types"
+import type { AutomationParseErrorCode, AutomationSchedule } from "../shared/automation-types"
 import type { AutomationServerInfo } from "./automation-scheduler"
 import { getLogger } from "./logging"
 import { moderationBlocks, MODERATION_BLOCKED_REASON } from "./moderation-keywords"
@@ -13,9 +13,13 @@ export function initAutomationLlm(deps: { awaitServer: () => Promise<AutomationS
   awaitServer = deps.awaitServer
 }
 
+// [#1592] 失败只给界面结构码(三类:没识别出周期 / AI 不可用 / 未通过安全审核);`reason` 是日志串,不上屏。
 export type LlmParseResult =
   | { ok: true; name: string; schedule: AutomationSchedule; prompt: string }
-  | { ok: false; reason: string }
+  | { ok: false; code: AutomationParseErrorCode; reason: string }
+
+const noSchedule = (reason: string): LlmParseResult => ({ ok: false, code: "automation-parse-no-schedule", reason })
+const unavailable = (reason: string): LlmParseResult => ({ ok: false, code: "automation-parse-unavailable", reason })
 
 const EXTRACT_INSTRUCTION = `你是一个定时任务解析器。把用户的一句话拆成 JSON(只输出 JSON,不要任何其它文字/代码块围栏):
 {"name":"<8字内任务名>","schedule":{"kind":"cron","expr":"<5字段 cron(分 时 日 月 周)>"} 或 {"kind":"interval","everyMinutes":<数字,≥5>},"prompt":"<给执行 agent 的任务指令,保留用户意图,不含时间信息>"}
@@ -33,11 +37,11 @@ function sane(parsed: unknown): parsed is { name: string; schedule: AutomationSc
 }
 
 export async function llmParseAutomation(text: string, projectDir: string): Promise<LlmParseResult> {
-  if (!text.trim()) return { ok: false, reason: "输入为空" }
+  if (!text.trim()) return noSchedule("输入为空")
   // REQ-160 AC2(`#1353`):这句话也要发给模型(`EXTRACT_INSTRUCTION + text`),所以在本机
-  // 查一遍。失败形态用这里既有的那个 —— `{ ok:false, reason }` 由调用面原样呈现,**不新增界面**。
-  if (moderationBlocks(text)) return { ok: false, reason: MODERATION_BLOCKED_REASON }
-  if (!awaitServer) return { ok: false, reason: "引擎未就绪" }
+  // 查一遍。失败形态用这里既有的那个 —— `{ ok:false, code, reason }`,**不新增界面**。
+  if (moderationBlocks(text)) return { ok: false, code: "automation-parse-blocked", reason: MODERATION_BLOCKED_REASON }
+  if (!awaitServer) return unavailable("引擎未就绪")
   const server = await awaitServer()
   const headers =
     server.username || server.password
@@ -49,14 +53,14 @@ export async function llmParseAutomation(text: string, projectDir: string): Prom
   try {
     const created = await client.session.create({ directory, title: "⏱ 自动化解析(临时)" } as never)
     const createdData = (created as { data?: { id?: string }; error?: unknown }).data
-    if ((created as { error?: unknown }).error || !createdData?.id) return { ok: false, reason: "临时会话创建失败" }
+    if ((created as { error?: unknown }).error || !createdData?.id) return unavailable("临时会话创建失败")
     sessionID = createdData.id
     const res = await client.session.prompt({
       sessionID,
       directory,
       parts: [{ type: "text", text: EXTRACT_INSTRUCTION + text }],
     } as never)
-    if ((res as { error?: unknown }).error) return { ok: false, reason: "模型调用失败" }
+    if ((res as { error?: unknown }).error) return unavailable("模型调用失败")
     const parts = ((res as { data?: { parts?: { type?: string; text?: string }[] } }).data?.parts ?? []) as { type?: string; text?: string }[]
     const reply = parts
       .filter((p) => p.type === "text" && typeof p.text === "string")
@@ -65,19 +69,19 @@ export async function llmParseAutomation(text: string, projectDir: string): Prom
       .trim()
     // 容错:剥代码围栏 / 取首个 {...} 块
     const m = reply.match(/\{[\s\S]*\}/)
-    if (!m) return { ok: false, reason: "模型未返回可解析的 JSON" }
+    if (!m) return noSchedule("模型未返回可解析的 JSON")
     let parsed: unknown
     try {
       parsed = JSON.parse(m[0])
     } catch {
-      return { ok: false, reason: "模型返回的 JSON 无法解析" }
+      return noSchedule("模型返回的 JSON 无法解析")
     }
     const err = (parsed as { error?: unknown }).error
-    if (typeof err === "string") return { ok: false, reason: err }
-    if (!sane(parsed)) return { ok: false, reason: "模型返回的结构不合法(缺 name/schedule/prompt 或周期过密)" }
+    if (typeof err === "string") return noSchedule(err)
+    if (!sane(parsed)) return noSchedule("模型返回的结构不合法(缺 name/schedule/prompt 或周期过密)")
     return { ok: true, name: parsed.name.trim().slice(0, 32), schedule: parsed.schedule, prompt: parsed.prompt.trim() }
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message.slice(0, 200) : "解析失败" }
+    return unavailable(error instanceof Error ? error.message.slice(0, 200) : "解析失败")
   } finally {
     // 临时会话即删(best-effort;失败只留一条日志,不影响结果)
     if (sessionID) {

@@ -309,6 +309,19 @@ describe("Alpha Settings 「工具」节", () => {
     expect(text(q("[data-alpha-settings]"))).toContain(zh["alpha.settings.toolsFooter"])
   })
 
+  test("#1593 AC5 无计费数据的工具行不挂计费徽标(不再写「未知」);有数据的照常;第三方组说明按批准稿", async () => {
+    await openTools(api())
+
+    // docgen(alpha-cloud)与 context7 的工具都没有 billing:行上与服务摘要里都不出现「计费:」。
+    const billingPrefix = zh["alpha.settings.toolsBilling"].split("{{")[0]!
+    expect(text(row("mcp:alpha-cloud:docgen"))).not.toContain(billingPrefix)
+    expect(text(row("mcp:context7:resolve-library-id"))).not.toContain(billingPrefix)
+    expect(text(q("[data-tools-service='mcp:context7']"))).not.toContain(billingPrefix)
+    // 对照:websearch 带真实计费数据,徽标还在(证明上面不是整个徽标被删掉)。
+    expect(text(row("mcp:alpha-cloud:websearch"))).toContain(zhFill("alpha.settings.toolsBilling", { value: "metered" }))
+    expect(text(q("[data-tools-class='third-party-mcp']"))).toContain("默认每次询问 · 是否收费由服务方决定")
+  })
+
   test("T2 tightening writes immediately without a digest, then re-reads the inventory", async () => {
     const calls: ToolPolicyRecord[] = []
     let current = inventory()

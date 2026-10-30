@@ -16,6 +16,8 @@ import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
 import { pushToast } from "../alpha-ui/Toast"
+import { sessionDisplayTitle } from "../alpha-ui/session-title"
+import { SHELL_KEYBINDS } from "./shell-keybinds"
 import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
@@ -89,8 +91,6 @@ function projectDisplayName(project: AlphaProject): string {
   return project.worktree
 }
 
-// Eagerly-created sessions carry a "New session - <ISO>" title until the first message retitles
-// them; show a friendly placeholder. "Untitled" is our own empty-title fallback (see toSession).
 // Robust clipboard write. The async Clipboard API needs transient user activation (and can be
 // blocked); fall back to a hidden-textarea execCommand, which works in the Electron renderer even
 // when the activation heuristic is unhappy. Returns whether the copy landed.
@@ -125,11 +125,6 @@ async function copyText(text: string): Promise<boolean> {
       return false
     }
   }
-}
-
-function sessionDisplayTitle(title: string): string {
-  if (title === "Untitled" || /^New session - /.test(title)) return t("alpha.sidebar.newChat")
-  return title
 }
 
 // REQ-126 AC2(#655):当前**已登记**的全页覆盖层就这两个(产物工作台已随 #654 下线)。
@@ -883,10 +878,10 @@ export function AlphaSidebar(props: {
   // `shared/desktop-menu-policy.ts` 显式退休;左上角那对按钮直连 `navigate(±1)`,始终有效。
   // 其余**退休**的菜单项同理,都从那份发布面直接删掉。
   command.register("alpha.shell", () => [
-    { id: "settings.open", title: t("alpha.sidebar.settings"), keybind: "mod+comma", hidden: true, onSelect: () => setSettingsOpen(true) },
-    { id: "session.new", title: t("alpha.sidebar.newChat"), keybind: "mod+shift+s", hidden: true, onSelect: () => newChat() },
-    { id: "project.open", title: t("alpha.sidebar.openProject"), keybind: "mod+o", hidden: true, onSelect: () => void openProject() },
-    { id: "sidebar.toggle", title: t("alpha.sidebar.hide"), keybind: "mod+b", hidden: true, onSelect: () => toggleSidebar() },
+    { id: "settings.open", title: t("alpha.sidebar.settings"), keybind: SHELL_KEYBINDS["settings.open"], hidden: true, onSelect: () => setSettingsOpen(true) },
+    { id: "session.new", title: t("alpha.sidebar.newChat"), keybind: SHELL_KEYBINDS["session.new"], hidden: true, onSelect: () => newChat() },
+    { id: "project.open", title: t("alpha.sidebar.openProject"), keybind: SHELL_KEYBINDS["project.open"], hidden: true, onSelect: () => void openProject() },
+    { id: "sidebar.toggle", title: t("alpha.sidebar.hide"), keybind: SHELL_KEYBINDS["sidebar.toggle"], hidden: true, onSelect: () => toggleSidebar() },
   ])
 
   const archiveProject = (worktree: string) => {

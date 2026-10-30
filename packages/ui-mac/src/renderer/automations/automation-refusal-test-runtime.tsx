@@ -18,10 +18,13 @@ import { AutomationPanel } from "./automation-panel"
 import { ToastViewport } from "../alpha-ui/Toast"
 import { setAutomationOpen } from "./automation-state"
 import { scheduleRefusalCopy } from "./schedule-refusal-copy"
+import { automationActionCopy } from "./schedule-refusal-copy"
 import { setLocale, t } from "../i18n"
+import { resetAuthRecoveryForTests } from "../auth-recovery"
+import type { AuthState } from "../../preload/types"
 import type { AutomationTask } from "../../shared/automation-types"
 
-export { render, scheduleRefusalCopy, setLocale, t }
+export { automationActionCopy, render, scheduleRefusalCopy, setLocale, t }
 
 /** `workspaceDefaultDir` 回给面板的目录 —— 表单的「项目」字段靠它填上,否则保存会早返。 */
 export const DEFAULT_DIR = "/Users/tester/proj-a"
@@ -42,8 +45,32 @@ const [removeResult, setRemoveResult] = createSignal<MutationResult>({ ok: true 
 const [removeCalls, setRemoveCalls] = createSignal<string[]>([])
 const [toggleResult, setToggleResult] = createSignal<MutationResult>({ ok: true })
 const [toggleCalls, setToggleCalls] = createSignal<Array<[string, boolean]>>([])
+/** [#1592] 云端选项按账户登录状态判;默认已登录平台账户(云端档的既有用例都以此为前提)。 */
+const SIGNED_IN: AuthState = { status: "logged-in", mode: "platform", platformStatus: "ready" }
+let authState: AuthState = SIGNED_IN
+const [authStartCalls, setAuthStartCalls] = createSignal(0)
+type RunNowResult = { ok: true } | { ok: false; code: string; reason: string }
+const [runNowResult, setRunNowResult] = createSignal<RunNowResult>({ ok: true })
+const [runNowCalls, setRunNowCalls] = createSignal<string[]>([])
+type NlLlmResult = { ok: true; name: string; schedule: AutomationTask["schedule"]; prompt: string } | { ok: false; code: string; reason: string }
+const [nlLlmResult, setNlLlmResult] = createSignal<NlLlmResult>({ ok: false, code: "automation-parse-unavailable", reason: "unused" })
 
-export { cloudSyncCalls, removeCalls, saveCalls, toggleCalls }
+export { authStartCalls, cloudSyncCalls, removeCalls, runNowCalls, saveCalls, toggleCalls }
+
+/** [#1592] `auth.getState` 回给面板的账户状态(在挂载面板之前设)。 */
+export function setAuth(state: AuthState): void {
+  authState = state
+}
+
+/** [#1592] 排 `automations.runNow` 的返回值。 */
+export function queueRunNowResult(result: RunNowResult): void {
+  setRunNowResult(() => result)
+}
+
+/** [#1592] 排 `automations.nlLlm` 的返回值。 */
+export function queueNlLlmResult(result: NlLlmResult): void {
+  setNlLlmResult(() => result)
+}
 
 /** [#994] 排 `automations.remove` 的返回值。 */
 export function queueRemoveResult(result: MutationResult): void {
@@ -84,7 +111,10 @@ export function installPreloadStub(): void {
     auth: {
       subscribe: unsubscribe,
       onError: unsubscribe,
-      getState: async () => ({ status: "logged-out", mode: "byok" }),
+      getState: async () => authState,
+      start: async () => {
+        setAuthStartCalls((n) => n + 1)
+      },
     },
     automations: {
       list: async () => ({ tasks: listedTasks(), state: { pausedAll: false }, loginItem: false }),
@@ -107,6 +137,11 @@ export function installPreloadStub(): void {
         setToggleCalls((seen) => [...seen, [id, enabled]])
         return toggleResult()
       },
+      runNow: async (id: string) => {
+        setRunNowCalls((seen) => [...seen, id])
+        return runNowResult()
+      },
+      nlLlm: async () => nlLlmResult(),
     },
     workspaceDefaultDir: async () => DEFAULT_DIR,
     openDirectoryPicker: async () => DEFAULT_DIR,
@@ -126,6 +161,12 @@ export function resetHarness(): void {
   setRemoveCalls([])
   setToggleResult(() => ({ ok: true }))
   setToggleCalls([])
+  authState = SIGNED_IN
+  resetAuthRecoveryForTests()
+  setAuthStartCalls(0)
+  setRunNowResult(() => ({ ok: true }))
+  setRunNowCalls([])
+  setNlLlmResult(() => ({ ok: false, code: "automation-parse-unavailable", reason: "unused" }))
   setLocale("zh")
 }
 

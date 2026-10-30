@@ -289,6 +289,29 @@
   text-align: right;
 }
 
+/* #1593:默认组合的键帽(取活稿 current/settings 的 .kb-chord / .kb-key)。 */
+.alpha-settings-kb-chord {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.alpha-settings-kb-key {
+  min-width: 24px;
+  height: 25px;
+  padding: 0 7px;
+  display: grid;
+  place-items: center;
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-semibold);
+  font-family: var(--a-font-mono);
+  color: var(--a-text-secondary);
+}
+
 .alpha-settings-number:disabled,
 .alpha-settings-shortcut:disabled {
   color: var(--a-text-disabled);

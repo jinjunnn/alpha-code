@@ -13,8 +13,8 @@ test("automation moderation cases run green in an isolated child process", () =>
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 5 pass")
+  expect(output).toContain(" 9 pass")
   expect(output).toContain(" 0 fail")
   // 「跑了 0 个文件」也是 `0 fail`。核对 bun 自己报的文件数与条数,否则这一步能假绿。
-  expect(output).toContain("Ran 5 tests across 1 file")
+  expect(output).toContain("Ran 9 tests across 1 file")
 })

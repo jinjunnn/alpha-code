@@ -21,6 +21,7 @@ import { newSessionDraftStash } from "./new-session-draft-stash"
 import { AlphaWorkspaceChip, visibleWorkspaces, workspaceLabel } from "./workspace-chip"
 import { useWorkspaceWritable } from "./workspace-writable"
 import { Banner } from "./Banner"
+import { ConfigBrokenBanner } from "./config-broken-banner"
 import { pushToast } from "./Toast"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
@@ -119,13 +120,24 @@ export function AlphaNewSession(props: {
               action={{ label: t("alpha.common.retry"), onClick: () => void props.projects.reload() }}
             />
           </Show>
+          <ConfigBrokenBanner />
           <h1 class="a-home-greet">
             {t("alpha.newSession.title")}<span class="a-home-greet-dim">{wsLabel() ? ` — ${wsLabel()}` : ""}</span>
           </h1>
 
           {/* THE shared composer(与首页/会话页同一组件,REQ-055);draft 提交 = 创建会话后
               经 seam promoteDraft 晋升(tab 交换、持久草稿清理、导航均由 upstream wrapper 承担)。 */}
-          <Show when={directory()} keyed fallback={<Banner kind="warning" title={t("alpha.newSession.directoryPending")} detail={t("alpha.newSession.directoryLoading")} />}>
+          {/* #1590 AC3:新对话目录还没就绪是正常的准备过程,不是故障 —— 与输入框同尺寸的中性占位,不弹警告条。 */}
+          <Show
+            when={directory()}
+            keyed
+            fallback={
+              <div class="a-home-preparing" role="status" data-alpha-new-session-preparing>
+                <span class="a-home-preparing-spinner" aria-hidden="true" />
+                {t("alpha.newSession.preparing")}
+              </div>
+            }
+          >
             {(dir) => (
               <AlphaComposer
                 mode="home"

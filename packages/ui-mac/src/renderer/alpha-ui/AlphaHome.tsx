@@ -17,7 +17,7 @@ import { AlphaWorkspaceChip, visibleWorkspaces } from "./workspace-chip"
 import { useWorkspaceWritable } from "./workspace-writable"
 import { pushToast } from "./Toast"
 import { Banner } from "./Banner"
-import { useConfigHealth } from "./use-config-health"
+import { ConfigBrokenBanner } from "./config-broken-banner"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
 import "./home.css"
@@ -49,7 +49,6 @@ export function AlphaHome(props: {
   markStartupTimeline("renderer.home.surface.setup", { composerPending: launchDraftPending() })
   const navigate = useNavigate()
   const { store } = props.projects
-  const configHealth = useConfigHealth()
 
   const visibleProjects = createMemo(() => visibleWorkspaces(store.projects))
 
@@ -125,14 +124,7 @@ export function AlphaHome(props: {
               action={{ label: t("alpha.common.retry"), onClick: () => void props.projects.reload() }}
             />
           </Show>
-          <Show when={configHealth().broken}>
-            <Banner
-              kind="warning"
-              title={t("alpha.home.configBroken")}
-              detail={configHealth().reason}
-              action={{ label: t("alpha.home.openConfig"), onClick: () => void window.api.openPath(configHealth().path ?? "") }}
-            />
-          </Show>
+          <ConfigBrokenBanner />
           <h1 class="a-home-greet">
             {greeting()},<span class="a-home-greet-dim"> {t("alpha.home.prompt")}</span>
           </h1>

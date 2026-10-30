@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { parseRoute } from "../../../shared/route-manifest"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
+import { t } from "../../i18n"
 
 describe("REQ-125 C1a typed live session context", () => {
   test("v2 target route plus typed sync record resolves the real server/directory/session triple", () => {
@@ -37,9 +38,20 @@ describe("REQ-125 C1a typed live session context", () => {
     ).toMatchObject({
       identity: { serverKey: "sidecar", directory: "/tmp/proj", sessionID: "ses_1" },
       project: "proj",
-      title: "ses_1",
+      // #1589 AC1:会话记录未读到时不拿会话编号顶替标题,界面显示「对话」。
+      title: "",
       activity: "running",
     })
+  })
+
+  test("#1589 AC1:未生成标题的会话与侧栏同显示「新对话」,普通标题原样", () => {
+    const route = parseRoute("/server/c2lkZWNhcg/session/ses_1")
+    const titleOf = (title: string) =>
+      sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session: { id: "ses_1", directory: "/tmp/proj", title } })
+        ?.title
+    expect(titleOf("New session - 2026-09-21T06:29:08.485Z")).toBe(t("alpha.sidebar.newChat"))
+    expect(titleOf("Untitled")).toBe(t("alpha.sidebar.newChat"))
+    expect(titleOf("整理架构说明")).toBe("整理架构说明")
   })
 
   test("status projection has exactly idle and running UI states", () => {

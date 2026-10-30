@@ -126,6 +126,7 @@ const { AlphaNewSession } = await import("../src/renderer/alpha-ui/alpha-new-ses
 const { AlphaHome } = await import("../src/renderer/alpha-ui/AlphaHome")
 const { parseRoute } = await import("../src/shared/route-manifest")
 const { newSessionDraftStash } = await import("../src/renderer/alpha-ui/new-session-draft-stash")
+const { refreshConfigHealth } = await import("../src/renderer/alpha-ui/use-config-health")
 const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
 const { dict: zh } = await import("../src/renderer/i18n/zh")
 // [ac#1225] AI 生成标识的中英两条文案要在**同一个生产节点**上各验一次,所以要能真的切 locale。
@@ -483,6 +484,171 @@ describe("REQ-126 CODE-D 新对话页工作区选择器", () => {
     chipButton(host).click()
     await flush()
     expect(popItems(host)[0]?.className).toContain("is-on")
+  })
+})
+
+describe("#1590 新对话页:配置失效提示、标题与准备中占位", () => {
+  // 返回值取自 main `ext-config.ts` `configHealth()` 语法错分支的真实形状。
+  const BROKEN = {
+    broken: true,
+    reason: "配置文件存在语法错误,引擎会忽略整份配置",
+    path: "/Users/tester/.config/opencode/opencode.json",
+  }
+  const openPathCalls: string[] = []
+  /** 在共享桩之上补 `ext.configHealth` 与可观察的 `openPath`;composer 会读的三个 ext 方法给空值。 */
+  function installConfigHealth(health: { broken: boolean; reason?: string; path?: string }) {
+    installPreloadStub(
+      { catalog, account: accountSummary, providerKeys, auth: { status: "logged-in", mode: "platform" } },
+      {},
+      {
+        openPath: (target: string) => openPathCalls.push(target),
+        workspaceDefaultDir: () => Promise.resolve(DEFAULT_WORKSPACE),
+        openDirectoryPicker: async () => undefined,
+        contracts: { health: async () => null, subscribe: () => () => {} },
+        ext: {
+          configHealth: async () => health,
+          builtinRead: async () => null,
+          listInstalls: async () => null,
+          factorySkillIds: async () => null,
+        },
+      },
+    )
+  }
+  const banners = (host: HTMLElement) => Array.from(host.querySelectorAll<HTMLElement>(".a-banner"))
+
+  afterEach(async () => {
+    // 健康信号是模块级的:恢复成健康,别把「失效」串到后面的用例。
+    installConfigHealth({ broken: false })
+    await refreshConfigHealth()
+    openPathCalls.splice(0)
+  })
+
+  test("AC1:配置失效 ⇒ 新对话页显示与首页相同的提示条,「打开配置」以配置路径调用 openPath", async () => {
+    installConfigHealth(BROKEN)
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+    await flush()
+
+    const banner = banners(host).find((el) => el.textContent?.includes(zh["alpha.home.configBroken"]))
+    expect(banner).toBeDefined()
+    expect(banner!.textContent).toContain(BROKEN.reason)
+    const action = Array.from(banner!.querySelectorAll("button")).find((b) => b.textContent === zh["alpha.home.openConfig"])!
+    action.click()
+    expect(openPathCalls).toEqual([BROKEN.path])
+  })
+
+  test("AC1 同一组件:首页在同一信号下渲染逐字相同的提示条", async () => {
+    installConfigHealth(BROKEN)
+    const newSession = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    const home = mount(() => createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a")]), serverKey: () => STORE_SERVER_KEY }))
+    await flush()
+    await flush()
+
+    const configBanner = (host: HTMLElement) =>
+      banners(host).find((el) => el.textContent?.includes(zh["alpha.home.configBroken"]))?.outerHTML
+    expect(configBanner(newSession)).toBeDefined()
+    expect(configBanner(newSession)).toBe(configBanner(home))
+  })
+
+  test("AC1 负对照:配置健康 ⇒ 不渲染提示条", async () => {
+    installConfigHealth({ broken: false, path: BROKEN.path })
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+    await flush()
+
+    expect(host.textContent).not.toContain(zh["alpha.home.configBroken"])
+  })
+
+  test("两页共用健康信号:先挂首页再挂新对话页,卸掉首页后新对话页仍在定时刷新;最后一个卸载才停", async () => {
+    // 只接管 5 分钟那一条轮询(按周期认),其余定时器照常走真的。
+    const realSet = globalThis.setInterval
+    const realClear = globalThis.clearInterval
+    const polls = new Map<unknown, () => void>()
+    globalThis.setInterval = ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (ms !== 5 * 60_000) return realSet(fn, ms, ...rest)
+      const id = Symbol("config-health-poll")
+      polls.set(id, fn)
+      return id
+    }) as typeof setInterval
+    globalThis.clearInterval = ((id: unknown) => {
+      if (polls.delete(id)) return
+      realClear(id as never)
+    }) as typeof clearInterval
+    try {
+      let calls = 0
+      installConfigHealth({ broken: false })
+      const ext = (window as unknown as { api: { ext: { configHealth: () => Promise<unknown> } } }).api.ext
+      const original = ext.configHealth
+      ext.configHealth = async () => {
+        calls += 1
+        return original()
+      }
+      const homeHost = document.createElement("div")
+      document.body.append(homeHost)
+      const disposeHome = render(
+        () => createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a")]), serverKey: () => STORE_SERVER_KEY }) as never,
+        homeHost,
+      )
+      const sessionHost = document.createElement("div")
+      document.body.append(sessionHost)
+      const disposeSession = render(
+        () => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }) as never,
+        sessionHost,
+      )
+      await flush()
+      expect(polls.size).toBe(1)
+
+      disposeHome()
+      await flush()
+      // 新对话页还挂着:轮询必须还在,并且真的去问了一次。
+      expect(polls.size).toBe(1)
+      const before = calls
+      for (const poll of polls.values()) poll()
+      await flush()
+      expect(calls).toBe(before + 1)
+
+      disposeSession()
+      await flush()
+      expect(polls.size).toBe(0)
+    } finally {
+      globalThis.setInterval = realSet
+      globalThis.clearInterval = realClear
+    }
+  })
+
+  test("AC2:标题为「新对话 — <工作区名>」", async () => {
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+
+    expect(host.querySelector("h1")?.textContent).toBe("新对话 — alpha-code")
+  })
+
+  test("AC3:新对话目录未就绪 ⇒ 中性占位「正在准备新对话…」,不渲染警告条", async () => {
+    setDraft({ server: STORE_SERVER_KEY, directory: "" })
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+    await flush()
+
+    const placeholder = host.querySelector<HTMLElement>("[data-alpha-new-session-preparing]")
+    expect(placeholder?.textContent).toBe("正在准备新对话…")
+    expect(placeholder?.getAttribute("role")).toBe("status")
+    expect(banners(host)).toHaveLength(0)
+    expect(textarea(host)).toBeNull()
+  })
+
+  test("AC3 负对照:目录就绪 ⇒ 不显示占位,输入框在", async () => {
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+
+    expect(host.querySelector("[data-alpha-new-session-preparing]")).toBeNull()
+    expect(textarea(host)).not.toBeNull()
+  })
+
+  test("AC4:输入框四处提示文案与批准稿 #home 表一致", () => {
+    expect(zh["alpha.composer.assemble"]).toBe("添加文件、上下文或模式")
+    expect(zh["alpha.composer.effortTitle"]).toBe("推理强度")
+    expect(zh["alpha.composer.effortChainPending"]).toBe("模型读取中")
+    expect(zh["alpha.composer.engineDefault"]).toBe("由模型决定")
   })
 })
 

@@ -609,3 +609,30 @@ body[data-alpha-sidebar="open"] .a-home--page {
   height: 9px;
   color: inherit;
 }
+
+/* #1590:新对话准备中的占位 —— 与输入框同尺寸、中性色(批准稿 #home)。 */
+.a-home-preparing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--a-space-2);
+  min-height: 100px;
+  border: 1px dashed var(--a-border);
+  border-radius: var(--a-radius-2xl);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+}
+.a-home-preparing-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.6px solid var(--a-border-strong);
+  border-top-color: var(--a-text-tertiary);
+  animation: a-home-preparing-spin 0.9s linear infinite;
+}
+@keyframes a-home-preparing-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-home-preparing-spinner { animation: none; }
+}

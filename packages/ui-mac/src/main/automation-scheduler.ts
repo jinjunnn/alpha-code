@@ -11,7 +11,7 @@ import { join } from "node:path"
 import { BrowserWindow, Notification, powerMonitor } from "electron"
 // CLIENT subpath(纯 fetch,main 的 Node 环境同样适用;v2 barrel 的 Node-only 依赖问题是 renderer 限定)
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import type { AutomationEvent, AutomationRunRecord, AutomationTask } from "../shared/automation-types"
+import type { AutomationEvent, AutomationRunNowErrorCode, AutomationRunRecord, AutomationTask } from "../shared/automation-types"
 import { AUTOMATION_DEFAULTS } from "../shared/automation-types"
 import { rescheduleAfterGap, shouldTripBreaker } from "../shared/automation-schedule"
 import { getAutomation, listAutomations, readAutomationState, saveAutomation, writeAutomationState } from "./alpha-automations"
@@ -113,14 +113,18 @@ function localDateStr(d: Date): string {
 
 /** A2(REQ-024):手动「立即运行」—— 不动 timers/plannedAt(不改 next-fire);占用全局并发位;
  *  计入每日 cap(诚实记账,手动跑也是跑)。 */
-export async function runAutomationNow(id: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+export async function runAutomationNow(
+  id: string,
+): Promise<{ ok: true } | { ok: false; code: AutomationRunNowErrorCode; reason: string }> {
+  // [#1592] 上屏的是结构码(renderer 按词典出文案);`reason` 只是日志串。
   const task = getAutomation(id)
-  if (!task) return { ok: false, reason: "任务不存在" }
-  if (runningTaskId) return { ok: false, reason: "另一任务正在运行" }
+  if (!task) return { ok: false, code: "automation-run-not-found", reason: "task not found" }
+  if (runningTaskId) return { ok: false, code: "automation-run-busy", reason: "another task is running" }
   const state = readAutomationState()
   const today = localDateStr(new Date())
   const usedToday = state.runCount.date === today ? state.runCount.count : 0
-  if (usedToday >= AUTOMATION_DEFAULTS.dailyRunCap) return { ok: false, reason: `已达每日运行上限(${AUTOMATION_DEFAULTS.dailyRunCap} 次/日)` }
+  if (usedToday >= AUTOMATION_DEFAULTS.dailyRunCap)
+    return { ok: false, code: "automation-run-daily-cap", reason: `daily run cap reached (${AUTOMATION_DEFAULTS.dailyRunCap}/day)` }
   writeAutomationState({ ...state, runCount: { date: today, count: usedToday + 1 } })
   runningTaskId = id
   const at = new Date().toISOString()
@@ -233,7 +237,8 @@ function runTimestamp(d: Date): string {
 }
 
 async function executeTask(task: AutomationTask): Promise<AutomationRunRecord> {
-  if (!awaitServer) return { at: new Date().toISOString(), status: "failed", summary: "scheduler not started" }
+  if (!awaitServer)
+    return { at: new Date().toISOString(), status: "failed", summary: "scheduler not started", reasonCode: "automation-run-not-ready" }
   const at = new Date().toISOString()
   const started = Date.now()
   const server = await awaitServer()

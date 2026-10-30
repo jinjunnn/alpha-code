@@ -431,3 +431,36 @@ body[data-alpha-sidebar="open"] .alpha-auto-page {
   color: var(--a-danger, #d33);
   font-variant-numeric: tabular-nums;
 }
+
+/* [#1592] 云端运行条件四行(批准稿 #auto-edit-cloud):标题 + 一行一句,中性说明色。 */
+.alpha-auto-cloud-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+}
+.alpha-auto-cloud-note b {
+  color: var(--a-text);
+  font-weight: var(--a-weight-semibold);
+}
+
+/* [#1592 AC5] 改成「可改文件」时的表单内确认(取代系统原生确认框;批准稿 #auto-cloud-locked)。 */
+.alpha-auto-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  font-size: var(--a-text-sm);
+  color: var(--a-text);
+}
+.alpha-auto-confirm > span {
+  flex: 1 1 auto;
+}

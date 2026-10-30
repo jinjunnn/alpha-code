@@ -17,8 +17,10 @@ export interface AutomationRunRecord {
   sessionID?: string
   /** 目标项目内的 run 目录(绝对路径),ok/failed/timeout 时存在。 */
   runDir?: string
-  /** 最终回复首行(列表/历史摘要用),或失败原因。 */
+  /** 最终回复首行(运行历史用),或失败原因(日志串,只进运行记录)。 */
   summary?: string
+  /** [#1592] 已知失败原因的结构码:列表行据它出人话;没有码的失败列表行只写「上次失败」。 */
+  reasonCode?: AutomationRunReasonCode
 }
 
 export interface AutomationTask {
@@ -65,6 +67,21 @@ export type AutomationStoreErrorCode =
   | "automation-schedule-invalid"
   | "automation-duration-invalid"
   | "automation-storage-failed" // 落盘抛错(磁盘满 / 无权限)
+
+/** [#1592] 一次运行失败的已知原因(同上的 kebab + `automation-` 前缀域)。 */
+export type AutomationRunReasonCode = "automation-run-not-ready" // 调度器未就绪,这次没跑
+
+/** [#1592] 「立即运行」被拒的本地结构码;`reason` 只进日志,界面按码出文案。 */
+export type AutomationRunNowErrorCode =
+  | "automation-run-not-found" // 任务已删除
+  | "automation-run-busy" // 另一个任务在运行(全局并发 1)
+  | "automation-run-daily-cap" // 今日已达每日上限
+
+/** [#1592] 「用 AI 解析」失败的本地结构码;原始报错只进日志。 */
+export type AutomationParseErrorCode =
+  | "automation-parse-no-schedule" // 模型没给出可用的周期
+  | "automation-parse-unavailable" // 引擎 / 临时会话 / 模型调用不可用
+  | "automation-parse-blocked" // 本机内容安全审核命中
 
 /** 调度器 → renderer 的推送事件(preload "automation-event" 通道)。 */
 export type AutomationEvent =

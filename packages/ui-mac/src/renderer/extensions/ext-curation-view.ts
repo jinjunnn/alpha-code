@@ -8,6 +8,7 @@
 //   · 词汇映射(tier/能力 token → 用户语言 i18n key;未知 token 原样 mono,不猜翻译)。
 
 import {
+  curationActivationFacts,
   decodeEntryCuration,
   isReviewExpired,
   type Curation,
@@ -15,6 +16,7 @@ import {
   type CurationTier,
 } from "../../shared/catalog-curation"
 import type { Catalog, CatalogEntry } from "./catalog-types"
+import { initialDesiredState } from "../../shared/ext-install-policy"
 
 /** 货架固定序(v6 稿:核心 → 精选 → 接入 → 实验室)。 */
 export const SHELF_ORDER: readonly CurationTier[] = ["core", "precache", "connector", "labs"]
@@ -136,4 +138,34 @@ export function formatBytesApprox(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
   return `${bytes} B`
+}
+
+export type ConfirmNoteKey = "alpha.ext.confirmNote" | "alpha.ext.confirmNoteDefaultOff" | "alpha.ext.confirmNoteUnreviewed"
+
+/**
+ * #1595 AC1:添加确认框的那一句。装好后是不是关着的,由 main 落账同一个分类器决定
+ * (`initialDesiredState`,与 hub 的「已安装但未启用」提示同一组入参):
+ * 装好即启用 →「保存后立即生效」;关着且已审核(curation 声明 default-disabled 等)→「装好后默认关闭」;
+ * 关着且没审核 →「未经审核,装好后默认关闭」。
+ */
+export function confirmNoteKey(entry: CatalogEntry, catalog: Catalog, nowIso: string): ConfirmNoteKey {
+  const status = curationOf(curationMapOf(catalog), entry.id)
+  const disabled =
+    initialDesiredState({
+      origin: "catalog",
+      source: entry.source,
+      kind: entry.type,
+      ...curationActivationFacts(status, nowIso),
+    }) === "disabled"
+  if (!disabled) return "alpha.ext.confirmNote"
+  return status.kind === "curated" ? "alpha.ext.confirmNoteDefaultOff" : "alpha.ext.confirmNoteUnreviewed"
+}
+
+/**
+ * #1595 AC1 包确认屏:与 main `package-admission.ts` 的落账同一入参(`{ origin: "catalog" }` + 组件类型,
+ * 包没有 curation)逐个判断要装的组件;有一件会关着就说「未经审核,装好后默认关闭」。
+ */
+export function packageConfirmNoteKey(componentKinds: readonly string[]): ConfirmNoteKey {
+  const anyDisabled = componentKinds.some((kind) => initialDesiredState({ origin: "catalog", kind }) === "disabled")
+  return anyDisabled ? "alpha.ext.confirmNoteUnreviewed" : "alpha.ext.confirmNote"
 }

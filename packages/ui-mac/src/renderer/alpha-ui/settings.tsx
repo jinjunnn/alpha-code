@@ -13,31 +13,28 @@ import { enterModal } from "./modal-presence"
 import { settingsSurfaceApi, type SettingsSurfaceApi } from "./settings-authority-client"
 import { AlphaSettingsTools } from "./settings-tools"
 import { t } from "../i18n"
+import { SHELL_KEYBINDS } from "../sidebar/shell-keybinds"
+// 只读取上游命令层的默认面板键位与键帽格式化(与真正解析按键的是同一份代码),不改上游。
+import { DEFAULT_PALETTE_KEYBIND, formatKeybindParts } from "../../../../app/src/context/command"
 import "./settings.css"
 
 type SettingsSection = "general" | "shortcuts" | "storage" | "tools"
 
+// #1593 AC4:自动保存文件、显示会话进度、显示推理摘要,以及文件树 / 导航控件 / 搜索入口 / 状态信息 /
+// 终端入口这几个开关全仓没有生效的读取方(坐标见批准稿审查表 S6),从界面拿掉;已存的设置数据不动
+// (保存时整份 draft 原样写回,这些键的值随之保留)。
 const GENERAL_TOGGLES = [
-  { key: "autoSave", label: "alpha.settings.autoSave", description: "alpha.settings.autoSaveDesc" },
   { key: "releaseNotes", label: "alpha.settings.releaseNotes", description: "alpha.settings.releaseNotesDesc" },
-  { key: "showReasoningSummaries", label: "alpha.settings.reasoning", description: "alpha.settings.reasoningDesc" },
-  { key: "showSessionProgressBar", label: "alpha.settings.progress", description: "alpha.settings.progressDesc" },
   { key: "showCustomAgents", label: "alpha.settings.customAgents", description: "alpha.settings.customAgentsDesc" },
 ] as const
 
-const INTERFACE_TOGGLES = [
-  { key: "showFileTree", label: "alpha.settings.fileTree", description: "alpha.settings.fileTreeDesc" },
-  { key: "showNavigation", label: "alpha.settings.navigation", description: "alpha.settings.navigationDesc" },
-  { key: "showSearch", label: "alpha.settings.search", description: "alpha.settings.searchDesc" },
-  { key: "showStatus", label: "alpha.settings.status", description: "alpha.settings.statusDesc" },
-  { key: "showTerminal", label: "alpha.settings.terminal", description: "alpha.settings.terminalDesc" },
-] as const
-
-const SHORTCUTS = [
-  { id: "settings.open", label: "alpha.settings.shortcutOpenSettings", fallback: "⌘," },
-  { id: "command.palette", label: "alpha.settings.shortcutCommands", fallback: "⌘K" },
-  { id: "project.open", label: "alpha.settings.shortcutOpenProject", fallback: "⌘O" },
-  { id: "session.new", label: "alpha.settings.shortcutNewSession", fallback: "⌘N" },
+// #1593 AC1:占位与键帽都取命令注册时的默认组合 —— 壳级三条读侧栏注册同一份 `SHELL_KEYBINDS`,
+// 面板读上游默认值;设置页不另写一份。占位用文字写法(就是输入框认的那种),照着填就有效。
+export const SHORTCUTS = [
+  { id: "settings.open", label: "alpha.settings.shortcutOpenSettings", defaultKeybind: SHELL_KEYBINDS["settings.open"] },
+  { id: "command.palette", label: "alpha.settings.shortcutCommands", defaultKeybind: DEFAULT_PALETTE_KEYBIND },
+  { id: "project.open", label: "alpha.settings.shortcutOpenProject", defaultKeybind: SHELL_KEYBINDS["project.open"] },
+  { id: "session.new", label: "alpha.settings.shortcutNewSession", defaultKeybind: SHELL_KEYBINDS["session.new"] },
   // REQ-126 AC7(#658):`session.previous` / `session.next` 已随上游 session 叶与 legacy layout
   // 一起退休(见 shared/desktop-menu-policy.ts)。上游只对**已注册**的 option 应用自定义键位
   // (context/command.tsx),所以把它们留在这张表里 = 用户改得了、存得下、按下去什么都不发生。
@@ -366,13 +363,15 @@ export function AlphaSettings(props: {
   const ToggleRow = (rowProps: {
     checked: boolean
     label: string
-    description: string
+    description?: string
     onChange: (value: boolean) => void
   }) => (
     <label class="alpha-settings-row alpha-settings-toggle-row">
       <span class="alpha-settings-row-copy">
         <strong>{rowProps.label}</strong>
-        <small>{rowProps.description}</small>
+        <Show when={rowProps.description}>
+          <small>{rowProps.description}</small>
+        </Show>
       </span>
       <input
         class="alpha-settings-switch"
@@ -478,7 +477,7 @@ export function AlphaSettings(props: {
               )}
             </Show>
             <Show when={saved()}>
-              <Banner kind="success" title={t("alpha.settings.saved")} detail={t("alpha.settings.savedDetail")} />
+              <Banner kind="success" title={t("alpha.settings.saved")} />
             </Show>
 
             <Show when={section() === "general" && draft()}>
@@ -544,16 +543,6 @@ export function AlphaSettings(props: {
                         }}
                       />
                     </label>
-                    <For each={INTERFACE_TOGGLES}>
-                      {(item) => (
-                        <ToggleRow
-                          checked={current().general[item.key]}
-                          label={t(item.label)}
-                          description={t(item.description)}
-                          onChange={(value) => updateGeneral(item.key, value)}
-                        />
-                      )}
-                    </For>
                   </section>
 
                   <section class="alpha-settings-group" aria-labelledby="settings-notifications-title">
@@ -586,7 +575,6 @@ export function AlphaSettings(props: {
                         <ToggleRow
                           checked={current().notifications[item.key]}
                           label={item.label}
-                          description={t("alpha.settings.notifyDesc")}
                           onChange={(value) => updateNotification(item.key, value)}
                         />
                       )}
@@ -617,18 +605,20 @@ export function AlphaSettings(props: {
                   <section class="alpha-settings-group" aria-label={t("alpha.settings.shortcutList")}>
                     <For each={SHORTCUTS}>
                       {(shortcut) => (
-                        <label class="alpha-settings-row alpha-settings-shortcut-row">
+                        <label class="alpha-settings-row alpha-settings-shortcut-row" data-shortcut={shortcut.id}>
                           <span class="alpha-settings-row-copy">
                             <strong>{t(shortcut.label)}</strong>
-                            <small>
-                              <code>{shortcut.id}</code>
-                            </small>
+                          </span>
+                          <span class="alpha-settings-kb-chord" aria-hidden="true">
+                            <For each={formatKeybindParts(shortcut.defaultKeybind)}>
+                              {(part) => <kbd class="alpha-settings-kb-key">{part}</kbd>}
+                            </For>
                           </span>
                           <input
                             class="alpha-settings-shortcut"
                             type="text"
                             aria-label={t("alpha.settings.shortcutLabel", { label: t(shortcut.label) })}
-                            placeholder={shortcut.fallback}
+                            placeholder={shortcut.defaultKeybind}
                             value={current().keybinds[shortcut.id] ?? ""}
                             disabled={!readyToEdit() || saving()}
                             onInput={(event) => updateShortcut(shortcut.id, event.currentTarget.value)}
@@ -688,7 +678,7 @@ export function AlphaSettings(props: {
                   >
                     {(result) => (
                       <span>
-                        {t("alpha.settings.storageStatus")}{storageCodeLabel(result().code)} <code>{result().code}</code>
+                        {t("alpha.settings.storageStatus")}{storageCodeLabel(result().code)}
                       </span>
                     )}
                   </Show>

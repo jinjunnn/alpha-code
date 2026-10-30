@@ -1399,6 +1399,12 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-text-tertiary);
   min-width: 0;
 }
+/* #1595:云连接器工具行首是自然语言名(技术名进「开发者详情」)。 */
+.alpha-ext-dtool b {
+  flex: 0 0 auto;
+  font-weight: var(--a-weight-medium, 500);
+  color: var(--a-text);
+}
 .alpha-ext-dtool span[data-action="deny"] {
   color: var(--a-error);
 }
