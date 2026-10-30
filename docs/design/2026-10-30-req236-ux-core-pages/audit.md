@@ -72,18 +72,18 @@ relates:
 
 | # | 位置 | 维度 | 现状 | 等级 | 改法 | 归属 |
 | --- | --- | --- | --- | --- | --- | --- |
-| C1 | `session-timeline/session-timeline.tsx:60-75`(`sync(id).catch(() => {})`;就绪 = 消息页已存在);`session-timeline-view.tsx:284-292`(空态只在就绪后) | 可操作性 | 打开对话,内容到之前时间线一片空白;读取失败被吞掉,就一直空白 —— 没有字、没有按钮,像是对话被清空了 | 挡任务 | 未就绪超过 0.3 秒显示「正在读取对话…」;读取被拒显示「没能读出这段对话的内容」+ 一句原因 +「重新读取」(重发同一 sync) | 本稿 T1 · 帧 `#conv-loading` |
+| C1 | `session-timeline/session-timeline.tsx:60-75`(`sync(id).catch(() => {})`;就绪 = 消息页已存在);`session-timeline-view.tsx:284-292`(空态只在就绪后) | 可操作性 | 打开对话,内容到之前时间线一片空白;读取失败被吞掉,就一直空白 —— 没有字、没有按钮,像是对话被清空了 | 挡任务 | 未就绪超过 0.3 秒显示「正在读取对话…」;读取被拒,**或到读取期限仍未落定**(今天读取会一直挂着,见 Q2),显示「没能读出这段对话的内容」+ 一句原因 +「重新读取」;重新读取必须发出新请求,不拿回挂着的旧请求 | 本稿 T1 · 帧 `#conv-loading` |
 | C2 | `session-workspace/session-workspace-core.ts:46`(标题 = 原始标题,缺席时 = 会话编号);`session-workspace-shell.tsx:216`;侧栏另有映射 `alpha-sidebar.tsx:130-133` | 文字 | 没生成标题的对话(本机库 5/27,正是首轮失败的那些),顶栏写「New session - 2026-09-21T06:29:08.485Z」,侧栏写「新对话」;会话记录未到时顶栏写会话编号 | 误导 | 侧栏的标题显示规则搬到共享模块,顶栏、空对话提示、搜索同用;编号回退改为「对话」 | 本稿 T2 · 帧 `#conv-header` |
 | C3 | `session-timeline.tsx:211`(空态标题 = 原始标题) | 文字 | 空对话提示的大标题同样可能是英文时间戳 | 打磨 | 同 C2 | 本稿 T2 |
 | C4 | `session-workspace-core.ts:47`(非 idle 一律 running);`session-workspace-shell.tsx:217-226`;`zh.ts:1359-1360`;时间线等待信号 `alpha-session-workspace.tsx:65,129` | 文字 · 必要性 | 助手停下等你批准 / 等你回答 / 自动重试时,顶栏仍写「正在生成…」,而时间线写「等待你的决定」;没在跑时常驻一枚「空闲」 | 误导 | 顶栏状态读同一个等待信号:等你批准 / 等你回答 / 正在重试 / 正在生成;空闲不显示 | 本稿 T1 · 帧 `#conv-header` |
 | C5 | `session-workspace-shell.tsx:209` | 文字 | 拿不到项目名时项目头像显示旧品牌符号「α」 | 打磨 | 显示空白圆角块 | 本稿 T1 |
 | C6 | `session-timeline.tsx:122-125`(模式名首字母大写);`session-timeline-view.tsx:432-443` | 文字 | 用户消息脚注「发往 Build」(本机库 65/70 条)、「发往 Alpha-ask」「发往 Alpha-readonly」 | 打磨 | 第一方模式映射成输入框里的档名与色点(全部批准 / 请求审批 / 只读 / 计划 / 自动化任务);用户自建助手照写原名 | 本稿 T1 · 帧 `#user-meta` |
 | C7 | `session-timeline/timeline-model.ts:882-897`(正文 = 服务原话);`cards/tool-cards.tsx:782-808`;已批帧 `current/conversation-timeline/design.html:169` 用的是人话 | 文字 · 可操作性 | 回复失败卡贴原话:「预授权拒绝: member-only model 需 active 会员」+「APIError」。不知道原因,也不知道能换模型 | 挡任务 | 只按结构化字段(错误名、状态码)认五类:402、401/403 与登录凭据错误、429、对话超长、回答被截断 → 固定人话 + 下一步;等宽行改为「错误名 状态码 · 原话」;认不出的原样不动 | 本稿 T1 · 帧 `#turn-error` |
-| C8 | 同 C7 | 文字 | 本机库 4/5 的回合错误是「Cannot connect to API: Request was cancelled.」(无状态码),英文工程话 | 误导 | 成因未定,先不改,认不出的分支原样;成因定了再决定归 T1 还是 #1572 | 不改 · 待 Codex 征询 Q1 |
+| C8 | 同 C7 | 文字 | 本机库 4/5 的回合错误是「Cannot connect to API: Request was cancelled.」(无状态码),英文工程话 | 误导 | 这是底层请求被终止后由 SDK 包成的传输失败(见 Q1),属于未归因的传输失败。T1 不认这条字符串、不为它写专门文案;通用失败卡里出现时,措辞最多是「请求没有完成,可以再发送一次」,不承诺「重新发送即可」 | 已归 #1572 |
 | C9 | `session-timeline-view.tsx:233-238`(只在贴底时跟随);无「自己发出」的钩子 | 可操作性 | 往上翻着对照历史时发出新消息,输入框清空,视图不动,看不到刚发的那条和助手在动 | 误导 | 新出现的行是自己发的用户消息时回到最新;助手生成时照旧不打扰 | 本稿 T1 · 帧 `#send-follow` |
 | C10 | `session-timeline-view.tsx:187-188`(`.catch(() => {})`) | 可操作性 | 往上翻加载更早消息失败,按钮静默复原,不说失败了 | 打磨 | 失败时那一行写「更早的消息没加载出来 · 重试」 | 本稿 T1 |
 | C11 | `timeline-model.ts:571-577`(摘要用工具技术名);`img12` | 文字 | 工作过程摘要「alpha_cloud_access 1 次 · cloud_dispatch 1 次 · cloud_await 1 次」 | 误导 | 云工具标题要先过来源证明,改名后标题表跟新名 | 已归 #1576(来源)+ #1568(名字) |
-| C12 | `cards/tool-card-model.ts:281-284,1319-1321`(插件来源 = origin);`img11` | 文字 | 第一方扩展插件那一步显示安装路径「/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js」和技术名 | 误导 | 两张在途票都碰这里,但 AC 都没点名第一方插件:#1576 方案 §2.6 第 5 条会把它归「第三方来源」并带路径名,#1568 只给云端工具标题 | 已归 #1576 / #1568 —— **需编排器在票面补一句**,见 Q3 |
+| C12 | `cards/tool-card-model.ts:281-284,1319-1321`(插件来源 = origin);`img11` | 文字 | 第一方扩展插件那一步显示安装路径「/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js」和技术名 | 误导 | — | 已归 #1576 |
 | C13 | `zh.ts:1533`;`img11` | 文字 | 自家云工具那一步写「这个工具来自第三方(cloud),我们不显示它收到和返回的内容」 | 误导 | — | 已归 #1576 |
 | C14 | 生图过程步骤与结果 | — | 只有技术名工具卡,图要去右栏找 | — | 过程留在工作过程折叠里,主视图只留回答和卡片(已批裁决) | 已归 #1552 |
 | C15 | 用户消息里的附件 | — | — | — | — | 已归 #1553 |
@@ -131,23 +131,25 @@ relates:
 
 | 标题 | 覆盖 | 边界(模块 / 关键文件) | out-of-scope | 尺寸 | 难度 | 依赖 | 将来拿什么证明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **T1** `[REQ-236][CODE] 对话页读取与回复失败时说清原因并给出路,顶栏状态和消息脚注改写成用户的话` | AC3 · T18 | `renderer/alpha-ui/session-timeline/session-timeline.tsx`(读取被拒信号、模式显示名)、`session-timeline-view.tsx`(读取行 / 读取失败行、自己发出时回到最新、更早消息失败提示)、`timeline-model.ts:882-897` 与 `cards/tool-cards.tsx:782-808`(五类已知原因的人话)、`session-workspace/session-workspace-shell.tsx:205-226` 与 `alpha-session-workspace.tsx`(顶栏状态读等待信号、去「空闲」与「α」)、`i18n/{zh,en,zht}.ts` | 工具名、来源标签、开发者详情(#1568 / #1576);生图卡(#1552);附件(#1553);联网分层文案(#1572);回合错误卡加按钮;消息上下条导航 | M | 常规 —— 状态都是已有事实的投影;难点是错误归类只认错误名与状态码,并与 #1572 在同一函数里共存 | 等 **#1572** 先合(同改 `timeline-model.ts:882-899`、`tool-cards.tsx:788-800`);等 **#1568** 先合(模式名改名,映射表用新名);等 **T2** 先合(同改顶栏);与 #1552 / #1553 同改 `session-timeline-view.tsx`、`timeline-model.ts`,后合者 rebase | `session-timeline.test.ts`(读取被拒 → 失败行与重新读取;未就绪超时 → 读取行);`timeline-model.test.ts`(402 / 401 / 403 / 登录凭据错误 / 429 / 对话超长 / 回答截断 → 固定文案,其余原样);视图滚动用例(不在底部时新增自己的用户行 → 贴底);顶栏组件用例(等你批准 / 等你回答 / 正在重试 / 空闲不渲染);脚注用例(第一方模式 → 档名,未知名原样);对照本稿 `#conv-header` `#conv-loading` `#turn-error` `#user-meta` `#send-follow`;T23「对话页」格 |
+| **T1** `[REQ-236][CODE] 对话页读取与回复失败时说清原因并给出路,顶栏状态和消息脚注改写成用户的话` | AC3 · T18 | `renderer/alpha-ui/session-timeline/session-timeline.tsx`(读取被拒信号、模式显示名)、`session-timeline-view.tsx`(读取行 / 读取失败行、自己发出时回到最新、更早消息失败提示);**读取期限**优先放在 alpha 自有层(`session-timeline.tsx` 包住 `sync` 的等待),到期判失败,重新读取发出新请求、不复用 `packages/app/src/context/server-session.ts:135` `runInflight` 里挂着的旧 Promise —— 若必须改 `packages/app` 的上游文件,按 north-star 例外规则登记(ADR-029 / ADR-041),在票里逐个列出;`timeline-model.ts:882-897` 与 `cards/tool-cards.tsx:782-808`(五类已知原因的人话)、`session-workspace/session-workspace-shell.tsx:205-226` 与 `alpha-session-workspace.tsx`(顶栏状态读等待信号、去「空闲」与「α」)、`i18n/{zh,en,zht}.ts` | 工具名、来源标签、开发者详情(#1568 / #1576);生图卡(#1552);附件(#1553);联网分层文案与「Cannot connect to API: Request was cancelled.」等未归因的传输失败(#1572);回合错误卡加按钮;消息上下条导航 | M | 常规 —— 状态都是已有事实的投影;难点是错误归类只认错误名与状态码,并与 #1572 在同一函数里共存 | 等 **#1572** 先合(同改 `timeline-model.ts:882-899`、`tool-cards.tsx:788-800`);等 **#1568** 先合(模式名改名,映射表用新名);等 **T2** 先合(同改顶栏);与 #1552 / #1553 同改 `session-timeline-view.tsx`、`timeline-model.ts`,后合者 rebase | `session-timeline.test.ts`(读取被拒 → 失败行与重新读取;未就绪超时 → 读取行;**读取永不落定 ⇒ 到期限出现失败行;重新读取发出新请求**);`timeline-model.test.ts`(402 / 401 / 403 / 登录凭据错误 / 429 / 对话超长 / 回答截断 → 固定文案,其余原样);视图滚动用例(不在底部时新增自己的用户行 → 贴底);顶栏组件用例(等你批准 / 等你回答 / 正在重试 / 空闲不渲染);脚注用例(第一方模式 → 档名,未知名原样);对照本稿 `#conv-header` `#conv-loading` `#turn-error` `#user-meta` `#send-follow`;T23「对话页」格 |
 | **T2** `[REQ-236][CODE] 会话搜索按侧栏所见标题匹配、能用方向键和回车打开,对话顶栏不再显示时间戳或编号` | AC3 · T18 | `renderer/alpha-ui/alpha-session-search.tsx`、`session-search.css`;新共享模块承接 `sidebar/alpha-sidebar.tsx:130-133` 的显示标题规则(侧栏改为引用);`session-workspace/session-workspace-core.ts:46`、`session-workspace-shell.tsx:209-216`、`session-timeline/session-timeline.tsx:211`;`i18n` | 文件搜索、命令执行、筛选器、对话内容全文搜索、跨服务器、侧栏内联过滤框去留、匹配高亮 | M | 轻 —— 纯渲染端,数据已在侧栏同一份 store;键盘逻辑在单组件内 | 无在途票碰 `alpha-session-search.tsx`;`alpha-sidebar.tsx` 会被 #1570 机械改名 —— 本票应在 #1570 之前合 | `alpha-session-search.test.ts`(默认标题显示「新对话」且能被「新对话」搜到;↓ + 回车打开第二条;无结果回车不导航;服务未就绪或项目未加载 → 读取中文案);`session-workspace-core` 用例(标题回退不含会话编号);侧栏既有用例不变;对照本稿 `#search` `#conv-header`;T23「搜索」格 |
 | **T3** `[REQ-236][CODE] 新对话页显示全局配置失效提示,首页与输入框去掉工程用语` | AC3 · T18 | `renderer/alpha-ui/alpha-new-session.tsx:113-128`、`AlphaHome.tsx:128-135`(提示条共用)、`alpha-composer.tsx:324,519,525,557` 的文案键、`i18n` | 输入框附件、状态行、模型选择器(#1553 / #1557 / #1558);首页与新对话页合并 | S | 轻 —— 挂载既有组件 + 换文案 | `alpha-composer.tsx` 同被 #1553 / #1557 / #1558 改,本票只动四个文案键,在它们之后 rebase;i18n 冲突为机械 | `new-session-workspace.component.test.ts`(配置失效 → 提示条与「打开配置」;目录未就绪 → 中性占位、无警告条);对照本稿 `#home`;T23「首页」格 |
 | **T4** `[REQ-236][CODE] 产物右栏的警告与出错文字改成用户能懂的话` | AC3 · T18 | `i18n` 的 `alpha.wb.mismatchBanner` / `cloudListFailed` / `fileMissing` / `notDownloaded` / `office.status.*` / `previewCrashed` 与 `alpha.session.artifactsVerifyFailed`;`artifacts-panel-view.tsx:532,541,581`(原话降为第二行、不一致改警示色) | 右栏结构、范围切换、技术详情折叠、下载恢复(#1552) | S | 轻 —— 文案与一处颜色 | 等 **#1552** 先合(同文件重排);也可由编排器作为建议并入 #1552 | 产物面板既有渲染用例改期望;对照本稿 `#artifacts-copy`;T23「产物」格 |
 
 ## 待 Codex 征询
 
-- **Q1**「Cannot connect to API: Request was cancelled.」从哪来?本机库 5 条回合错误里 4 条是它(`APIError`,无状态码),
-  而且正是那 4 个标题停在英文时间戳的对话。是引擎因令牌续期重启时切断了在途请求,还是用户中止被归成了 `APIError`?
-  坐标:`packages/opencode/src/session/message-v2.ts:680-740`(错误分派)、`ui-mac/.../session-timeline/timeline-model.ts:884-897`、
-  `docs/design/req236-engine-lifecycle.md`。答案决定这类卡能不能说「连接被中断了,重新发送即可」,以及归 T1 还是 #1572。
-- **Q2** `serverSync().session.sync` 在内部重试用尽后是 reject,还是可能一直挂着?坐标:`packages/app/src/context/server-session.ts:537-600,836-848`
-  与 `@opencode-ai/core/util/retry`。决定 T1 的读取失败行只靠 reject 就够,还是还要一个读取期限。
-- **Q3** 第一方扩展插件的工具该显示成什么来源?#1576 方案 §2.6 第 5 条把 `plugin` 一律归「第三方来源(带 origin 名)」,
-  第一方插件的 origin 是安装路径(`img11`),照做就会显示「第三方来源 /Applications/…/plugin.js」。来源只能由 identity 证明、
-  不能按路径字符串判(规范 §4 第 4 条),那第一方插件凭什么归「Code Puppy 内置」?坐标:`cards/tool-card-model.ts:281-284,1319-1321`、
-  `docs/design/req236-permissions-and-provenance.md` §2.6。结论应写进 #1576 / #1568 的票面,不新开票。
+三问均已答复(2026-10-30),编排器裁决已并入上文;坐标经本 lane 逐条复核,行号未对上的照实标出。
+
+- **Q1 已答**:「Cannot connect to API: Request was cancelled.」是底层请求被终止后由 SDK 包成的 `APIError`:
+  undici `lib/web/fetch/response.js` 的非 AbortError 分支产出「Request was cancelled.」(装着的 6.x 在 `:450`、7.x 在 `:488`/`:490`;
+  Codex 引的 `:442` 与装着的版本行号未对上)→ `@ai-sdk/provider-utils` `src/handle-fetch-error.ts:51` 加「Cannot connect to API: 」前缀、不带状态码
+  → `packages/opencode/src/session/message-v2.ts:692` 归为 `APIError`。正常的用户中止走 `processor.ts:677`(标记中止)→ `message-v2.ts:625,656`
+  的 `AbortedError`,不是这一条。令牌续期重启确实会强关在途连接(`packages/ui-mac/src/main/index.ts:228` 以 `token-rotation` 停 sidecar,
+  `sidecar-stop.ts:38` 带 `closeActiveConnections: true`)。**裁决**:归 #1572(未归因的传输失败);T1 不认这条字符串(见 C8)。
+- **Q2 已答**:对话读取会一直挂着。`packages/core/src/util/retry.ts:33` 直接 `await fn()`、无期限;`server-session.ts:841` 的 `Promise.all` 无期限;
+  消息读取 `server-session.ts:537` 不传取消信号;只有请求落定才会 reject。**裁决**:T1 加读取期限,超时即失败行 + 重新读取,
+  重新读取发新请求(见 C1 与 T1 边界、证据)。
+- **Q3 已答**:第一方扩展插件的来源显示归 #1576 / #1568,由编排器把建议写进那两张票;本稿只标归属(见 C12)。
 
 ## 待 owner 裁决
 
@@ -167,10 +169,10 @@ relates:
 
 ## 仍是推断、没核过的断言
 
-- 读取对话失败在实际使用中多常见:只证明了代码路径上失败没有任何呈现,没在日志里取到失败样本。
-- `sync` 重试用尽后会 reject(Q2 未答前是推断)。
+- 读取对话卡住或失败在实际使用中多常见:代码路径已核实(读取无期限、可一直挂着,坐标见 Q2),但没在日志里取到失败样本。
+- ~~`sync` 重试用尽后会 reject~~ → **已核实,结论相反**:请求不落定就永远不 reject(`packages/core/src/util/retry.ts:33`、`packages/app/src/context/server-session.ts:537,841`)。
 - 焦点在结果链接上按回车会触发打开:这是浏览器标准行为,未在应用里实测。
-- 「Request was cancelled」的成因(Q1)。
+- 「Request was cancelled」:**机制已核实**(undici 非 AbortError 分支 → `handle-fetch-error.ts:51` → `message-v2.ts:692`;续期重启强关连接 `ui-mac/src/main/index.ts:228`、`sidecar-stop.ts:38`);**与本机库那 4 条的因果仍是推断**。
 - 「发往 Build」等是由 `session-timeline.tsx:122-125` 推出的显示结果,未截图;本机库的模式计数是实测。
 - 「配置写坏后用户只会发现设置没生效」是按 `ext-config.ts:1573-1597` 的提示文案(「引擎会忽略整份配置」)推出的后果,未实测。
 
