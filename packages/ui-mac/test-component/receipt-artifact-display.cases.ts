@@ -69,8 +69,34 @@ const excelEntry = {
   },
 } as never
 
-// #1564:详情页对四个第一方 Office 条目读 main 的随包运行时事实(preload `ext.officeRuntime`);这里只给那一条 IPC。
-Object.defineProperty(window, "api", { configurable: true, writable: true, value: { ext: { officeRuntime: async () => ({ ok: true }) } } })
+/** #1564:alpha-web 签名目录里 Word 卡片的原样(`alpha-catalog.json`):仍写着 uv 命令与 runtimeDep ["uv"]。 */
+const wordEntry = {
+  id: "mcp:alpha-word",
+  type: "mcp",
+  name: "alpha-word",
+  displayName: "Word 文档读写",
+  description: "读写 .docx",
+  source: "alpha",
+  category: "office",
+  license: "MIT",
+  version: "1.0.0",
+  installSpec: {
+    kind: "mcp",
+    mcpType: "local",
+    command: ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", "{alphaResources}/office-mcp/server.py", "word", "{workspace}"],
+    requiredEnvVars: [],
+    runtimeDep: ["uv"],
+  },
+} as never
+
+// #1564:详情页对四个第一方 Office 条目读 main 的随包运行时事实(preload `ext.officeRuntime`);本机 PATH 上没有 uv
+// (`ext.checkRuntime("uv")` 为 false)。
+let officeRuntimeAnswer: { ok: true } | { ok: false; reason: "office-runtime-missing" } = { ok: true }
+Object.defineProperty(window, "api", {
+  configurable: true,
+  writable: true,
+  value: { ext: { officeRuntime: async () => officeRuntimeAnswer, checkRuntime: async (tool: string) => ({ ok: tool !== "uv" }) } },
+})
 
 const disposals: Array<() => void> = []
 afterAll(() => {
@@ -78,7 +104,7 @@ afterAll(() => {
 })
 
 /** 挂真 `ExtensionDetail`(生产组件,零替身),receipts 用给定的那一份。 */
-function mountDetail(receipts: Array<Record<string, unknown>>, installed: boolean): HTMLElement {
+function mountDetail(receipts: Array<Record<string, unknown>>, installed: boolean, entry = excelEntry): HTMLElement {
   const host = document.createElement("div")
   document.body.append(host)
   const ext = {
@@ -90,7 +116,7 @@ function mountDetail(receipts: Array<Record<string, unknown>>, installed: boolea
   const dispose = render(
     () =>
       createComponent(ExtensionDetail, {
-        target: { kind: "entry", entry: excelEntry },
+        target: { kind: "entry", entry },
         ext,
         catalogVersion: "2026-08-17.3",
         byId: () => undefined,
@@ -163,5 +189,32 @@ describe("REQ-105 #319 — the detail header states what the install actually ex
     const host = mountDetail([], false)
     expect(digestNode(host)).toBeNull()
     expect(host.textContent ?? "").not.toContain(en["alpha.ext.detailArtifactDigest"])
+  })
+})
+
+// ── #1564 AC3:详情页的运行环境一节,对 Office 条目读随包运行时事实,不读卡片的 runtimeDep(uv)──────────────
+async function settle() {
+  for (let i = 0; i < 6; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+const runtimePills = (host: HTMLElement) => [...host.querySelectorAll("[data-dep]")].map((node) => [node.getAttribute("data-dep"), node.textContent ?? ""])
+
+describe("#1564 AC3 — the detail page's runtime section for a document tool", () => {
+  test("no uv on PATH, bundled runtime present ⇒ the bundled runtime is ✓ and uv is never listed", async () => {
+    officeRuntimeAnswer = { ok: true }
+    const host = mountDetail([], false, wordEntry)
+    await settle()
+    expect(runtimePills(host)).toEqual([["ok", `${en["alpha.ext.officeRuntime"]} ✓`]])
+    expect(host.textContent ?? "").not.toContain(en["alpha.ext.depMissingTitle"])
+    expect([...host.querySelectorAll("code")].map((node) => node.textContent)).not.toContain("brew install uv")
+    expect(host.textContent ?? "").not.toContain(en["alpha.ext.officeRuntimeMissing"])
+  })
+
+  test("bundled runtime missing ⇒ the named reason that says to reinstall Code Puppy", async () => {
+    officeRuntimeAnswer = { ok: false, reason: "office-runtime-missing" }
+    const host = mountDetail([], false, wordEntry)
+    await settle()
+    expect(runtimePills(host)).toEqual([["missing", `${en["alpha.ext.officeRuntime"]} ✗ ${en["alpha.ext.depMissing"]}`]])
+    expect(host.textContent ?? "").toContain(en["alpha.ext.officeRuntimeMissing"])
+    officeRuntimeAnswer = { ok: true }
   })
 })

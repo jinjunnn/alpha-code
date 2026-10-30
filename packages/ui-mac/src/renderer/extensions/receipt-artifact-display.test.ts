@@ -5,7 +5,7 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
 
-test("the production ExtensionDetail header states the recorded artifact digest, or says it is not recorded", () => {
+test("the production ExtensionDetail header states the recorded artifact digest, or says it is not recorded; a document tool's runtime section reads the bundled runtime (#1564)", () => {
   const result = Bun.spawnSync({
     cmd: [
       process.execPath,
@@ -19,7 +19,7 @@ test("the production ExtensionDetail header states the recorded artifact digest,
   if (result.exitCode !== 0) throw new Error(output)
   // 计数按本仓纪律钉死:先确认新用例真的跑起来了才把数字同步上来。只判「0 fail」会让
   // 「一个都没跑」直接读成通过(本机陷阱:跑了 0 条时 0 fail 恒成立)。
-  expect(output).toContain(" 4 pass")
+  expect(output).toContain(" 6 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 4 tests across 1 file/)
+  expect(output).toMatch(/Ran 6 tests across 1 file/)
 }, 60_000)
