@@ -298,6 +298,32 @@ describe("AC5 one coordinator per run", () => {
     expect(h.tracker.get(projectDir, RUN)?.delivery.status).toBe("saved")
   })
 
+  // r1 审计:SSE 被代理缓冲或建不起来时(订阅端对 401/404 以外的失败无限重连),单飞不能把之后的补救吞成空操作。
+  test("等 SSE 时再次 trackRun 叫醒在途交付:SSE 永不出帧、状态已终态 ⇒ 重查一次状态后落盘 saved", async () => {
+    const h = harness({ statuses: [status("queued"), status("completed")] })
+    h.tracker.track({ directory: projectDir, runId: RUN })
+    await until(() => h.sinks.length === 1, "SSE subscription")
+    await Bun.sleep(10)
+    expect(h.tracker.isDelivering(projectDir, RUN)).toBe(true)
+    h.tracker.track({ directory: projectDir, runId: RUN }) // 模型又一次 cloud_await 的终态命中
+    await h.settled()
+    expect(h.last()?.delivery.status).toBe("saved")
+    expect(h.calls).toContain(`unsubscribe:${RUN}`)
+    expect(fs.readFileSync(savedFile(), "utf8")).toBe(CONTENT)
+  })
+
+  test("retry 叫醒时状态仍未终态 ⇒ 回去接着等 SSE,不提前列表或下载", async () => {
+    const h = harness({ statuses: [status("queued"), status("running"), status("completed")] })
+    h.tracker.track({ directory: projectDir, runId: RUN })
+    await until(() => h.sinks.length === 1, "first SSE subscription")
+    h.tracker.retry(projectDir, RUN)
+    await until(() => h.sinks.length === 2, "second SSE subscription")
+    expect(h.calls.some((c) => c.startsWith("list") || c === "download")).toBe(false)
+    h.emit({ event: "job.completed", data: {} })
+    await h.settled()
+    expect(h.last()?.delivery.status).toBe("saved")
+  })
+
   test("retry 在交付落定之后另起一轮(时间线「重新下载」)", async () => {
     const h = harness({ downloads: [async () => ({ ok: false, error: "not-found" }), writeOk()] })
     h.tracker.track({ directory: projectDir, runId: RUN })

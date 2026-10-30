@@ -63,7 +63,15 @@ const TERMINAL_STATUSES = new Set<string>(["completed", "failed", "cancelled"])
 // 平台分类码文法(platform-error-code.ts 同一形):只有这一形的失败码进 job.code。
 const CLASSIFICATION_CODE = /^[a-z][a-z0-9_]{2,63}$/
 
-type Task = { key: string; directory: string; runId: string; identity: string; ctrl: AbortController }
+type Task = {
+  key: string
+  directory: string
+  runId: string
+  identity: string
+  ctrl: AbortController
+  /** 只在等 SSE 时存在:结束等待、回去重查一次状态。 */
+  wake?: () => void
+}
 
 export function createCloudRunTracker(deps: CloudRunTrackerDeps) {
   const inflight = new Map<string, Task>()
@@ -89,7 +97,13 @@ export function createCloudRunTracker(deps: CloudRunTrackerDeps) {
 
   function start(directory: string, runId: string) {
     const key = keyOf(directory, runId)
-    if (inflight.has(key)) return
+    const running = inflight.get(key)
+    if (running) {
+      // 在途交付若正在等 SSE:结束等待、立刻重查一次状态。SSE 被代理缓冲或建不起来时(订阅端对 401/404 以外的
+      // 失败无限退避重连),模型的再一次查询或用户的「重新下载」就是出口,不能被单飞吞成空操作。
+      running.wake?.()
+      return
+    }
     const task: Task = { key, directory, runId, identity: deps.identity(), ctrl: new AbortController() }
     inflight.set(key, task)
     publish(directory, runId, { delivery: { status: "pending" } })
@@ -130,14 +144,16 @@ export function createCloudRunTracker(deps: CloudRunTrackerDeps) {
     let status = await deps.status(task.runId)
     if (!alive(task)) return undefined
     if (!("job_id" in status)) return { scope: "status", code: status.error }
-    if (!TERMINAL_STATUSES.has(status.status)) {
+    while (!TERMINAL_STATUSES.has(status.status)) {
       publish(task.directory, task.runId, { job: jobOf(status), delivery: { status: "pending" } })
       const ended = await untilTerminal(task)
       if (!alive(task)) return undefined
-      if (ended) return { scope: "status", code: ended }
+      if (ended.code) return { scope: "status", code: ended.code }
       status = await deps.status(task.runId)
       if (!alive(task)) return undefined
       if (!("job_id" in status)) return { scope: "status", code: status.error }
+      // SSE 已给出终态帧:照此前语义继续(状态回包慢半拍也不回头等);只有被 track/retry 叫醒、状态仍未终态才接着等。
+      if (!ended.woken) break
     }
     const settled = status
     publish(task.directory, task.runId, { job: jobOf(settled), delivery: { status: "downloading" } })
@@ -169,14 +185,20 @@ export function createCloudRunTracker(deps: CloudRunTrackerDeps) {
     return verifyLocal(task.directory, task.runId, ids)
   }
 
-  /** 等 SSE 终态。返回 undefined = 到了终态;字符串 = 订阅被平台拒绝的码(或本地作废)。 */
-  function untilTerminal(task: Task): Promise<string | undefined> {
+  /** 等 SSE 终态。`{}` = 到了终态;`code` = 订阅被平台拒绝的码(或本地作废);`woken` = 被 track/retry 叫醒。 */
+  function untilTerminal(task: Task): Promise<{ code?: string; woken?: true }> {
     return new Promise((resolve) => {
-      const done = (code?: string) => {
+      let finished = false
+      // 退订后已读出的帧仍可能交来一次(alpha-cloud-events 只置 stopped);只认第一次,免得清掉下一轮等待的 wake。
+      const finish = (result: { code?: string; woken?: true }) => {
+        if (finished) return
+        finished = true
         unsubscribe()
+        task.wake = undefined
         task.ctrl.signal.removeEventListener("abort", onAbort)
-        resolve(code)
+        resolve(result)
       }
+      const done = (code?: string) => finish(code ? { code } : {})
       const onAbort = () => done("cancelled")
       task.ctrl.signal.addEventListener("abort", onAbort, { once: true })
       const unsubscribe = deps.subscribe(task.runId, (ev) => {
@@ -186,6 +208,7 @@ export function createCloudRunTracker(deps: CloudRunTrackerDeps) {
         if (ev.event === "job.started" || ev.event === "job.running")
           publish(task.directory, task.runId, { job: { status: "running" }, delivery: { status: "pending" } })
       })
+      task.wake = () => finish({ woken: true })
     })
   }
 
