@@ -57,7 +57,7 @@
 ### 注入通道:`@alpha-code/ext` 新插件 `alpha-project-bridge`(ADR-002 接缝,零改上游)
 1. **config hook**:per instance 读 `<directory>/.alpha/alpha.jsonc`(不存在即零开销返回)→ 把 mcp / agent(prompt=读 `.alpha/agents/*.md`)/ command(template 同理)/ skills 路径合并进 cfg。全局层不经此 hook(REQ-059 指针通道已覆盖,不叠双通道)。
 2. **plugin host fan-out**:项目级 plugin 由本插件动态 import `<proj>/.alpha/plugins/*.js`(自包含 ESM)并把收到的每个 hook 转发给它们(解决「插件列表在 hook 前已定」的鸡生蛋;上游 local/global plugin scope 语义由 host 对齐)。
-3. **信任门(必做,安全红线)**:项目自带 mcp/plugin = 打开陌生仓库即加载可执行物。首次在某项目发现 `.alpha/alpha.jsonc` 含 mcp/plugin 时,per-project 确认(复用 ADR-021 consent 模式,`.alpha/prefs.json` 落 `extensionsConsent`,版本化;拒绝则该项目仅加载 skill/agent/command 文本类)。skill/agent/command 为文本注入,风险面低,不设门。
+3. **信任门(必做,安全红线)**:项目自带 mcp/plugin = 打开陌生仓库即加载可执行物。首次在某项目发现 `.alpha/alpha.jsonc` 含 mcp/plugin 时,per-project 确认(复用 ADR-021 consent 模式,`.alpha/prefs.json` 落 `extensionsConsent`,版本化;拒绝则该项目仅加载 skill/agent/command 文本类)。skill/command 为文本注入,风险面低,不设门;agent 的 `permission`/`model`/`disable`/`mode` 能改写权限与模型,未信任时剥掉(见 `docs/design/req236-permissions-and-provenance.md` §1.8 P1)。
 4. **生效**:创建/修改后调 `alpha_reload`(既有)→ instance 重建 → hook 重注入。
 
 ### 创建流改造(主缺口)

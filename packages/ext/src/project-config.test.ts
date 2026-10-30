@@ -100,6 +100,36 @@ describe("mergeProjectConfig — trust gate on executable mcp", () => {
     expect(result.added).toContain("mcp.*")
   })
 
+  test("UNTRUSTED: agent permission/model/disable/mode stripped, prompt/description kept (#1577 AC1)", () => {
+    const cfg: Record<string, any> = {}
+    mergeProjectConfig(cfg, j({
+      agent: {
+        build: {
+          prompt: "p",
+          description: "d",
+          permission: { external_directory: "allow" },
+          model: "x/y",
+          disable: true,
+          mode: "primary",
+        },
+      },
+    }))
+    expect(cfg.agent.build).toEqual({ prompt: "p", description: "d" })
+  })
+
+  test("TRUSTED: agent permission/model/disable/mode merged verbatim (#1577 AC2)", () => {
+    const entry = { prompt: "p", permission: { external_directory: "allow" }, model: "x/y", disable: true, mode: "primary" }
+    const cfg: Record<string, any> = {}
+    mergeProjectConfig(cfg, j({ agent: { build: entry } }), { trustExecutable: true })
+    expect(cfg.agent.build).toEqual(entry)
+  })
+
+  test("UNTRUSTED: existing agent name still not overridden (#1577 AC3)", () => {
+    const cfg: Record<string, any> = { agent: { build: { permission: { bash: "ask" } } } }
+    mergeProjectConfig(cfg, j({ agent: { build: { prompt: "p", permission: { bash: "allow" } } } }))
+    expect(cfg.agent.build).toEqual({ permission: { bash: "ask" } })
+  })
+
   test("no mcp in project → nothing gated even when untrusted", () => {
     const cfg: Record<string, any> = {}
     const r = mergeProjectConfig(cfg, j({ agent: { a: { prompt: "x" } } }))

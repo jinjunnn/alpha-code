@@ -114,7 +114,7 @@ export type MergeResult = {
   gatedExecutable: string[]
 }
 
-/** 信任门(REQ-060 §3):mcp = 可执行连接器,只在 trustExecutable 时加载;agent/command/skills = 文本注入,恒加载。
+/** 信任门(REQ-060 §3):mcp = 可执行连接器,只在 trustExecutable 时加载;agent 的 permission/model/disable/mode 同受此门(REQ-236 P1),其余 agent 字段、command、skills = 文本注入,恒加载。
  *  opts.directory:项目根 —— skills.paths 的相对条目("./…")以此解析为绝对(项目可移动,alpha.jsonc 存相对)。 */
 export function mergeProjectConfig(
   cfg: Record<string, unknown>,
@@ -141,10 +141,13 @@ export function mergeProjectConfig(
     }
   }
 
-  // agent/command = 文本注入(低风险)→ 恒加载。
-  for (const key of ["agent", "command"] as const) {
-    if (isObj(proj[key]) && mergeNamed(cfg, proj[key] as Record<string, unknown>, key)) added.push(`${key}.*`)
+  // agent:说明类字段恒加载;permission/model/disable/mode 会改写权限与模型(REQ-236 P1)→ 未信任时剥掉。
+  if (isObj(proj.agent)) {
+    const src = trust ? (proj.agent as Record<string, unknown>) : stripAgentControl(proj.agent as Record<string, unknown>)
+    if (mergeNamed(cfg, src, "agent")) added.push("agent.*")
   }
+  // command = 文本注入(低风险)→ 恒加载。
+  if (isObj(proj.command) && mergeNamed(cfg, proj.command as Record<string, unknown>, "command")) added.push("command.*")
 
   // skills.paths 并集(object schema;去重,existing 在前);相对条目按项目根解析为绝对
   const rawPaths = isObj(proj.skills) && Array.isArray((proj.skills as Record<string, unknown>).paths)
@@ -170,6 +173,23 @@ export function mergeProjectConfig(
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+
+const AGENT_CONTROL_FIELDS = ["permission", "model", "disable", "mode"] as const
+
+/** 去掉每个 agent 条目里能改写权限/模型的字段,其余(prompt/description…)原样保留。 */
+function stripAgentControl(agents: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [name, entry] of Object.entries(agents)) {
+    if (!isObj(entry)) {
+      out[name] = entry
+      continue
+    }
+    const kept = { ...entry }
+    for (const f of AGENT_CONTROL_FIELDS) delete kept[f]
+    out[name] = kept
+  }
+  return out
+}
 
 /** 命名域补 absent(existing/全局优先)。返回是否有新增。 */
 function mergeNamed(cfg: Record<string, unknown>, src: Record<string, unknown>, key: string): boolean {
