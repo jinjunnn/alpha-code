@@ -209,13 +209,12 @@ describe("REQ-236 #1562 续期热应用:同一个引擎进程里换凭据文件"
         expect(new Set(second.headers)).toEqual(new Set([`Bearer ${TOKEN_B}`]))
 
         // 读不到:请求在发出前被拒,且不回落 SDK 缓存或配置里的任何值。
+        // 「这个认证错误不进引擎的退避重试」由 opencode/test/session/alpha-platform-credential-error.test.ts 用生产
+        // retryable() 判(不用墙钟上界)。
         fs.rmSync(secretFilePath(userData, "ALPHA_API_KEY"))
-        const started = Date.now()
         const third = await prompt(engine, sessionID)
         expect(third.error?.name).toBe("ProviderAuthError")
         expect(third.headers).toEqual([])
-        // 确定性的认证失败不进引擎的退避重试(那条路至少 2+4+8+16+32 秒才放弃);上界取得很宽,只排除「被重试了」。
-        expect(Date.now() - started).toBeLessThan(30_000)
 
         // 哨兵臂:令牌一次都不出现在引擎输出与 HTTP 响应里(请求头之外没有任何一处带它)。
         const output = engine.output()

@@ -1,6 +1,6 @@
 // REQ-236 §2.1-4(`#1562`):平台模型请求的凭据在**请求边界现读**,不在引擎装配置时定死。
 //
-// 为什么在这里:续期每十分钟换一次令牌。以前令牌经 `provider.alpha.options.apiKey = {file:…}` 在引擎装配置时
+// 为什么在这里:续期每十分钟换一次令牌。以前令牌经平台 provider 的 `options.apiKey = {file:…}` 在引擎装配置时
 // 被替换成字面量,再被 provider.ts 的 SDK 缓存按 options 哈希留住 —— 文件改了引擎也不读,只能重启引擎换血
 // (owner 机器上四小时 25 次)。现在注入面只给平台 provider 一个固定的非凭据占位 apiKey
 // (ui-mac `alpha-models.ts` PLATFORM_API_KEY_PLACEHOLDER),真凭据由本钩子每次请求从
