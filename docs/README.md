@@ -10,6 +10,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | Need                                                                 | Canonical source                                                     |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | System structure and upstream boundary                               | [`architecture/`](architecture/)                                     |
+| Code Puppy product authority, token renewal, independent MCP startup, and upstream takeover design | [`design/codepuppy-runtime-authority.md`](design/codepuppy-runtime-authority.md) |
 | Host extension package contract/host decision boundary               | [`architecture/host-extension-package-contract-boundary.md`](architecture/host-extension-package-contract-boundary.md) |
 | Alpha Connection record lifetime and handler allowlist               | [`architecture/alpha-connection-lifetime.md`](architecture/alpha-connection-lifetime.md) |
 | Package MCP OAuth ownership boundary (engine protocol / main attempt) | [`architecture/package-mcp-oauth-boundary.md`](architecture/package-mcp-oauth-boundary.md) |
