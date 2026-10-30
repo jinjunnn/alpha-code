@@ -1,7 +1,8 @@
 // REQ-127 #681 / ADR-039 §4 —— 生产 wiring 闸门的 runner。
 //
 // 真判据在 models-catalog-v2.wiring.cases.ts,子进程里跑:那个文件必须 mock electron 才能拿到
-// 生产 `registerModelsIpcHandlers` 注册的两个 handler,而 bun 的 mock.module 在同一进程内会泄漏到
+// 生产 `registerModelsIpcHandlers` 注册的 handler(`#1555` 起只剩 models-catalog;刷新侧由刷新器那一轮
+// syncLiveAllowlist 驱动,fork 前钉住已应用目录),而 bun 的 mock.module 在同一进程内会泄漏到
 // 后续测试文件(教训在案)。本文件**直接执行**判据并钉住子进程用例条数下界 —— 不是委派。
 //
 // 这道闸删掉会失去什么:V1→V2 硬切就只剩类型与 fixture 层的证据,而 ADR-039 §4 明确说那不够 ——

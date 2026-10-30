@@ -11,6 +11,6 @@ test("effective catalog 失败域隔离 + BYOK 目录主权 + V2 硬切(#595 退
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain("12 pass")
+  expect(output).toContain("13 pass")
   expect(output).toContain("0 fail")
 })

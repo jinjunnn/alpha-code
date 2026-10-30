@@ -5,14 +5,14 @@
 //
 // 三个职责:
 //   1. fetchPlatformModels —— 拉网关目录(edition + 平台模型清单 + basis + 逐行双倍数);
-//   2. syncLiveAllowlist —— 成功后写 <userData>/alpha-live-models.json 的 catalog LKG
-//      (严格 V2:basis 非空 + 每行可信 pair + 清单非空;文件桥,fork 期 sidecar 的
-//      buildAlphaModelConfig 与本模块的 effective catalog 共同消费);失败保留 last-known,不清缓存;
-//   3. getEffectiveCatalog —— picker 的目录视图:平台段经**唯一投影**装配 + liveSync 来源标注
-//      (live/cache/static,降级提示 B20;picker 永不空白)。
+//   2. syncLiveAllowlist —— 成功后写 <userData>/alpha-live-models.json 的 catalog LKG(已下载;
+//      严格 V2:basis 非空 + 每行可信 pair + 清单非空);失败保留 last-known,不清缓存;
+//   3. getEffectiveCatalog —— picker 的目录视图:平台段读 fork 前钉住的「已应用目录」(`#1555`,
+//      与 sidecar 的 buildAlphaModelConfig 同一份)经**唯一投影**装配 + liveSync 来源标注
+//      (live/cache/static,降级提示 B20;picker 永不空白),并带「已下载 / 已应用」两个版本。
 //
-// 刷新入口:启动(main/index.ts,fire-and-forget)、认证变化后 respawn 前与 models-platform-live IPC。
-// picker 的 models-catalog 读取不刷新;首试超时后的唯一一次补试在后台进行,不延长 respawn 等待。
+// 刷新入口只有 catalog-refresher.ts 的 requestCatalogRefresh(启动 / 身份变化 / 30 分钟 / 手动),
+// 单飞、永不被 respawn 或启动 await(`#1555`)。picker 的 models-catalog 读取不刷新。
 //
 // REQ-109 #595(owner 裁决 2026-07-24):**BYOK 段不再受平台任何干预**。网关 wire 的
 // `byok_providers` 撤销后没有任何策略消费方,本模块不再解码、缓存、记录或传递它;BYOK 目录只由本地
@@ -32,7 +32,13 @@ import { ALPHA_PATHS } from "../shared/alpha-config"
 import type { CloudResult, PlatformLiveModel } from "../preload/types"
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { getModelCatalog } from "./alpha-models"
-import { isTrustedPair, projectPlatformModels, readCatalogSnapshot, writeCatalogSnapshot } from "./alpha-live-allowlist"
+import {
+  isTrustedPair,
+  projectPlatformModels,
+  readAppliedPlatformSnapshot,
+  readCatalogSnapshot,
+  writeCatalogSnapshot,
+} from "./alpha-live-allowlist"
 import { reportContractFailure } from "./alpha-contract-health"
 import { reportCatalogRefresh } from "./alpha-catalog-health"
 
@@ -111,9 +117,10 @@ async function fetchModels(attempt: number): Promise<PlatformModelsResult> {
   }
 }
 
-/** 拉网关目录并同步到本地 catalog LKG(成功才写;失败保留 last-known,fail-open),返回拉取结果本身。
- *  启动、认证变化后的 respawn 与 IPC 共用。首试仍最多 8 秒;timeout 约 1 秒后后台补试一次,
- *  补试也最多 8 秒。新刷新或账号身份变化使旧轮失效,包括旧轮的契约/目录 health 上报。 */
+/** 一轮刷新:拉网关目录并同步到本地 catalog LKG(成功才写;失败保留 last-known,fail-open),返回本轮
+ *  最后一次拉取的结果。唯一调用方是 catalog-refresher.ts(单飞)。首试最多 8 秒;timeout 约 1 秒后补试
+ *  一次(补试也最多 8 秒),补试计入本轮 —— 返回的 Promise 覆盖整轮,刷新器据此保证同一时刻至多一个
+ *  在途请求。新刷新或账号身份变化使旧轮失效,包括旧轮的写盘与契约/目录 health 上报。 */
 let syncedThisSession = false
 export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformModelsResult> {
   const sequence = ++refreshSequence
@@ -122,9 +129,8 @@ export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformM
   const refresh = async (attempt: number) => {
     const r = await fetchModels(attempt)
     if (!current()) return r
-    // #1084(#987 CHOICE=A):刷新结局在**这里**落到用户可观察出口 —— 三个刷新入口(启动、登录后
-    // respawn 前、models-platform-live IPC)共用本函数,所以调用点上的 `.catch(() => {})` 再也吞不掉
-    // 分类码。成功走到末尾清空出口;下面每一条提前返回都必须先上报,否则那条路径又变回静默。
+    // #1084(#987 CHOICE=A):刷新结局在**这里**落到用户可观察出口 —— 刷新器的每个触发点共用本函数,
+    // 所以调用点吞不掉分类码。成功走到末尾清空出口;下面每一条提前返回都必须先上报,否则那条路径又变回静默。
     if ("error" in r) {
       reportCatalogRefresh(r.error)
       return r
@@ -159,20 +165,22 @@ export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformM
   }
   const r = await refresh(1)
   if ("error" in r && r.error === "timeout" && current()) {
-    setTimeout(() => {
-      if (current()) void refresh(2)
-    }, 1000)
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (current()) return refresh(2)
   }
   return r
 }
 
-/** picker 的目录视图(models-catalog IPC):**平台段**走与 sidecar 同一份投影;快照缺失/无效 →
- *  原样内置 snapshot 且平台段无价格(static)。BYOK 段原样透出(#595:平台不得远程干预)。
+/** picker 的目录视图(models-catalog IPC):**平台段**读 fork 前钉住的已应用目录、走与 sidecar 同一份
+ *  投影;已应用快照缺失/无效 → 原样内置 snapshot 且平台段无价格(static)。刷新成功只改「已下载」,
+ *  picker 在下一次引擎换代前仍显示已应用版本(`#1555` AC5)。BYOK 段原样透出(#595:平台不得远程干预)。
  *  本函数不引用任何平台拉取的失败状态 —— 平台侧的网络失败与契约不兼容都只损失平台段的新鲜度,
  *  绝不阻断本地目录返回。 */
 export function getEffectiveCatalog(userDataPath: string): EffectiveCatalog {
   const cat = getModelCatalog()
-  const snapshot = readCatalogSnapshot(userDataPath)
+  const snapshot = readAppliedPlatformSnapshot(userDataPath)
+  // 「已下载」只取版本字段,不拿它拼目录(方案 I2)。BYOK 远程文档未上线前两边都是随包目录版本。
+  const downloaded = readCatalogSnapshot(userDataPath)
   // 内置 BYOK 目录:原样透出。#595 撤销了 edition 白名单收窄 —— BYOK 走全主权,本地目录即权威。
   return {
     ...cat,
@@ -181,5 +189,7 @@ export function getEffectiveCatalog(userDataPath: string): EffectiveCatalog {
     liveSync: snapshot
       ? { status: syncedThisSession ? "live" : "cache", fetchedAt: snapshot.fetchedAt, edition: snapshot.edition }
       : { status: "static" },
+    applied: { platformFetchedAt: snapshot?.fetchedAt ?? null, byokVersion: cat.version },
+    downloaded: { platformFetchedAt: downloaded?.fetchedAt ?? null, byokVersion: cat.version },
   }
 }

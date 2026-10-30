@@ -21,6 +21,7 @@ import { ignoredConfigProviderBlocks, ignoredConfigRemoteMcpEntries } from "./ex
 import { readCustomProviderRecords } from "./custom-provider-records"
 import { readMcpServerRecords } from "./mcp-server-records"
 import { buildAlphaModelConfig } from "./alpha-models"
+import { pinAppliedCatalog } from "./alpha-live-allowlist"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
@@ -114,6 +115,8 @@ type SpawnLocalServerOptions = {
   healthCheck?: typeof checkHealth
   fork?: typeof electronNs.utilityProcess.fork
   timelineContext?: "boot" | "respawn"
+  /** `#1555`:这一代 sidecar 的序号,记进 fork 前钉住的「已应用目录」(诊断用)。 */
+  generation?: number
   /**
    * REQ-159 `#1321`:围栏计划器。缺省 = 生产计划器(store 并集 + 真 sandbox-exec 试编译 + 原生模块解析);
    * 测试用假子进程时注入替身。返回 undefined 只允许在非 darwin(那里没有 seatbelt);darwin 上
@@ -507,6 +510,16 @@ export async function spawnLocalServer(
     // respawn,index.ts)照既有路径发布 generation failed。
     getLogger()?.error("alpha-secrets sync FAILED — refusing to fork the sidecar (fail closed)", error)
     throw new Error(`alpha-secrets sync failed — sidecar fork refused: ${serializeError(error).message}`)
+  }
+
+  // REQ-237 `#1555`(方案 req236 §2.4):把当刻的已下载目录钉成「已应用目录」—— 引擎模型配置
+  // (buildAlphaModelConfig,含下面的出网放行派生)与 picker 只读这一份,刷新器在后台怎么改 LKG 都不会让
+  // 两边分叉。这里只读写本机文件,不碰网络:目录请求挂死不影响 fork。写失败与密钥文件同一条 fail-closed 路径。
+  try {
+    pinAppliedCatalog(options.userDataPath, options.generation ?? 0)
+  } catch (error) {
+    getLogger()?.error("applied model catalog pin FAILED — refusing to fork the sidecar (fail closed)", error)
+    throw new Error(`applied model catalog pin failed — sidecar fork refused: ${serializeError(error).message}`)
   }
 
   // web search 本地腿的主权闸重算,**每次 fork 都跑**。`#1411` 之后唯一判据是 kill-switch(纯 env),

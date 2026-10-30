@@ -1346,12 +1346,9 @@ export type ElectronAPI = {
     onEvent: (cb: (event: AutomationEvent) => void) => () => void
   }
   // alpha model catalog for the model picker. REQ-001:catalog = effective 视图(内置 snapshot 按
-  // B 网关 edition 白名单收窄 + liveSync 来源标注);platformLive 拉取顺带刷新本地白名单缓存。
+  // B 网关 edition 白名单收窄 + liveSync 来源标注;`#1555` 起平台段 = fork 前钉住的已应用目录)。
   models: {
     catalog: () => Promise<EffectiveCatalog>
-    platformLive: () => Promise<
-      CloudResult<{ models: PlatformLiveModel[]; edition?: string }>
-    >
     /** #1084:最近一次目录刷新的失败结局(`null` = 成功)。启动那次刷新早于 renderer 挂载,
      *  所以出口必须同时提供「当前值」与「后续变化」两条。 */
     refreshHealth: () => Promise<CatalogRefreshFailure | null>

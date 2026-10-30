@@ -124,6 +124,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     evidence: "#564",
     lines: 1,
   },
+  "packages/ui-mac/src/main/catalog-refresher.wiring.test.ts": {
+    why: "`#1555` AC1 的辅助锚:index.ts 的 doRespawnSidecar 在 spawnLocalServer 之前不再出现 syncLiveAllowlist( / await requestCatalogRefresh,启动与 onChanged 经 requestCatalogRefresh 触发,server.ts 里 pinAppliedCatalog 排在密钥同步之后、出网派生与 fork 之前。两个不会让它变红的变异:①在 doRespawnSidecar 里改成 await 一个包了 syncLiveAllowlist 的同名别的函数(文本里没有被禁的那几串);②把 pinAppliedCatalog 的函数体换成 no-op(调用文本与下标仍在)。行为判据在 spawnLocalServer 的真 fork 用例与刷新器子进程用例。",
+    evidence: "#1555",
+    lines: 2,
+  },
   "packages/ui-mac/src/main/deep-link-wiring.test.ts": {
     why: "3 处读 index.ts / windows.ts / deep-links.ts。两条 test 是锚(每个 OS 入口都喂同一个队列、retained-copy 协议两半都接上),另两条是唯一性/负全称锁(.send(\"deep-link\") 恰好一次、index 里不得出现 trackDeepLinkRenderer)—— 后者本票不降级。锚的两个不会变红的变异:①把 deepLinks.ingest(process.argv) 挪到 whenReady 之后(文本仍在,顺序不被断言);②把 acknowledge 的实现改成空函数。",
     evidence: "#638",

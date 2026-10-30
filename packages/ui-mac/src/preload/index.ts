@@ -386,7 +386,6 @@ const api: ElectronAPI = {
   },
   models: {
     catalog: () => ipcRenderer.invoke("models-catalog"),
-    platformLive: () => ipcRenderer.invoke("models-platform-live"),
     // #1084:目录刷新的最后结局。invoke 取当前值(启动那次刷新早于 renderer 挂载),
     // subscribe 收后续变化;`null` = 最近一次刷新成功。
     refreshHealth: () => ipcRenderer.invoke("alpha-catalog-health"),

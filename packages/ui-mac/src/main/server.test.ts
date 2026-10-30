@@ -29,6 +29,8 @@ mockElectron(() => ({
     isPackaged: false,
     on: appEvents.on.bind(appEvents),
     off: appEvents.off.bind(appEvents),
+    // `#1555`:目录刷新器从这里取 userData(只有「目录 fetch 永不 settle」那条用例会走到)。
+    getPath: () => userDataPath,
   },
   utilityProcess: {
     fork: () => {
@@ -63,6 +65,8 @@ const { hasSecretFile, secretFilePath } = await import("./alpha-secret-files")
 const { clearByokKeys, initByokKeys, storeByokKey } = await import("./alpha-byok-keys")
 const { writeShellEnvCache } = await import("./shell-env-cache")
 const { preferAppEnv, spawnLocalServer } = await import("./server")
+const { requestCatalogRefresh } = await import("./catalog-refresher")
+const { appliedCatalogPath, writeCatalogSnapshot } = await import("./alpha-live-allowlist")
 // REQ-159 `#1321`:生产 spawnLocalServer 在 fork 前做围栏计划(真 store / 真 sandbox-exec / 真原生模块路径);
 // 本文件的假子进程不跑 sidecar.ts,注入一个替身计划 —— 围栏本身的判据在 process-fence-*.test.ts。
 const fakePlanFence = () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/nonexistent/alpha_fence.node" })
@@ -676,6 +680,60 @@ describe("spawnLocalServer", () => {
         fork: fakeFork,
       }),
     ).rejects.toThrow(/alpha-secrets sync failed/)
+    expect(forkCalls).toHaveLength(0)
+  })
+
+  // REQ-237 `#1555` AC1(方案 req236 I1①):目录请求一直不返回时,本机 fork 照常推进。修前每次换代都先
+  // `await syncLiveAllowlist`(续期平均白等 4.0s、最多 8s);现在刷新器在后台,spawnLocalServer 只读写本机文件。
+  // 把 fork 路径改回等待目录(任何 await 刷新结果的写法),这条用例就挂在永不落定的 fetch 上直到超时转红。
+  test("`#1555` AC1:目录 fetch 永不 settle 时 spawnLocalServer 仍完成 fork", async () => {
+    const realFetch = globalThis.fetch
+    const catalogRequests: string[] = []
+    globalThis.fetch = ((input: string | URL | Request) => {
+      catalogRequests.push(String(input instanceof Request ? input.url : input))
+      return new Promise<Response>(() => {})
+    }) as typeof fetch
+    try {
+      writeCatalogSnapshot(userDataPath, {
+        fetchedAt: "2026-10-30T00:00:00Z",
+        pricingBasisModelId: "deepseek-v4-flash",
+        models: [{ id: "deepseek-v4-flash", pricing: { input: 1, output: 1 } }],
+      })
+      expect(requestCatalogRefresh("boot")).toBeUndefined()
+      expect(catalogRequests.some((url) => url.endsWith("/v1/models"))).toBe(true) // 目录请求已发出且挂着
+
+      const result = await spawnLocalServer("127.0.0.1", 4099, "password", {
+        userDataPath,
+        healthCheck: async () => true,
+        planFence: fakePlanFence,
+        fork: fakeFork,
+        generation: 5,
+      })
+      await result.health.wait
+      expect(forkCalls).toHaveLength(1)
+      // fork 前钉住的是当刻的已下载目录,带着这一代的序号。
+      expect(JSON.parse(readFileSync(appliedCatalogPath(userDataPath), "utf8"))).toEqual({
+        generation: 5,
+        platform: expect.objectContaining({ fetchedAt: "2026-10-30T00:00:00Z" }),
+      })
+      await result.listener.stop()
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  // REQ-237 `#1555` AC4:已应用目录写不进去 ⇒ 与密钥文件写失败同一条 fail-closed 路径,拒绝本次 fork。
+  // 否则这一代引擎会读到上一代钉住的旧目录(或没有目录),picker 与引擎重新分叉。
+  test("`#1555` AC4:已应用目录钉住失败时拒绝 fork", async () => {
+    mkdirSync(join(appliedCatalogPath(userDataPath), "occupied"), { recursive: true })
+    await expect(
+      spawnLocalServer("127.0.0.1", 4096, "password", {
+        userDataPath,
+        healthCheck: async () => true,
+        planFence: fakePlanFence,
+        fork: fakeFork,
+      }),
+    ).rejects.toThrow(/applied model catalog pin failed — sidecar fork refused/)
     expect(forkCalls).toHaveLength(0)
   })
 
