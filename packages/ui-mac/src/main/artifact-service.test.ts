@@ -327,6 +327,21 @@ describe("resolveArtifact / verifyArtifact", () => {
     expect(res.ok && res.entry.local.state).toBe("verified") // descriptor.sha256 吻合 → 升级
   })
 
+  // #1551 r1:复核在交付热路径上(每次 track / reverify),结论不变时不得改写 manifest、不得刷新 updatedAt
+  // (否则旧 run 会被顶到 REQ-126 B1 按时间排序的最前)。
+  test("#1551 a verify that confirms the stored result leaves the manifest file and updatedAt untouched", async () => {
+    const a = seedArtifact("report.md", "# hi")
+    registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
+    const before = { ino: fs.statSync(manifestPath()).ino, text: fs.readFileSync(manifestPath(), "utf8") }
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    for (let i = 0; i < 2; i++) {
+      const res = await verifyArtifact(projectDir, RUN, a.descriptor.id)
+      expect(res.ok && res.entry.local.state).toBe("verified")
+    }
+    expect(fs.statSync(manifestPath()).ino).toBe(before.ino)
+    expect(fs.readFileSync(manifestPath(), "utf8")).toBe(before.text)
+  })
+
   test("no producer digest: verify pins local digest but stays unverified", async () => {
     const a = seedArtifact("blob.bin", "data")
     const d = { ...a.descriptor }

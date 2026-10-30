@@ -1403,7 +1403,11 @@ export async function verifyArtifact(
   const target = safeResolveInAlpha(projectDir, "runs", runId, ...entry.local.savedPath.split("/"))
   if (!target) return { ok: false, reason: "path escapes .code-puppy" }
 
+  // #1551:复核结论与已存记录一致时不写回、不刷新 updatedAt —— 复核在交付热路径上,每次都写会把旧 run
+  // 顶到按时间排序(REQ-126 B1)的最前。
+  const stored = JSON.stringify(entry.local)
   const persist = (): ArtifactInspectResult => {
+    if (JSON.stringify(entry.local) === stored) return { ok: true, entry }
     manifest.updatedAt = new Date().toISOString()
     const written = writeArtifactManifest(projectDir, runId, manifest)
     if (!written.ok) return { ok: false, reason: `verify result not persisted: ${written.reason}` }
