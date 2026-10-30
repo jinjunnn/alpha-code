@@ -389,7 +389,8 @@ it.instance("AC3: an auth failure does not reconnect", () =>
 
 // `#1572` AC7:policy / tls-cert / http 4xx 是确定性失败 —— 记各自的层、之后 10 分钟以上零次后台重连。
 // 把它们任一加进 RECONNECT_CODES(或让 http 4xx 也重连)⇒ 30 s 处多出 POST;把 SSE 兜底前保留 StreamableHTTP 归因的那一句
-// 去掉 ⇒ tls-cert 只剩 SSE 的扁平文字,回落成 transport 并重连。policy 臂把引擎的代理变量指向出网代理的形状(同 sidecar)。
+// 去掉 ⇒ tls-cert 只剩 SSE 的扁平文字,回落成 transport 并重连。policy 臂把引擎的代理变量与出网代理标记都指向出网代理
+// (同 sidecar);少了标记,用户自己的代理回 403 不算本机策略,这一臂就会记 transport。
 for (const [mode, code] of [
   ["policy", "policy"],
   ["cert", "tls-cert"],
@@ -397,13 +398,17 @@ for (const [mode, code] of [
 ] as const)
   it.instance(`AC7 (#1572): a ${code} failure does not reconnect`, () =>
     Effect.gen(function* () {
-      const saved = process.env.HTTP_PROXY
-      if (mode === "policy") process.env.HTTP_PROXY = "http://127.0.0.1:61234"
+      // policy 臂:引擎的代理变量与决定者标记同指出网代理(形状同 ui-mac sidecarEgressProxyEnv)。
+      const keys = ["HTTP_PROXY", "ALPHA_EGRESS_PROXY"] as const
+      const saved = keys.map((key) => process.env[key])
+      if (mode === "policy") for (const key of keys) process.env[key] = "http://127.0.0.1:61234"
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          if (saved === undefined) delete process.env.HTTP_PROXY
-          else process.env.HTTP_PROXY = saved
-        }),
+        Effect.sync(() =>
+          keys.forEach((key, index) => {
+            if (saved[index] === undefined) delete process.env[key]
+            else process.env[key] = saved[index]
+          }),
+        ),
       )
       const net = yield* remoteStandIn()
       net.mode = mode

@@ -144,9 +144,15 @@ function httpStatusOf(node: ErrorNode): number | undefined {
 }
 
 /**
- * 引擎的请求走不走本机出网代理。引擎(sidecar)的代理变量恒被整份改写为出网代理(ui-mac sidecar-env.ts 的
- * sidecarEgressProxyEnv),NO_PROXY 里的名字直连。这里读的就是 sidecar 写进来的那两份值,不另持一份清单;
- * NO_PROXY 只按逐项精确名字匹配 —— 那是 sidecar 写的唯一形状。main 侧的请求一律按 `{ via: "other" }`。
+ * 出网代理的决定者(ui-mac sidecar-env.ts 的 sidecarEgressProxyEnv)把代理变量改写成出网代理时,同时写下这个标记,
+ * 值是同一个代理 URL。只有 darwin 起出网代理;别的平台代理变量原样是用户自己的代理,没有这个标记。
+ */
+export const EGRESS_PROXY_MARKER_ENV = "ALPHA_EGRESS_PROXY"
+
+/**
+ * 引擎的请求走不走本机出网代理。不从代理变量反推:只有当这次请求要用的代理变量与决定者写下的标记是同一个
+ * origin 时才是出网代理(用户自己的代理回 403 不是本机策略)。NO_PROXY 里的名字直连 —— 只按逐项精确名字匹配,
+ * 那是 sidecar 写的唯一形状。main 侧的请求一律按 `{ via: "other" }`。
  */
 export function engineNetFailurePath(
   target: string | URL | undefined,
@@ -155,7 +161,9 @@ export function engineNetFailurePath(
   const url = typeof target === "string" ? (URL.canParse(target) ? new URL(target) : undefined) : target
   if (!url) return { via: "other" }
   const proxy = url.protocol === "https:" ? (env.HTTPS_PROXY ?? env.https_proxy) : (env.HTTP_PROXY ?? env.http_proxy)
-  if (!proxy || !URL.canParse(proxy)) return { via: "other" }
+  const marker = env[EGRESS_PROXY_MARKER_ENV]
+  if (!proxy || !marker || !URL.canParse(proxy) || !URL.canParse(marker)) return { via: "other" }
+  if (new URL(proxy).origin !== new URL(marker).origin) return { via: "other" }
   const host = url.hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase()
   const bypass = (env.NO_PROXY ?? env.no_proxy ?? "").split(",").map((item) => item.trim().toLowerCase())
   if (bypass.includes(host)) return { via: "other" }

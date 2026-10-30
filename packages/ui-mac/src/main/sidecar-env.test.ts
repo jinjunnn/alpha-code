@@ -620,7 +620,7 @@ describe("createSidecarEnv — container-valued vars", () => {
 
 // ── REQ-137 `#1337`:sidecar 的代理栈由策略代理独占决定 ─────────────────────────────────
 describe("sidecarEgressProxyEnv (#1337)", () => {
-  test("八个代理变量整份给出:六个指向 loopback 策略代理、两个 NO_PROXY 只留 loopback;叠在 createSidecarEnv 之上时用户导出的值不存活", () => {
+  test("八个代理变量 + 出网代理标记整份给出:六个指向 loopback 策略代理、两个 NO_PROXY 只留 loopback、标记同 URL;叠在 createSidecarEnv 之上时用户导出的值不存活", () => {
     const env = sidecarEgressProxyEnv(51337)
     expect(env).toEqual({
       HTTP_PROXY: "http://127.0.0.1:51337",
@@ -631,9 +631,11 @@ describe("sidecarEgressProxyEnv (#1337)", () => {
       all_proxy: "http://127.0.0.1:51337",
       NO_PROXY: SIDECAR_EGRESS_NO_PROXY,
       no_proxy: SIDECAR_EGRESS_NO_PROXY,
+      // `#1572`:决定者标记,引擎据它判断代理变量是不是出网代理(同一 URL)。
+      ALPHA_EGRESS_PROXY: "http://127.0.0.1:51337",
     })
     expect(SIDECAR_EGRESS_NO_PROXY).toBe("127.0.0.1,localhost,::1")
-    // 八个名字都在白名单里(否则 fork 时会被 createSidecarEnv 丢掉,而这里的覆盖就落不到 sidecar 上)
+    // 九个名字都在白名单里(否则 fork 时会被 createSidecarEnv 丢掉,而这里的覆盖就落不到 sidecar 上)
     const user = { PATH: "/usr/bin", HOME: "/Users/u", HTTPS_PROXY: "http://127.0.0.1:7897", NO_PROXY: "github.com,.internal", ALL_PROXY: "socks5://127.0.0.1:1080" }
     const merged = { ...createSidecarEnv(user), ...env }
     for (const key of Object.keys(env)) expect(Object.keys(createSidecarEnv({ ...user, [key]: "x" })), key).toContain(key)

@@ -17,6 +17,7 @@ import { HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import {
   classifyNetFailure,
   EGRESS_DIAL_FAILURE_STATUS,
+  EGRESS_PROXY_MARKER_ENV,
   engineNetFailurePath,
   isNetFailureLayer,
   type NetFailurePath,
@@ -256,10 +257,12 @@ describe("AC6 分类不泄密:输出只有层名与错误码", () => {
 })
 
 describe("engineNetFailurePath:引擎请求走不走本机出网代理", () => {
+  // 形状同 ui-mac sidecar-env.ts 的 sidecarEgressProxyEnv:代理变量 + NO_PROXY + 决定者写下的标记。
   const env = {
     HTTPS_PROXY: "http://127.0.0.1:61234",
     HTTP_PROXY: "http://127.0.0.1:61234",
     NO_PROXY: "127.0.0.1,localhost,::1",
+    [EGRESS_PROXY_MARKER_ENV]: "http://127.0.0.1:61234",
   }
 
   test("代理变量在场、目标不在 NO_PROXY ⇒ egress-proxy,proxyOrigin 取自代理变量", () => {
@@ -279,6 +282,20 @@ describe("engineNetFailurePath:引擎请求走不走本机出网代理", () => {
     expect(engineNetFailurePath("https://mcp.exa.ai/", {})).toEqual({ via: "other" })
     expect(engineNetFailurePath("not a url", env)).toEqual({ via: "other" })
     expect(engineNetFailurePath(undefined, env)).toEqual({ via: "other" })
+  })
+
+  // 非 darwin 不起出网代理,sidecar 的代理变量原样是用户自己的代理:不从代理变量反推,只认决定者写下的标记。
+  test("有代理变量、没有出网代理标记(或标记指向别处)⇒ other —— 用户自己的代理回 403 不是本机策略", () => {
+    const user = { HTTPS_PROXY: "http://127.0.0.1:7897", HTTP_PROXY: "http://127.0.0.1:7897", NO_PROXY: "localhost" }
+    expect(engineNetFailurePath("https://mcp.exa.ai/mcp", user)).toEqual({ via: "other" })
+    expect(
+      engineNetFailurePath("https://mcp.exa.ai/mcp", { ...user, [EGRESS_PROXY_MARKER_ENV]: "http://127.0.0.1:61234" }),
+    ).toEqual({
+      via: "other",
+    })
+    expect(
+      classifyNetFailure(proxyTunnelFailure(403), engineNetFailurePath("https://mcp.exa.ai/mcp", user)),
+    ).toBeUndefined()
   })
 })
 
