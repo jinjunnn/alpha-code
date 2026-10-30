@@ -457,15 +457,6 @@ export function writeConfigTextAtomic(target: string, before: string, result: st
   }
 }
 
-/**
- * #535 / REQ-109 T6 G2 wrote a 5 s `timeout` into every local MCP definition at boot — and that one field also capped
- * `tools/list` and every tool call of the server. #1563 (AC7) retired the write: the engine now gives connect +
- * initialize (`timeout ?? 30 s`), `tools/list` and tool calls their own budgets. Bounds already written into existing
- * entries are left alone. Kept as a no-op only because its single boot call site lives in `index.ts`, which another
- * in-flight change holds; remove the call and this function together.
- */
-export function ensureGovernedMcpConnectTimeouts(_options: { logError?: (message: string) => void } = {}): void {}
-
 /** `#1381`:远程 MCP 真源只装 url / headers(启停归账本,由 sidecar 注入压;其余键没有生产路径会送来)。多出来的键**拒**,不静默丢。 */
 const REMOTE_RECORD_LEAF_KEYS = new Set(["type", "url", "headers"])
 

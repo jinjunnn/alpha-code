@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, ignoredConfigProviderBlocks, ignoredConfigRemoteMcpEntries, persistMcp, PROVIDER_KEYCHAIN_MARKER, readConfiguredProviderKeys, readMcpLeaf, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict, restoreMcpLeaf, validateProviderInput } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, ignoredConfigProviderBlocks, ignoredConfigRemoteMcpEntries, persistMcp, PROVIDER_KEYCHAIN_MARKER, readConfiguredProviderKeys, readMcpLeaf, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict, restoreMcpLeaf, validateProviderInput } from "./ext-config"
 import { classifyBaseUrl, egressDestinationFromBaseUrl } from "./network-egress-derived"
 import { readMcpServerTruth } from "./mcp-server-truth"
 import { writeMcpServerTruth } from "./mcp-server-truth-write"
@@ -68,84 +68,18 @@ function writeAlphaConfig(value: unknown): void {
   fs.writeFileSync(path.join(alphaTmp, "alpha.jsonc"), JSON.stringify(value, null, 2))
 }
 
-describe("ensureGovernedMcpConnectTimeouts — boot reconcile", () => {
-  // #1563 AC7:启动不再给本机 MCP 统一写 5 秒 —— 那一个字段同时卡住了连接、tools/list 与每一次工具调用。
-  test("#1563: boot no longer writes timeout 5000 into a local definition without timeout", () => {
-    writeAlphaConfig({
-      mcp: {
-        local: { type: "local", command: ["uvx", "cold-package"] },
-      },
-    })
-    const before = fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")
-
-    ensureGovernedMcpConnectTimeouts()
-
-    expect(readAlphaConfig().mcp.local).toEqual({ type: "local", command: ["uvx", "cold-package"] })
-    expect(fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")).toBe(before)
-  })
-
-  test("explicit timeout is preserved; remote, disabled local, and lone disabled leaf are untouched", () => {
-    const before = {
-      mcp: {
-        explicit: { type: "local", command: ["npx", "slow-package"], timeout: 0 },
-        remote: { type: "remote", url: "https://example.com/mcp" },
-        disabled: { type: "local", command: ["uvx", "disabled-package"], enabled: false },
-        loneDisabled: { enabled: false },
-      },
-    }
-    writeAlphaConfig(before)
-
-    expect(() => ensureGovernedMcpConnectTimeouts()).not.toThrow()
-
-    expect(readAlphaConfig()).toEqual(before)
-  })
-
-  // #1563:这道 reconcile 已退役,不再读 alpha.jsonc —— 缺失或解析不了都既不写盘也不报错。
-  test("#1563: the retired reconcile neither reads nor writes alpha.jsonc, missing or unparseable", () => {
-    const logs: string[] = []
-    const target = path.join(alphaTmp, "alpha.jsonc")
-
-    ensureGovernedMcpConnectTimeouts({ logError: (message) => logs.push(message) })
-
-    expect(fs.existsSync(target)).toBe(false)
-    expect(logs).toEqual([])
-
-    fs.mkdirSync(alphaTmp, { recursive: true })
-    fs.writeFileSync(target, '{"mcp":{"broken":')
-    const malformed = fs.readFileSync(target, "utf8")
-    ensureGovernedMcpConnectTimeouts({ logError: (message) => logs.push(message) })
-
-    expect(fs.readFileSync(target, "utf8")).toBe(malformed)
-    expect(logs).toEqual([])
-  })
-
-  test("second run is byte-identical after the first atomic reconcile", () => {
-    writeAlphaConfig({
-      mcp: {
-        local: { type: "local", command: ["npx", "cold-package"] },
-      },
-    })
-
-    ensureGovernedMcpConnectTimeouts()
-    const first = fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")
-    ensureGovernedMcpConnectTimeouts()
-
-    expect(fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")).toBe(first)
-  })
-
+describe("main boot wiring", () => {
   // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
   test("ANCHOR (not a gate): main boot awaits recovered community Excel retirement before first fork", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")
     const recovery = source.indexOf("  const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller, alphaSidecar }")
     const retirement = source.indexOf("    : retireCommunityExcelAfterRecovery(extLedgerReady)")
     const retirementAwait = source.indexOf("    const communityExcel = yield* Effect.promise(() => communityExcelRetirement)")
-    const timeout = source.indexOf("  ensureGovernedMcpConnectTimeouts()")
     const firstFork = source.indexOf("spawnLocalServer(hostname, port, password")
 
     expect(recovery).toBeGreaterThan(-1)
     expect(retirement).toBeGreaterThan(recovery)
     expect(retirementAwait).toBeGreaterThan(retirement)
-    expect(firstFork).toBeGreaterThan(timeout)
     expect(firstFork).toBeGreaterThan(retirementAwait)
   })
 })
