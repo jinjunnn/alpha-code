@@ -206,8 +206,13 @@ owner 机现状(只读):`opencode.updater` 内容 `{}`;0.1.22 各会话 `main.lo
   所以由刷新器自己比对标签,纯续期不拉);`interval` 30 分钟一次两份都拉;`manual` 来自横幅/状态行的重试。
   首试 8s、超时后 1s 补试一次(沿用 `:160-165`),之后等下一个触发点 —— 不在刷新器里再造无限退避。
 - **校验与采纳**:平台文档沿用「整份拒绝」纪律(ADR-039;`:71-81`);BYOK 文档见 §2.3。通过才原子写 LKG
-  (`writeFileAtomicSync`,同 `alpha-live-allowlist.ts:102-107`),失败保留旧 LKG 并经现有
-  `reportCatalogRefresh`(`alpha-catalog-health.ts`)出横幅。
+  (`writeFileAtomicSync`,同 `alpha-live-allowlist.ts:102-107`),失败保留旧 LKG。
+- **刷新结局按文档分别记**(R1 F4):现有 `alpha-catalog-health.ts:19` 只有一个 `failure`,`:29` 的
+  `reportCatalogRefresh(null)` 会把它整个清空 —— 两份文档共用它时,一份成功就抹掉另一份仍在的失败。改为在同一个
+  health 所有者内按文档保存:`reportCatalogRefresh(doc: "platform" | "byok", code: string | null)`,内部
+  `Record<doc, CatalogRefreshFailure | null>`;IPC `alpha-catalog-health` 与推送 `alpha-catalog-failure` 发出汇总
+  `{ platform: … | null, byok: … | null }`,横幅(`renderer/alpha-ui/Banner.tsx:76-78`)按文档分别说明哪一份没更新、
+  最近成功时间与重试。某一份成功只清它自己那一格。不新建第二个 health 模块。
 - **不再存在的东西**:`index.ts:1456-1458` 的 await;`models-platform-live` IPC 及其 preload 声明
   (零调用者,`preload/index.ts:389`、`preload/types.ts:1349-1352`)。
 
@@ -225,8 +230,10 @@ owner 机现状(只读):`opencode.updater` 内容 `{}`;0.1.22 各会话 `main.lo
   `projectPlatformModels`(`:119-135`)改为全部字段取快照;**删除随包 `platformModels` 与 `platformProvider.pico`**。
   无快照时平台段为空并如实标「平台模型清单尚未获取」,不再回退到随包 12 条(那份数据本身就是要消灭的第二权威)。
   撤销方式:恢复 `alpha-models.json` 的 `platformModels` 与 `projectPlatformModels` 的 `!snapshot` 分支,纯数据回滚。
-- 过渡期事实:网关先部署 V3 时,0.1.22 解码失败 → 走现有 contract-incompatible 横幅并继续用 LKG,平台调用不受影响
-  (按 owner「不考虑旧客户端兼容」,不做双协议)。
+- 过渡期事实(R1 Q4 限定):桌面端解码 `/v1/models` 的生产路径只有 `alpha-platform-models.ts:71` 一处。网关先部署 V3 时,
+  0.1.22 解码失败 → `:94` 上报不兼容、`:128` 返回且不覆盖 LKG、`:173` 继续返回本地目录;横幅去重在 `Banner.tsx:76`。
+  确定的后果是 **0.1.22 此后取不到任何目录更新**;只有在现有模型与路由都不变的前提下,它用 LKG 发出的平台调用才不受影响 ——
+  不能推广到之后的模型退役或路由变化。owner 已裁「不考虑旧客户端兼容」,不加双协议。
 
 ### 2.3 BYOK 预置目录:数据可远程更新,可执行字段留在 App 里
 
@@ -249,6 +256,22 @@ owner 机现状(只读):`opencode.updater` 内容 `{}`;0.1.22 各会话 `main.lo
 4. 模型 `variants` 出现允许集外的选项键 → 跳过该模型(不半应用)。
 5. 随包 `alpha-models.json` 只保留 BYOK 段作为**首启引导**,格式与远程文档同构并带自己的 `catalog_version`;
    App 升级带来更高的随包版本时随包胜出。
+
+**随包 JSON 的其他直接读者一起迁**(R1 F2;`rg -n 'alpha-models\.json|readCatalogSnapshot' packages/ui-mac/src`,
+剔除注释/测试/定义后的生产命中除 `alpha-models.ts`、`alpha-platform-models.ts` 外还有四个)。`keyEnv` 搬进适配器表、
+随包格式改变之后,它们若仍读旧字段:
+
+| 读者 | 今天读什么 | 不迁会怎样 | 改为 |
+| --- | --- | --- | --- |
+| `main/alpha-byok-keys.ts:50`(`keyEnvFor`)、`:54`(`isCatalogByokId`) | `CATALOG.byokProviders[].keyEnv / id` | 钥匙串里已存的 Key 映射不到 env,不再物化 | 读 `byok-adapters.ts` |
+| `main/alpha-secret-files.ts:37`(`secretEnvVars`) | 同上 `keyEnv` | 要物化的文件名集合缺失 BYOK 项;`:118-123` 会把「不在 wanted 集」的既有 BYOK 密钥文件**删掉** ⇒ 已配好的直连全部不可执行 | 读 `byok-adapters.ts` |
+| `main/alpha-provider-status.ts:41`(`getProviderKeyStatus`) | `CATALOG.byokProviders` 的 id/keyEnv | picker 的「已配置 Key」判定错 | provider 身份读适配器表(谓词 1 的 KEY 半边),展示名读已应用目录 |
+| `main/ext-config.ts:1173`(`isReservedProviderId`) | `PROVIDER_CATALOG.platformProvider.id / byokProviders` | 保留 id 判定漏项,自定义节点可与内置 id 冲突 | 读适配器表 + 平台 provider 常量 |
+
+规则:**Key 名、预置身份、保留 id 只认适配器表**;已应用目录只提供模型与展示元数据。C2 必须带一条回归:用真实钥匙串
+存储格式预置一个已有 BYOK Key → 走迁移后的 `syncSecretFiles` → fork → 引擎配置里出现该 provider 且 `{file:}` 指向的文件
+存在 → 一次请求带上该 Key(沿用 `custom-provider-derivation.test.ts` 的真引擎夹具形态,测试经注入把适配器表的 baseURL
+指向本地桩服务端,断言桩收到的鉴权头)。迁移前后同一 Key 的密钥文件不被删除。
 
 BYOK 契约两个谓词的输入集不变:「本地目录」从「随包 JSON」改为「本机已应用 BYOK 目录」(§2.4),它在读取时仍是
 本机事实;刷新失败、平台不可达、未登录都只意味着继续用已采纳版本 —— 不新增登录/会员/余额/网关在线前提(AC3)。
@@ -282,21 +305,62 @@ main 在每次 fork 前把当刻的两份 LKG 合成一份钉住文件 `<userDat
 | 目录已被引擎应用 | `EffectiveCatalog.applied` + 当前 generation(§2.4) |
 | 目标模型可执行 | 现有 `canSend`(`alpha-composer.tsx:1034-1049`)与 BYOK 契约谓词 2,不改 |
 
-**状态行与出口**(替换 `alpha-composer.tsx:1851-1855`):`recovering` 开始计时;10s 内中性色「正在读取模型状态」;
-≥10s 说明卡点 —— 屏障探针连续不答写「本机引擎暂未响应(已等待 N 秒)」,引擎换代中写「引擎正在重启」 ——
-并给「重试」按钮(复用 `retryCurrentModel`,`:1388-1391`);≥30s 增加「重启引擎」按钮(复用现有 recovery 动作
-`RECOVERY_ACTIONS.retryEngine`,`shared/recovery.ts:18`)。卡点分类来自 `ModelContractError` 增加的
-`stage: "barrier"|"list"` 与 `kind: "no-answer"|"http"|"network"`(`model-contract.ts:83-91`)。
-错误态与等待态不再共用错误样式。时序标记的 25 条上限改为每代引擎 25 条(`alpha-composer.tsx:737,1118` 等计数器在
+**状态行与出口**(替换 `alpha-composer.tsx:1851-1855`;R1 F1 修订):
+
+- **覆盖 `loading` 与 `recovering` 两态,从实际读取开始计时。** 首轮屏障一直不答时,`model-contract.ts:275-279` 只计数并
+  `continue`,`list()` 的 Promise 既不 resolve 也不 reject;composer 停在 `:1102` 设下的 `loading`,只有 `:1286` 的失败
+  回调才会进 `recovering`。所以只挂在 `recovering` 上的出口会漏掉最长的那种等待,只在 `ModelContractError` 上加字段也
+  传不出这段在途状态。计时起点 = `readModels()` 发出本轮第一条请求(`:1112-1124`),跨重试累计,链成功或被 supersede 时清零。
+- **在途阶段由屏障自己发布。** `createModelContract` 的 options 增加 `onProgress?(p)`(与现有 `onCatalogReady` 同一注入通道,
+  `model-contract.ts:35-50`),`p = { stage: "barrier" | "list", probes, probeTimeouts, since }`:进入屏障、每次单探针到期
+  (`:275-278` 处)、屏障通过后发出 `model.list` 时各报一次。composer 用它决定状态行文案;`ModelContractError` 另加
+  `stage` 与 `kind: "no-answer" | "http" | "network"`(`:83-91`),只用于失败后的说明。
+- **呈现**:10s 内中性色「正在读取模型状态」;≥10s 说明卡点 —— 屏障探针连续不答写「本机引擎暂未响应(已等待 N 秒)」,
+  引擎换代中写「引擎正在重启」 —— 并给「重试」按钮(复用 `retryCurrentModel`,`:1388-1391`);≥30s 增加「重启引擎」按钮
+  (复用现有 recovery 动作 `RECOVERY_ACTIONS.retryEngine`,`shared/recovery.ts:18`)。错误态与等待态不再共用错误样式。
+- **测试从真实探针驱动**:组件测试注入的 contract 用小 `probeTimeoutMs` 与一个 `provider.get` 永不 settle 的客户端,
+  让屏障真的连续到期;断言链仍处于 `loading` 时到点出现按钮(现码上红:`loading` 不渲染任何状态行)。不直接把状态设成 `recovering`。时序标记的 25 条上限改为每代引擎 25 条(`alpha-composer.tsx:737,1118` 等计数器在
 generation 变化时归零),否则长会话里的复发没有记录。
 
 **根因修复按 V1 结果二选一**(两支都预先写好,V1 结束即派):
 
-- H1 成立 → (a) renderer 只保留**一条** `/global/event` 订阅,`use-projects`、`cloud-run-watcher`、`use-extensions`
-  改为订阅同一个分发器(放在 `use-projects.ts:572-600` 现有那条流上);(b) `composer-autocomplete.tsx:133-141` 不在挂载时拉
+- H1 成立 → (a) ui-mac 自己的三条 `/global/event` 订阅(`use-projects`、`cloud-run-watcher`、`use-extensions`)合并为一个
+  分发器(放在 `use-projects.ts:572-600` 现有那条流上)。上游会话同步还另有一条:`packages/app/src/context/server-sdk.tsx:278`
+  由 `server-sync.tsx:639` 启动(R1 ARCH-NOTE),所以合并后 renderer 至少仍有 **2 条**;能否让 ui-mac 直接订阅上游那条的
+  事件(只消费、不改上游文件)在 C3b 实现时核实,做不到就是 2 条。(b) `composer-autocomplete.tsx:133-141` 不在挂载时拉
   `command.list`,改为首次打开斜杠菜单时拉(`:169-175` 已有打开即刷新),并给它 10s abort。
-  判据:§2.11 的复现夹具在修前红、修后绿。
+  判据:§5 的复现夹具在修前红、修后绿。
+- H1 的三个平台前提 —— 同源 6 连接上限、SSE 流计入、排队请求取消后重发落到队尾 —— 在已安装的 Electron **42.3.3**
+  (`/Applications/Code Puppy.app/.../Electron Framework.framework/.../Info.plist:14`)对应的 Chromium **148.0.7778.218**
+  上**均未验证**(R1 Q1);其他 Chromium 版本的经验不作证据。C3b 维持「V1 判定后才开」。
 - H2 成立 → renderer 侧只做上面的状态行;引擎侧阻塞点交给生命周期 lane 的 MCP 逐服务启动设计,本文不改引擎。
+
+**模型目录刷新失败提示的位置与语义**(T06 后半句「目录失败提示不遮住导航、设置及操作区」,自 alpha-code#1550 AC2 移交,归 C3a):
+
+现状:`CatalogFailureBanner`(`renderer/alpha-ui/Banner.tsx:68-87`)在 `renderer/index.tsx:588-592` 全局挂载,样式
+`alpha-ui/banner.css:14-23` 为 `position: fixed; top: 12px; left: 50%; width: min(720px, calc(100vw - 32px))`,
+z-index 为 `--a-z-modal - 1`(REQ-230 有意压在设置页这类 `--a-z-overlay` 浮层之上)。任何固定浮动位置都会在某个窗口宽度下
+压住顶部导航、设置入口或页面操作区;而放进应用整体布局的页面流要改上游冻结布局。
+
+语义判断:目录刷新失败是**降级不是阻断**(`Banner.tsx:62-63` 自己写明:BYOK 与上次成功的缓存目录照常可用)。它只在
+「选模型、发消息」时与用户有关;设置、定制中心、自动化、产物这些页面不消费模型目录。因此提示跟着使用点走,放进已有的
+流内位置,不再用全局浮层:
+
+| 状态(按文档,汇总自 §2.1 的 health) | 位置 | 内容 | 动作 |
+| --- | --- | --- | --- |
+| 某份目录**从未成功获取**(平台段为空,或 BYOK 仍是随包引导版)且最近一次刷新失败 | composer 已有流内提示位 `.a-comp-model-alert`(`alpha-composer.tsx:1843-1870` 那一槽,`alpha-composer.css:44`);同时在 picker 对应分组头 | 「平台模型清单暂时取不到」+ 原因分类 | 「重试」= `requestCatalogRefresh("manual")` |
+| 有已应用版本,最近一次刷新失败 | 只在 picker 弹层底部一行(随弹层出现,流内) | 「模型清单更新失败,正在使用 <时间> 同步的版本」+ 原因 | 「重试」 |
+| 最近一次刷新成功 | 不显示 | — | — |
+| 设置 / 定制中心 / 自动化 / 产物页 | 不显示 | 这些页不消费模型目录;回到对话或打开选择器时提示自然出现 | — |
+
+- 同一提示槽一次只显示一条,优先级:发送被拦(REQ-160)> C3a 模型状态行 > 「BYOK 节点未加载」> 目录未获取。
+- 删除 `index.tsx:588-592` 的全局挂载与 `banner.css` 里 `.a-catalog-failure` 的 fixed 规则;`ContractFailureBanner`
+  (`Banner.tsx:41-56`)对 `surface === "model-catalog"` 不再渲染 —— 该情况已由 per-doc health 记为 `contract-incompatible`
+  并走上表;其他契约面的全局横幅不在本票范围。
+- C3a 可先于 C2 合并:先用现有单值 health 呈现平台一份,C2 按文档拆分后同一位置按文档逐条显示。
+- 被否的位置:右下角 toast(窄窗口压住发送键,且一闪即逝说不清持续状态);顶栏下方、压在面板之下(设置页会盖住它,
+  与「设置页也看得到」的初衷矛盾,而那一初衷本身就不成立 —— 见上);保留全局浮层只调宽度/位置(总有窗口宽度会遮挡);
+  进入应用整体页面流(要改上游冻结布局)。
 
 ### 2.6 T08:按模型品牌显示图标
 
@@ -327,9 +391,21 @@ generation 变化时归零),否则长会话里的复发没有记录。
 
 - composer 区分「用户显式选择」与「解析出的默认」(`applyDefaultComposerModel` 已是默认写入口;显式写入口是
   `selectComposerModel`,`alpha-composer.tsx:1051-1092`),用一个 `explicit` 标记记在 composer 模型状态里。
-- 发送时,显式选择存在就在 `promptAsync` 里带 `model: {providerID, modelID}` 与 `variant`(`:1712-1717`;首发同改
-  `use-projects.ts:465` 之后的 `promptAsync`)。引擎 `prompt.ts:688` 的 `input.model` 因此胜过 agent 模型;
-  未显式选择时不带,agent 推荐照旧生效。**不改引擎文件。**
+- 发送时,显式选择存在就带上它,未显式选择时不带(agent / 命令推荐照旧生效)。**四个发送入口都要带**(R1 F3):
+
+  | 入口 | 坐标 | 携带 | 引擎侧优先级 |
+  | --- | --- | --- | --- |
+  | 会话内普通消息 | `alpha-composer.tsx:1712-1717` `promptAsync` | `model: {providerID, modelID}` + `variant` | `prompt.ts:688` `input.model ?? ag.model ?? currentModel` —— 已正确 |
+  | 首发普通消息 | `sidebar/use-projects.ts:493` 起的 `promptAsync` | 同上 | 同上 |
+  | 会话内斜杠命令 | `alpha-composer.tsx:1668-1673` `session.command` | `model: "<providerID>/<modelID>"` + `variant`(v1 `CommandInput`,`prompt.ts:1580` 起有这两个字段) | `prompt.ts:1455-1462` 今天是 `cmd.model → cmd.agent.model → input.model → currentModel`,**显式选择排在后两位** |
+  | 首发斜杠命令 | `sidebar/use-projects.ts:485-487` `session.command` | 同上 | 同上 |
+
+- **引擎文件必须改一处**:把 `prompt.ts:1455-1462` 的 `taskModel` 顺序改为 `input.model → cmd.model → cmd.agent.model →
+  currentModel`。因为客户端只在用户显式选择时才带 `input.model`,这一改等价于「显式选择优先,命令/agent 推荐只作默认」;
+  不带时行为与今天相同。`packages/opencode/src/session/prompt.ts` 已在 ADR-041 的 L3 接管清单里(`ADR-041-tool-identity-ledger.md:60`,
+  `scripts/north-star-guard.sh:173` 已排除),所以**不扩大排除面**;按 ADR-029 第 3 条,C6 以具名窄补丁交付:该块加
+  `alpha:` 标注说明来源(REQ-236 T24 §2.4),并在 ADR-041 接管清单的 `prompt.ts` 条目下追加一行订正,登记它新增的
+  「命令模型优先级」职责(ADR-041 原本只为工具身份接管它)。§2.11 对应的替代一行已同步改写。
 - 回执:沿用已有两处事实面(用户行 model、助手 footnote)。两者不一致时 footnote 加一句「实际使用 X」——
   只在不一致时出现,不新增常驻 UI。
 
@@ -365,7 +441,7 @@ generation 变化时归零),否则长会话里的复发没有记录。
 | 用 `provider` 字段选图标 | 那是路由腿,qwen 会显示 OpenRouter |
 | 拉到新目录就立刻换代引擎 | 会打断正在输出的回答;生效时机交给换代边界与对方 lane |
 | T10 手写版本比较或新增 semver 依赖 | electron-updater 已暴露它自己的 `currentVersion: SemVer` |
-| T24 改引擎 `prompt.ts:688` 的优先级 | 不必改上游文件;请求里带 `model` 即可让现有优先级给出正确结果 |
+| T24 改引擎 `prompt.ts:688` 的优先级 | 普通消息不必改:请求里带 `model` 即可让现有优先级给出正确结果;命令路径 `:1455` 必须改,见 §2.8 |
 
 ### 2.12 随方案校正的文档
 
@@ -386,12 +462,17 @@ generation 变化时归零),否则长会话里的复发没有记录。
 3. **账户隔离**:BYOK 拉取不带凭据;平台快照仍按现有身份仲裁写入(残余:不按账户失效,见 §1.6)。
 4. **回滚与重放**:两份文档的采纳都单调(平台按 fetchedAt 序号仲裁,BYOK 按 `catalog_version`);损坏/空/旧代文档整份拒绝。
 5. **本机竞态**:刷新器写 LKG、main 在 fork 前钉住、读者只读钉住文件 —— 写读不交叉。
-6. **本机请求饥饿**:renderer 对引擎 origin 的长连接数有上界(H1 分支落地后为 1 条 SSE),后台资源请求带 abort。
+6. **本机请求饥饿**:renderer 对引擎 origin 的长连接数有上界(H1 分支落地后 ui-mac 自有订阅为 1 条,加上游会话同步 1 条,共 ≤2 条 SSE),后台资源请求带 abort。
 7. **更新器**:只安装比当前新的版本;来源与完整性仍由 electron-updater 的 feed 与 sha512 负责。
 
 实现必须守住的不变量(每条都对应一个先红后绿的测试,见 §4):
 
-- I1 `doRespawnSidecar` 与 `spawnLocalServer` 中不存在任何对网络目录请求的 await。
+- I1 目录请求一直不返回时,本机 fork 与就绪照常推进(R1 F5:判据是生产入口的**行为**,源码锚只作辅助)。
+  两处检查:① `spawnLocalServer` 单测 —— 注入 `fork`(`server.ts:115`)并让 `/v1/models` 与 `/v1/byok-catalog` 的 fetch 永不 settle,
+  先 `requestCatalogRefresh("boot")` 再 spawn,断言 fork 被调用、spawn 完成;② 换代链路(`index.ts` 跑不进单测)用 dev 构建把
+  平台端点指向一个只收不答的本地桩,触发一次续期,读 `startup-timeline` 中 `main.auth.rotation` → `main.sidecar.generation.emit phase=recovering`
+  的间隔:今天等于目录请求耗时(实测 23:46:42.282 → 23:46:45.859 = 3.58s,修前红),修后应 <1s。源码锚
+  (`doRespawnSidecar` 体内无 `syncLiveAllowlist(` / `requestCatalogRefresh` 的 await)保留为辅助。
 - I2 `buildAlphaModelConfig` 与 `getEffectiveCatalog` 只读 `alpha-applied-catalog.json`;任何地方不得直接读 LKG 拼目录。
 - I3 BYOK provider 的 `options.baseURL` 只来自 `byok-adapters.ts`;远程文档里出现 `baseURL/keyEnv/compat/npm` 字段 = schema 拒绝。
 - I4 BYOK 拉取请求不带 `authorization` 头。
@@ -399,7 +480,10 @@ generation 变化时归零),否则长会话里的复发没有记录。
 - I6 平台段没有有效快照时不声称任何价格(沿用 #679),也不回退随包平台清单。
 - I7 picker 平台行的品牌不来自 `provider` 字段。
 - I8 `start()` 只把 `isNewer` 的记录投影成 ready;`install()` 对非更新版本不调用 `quitAndInstall`。
-- I9 显式选择存在时,发出的 `promptAsync` 体里有 `model`;不存在时没有。
+- I9 显式选择存在时,四个发送入口(两处 `promptAsync`、两处 `session.command`)的请求体都带 `model`;不存在时都不带。
+  命令路径上带了 `model` 时,引擎实际执行的模型是它,而不是命令或其 agent 绑定的模型。
+- I10 两份目录的刷新结局各自保存:任一份成功只清除它自己的失败,另一份的失败仍可见。
+- I11 目录格式迁移后,迁移前已配置的 BYOK Key 仍被物化为密钥文件、仍注入引擎配置,且不被 `syncSecretFiles` 的清理分支删除。
 
 `docs/architecture/constraints.md` 不存在,无「已知偏离」可对照;本方案不新增偏离,并消除一个既有双权威
 (随包平台富化 vs 网关 registry)与一个跨腿借数据(`byokModelMeta` 平台回落)。
@@ -411,15 +495,15 @@ generation 变化时归零),否则长会话里的复发没有记录。
 
 | # | 标题 / 仓 | 覆盖 | 边界(关键文件) | out-of-scope | 退出条件 | 尺寸·难度·依赖·独立 PR | 将来拿什么证明 | UI 稿 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| V1 | `[REQ-236][VERIFY] 判定新对话模型读取悬挂发生在界面排队还是引擎` · alpha-code | 236 AC2 / T07(根因) | 打包 0.1.22 加 Chromium `--log-net-log`;`startup-timeline.log`、`opencode.log`;dev 复现夹具(N 个目录各配一个不应答的远程 MCP + 打开 N 个 composer) | 修复本身 | 夹具先证明能测出饥饿(修前必现);真实环境 ≥3 次「续期换代后新对话」样本;报告 H1/H2 结论与每次的 socket 等待证据 | M·难(要在打包环境复现间歇现象)·无·— | 报告进 `docs/verification/`;netlog 中 `127.0.0.1:<port>` 的 socket 池等待事件或已发出未响应 | 否 |
-| C1 | `[REQ-237][CODE] 目录刷新不再阻塞引擎换代,选择器与引擎读同一份已应用目录` · alpha-code | 237 AC2(平台段)/ 236 AC2 / T07 | 新 `main/catalog-refresher.ts`;`index.ts:764,729-737,1456-1458`;`server.ts:494-514`;`alpha-models.ts:73`;`alpha-platform-models.ts:118-185`;`models-ipc.ts`;`preload/index.ts:389`、`preload/types.ts:1349-1352` | V3/BYOK 远程文档(C2);UI 文案 | I1、I2 的测试先红后绿;`bun test src` 对 base 失败集不新增 | M·常规·无·**独立 PR**(换代链路接缝,生命周期 lane 依赖) | 新 `catalog-refresher.test.ts`(单飞、身份仲裁、纯续期不拉);新 `catalog-refresher.wiring.test.ts` 源码锚:`doRespawnSidecar` 无 `syncLiveAllowlist(`(现码上红);`alpha-platform-catalog.cases.ts` 增「刷新成功后 picker 仍显示已应用版本」(现码上红) | 否 |
+| V1 | `[REQ-236][VERIFY] 判定新对话模型读取悬挂发生在界面排队还是引擎` · alpha-code | 236 AC2 / T07(根因) | 打包 0.1.22(Electron 42.3.3 / Chromium 148)加 Chromium `--log-net-log`;`startup-timeline.log`、`opencode.log`;dev 复现夹具(N 个目录各配一个不应答的远程 MCP + 打开 N 个 composer);连接计数含上游 `server-sdk.tsx:278` 那条事件流 | 修复本身 | 夹具先证明能测出饥饿(修前必现);真实环境 ≥3 次「续期换代后新对话」样本;报告 H1/H2 结论、每次的 socket 等待证据,以及 H1 三个前提(6 连接上限、SSE 计入、取消重发落队尾)在该 Chromium 版本上的实测结论 | M·难(要在打包环境复现间歇现象)·无·— | 报告进 `docs/verification/`;netlog 中 `127.0.0.1:<port>` 的 socket 池等待事件或已发出未响应 | 否 |
+| C1 | `[REQ-237][CODE] 目录刷新不再阻塞引擎换代,选择器与引擎读同一份已应用目录` · alpha-code | 237 AC2(平台段)/ 236 AC2 / T07 | 新 `main/catalog-refresher.ts`;`index.ts:764,729-737,1456-1458`;`server.ts:494-514`;`alpha-models.ts:73`;`alpha-platform-models.ts:118-185`;`models-ipc.ts`;`preload/index.ts:389`、`preload/types.ts:1349-1352` | V3/BYOK 远程文档与 health 按文档拆分(C2);UI 文案 | I1(行为检查两处)、I2 的测试先红后绿;`bun test src` 对 base 失败集不新增 | M·常规·无·**独立 PR**(换代链路接缝,生命周期 lane 依赖) | 新 `catalog-refresher.test.ts`(单飞、身份仲裁、纯续期不拉);`server.test.ts` 增「目录 fetch 永不 settle 时 `spawnLocalServer` 仍完成 fork」(I1①);dev 桩下续期 `main.auth.rotation`→`generation.emit recovering` 间隔 <1s(I1②,修前 3.58s);辅助源码锚 `catalog-refresher.wiring.test.ts`;`alpha-platform-catalog.cases.ts` 增「刷新成功后 picker 仍显示已应用版本」(现码上红) | 否 |
 | P1 | `[REQ-237][CODE] 网关发布平台模型展示字段与自带 Key 预置目录` · alpha-platform | 237 AC1 | `models.config.json` 增 `display`;`models-config-loader.ts`;`lib/model-catalog-v2.ts`→v3;`contracts/v3/model-catalog.schema.json`、`contracts/v1/byok-catalog.schema.json` + producer fixtures;`src/byok-catalog.json`;worker.ts/server.ts 新路由 `GET /v1/byok-catalog`;BYOK 文档首版内容 = alpha-code 现随包 5 provider / 10 模型(元数据补全,含今天靠平台回落的那几条) | 客户端消费;任何账户/edition 逻辑进入 BYOK 端点 | 网关 `bun test` 绿;producer fixture 与 schema 互验;部署后 `curl /v1/models` 为 V3、`curl /v1/byok-catalog` 无需凭据返回 v1 | L·常规·无·独立 PR(跨仓契约) | `model-catalog-v2.test.ts` 改 V3 并加「display 必填、variants 选项键越界即装载失败」;新 `byok-catalog.test.ts`(schema、无凭据可读、不读 edition) | 否 |
-| C2 | `[REQ-237][CODE] 桌面端采纳远程平台展示字段与自带 Key 预置目录` · alpha-code | 237 AC1、AC2、AC3 / 236 T09 | `alpha-contracts-consumer`(V3 pin + byok v1 pin、`decode.ts:35,59`);`catalog-refresher.ts` 的 BYOK 文档与 `adoptByokCatalog`;新 `main/byok-adapters.ts`;`alpha-models.json`(删 platformModels/platformProvider.pico,BYOK 段改首启引导格式);`alpha-live-allowlist.ts:32-135`;`alpha-models.ts:83-118`;`shared/alpha-model-types.ts:89-104`;runbook 与 BYOK 契约(§2.12) | 品牌图标(C4);新供应商协议 | I3–I6 测试先红后绿;`alpha-reasoning-badge-parity` 起真引擎对账仍绿;BYOK 契约回归闸门表全部仍绿 | L·难(三处消费者同改、契约改写、真引擎对账)·P1、C1·独立 PR | 新 `byok-catalog-adopt.test.ts`(未知 provider 跳过、越界选项键跳过模型、版本不升不采纳、文档带 baseURL 被拒);`alpha-models.test.ts` 改为断言 baseURL 只来自适配器表;`network-egress-derived.test.ts` 加「远程目录无法新增放行主机」;T23 格「发布一次 BYOK 目录变化 → 同一打包客户端拉取 → picker 出现 → 真实发送」 | picker 底部「清单已更新,下次引擎启动后生效」一行与平台段「尚未获取」空态 |
-| C3a | `[REQ-236][CODE] 模型状态行说明卡点并提供重试与重启引擎` · alpha-code | 236 AC2 / T07 | `alpha-composer.tsx:1851-1855,737,1118,1388-1391`;`model-contract.ts:83-91`;`i18n/zh.ts`、`en.ts` | 根因修复(C3b);引擎改动 | 组件测试驱动 recovering ≥10s / ≥30s 两档出现对应按钮;等待态不用错误样式 | M·常规·C1(读 applied/downloaded)·否 | `alpha-composer-model.cases.ts` 增两档用例(现码上 recovering 无按钮 ⇒ 红);`model-contract.test.ts` 增 `stage/kind` 分类;T23 格「冷启动 ×3 + 续期后新对话 ×3 分阶段计时」 | **要**:状态行四种文案与两档按钮、中性色/错误色区分 |
-| C3b | `[REQ-236][CODE] 本机请求不再被常驻订阅和后台列表占满`(V1 判 H1 时开)· alpha-code | 236 AC2 / T07 | `sidebar/use-projects.ts:572-600`;`alpha-ui/cloud-run-watcher.tsx:59`;`extensions/use-extensions.ts:1024-1050`;`alpha-ui/composer-autocomplete.tsx:133-175` | 引擎 MCP 生命周期 | V1 的复现夹具修前红、修后绿;引擎日志 `global event connected` 每代只增 1 条(renderer) | M·难(三个订阅方的事件语义要逐一对齐)·V1·否 | 夹具测试;`shell-commands-test-runtime.tsx` 现有可控 SSE 流加「只建一条连接」断言 | 否 |
+| C2 | `[REQ-237][CODE] 桌面端采纳远程平台展示字段与自带 Key 预置目录` · alpha-code | 237 AC1、AC2、AC3 / 236 T09 | `alpha-contracts-consumer`(V3 pin + byok v1 pin、`decode.ts:35,59`);`catalog-refresher.ts` 的 BYOK 文档与 `adoptByokCatalog`;新 `main/byok-adapters.ts`;随包 JSON 的四个直接读者 `alpha-byok-keys.ts:50,54`、`alpha-secret-files.ts:37`(及 `:118-123` 清理分支的 wanted 集)、`alpha-provider-status.ts:41`、`ext-config.ts:1173` 改读适配器表;`alpha-catalog-health.ts:19,29` 按文档保存 + `Banner.tsx:76-78` 汇总呈现;`alpha-models.json`(删 platformModels/platformProvider.pico,BYOK 段改首启引导格式);`alpha-live-allowlist.ts:32-135`;`alpha-models.ts:83-118`;`shared/alpha-model-types.ts:89-104`;runbook 与 BYOK 契约(§2.12) | 品牌图标(C4);新供应商协议 | I3–I6、I10、I11 测试先红后绿;`alpha-reasoning-badge-parity` 起真引擎对账仍绿;BYOK 契约回归闸门表全部仍绿 | L·难(三处消费者 + 四个直接读者同改、契约改写、真引擎对账)·P1、C1·独立 PR | 新 `byok-catalog-adopt.test.ts`(未知 provider 跳过、越界选项键跳过模型、版本不升不采纳、文档带 baseURL 被拒);**已有 Key 迁移回归**:预置真实存储格式的 BYOK Key → `syncSecretFiles` → fork → 引擎配置含该 provider 且文件存在 → 本地桩收到该 Key,迁移前后密钥文件不被删(I11);`alpha-catalog-health` 用例覆盖「平台先败后 BYOK 成功」「BYOK 先败后平台成功」「单边恢复」三种顺序(I10;现码上前两种红);`alpha-models.test.ts` 改为断言 baseURL 只来自适配器表;`network-egress-derived.test.ts` 加「远程目录无法新增放行主机」;T23 格「发布一次 BYOK 目录变化 → 同一打包客户端拉取 → picker 出现 → 真实发送」 | picker 底部「清单已更新,下次引擎启动后生效」一行、平台段「尚未获取」空态、横幅按文档分别说明 |
+| C3a | `[REQ-236][CODE] 模型状态行说明卡点并提供重试与重启引擎,目录失败提示改到使用处且不遮挡` · alpha-code | 236 AC2 / T07、T06 后半句(目录失败提示不遮住导航/设置/操作区,自 alpha-code#1550 AC2 移交) | `alpha-composer.tsx:1102,1112-1124,1286,1843-1870,737,1118,1388-1391`;`model-contract.ts:35-50`(新增 `onProgress`)、`:83-91`、`:275-279`;`renderer/alpha-ui/Banner.tsx:41-87`、`renderer/index.tsx:588-592`、`alpha-ui/banner.css:14-23`;picker 弹层底部与分组头(`alpha-composer-model.tsx`);`i18n/zh.ts`、`en.ts` | 根因修复(C3b);引擎改动;其他契约面的全局横幅 | 等待计时从实际读取开始,`loading` 与 `recovering` 两态都有 ≥10s / ≥30s 两档出口;等待态不用错误样式;目录失败提示只出现在 composer 流内提示位与 picker 内,全局 fixed 浮层删除 | M·常规·C1(读 applied/downloaded);按文档逐条显示待 C2·否 | `alpha-composer-model.cases.ts` 增用例:注入小 `probeTimeoutMs` + `provider.get` 永不 settle 的客户端,屏障真实连续到期,链仍在 `loading` 时到点出现「重试」/「重启引擎」(现码上红);`model-contract.test.ts` 增 `onProgress` 每次到期都报、`stage/kind` 分类;`catalog-failure-banner.cases.ts` 改为断言:无已应用平台目录 + 刷新失败 ⇒ composer 流内提示位出现、全局层无 `.a-catalog-failure`(现码上红);有已应用版本 + 失败 ⇒ 只在 picker 底部;设置页不出现;UI 对照批准稿在窄(≤800px)与宽窗口下不压住导航、设置入口、发送区;T23 格「冷启动 ×3 + 续期后新对话 ×3 分阶段计时」 | **要**:状态行四种文案与两档按钮、中性色/错误色区分;目录失败提示的两种状态(从未获取 → composer 提示位 + 分组头;有旧版本 → picker 底部一行),含最近成功时间、原因、重试,窄/宽两种窗口宽度的摆放 |
+| C3b | `[REQ-236][CODE] 本机请求不再被常驻订阅和后台列表占满`(V1 判 H1 时开)· alpha-code | 236 AC2 / T07 | `sidebar/use-projects.ts:572-600`;`alpha-ui/cloud-run-watcher.tsx:59`;`extensions/use-extensions.ts:1024-1050`;`alpha-ui/composer-autocomplete.tsx:133-175`;只读核实能否消费上游 `packages/app/src/context/server-sdk.tsx:278` 的事件 | 引擎 MCP 生命周期;改上游 app 包 | V1 的复现夹具修前红、修后绿;引擎日志 `global event connected` 每代来自 renderer 的不超过 2 条(ui-mac 1 + 上游 1;若能复用上游那条则为 1) | M·难(三个订阅方的事件语义要逐一对齐)·V1·否 | 夹具测试;`shell-commands-test-runtime.tsx` 现有可控 SSE 流加「ui-mac 只建一条连接」断言 | 否 |
 | C4 | `[REQ-236][CODE] 模型选择器与输入框按模型品牌显示图标` · alpha-code | 236 AC2 / T08 | `model-picker-core.ts:17,115,131,145,172,220`;`alpha-composer-model.tsx:761-762`;`alpha-composer.tsx:467-469`;`composer-reskin.css:91-111`;`model-picker-add.tsx:239-240` | 新图标资源;品牌改名 | 品牌映射单测;视觉与批准稿一致 | M·常规·C2·否 | `model-picker-core.test.ts` 增「平台行品牌来自 display.brand,不来自 provider」(I7)、「自定义节点为中性图形」;UI 对照批准稿 | **要**:home chip、会话 chip、picker 三组行、添加卡片、未知品牌与自定义节点回落 |
 | C5 | `[REQ-236][CODE] 更新提示只出现比当前版本新的已下载更新` · alpha-code | 236 AC2 / T10 | `updater.ts:72-88`、`updater-controller.ts:7-11,74-128` | 发布流程 | I8 测试先红后绿 | S·常规·无·独立 PR(发布链) | `updater-restore.test.ts` 增「记录 0.1.17 + 当前 0.1.22 ⇒ 不进 ready、清记录、调用 check」(现码上红)、「恢复 ready 不阻断后台检查」、「install 对非更新版本不 quitAndInstall」;T23 格「升级提示回放」 | 否 |
-| C6 | `[REQ-236][CODE] 发送携带用户明确选择的模型,agent 推荐只作默认` · alpha-code | 236 AC2 / T24 §2.4 | `alpha-composer.tsx:1051-1092,1712-1717`;`sidebar/use-projects.ts:443-500`;footnote 不一致提示 `timeline-model.ts:733-740` | 引擎 `prompt.ts` | I9 测试先红后绿 | S·常规·无·否 | 组件测试断言 `promptAsync` 体含 `model`(现码上红)与未显式时不含;T23 格「装一个带 model 的 agent,显式选另一模型,footnote 显示所选模型」 | 否(不一致提示沿用 footnote 现样式) |
+| C6 | `[REQ-236][CODE] 发送与斜杠命令都按用户明确选择的模型执行,agent/命令推荐只作默认` · alpha-code | 236 AC2 / T24 §2.4 | `alpha-composer.tsx:1051-1092,1668-1673,1712-1717`;`sidebar/use-projects.ts:485-487,493`;引擎 `packages/opencode/src/session/prompt.ts:1455-1462`(已在 ADR-041 L3 清单,具名窄补丁 + ADR-041 接管清单追加订正,不改排除面);footnote 不一致提示 `timeline-model.ts:733-740` | `prompt.ts:688` 普通消息路径(已正确);agent 模型推荐机制本身 | I9 测试先红后绿 | M·常规·无·**独立 PR**(改引擎接管文件) | 组件测试断言两处 `promptAsync` 与两处 `session.command` 的请求体在显式选择时含 `model`、未显式时不含(现码上红);`packages/opencode/test/session/prompt.test.ts`(同在 ADR-041 清单)增「命令绑定 agent 带模型 B、input.model=A ⇒ 实际执行 A」与「不带 input.model ⇒ 仍用 B」;T23 格「装一个带 model 的 agent 与一条绑定它的命令,显式选另一模型,普通消息与该命令的 footnote 都显示所选模型」 | 否(不一致提示沿用 footnote 现样式) |
 | V2 | `[REQ-236][VERIFY] 核对现行模型清单的端点可用性与能力标注` · alpha-code + alpha-platform | 236 AC2 / T09 | 平台 6 个 cn 模型各一次最小真实请求(长期生产测试账号);owner 机已配 Key 的 BYOK 用 `packages/ui-mac/scripts/verify-byok-catalog.ts`;看图标注按 runbook B 节复查 | 修数据(结论转入 P1 的 BYOK 首版内容或网关 display) | 每个模型 PASS/FAIL/未验证一行 | S·常规·无·— | 报告进 `docs/verification/`。花费上限:平台 6 次 × ≤200 token,按 `deepseek-v4-flash` 基准倍数最高 15.8×,合计估算远低于 ¥1(未按实价核算,V2 开跑前按网关价目算出上限再报);先跑 1 条验证输出格式 | 否 |
 
 所有 T23 格进共享 RC 回归,不另造发布门。父票 AC 不因任何子票合并而关。
@@ -437,15 +521,24 @@ generation 变化时归零),否则长会话里的复发没有记录。
 
 ## 待 Codex 征询
 
-1. **H1 的平台前提**(`model-contract.ts:202-308`、`composer-autocomplete.tsx:133-141`):Electron 当前 Chromium 下,
-   renderer `fetch` 访问 `http://127.0.0.1:<port>` 是否受每组 6 连接上限约束、`ReadableStream` 形式的 SSE 是否计入、
-   对排队中的请求 abort 后重发是否落到队尾。若任一不成立,H1 不成立,C3b 不应开。
-2. **变体选项能到哪**(`packages/opencode/src/session/llm/request.ts:84-95` 的 `mergeOptions(..., variant)`):
-   远程 `variants` 只允许 `reasoningEffort | reasoning | thinking` 三个顶层键时,是否存在任何路径让它影响 `baseURL`、请求头或 fetch?
-   若有,I3 需扩展到变体值的结构校验。
-3. **钉住文件的读者完备性**:除 `buildAlphaModelConfig` 与 `getEffectiveCatalog` 外,`byokModelMeta`、`resolveDefaultModel`、
-   出网派生是否还有直接读 `alpha-models.json` 或 LKG 的路径(`grep -rn "alpha-models.json\|readCatalogSnapshot" packages/ui-mac/src` 需逐个判)。
-4. **V3 过渡**:0.1.22 遇到 V3 时走 contract-incompatible(`alpha-platform-models.ts:94-97`),是否还有别的 0.1.22 路径解码 `/v1/models` 并会因此失败到用户可见?
+R1 已答复全部四问,结论已回写:Q1 → §2.5(三个前提在 Electron 42.3.3 / Chromium 148 上未验证,C3b 维持 V1 后才开);
+Q2 → 不变(本版可达路径中三个选项键只进请求体,`@ai-sdk/openai-compatible@2.0.41` 的 URL/headers/fetch 取自 config,I3 不扩展);
+Q3 → §2.3 读者迁移表与 C2;Q4 → §2.2 过渡期断言限定。本轮无新的待征询项。
+
+## 方案审记录
+
+**R1(Codex,只读,结论 FIX-THEN-MERGE)**,编排器裁决全部接受:
+
+| finding | 改在哪 |
+| --- | --- |
+| F1 Major 等待出口漏掉无限 `loading` | §2.5「状态行与出口」改为覆盖 loading/recovering、从实际读取计时、屏障经 `onProgress` 发布在途阶段、测试由真实探针驱动;§4 C3a 行 |
+| F2 Major 随包 JSON 四个直接读者漏迁 | §2.3 新增读者迁移表与已有 Key 迁移回归;§3 I11;§4 C2 行 |
+| F3 Major 斜杠命令入口绕过显式模型 | §2.8 改为四个发送入口 + `prompt.ts:1455-1462` 具名窄补丁(ADR-041 清单内,追加订正);§2.11 对应行;§3 I9;§4 C6 行(S→M,独立 PR) |
+| F4 Major 两份目录共用单值 health | §2.1 新增「刷新结局按文档分别记」;§3 I10;§4 C2 行 |
+| F5 Minor I1 源码锚不能证明不等待 | §3 I1 改为两处生产入口行为检查,源码锚降为辅助;§4 C1 行 |
+| ARCH-NOTE 上游另有一条事件流 | §2.5 H1 分支、§3 第 6 条、§4 C3b 与 V1 行改为「ui-mac 1 条 + 上游 1 条」 |
+
+**R1 后追加范围**(编排器移交):目录刷新失败提示的位置与语义(alpha-code#1550 AC2 后半句)→ §2.5 新增小节;§4 C3a 行与其 UI 稿需求。
 
 ## 待 owner 裁决
 
@@ -456,7 +549,7 @@ generation 变化时归零),否则长会话里的复发没有记录。
 
 ## 仍是推断、没跑过的断言
 
-1. H1(renderer 同源连接排队)是两次样本的最佳解释,但没有 netlog 或独立带鉴权请求证明;H2 未被排除。
+1. H1(renderer 同源连接排队)是两次样本的最佳解释,但没有 netlog 或独立带鉴权请求证明;H2 未被排除;其三个平台前提在 Electron 42.3.3 / Chromium 148 上均未验证。
 2. 「每次 token-only 换代丢掉 MCP 状态、下一次新对话重付初始化」由源码(InstanceState 随进程)与日志时序推出,未做对照实验。
 3. 样本 A/B 的四条 Skill `init` 分别属于哪个目录未确认(日志行不带目录)。
 4. owner 截图里「安装 0.1.17」的具体来源未定:陈旧持久化记录与误启动 `dist/` 里 0.1.17 包都可能,日志都不足以判定。
@@ -464,4 +557,5 @@ generation 变化时归零),否则长会话里的复发没有记录。
 6. 上游 sprite 的 `alibaba` 图形作为 Qwen 品牌图标是否被用户认得,未做视觉确认(C4 稿上定)。
 7. `composer-reskin.css:91-111` 是死样式:只证明了会话 composer 已换成 `AlphaComposer`,未证明上游 `prompt-input*` 在任何 alpha 面都不再渲染。
 8. 在 V2 之前,线上 6 个平台模型与 BYOK 10 个模型「端点实际可用」未逐个实测;本文只读了目录。
-9. 网关部署 V3 后 0.1.22 只出现横幅、平台调用不受影响 —— 由代码路径推出(Codex 征询 4)。
+9. 网关部署 V3 后,在现有模型与路由不变的前提下 0.1.22 用 LKG 的平台调用不受影响 —— 由代码路径推出(R1 Q4 同结论),未实跑;0.1.22 此后取不到目录更新是确定后果。
+10. 目录失败提示移入 composer 与 picker 后,用户在设置等页面看不到它;判断「这些页面不需要它」依据的是这些页不消费模型目录,未做用户验证。
