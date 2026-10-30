@@ -15,7 +15,7 @@
 // 本 boot reconcile 把前者从**运行中的实例**重新派生,把后者从**兄弟渠道根**收养过来。每次启动跑一次,
 // 排在第一次 sidecar fork 之前(锚在 alpha-office-instance.test.ts;index.ts 结构上进不了 bun)。
 //
-// ── 两个收窄式操作,都幂等、都 fail-closed ───────────────────────────────────────────────
+// ── 收窄式操作,都幂等、都 fail-closed ───────────────────────────────────────────────
 //   1. **re-anchor**:当前根里的 Alpha Office `mcp.<name>` 叶子,命令与钉死模板逐 token 相同、只有
 //      server 槽指着另一个绝对 `…/office-mcp/server.py` ⇒ 把 server 槽改写成当前 bundle 的 canonical
 //      路径。命令里别的一个字不动(workspace 槽可能还是遗留的具体路径 —— 紧接着跑的
@@ -26,6 +26,9 @@
 //      (`applyMcpWritePolicy`:canonical server、`{workspace}` 标记、REQ-133 安全检查、内容 digest)
 //      写进当前根。`desiredState` 照抄、能力授权账照抄、transaction id 新铸。多个兄弟都有时取
 //      `updatedAt ?? installedAt` 最新的那条。**兄弟根只读**:不写、不 quarantine(sideEffectFree 读)。
+//   0. **migrate**(#1564 AC4,排在 re-anchor 之前、对同一批叶子):改用随包运行时之前装的 uv 形态条目
+//      ⇒ 当前 bundle 的 main 模板(随包解释器 + server + `{workspace}`),并去掉 `timeout`。re-anchor 同样
+//      改写 main 模板的解释器槽。迁过的条目就是 main 模板,重复启动不再改动。adopt 对 uv 形态的兄弟叶子同样去 timeout。
 // 其余一切 —— 自定义 MCP、非 Office 的 catalog MCP、模板漂移、到处都没有的(用户卸载过的)连接器、
 // 损坏账本 —— 逐字节不动,并如实报告。两条路都不会产生「有 record 无叶子 / 有叶子无 record」的半状态:
 // adopt 先探账本可写、再写 record、再写叶子,叶子写失败即撤回 record。
@@ -39,6 +42,8 @@ import { applyEdits, modify, parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import {
   ALPHA_OFFICE_CONNECTORS,
+  ALPHA_OFFICE_PYTHON_SLOT,
+  ALPHA_OFFICE_SERVER_SLOT,
   WORKSPACE_MARKER,
   alphaOfficeInstallCommand,
   type AlphaOfficeFormat,
@@ -51,8 +56,16 @@ import { resourcesRoot } from "./ext-fs-installer"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { probeLedgerForWrite, readLedgerV2, removeRecordV2, upsertRecordV2, type InstallRecordV2 } from "./ext-receipt-v2"
 
-const ALPHA_OFFICE_SERVER_MARKER = "{alphaResources}/office-mcp/server.py"
 const SERVER_SUFFIX = "/office-mcp/server.py"
+const PYTHON_SUFFIX = "/office-runtime/bin/python3"
+/** #1564 AC4:改成随包运行时之前,每条已安装的第一方 Office 条目都是这个 uv 形态(钉版即当年 catalog 卡片
+ *  与 0.1.x 出货的那几个,样本见 alpha-office-instance.test.ts)。冻结在这里,只用来认出它、迁走它。 */
+const LEGACY_UV_PINS: Record<AlphaOfficeFormat, readonly string[]> = {
+  word: ["python-docx==1.2.0"],
+  excel: ["openpyxl==3.1.5"],
+  powerpoint: ["python-pptx==1.0.2"],
+  pdf: ["pypdf==6.16.1", "reportlab==5.0.0"],
+}
 const CONFIG_FILE = "alpha.jsonc"
 const LOG_TAG = "[req155-1244]"
 
@@ -75,7 +88,9 @@ export type OfficeInstanceReconcileOptions = {
 }
 
 export type OfficeInstanceReconcileOutcome = {
-  /** 当前根里 server 槽被改写到当前 bundle 的连接器名。 */
+  /** 当前根里 uv 形态的条目被迁成随包运行时命令、去掉 timeout 的连接器名(#1564 AC4)。 */
+  migrated: string[]
+  /** 当前根里解释器 / server 槽被改写到当前 bundle 的连接器名。 */
   reanchored: string[]
   /** 从兄弟根收养进当前根的连接器名。 */
   adopted: string[]
@@ -84,41 +99,57 @@ export type OfficeInstanceReconcileOutcome = {
 
 type Connector = (typeof ALPHA_OFFICE_CONNECTORS)[number]
 
-/** 与钉死模板逐 token 比对,只放过 server 槽(任意绝对 `…/office-mcp/server.py`)与 workspace 槽
- *  (`{workspace}` 或绝对路径)。server 槽已是当前路径 ⇒ null(无事可做)。模板漂移 ⇒ null(不碰)。 */
-export function reanchorOfficeCommand(format: AlphaOfficeFormat, command: unknown, currentServer: string): string[] | null {
-  if (!isStringArray(command)) return null
-  const template = alphaOfficeInstallCommand(format)
-  const serverIndex = template.indexOf(ALPHA_OFFICE_SERVER_MARKER)
-  const workspaceIndex = template.indexOf(WORKSPACE_MARKER)
-  if (command.length !== template.length) return null
-  for (let index = 0; index < template.length; index += 1) {
-    if (index === serverIndex || index === workspaceIndex) continue
-    if (command[index] !== template[index]) return null
-  }
-  const server = command[serverIndex]!
-  if (!isAbsoluteAny(server) || !normalizeSlashes(server).endsWith(SERVER_SUFFIX)) return null
-  if (server === currentServer) return null
-  const workspace = command[workspaceIndex]!
-  if (workspace !== WORKSPACE_MARKER && !isAbsoluteAny(workspace)) return null
-  return command.map((argument, index) => (index === serverIndex ? currentServer : argument))
+/** 认出一条第一方 Office 命令的形态:`current` = main 模板(#1564),`legacy` = 迁移前的 uv 模板。逐 token
+ *  比对,只放过资源槽(任意绝对 `…/office-runtime/bin/python3`、`…/office-mcp/server.py`)与 workspace 槽
+ *  (`{workspace}` 或绝对路径)。别的形状(模板漂移、多参、相对路径)⇒ null,一个字都不碰。 */
+export function officeCommandForm(format: AlphaOfficeFormat, command: unknown): "current" | "legacy" | null {
+  if (matchesTemplate(alphaOfficeInstallCommand(format), command)) return "current"
+  if (matchesTemplate(legacyUvCommand(format), command)) return "legacy"
+  return null
 }
 
-/** adopt 前的形状归一:同一模板匹配(server 槽任意绝对 server 路径),workspace 槽若是遗留的具体绝对
- *  路径则还原成 `{workspace}`(REQ-134:catalog MCP 的 workspace 跟随实例,不是安装时那台机器的目录)。
- *  模板不匹配原样返回 —— 让写策略去拒绝,并把理由说出来。 */
-function normalizeWorkspaceSlot(format: AlphaOfficeFormat, command: string[]): string[] {
-  const template = alphaOfficeInstallCommand(format)
-  const serverIndex = template.indexOf(ALPHA_OFFICE_SERVER_MARKER)
-  const workspaceIndex = template.indexOf(WORKSPACE_MARKER)
-  if (command.length !== template.length) return command
-  for (let index = 0; index < template.length; index += 1) {
-    if (index === serverIndex || index === workspaceIndex) continue
-    if (command[index] !== template[index]) return command
-  }
-  const workspace = command[workspaceIndex]!
-  if (workspace === WORKSPACE_MARKER || !isAbsoluteAny(workspace)) return command
-  return command.map((argument, index) => (index === workspaceIndex ? WORKSPACE_MARKER : argument))
+/** #1564 AC4:uv 形态 ⇒ 当前 bundle 的 main 模板,workspace 槽还原成 `{workspace}`(REQ-134)。不是 uv 形态 ⇒ null。 */
+export function migrateLegacyOfficeCommand(format: AlphaOfficeFormat, command: unknown, currentServer: string): string[] | null {
+  if (officeCommandForm(format, command) !== "legacy") return null
+  return currentOfficeCommand(format, currentServer, WORKSPACE_MARKER)
+}
+
+/** main 模板形态、但解释器 / server 槽指着另一个 bundle ⇒ 改写成当前 bundle 的路径,workspace 槽原样。
+ *  已是当前路径或不是 main 模板形态 ⇒ null(无事可做 / 不碰)。 */
+export function reanchorOfficeCommand(format: AlphaOfficeFormat, command: unknown, currentServer: string): string[] | null {
+  if (officeCommandForm(format, command) !== "current") return null
+  const current = command as string[]
+  const next = currentOfficeCommand(format, currentServer, current[alphaOfficeInstallCommand(format).indexOf(WORKSPACE_MARKER)]!)
+  return next.every((argument, index) => argument === current[index]) ? null : next
+}
+
+function legacyUvCommand(format: AlphaOfficeFormat): string[] {
+  return ["uv", "run", "--no-project", ...LEGACY_UV_PINS[format].flatMap((pin) => ["--with", pin]), ALPHA_OFFICE_SERVER_SLOT, format, WORKSPACE_MARKER]
+}
+
+/** 当前 bundle 的 main 模板:解释器与 server 同在 `currentServer` 所在的资源根下(与写策略同一种解析)。 */
+function currentOfficeCommand(format: AlphaOfficeFormat, currentServer: string, workspace: string): string[] {
+  const resources = currentServer.slice(0, -SERVER_SUFFIX.length)
+  return alphaOfficeInstallCommand(format).map((argument) =>
+    argument === ALPHA_OFFICE_PYTHON_SLOT
+      ? join(resources, "office-runtime", "bin", "python3")
+      : argument === ALPHA_OFFICE_SERVER_SLOT
+        ? currentServer
+        : argument === WORKSPACE_MARKER
+          ? workspace
+          : argument,
+  )
+}
+
+function matchesTemplate(template: string[], command: unknown): boolean {
+  if (!isStringArray(command) || command.length !== template.length) return false
+  return template.every((want, index) => {
+    const got = command[index]!
+    if (want === ALPHA_OFFICE_SERVER_SLOT) return isAbsoluteAny(got) && normalizeSlashes(got).endsWith(SERVER_SUFFIX)
+    if (want === ALPHA_OFFICE_PYTHON_SLOT) return isAbsoluteAny(got) && normalizeSlashes(got).endsWith(PYTHON_SUFFIX)
+    if (want === WORKSPACE_MARKER) return got === WORKSPACE_MARKER || isAbsoluteAny(got)
+    return got === want
+  })
 }
 
 export function reconcileAlphaOfficeInstalls(options: OfficeInstanceReconcileOptions = {}): OfficeInstanceReconcileOutcome {
@@ -128,7 +159,7 @@ export function reconcileAlphaOfficeInstalls(options: OfficeInstanceReconcileOpt
     warnings.push(message)
     logError(`${LOG_TAG} ${message}`)
   }
-  const outcome: OfficeInstanceReconcileOutcome = { reanchored: [], adopted: [], warnings }
+  const outcome: OfficeInstanceReconcileOutcome = { migrated: [], reanchored: [], adopted: [], warnings }
 
   let environment: AppEnvironment
   let currentRoot: string
@@ -166,25 +197,38 @@ export function reconcileAlphaOfficeInstalls(options: OfficeInstanceReconcileOpt
     ...currentLedger.v1Only.filter((receipt) => receipt.type === "mcp").map((receipt) => receipt.name),
   ])
 
-  // ── 1. re-anchor(当前根里已有 record 的叶子)────────────────────────────────────────
+  // ── 1. migrate / re-anchor(当前根里已有 record 的叶子)──────────────────────────────
+  // uv 形态 ⇒ 随包运行时命令并去掉 timeout(#1564 AC4;那个 5000 是旧的启动补写,随包解释器不需要它);
+  // main 模板形态但指着别的 bundle ⇒ 只改资源槽。迁过的条目已是 main 模板,下一次启动两条都不命中。
+  const formatting = { formattingOptions: { tabSize: 2, insertSpaces: true } }
   let text = config.text
   for (const connector of ALPHA_OFFICE_CONNECTORS) {
     if (!presentInCurrent.has(connector.name)) continue
     const leaf = config.mcp[connector.name]
     if (!isRecord(leaf) || leaf.type !== "local") continue
+    const migrated = migrateLegacyOfficeCommand(connector.format, leaf.command, currentServer)
+    if (migrated) {
+      text = applyEdits(text, modify(text, ["mcp", connector.name, "command"], migrated, formatting))
+      if ("timeout" in leaf) text = applyEdits(text, modify(text, ["mcp", connector.name, "timeout"], undefined, formatting))
+      outcome.migrated.push(connector.name)
+      continue
+    }
     const command = reanchorOfficeCommand(connector.format, leaf.command, currentServer)
     if (!command) continue
-    text = applyEdits(text, modify(text, ["mcp", connector.name, "command"], command, { formattingOptions: { tabSize: 2, insertSpaces: true } }))
+    text = applyEdits(text, modify(text, ["mcp", connector.name, "command"], command, formatting))
     outcome.reanchored.push(connector.name)
   }
-  if (outcome.reanchored.length > 0) {
+  if (outcome.migrated.length + outcome.reanchored.length > 0) {
     const written = writeConfigTextAtomic(configPath, config.text, text)
     if (!written.ok) {
       warn(`re-anchor write failed: ${configPath} (${written.reason})`)
+      outcome.migrated.length = 0
       outcome.reanchored.length = 0
       return outcome
     }
   }
+  if (outcome.migrated.length > 0)
+    logError(`${LOG_TAG} #1564 migrated ${outcome.migrated.join(", ")} from uv to the bundled Office runtime command; timeout removed`)
 
   // ── 2. adopt(当前根里完全没有的连接器,从兄弟根收养)─────────────────────────────────
   const missing = ALPHA_OFFICE_CONNECTORS.filter((connector) => !presentInCurrent.has(connector.name))
@@ -203,9 +247,15 @@ export function reconcileAlphaOfficeInstalls(options: OfficeInstanceReconcileOpt
       warn(`${connector.name}: sibling ${pick.view.environment} holds a record but no local config leaf — not adopted`)
       continue
     }
-    // `enabled` 是引擎消费键,由 desiredState 重新投影;其余叶子字段(timeout / environment)照抄。
+    const form = officeCommandForm(connector.format, leaf.command)
+    if (!form) {
+      warn(`${connector.name}: sibling ${pick.view.environment} leaf drifted from the pinned Code Puppy command — not adopted (REQ-133)`)
+      continue
+    }
+    // `enabled` 是引擎消费键,由 desiredState 重新投影;命令由写策略换成 main 模板;uv 形态的 timeout 与迁移
+    // 同样去掉(#1564 AC4),其余叶子字段(environment 等)照抄。
     const { enabled: _enabled, ...server } = leaf as Record<string, unknown> & { enabled?: unknown }
-    server.command = normalizeWorkspaceSlot(connector.format, leaf.command)
+    if (form === "legacy") delete server.timeout
     const policy = applyMcpWritePolicy(connector.name, server)
     if (!policy.ok) {
       warn(`${connector.name}: sibling ${pick.view.environment} leaf refused by the office write policy — not adopted (${policy.reason})`)

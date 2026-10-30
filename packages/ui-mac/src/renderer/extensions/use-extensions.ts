@@ -29,7 +29,7 @@ import type {
   UninstallKeyIntent,
 } from "../../preload/types"
 import { isExtensionName } from "../../shared/extension-name"
-import { isWorkspacePolicyMcp } from "../../shared/office-advisories"
+import { ALPHA_OFFICE_CONNECTORS, isAlphaOfficeCatalogId, isWorkspacePolicyMcp } from "../../shared/office-advisories"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 import type { ProviderAddressRejection } from "../../shared/alpha-model-types"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
@@ -385,8 +385,9 @@ export interface ExtensionsApi {
   setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled", opts?: { confirmExpiredReview?: boolean }): Promise<ActionResult>
   /** True if this catalog entry is already installed (MCP via SDK truth; others via receipts). */
   isInstalled(entry: CatalogEntry): boolean
-  /** which-check the entry's runtime deps; { ok:false, missing } if a binary is absent. */
-  checkRuntime(tools: string[] | undefined): Promise<RuntimeCheck>
+  /** which-check the entry's runtime deps; { ok:false, missing } if a binary is absent. #1564 AC3: the four
+   *  first-party Office entries read main's bundled-runtime fact instead of the card's runtimeDep (uv). */
+  checkRuntime(entry: CatalogEntry): Promise<RuntimeCheck>
   /** REQ-036 出厂技能名单(skills.paths 注入;逃生开关关闭时为空)——hub 据此把对应 catalog
    *  条目呈现为「出厂内置」而非可安装(S18 X1)。创建类操作已技能化,不再有表单写入方法。 */
   factorySkills(): string[]
@@ -481,6 +482,12 @@ function needsAuth(info: unknown): boolean {
 /** `#1563`:引擎还在后台启动这台服务(`pending`)—— 判等,与上面一样不靠子串。 */
 function isPending(info: unknown): boolean {
   return statusTag(info) === "pending"
+}
+/** `#1564` AC6:第一方文档工具的随包解释器不在 ⇒ 引擎报 failed / dependency_missing(spawn ENOENT),修复动作是
+ *  重新安装 Code Puppy。别的连接器的 dependency_missing 是用户自己的命令缺了,不给这个动作。 */
+export function mcpRepair(name: string, info: unknown): InstalledState["repair"] {
+  if (statusTag(info) !== "failed" || (info as { code?: unknown }).code !== "dependency_missing") return undefined
+  return ALPHA_OFFICE_CONNECTORS.some((connector) => connector.name === name) ? "reinstall-app" : undefined
 }
 function statusError(info: unknown): string | undefined {
   if (!info || typeof info !== "object") return undefined
@@ -643,6 +650,7 @@ export function useExtensions(
           needsAuth: needsAuth(info),
           pending: isPending(info),
           error: statusError(info),
+          repair: mcpRepair(name, info),
         }
       }
       setStore("mcp", next)
@@ -1019,7 +1027,12 @@ export function useExtensions(
     return requestReload(directory ? { directory } : "global", "user: reload now", [], true)
   }
 
-  async function checkRuntime(tools: string[] | undefined): Promise<RuntimeCheck> {
+  async function checkRuntime(entry: CatalogEntry): Promise<RuntimeCheck> {
+    if (isAlphaOfficeCatalogId(entry.id)) {
+      const ready = await extIpc.officeRuntime()
+      return ready.ok ? { ok: true } : { ok: false, reason: ready.reason }
+    }
+    const tools = entry.installSpec?.kind === "mcp" ? entry.installSpec.runtimeDep : undefined
     if (!tools || tools.length === 0) return { ok: true }
     for (const tool of tools) {
       const r = await extIpc.checkRuntime(tool)

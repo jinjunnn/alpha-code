@@ -1135,10 +1135,9 @@ export function ExtensionHub(props: {
     scope: CatalogInstallScopeChoice = DEFAULT_CATALOG_INSTALL_SCOPE,
     selectedProjectDir?: string,
   ): Promise<ActionResult> => {
-    const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
     if (!skipCheck) {
-      const rc = await ext.checkRuntime(spec?.runtimeDep)
-      if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
+      const rc = await ext.checkRuntime(e)
+      if (!rc.ok) return { ok: false, reason: "reason" in rc ? rc.reason : t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
     }
     return ext.addMcp(e, undefined, secrets, authorization, scope, selectedProjectDir)
   }
@@ -1203,10 +1202,9 @@ export function ExtensionHub(props: {
       // 对**任何**返回具名 warning 的调用默认生效,不必逐入口登记。
       if (e.type === "mcp") {
         setStageFor(e.id, "checking")
-        const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
-        const rc = await ext.checkRuntime(spec?.runtimeDep)
+        const rc = await ext.checkRuntime(e)
         if (!rc.ok) {
-          setErrFor(e.id, t("alpha.ext.runtimeMissing", { tool: rc.missing }))
+          setErrFor(e.id, "reason" in rc ? t("alpha.ext.officeRuntimeMissing") : t("alpha.ext.runtimeMissing", { tool: rc.missing }))
           return null
         }
         setStageFor(e.id, "installing")
@@ -2171,7 +2169,7 @@ export function ExtensionHub(props: {
                   }
                 >
                   <span class="alpha-ext-man-dot" data-err="" />
-                  {row.mcp?.error}
+                  {row.mcp?.repair === "reinstall-app" ? t("alpha.ext.officeRuntimeMissing") : row.mcp?.error}
                 </Show>
               }
             >

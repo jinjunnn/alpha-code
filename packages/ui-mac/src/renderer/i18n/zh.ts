@@ -345,6 +345,7 @@ export const dict = {
   "alpha.ext.sourceAlpha": "Code Puppy 出品",
   "alpha.ext.agentSelf": "自建",
   "alpha.ext.runtimeMissing": "请先安装 {{tool}}",
+  "alpha.ext.officeRuntimeMissing": "Code Puppy 自带的文档运行环境缺失或不完整，请重新安装 Code Puppy。",
   "alpha.ext.comingSoon": "即将推出",
   "alpha.ext.installFailed": "安装没有完成，请重试。",
   "alpha.ext.loading": "加载中…",
@@ -787,6 +788,7 @@ export const dict = {
   "alpha.ext.detailMode": "模式",
   "alpha.ext.noSecrets": "无需密钥",
   "alpha.ext.noRuntimeDeps": "无需另外安装运行程序",
+  "alpha.ext.officeRuntime": "Code Puppy 自带的文档运行环境",
   "alpha.ext.playwrightRuntimeNote":
     "默认使用电脑上已安装的 Chrome，首次打开网页无需下载浏览器。如果没有安装 Chrome，或选择了 Chromium，首次使用时会从 cdn.playwright.dev 下载约 268 MB。若下载或启动失败，请检查网络连接及浏览器安装情况后重试；受限网络或中国区网络可能影响下载。",
   "alpha.ext.skillNoAsset": "此版本未包含该技能的内容，目前无法安装。",

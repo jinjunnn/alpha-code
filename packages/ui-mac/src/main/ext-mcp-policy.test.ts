@@ -71,21 +71,42 @@ describe("persistMcpWithPolicy — REQ-133 Alpha Office workspace sandbox", () =
     expect(command.at(-3)).toBe(fs.realpathSync(path.resolve(import.meta.dir, "../../resources/office-mcp/server.py")))
   })
 
-  test("remote configs and concrete or missing workspace arguments fail closed", () => {
+  test("remote configs fail closed; a concrete or missing workspace argument is replaced by the marker (card tokens are not consumed, #1564)", () => {
     expect(persistMcpWithPolicy("alpha-word", { type: "remote", url: "http://127.0.0.1/mcp" }).ok).toBe(false)
     const workspace = path.join(tmp, "project")
     fs.mkdirSync(workspace)
     const concrete = {
       type: "local",
       command: alphaOfficeInstallCommand("word").map((argument) => argument.replace("{workspace}", workspace)),
-    }
-    expect(persistMcpWithPolicy("alpha-word", concrete).ok).toBe(false)
+    } as Record<string, unknown>
+    expect(applyMcpWritePolicy("alpha-word", concrete).ok).toBe(true)
+    expect((concrete.command as string[]).at(-1)).toBe(WORKSPACE_MARKER)
     const missing = path.join(tmp, "missing")
     const server = {
       type: "local",
       command: alphaOfficeInstallCommand("pdf").map((argument) => argument.replace("{workspace}", missing)),
+    } as Record<string, unknown>
+    expect(applyMcpWritePolicy("alpha-pdf", server).ok).toBe(true)
+    expect(JSON.stringify(server.command)).not.toContain(missing)
+  })
+
+  // #1564 AC1:alpha-web 签名目录里的四张卡片今天仍是 uv 命令(样本 = src/renderer/extensions/alpha-catalog.json 的
+  // installSpec.command,经 planner 把 {alphaResources} 解成资源根之后交给本闸)。落盘的只能是 main 模板。
+  test("a catalog card that still carries the uv command persists main's bundled-runtime template", () => {
+    const resources = fs.realpathSync(path.resolve(import.meta.dir, "../../resources"))
+    const cards = {
+      word: ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", `${resources}/office-mcp/server.py`, "word", "{workspace}"],
+      excel: ["uv", "run", "--no-project", "--with", "openpyxl==3.1.5", `${resources}/office-mcp/server.py`, "excel", "{workspace}"],
+      powerpoint: ["uv", "run", "--no-project", "--with", "python-pptx==1.0.2", `${resources}/office-mcp/server.py`, "powerpoint", "{workspace}"],
+      pdf: ["uv", "run", "--no-project", "--with", "pypdf==6.16.1", "--with", "reportlab==5.0.0", `${resources}/office-mcp/server.py`, "pdf", "{workspace}"],
     }
-    expect(persistMcpWithPolicy("alpha-pdf", server).ok).toBe(false)
+    for (const [format, command] of Object.entries(cards)) {
+      const server = { type: "local", command } as Record<string, unknown>
+      expect(applyMcpWritePolicy(`alpha-${format}`, server).ok).toBe(true)
+      expect(server.command).toEqual([
+        path.join(resources, "office-runtime", "bin", "python3"), "-I", "-B", path.join(resources, "office-mcp", "server.py"), format, WORKSPACE_MARKER,
+      ])
+    }
   })
 })
 

@@ -1,12 +1,18 @@
+// #1564 AC1:四个文档工具只用 main 模板的命令启动 —— 随包解释器(native/office-runtime/build/<本机架构>/,按
+// resources/office-runtime/ 的 lock 由 scripts/build-office-runtime.ts 产出;已是最新则直接复用)以 `-I -B` 跑随包
+// server.py。每条用例都在没有 uv / Homebrew 的 PATH 里执行这条命令,不联网下载任何依赖。随包运行时只进 mac 包,
+// 所以本文件只在 darwin 上跑(登记 `[平台:darwin]`)。
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import { alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/office-advisories"
+import { buildOfficeRuntime } from "../../scripts/build-office-runtime"
+import { ALPHA_OFFICE_PYTHON_SLOT, ALPHA_OFFICE_SERVER_SLOT, WORKSPACE_MARKER, alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/office-advisories"
 
+const darwin = process.platform === "darwin"
 const server = resolve(import.meta.dir, "../../resources/office-mcp/server.py")
-const uv = Bun.which("uv")
-const python = Bun.which("python3")
+/** 随包解释器;beforeAll 里由生产构建脚本给出。 */
+let python: string
 const enabledFormats = new Set(
   (process.env.ALPHA_OFFICE_MCP_TEST_FORMATS ?? "word,excel,powerpoint,pdf")
     .split(",")
@@ -15,18 +21,21 @@ const enabledFormats = new Set(
 )
 const testFormat = (format: AlphaOfficeFormat) => test.skipIf(!enabledFormats.has(format))
 let workspace: string
+/** 没有 uv、没有 Homebrew 的执行环境:命令要靠的只有包里的东西。 */
+let bare: Record<string, string>
 
 beforeAll(() => {
-  if (!python) throw new Error("本次测量作废: office-mcp tests require python3 on PATH (missing toolchain must not skip-green)")
-  if (!uv) throw new Error("本次测量作废: office-mcp tests require uv on PATH (missing toolchain must not skip-green)")
+  if (!darwin) return
   if (enabledFormats.size === 0) {
     throw new Error("本次测量作废: ALPHA_OFFICE_MCP_TEST_FORMATS is empty")
   }
+  python = join(buildOfficeRuntime({ arch: process.arch === "x64" ? "x64" : "arm64" }).dir, "bin", "python3")
   workspace = mkdtempSync(join(tmpdir(), "alpha-office-mcp-"))
-})
+  bare = { PATH: "/usr/bin:/bin", HOME: workspace, TMPDIR: workspace }
+}, 900_000)
 
 afterAll(() => {
-  rmSync(workspace, { recursive: true, force: true })
+  if (workspace) rmSync(workspace, { recursive: true, force: true })
 })
 
 type ResponseMessage = {
@@ -44,7 +53,7 @@ async function exchange(command: string[], requests: unknown[]) {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
-    env: process.env,
+    env: bare,
   })
   child.stdin.write(`${requests.map((request) => JSON.stringify(request)).join("\n")}\n`)
   child.stdin.end()
@@ -61,9 +70,10 @@ async function exchange(command: string[], requests: unknown[]) {
     .map((line) => JSON.parse(line) as ResponseMessage)
 }
 
+/** 生产模板,main 的三处替换照做:随包解释器、随包 server、workspace。 */
 function commandFor(format: AlphaOfficeFormat) {
   return alphaOfficeInstallCommand(format).map((argument) =>
-    argument.replace("{alphaResources}/office-mcp/server.py", server).replace("{workspace}", workspace),
+    argument === ALPHA_OFFICE_PYTHON_SLOT ? python : argument === ALPHA_OFFICE_SERVER_SLOT ? server : argument === WORKSPACE_MARKER ? workspace : argument,
   )
 }
 
@@ -97,7 +107,7 @@ function refusal(messages: ResponseMessage[], id: number) {
 /** #1245:判据读的是产物本身(解包 OOXML),不是工具返回值 —— 上一轮的教训正是「返回成功而产物里一个字段都没有」。 */
 function ooxmlPart(file: string, part: string) {
   const result = Bun.spawnSync([
-    python!,
+    python,
     "-c",
     "import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode('utf-8'))",
     file,
@@ -130,7 +140,17 @@ function docxFacts(file: string, headingText: string) {
   }
 }
 
-describe("REQ-133 Alpha first-party Office MCP resources", () => {
+describe.skipIf(!darwin)("REQ-133 Alpha first-party Office MCP resources", () => {
+  test("#1564 AC1: every format starts the bundled interpreter in isolated mode — no uv anywhere in the command", () => {
+    for (const format of ["word", "excel", "powerpoint", "pdf"] as const) {
+      const command = commandFor(format)
+      expect(command.slice(0, 3)).toEqual([python, "-I", "-B"])
+      expect(python.endsWith("/native/office-runtime/build/" + (process.arch === "x64" ? "x64" : "arm64") + "/bin/python3")).toBe(true)
+      expect(command.some((argument) => argument === "uv" || argument.startsWith("--with"))).toBe(false)
+      expect(Bun.which("uv", { PATH: bare.PATH })).toBeNull()
+    }
+  })
+
   testFormat("word")(
     "Word creates and reads docx without Microsoft Word",
     async () => {
@@ -179,11 +199,11 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
     async () => {
       // 先证明判官测得出已知的坏:裸 python-docx 模板(= 旧 server 的产物形状)eastAsia 为空、US Letter、created=2013。
       const control = join(workspace, "control.docx")
-      const bare = Bun.spawnSync(
-        ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", "python", "-c", "import sys; from docx import Document; d = Document(); d.add_paragraph('一、总体情况'); d.save(sys.argv[1])", control],
-        { env: process.env },
+      const template = Bun.spawnSync(
+        [python, "-I", "-B", "-c", "import sys; from docx import Document; d = Document(); d.add_paragraph('一、总体情况'); d.save(sys.argv[1])", control],
+        { env: bare },
       )
-      if (bare.exitCode !== 0) throw new Error(`本次测量作废: control docx not produced: ${bare.stderr.toString()}`)
+      if (template.exitCode !== 0) throw new Error(`本次测量作废: control docx not produced: ${template.stderr.toString()}`)
       const controlFacts = docxFacts(control, "一、总体情况")
       expect(controlFacts.eastAsiaTypefaces).toEqual(["", ""])
       expect(controlFacts.docDefaultsEastAsia).toBeNull()
@@ -347,7 +367,7 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
   test("absolute paths with traversal segments are rejected before format code runs", async () => {
     const path = `${workspace}/nested/../escape.docx`
     const messages = await exchange(
-      [python!, server, "word", workspace],
+      [python, server, "word", workspace],
       [initialize(), call(2, "read_docx", { path })],
     )
     const response = messages.find((message) => message.id === 2)
@@ -357,7 +377,7 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
 
   test("absolute paths outside the granted workspace are rejected before format code runs", async () => {
     const messages = await exchange(
-      [python!, server, "word", workspace],
+      [python, server, "word", workspace],
       [initialize(), call(2, "read_docx", { path: join(dirname(workspace), "outside.docx") })],
     )
     const response = messages.find((message) => message.id === 2)
@@ -374,7 +394,7 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
     } as const
     for (const format of Object.keys(expected) as AlphaOfficeFormat[]) {
       const messages = await exchange(
-        [python!, server, format, workspace],
+        commandFor(format),
         [initialize(), { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }],
       )
       expect(messages.find((message) => message.id === 2)?.result?.tools?.map((tool) => tool.name)).toEqual(
@@ -385,7 +405,7 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
 
   test("server CLI has no network transport, host, port, or SSE flags", () => {
     for (const extra of [["sse"], ["--host", "0.0.0.0"], ["--port", "8017"], ["--transport", "streamable-http"]]) {
-      const result = Bun.spawnSync([python!, server, "word", workspace, ...extra])
+      const result = Bun.spawnSync([python, server, "word", workspace, ...extra])
       expect(result.exitCode, extra.join(" ")).not.toBe(0)
       expect(result.stderr.toString()).toContain("stdio is the only transport")
     }

@@ -69,6 +69,9 @@ const excelEntry = {
   },
 } as never
 
+// #1564:详情页对四个第一方 Office 条目读 main 的随包运行时事实(preload `ext.officeRuntime`);这里只给那一条 IPC。
+Object.defineProperty(window, "api", { configurable: true, writable: true, value: { ext: { officeRuntime: async () => ({ ok: true }) } } })
+
 const disposals: Array<() => void> = []
 afterAll(() => {
   for (const dispose of disposals.splice(0)) dispose()

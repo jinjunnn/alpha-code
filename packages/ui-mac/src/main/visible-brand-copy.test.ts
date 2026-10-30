@@ -21,7 +21,8 @@ const copy = [
   ["packages/ui-mac/src/main/ext-install-planner.ts", "reason: `entry ${entry.id} installs an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing`,", 1],
   ["packages/ui-mac/src/main/ext-install-planner.ts", "reason: `asset ${asset.id} is an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing`,", 1],
   ["packages/ui-mac/src/main/ext-mcp-policy.ts", "if (!connector) return { ok: false, reason: \"unknown Code Puppy Office connector mode (REQ-133 fail-closed)\" }", 1],
-  ["packages/ui-mac/src/main/ext-mcp-policy.ts", "return { ok: false, reason: `${connector.name} command differs from the pinned Code Puppy stdio command (REQ-133)` }", 1],
+  // #1564 AC1:写策略不再比对目录卡片的命令,这一句拒绝随之消失(0 次 = 它不会再出现在用户面前)。
+  ["packages/ui-mac/src/main/ext-mcp-policy.ts", "return { ok: false, reason: `${connector.name} command differs from the pinned Code Puppy stdio command (REQ-133)` }", 0],
   ["packages/ui-mac/src/main/ext-mcp-policy.ts", "return { ok: false, reason: `${connector.name} bundled server escaped Code Puppy resources (REQ-133)` }", 1],
   ["packages/ui-mac/src/main/package-admission.ts", "reason: `package admission: component \"${component.id}\" installs an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing the whole package`,", 1],
   ["packages/ui-mac/src/main/package-admission.ts", "reason: `component \"${component.accepted.component.id}\" installs an engine plugin — Code Puppy no longer installs executable plugins into the engine (ADR-040); refusing`,", 1],

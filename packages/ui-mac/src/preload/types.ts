@@ -20,6 +20,7 @@ export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wi
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ToolPolicyApi } from "../shared/tool-policy-wire"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
+import type { OfficeRuntimeReadiness } from "../shared/office-advisories"
 import type {
   PackageAdmissionAuthorizationV1,
   PackageAdmissionPreviewV1,
@@ -826,6 +827,8 @@ export type ElectronAPI = {
     ) => Promise<{ ok: true } | { ok: false; reason: string; code?: ProviderAddressRejection }>
     removeMcp: (name: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     checkRuntime: (tool: string) => Promise<{ ok: boolean }>
+    /** #1564:随包 Office 运行时是否就绪(四个第一方 Office 条目的准备检查只读它)。 */
+    officeRuntime: () => Promise<OfficeRuntimeReadiness>
     // B11/B23:全局配置健康(broken=引擎会整份忽略用户配置)
     configHealth: () => Promise<{ broken: boolean; reason?: string; path?: string }>
     /** REQ-036 出厂技能名单(skills.paths 注入的技能名;ALPHA_FACTORY_SKILLS_DISABLE 时为空)——

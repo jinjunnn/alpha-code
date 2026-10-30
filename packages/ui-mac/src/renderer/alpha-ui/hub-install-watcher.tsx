@@ -171,9 +171,8 @@ export function HubInstallWatcher(props: {
     const requestId = props.hub.requestId
     if (scope === "project" && entry.type !== "mcp") return { ok: false, reason: "project-scope-mcp-only" }
     if (entry.type === "mcp") {
-      const spec = entry.installSpec && entry.installSpec.kind === "mcp" ? entry.installSpec : undefined
-      const rc = await ext.checkRuntime(spec?.runtimeDep)
-      if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
+      const rc = await ext.checkRuntime(entry)
+      if (!rc.ok) return { ok: false, reason: "reason" in rc ? rc.reason : t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
       return ext.addMcp(entry, undefined, secrets, authorization, scope, selectedProjectDir, requestId)
     }
     if (entry.type === "skill") return ext.installSkill(entry, authorization, requestId)

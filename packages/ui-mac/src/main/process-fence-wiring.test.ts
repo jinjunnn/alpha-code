@@ -23,6 +23,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { mockElectron } from "../../test-component/electron-mock"
 import { ALPHA_OFFICE_CONNECTORS, alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/office-advisories"
+import { buildOfficeRuntime } from "../../scripts/build-office-runtime"
 import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 import { renderProcessFenceProfile, resolveEngineRoots } from "./process-fence-profile"
 import { upsertRecordV2 } from "./ext-receipt-v2"
@@ -121,7 +122,17 @@ afterEach(() => {
 
 // #1504: real uv + bundled commands + production env/profile/proxy. Only Electron's fork is
 // recorded; sandbox-exec applies that profile to uv. This does not replace packaged Hub validation.
+// #1564: the four Office entries no longer run uv; these cases keep the uv-era command literally (the
+// recorded 2026-09-04 sample below) because they judge the fence's uv cache wiring, which other uv-based
+// MCPs still use. The bundled-runtime command is judged by the #1564 case at the end of this block.
 describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence", () => {
+  /** The uv-era pins every installed Office entry carried before #1564 (owner machine, 2026-09-04). */
+  const LEGACY_UV_PINS: Record<AlphaOfficeFormat, string[]> = {
+    word: ["python-docx==1.2.0"],
+    excel: ["openpyxl==3.1.5"],
+    powerpoint: ["python-pptx==1.0.2"],
+    pdf: ["pypdf==6.16.1", "reportlab==5.0.0"],
+  }
   let root: string
   let workspace: string
   let globalRoot: string
@@ -162,9 +173,10 @@ describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence",
     // Receipt/config shape from alpha-office-instance.test.ts's recorded 2026-09-04 sample;
     // production writer generates isolated receipts with synthetic timestamps and transaction IDs.
     for (const connector of ALPHA_OFFICE_CONNECTORS) {
-      commands.set(connector.format, alphaOfficeInstallCommand(connector.format).map((argument) =>
-        argument.replace("{alphaResources}", resolve(import.meta.dir, "../../resources")),
-      ))
+      commands.set(connector.format, [
+        "uv", "run", "--no-project", ...LEGACY_UV_PINS[connector.format].flatMap((pin) => ["--with", pin]),
+        resolve(import.meta.dir, "../../resources/office-mcp/server.py"), connector.format, "{workspace}",
+      ])
       expect(upsertRecordV2(globalRoot, {
         id: connector.catalogId, name: connector.name, kind: "mcp", environment: "dev", scope: { kind: "global" },
         version: "1.0.0", manifestDigest: `sha256:${"00".repeat(32)}`, grantDigest: `sha256:${"11".repeat(32)}`,
@@ -213,8 +225,8 @@ describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence",
     if (root) rmSync(root, { recursive: true, force: true })
   })
 
-  async function exchange(format: AlphaOfficeFormat, childEnv = env) {
-    const command = commands.get(format)!.map((argument) => argument.replace("{workspace}", workspace))
+  async function exchange(format: AlphaOfficeFormat, childEnv = env, template = commands.get(format)!) {
+    const command = template.map((argument) => argument.replace("{workspace}", workspace))
     const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile, ...command], {
       cwd: workspace, env: childEnv, stdin: "pipe", stdout: "pipe", stderr: "pipe", timeout: 120_000,
     })
@@ -278,6 +290,22 @@ describe.skipIf(!darwin)("#1504 Office cache under the unchanged process fence",
     expect(hashes()).toEqual(installedHashes)
     console.log(JSON.stringify({ issue: 1504, before: installedHashes, after: hashes(), profileSha256: createHash("sha256").update(profile).digest("hex") }))
   }, 180_000)
+
+  // #1564 AC1:main 模板(随包解释器 `-I -B` + 随包 server)在同一道生产围栏、同一份 sidecar env 里起得来,
+  // PATH 上没有 uv 也一样;没有任何出网(策略代理一条记录都没有),也不往 uv 缓存写东西。
+  test("#1564: the four bundled-runtime commands initialize inside the production fence with no uv on PATH and no egress", async () => {
+    const runtime = buildOfficeRuntime({ arch: process.arch === "x64" ? "x64" : "arm64" }).dir
+    const withoutUv = { ...env, PATH: "/usr/bin:/bin" }
+    for (const connector of ALPHA_OFFICE_CONNECTORS) {
+      const template = alphaOfficeInstallCommand(connector.format).map((argument) =>
+        argument.replace("{alphaResources}/office-runtime", runtime).replace("{alphaResources}", resolve(import.meta.dir, "../../resources")),
+      )
+      expect(template.slice(0, 3)).toEqual([join(runtime, "bin", "python3"), "-I", "-B"])
+      connected(connector.format, await exchange(connector.format, withoutUv, template))
+    }
+    expect(proxyLog).toEqual([])
+    expect(fs.existsSync(join(root, "userData", "uv-cache"))).toBe(false)
+  }, 900_000)
 })
 
 describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {

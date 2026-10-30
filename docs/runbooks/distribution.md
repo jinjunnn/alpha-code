@@ -128,6 +128,7 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 | 内置终端 | `@lydell/node-pty-darwin-<arch>`(`pty.node` + `spawn-helper`) | **包名在 build 时编进 `out/main`**(`electron.vite.config.ts` 的 node-pty narrower)⇒ build 必须带 `ALPHA_TARGET_ARCH` |
 | 引擎文件监听 | `@parcel/watcher-darwin-<arch>`(`watcher.node`) | 引擎产物运行时按 `process.arch` require ⇒ 只要求该架构的包在 `node_modules` 里被打进去 |
 | 进程围栏 | `native/alpha-fence/build/alpha_fence.node` | 本来就是 fat(arm64 + x86_64),见下 |
+| 文档工具运行环境(#1564) | `native/office-runtime/build/<arch>/` → 包内 `Contents/Resources/office-runtime/` | prebuild 按 `ALPHA_TARGET_ARCH` 构建那一份,见下「随包 Office 运行时」 |
 | Electron 本体 | electron-builder 按打包架构下载 | 无需操作 |
 | 引擎本体 / ext / 预览 | `../opencode/dist/node/node.js` + `*.wasm`、`../ext/dist/plugin.js` + photon wasm、tree-sitter wasm、ghostty-web(wasm,渲染层) | 纯 JS / wasm,与架构无关 |
 
@@ -178,6 +179,32 @@ grep -c "url: code-puppy-mac-" dist/latest-mac.yml       # 期望 4(两种架构
 否则会把 arm64 用户的自动更新 feed 覆盖掉;仍按 ③ 与留底的 arm64 feed 合并。
 
 **未验证(需真 Intel 机)**:x64 包在 Intel Mac 上启动、本地引擎起来、内置终端能打开并执行命令(#1496 AC2)。
+
+### 随包 Office 运行时(#1564)
+
+Word / Excel / PowerPoint / PDF 四个文档工具的命令是 `<Resources>/office-runtime/bin/python3 -I -B <Resources>/office-mcp/server.py <格式> {workspace}`
+—— 不要用户装 uv,也不在第一次使用时下载依赖。`office-runtime/` 由 `packages/ui-mac/scripts/build-office-runtime.ts`
+在 prebuild 里按目标架构产出(落 `native/office-runtime/build/<arch>/`,gitignore;extraResources 只装目标架构那一份):
+
+- 钉版:`resources/office-runtime/requirements.in`(五个顶层包)、`requirements-arm64.lock` / `requirements-x64.lock`
+  (完整传递闭包 + sha256,文件头记着生成命令 `uv pip compile … --python-platform <triple> --generate-hashes`;
+  升级任何一个包就重跑这两条)、`office-runtime.lock`(python-build-standalone CPython 的 URL + sha256,以及闭包的依赖图)。
+  闭包是否完整由 `src/main/office-runtime-lock.test.ts` 判。
+- 构建:下载并校验运行时 → `pip install --require-hashes --only-binary=:all:` → `pip check` → 已装版本与依赖图逐项对 lock →
+  删 `test/`、`tkinter`、`idlelib`、`ensurepip`、`pip` → `compileall`(unchecked-hash)。lock 与脚本都没变时复用上次产物。
+  下载缓存在 `native/office-runtime/cache/`(运行时)与 pip 自己的缓存(轮子)。
+- 验证(每次构建都跑,任何一项不过即失败):每个 Mach-O 含目标架构片、随包解释器 `-I` 逐个 import 闭包里的顶层模块、
+  按生产命令形状驱动 `server.py` 四种格式各写一个样例文件再读回。x64 在 arm64 打包机上经 Rosetta(`arch -x86_64`)
+  执行同样的安装与验证;没装 Rosetta 时构建直接失败(`softwareupdate --install-rosetta`),不会跳过。
+- beforePack 同样核对 `office-runtime/` 下每个 Mach-O 含目标架构片;签名时 electron-builder 把它们与其它内嵌二进制
+  同 Team 深签(entitlements 不变)。签名后能否运行、干净账户(无 Homebrew / uv)里四格式读写,归发版回归 T23。
+
+构建日志里的体积行(2026-10-30,CPython 3.11.15 + 11 个发行包,本机未签名构建实测):
+
+```
+[alpha:office-runtime] arm64: 111.5 MB (4753 files, 48 Mach-O, 11 top-level modules imported, 4 formats round-tripped)
+[alpha:office-runtime] x64: 104.6 MB (4753 files, 48 Mach-O, 11 top-level modules imported, 4 formats round-tripped)
+```
 本仓 CI 与开发机都没有 x86_64 运行时,上面的 `lipo` 只证明**装进去的片对**,不证明跑得起来。
 
 **进程围栏的原生模块不需要为 x64 多做任何事**(REQ-159 `#1321`):`prebuild` 里的

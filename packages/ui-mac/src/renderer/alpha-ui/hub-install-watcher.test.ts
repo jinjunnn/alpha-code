@@ -54,6 +54,23 @@ const ENTRIES = [
     category: "dev",
     installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "notes"], requiredEnvVars: ["NOTES_TOKEN"] },
   },
+  // #1564:alpha-web 签名目录里 Word 文档工具卡片的原样(src/renderer/extensions/alpha-catalog.json):仍写着 uv 命令与 runtimeDep ["uv"]。
+  {
+    id: "mcp:alpha-word",
+    type: "mcp",
+    name: "alpha-word",
+    displayName: "Word 文档读写",
+    description: "读取 .docx 的正文和结构，也能新建或改写文档。",
+    source: "alpha",
+    category: "office",
+    installSpec: {
+      kind: "mcp",
+      mcpType: "local",
+      command: ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", "{alphaResources}/office-mcp/server.py", "word", "{workspace}"],
+      requiredEnvVars: [],
+      runtimeDep: ["uv"],
+    },
+  },
   {
     id: "skill:writer",
     type: "skill",
@@ -122,6 +139,9 @@ let intents: Array<Record<string, unknown>> = []
 let stages: HubRequestStages
 let stageOk = true
 let installScript: InstallScript = []
+/** #1564:本机 PATH 上有没有 uv(ext.checkRuntime 的 which)、main 报的随包 Office 运行时在不在(ext.officeRuntime)。 */
+let uvOnPath = true
+let officeRuntimeReady = true
 const disposers: Array<() => void> = []
 const neverSettle = () => new Promise<never>(() => {})
 
@@ -131,6 +151,8 @@ beforeEach(() => {
   intents = []
   stageOk = true
   installScript = []
+  uvOnPath = true
+  officeRuntimeReady = true
   runtime.resetHarness()
   document.body.replaceChildren()
   const ext: Record<string, unknown> = {
@@ -142,7 +164,8 @@ beforeEach(() => {
     },
     remoteCatalog: async () => ({ source: "remote", catalog: { version: "9.9.9", entries: ENTRIES, packages: [PACKAGE_VIEW] } }),
     advisoryActive: async () => ({ ids: [], fresh: true }),
-    checkRuntime: async () => ({ ok: true }),
+    checkRuntime: async (tool: string) => ({ ok: tool !== "uv" || uvOnPath }),
+    officeRuntime: async () => (officeRuntimeReady ? { ok: true } : { ok: false, reason: "office-runtime-missing" }),
     installCatalog: async (intent: Record<string, unknown>) => {
       intents.push(intent)
       await held.get("install")?.promise
@@ -297,6 +320,36 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     })
     expect(timeline()).toEqual(["stage:confirming", "install", "stage:submitted", "install", "reply:once"])
     expect(stages.get("req_hub_watcher_08")).toMatchObject({ stage: "committed" })
+  })
+
+  test("#1564 AC3:PATH 里没有 uv、随包 Office 运行时在 ⇒ 装 Word 文档工具照常走完,不再因卡片的 uv 依赖拒装", async () => {
+    uvOnPath = false
+    installScript = [{ ok: true, kind: "mcp", name: "alpha-word" }]
+    mount()
+    await flush()
+    runtime.ask(hubRequest("mcp:alpha-word", "req_hub_office_ready"))
+    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
+    button(zh["alpha.ext.confirmInstall"])!.click()
+    await until(() => replies().length > 0, "the reply")
+    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
+    expect(intents.map((intent) => intent.catalogId)).toEqual(["mcp:alpha-word"])
+    expect(stages.get("req_hub_office_ready")).toMatchObject({ stage: "committed" })
+  })
+
+  test("#1564 AC3:随包 Office 运行时缺 ⇒ 具名拒绝(框里说重新安装 Code Puppy)、记 failed、零出站;本机有 uv 也不回落", async () => {
+    officeRuntimeReady = false
+    mount()
+    await flush()
+    runtime.ask(hubRequest("mcp:alpha-word", "req_hub_office_missing"))
+    await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
+    button(zh["alpha.ext.confirmInstall"])!.click()
+    await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")
+    expect(document.querySelector("[data-hub-agent-failure]")?.textContent).toBe(zh["alpha.ext.officeRuntimeMissing"])
+    expect(zh["alpha.ext.officeRuntimeMissing"]).toContain("重新安装 Code Puppy")
+    expect(intents).toHaveLength(0)
+    button(zh["alpha.ext.close"])!.click()
+    await until(() => replies().length > 0, "the reply")
+    expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "stage:failed(office-runtime-missing)", "reply:reject"])
   })
 
   test("对照:不带 alphaHub 的请求照旧是通用五栏审批框,不进守望者", async () => {

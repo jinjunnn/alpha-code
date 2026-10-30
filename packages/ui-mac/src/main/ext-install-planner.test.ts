@@ -998,7 +998,9 @@ describe("other kinds — derivation & records", () => {
     expect(cfg.mcp["alpha-word"].command).toContain("word")
   })
 
-  test("REQ-133/#823: applyMcpWritePolicy — not classifyBundleChild's early-out — still rejects a malformed workspace argument", async () => {
+  // #1564 AC1:目录卡片里的命令不再被消费 —— 卡片的 workspace 槽写的是具体路径,落盘的仍是 main 模板与字面量
+  // `{workspace}`(REQ-134 的保证由「只写 main 模板」承担,不再靠拒装)。
+  test("REQ-133/#823 + #1564: applyMcpWritePolicy — not classifyBundleChild's early-out — persists main's template over a malformed card workspace argument", async () => {
     const spoofed: CatalogEntry = {
       ...mcpEntry,
       id: "mcp:alpha-word-spoofed",
@@ -1018,8 +1020,13 @@ describe("other kinds — derivation & records", () => {
     }
     const { deps } = makeDeps({ entries: [...ALL_ENTRIES, spoofed, office] })
     const result = await installAuthorized({ catalogId: office.id, scope: { scope: "global" } }, deps)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.reason).toContain("REQ-134")
+    expect(result.ok).toBe(true)
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    const resources = fs.realpathSync(path.resolve(import.meta.dir, "../../resources"))
+    expect(cfg.mcp["alpha-word"].command).toEqual([
+      path.join(resources, "office-runtime", "bin", "python3"), "-I", "-B", path.join(resources, "office-mcp", "server.py"), "word", "{workspace}",
+    ])
+    expect(JSON.stringify(cfg.mcp["alpha-word"])).not.toContain("/tmp/not-a-marker")
   })
 
   test("bundle: skill(generation)+ 无密钥 MCP(config)一次原子提交(REQ-100 #311)", async () => {
