@@ -160,11 +160,15 @@ describe("#679 平台计价权威棘轮:本地目录不得重新长出价格轴"
     const catalog = JSON.parse(readFileSync(join(packageRoot, "src/main/alpha-models.json"), "utf8")) as {
       tiers?: unknown
       defaultPlatformModel?: unknown
-      platformModels: Array<Record<string, unknown>>
+      platformModels?: unknown
+      byokCatalog: { providers: Array<{ id: string; models: Array<Record<string, unknown>> }> }
     }
     expect(catalog.tiers).toBeUndefined()
-    expect(catalog.platformModels.length).toBeGreaterThan(0)
-    for (const model of catalog.platformModels) {
+    // `#1556` AC1:随包平台清单已删除 —— 平台模型的一切字段只来自网关快照(ADR-039 + V3 display)。
+    expect(catalog.platformModels).toBeUndefined()
+    const byokModels = catalog.byokCatalog.providers.flatMap((provider) => provider.models)
+    expect(byokModels.length).toBeGreaterThan(0)
+    for (const model of byokModels) {
       expect(Object.keys(model), String(model.id)).not.toContain("tier")
       // 本地目录**永远不产出** pricing:它只能来自网关快照(ADR-039)。
       expect(Object.keys(model), String(model.id)).not.toContain("pricing")

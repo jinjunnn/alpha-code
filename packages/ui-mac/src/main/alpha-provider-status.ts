@@ -8,12 +8,10 @@
 // export named 'app'"). Keeping this electron-touching code in its own main-only module keeps the
 // sidecar's module graph electron-free.
 
-import catalog from "./alpha-models.json"
-import type { AlphaModelCatalog, ProviderKeyState, ProviderKeyStatus } from "../shared/alpha-model-types"
+import type { ProviderKeyState, ProviderKeyStatus } from "../shared/alpha-model-types"
 import { readConfiguredProviderKeys, type ProviderKeyKind } from "./ext-config"
 import { byokKeyMap } from "./alpha-byok-keys"
-
-const CATALOG = catalog as unknown as AlphaModelCatalog
+import { BYOK_ADAPTERS } from "./byok-adapters"
 
 /** Masked tail only (never the full key) so the renderer can show WHICH key is set, not its value. */
 const last4 = (k: string): string => (k.length >= 4 ? k.slice(-4) : "••")
@@ -38,9 +36,10 @@ export function getProviderKeyStatus(): ProviderKeyStatus {
   const cfgKinds = readConfiguredProviderKeys() // alpha.jsonc provider blocks, classified, value-free
   const kc = byokKeyMap() // alpha's encrypted key store — the source of truth
   const out: ProviderKeyStatus = {}
-  for (const p of CATALOG.byokProviders) {
+  // REQ-237 `#1556`:catalog BYOK provider 的身份与 Key 名只认 App 内置适配器表(展示名在已应用目录里,本函数不需要)。
+  for (const p of BYOK_ADAPTERS) {
     const kcKey = kc.get(p.id)
-    const envVal = p.keyEnv ? process.env[p.keyEnv] : undefined
+    const envVal = process.env[p.keyEnv]
     const kind = cfgKinds.get(p.id)
     if (kcKey) out[p.id] = { configured: true, source: "keychain", hint: last4(kcKey) }
     else if (envVal) out[p.id] = { configured: true, source: "env", hint: last4(envVal) }

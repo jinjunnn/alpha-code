@@ -29,6 +29,10 @@ export type ModelPickerRow = {
   engineIndependent?: true
 }
 
+/** 平台行的字母图标。`#1556` 删掉了随包 `platformProvider.pico`(平台展示字段只归网关);在按品牌出图
+ *  (alpha-code#1558,读 `PlatformModel.brand`)落地之前,平台行保留原来那枚 Code Puppy「C」,用户看到的不变。 */
+const PLATFORM_PICO = { letter: "C", color: "#4f46e5" }
+
 /** 平台已把倍数 half-up 到一位小数(契约 docs/contracts,`isTrustedPair` 拒绝不落在 0.1 网格上的值),
  *  所以 `toFixed(1)` 是**本地化**不是 rounding:它只决定 `1` 要不要写成 `1.0`,不会改变任何数值。 */
 const formatMultiplier = (value: number) => value.toFixed(1)
@@ -112,7 +116,7 @@ export function buildModelPickerRows(input: {
         variants: model.variants ? Object.keys(model.variants) : [],
       },
       providerName: input.catalog.platformProvider.name,
-      pico: input.catalog.platformProvider.pico,
+      pico: PLATFORM_PICO,
       ...(model.pricing ? { pricing: model.pricing } : {}),
       reasoning: !!model.reasoning,
       availability: availability.kind,

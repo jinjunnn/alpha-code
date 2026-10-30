@@ -36,6 +36,7 @@ const ENUMERATED_MEMBERS = [
   "alpha-cloud-jobs.ts",
   "alpha-cloud-schedules.ts",
   "alpha-platform-models.ts",
+  "catalog-refresher.ts", // `#1556`:BYOK 预置目录拉取的拒绝同样经咽喉分类
 ]
 
 /** 递归枚举 src/main 生产源(测试与用例文件被 tsconfig 排除在 typecheck 外,也不在本闸辖区)。 */

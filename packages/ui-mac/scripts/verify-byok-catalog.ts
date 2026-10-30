@@ -30,6 +30,7 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
+import { BYOK_ADAPTERS } from "../src/main/byok-adapters"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CATALOG = join(HERE, "..", "src", "main", "alpha-models.json")
@@ -76,7 +77,16 @@ async function liveIds(baseURL: string, key: string): Promise<{ ids?: string[]; 
   return { ids }
 }
 
-const catalog = JSON.parse(readFileSync(CATALOG, "utf8")) as { byokProviders: Provider[] }
+// `#1556`:随包 BYOK 段是 ByokCatalogV1 形状的首启引导(`byokCatalog`),端点与 Key 名在 App 内置适配器表里。
+const bundled = JSON.parse(readFileSync(CATALOG, "utf8")) as {
+  byokCatalog: { providers: Array<{ id: string; name: string; models: Array<{ id: string }> }> }
+}
+const catalog = {
+  byokProviders: bundled.byokCatalog.providers.flatMap((p): Provider[] => {
+    const adapter = BYOK_ADAPTERS.find((a) => a.id === p.id)
+    return adapter ? [{ id: p.id, name: p.name, baseURL: adapter.baseURL, keyEnv: adapter.keyEnv, models: p.models.map((m) => m.id) }] : []
+  }),
+}
 let real = 0
 let checked = 0
 const unverified: string[] = []

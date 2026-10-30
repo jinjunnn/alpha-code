@@ -62,6 +62,8 @@ export const ALPHA_PATHS = {
   modelProxy: "/v1",
   /** platform: live model allowlist (B gateway 真相源;A 用于同步/校验模型目录,解 alpha-models.json 占位漂移)。 */
   models: "/v1/models",
+  /** platform: BYOK preset catalog(`#1556`,ByokCatalogV1;从不带凭据,结构上无法按账户收窄)。 */
+  byokCatalog: "/v1/byok-catalog",
   /** cloud: MCP facade → ALPHA_CLOUD_MCP_URL (on the `cloud` worker, NOT the model gateway). */
   mcpGateway: "/mcp",
   /** cloud: unified cloud jobs API (ADR-016) → dispatch POST, status GET {cloudJobs}/{id}, SSE {cloudJobs}/{id}/events, list {cloudJobs}/{id}/artifacts. */

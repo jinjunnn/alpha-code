@@ -2,10 +2,11 @@
 // sidecar.ts -> injectAlphaConfig). Everything here rides opencode's NATIVE config contract, so
 // it touches zero upstream source and survives every fork-sync (ADR-005/006/007).
 //
-// CONFIG-DRIVEN (ADR-014): the catalog DATA lives in ./alpha-models.json — the single source of
-// truth. This file only READS that JSON and assembles opencode's native config. Add/retire models,
-// retune 展示元数据(显示名 / reasoning / web / variants), or change presets by editing the JSON,
-// NOT this code. 计价倍数不在其中:它由网关 /v1/models 下发(REQ-127 #679 / ADR-039)。
+// CATALOG DATA (REQ-237 `#1556`):平台模型(id / 计价 / 名称 / 品牌 / 能力 / 档位)只来自已应用的网关目录
+// (V3 `display`);BYOK 模型与元数据只来自已应用 BYOK 目录(远程 `GET /v1/byok-catalog`,随包
+// ./alpha-models.json 只留首启引导);BYOK 的端点 / Key 名 / 协议适配器只来自 App 内置适配器表
+// ./byok-adapters.ts。两份已应用目录由 main 在 fork 前钉住(alpha-live-allowlist.ts pinAppliedCatalog),
+// picker 与本函数读同一份。本文件不持有任何目录数据。
 //
 // The four native levers (runtime: packages/opencode/src/provider/provider.ts):
 //   - enabled_providers: HARD allowlist. When set, ONLY these provider ids are visible.
@@ -22,21 +23,65 @@
 //
 // Escape hatch: ALPHA_MODELS_DISABLE=1 skips this entirely.
 
+import type { ByokCatalogV1 } from "@alpha-code/contracts-consumer"
 import catalog from "./alpha-models.json"
-import type { AlphaModelCatalog } from "../shared/alpha-model-types"
+import type { AlphaModelCatalog, ByokProvider } from "../shared/alpha-model-types"
 import { byokEngineId, byokModelMeta } from "../shared/alpha-model-types"
-import { projectPlatformModels, readAppliedPlatformSnapshot } from "./alpha-live-allowlist"
+import { projectPlatformModels, readAppliedByokCatalog, readAppliedPlatformSnapshot } from "./alpha-live-allowlist"
+import { byokAdapter } from "./byok-adapters"
 import { customProviderSecretName, hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { readCustomProviderRecords } from "./custom-provider-records"
 // NOTE: this module is loaded by the SIDECAR (utilityProcess) via buildAlphaModelConfig, so it must
 // stay electron-free. getProviderKeyStatus (which reads the safeStorage keychain) lives in the
 // main-only alpha-provider-status.ts for that reason — do NOT import alpha-byok-keys here.
 
-const CATALOG = catalog as unknown as AlphaModelCatalog
+const BUNDLED = catalog as unknown as Pick<AlphaModelCatalog, "defaultModel" | "defaultPlatformModel" | "platformProvider">
 
-/** The full model catalog (for window.api.models.catalog -> renderer picker). */
-export function getModelCatalog(): AlphaModelCatalog {
-  return CATALOG
+/** BYOK 段的**唯一**投影:已应用 BYOK 目录 × App 内置适配器表(方案 §2.3)。provider 身份 / 名称 / preset / 模型 /
+ *  逐模型元数据取目录;`compat` / `baseURL` / `keyEnv` / `pico` 只取适配器表 —— 目录里不认识的 provider 没有适配器,
+ *  投影不出来(采纳时已跳过,这里是同一判据的读侧)。 */
+export function projectByokProviders(byok: ByokCatalogV1): ByokProvider[] {
+  return byok.providers.flatMap((provider): ByokProvider[] => {
+    const adapter = byokAdapter(provider.id)
+    if (!adapter) return []
+    return [
+      {
+        id: provider.id,
+        name: provider.name,
+        preset: provider.preset,
+        compat: adapter.compat,
+        baseURL: adapter.baseURL,
+        keyEnv: adapter.keyEnv,
+        pico: adapter.pico,
+        models: provider.models.map((model) => model.id),
+        modelMeta: Object.fromEntries(
+          provider.models.map((model) => [
+            model.id,
+            {
+              name: model.name,
+              ...(model.reasoning ? { reasoning: true } : {}),
+              ...(model.variants ? { variants: model.variants } : {}),
+            },
+          ]),
+        ),
+        imageInput: Object.fromEntries(provider.models.map((model) => [model.id, model.image_input])),
+      },
+    ]
+  })
+}
+
+/** The applied model catalog (picker via getEffectiveCatalog, engine via buildAlphaModelConfig): both segments
+ *  come from the catalog pinned before the current fork. */
+export function getModelCatalog(userDataPath: string): AlphaModelCatalog {
+  const byokProviders = projectByokProviders(readAppliedByokCatalog(userDataPath).byok)
+  return {
+    defaultModel: BUNDLED.defaultModel,
+    defaultPlatformModel: BUNDLED.defaultPlatformModel,
+    platformProvider: BUNDLED.platformProvider,
+    platformModels: projectPlatformModels(readAppliedPlatformSnapshot(userDataPath)),
+    byokProviders,
+    presetIds: byokProviders.filter((provider) => provider.preset).map((provider) => provider.id),
+  }
 }
 
 /** REQ-228 #1420:引擎 config 的 `modalities.input`,引擎据它算 `capabilities.input.image`
@@ -66,22 +111,21 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   const provider: Record<string, unknown> = {}
   const enabled: string[] = []
 
-  // REQ-001:B 网关 edition 白名单。`#1555` 起读 fork 前钉住的「已应用目录」(alpha-applied-catalog.json),
-  // 不读后台刷新器随时改写的 LKG —— picker 读同一份,两边永远是同一个版本。缺失/损坏/旧代
-  // → 不限制,内置 snapshot 兜底,fail-open。约束对象**只有平台模型清单**;用户自定义节点(下方
-  // 第 (3) 段,来自真源)不受限;BYOK 目录自 REQ-109 #595 起也不受限 —— owner 裁决 BYOK 走全主权,
-  // 本地 alpha-models.json 即权威,平台不得远程干预(契约 docs/contracts/byok-availability.md)。
-  const snapshot = readAppliedPlatformSnapshot(userDataPath)
-  // REQ-127 #681:平台段的**唯一**投影,算一次。平台节点直接用它;BYOK 节点的 reasoning 元数据也从它
-  // 派生(byokModelMeta),与 picker 的 BYOK 行(getEffectiveCatalog → 同一投影)同一份判据。
-  const platformModels = projectPlatformModels(CATALOG.platformModels, snapshot)
+  // `#1555` 起读 fork 前钉住的「已应用目录」(alpha-applied-catalog.json),不读后台刷新器随时改写的 LKG ——
+  // picker 读同一份,两边永远是同一个版本。平台段:网关 edition 清单 + V3 `display`,没有有效快照 ⇒ 空
+  // (`#1556`:随包平台清单已删除)。BYOK 段:已应用 BYOK 目录,从不按账户 / edition 收窄(REQ-109 #595,
+  // 契约 docs/contracts/byok-availability.md)。用户自定义节点(下方第 (3) 段,来自真源)不受目录约束。
+  const applied = getModelCatalog(userDataPath)
+  const platformModels = applied.platformModels
 
   // (1) BYOK 直连节点 (方案 C): inject each catalog provider that HAS a key (opt-in) as a FULL custom
-  // provider — npm/baseURL/models come from the catalog (alpha-code defines them, independent of
-  // models.dev), and the apiKey is a {file:} ref into the secret channel (fed by the alpha keychain /
-  // shell / alpha.env via main's syncSecretFiles at fork, A6). No key file → not injected, so the
-  // picker only shows keyed BYOK nodes. Calls go DIRECT to the provider's baseURL (never via the gateway).
-  for (const p of CATALOG.byokProviders) {
+  // provider — npm/baseURL come from the App's built-in adapter table (`#1556`: never from remote data, so a
+  // remote catalog can neither redirect a user's key nor mint a new egress host — network-egress-derived.ts
+  // derives the allowlist from these baseURLs), models from the applied BYOK catalog, and the apiKey is a
+  // {file:} ref into the secret channel (fed by the alpha keychain / shell / alpha.env via main's
+  // syncSecretFiles at fork, A6). No key file → not injected, so the picker only shows keyed BYOK nodes.
+  // Calls go DIRECT to the provider's baseURL (never via the gateway).
+  for (const p of applied.byokProviders) {
     if (!p.keyEnv || !hasSecretFile(userDataPath, p.keyEnv)) continue
     const npm = p.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
     // REQ-153 #1236:`reasoning` 是引擎 `capabilities.reasoning` 的唯一来源(config schema
@@ -90,23 +134,23 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     // REQ-153 #1266:`variants`(档位 → 引擎 options)与 picker 的 BYOK 行同一份派生(byokModelMeta),
     // 引擎侧 provider.ts:1503-1507 把它与自己按 npm 派生的档位表 mergeDeep —— 桌面 chip 列出的每个
     // 标签,引擎 `model.variants[variant]` 都查得到。
-    // REQ-153 #1267:BYOK-only id(平台无同名条目)的徽标 / 档位来自目录自己的 `modelMeta` 槽,仍经同一个
-    // byokModelMeta 派生 —— 上游 transform.options() 对 zhipuai* 无条件写 thinking:enabled,`关` 档
+    // REQ-153 #1267:上游 transform.options() 对 zhipuai* 无条件写 thinking:enabled,`关` 档
     // (`thinking: { type: "disabled" }`)是用户关掉它的唯一途径,而它要能被引擎查到,就必须从这里注入。
+    // `#1556`:元数据只来自 BYOK 目录自己,不再借平台同名条目。
     // Inject under a non-models.dev engine id (`<id>-byok`) so opencode's availability gate doesn't
     // filter these out via the models.dev integration collision (see byokEngineId). Display id, key
     // status, gateway allowlist and the key store all keep the plain `p.id`.
     const engineId = byokEngineId(p.id)
-    // REQ-228 #1420:能不能看图取目录自己的 `imageInput`(抄自 models.dev,出处在 `modelsDev`),**不**走 byokModelMeta 的平台同名
-    // 回落 —— 平台同名条目看不了图是因为网关拒收图片,不是模型本身不能看;直连不经网关。缺值 ⇒ 看不了图。
+    // REQ-228 #1420:能不能看图取 BYOK 目录自己的 `image_input` —— 平台同名条目看不了图是因为网关拒收图片,
+    // 不是模型本身不能看;直连不经网关。缺值 ⇒ 看不了图。
     const models: Record<string, InjectedModel> = {}
     for (const m of p.models) {
-      const meta = byokModelMeta({ platformModels, byokProviders: CATALOG.byokProviders }, engineId, m)
+      const meta = byokModelMeta(applied, engineId, m)
       models[m] = {
         name: m,
         ...(meta.reasoning ? { reasoning: true } : {}),
         ...(meta.variants ? { variants: meta.variants } : {}),
-        modalities: inputModalities(p.imageInput?.[m] === true),
+        modalities: inputModalities(p.imageInput[m] === true),
       }
     }
     provider[engineId] = {
@@ -121,10 +165,10 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   // (2) ALPHA platform gateway -- a custom OpenAI-compatible provider whose key is fronted by ALPHA
   // (代发). Auto-joins the allowlist (front of list) only once ALPHA_BASE_URL points at the gateway
   // AND the key file exists (a URL with no key would only produce doomed 401 calls).
-  // REQ-001:模型清单以 live 白名单为准(网关 registry 真实 id;展示名经 snapshot 富化,未知 id 用
-  // id 本名),无缓存 → 静态 snapshot(原行为)。
+  // REQ-001:模型清单以已应用的网关目录为准(registry 真实 id + V3 `display`);没有有效快照 ⇒ 节点照注入、
+  // 模型表为空(`#1556` AC1:不回退随包清单)。
   if (process.env.ALPHA_BASE_URL && hasSecretFile(userDataPath, "ALPHA_API_KEY")) {
-    const pp = CATALOG.platformProvider
+    const pp = applied.platformProvider
     // REQ-127 #681:平台段走与 picker 完全相同的那一份投影。此前这里自制 nameById/variantsById/source
     // 三段装配,于是「什么算有效缓存」有两份定义 —— 空缓存时 picker 给 0 行、引擎配置给静态 9 行。
     // REQ-029:variants(推理档)随投影下发 —— 引擎 request 层 merge 进 options(echo 实验实锤
@@ -199,7 +243,7 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
 
   // Default model: env override wins, else catalog default, else none (never force a default whose
   // key may be absent). Format "<providerID>/<modelID>".
-  const model = process.env.ALPHA_DEFAULT_MODEL ?? CATALOG.defaultModel ?? undefined
+  const model = process.env.ALPHA_DEFAULT_MODEL ?? applied.defaultModel ?? undefined
 
   return {
     enabled_providers: enabled,

@@ -21,6 +21,7 @@ import { dict as enDict } from "../src/renderer/i18n/en"
 // `#1374`:共享 `window.api` 桩。它只 import 类型,运行期零依赖 —— 与上面两份 dict 同理,
 // 静态 import 不会把 solid-js 拖到 `mock.module` 之前。
 import { installPreloadStub } from "./preload-stub"
+import { effectiveCatalogFixture } from "./effective-catalog.fixture"
 // ⚠️ `../src/renderer/i18n`(index)**不能**静态 import:它在模块求值期就 import 了 "solid-js",
 // 而 ESM 静态 import 早于下面的 `mock.module("solid-js", …)` —— 于是整个文件拿到 Solid 的
 // **server** 构建,45 条用例一起挂在 `getNextContextId cannot be used under non-hydrating context`。
@@ -102,12 +103,8 @@ const { byokEngineId } = await import("../src/shared/alpha-model-types")
 const { resetAuthRecoveryForTests } = await import("../src/renderer/auth-recovery")
 const { setLocale } = await import("../src/renderer/i18n")
 
-const catalog = {
-  ...(await Bun.file(new URL("../src/main/alpha-models.json", import.meta.url)).json()),
-  liveSync: { status: "static" },
-  // #681:平台段没有有效 V2/LKG 时 basis 为 null(该 stub 不带远端目录)。
-  pricingBasisModelId: null,
-} as EffectiveCatalog
+// `#1556`:已应用目录(上游 V3 producer 快照 + 随包 BYOK 首启引导)经生产投影装配,见 effective-catalog.fixture.ts。
+const catalog = effectiveCatalogFixture()
 
 const info = (providerID: string, id: string, name = id): ModelV2Info => ({
   id,
@@ -510,9 +507,11 @@ describe("AlphaComposer production model seam", () => {
     })
     const [directory, setDirectory] = createSignal("/A")
     const switches: Array<{ sessionID: string; model: ModelRef }> = []
+    // 选一个有档位的平台模型(`#1556` 起目录顺序是网关的,第一个不一定有档位)。
+    const withEffort = catalog.platformModels.find((model) => model.variants)!
     const contract: ModelContract = {
       list: async () => platformModels,
-      current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+      current: async () => ({ providerID: catalog.platformProvider.id, id: withEffort.id }),
       switch: async (sessionID, model) => {
         switches.push({ sessionID, model })
       },
@@ -538,7 +537,7 @@ describe("AlphaComposer production model seam", () => {
     click(effort)
     const variant = () =>
       [...document.body.querySelectorAll<HTMLButtonElement>(".a-pop-item")].find(
-        (button) => button.textContent?.trim() === Object.keys(catalog.platformModels[0]!.variants ?? {})[0],
+        (button) => button.textContent?.trim() === Object.keys(withEffort.variants ?? {})[0],
       )!
     expect(variant()).toBeInstanceOf(HTMLButtonElement)
 
@@ -1132,7 +1131,7 @@ describe("ModelPickPop production component", () => {
     click(rows[0] ?? null)
     await waitFor(() => expect(picks).toHaveLength(1))
     expect(picks[0]?.providerID).toBe("alpha")
-    expect(picks[0]?.id).toBe("claude-opus-4.8")
+    expect(picks[0]?.id).toBe(catalog.platformModels[0]!.id) // 第一行 = 已应用目录(网关顺序)的第一个模型
     mounted.dispose()
   })
 
@@ -3641,10 +3640,9 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
   /** BYOK 与自定义节点:代理计价与它们无关 —— 行尾要么空,要么只有那条运行态,**没有第三种可能**。 */
   const expectNonPlatformRowsCarryNoPricing = (dict: Record<string, string>) => {
     for (const id of keyedByok.models) {
-      const display = catalog.platformModels.find((model) => model.id === id)
       expectRowExactly(rowFor(id, "byok"), dict, {
         letter: keyedByok.pico.letter,
-        name: display?.name ?? id,
+        name: keyedByok.modelMeta[id]?.name ?? id,
         id,
         providerName: keyedByok.name,
         group: "byok",
@@ -3716,13 +3714,63 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
     mounted.dispose()
   })
 
-  test("没有有效 V2/LKG:每个平台行恰好只有「计价信息暂不可用」,基准说明整条不渲染", async () => {
-    // 静态目录(内置 snapshot):basis 为 null、逐行无 pricing —— 冷启动常态。
-    const mounted = await openPicker({ catalog: async () => catalog })
-    expectPlatformRows(zh, () => [zh["alpha.model.pricingUnavailable"]])
+  // `#1556` AC1:没有已应用的平台快照 ⇒ 平台段为空,如实标「平台模型清单尚未获取」,不声称任何价格 ——
+  // 此前这一态回退随包 12 条并逐行写「计价信息暂不可用」(那份随包清单就是要消灭的第二权威)。
+  // 批准稿:docs/design/2026-10-30-req236-model-picker/frame.html#versions「平台模型清单还没取到过」。
+  test("`#1556` AC1:没有平台快照 ⇒ 平台段零行、空态说「尚未获取」、没有任何价格与基准说明;自带 Key 行照常", async () => {
+    const notLoaded = {
+      ...catalog,
+      platformModels: [],
+      pricingBasisModelId: null,
+      liveSync: { status: "static" },
+      applied: { ...catalog.applied, platformFetchedAt: null },
+      downloaded: { ...catalog.downloaded, platformFetchedAt: null },
+    } as EffectiveCatalog
+    resetComposerModelProjection()
+    installApi({
+      catalog: async () => notLoaded,
+      keyStatus: async () => ({ ...keys, [CUSTOM.providerID]: { configured: true, source: "config" } }),
+    })
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => engineModels(), current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+    await waitFor(() => expect(rowFor(CUSTOM.id, "byok")).toBeInstanceOf(HTMLButtonElement))
+    expect(rows("platform")).toHaveLength(0)
+    const empty = document.body.querySelector<HTMLElement>(".a-mpp-platform-empty")!
+    expect(empty.getAttribute("role")).toBe("status")
+    expect(empty.textContent).toBe(zh["alpha.model.platformNotLoaded"] + zh["alpha.model.platformNotLoadedDetail"])
     expect(document.body.querySelector(".a-mpp-basis")).toBeNull()
+    expect(document.body.textContent).not.toContain(zh["alpha.model.pricingUnavailable"])
+    expect(document.body.textContent).not.toMatch(/\d×/)
     expectNonPlatformRowsCarryNoPricing(zh)
     mounted.dispose()
+  })
+
+  // `#1556` AC9:「已下载」与「已应用」不同 ⇒ 弹层底部一行「模型清单已更新,将在引擎下次启动后生效」;相同 ⇒ 不出现。
+  // 批准稿:frame.html#versions「新清单已下载,待生效」(中性色、无按钮)。两份目录任一份不同都算。
+  test("`#1556` AC9:已下载 ≠ 已应用 ⇒ 底部一行待生效说明;相同 ⇒ 整块不出现", async () => {
+    const footer = () => document.body.querySelector<HTMLElement>(".a-mpp-foot")
+    const same = await openPicker()
+    expect(footer()).toBeNull()
+    same.dispose()
+
+    for (const downloaded of [
+      { ...pricedCatalog.downloaded, platformFetchedAt: "2026-10-30T09:00:00Z" },
+      { ...pricedCatalog.downloaded, byokVersion: pricedCatalog.applied.byokVersion + 1 },
+    ]) {
+      const pending = await openPicker({ catalog: async () => ({ ...pricedCatalog, downloaded }) as EffectiveCatalog })
+      await waitFor(() => expect(footer()).toBeInstanceOf(HTMLElement))
+      expect(footer()!.getAttribute("role")).toBe("status")
+      expect(footer()!.textContent).toBe(zh["alpha.model.catalogPending"])
+      expect(footer()!.querySelector("button")).toBeNull()
+      pending.dispose()
+    }
   })
 
   test("平台行同时有运行态时,行尾恰好是 [运行态, 计价二态] 两段,有序且不多不少", async () => {
@@ -3788,9 +3836,15 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
       return mounted
     }
 
+    // 逐行无 pricing 的平台目录:`#1556` 起目录不再产出这一态,这里摘掉 pair 造一份,守住「解析链看不见价格」。
+    const unpricedCatalog = {
+      ...catalog,
+      pricingBasisModelId: null,
+      platformModels: catalog.platformModels.map(({ pricing: _pricing, ...model }) => model),
+    } as EffectiveCatalog
     test.each([
-      ["静态目录:逐行都没有 pricing(首次同步前 / LKG 失效后的常态)", () => catalog, "deepseek-v4-flash"],
-      ["静态目录 + 目录顺序反过来", () => reversed(catalog), "deepseek-v4-flash"],
+      ["逐行都没有 pricing", () => unpricedCatalog, "deepseek-v4-flash"],
+      ["逐行都没有 pricing + 目录顺序反过来", () => reversed(unpricedCatalog), "deepseek-v4-flash"],
       ["控制组:有 pricing 的目录,顺序原样", () => pricedCatalog, "deepseek-v4-flash"],
       [
         "声明的默认就是全场最贵那个(价格不参与挑选,贵的照样能当默认)",

@@ -2,7 +2,8 @@
 // 「main 写 / sidecar 读」模式),外加平台段的**唯一投影**。
 //
 // 网关 GET /v1/models 是「允许哪些**平台代理**模型、以及它们各自的计价倍数」的权威源
-// (edition-scoped)。后台刷新器(catalog-refresher.ts)把一份**已通过严格 ModelCatalogV2 校验**的
+// (edition-scoped),`#1556` 起也是它们的名称 / 品牌 / 能力 / 档位(V3 `display`)的权威源。
+// 后台刷新器(catalog-refresher.ts)把一份**已通过严格 ModelCatalogV3 校验**的
 // 快照写到 <userData>/alpha-live-models.json(已下载);每次 fork 前 main 把它钉成
 // alpha-applied-catalog.json(已应用,`#1555`),buildAlphaModelConfig(sidecar)与 picker 的
 // effective catalog(main)只读钉住的那份。
@@ -16,25 +17,28 @@
 //  3. **`models` 为空视为无效**。一次合法但空的目录响应(空 edition / 配置失误)不得把磁盘上的
 //     合法 LKG 原子覆盖成空快照 —— `every` 对空数组恒真,这是可达的数据丢失路径。
 //
-// 缓存缺失 / 损坏 / 旧代 / 网关不可达 → 平台段回退内置 snapshot(alpha-models.json)且**不声称任何
-// 价格**,picker 永不空白(B20)。
+// 缓存缺失 / 损坏 / 旧代(含 V2 时代没有 `display` 的旧 LKG)/ 网关不可达 → 平台段为**空**且不声称任何价格
+// (`#1556` AC1:picker 如实标「平台模型清单尚未获取」;随包平台清单已删除,不再回退)。
 //
-// REQ-109 #595:BYOK 供应商白名单(旧 `byokProviders` 字段)已撤销 —— BYOK 目录只由本地
-// alpha-models.json 决定,快照里不再有任何 BYOK 策略面(契约 docs/contracts/byok-availability.md)。
+// REQ-109 #595:平台快照里没有任何 BYOK 策略面。`#1556` 起 BYOK 预置目录是另一份文档(下方 BYOK 段):
+// 已下载 LKG 与随包首启引导取版本高者,fork 前与平台快照一起钉进已应用目录(契约 docs/contracts/byok-availability.md)。
 //
 // electron-free:sidecar(utilityProcess)经 alpha-models.ts 读;main 经 alpha-platform-models.ts 写。
 
 import * as path from "node:path"
 import * as fs from "node:fs"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
-import type { PlatformModel, PricingMultiplier } from "../shared/alpha-model-types"
+import type { ByokCatalogV1 } from "@alpha-code/contracts-consumer"
+import type { PlatformModel, PlatformModelDisplay, PricingMultiplier } from "../shared/alpha-model-types"
+import catalog from "./alpha-models.json"
 
-/** 快照里的一行:id 与 pricing 是远端权威,展示元数据一律不进快照。 */
+/** 快照里的一行:全部字段都是远端权威(`#1556`:展示与能力字段随 V3 `display` 一起进快照)。 */
 export type CatalogSnapshotModel = {
   id: string
   provider?: string
   minPlan?: string
   pricing: PricingMultiplier
+  display: PlatformModelDisplay
 }
 
 export type CatalogSnapshot = {
@@ -66,6 +70,20 @@ export const isTrustedPair = (pair: unknown): pair is PricingMultiplier => {
   return ok(candidate.input) && ok(candidate.output)
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value)
+
+/** `display` 的判据(写前与读回同一份):name 非空、brand 是字符串,其余可选字段类型对。 */
+const isValidDisplay = (display: unknown): display is PlatformModelDisplay =>
+  isRecord(display) &&
+  typeof display.name === "string" &&
+  !!display.name &&
+  typeof display.brand === "string" &&
+  !!display.brand &&
+  (display.reasoning === undefined || typeof display.reasoning === "boolean") &&
+  (display.web === undefined || typeof display.web === "boolean") &&
+  (display.variants === undefined || (isRecord(display.variants) && Object.values(display.variants).every(isRecord)))
+
 /** 完整快照校验。**写前与读回必须都调它** —— 两处各写一份判据正是本票要消灭的形态。 */
 export function isValidCatalogSnapshot(value: unknown): value is CatalogSnapshot {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
@@ -82,11 +100,12 @@ export function isValidCatalogSnapshot(value: unknown): value is CatalogSnapshot
       !!model.id &&
       (model.provider === undefined || typeof model.provider === "string") &&
       (model.minPlan === undefined || typeof model.minPlan === "string") &&
-      isTrustedPair(model.pricing),
+      isTrustedPair(model.pricing) &&
+      isValidDisplay(model.display),
   )
 }
 
-/** 读快照;缺失 / 坏 JSON / 旧代 / 任一行 pair 不可信 → null(调用方回退内置 snapshot 且不声称价格)。 */
+/** 读快照;缺失 / 坏 JSON / 旧代 / 任一行 pair 不可信 → null(平台段为空且不声称价格)。 */
 export function readCatalogSnapshot(userDataPath: string): CatalogSnapshot | null {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(liveAllowlistPath(userDataPath), "utf8"))
@@ -106,6 +125,73 @@ export function writeCatalogSnapshot(userDataPath: string, snapshot: CatalogSnap
   return true
 }
 
+// ── REQ-237 `#1556`(方案 req236 §2.3):BYOK 预置目录 —— 已下载 LKG 与随包首启引导 ─────────────────
+//
+// 已下载 LKG 只由 catalog-refresher.ts 写,写进去的是 adoptByokCatalog 采纳后的那一份(schema 通过、版本更高、
+// 只剩 App 适配器表认识的 provider)。随包 `byokCatalog` 与它同构,只作首启引导:两者取 `catalog_version` 高者
+// (方案 §2.3 规则 5:App 升级带来更高的随包版本时随包胜出)。拉取失败 / 校验失败 / 未登录都不写 LKG,
+// 所以已有条目从不因失败而减少(I5)。
+
+const BYOK_FILE = "alpha-byok-catalog.json"
+const BUNDLED_BYOK = (catalog as unknown as { byokCatalog: ByokCatalogV1 }).byokCatalog
+
+export function byokCatalogPath(userDataPath: string): string {
+  return path.join(userDataPath, BYOK_FILE)
+}
+
+/** 本机 BYOK 目录文件(LKG 与钉住副本)的判据,写前与读回同一份。完整 schema 在采纳时已由 ByokCatalogV1 decoder 判过;
+ *  这里只守「读回来的还是那个形状」(sidecar 也读,不在它的模块图里引 Ajv)。 */
+export function isValidByokCatalog(value: unknown): value is ByokCatalogV1 {
+  if (!isRecord(value) || value.schema_version !== 1) return false
+  if (typeof value.catalog_version !== "number" || !Number.isSafeInteger(value.catalog_version) || value.catalog_version <= 0)
+    return false
+  if (!Array.isArray(value.providers)) return false
+  return value.providers.every(
+    (provider) =>
+      isRecord(provider) &&
+      typeof provider.id === "string" &&
+      typeof provider.name === "string" &&
+      typeof provider.preset === "boolean" &&
+      Array.isArray(provider.models) &&
+      provider.models.every(
+        (model) =>
+          isRecord(model) &&
+          typeof model.id === "string" &&
+          typeof model.name === "string" &&
+          typeof model.image_input === "boolean" &&
+          (model.reasoning === undefined || typeof model.reasoning === "boolean") &&
+          (model.variants === undefined || (isRecord(model.variants) && Object.values(model.variants).every(isRecord))),
+      ),
+  )
+}
+
+export function readByokCatalogLkg(userDataPath: string): ByokCatalogV1 | null {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(byokCatalogPath(userDataPath), "utf8"))
+    return isValidByokCatalog(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** 写 BYOK LKG(原子替换)。判据不过直接不写。唯一写入方是 catalog-refresher.ts 的单飞轮次。@returns 是否落盘。 */
+export function writeByokCatalogLkg(userDataPath: string, byok: ByokCatalogV1): boolean {
+  if (!isValidByokCatalog(byok)) return false
+  fs.mkdirSync(userDataPath, { recursive: true })
+  writeFileAtomicSync(byokCatalogPath(userDataPath), JSON.stringify(byok))
+  return true
+}
+
+export type ByokCatalogChoice = { byok: ByokCatalogV1; source: "remote" | "bundled" }
+
+/** 已下载的 BYOK 目录 = LKG 与随包首启引导里 `catalog_version` 更高的那一份(相等 ⇒ 随包)。 */
+export function downloadedByokCatalog(userDataPath: string): ByokCatalogChoice {
+  const lkg = readByokCatalogLkg(userDataPath)
+  return lkg && lkg.catalog_version > BUNDLED_BYOK.catalog_version
+    ? { byok: lkg, source: "remote" }
+    : { byok: BUNDLED_BYOK, source: "bundled" }
+}
+
 // ── REQ-237 `#1555`(方案 req236 §2.4):「已应用目录」—— fork 前钉住的那一份 ─────────────────
 //
 // LKG(上面那份)是**已下载**:后台刷新器随时可能改写它。引擎配置(buildAlphaModelConfig)与 picker
@@ -118,57 +204,66 @@ const APPLIED_FILE = "alpha-applied-catalog.json"
 export type AppliedCatalog = {
   /** 钉住它的那一代 sidecar(诊断用)。 */
   generation: number
-  /** 钉住当刻的平台 LKG;没有有效 LKG ⇒ null(读者回退内置 snapshot 且不声称价格,同 LKG 缺失)。 */
+  /** 钉住当刻的平台 LKG;没有有效 LKG ⇒ null(平台段为空且不声称价格,同 LKG 缺失)。 */
   platform: CatalogSnapshot | null
+  /** `#1556`:钉住当刻的 BYOK 目录(LKG 与随包首启引导取高者)。 */
+  byok: ByokCatalogV1
+  byokSource: "remote" | "bundled"
 }
 
 export function appliedCatalogPath(userDataPath: string): string {
   return path.join(userDataPath, APPLIED_FILE)
 }
 
-/** fork 前调用:把当刻 LKG 原子写成「已应用目录」。写失败直接抛(fail closed,由 spawnLocalServer 拒绝 fork)。 */
+/** fork 前调用:把当刻两份已下载目录原子写成「已应用目录」。写失败直接抛(fail closed,由 spawnLocalServer 拒绝 fork)。 */
 export function pinAppliedCatalog(userDataPath: string, generation: number): AppliedCatalog {
-  const applied: AppliedCatalog = { generation, platform: readCatalogSnapshot(userDataPath) }
+  const byok = downloadedByokCatalog(userDataPath)
+  const applied: AppliedCatalog = {
+    generation,
+    platform: readCatalogSnapshot(userDataPath),
+    byok: byok.byok,
+    byokSource: byok.source,
+  }
   fs.mkdirSync(userDataPath, { recursive: true })
   writeFileAtomicSync(appliedCatalogPath(userDataPath), JSON.stringify(applied))
   return applied
 }
 
-/** 读已应用目录的平台段。缺失 / 坏 JSON / 快照过不了同一份判据 → null(与 readCatalogSnapshot 同一退化语义)。 */
-export function readAppliedPlatformSnapshot(userDataPath: string): CatalogSnapshot | null {
+function readAppliedFile(userDataPath: string): Partial<AppliedCatalog> | null {
   try {
-    const parsed = JSON.parse(fs.readFileSync(appliedCatalogPath(userDataPath), "utf8")) as Partial<AppliedCatalog> | null
-    return isValidCatalogSnapshot(parsed?.platform) ? parsed.platform : null
+    return JSON.parse(fs.readFileSync(appliedCatalogPath(userDataPath), "utf8")) as Partial<AppliedCatalog> | null
   } catch {
     return null
   }
 }
 
+/** 读已应用目录的平台段。缺失 / 坏 JSON / 快照过不了同一份判据 → null(与 readCatalogSnapshot 同一退化语义)。 */
+export function readAppliedPlatformSnapshot(userDataPath: string): CatalogSnapshot | null {
+  const parsed = readAppliedFile(userDataPath)
+  return isValidCatalogSnapshot(parsed?.platform) ? parsed.platform : null
+}
+
+/** `#1556`:读已应用目录的 BYOK 段。还没钉过(首次 fork 之前)/ 坏 JSON / 过不了判据 → 随包首启引导。 */
+export function readAppliedByokCatalog(userDataPath: string): ByokCatalogChoice {
+  const parsed = readAppliedFile(userDataPath)
+  return isValidByokCatalog(parsed?.byok)
+    ? { byok: parsed.byok, source: parsed.byokSource === "remote" ? "remote" : "bundled" }
+    : { byok: BUNDLED_BYOK, source: "bundled" }
+}
+
 /** 平台段的**唯一**投影。picker(getEffectiveCatalog)与 sidecar(buildAlphaModelConfig)必须都走这里。
  *
- *  远端 authority:id 与 pricing 一律来自快照;本地只补 name/reasoning/web/variants 这些展示元数据。
- *  逐字段显式构造 —— 本地对象**从不**被 spread 进来,结构上无法覆盖远端字段。
- *
- *  `local` 由调用方传入(本模块不 import alpha-models.ts,避免循环依赖)。
- *
- *  [#679] 本地目录里**已经没有任何价格轴**。此前这里为快照里没被本地收录的模型合成一个最便宜的
- *  档位,于是「平台刚上线的 71.4×/178.6× 模型」在选择器上显示成「标准 ×1」—— 合成一个价格主张
- *  比不显示更坏。现在未知模型只降级 `name`(用 id 本名),价格仍是平台原值。 */
-export function projectPlatformModels(
-  local: readonly PlatformModel[],
-  snapshot: CatalogSnapshot | null,
-): PlatformModel[] {
-  if (!snapshot) return local.map((model) => ({ ...model, pricing: undefined }))
-  const byId = new Map(local.map((model) => [model.id, model]))
-  return snapshot.models.map((remote) => {
-    const meta = byId.get(remote.id)
-    return {
-      id: remote.id,
-      name: meta?.name ?? remote.id,
-      ...(meta?.reasoning ? { reasoning: true } : {}),
-      ...(meta?.web ? { web: true } : {}),
-      ...(meta?.variants ? { variants: meta.variants } : {}),
-      pricing: remote.pricing,
-    }
-  })
+ *  `#1556`(AC1):每个字段都取自已应用快照 —— id 与 pricing 来自目录行,名称 / 品牌 / 能力 / 档位来自该行的
+ *  `display`。没有有效快照 ⇒ 空:随包平台清单(第二份权威)已删除,不回退,也就不声称任何价格(#679 / I6)。 */
+export function projectPlatformModels(snapshot: CatalogSnapshot | null): PlatformModel[] {
+  if (!snapshot) return []
+  return snapshot.models.map((remote) => ({
+    id: remote.id,
+    name: remote.display.name,
+    brand: remote.display.brand,
+    ...(remote.display.reasoning ? { reasoning: true } : {}),
+    ...(remote.display.web ? { web: true } : {}),
+    ...(remote.display.variants ? { variants: remote.display.variants } : {}),
+    pricing: remote.pricing,
+  }))
 }

@@ -1,4 +1,4 @@
-// #1084(#987 CHOICE=A,DECIDE #1078)—— 平台模型目录刷新失败的**用户可观察出口**。
+// #1084(#987 CHOICE=A,DECIDE #1078)—— 模型目录刷新失败的**用户可观察出口**。
 //
 // 在此之前:`fetchPlatformModels()` 把网关拒绝翻成稳定分类码(`rate_limited` / `unauthorized` /
 // `http-503` / `network` …),但三个刷新入口一个都不消费它 —— main/index.ts 两处
@@ -13,26 +13,32 @@
 // 失败即那个分类码。contract-incompatible 两边都记:main 侧要保持「最后一次刷新结局」单一真源,
 // renderer 侧靠契约横幅在场时自抑制来避免两条横幅重叠(见 Banner.tsx)。
 import { ipcMain, type BrowserWindow } from "electron"
-import type { CatalogRefreshFailure } from "../shared/alpha-model-types"
+import type { CatalogRefreshHealth } from "../shared/alpha-model-types"
 import { getLogger } from "./logging"
 
-let failure: CatalogRefreshFailure | null = null
+// REQ-237 `#1556`(方案 §2.1 / I10):两份目录(平台 V3、BYOK 预置目录)共用本模块,所以结局**按文档**各存一格。
+// 此前只有一个 `failure`,一份成功就会把另一份仍在的失败整个清掉。一份成功只清它自己那一格。
+export type CatalogDocument = keyof CatalogRefreshHealth
+
+const health: CatalogRefreshHealth = { platform: null, byok: null }
 let getWindow: () => BrowserWindow | null = () => null
 
 export function registerCatalogHealthIpcHandlers(window: () => BrowserWindow | null) {
   getWindow = window
-  ipcMain.handle("alpha-catalog-health", () => failure)
+  ipcMain.handle("alpha-catalog-health", () => getCatalogFailure())
 }
 
-/** 记录并广播一次目录刷新的结局。`code === null` = 本次刷新成功 ⇒ 清掉出口(横幅不许永远挂着)。
- *  推送与 invoke 两条都要有:启动那次刷新跑在窗口存在之前,只有推送的话它到不了 renderer。 */
-export function reportCatalogRefresh(code: string | null) {
-  failure = code ? { code, at: new Date().toISOString() } : null
-  if (failure) getLogger().warn("alpha-catalog-health: platform model catalog refresh failed", failure)
+/** 记录并广播一份目录这一次刷新的结局。`code === null` = 这份目录本次刷新成功 ⇒ 只清它自己那一格
+ *  (横幅不许永远挂着,也不许替另一份目录报平安)。推送与 invoke 两条都要有:启动那次刷新跑在窗口存在之前,
+ *  只有推送的话它到不了 renderer。 */
+export function reportCatalogRefresh(doc: CatalogDocument, code: string | null) {
+  const failure = code ? { code, at: new Date().toISOString() } : null
+  health[doc] = failure
+  if (failure) getLogger().warn("alpha-catalog-health: model catalog refresh failed", { doc, ...failure })
   const window = getWindow()
-  if (window && !window.isDestroyed()) window.webContents.send("alpha-catalog-failure", failure)
+  if (window && !window.isDestroyed()) window.webContents.send("alpha-catalog-failure", getCatalogFailure())
 }
 
-export function getCatalogFailure(): CatalogRefreshFailure | null {
-  return failure
+export function getCatalogFailure(): CatalogRefreshHealth {
+  return { ...health }
 }

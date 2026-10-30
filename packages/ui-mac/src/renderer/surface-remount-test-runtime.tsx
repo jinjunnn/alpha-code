@@ -311,15 +311,16 @@ export function installPreloadStub() {
       return { ok: ensureDefaultWorkspaceOk }
     },
     "models.catalog": async () => ({
-      version: "harness",
       defaultModel: null,
       defaultPlatformModel: null,
-      platformProvider: { id: "alpha", name: "Alpha", npm: "", pico: { letter: "A", color: "#f60" } },
+      platformProvider: { id: "alpha", name: "Alpha", npm: "" },
       platformModels: [],
       byokProviders: [],
       presetIds: [],
       liveSync: { status: "static" },
       pricingBasisModelId: null,
+      applied: { platformFetchedAt: null, byokVersion: 1 },
+      downloaded: { platformFetchedAt: null, byokVersion: 1 },
     }),
     "providers.keyStatus": async () => ({}),
     // AlphaHome 的 useConfigHealth 走 extIpc.configHealth;缺省 Proxy 会回 undefined,

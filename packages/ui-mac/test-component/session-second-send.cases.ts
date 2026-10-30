@@ -37,6 +37,7 @@ import type { ModelContract } from "../src/renderer/alpha-ui/model-contract"
 // `#1374`:共享 `window.api` 桩。它只 import 类型(运行期零依赖),所以静态 import 不会
 // 在 `mock.module` 之前把 solid-js 之类的东西拖进来。
 import { installPreloadStub } from "./preload-stub"
+import { effectiveCatalogFixture } from "./effective-catalog.fixture"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -267,12 +268,8 @@ const {
 const { createComposerFocusChannel } = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-core")
 
 /* ── composer 的模型链前置(与既有 composer 组件用例同一套 fixture)────────────── */
-const catalog = {
-  ...(await Bun.file(new URL("../src/main/alpha-models.json", import.meta.url)).json()),
-  liveSync: { status: "static" },
-  // #681:平台段没有有效 V2/LKG 时 basis 为 null(该 stub 不带远端目录)。
-  pricingBasisModelId: null,
-} as EffectiveCatalog
+// `#1556`:已应用目录(上游 V3 producer 快照 + 随包 BYOK 首启引导)经生产投影装配,见 effective-catalog.fixture.ts。
+const catalog = effectiveCatalogFixture()
 const modelInfo = (providerID: string, id: string, name = id): ModelV2Info => ({
   id,
   providerID,

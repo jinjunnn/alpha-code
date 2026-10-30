@@ -697,10 +697,11 @@ describe("spawnLocalServer", () => {
       writeCatalogSnapshot(userDataPath, {
         fetchedAt: "2026-10-30T00:00:00Z",
         pricingBasisModelId: "deepseek-v4-flash",
-        models: [{ id: "deepseek-v4-flash", pricing: { input: 1, output: 1 } }],
+        models: [{ id: "deepseek-v4-flash", pricing: { input: 1, output: 1 }, display: { name: "DeepSeek V4 Flash", brand: "deepseek" } }],
       })
       expect(requestCatalogRefresh("boot")).toBeUndefined()
       expect(catalogRequests.some((url) => url.endsWith("/v1/models"))).toBe(true) // 目录请求已发出且挂着
+      expect(catalogRequests.some((url) => url.endsWith("/v1/byok-catalog"))).toBe(true) // `#1556`:BYOK 那份同样挂着
 
       const result = await spawnLocalServer("127.0.0.1", 4099, "password", {
         userDataPath,
@@ -715,6 +716,9 @@ describe("spawnLocalServer", () => {
       expect(JSON.parse(readFileSync(appliedCatalogPath(userDataPath), "utf8"))).toEqual({
         generation: 5,
         platform: expect.objectContaining({ fetchedAt: "2026-10-30T00:00:00Z" }),
+        // `#1556`:BYOK 那份一起钉住;还没下载过远程版本 ⇒ 随包首启引导。
+        byok: expect.objectContaining({ schema_version: 1 }),
+        byokSource: "bundled",
       })
       await result.listener.stop()
     } finally {

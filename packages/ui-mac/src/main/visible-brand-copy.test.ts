@@ -1,11 +1,10 @@
 import { expect, test } from "bun:test"
 import { join } from "node:path"
 
-// #1507 票面 ①-A 的 35 坐标;重复的同一文案按实际出现次数核对。
+// #1507 票面 ①-A 的 35 坐标;重复的同一文案按实际出现次数核对。`#1556` 删掉随包 `platformProvider.pico` 后,其中 alpha-models.json 的 `"letter": "C"` 一格随之消失。
 const copy = [
   ["packages/ui-mac/src/renderer/alpha-ui/Banner.tsx", "title=\"Code Puppy platform contract is incompatible\"", 1],
   ["packages/ui-mac/src/main/alpha-models.json", "\"name\": \"Code Puppy\",", 1],
-  ["packages/ui-mac/src/main/alpha-models.json", "\"letter\": \"C\",", 1],
   ["packages/ui-mac/src/main/data-clear-boot.ts", "\"Code Puppy 自有配置中指向已清除数据的悬空连接器/插件引用会一并清理。\\n\" +", 1],
   ["packages/ui-mac/src/main/ext-ipc.ts", "message: \"此项目自带 Claude Code / .agents 生态内容,导入为本项目的 Code Puppy 扩展?\",", 1],
   ["packages/ui-mac/src/main/alpha-builtin-policy.ts", "v.push({ kind: \"agent\", name: n, reason: `受保护:${n} 是 Code Puppy 注入的功能载体(自动化等),禁用会使其静默失效,已拒绝` })", 1],

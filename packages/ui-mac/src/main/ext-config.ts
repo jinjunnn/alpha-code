@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url"
 import { applyEdits, format, modify, parse, type ParseError } from "jsonc-parser"
 import catalog from "./alpha-models.json"
 import { byokEngineId, type AlphaModelCatalog, type ProviderAddressRejection, type ProviderInput, type ProviderResult } from "../shared/alpha-model-types"
+import { BYOK_ADAPTERS } from "./byok-adapters"
 import { isExtensionName } from "../shared/extension-name"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
@@ -1093,7 +1094,7 @@ function removeMcpUnlocked(name: string): ConfigResult {
   return removeMcpServerRecord(name)
 }
 
-const PROVIDER_CATALOG = catalog as unknown as AlphaModelCatalog
+const PROVIDER_CATALOG = catalog as unknown as Pick<AlphaModelCatalog, "platformProvider">
 
 /** REQ-226 (`#1343`): the marker constant and the one classifier for a provider block's `options.apiKey`.
  *  They live in engine-config-truth (the electron-free core this module already imports) because the boot
@@ -1102,10 +1103,11 @@ export { PROVIDER_KEYCHAIN_MARKER, type ProviderKeyKind } from "./engine-config-
 
 /** Ids alpha itself injects (catalog BYOK display ids, their `<id>-byok` engine ids, the platform id). A
  * custom provider with one of these names would make two injection paths write `provider.<id>.options`
- * for the same id, with the winner decided by object key order (baseline §三 I4). */
+ * for the same id, with the winner decided by object key order (baseline §三 I4).
+ * REQ-237 `#1556`:BYOK 的保留 id 只认 App 内置适配器表(远程目录只能在表内 provider 上增删模型,不能新增 provider)。 */
 function isReservedProviderId(id: string): boolean {
   if (id === PROVIDER_CATALOG.platformProvider.id) return true
-  return PROVIDER_CATALOG.byokProviders.some((p) => p.id === id || byokEngineId(p.id) === id)
+  return BYOK_ADAPTERS.some((adapter) => adapter.id === id || byokEngineId(adapter.id) === id)
 }
 
 /** 地址被拒时给调用方的英文原文(renderer 按 `code` 用用户的语言说;这里只是兜底与日志)。 */

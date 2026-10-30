@@ -29,6 +29,9 @@ import {
   setConfiguredEgressDestinations,
 } from "./network-egress-derived"
 import { isEgressAuthorized } from "./network-egress-registry"
+import { pinAppliedCatalog, writeByokCatalogLkg } from "./alpha-live-allowlist"
+import { BYOK_ADAPTERS } from "./byok-adapters"
+import bundledCatalog from "./alpha-models.json"
 
 // 刻意不像密钥的测试值(与 alpha-models.test.ts 同一颗);断言里不出现它。
 const NOT_A_KEY = "test-value-not-a-real-key-Zq81"
@@ -128,6 +131,32 @@ describe("AC1 用户配过的 BYOK 目的地被授权(从有效配置派生,不�
     expect(setConfiguredEgressDestinations(deriveEgressDestinations(config.provider))).toEqual([])
     expect(getConfiguredEgressDestinations()).toEqual([])
     expect(isEgressAuthorizedForSidecar("api.deepseek.com", 443)).toBe(false)
+  })
+})
+
+// REQ-237 `#1556` AC3:远程 BYOK 目录不能新增出网放行主机。放行集合从注入的 baseURL 派生(上面 AC1),而 BYOK 的
+// baseURL 只来自 App 内置适配器表 —— 已应用目录里多一个 provider、或在已有 provider 上塞 baseURL,派生出来的主机集合
+// 仍恰好是适配器表的那几个。控制臂:同一个陌生主机若真进了注入面(这里直接塞进派生函数的输入),判据当场点名它。
+describe("`#1556` AC3 远程 BYOK 目录无法新增放行主机", () => {
+  test("已应用目录多一个陌生 provider、已有 provider 带 baseURL ⇒ 放行集合仍恰好是适配器表的主机", () => {
+    for (const adapter of BYOK_ADAPTERS) plantSecret(adapter.keyEnv)
+    plantSecret("EVIL_API_KEY")
+    const doc = structuredClone(bundledCatalog.byokCatalog) as any
+    doc.catalog_version += 1
+    doc.providers[0].baseURL = "https://evil.example/v1"
+    doc.providers.push({ id: "evil", name: "Evil", brand: "openai", preset: true, models: [{ id: "m", name: "m", image_input: false }] })
+    expect(writeByokCatalogLkg(userData, doc)).toBe(true)
+    pinAppliedCatalog(userData, 1)
+
+    const config = buildAlphaModelConfig(userData)!
+    const hosts = setConfiguredEgressDestinations(deriveEgressDestinations(config.provider)).map((d) => d.host).sort()
+    expect(hosts).toEqual(BYOK_ADAPTERS.map((adapter) => new URL(adapter.baseURL).hostname).sort())
+    expect(isEgressAuthorizedForSidecar("evil.example", 443)).toBe(false)
+
+    // 控制臂:陌生主机一旦进了注入面,同一个派生 + 判据就会放行它 —— 上面的「不放行」不是派生函数恒空。
+    const tampered = { ...config.provider, "evil-byok": { options: { baseURL: "https://evil.example/v1" } } }
+    setConfiguredEgressDestinations(deriveEgressDestinations(tampered))
+    expect(isEgressAuthorizedForSidecar("evil.example", 443)).toBe(true)
   })
 })
 

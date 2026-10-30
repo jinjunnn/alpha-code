@@ -25,16 +25,17 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
-import catalog from "./alpha-models.json"
-import type { AlphaModelCatalog } from "../shared/alpha-model-types"
+import { BYOK_ADAPTERS } from "./byok-adapters"
 
 const SECRET_DIR = "alpha-secrets"
 
 /** Every env var main materializes into the file channel: platform + cloud MCP + all catalog BYOK keys.
+ * REQ-237 `#1556`:BYOK 的 Key 名只认 App 内置适配器表 —— 本集合同时是下方清理分支的 wanted 集,读错来源会把
+ * 已配好的直连密钥文件当「退役」删掉。
  * `ALPHA_MCP_TOKEN`(#1195 / REQ-144 T2)= 登录铸的 `mcp_access` token(aud = 云 MCP resource),
  * 云 MCP 定义经 `{file:}` 引用消费它;缺席时本函数的删除分支负责把旧文件收走(登出/旧信封)。 */
 export function secretEnvVars(): string[] {
-  const byok = (catalog as unknown as AlphaModelCatalog).byokProviders.map((p) => p.keyEnv).filter(Boolean)
+  const byok = BYOK_ADAPTERS.map((adapter) => adapter.keyEnv)
   return ["ALPHA_API_KEY", "ALPHA_CLOUD_TOKEN", "ALPHA_MCP_TOKEN", ...byok]
 }
 

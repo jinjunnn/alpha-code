@@ -293,17 +293,18 @@ export function installPreloadStub() {
       return DEFAULT_WORKSPACE
     },
     "models.catalog": async () => ({
-      version: "harness",
       defaultModel: null,
       // #679:本地目录没有价格轴了;平台自动默认的唯一依据是这个显式声明(harness 不需要默认)。
       defaultPlatformModel: null,
-      platformProvider: { id: "alpha", name: "Alpha", npm: "", pico: { letter: "A", color: "#f60" } },
+      platformProvider: { id: "alpha", name: "Alpha", npm: "" },
       platformModels: [],
       byokProviders: [],
       presetIds: [],
       liveSync: { status: "static" },
       // #681:没有有效 V2/LKG ⇒ 平台段计价不可用,basis 为 null。
       pricingBasisModelId: null,
+      applied: { platformFetchedAt: null, byokVersion: 1 },
+      downloaded: { platformFetchedAt: null, byokVersion: 1 },
     }),
     "providers.keyStatus": async () => ({}),
   }
