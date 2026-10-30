@@ -183,8 +183,9 @@ async function waitFor(assertion: () => void) {
   throw failure
 }
 
-function mount(section: "installed" | "cloud" | "connectors") {
-  setHubSection(section)
+// `#1594`:九个页签收成三页 —— 已装行、云连接器、云条目、目录连接器都在连接器页。
+function mount() {
+  setHubSection("connectors")
   const root = document.createElement("div")
   root.id = "root"
   root.className = "a-ui"
@@ -226,13 +227,16 @@ afterAll(async () => {
 })
 
 const authorizeButtons = () => Array.from(document.querySelectorAll<HTMLButtonElement>("[data-mcp-authorize]"))
+/** `#1594`:平台云连接器在连接器页有自己的一行(见下面「云连接器卡」各条),不再同时出一条已装行;
+ *  已装 MCP 行的判据因此用一个普通的、手动加的 server 名来跑(引擎报回来、没有安装记录的那一类)。 */
+const GENERIC_MCP = "docs-remote"
 
 test("needs_auth 的 MCP 行:状态说「需要重新登录」,并出现一颗真的能点的按钮", async () => {
   reset()
-  engineStatus = { cloud: { status: "needs_auth" } }
-  mount("installed")
+  engineStatus = { [GENERIC_MCP]: { status: "needs_auth" } }
+  mount()
 
-  await waitFor(() => expect(authorizeButtons().map((b) => b.dataset.mcpAuthorize)).toEqual(["cloud"]))
+  await waitFor(() => expect(authorizeButtons().map((b) => b.dataset.mcpAuthorize)).toEqual([GENERIC_MCP]))
   // 状态文案:说「需要重新登录」,**不是**「未连接」——后者会把唯一的补救路径从界面上抹掉。
   await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.ext.mcpNeedsAuth"]))
   expect(document.body.textContent).not.toContain(zh["alpha.ext.disabled"])
@@ -242,14 +246,14 @@ test("needs_auth 的 MCP 行:状态说「需要重新登录」,并出现一颗�
 
 test("点下去真的走到引擎的 authenticate,授权后那颗按钮消失、状态翻成已连接", async () => {
   reset()
-  engineStatus = { cloud: { status: "needs_auth" } }
-  mount("installed")
+  engineStatus = { [GENERIC_MCP]: { status: "needs_auth" } }
+  mount()
   await waitFor(() => expect(authorizeButtons().length).toBe(1))
 
   authorizeButtons()[0]!.click()
 
   // ① 生产链真的调到了引擎那条 HTTP 端点,且带对了 server 名。
-  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(authenticateCalls).toEqual([{ name: GENERIC_MCP }]))
   // ② 状态从引擎重读 —— 不是本地乐观改一下(那会在授权其实失败时谎报成功)。
   await waitFor(() => expect(authorizeButtons().length).toBe(0))
   await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.ext.enabledLive"]))
@@ -260,14 +264,14 @@ test("点下去真的走到引擎的 authenticate,授权后那颗按钮消失、
 
 test("授权没完成时如实说失败,按钮留在原地(不谎报已重新登录)", async () => {
   reset()
-  engineStatus = { cloud: { status: "needs_auth" } }
+  engineStatus = { [GENERIC_MCP]: { status: "needs_auth" } }
   authenticateBehaviour = "reject"
-  mount("installed")
+  mount()
   await waitFor(() => expect(authorizeButtons().length).toBe(1))
 
   authorizeButtons()[0]!.click()
 
-  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(authenticateCalls).toEqual([{ name: GENERIC_MCP }]))
   await waitFor(() => expect(toastTexts().some((text) => text.includes(zh["alpha.ext.mcpAuthFailed"]))).toBe(true))
   expect(toastTexts().some((text) => text.includes(zh["alpha.ext.mcpAuthDone"]))).toBe(false)
   // 补救入口必须还在 —— 「再试一次」是这条提示唯一有意义的下一步。
@@ -276,14 +280,14 @@ test("授权没完成时如实说失败,按钮留在原地(不谎报已重新登
 
 test("M1:端点 200 但 body 是 failed —— 必须说失败,绝不能说「已重新登录」", async () => {
   reset()
-  engineStatus = { cloud: { status: "needs_auth" } }
+  engineStatus = { [GENERIC_MCP]: { status: "needs_auth" } }
   authenticateBehaviour = "http-200-but-failed"
-  mount("installed")
+  mount()
   await waitFor(() => expect(authorizeButtons().length).toBe(1))
 
   authorizeButtons()[0]!.click()
 
-  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(authenticateCalls).toEqual([{ name: GENERIC_MCP }]))
   // 授权后这个 server 是 `failed`:`needs_auth` 确实不成立了 —— 按「不再 needs_auth」
   // 判成功的实现会在这里宣布成功,而用户的 MCP 根本用不了。
   await waitFor(() => expect(document.body.textContent).toContain("token rejected by resource server"))
@@ -296,8 +300,8 @@ test("M1:端点 200 但 body 是 failed —— 必须说失败,绝不能说「�
 // ── 区分度证明:一个「永远显示授权按钮」的错误实现必须过不了下面这两条 ────────────────────
 test("failed 的 MCP 行不出授权按钮(它不是用户点一下能修好的状态)", async () => {
   reset()
-  engineStatus = { cloud: { status: "failed", error: "connect ECONNREFUSED" } }
-  mount("installed")
+  engineStatus = { [GENERIC_MCP]: { status: "failed", error: "connect ECONNREFUSED" } }
+  mount()
 
   await waitFor(() => expect(document.body.textContent).toContain("connect ECONNREFUSED"))
   expect(authorizeButtons().length).toBe(0)
@@ -306,9 +310,9 @@ test("failed 的 MCP 行不出授权按钮(它不是用户点一下能修好的�
 test("needs_client_registration 也不出授权按钮(缺 clientId,点一百次也没用)", async () => {
   reset()
   engineStatus = {
-    cloud: { status: "needs_client_registration", error: "Server does not support dynamic client registration." },
+    [GENERIC_MCP]: { status: "needs_client_registration", error: "Server does not support dynamic client registration." },
   }
-  mount("installed")
+  mount()
 
   await waitFor(() => expect(document.body.textContent).toContain("dynamic client registration"))
   expect(authorizeButtons().length).toBe(0)
@@ -317,8 +321,8 @@ test("needs_client_registration 也不出授权按钮(缺 clientId,点一百次�
 
 test("connected 的 MCP 行不出授权按钮", async () => {
   reset()
-  engineStatus = { cloud: { status: "connected" } }
-  mount("installed")
+  engineStatus = { [GENERIC_MCP]: { status: "connected" } }
+  mount()
 
   await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.ext.enabledLive"]))
   expect(authorizeButtons().length).toBe(0)
@@ -327,8 +331,8 @@ test("connected 的 MCP 行不出授权按钮", async () => {
 // `#1563` 审计 F5:引擎在后台启动这台服务时报 pending —— 已安装行不能说「已停用」,说定制中心对同一状态的那句。
 test("`#1563` pending 的 MCP 行不说「已停用」,也不出授权按钮", async () => {
   reset()
-  engineStatus = { cloud: { status: "pending" } }
-  mount("installed")
+  engineStatus = { [GENERIC_MCP]: { status: "pending" } }
+  mount()
 
   await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.ext.hubReasonNotLoaded"]))
   expect(document.body.textContent).not.toContain(zh["alpha.ext.disabled"])
@@ -339,7 +343,7 @@ test("`#1563` pending 的 MCP 行不说「已停用」,也不出授权按钮", a
 test("云连接器卡在 needs_auth 时说「需要重新登录」并给出同一个动作", async () => {
   reset()
   engineStatus = { cloud: { status: "needs_auth" } }
-  mount("cloud")
+  mount()
 
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.mcpNeedsAuth"]))
   // 「未连接(引擎会自动重连)」在这里是**假话**:没有令牌,引擎永远不会自己连上。
@@ -356,7 +360,7 @@ test("云连接器卡在 needs_auth 时说「需要重新登录」并给出同�
 test("带 {workspace} 的 Hub MCP 安装不打开目录选择器,只发送全局 catalog intent", async () => {
   reset()
   engineStatus = {}
-  mount("connectors")
+  mount()
 
   let filesystemCard: HTMLElement | undefined
   await waitFor(() => {
@@ -402,7 +406,7 @@ const primaryAddButton = () =>
 async function openCloudEntry(displayName: string) {
   await waitFor(() => {
     const card = Array.from(document.querySelectorAll<HTMLElement>(".alpha-ext-card")).find((c) =>
-      c.querySelector(".alpha-ext-card-name b")?.textContent?.includes(displayName),
+      c.querySelector("b")?.textContent?.includes(displayName),
     )
     if (!card) throw new Error(`card not found: ${displayName}`)
     card.click()
@@ -413,7 +417,7 @@ test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", a
   reset()
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
-  mount("cloud")
+  mount()
   await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
   expect(primaryAddButton()!.disabled).toBe(true)
@@ -421,7 +425,7 @@ test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", a
   // 正向对照:同一条链、同一颗按钮,ready 时必须是可点的。
   reset()
   engineStatus = { cloud: { status: "connected" } }
-  mount("cloud")
+  mount()
   await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
   expect(primaryAddButton()!.disabled).toBe(false)
@@ -435,32 +439,33 @@ test("`#624` 恢复中:code-review 详情的云派发按钮禁用(ready 时可�
   reset()
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
-  mount("cloud")
+  mount()
   await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
   expect(dispatchButtons().map((b) => b.disabled)).not.toContain(false)
 
   reset()
   engineStatus = { cloud: { status: "connected" } }
-  mount("cloud")
+  mount()
   await openCloudEntry("云端代码审查（code-review）")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
   expect(dispatchButtons().map((b) => b.disabled)).toContain(false)
 })
 
-test("`#624` 恢复中的门控条不谎称「未登录 / BYOK」,也不给 no-op 按钮", async () => {
+// `#1594`:原「云能力」页顶的门控条收进云连接器那一行(批准稿 `#hub-connectors`:状态 + 一个动作)。
+test("`#624` 恢复中的云连接器行不谎称「未登录 / BYOK」,也不给 no-op 按钮", async () => {
   reset()
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
-  mount("cloud")
+  mount()
 
   await waitFor(() =>
-    expect(document.querySelector(".alpha-ext-cloudgate-t")?.textContent).toBe(zh["alpha.ext.cloudGateTitleRecovering"]),
+    expect(document.querySelector("[data-cloud-connector] .alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnRecovering"]),
   )
-  // 用户此刻**已登录**且**已在 platform 模式** —— 这两句都是假话。
-  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudGateTitleMode"])
-  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudGateTitleLogin"])
+  // 用户此刻**已登录**且**已在 platform 模式** —— 「需登录」是假话。
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudConnNeedLogin"])
   // 「切换到平台模式」点下去是 no-op;恢复中不给任何动作。
+  expect(document.querySelector("[data-cloud-connector] button")).toBeNull()
   expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudSwitchMode"])
   expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudLoginCta"])
 })
@@ -469,7 +474,7 @@ test("`#624` 恢复中的连接器卡说「凭证恢复中」,不说「需登录
   reset()
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
-  mount("cloud")
+  mount()
 
   await waitFor(() =>
     expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnRecovering"]),
@@ -489,7 +494,7 @@ test("`#624` 恢复中的连接器卡说「凭证恢复中」,不说「需登录
 test("`#1106` 主线:disabled 云条目 → hub 补发一次 connect → needs_auth → 授权按钮点亮 → 授权成功", async () => {
   reset()
   engineStatus = { cloud: { status: "disabled" } }
-  mount("cloud")
+  mount()
 
   // kick 恰好一次;引擎如实报回 needs_auth,`#733` 的卡片臂与按钮随之点亮。
   await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
@@ -506,7 +511,7 @@ test("`#1106` 主线:disabled 云条目 → hub 补发一次 connect → needs_a
 test("`#1106` 只认云条目的 disabled:needs_auth 的 cloud 与 disabled 的别家 server 都不触发 connect", async () => {
   reset()
   engineStatus = { cloud: { status: "needs_auth" }, filesystem: { status: "disabled" } }
-  mount("cloud")
+  mount()
 
   // 等到状态真的被读进来(按钮出现 = loadStatus 已完成),再断零 —— 不然是「没跑」冒充「没发」。
   await waitFor(() => expect(authorizeButtons().length).toBe(1))
@@ -517,7 +522,7 @@ test("`#1106` kill-switch 的中和条目:kick 连到 127.0.0.1:1 即刻失败,�
   reset()
   connectBehaviour = "econnrefused"
   engineStatus = { cloud: { status: "disabled" } }
-  mount("cloud")
+  mount()
 
   await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
   // 结局 failed:卡片说「未连接」,没有一颗点了必失败的授权按钮(与今天的 kill-switch 呈现一致)。
@@ -529,7 +534,7 @@ test("`#1106` 凭证其实已在(别处授权完成):kick 直接把它连上", a
   reset()
   connectBehaviour = "connected"
   engineStatus = { cloud: { status: "disabled" } }
-  mount("cloud")
+  mount()
 
   await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnConnected"]))

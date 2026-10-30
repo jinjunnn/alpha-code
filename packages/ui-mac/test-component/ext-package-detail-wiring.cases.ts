@@ -561,7 +561,8 @@ async function mountHarness(options?: {
     },
   })
 
-  setHubSection("featured")
+  // `#1594`:扩展包与 Code Puppy 云两组都在连接器页(原「推荐」「云能力」页已收进来)。
+  setHubSection("connectors")
   const root = document.createElement("div")
   root.id = "root"
   root.className = "a-ui"
@@ -882,13 +883,13 @@ describe("package detail production renderer path", () => {
         catalogId: "package:renderer-ready",
         verdict: "compatible",
         prerequisite: "ready",
-        action: zh["alpha.ext.packageActionInstall"],
+        action: zh["alpha.ext.add"],
       },
       {
         catalogId: "package:renderer-prerequisite",
         verdict: "compatible",
         prerequisite: "required-action",
-        action: zh["alpha.ext.packageActionResolvePrerequisite"],
+        action: zh["alpha.ext.rowSetup"],
       },
       {
         catalogId: "package:renderer-update",
@@ -912,7 +913,7 @@ describe("package detail production renderer path", () => {
         catalogId: MIXED_BUNDLE_PACKAGE_ID,
         verdict: "compatible",
         prerequisite: "required-action",
-        action: zh["alpha.ext.packageActionResolvePrerequisite"],
+        action: zh["alpha.ext.rowSetup"],
       },
     ]) {
       const view = browse.catalog.packages.find((view) => view.catalogId === expected.catalogId)
@@ -926,13 +927,24 @@ describe("package detail production renderer path", () => {
         expect(document.querySelector(`[data-package-card='${expected.catalogId}']`)).toBeNull()
         continue
       }
+      // `#1594` AC3:行上只有名称、一行描述、一个动作 —— 兼容判定与前置状态不再是行上的标签,只留作行的属性。
       const card = packageCard(expected.catalogId)
       expect({
         catalogId: card.getAttribute("data-package-card"),
-        verdict: card.querySelector("[data-verdict]")?.getAttribute("data-verdict"),
-        prerequisite: card.querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite"),
+        prerequisite: card.getAttribute("data-prerequisite"),
         action: card.querySelector("button")?.textContent?.trim(),
-      }).toEqual(expected)
+      }).toEqual({ catalogId: expected.catalogId, prerequisite: expected.prerequisite, action: expected.action })
+      expect(card.querySelectorAll("button")).toHaveLength(1)
+      expect(card.querySelector("[data-verdict], .alpha-ext-package-state, .alpha-ext-chip, .alpha-ext-meta")).toBeNull()
+      // `#1594` AC6:前置条件未就绪 ⇒ 描述换成缺什么(逐项取 main 安全视图的 label),动作是「设置」;
+      // 「需要先处理」「处理前置条件」不再出现在行上。
+      if (expected.prerequisite === "required-action")
+        expect(card.querySelector("[data-package-need]")?.textContent).toBe(
+          view!.prerequisites.items.map((item) => zh["alpha.ext.needItem"].replace("{{item}}", item.label)).join(" · "),
+        )
+      else expect(card.querySelector("[data-package-need]")).toBeNull()
+      expect(card.textContent).not.toContain("需要先处理")
+      expect(card.textContent).not.toContain("处理前置条件")
     }
 
     const search = document.querySelector<HTMLInputElement>(".alpha-ext-search input")
@@ -1325,7 +1337,9 @@ describe("package detail production renderer path", () => {
     try {
       const harness = await mountHarness()
       const card = packageCard("package:renderer-prerequisite")
-      expect(card.querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite")).toBe("required-action")
+      expect(card.getAttribute("data-prerequisite")).toBe("required-action")
+      // `#1594` AC6:行上的「设置」打开的就是原来那个填写前置项的确认屏。
+      expect(card.querySelector("button")?.textContent?.trim()).toBe(zh["alpha.ext.rowSetup"])
       click(card.querySelector("button"))
       await waitForPackageAuthorization("package:renderer-prerequisite")
       expectDialogContract(packageAuthorizationDialog(), {
@@ -1350,9 +1364,10 @@ describe("package detail production renderer path", () => {
       )
       await waitFor(() =>
         expect({
-          prerequisite: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite"),
-          text: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.textContent,
-        }).toEqual({ prerequisite: "ready", text: zh["alpha.ext.packagePrerequisiteReady"] }),
+          prerequisite: packageCard("package:renderer-prerequisite").getAttribute("data-prerequisite"),
+          need: packageCard("package:renderer-prerequisite").querySelector("[data-package-need]"),
+          action: packageCard("package:renderer-prerequisite").querySelector("button")?.textContent?.trim(),
+        }).toEqual({ prerequisite: "ready", need: null, action: zh["alpha.ext.add"] }),
       )
 
       const first = harness.installIntents[0] as Record<string, unknown>
@@ -1487,10 +1502,10 @@ describe("package detail production renderer path", () => {
     expect(
       browse.catalog.packages.find((view) => view.catalogId === "package:renderer-payload-blocked")!.action.reasonCode,
     ).toBe("package-payload-integrity")
-    for (const section of ["featured", "connectors", "skills", "agents", "plugins", "bundles"] as const) {
+    for (const section of ["connectors", "skills", "agents"] as const) {
       setHubSection(section)
       await flush()
-      if (section === "featured") expectInstallablePackageCards()
+      if (section === "connectors") expectInstallablePackageCards()
       const search = document.querySelector<HTMLInputElement>(".alpha-ext-search input")!
       for (const id of unavailablePackageIds) {
         expect(document.querySelector(`[data-package-card='${id}']`)).toBeNull()
@@ -1514,14 +1529,14 @@ describe("package detail production renderer path", () => {
     const harness = await mountHarness({ withCloud: true })
     const legacyCloud = bundledCatalog.entries.filter((entry) => entry.type === "cloud")
     expect(legacyCloud.length).toBeGreaterThan(0)
-    setHubSection("cloud")
+    setHubSection("connectors")
     await waitFor(() => expect(document.querySelector(`[data-package-card="${CLOUD_PACKAGE_ID}"]`)).toBeInstanceOf(HTMLElement))
-    // 云能力分区里只有 cloud 包,不是把所有可装包都倒进来。
-    expect(Array.from(document.querySelectorAll("[data-package-card]"), (card) => card.getAttribute("data-package-card"))).toEqual([
-      CLOUD_PACKAGE_ID,
-    ])
+    // `#1594`:原「云能力」页 = 连接器页的「Code Puppy 云」组。组里只有 cloud 包,不是把所有可装包都倒进来。
+    expect(
+      Array.from(document.querySelectorAll("[data-group='cloud'] [data-package-card]"), (card) => card.getAttribute("data-package-card")),
+    ).toEqual([CLOUD_PACKAGE_ID])
     for (const entry of legacyCloud)
-      expect(document.querySelector(`.alpha-ext-card-name b[title='${entry.name}']`), entry.id).toBeInstanceOf(HTMLElement)
+      expect(document.querySelector(`[data-group='cloud'] .alpha-ext-card b[title='${entry.name}']`), entry.id).toBeInstanceOf(HTMLElement)
 
     click(packageCard(CLOUD_PACKAGE_ID))
     await waitFor(() => expect(document.querySelector(`[data-package-detail="${CLOUD_PACKAGE_ID}"] [data-cloud-form]`)).toBeInstanceOf(HTMLElement))
@@ -1549,11 +1564,11 @@ describe("package detail production renderer path", () => {
     await mountHarness()
     setHubSection("connectors")
     await waitFor(() =>
-      expect(document.querySelector(".alpha-ext-card-name b[title='git']")).toBeInstanceOf(
+      expect(document.querySelector(".alpha-ext-card b[title='git']")).toBeInstanceOf(
         HTMLElement,
       ),
     )
-    const card = document.querySelector(".alpha-ext-card-name b[title='git']")!.closest(".alpha-ext-card")!
+    const card = document.querySelector(".alpha-ext-card b[title='git']")!.closest(".alpha-ext-card")!
     click(card.querySelector(".alpha-ext-add"))
     const keys = document.querySelector<HTMLElement>(".alpha-ext-confirm-keys")
     expect(keys).toBeInstanceOf(HTMLElement)

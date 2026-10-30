@@ -4,11 +4,10 @@
 // from the bundled catalog; install status + actions go through useExtensions (receipts ⨝ SDK truth
 // + thin persist IPC).
 //
-// IA (user-approved 2026-07-04 — supersedes the
-// left-rail sketch in the v3 design doc §5.1): a single HORIZONTAL tab bar (推荐/连接器/技能/Agent/
-// 插件/套件/已安装[badge=updatable]/创建/云能力). 有更新 lives inside 已安装; 导入 lives inside 创建.
-// The search box is GLOBAL and persistent (survives tab switches); a non-empty query shows
-// cross-type results grouped by type. Clicking a card body opens the in-hub detail page
+// IA(`#1594`,REQ-236 批准稿 `docs/design/2026-10-30-req236-ux-config-pages/frame.html#hub`):横向三页
+// 连接器 / 技能 / 助手。每页 = 标题 + 一行副标题 + 本页搜索 +「添加 ▾」;每页顶部「已安装」一组,
+// 下面是可添加的条目(连接器按类别分组,另有扩展包 / Code Puppy 云 / 套件三组;技能与助手分「推荐 / 系统」)。
+// 列表行 = 图标 + 名称 + 一行描述 + 一个动作。Clicking a row body opens the in-hub detail page
 // (extension-detail.tsx) as a drill-down WITHIN the current tab (tab stays highlighted); Esc pops
 // one level at a time (confirm dialog → detail → list → close).
 //
@@ -63,30 +62,17 @@ import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../sh
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
-import { extensionError, catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
+import { extensionError, catalogDescription, iconFor, iconForRow, MoreMenu, PackageLogo, typeLabel, Svg, SearchIc, type MoreMenuItem } from "./ext-presentation"
 import { inventoryInstallRow, healthPresentation } from "./ext-inventory-present"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
 import { officeAdvisoryFor, retiredCommunityOfficeFor } from "../../shared/office-advisories"
 // #397 PR-B:四级货架与策展呈现(纯派生层;解码真源 = shared/catalog-curation,fail-closed)。
-import {
-  SHELF_CHIP_KEYS,
-  SHELF_TITLE_KEYS,
-  buildShelves,
-  curatedOf,
-  curationMapOf,
-  curationOf,
-  downloadPresentation,
-  formatBytesApprox,
-  isArchived,
-  isExpired,
-  isSessionGrant,
-  splitBrowse,
-} from "./ext-curation-view"
+import { curatedOf, curationMapOf, curationOf, isArchived, isSessionGrant, splitBrowse } from "./ext-curation-view"
 // #408 PR-C:会话开关纯派生层(状态机 / 拒绝码路由;真源 = main grant 登记 + 本地连接结果)。
 import { findSessionGrant, sessionGrantKeyOf, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
 import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
-import { packagePresentation, packageRetainedReasonKey } from "./ext-package-presentation"
+import { packageRetainedReasonKey } from "./ext-package-presentation"
 import { packageListingTextV1 } from "../../shared/host-extension-package-contract/decoder"
 import { extIpc } from "./ext-ipc"
 import "./extension-hub.css"
@@ -105,19 +91,18 @@ type ManageRow = {
   mcp?: InstalledState // MCP only — live connect/error status from the SDK
 }
 
-// Horizontal tab bar (REQ-019 T1, user-approved). 已安装 carries the updatable-count badge.
-const TABS: { key: HubSection; labelKey: string }[] = [
-  { key: "featured", labelKey: "alpha.ext.tabFeatured" },
-  { key: "connectors", labelKey: "alpha.ext.tabConnectors" },
-  { key: "skills", labelKey: "alpha.ext.tabSkills" },
-  { key: "agents", labelKey: "alpha.ext.tabAgents" },
-  { key: "plugins", labelKey: "alpha.ext.tabPlugins" },
-  { key: "bundles", labelKey: "alpha.ext.tabBundles" },
-  { key: "installed", labelKey: "alpha.ext.tabInstalled" },
-  { key: "create", labelKey: "alpha.ext.tabCreate" },
-  { key: "cloud", labelKey: "alpha.ext.tabCloud" },
+// `#1594`:三个页签(批准稿 `#hub-tabs`)。每页的副标题、搜索占位,以及「已安装」组收哪几类安装物。
+const TABS: { key: HubSection; labelKey: string; subKey: string; searchKey: string }[] = [
+  { key: "connectors", labelKey: "alpha.ext.tabConnectors", subKey: "alpha.ext.connectorsSub", searchKey: "alpha.ext.searchConnectors" },
+  { key: "skills", labelKey: "alpha.ext.tabSkills", subKey: "alpha.ext.skillsSub", searchKey: "alpha.ext.searchSkills" },
+  { key: "agents", labelKey: "alpha.ext.tabAgents", subKey: "alpha.ext.agentsSub", searchKey: "alpha.ext.searchAgents" },
 ]
-const BROWSE_SECTIONS: readonly HubSection[] = ["featured", "connectors", "skills", "agents", "plugins", "bundles"]
+/** 一条安装物在哪一页的「已安装」组里:技能与命令进技能页,助手进助手页,其余(连接器、插件、套件、云)进连接器页。 */
+function pageOfType(type: InstallReceiptType): HubSection {
+  if (type === "skill" || type === "command") return "skills"
+  if (type === "agent") return "agents"
+  return "connectors"
+}
 
 // Connector grouping order (catalog `category`). "other" catches anything unmapped.
 const CAT_ORDER = ["dev", "office", "research", "china-office", "design", "other"] as const
@@ -138,8 +123,6 @@ function catLabel(cat: string): string {
   }
 }
 
-// #397:推荐页从「代码手挑列表」切换为甄选驱动四货架(v6 已批稿改动一)—— 硬编码推荐退场。
-
 // Numeric-aware version compare for catalog snapshot versions ("2026-07-03.1"): true if a < b.
 function versionLess(a: string, b: string): boolean {
   const pa = a.split(/[^0-9]+/).filter(Boolean).map(Number)
@@ -152,40 +135,20 @@ function versionLess(a: string, b: string): boolean {
   return false
 }
 
-// Compact "what this needs" pills shown on a card foot (runtime deps, key requirement, license,
-// restart, item count). lock=true renders a small padlock before the text.
-// #397:curated 条目的密钥/依赖/体积事实真源切到甄选摘要(签名真源;诚实口径 —— unknown 不估算)。
-function metaPills(e: CatalogEntry, curation?: Curation | null): { text: string; lock?: boolean }[] {
-  if (curation) {
-    const out: { text: string; lock?: boolean }[] = []
-    if (curation.summaries.runtimeDependencies.length)
-      out.push({ text: t("alpha.ext.metaRuntime", { dep: curation.summaries.runtimeDependencies.join(" · ") }) })
-    if (curation.summaries.requiredSecrets.length)
-      out.push({ text: t("alpha.ext.metaKeysCount", { count: String(curation.summaries.requiredSecrets.length) }), lock: true })
-    const dl = downloadPresentation(curation)
-    if (dl.kind === "known") out.push({ text: t("alpha.ext.metaDownloadKnown", { size: formatBytesApprox(dl.bytes) }) })
-    else if (dl.kind === "config-only") out.push({ text: t("alpha.ext.metaDownloadNone") }) // r1-4:connection-only 诚实口径
-    else out.push({ text: t("alpha.ext.metaDownloadUnknown") })
-    if (e.type === "bundle") out.push({ text: t("alpha.ext.metaItems", { count: (e.bundleItems ?? []).length }) })
-    return out
-  }
-  const out: { text: string; lock?: boolean }[] = []
-  const spec = e.installSpec
-  if (e.type === "mcp" && spec?.kind === "mcp") {
-    if (spec.runtimeDep?.length) out.push({ text: t("alpha.ext.metaRuntime", { dep: spec.runtimeDep.join(" · ") }) })
-    if (spec.requiredEnvVars?.length) out.push({ text: t("alpha.ext.metaKey"), lock: true })
-  } else if (e.type === "skill") {
-    if (e.license) out.push({ text: e.license })
-  } else if (e.type === "plugin") {
-    if (e.license) out.push({ text: e.license })
-    out.push({ text: t("alpha.ext.metaRestart") })
-  } else if (e.type === "bundle") {
-    out.push({ text: t("alpha.ext.metaItems", { count: (e.bundleItems ?? []).length }) })
-  } else if (e.type === "cloud") {
-    out.push({ text: t("alpha.ext.metaCloudExec") })
-    if (e.installSpec?.kind === "cloud") out.push({ text: e.installSpec.tier })
-  }
-  return out
+// `#1594` AC6:需要令牌或本机文件的扩展包,行上直接写缺什么。官方两条按前置项的 id 说人话
+// (id 由 `shared/package-secret-prerequisite.ts` 以「组件 id#变量名」生成,安装确认框按同一 id 给填写说明);
+// 其余前置项的 label 就是确认框里那一格的名字,照它说。
+const PREREQUISITE_NEED_KEYS: Record<string, string> = {
+  "mcp:github-official#GITHUB_PERSONAL_ACCESS_TOKEN": "alpha.ext.needGithubToken",
+  "mcp:dbhub-readonly#DSN": "alpha.ext.needDatabaseFile",
+}
+function prerequisiteNeedText(view: CatalogPackageViewV1): string {
+  return view.prerequisites.items
+    .map((item) => {
+      const key = PREREQUISITE_NEED_KEYS[item.prerequisiteId]
+      return key ? t(key as never) : t("alpha.ext.needItem", { item: item.label })
+    })
+    .join(" · ")
 }
 
 export function ExtensionHub(props: {
@@ -226,10 +189,10 @@ export function ExtensionHub(props: {
   // key 里带账本指纹:装完/卸完 receipts 变了就自动重取。启停**不**改指纹(desiredState 不在
   // 指纹里),所以 `runStateToggle` 末尾显式 `refetchPackages()` —— 少这一行的后果是开关拨完
   // 包卡上的「未启用」不消失,用户以为没生效又去拨一次。
-  // key 里也带 tab:进「已安装」就重读一次。这不只是省一次 IPC —— 账本在别处坏掉时,
-  // 「回到这一页会重新读」是用户唯一能自己走到「读不出」那条如实呈现上的路。
+  // key 里也带 tab:进连接器页(已装扩展包在它的「已安装」组,`#1594`)就重读一次。这不只是省一次 IPC ——
+  // 账本在别处坏掉时,「回到这一页会重新读」是用户唯一能自己走到「读不出」那条如实呈现上的路。
   const [installedPackages, { refetch: refetchPackages }] = createResource(
-    () => (props.open() && section() === "installed" ? `${receiptFingerprint(ext.store.receipts)}` : null),
+    () => (props.open() && section() === "connectors" ? `${receiptFingerprint(ext.store.receipts)}` : null),
     () => ext.listInstalledPackages(),
   )
   /** 这个包在界面上叫什么。**`#784` owner 裁决**:显示插件作者自己声明的名字;
@@ -438,16 +401,6 @@ export function ExtensionHub(props: {
       else delete next[id]
       return next
     })
-  // T7/E11:来源与许可证筛选(浏览区 + 全局搜索共用;清除筛选 = 空态推荐动作)。
-  const [srcFilter, setSrcFilter] = createSignal<"all" | "official" | "community" | "alpha">("all")
-  const [licFilter, setLicFilter] = createSignal<"all" | "MIT" | "Apache-2.0" | "mixed">("all")
-  const filterMatch = (e: CatalogEntry) =>
-    (srcFilter() === "all" || e.source === srcFilter()) && (licFilter() === "all" || e.license === licFilter())
-  const filtersActive = () => srcFilter() !== "all" || licFilter() !== "all"
-  const clearFilters = () => {
-    setSrcFilter("all")
-    setLicFilter("all")
-  }
   // REQ-019 T2:详情页目标(catalog 条目或引擎 agent)。非空 = 当前 tab 内下钻显示详情页。
   const [detail, setDetail] = createSignal<DetailTarget | null>(null)
   // 安装确认框 + #348 capability 授权两阶段状态机 —— REQ-234 `#1531` 起住在 install-confirm.tsx,与 agent 安装守望者共用
@@ -595,10 +548,10 @@ export function ExtensionHub(props: {
       }
       setLocalPlugin(null)
       // 裁决 B:装完默认全关。不跳页的结果是用户按完确认**什么都看不到**,然后判定功能坏了。
-      // 所以确认成功后直接落在已安装页,新包卡带引导条。**先切页再重取** —— 包清单的
-      // resource key 里带着 tab,切页本身就是那次重取的触发器。
+      // 所以确认成功后直接落在连接器页(已装扩展包在它的「已安装」组,`#1594`),新包排最前并写明下一步。
+      // **先切页再重取** —— 包清单的 resource key 里带着 tab,切页本身就是那次重取的触发器。
       setDetail(null)
-      setHubSection("installed")
+      setHubSection("connectors")
       setHighlightPackage(r.packageId)
       await refetchPackages()
       flash(
@@ -665,9 +618,14 @@ export function ExtensionHub(props: {
     }
   }
 
+  // 技能 / 助手页的「推荐 / 系统」分段(批准稿 `#hub-skills`)。
+  const [segment, setSegment] = createSignal<"recommended" | "system">("recommended")
   // Tab navigation always leaves the detail page (a detail is a drill-down of its tab).
+  // `#1594`:搜索是本页的(占位写「搜索连接器 / 技能 / 助手」),换页就清空,分段回到「推荐」。
   const gotoSection = (key: HubSection) => {
     setDetail(null)
+    setQuery("")
+    setSegment("recommended")
     setHubSection(key)
   }
   const openEntryDetail = (e: CatalogEntry) => setDetail({ kind: "entry", entry: e })
@@ -858,12 +816,6 @@ export function ExtensionHub(props: {
     () => (props.open() ? "open" : null),
     () => extIpc.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
   )
-  const advisoryState = createMemo<"loading" | "unavailable" | "ready">(() => {
-    if (advisoryFacts.loading) return "loading"
-    if (advisoryFacts.error) return "unavailable"
-    const f = advisoryFacts()
-    return f && f.fresh ? "ready" : "unavailable"
-  })
   const advisoryBlocked = createMemo(() => new Set(advisoryFacts()?.ids ?? []))
   // REQ-135:the signed snapshot remains byte-honest for installed-item identity, while every surface
   // that can lead to installation consumes this installable view, including verified advisory blocks.
@@ -874,58 +826,42 @@ export function ExtensionHub(props: {
   // REQ-235:root 档案为 cloud@1 的签名包(main 投影了表单描述)与 legacy 云条目同列在「云能力」分区。
   const cloudPackages = createMemo(() => installablePackages().filter((view) => view.cloud))
   const byType = (type: CatalogEntry["type"]) => installableEntries().filter((e) => e.type === type)
-  // 浏览区/搜索共用的筛选视图(T7/E11:来源+许可证)。
-  const byTypeF = (type: CatalogEntry["type"]) => byType(type).filter(filterMatch)
   // Full-catalog lookup is intentional: an installed retired connector still needs honest name,
   // provenance, and retirement guidance until boot teardown has completed.
   const byId = (id: string) => catalog().entries.find((e) => e.id === id)
 
-  // Global search (REQ-019 T1): a non-empty query searches ALL types at once, grouped by type —
-  // regardless of which browse tab is active. Clearing the query returns to the tab's list.
-  const searching = () => query().trim().length > 0
-  const searchGroups = createMemo(() => {
-    if (!searching()) return []
-    const groups: { label: string; items: CatalogEntry[] }[] = []
-    for (const ty of ["mcp", "skill", "agent", "plugin", "bundle", "cloud"] as const) {
-      const items = byTypeF(ty).filter(matches)
-      if (items.length) groups.push({ label: typeLabel(ty), items })
-    }
-    return groups
-  })
-  const searchPackages = createMemo(() =>
-    searching() ? installablePackages().filter(matchesPackage) : [],
-  )
-  // REQ-079 curation:浏览/搜索面只出现「自建」agent;引擎原生内置(build/plan/general/…)
-  // 不再平铺 —— 其查看与管理唯一入口 = 已安装 → 内置 治理面板(governance-panel)。
+  // REQ-079 curation:引擎原生内置(build/plan/general/…)不进浏览面 —— 它们在助手页「系统」分段的内置治理面板里。
   const ownAgents = createMemo(() => ext.store.agents.filter((a) => !a.native))
-  const searchAgents = createMemo(() => (searching() ? ownAgents().filter(matchesAgent) : []))
+  const searching = () => query().trim().length > 0
 
   // ── #397 PR-B:策展视图(解码一次/目录;fail-closed —— invalid 与未策展同呈现)────────────────
   const curationById = createMemo(() => curationMapOf(catalog()))
   const statusOf = (id: string): CurationStatus => curationOf(curationById(), id)
   // 复审期限比较的时钟:每次打开 hub 取一次(合同:消费端时钟仅用于此比较)。
   const nowIso = createMemo(() => (props.open(), new Date().toISOString()))
-  // 推荐页四货架(固定序 核心→精选→接入→实验室;空货架隐藏;未策展/归档/失养/过期/公示不进)。
-  // 公示事实未就绪 = 零货架(保守;featured JSX 按 advisoryState 给诚实降级态)。
-  const shelves = createMemo(() =>
-    advisoryState() === "ready" ? buildShelves(installableEntries(), curationById(), nowIso(), advisoryBlocked()) : [],
-  )
-
-  // Connectors grouped by category (fixed order) — drives the 连接器 tab subheaders.
-  // #397 改动二:分组轴保持 category(货架是治理身份不是导航轴);仅已分级条目进分组,
-  // 未分级(未策展 + fail-closed)收尾组(诚实组头,见 browse JSX)。
-  const groupedConnectors = createMemo(() => {
-    const { graded } = splitBrowse(byTypeF("mcp"), curationById())
+  // `#1594`:可添加的 = 目录里还没装的(已装的在本页顶部「已安装」组);出厂内置技能在技能页「系统」分段。
+  // 每组内已分级的排前(批准稿:精选排前);未分级的照样可装,装上默认关闭(行为在安装层,不在这里)。
+  const browsable = (type: CatalogEntry["type"]) => {
+    const items = byType(type).filter(
+      (e) => matches(e) && !ext.isInstalled(e) && !(type === "skill" && ext.factorySkills().includes(e.name)),
+    )
+    const split = splitBrowse(items, curationById())
+    return [...split.graded, ...split.ungraded]
+  }
+  // 按目录 `category` 分组(固定序);插件目录今天 0 条,有了也和连接器同组。
+  const groupByCategory = (items: CatalogEntry[]) => {
     const map = new Map<string, CatalogEntry[]>()
-    for (const e of graded) {
+    for (const e of items) {
       const k = (CAT_ORDER as readonly string[]).includes(e.category) ? e.category : "other"
-      const arr = map.get(k) ?? []
-      arr.push(e)
-      map.set(k, arr)
+      map.set(k, [...(map.get(k) ?? []), e])
     }
     return CAT_ORDER.filter((c) => map.has(c)).map((c) => ({ cat: c as string, items: map.get(c)! }))
-  })
-  const ungradedConnectors = createMemo(() => splitBrowse(byTypeF("mcp"), curationById()).ungraded)
+  }
+  const connectorGroups = createMemo(() => groupByCategory([...browsable("mcp"), ...browsable("plugin")]))
+  const skillGroups = createMemo(() => groupByCategory(browsable("skill")))
+  const browsablePackages = createMemo(() => installablePackages().filter((view) => !view.cloud && matchesPackage(view)))
+  const browsableCloud = createMemo(() => browsable("cloud"))
+  const browsableCloudPackages = createMemo(() => cloudPackages().filter(matchesPackage))
 
   // 已安装 = 全类型统一视图(REQ-018 T6):receipts(skill/agent/plugin/mcp)⨝ SDK 的 MCP 实时
   // 状态(connected/error)。live-but-unrecorded 的 MCP(手动加/迁移前)也并入,合成最小 receipt
@@ -950,8 +886,9 @@ export function ExtensionHub(props: {
       })
     }
     // live MCP the SDK knows but we have no receipt for (manual / pre-migration) — allow uninstall.
+    // `#1594`:平台云连接器在连接器页有自己的一行(状态、登录、去授权都在那一行),不再重复成一条已装行。
     for (const s of Object.values(ext.store.mcp)) {
-      if (seenMcp.has(s.name) || !nameOnlyLiveMcpIsUnambiguousGlobal(s.name, ext.store.projectReceipts))
+      if (s === cloudLive() || seenMcp.has(s.name) || !nameOnlyLiveMcpIsUnambiguousGlobal(s.name, ext.store.projectReceipts))
         continue
       const entry = mcpByName.get(s.name)
       rows.push({
@@ -983,14 +920,20 @@ export function ExtensionHub(props: {
     return rows
   })
 
-  // REQ-103(#195,AC5)已安装按 scope 分组:全局(对所有项目生效)/ 本项目。同名可并存 —— 全局与
-  // 项目同名安装是两行、各自独立操作(receipt.scope 即真源;project 行仅当传入项目目录后才出现)。
-  const installedByScope = createMemo(() => {
-    const global: ManageRow[] = []
-    const project: ManageRow[] = []
-    for (const row of installedAll()) (row.receipt.scope === "project" ? project : global).push(row)
-    return { global, project }
-  })
+  // REQ-103(#195,AC5)已安装按 scope 分组:全局 / 本项目;同名可并存,各自独立操作(receipt.scope 即真源;
+  // project 行仅当传入项目目录后才出现)。`#1594`:分到所属那一页的「已安装」组,并吃本页搜索。
+  const installedFor = (page: HubSection) => {
+    const q = query().trim().toLowerCase()
+    const rows = installedAll().filter(
+      (row) =>
+        pageOfType(row.type) === page &&
+        (!q || `${row.displayName} ${row.name} ${row.entry?.description ?? ""}`.toLowerCase().includes(q)),
+    )
+    return {
+      global: rows.filter((row) => row.receipt.scope !== "project"),
+      project: rows.filter((row) => row.receipt.scope === "project"),
+    }
+  }
 
   // 有更新(REQ-019 T1:已安装 tab 角标 + 列表顶部分组;T5 接更新动作):receipt 记录的 catalog
   // 快照版本落后于当前 catalog,且条目仍在目录中。created/imported 无版本概念,不参与。
@@ -1010,15 +953,6 @@ export function ExtensionHub(props: {
         !!byId(r.id) &&
         versionLess(r.version, entryVersion(byId(r.id))),
     ),
-  )
-
-  // REQ-105:已安装项里命中 archived advisory 的行(receipts + live MCP 都覆盖)——驱动
-  // 已安装 tab 顶部的诚实警示条。用户安装保持原样(不静默删除);卸载走既有 receipts 可审计路径。
-  const advisoryRows = createMemo(() =>
-    installedAll().flatMap((row) => {
-      const adv = officeAdvisoryFor({ id: row.receipt.id, name: row.name })
-      return adv ? [{ row, adv }] : []
-    }),
   )
 
   // B11:收编进全局 pushToast(一处定义,各处复用)—— toast 只报成功,失败走行内。
@@ -1421,13 +1355,6 @@ export function ExtensionHub(props: {
   }
 
   // ── reusable pieces ─────────────────────────────────────────────────────────────────────────
-  const Hero = (cp: { title: string; sub: string }) => (
-    <header class="alpha-ext-hero">
-      <h1 class="alpha-ext-title">{cp.title}</h1>
-      <p class="alpha-ext-sub">{cp.sub}</p>
-    </header>
-  )
-
   const SecRow = (cp: { label: string; count?: number; warn?: boolean; actionLabel?: string; onAction?: () => void }) => (
     <div class="alpha-ext-secrow">
       <span class="alpha-ext-overline" data-warn={cp.warn ? "" : undefined}>
@@ -1445,356 +1372,168 @@ export function ExtensionHub(props: {
     </div>
   )
 
-  // T7/E11:来源 + 许可证筛选 chips(浏览区共用;全局搜索也吃同一组筛选)。
-  const Filters = () => (
-    <div class="alpha-ext-filters">
-      <span class="alpha-ext-filters-l">{t("alpha.ext.filterSource")}</span>
-      <For each={["all", "official", "community", "alpha"] as const}>
-        {(v) => (
-          <button class="alpha-ext-fchip" data-on={srcFilter() === v ? "" : undefined} onClick={() => setSrcFilter(v)}>
-            {v === "all" ? t("alpha.ext.filterAll") : sourceLabel(v)}
-          </button>
-        )}
-      </For>
-      <span class="alpha-ext-filters-l" style={{ "margin-left": "10px" }}>
-        {t("alpha.ext.filterLicense")}
-      </span>
-      <For each={["all", "MIT", "Apache-2.0", "mixed"] as const}>
-        {(v) => (
-          <button class="alpha-ext-fchip" data-on={licFilter() === v ? "" : undefined} onClick={() => setLicFilter(v)}>
-            {v === "all" ? t("alpha.ext.filterAll") : v}
-          </button>
-        )}
-      </For>
-    </div>
-  )
-  // 筛选后空态:一句引导 + 清除筛选推荐动作(T7 空态纪律)。
-  const FilteredEmpty = () => (
-    <EmptyState
-      title={t("alpha.ext.noResults")}
-      sub={filtersActive() ? t("alpha.ext.filteredEmptySub") : undefined}
-      action={
-        filtersActive() ? (
-          <button class="alpha-ext-add" data-variant="primary" onClick={clearFilters}>
-            {t("alpha.ext.clearFilters")}
-          </button>
-        ) : undefined
-      }
-    />
-  )
-
-  // One browsable entry as a card (icon · name/chip · desc · meta + action). The card body opens the
-  // detail page (drill-down); the foot action runs the per-type install path (stageInstall) — or
-  // 打开详情 when already installed.
-  const Card = (cp: { e: CatalogEntry }) => {
+  // `#1594` 列表行(批准稿 `#hub-connectors`):图标 + 名称 + 一行描述 + 一个动作,双列排布。来源、版本、
+  // 兼容、运行位置都只在详情页;点行进详情页。行上的动作仍走既有的分流(stageInstall)。
+  const EntryRow = (cp: { e: CatalogEntry; dim?: boolean }) => {
     const e = cp.e
     const ic = iconFor(e)
-    const installedNow = createMemo(() => ext.isInstalled(e))
-    // REQ-036 / S18 X1:出厂注入的技能(skills.paths)显示「出厂内置」而非「安装」——已经处处可用,
-    // 再给安装按钮是双重身份混乱;关掉出厂注入(逃生开关)时名单为空,条目自动回到可安装态。
-    const isFactory = createMemo(() => e.type === "skill" && ext.factorySkills().includes(e.name))
     const isBusy = () => busy() === e.id
-    // #397:策展身份(chip = 用户语言四色货架;归档 = 禁新安装,main 闸已拒,此处是呈现层)。
+    // #397/REQ-135:archived 与 retired 都不可新装,文案各自说;已分级的动作是主按钮,未分级是次按钮(装上默认关闭)。
     const cst = createMemo(() => statusOf(e.id))
-    const curated = () => curatedOf(cst())
     const archivedNow = () => isArchived(cst())
     const retiredNow = () => retiredCommunityOfficeFor({ id: e.id, name: e.name }) !== undefined
     return (
-      <div class="alpha-ext-card" data-clickable="" onClick={() => openEntryDetail(e)}>
-        <div class="alpha-ext-card-top">
-          <span class="alpha-ext-card-ic" style={{ background: ic.color }}>
-            {ic.glyph}
-          </span>
-          <div class="alpha-ext-card-hd">
-            <div class="alpha-ext-card-name">
-              <b title={e.name}>{e.displayName}</b>
-              {/* #397 改动二:分级 chip(名称行;四色四货架,与推荐页同词;未分级 = 缺席即身份) */}
-              <Show when={curated()}>
-                {(c) => (
-                  <span class="alpha-ext-chip" data-shelf={c().tier}>
-                    {t(SHELF_CHIP_KEYS[c().tier] as never)}
-                  </span>
-                )}
-              </Show>
-              <span class="alpha-ext-chip" data-source={e.source}>
-                {sourceLabel(e.source)}
-              </span>
-              <Show when={archivedNow()}>
-                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.shelfArchivedChip")}</span>
-              </Show>
-              <Show when={isExpired(cst(), nowIso())}>
-                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.reviewExpiredChip")}</span>
-              </Show>
-              <Show when={e._verify ?? e.installSpec?._verify}>
-                <span class="alpha-ext-verify-chip">{t("alpha.ext.verifyPending")}</span>
-              </Show>
-              {/* REQ-105:归档连接器如经远程/缓存 catalog 露出,卡片即带 archived 警示(legacy optional) */}
-              <Show when={!archivedNow() && officeAdvisoryFor({ id: e.id, name: e.name })}>
-                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.advArchivedChip")}</span>
-              </Show>
-              <Show when={retiredNow()}>
-                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.retiredCommunityChip")}</span>
-              </Show>
-            </div>
-          </div>
-        </div>
-        <p class="alpha-ext-card-desc">{catalogDescription(e)}</p>
-        <div class="alpha-ext-card-foot">
-          <For each={metaPills(e, curated())}>
-            {(m) => (
-              <span class="alpha-ext-meta">
-                <Show when={m.lock}>
-                  <LockIc />
-                </Show>
-                {m.text}
-              </span>
-            )}
-          </For>
-          <Show
-            when={!isFactory()}
-            fallback={
-              <button
-                class="alpha-ext-add"
-                data-variant="installed"
-                onClick={(ev) => {
-                  ev.stopPropagation()
-                  openEntryDetail(e)
-                }}
-              >
-                {t("alpha.ext.factoryBuiltin")}
-              </button>
-            }
-          >
-            <Show
-              when={!installedNow()}
-              fallback={
-                <button
-                  class="alpha-ext-add"
-                  data-variant="installed"
-                  onClick={(ev) => {
-                    ev.stopPropagation()
-                    openEntryDetail(e)
-                  }}
-                >
-                  ✓ {t("alpha.ext.openDetail")}
-                </button>
-              }
-            >
-              {/* #397/REQ-135:archived and retired are both unavailable but use distinct copy;
-                  ungraded cards remain ghost actions(default-disabled after install). */}
-              <Show
-                when={!archivedNow() && !retiredNow()}
-                fallback={
-                  <button
-                    class="alpha-ext-add"
-                    disabled
-                    title={t(retiredNow() ? "alpha.ext.retiredCommunityNoInstallHint" : "alpha.ext.archivedNoInstallHint")}
-                    onClick={(ev) => ev.stopPropagation()}
-                  >
-                    {t(retiredNow() ? "alpha.ext.retiredCommunityNoInstall" : "alpha.ext.archivedNoInstall")}
-                  </button>
-                }
-              >
-                <button
-                  class="alpha-ext-add"
-                  data-variant={cst().kind === "curated" ? "primary" : "ghost"}
-                  disabled={isBusy()}
-                  onClick={(ev) => {
-                    ev.stopPropagation()
-                    stageInstall(e)
-                  }}
-                >
-                  {stage()[e.id] === "checking"
-                    ? t("alpha.ext.stageChecking")
-                    : stage()[e.id] === "installing" || isBusy()
-                      ? t("alpha.ext.stageInstalling")
-                      : e.type === "cloud"
-                        ? t("alpha.ext.enableCloud")
-                        : t("alpha.ext.add")}
-                </button>
-              </Show>
-            </Show>
-          </Show>
-        </div>
-        {/* B11:失败行内(错误 chip 行),不裸 toast */}
-        <Show when={cardErr()[e.id]}>
-          <p class="alpha-ext-card-err">{cardErr()[e.id]}</p>
-        </Show>
-      </div>
-    )
-  }
-
-  const Grid = (cp: { items: CatalogEntry[] }) => (
-    <div class="alpha-ext-grid">
-      <For each={cp.items}>{(e) => <Card e={e} />}</For>
-    </div>
-  )
-
-  const PackageCard = (cp: { view: CatalogPackageViewV1 }) => {
-    const view = () => currentPackageView(cp.view)
-    const presentation = () => packagePresentation(view())
-    const sourceKey = () =>
-      catalogSource() === "remote"
-        ? "alpha.ext.packageSourceRemote"
-        : catalogSource() === "cache"
-          ? "alpha.ext.packageSourceCache"
-          : "alpha.ext.packageSourceBuiltin"
-    return (
       <div
-        class="alpha-ext-card"
+        class="alpha-ext-kit alpha-ext-card"
         data-clickable=""
-        data-package-card={view().catalogId}
-        onClick={() => openPackageDetail(view())}
+        data-entry={e.id}
+        data-dim={cp.dim ? "" : undefined}
+        onClick={() => openEntryDetail(e)}
       >
-        <div class="alpha-ext-card-top">
-          {/* `#1287`:发布者签名的 logo 与品牌色;两者都缺就是今天的样子(首字母 + 主题色)。 */}
-          <span
-            class="alpha-ext-card-ic"
-            style={{
-              background:
-                packageListingTextV1(view().listing, "brandColor") ?? "var(--a-accent-solid)",
-            }}
-          >
-            <PackageLogo listing={view().listing} fallback={view().presentation.displayName} />
-          </span>
-          <div class="alpha-ext-card-hd">
-            <div class="alpha-ext-card-name">
-              <b title={view().catalogId}>{view().presentation.displayName}</b>
-              <span class="alpha-ext-chip" data-source="alpha">{t(sourceKey())}</span>
-            </div>
-            {/* 「这是谁做的」是装之前最该看见的一行,所以它在卡片上,不只在详情页。 */}
-            <Show when={packageListingTextV1(view().listing, "developerName")}>
-              {(developer) => (
-                <span class="alpha-ext-card-sub" data-package-developer="">
-                  {developer()}
-                </span>
-              )}
-            </Show>
-          </div>
-        </div>
-        <p class="alpha-ext-card-desc">{view().presentation.description}</p>
-        <div class="alpha-ext-card-foot">
-          <span class="alpha-ext-meta">{view().presentation.version}</span>
-          <span class="alpha-ext-package-state" data-verdict={view().verdict}>
-            {t(presentation().verdictKey)}
-          </span>
-          <span class="alpha-ext-package-state" data-prerequisite={view().prerequisites.status}>
-            {t(presentation().prerequisiteKey)}
-          </span>
-          <button
-            class="alpha-ext-add"
-            data-variant={view().action.kind === "install" ? "primary" : "ghost"}
-            disabled={!view().action.enabled || busy() === view().catalogId}
-            onClick={(event) => {
-              event.stopPropagation()
-              void runPackageAction(view())
-            }}
-          >
-            {t(presentation().actionKey)}
-          </button>
-        </div>
-        <Show when={cardErr()[view().catalogId]}>
-          <p class="alpha-ext-card-err" role="alert">{cardErr()[view().catalogId]}</p>
-        </Show>
-      </div>
-    )
-  }
-
-  const PackageGrid = (cp: { items: CatalogPackageViewV1[] }) => (
-    <div class="alpha-ext-grid">
-      <For each={cp.items}>{(view) => <PackageCard view={view} />}</For>
-    </div>
-  )
-
-  // #397 改动二:「未分级」尾组(未策展 + fail-closed 同呈现;组头一行诚实说明 ——
-  // 可安装,走默认关闭的保守规则;无分级 chip = 缺席即身份,不发明「未知级」徽章)。
-  const UngradedGroup = (cp: { items: CatalogEntry[] }) => (
-    <Show when={cp.items.length > 0}>
-      <div class="alpha-ext-grp">
-        {t("alpha.ext.ungradedGroup")}
-        <span class="alpha-ext-grp-ct">{cp.items.length}</span>
-      </div>
-      <p class="alpha-ext-group-note">{t("alpha.ext.ungradedNote")}</p>
-      <Grid items={cp.items} />
-    </Show>
-  )
-
-  // One engine agent as a card (Agent tab + global search). Card body opens the agent detail.
-  const AgentCard = (cp: { a: HubAgent }) => {
-    const a = cp.a
-    const ic = iconForRow(undefined, "agent", a.name)
-    const receipt = () => ext.store.receipts.find((r) => r.type === "agent" && r.name === a.name)
-    return (
-      <div class="alpha-ext-card" data-clickable="" onClick={() => openAgentDetail(a)}>
-        <div class="alpha-ext-card-top">
-          <span class="alpha-ext-card-ic" style={{ background: ic.color }}>
-            {ic.glyph}
-          </span>
-          <div class="alpha-ext-card-hd">
-            <div class="alpha-ext-card-name">
-              <b title={a.name}>{a.name}</b>
-              <span class="alpha-ext-type-pill">
-                {a.native ? t("alpha.ext.agentBuiltin") : t("alpha.ext.agentSelf")} · {a.mode}
-              </span>
-            </div>
-          </div>
-        </div>
-        <p class="alpha-ext-card-desc">{a.description ?? t("alpha.ext.agentNoDesc")}</p>
-        <div class="alpha-ext-card-foot">
-          <Show
-            when={receipt()}
-            fallback={
-              <span class="alpha-ext-meta">{a.native ? t("alpha.ext.agentBuiltinNote") : t("alpha.ext.agentOwnNote")}</span>
-            }
-          >
-            <button
-              class="alpha-ext-add"
-              onClick={(ev) => {
-                ev.stopPropagation()
-                void onUninstall(receipt()!)
-              }}
-            >
-              {t("alpha.ext.remove")}
-            </button>
-          </Show>
-        </div>
-      </div>
-    )
-  }
-
-  // Featured-tab bundle hero row (wider, richer than a grid card).
-  const KitRow = (cp: { e: CatalogEntry }) => {
-    const e = cp.e
-    const ic = iconFor(e)
-    const isBusy = () => busy() === e.id
-    return (
-      <div class="alpha-ext-kit" data-clickable="" onClick={() => openEntryDetail(e)}>
         <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
           {ic.glyph}
         </span>
         <div class="alpha-ext-kit-body">
           <div class="alpha-ext-kit-ttl">
-            <b>{e.displayName}</b>
-            <span class="alpha-ext-chip" data-source={e.source}>
-              {sourceLabel(e.source)}
-            </span>
+            <b title={e.name}>{e.displayName}</b>
           </div>
-          <div class="alpha-ext-kit-desc">
-            {catalogDescription(e)}
-            <span class="alpha-ext-kit-n"> · {t("alpha.ext.metaItems", { count: (e.bundleItems ?? []).length })}</span>
+          <div class="alpha-ext-kit-desc">{catalogDescription(e)}</div>
+          {/* B11:失败行内,不裸 toast */}
+          <Show when={cardErr()[e.id]}>
+            <p class="alpha-ext-card-err">{cardErr()[e.id]}</p>
+          </Show>
+        </div>
+        <Show
+          when={!archivedNow() && !retiredNow()}
+          fallback={
+            <button
+              class="alpha-ext-add"
+              disabled
+              title={t(retiredNow() ? "alpha.ext.retiredCommunityNoInstallHint" : "alpha.ext.archivedNoInstallHint")}
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              {t(retiredNow() ? "alpha.ext.retiredCommunityNoInstall" : "alpha.ext.archivedNoInstall")}
+            </button>
+          }
+        >
+          <button
+            class="alpha-ext-add"
+            data-variant={cst().kind === "curated" ? "primary" : "ghost"}
+            disabled={isBusy()}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              stageInstall(e)
+            }}
+          >
+            {stage()[e.id] === "checking"
+              ? t("alpha.ext.stageChecking")
+              : stage()[e.id] === "installing" || isBusy()
+                ? t("alpha.ext.stageInstalling")
+                : e.type === "cloud"
+                  ? t("alpha.ext.enableCloud")
+                  : t("alpha.ext.add")}
+          </button>
+        </Show>
+      </div>
+    )
+  }
+
+  const Grid = (cp: { items: CatalogEntry[]; group: string }) => (
+    <div class="alpha-ext-grid" data-group={cp.group}>
+      <For each={cp.items}>{(e) => <EntryRow e={e} />}</For>
+    </div>
+  )
+
+  // 签名扩展包的一行。`#1594` AC6:需要令牌或本机文件时,描述换成缺什么(「需要 GitHub 令牌」),动作是「设置」,
+  // 点下去走既有的 runPackageAction —— 打开的就是原来那个填令牌 / 填数据库位置的确认屏。
+  const PackageRow = (cp: { view: CatalogPackageViewV1; dim?: boolean }) => {
+    const view = () => currentPackageView(cp.view)
+    const needsSetup = () => view().action.kind === "resolve-prerequisite"
+    return (
+      <div
+        class="alpha-ext-kit"
+        data-clickable=""
+        data-package-card={view().catalogId}
+        data-prerequisite={view().prerequisites.status}
+        data-dim={cp.dim ? "" : undefined}
+        onClick={() => openPackageDetail(view())}
+      >
+        {/* `#1287`:发布者签名的 logo 与品牌色;两者都缺就是首字母 + 主题色。 */}
+        <span
+          class="alpha-ext-kit-ic"
+          style={{ background: packageListingTextV1(view().listing, "brandColor") ?? "var(--a-accent-solid)" }}
+        >
+          <PackageLogo listing={view().listing} fallback={view().presentation.displayName} />
+        </span>
+        <div class="alpha-ext-kit-body">
+          <div class="alpha-ext-kit-ttl">
+            <b title={view().catalogId}>{view().presentation.displayName}</b>
           </div>
+          <div class="alpha-ext-kit-desc" data-package-need={needsSetup() ? "" : undefined}>
+            {needsSetup() ? prerequisiteNeedText(view()) : view().presentation.description}
+          </div>
+          <Show when={cardErr()[view().catalogId]}>
+            <p class="alpha-ext-card-err" role="alert">{cardErr()[view().catalogId]}</p>
+          </Show>
         </div>
         <button
           class="alpha-ext-add"
-          data-variant="primary"
-          disabled={isBusy()}
-          onClick={(ev) => {
-            ev.stopPropagation()
-            stageInstall(e)
+          data-variant={needsSetup() ? "ghost" : "primary"}
+          disabled={!view().action.enabled || busy() === view().catalogId}
+          onClick={(event) => {
+            event.stopPropagation()
+            void runPackageAction(view())
           }}
         >
-          {isBusy() ? t("alpha.ext.adding") : t("alpha.ext.add")}
+          {needsSetup() ? t("alpha.ext.rowSetup") : t("alpha.ext.add")}
         </button>
+      </div>
+    )
+  }
+
+  // 自己在对话里建的助手(没有安装记录)。来源说明只在详情页(批准稿 `#hub-agents`)。
+  const AgentRow = (cp: { a: HubAgent }) => {
+    const a = cp.a
+    const ic = iconForRow(undefined, "agent", a.name)
+    return (
+      <div class="alpha-ext-kit" data-clickable="" data-own-agent={a.name} onClick={() => openAgentDetail(a)}>
+        <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
+          {ic.glyph}
+        </span>
+        <div class="alpha-ext-kit-body">
+          <div class="alpha-ext-kit-ttl">
+            <b title={a.name}>{a.name}</b>
+          </div>
+          <div class="alpha-ext-kit-desc">{a.description ?? t("alpha.ext.agentNoDesc")}</div>
+        </div>
+        <MoreMenu id={`agent:${a.name}`} items={[{ key: "settings", label: t("alpha.ext.rowSetup"), onSelect: () => openAgentDetail(a) }]} />
+      </div>
+    )
+  }
+
+  // 出厂内置技能(skill-creator 等):技能页「系统」分段。有目录条目的可进详情页。
+  const FactorySkillRow = (cp: { name: string }) => {
+    const entry = () => installableEntries().find((e) => e.type === "skill" && e.name === cp.name)
+    const ic = iconForRow(entry(), "skill", cp.name)
+    return (
+      <div
+        class="alpha-ext-kit"
+        data-clickable={entry() ? "" : undefined}
+        data-factory-skill={cp.name}
+        onClick={() => entry() && openEntryDetail(entry()!)}
+      >
+        <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
+          {ic.glyph}
+        </span>
+        <div class="alpha-ext-kit-body">
+          <div class="alpha-ext-kit-ttl">
+            <b title={cp.name}>{entry()?.displayName ?? cp.name}</b>
+          </div>
+          <div class="alpha-ext-kit-desc">{entry() ? catalogDescription(entry()!) : t("alpha.ext.factoryBuiltin")}</div>
+        </div>
+        <Show when={entry()}>
+          {(e) => <MoreMenu id={`factory:${cp.name}`} items={[{ key: "settings", label: t("alpha.ext.rowSetup"), onSelect: () => openEntryDetail(e()) }]} />}
+        </Show>
       </div>
     )
   }
@@ -1815,190 +1554,108 @@ export function ExtensionHub(props: {
     </div>
   )
 
-  // REQ-103(#195)已安装行:名字 + 徽标 + 一行「健康点 · 健康态 · 启用态」+ 右侧开关/审查更新/卸载。
-  // 三态正交(AC2):健康点=governance health(运行健康/上游归档/事务未落定…);启用态=文字(已连接/
-  // 已安装但关闭);来源/类型/版本收进详情页(coordinator 拍板,已安装行不再挤来源灰字)。
-  // ── REQ-128 Phase 3 `#784`:已装扩展包区块 ────────────────────────────────────────────────
+  // ── REQ-128 Phase 3 `#784`:已装扩展包 ─────────────────────────────────────────────────────
   //
-  // 每个技能各有自己的开关(装完默认全关,owner 裁决 B),包头挂「移除此扩展包」。
-  // 开关走的是**既有** `runStateToggle` —— 与平铺行同一条通道、同一个账本、同一次
-  // 重载请求。另写一条「包内开关」就是给同一个状态第二个答案。
-  const PackageComponentRow = (cp: {
-    packageId: string
-    component: { componentId: string; kind: string; name: string; required: boolean; desiredState: "enabled" | "disabled" | null }
-  }) => {
-    const receipt = createMemo(() =>
-      ext.store.receipts.find((r) => r.type === (cp.component.kind as InstallReceiptType) && r.name === cp.component.name),
-    )
-    // `null` = 图里有这个节点、账本里没有 record。**不许当成「已启用」**:那会画出一个
-    // 拨下去必然失败的开关。如实呈现为「读不出」,开关禁用。
-    const known = () => cp.component.desiredState !== null
-    const on = () => cp.component.desiredState === "enabled"
-    const busy = createSignal(false)
-    const toggle = async () => {
-      const r = receipt()
-      if (!r || busy[0]()) return
-      busy[1](true)
-      try {
-        await runStateToggle({
-          receipt: r,
-          type: cp.component.kind,
-          name: cp.component.name,
-          currentlyOn: on(),
-          liveUnreceipted: false,
-          mcpConnected: false,
-        })
-      } finally {
-        busy[1](false)
-      }
-    }
+  // `#1594`:每个包是连接器页「已安装」组里的一行,「…」里是「移除此扩展包」(整包移除的入口,本地导入的包
+  // 没有目录详情页可去,这里是唯一的移除入口)。包内技能各自是技能页「已安装」组里的一行,开关走既有的
+  // `runStateToggle` —— 与平铺行同一条通道、同一个账本、同一次重载请求。
+  const orderedPackages = createMemo(() => {
+    const s = installedPackages()
+    if (!s || !s.ok) return []
+    const q = query().trim().toLowerCase()
+    const top = highlightPackage()
+    // 刚装完的排最前(裁决 B 之下,不这么做用户按完确认「什么都看不到」)。
+    return s.packages
+      .filter((pack) => !q || packLabel(pack).toLowerCase().includes(q))
+      .sort((a, b) => (a.packageId === top ? -1 : b.packageId === top ? 1 : packLabel(a) < packLabel(b) ? -1 : 1))
+  })
+  const InstalledPackageRow = (cp: { pack: ReturnType<typeof orderedPackages>[number] }) => {
+    const pack = cp.pack
+    const enabledCount = () => pack.components.filter((c) => c.desiredState === "enabled").length
+    const ic = iconForRow(undefined, "bundle", packLabel(pack))
     return (
-      <div class="alpha-ext-pack-c" data-package-component={`${cp.packageId}/${cp.component.name}`}>
-        <div class="alpha-ext-man-body">
-          <div class="alpha-ext-man-nm">
-            <b title={cp.component.name}>{cp.component.name}</b>
-            <Show when={known() && !on()}>
-              <span class="alpha-ext-type-pill" data-off="">
-                {t("alpha.ext.notEnabledChip")}
-              </span>
-            </Show>
+      // 来源**只从 child record 的 `origin` 读**(基线 §8 纪律 2),行上不显示,留作身份属性。
+      <div class="alpha-ext-kit" data-installed-package={pack.packageId} data-package-origin={pack.origin ?? ""}>
+        <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
+          {ic.glyph}
+        </span>
+        <div class="alpha-ext-kit-body">
+          <div class="alpha-ext-kit-ttl">
+            <b data-package-label={pack.packageId}>{packLabel(pack)}</b>
           </div>
-          <div class="alpha-ext-man-st">
-            <span class="alpha-ext-man-dot" data-on={on() ? "" : undefined} />
-            {!known()
-              ? t("alpha.ext.packageComponentUnknownState")
-              : on()
-                ? t("alpha.ext.enabled")
-                : t("alpha.ext.notEnabledHint")}
+          {/* 裁决 B 的必然连带:装完默认全关 ⇒ 不说下一步,用户按完确认拿不到任何东西。有任意一个开了就换成计数。 */}
+          <div class="alpha-ext-kit-desc">
+            {enabledCount() === 0
+              ? t("alpha.ext.packageAllOffRow", { count: String(pack.components.length) })
+              : `${t("alpha.ext.packageSkillCount", { count: String(pack.components.length) })} · ${t("alpha.ext.packageSomeEnabled", { count: String(enabledCount()) })}`}
           </div>
+          <Show when={packErr()[pack.packageId]}>
+            {(error) => (
+              <p class="alpha-ext-card-err" data-package-error={pack.packageId} role="alert">
+                {error()}
+              </p>
+            )}
+          </Show>
         </div>
-        <button
-          class="alpha-ext-sw"
-          data-on={on() ? "" : undefined}
-          data-package-switch={`${cp.packageId}/${cp.component.name}`}
-          disabled={busy[0]() || !known() || !receipt()}
-          aria-label={on() ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
-          onClick={(ev) => {
-            ev.stopPropagation()
-            void toggle()
-          }}
+        <MoreMenu
+          id={`package:${pack.packageId}`}
+          items={[
+            {
+              key: "remove-package",
+              label: packBusy() === pack.packageId ? t("alpha.ext.packageRemoving") : t("alpha.ext.packageActionUninstall"),
+              danger: true,
+              disabled: packBusy() === pack.packageId,
+              onSelect: () => void runRemovePackage(pack.packageId),
+            },
+          ]}
         />
       </div>
     )
   }
-
-  const InstalledPackagesSection = () => {
-    const state = () => installedPackages()
-    // 刚装完的排最前(裁决 B 之下,不这么做用户按完确认「什么都看不到」)。
-    const ordered = createMemo(() => {
-      const s = state()
-      if (!s || !s.ok) return []
-      const top = highlightPackage()
-      return [...s.packages].sort((a, b) =>
-        a.packageId === top ? -1 : b.packageId === top ? 1 : packLabel(a) < packLabel(b) ? -1 : 1,
-      )
-    })
-    return (
-      <>
-        {/* 上一次移除留下了什么。**故意放在包卡之外** —— 卡会随着包图消失,解释不能跟着走。 */}
-        <Show when={packRemoval()}>
-          {(removal) => (
-            <div class="alpha-ext-verify-note" data-package-removal={removal().packageId} role="status">
-              <b>{t("alpha.ext.packageRemovedWithRetained", { pack: removal().label, count: String(removal().retained.length) })}</b>
-              <ul class="alpha-ext-package-retained">
-                <For each={removal().retained}>
-                  {(entry) => (
-                    <li data-package-retained={`${entry.kind}:${entry.name}`} data-retained-reason={entry.reasonCode ?? ""}>
-                      <code>{entry.name}</code>
-                      <span>{entry.reasonCode ? (t(packageRetainedReasonKey(entry.reasonCode) as never) as string) : ""}</span>
-                    </li>
-                  )}
-                </For>
-              </ul>
-              <button class="alpha-ext-updbtn" data-dismiss-removal="" onClick={() => setPackRemoval(null)}>
-                {t("alpha.ext.gotIt")}
-              </button>
-            </div>
-          )}
-        </Show>
-        {/* 「读不出」与「没装」**永远分开**:折叠成一句「暂无扩展包」会让用户以为东西丢了,
-            于是去重装 —— 而重装会撞上同名拒绝。 */}
-        <Show when={packagesUnreadable()}>
-          <SecRow label={t("alpha.ext.packagesSection")} />
-          <div class="alpha-ext-verify-note" data-packages-unreadable="" role="alert">
-            <b>{t("alpha.ext.packagesUnreadableTitle")}</b>
-            <p>{(state() as { reason: string }).reason}</p>
-            <button class="alpha-ext-updbtn" onClick={() => void refetchPackages()}>
-              {t("alpha.ext.retry")}
+  // 整包移除的结果与「读不出」—— 区块级,**故意放在包行之外**:行会随着包图消失,解释不能跟着走;
+  // 「读不出」与「没装」**永远分开**,折叠成一句「暂无扩展包」会让用户以为东西丢了而去重装。
+  const PackageFeedback = () => (
+    <>
+      <Show when={packRemoval()}>
+        {(removal) => (
+          <div class="alpha-ext-verify-note" data-package-removal={removal().packageId} role="status">
+            <b>{t("alpha.ext.packageRemovedWithRetained", { pack: removal().label, count: String(removal().retained.length) })}</b>
+            <ul class="alpha-ext-package-retained">
+              <For each={removal().retained}>
+                {(entry) => (
+                  <li data-package-retained={`${entry.kind}:${entry.name}`} data-retained-reason={entry.reasonCode ?? ""}>
+                    <code>{entry.name}</code>
+                    <span>{entry.reasonCode ? (t(packageRetainedReasonKey(entry.reasonCode) as never) as string) : ""}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <button class="alpha-ext-updbtn" data-dismiss-removal="" onClick={() => setPackRemoval(null)}>
+              {t("alpha.ext.gotIt")}
             </button>
           </div>
-        </Show>
-        <Show when={ordered().length > 0}>
-          <SecRow label={t("alpha.ext.packagesSection")} count={ordered().length} />
-          <p class="alpha-ext-dnote" style={{ margin: "0 2px 8px" }}>{t("alpha.ext.packagesGroupNote")}</p>
-          <For each={ordered()}>
-            {(pack) => {
-              const enabledCount = () => pack.components.filter((c) => c.desiredState === "enabled").length
-              // 来源**只从 child record 的 `origin` 读**(基线 §8 纪律 2)。显示名再怎么写,
-              // 都不参与这个判定 —— `#737`:不从 id 读结构,同理不从展示字段读身份。
-              const local = () => pack.origin === "imported-claude" || pack.origin === "imported-agents"
-              return (
-                <div class="alpha-ext-pack" data-installed-package={pack.packageId}>
-                  <div class="alpha-ext-pack-h">
-                    <div class="alpha-ext-man-body">
-                      <div class="alpha-ext-man-nm">
-                        <b data-package-label={pack.packageId}>{packLabel(pack)}</b>
-                        <span class="alpha-ext-type-pill">{t("alpha.ext.packageType")}</span>
-                        <span class="alpha-ext-type-pill" data-off="" data-package-origin={pack.origin ?? ""}>
-                          {local() ? t("alpha.ext.packageFromLocalFolder") : t("alpha.ext.packageFromCatalog")}
-                        </span>
-                      </div>
-                      <div class="alpha-ext-man-st">
-                        {pack.version ? `v${pack.version}` : t("alpha.ext.packageNoVersion")} ·{" "}
-                        {t("alpha.ext.packageSkillCount", { count: String(pack.components.length) })} ·{" "}
-                        {enabledCount() === 0
-                          ? t("alpha.ext.packageNoneEnabled")
-                          : t("alpha.ext.packageSomeEnabled", { count: String(enabledCount()) })}
-                      </div>
-                    </div>
-                    <button
-                      class="alpha-ext-add"
-                      data-variant="danger"
-                      data-package-remove={pack.packageId}
-                      disabled={packBusy() === pack.packageId}
-                      onClick={() => void runRemovePackage(pack.packageId)}
-                    >
-                      {packBusy() === pack.packageId ? t("alpha.ext.packageRemoving") : t("alpha.ext.packageActionUninstall")}
-                    </button>
-                  </div>
-                  {/* 裁决 B 的必然连带:装完默认全关 ⇒ 不说这一句,用户按完确认拿不到任何东西。
-                      有任意一个被启用过就不再出现。 */}
-                  <Show when={enabledCount() === 0}>
-                    <p class="alpha-ext-pack-lead">{t("alpha.ext.packageAllOffLead")}</p>
-                  </Show>
-                  <div class="alpha-ext-pack-cs">
-                    <For each={pack.components}>
-                      {(component) => <PackageComponentRow packageId={pack.packageId} component={component} />}
-                    </For>
-                  </div>
-                  <Show when={packErr()[pack.packageId]}>
-                    {(error) => (
-                      <p class="alpha-ext-card-err" data-package-error={pack.packageId} role="alert">
-                        {error()}
-                      </p>
-                    )}
-                  </Show>
-                </div>
-              )
-            }}
-          </For>
-        </Show>
-      </>
-    )
-  }
+        )}
+      </Show>
+      <Show when={packagesUnreadable()}>
+        <div class="alpha-ext-verify-note" data-packages-unreadable="" role="alert">
+          <b>{t("alpha.ext.packagesUnreadableTitle")}</b>
+          <p>{(installedPackages() as { reason: string }).reason}</p>
+          <button class="alpha-ext-updbtn" onClick={() => void refetchPackages()}>
+            {t("alpha.ext.retry")}
+          </button>
+        </div>
+      </Show>
+    </>
+  )
 
+  // REQ-103(#195)→ `#1594` 已安装行:图标 + 名称 + 一行状态 + 一个动作。三态正交的事实(健康 = governance、
+  // 启用 = 账本 desiredState、生效 = main 三档)仍各从原数据源读,只是合成一行、取最要紧的那一件说。
+  // 没有要处理的事时描述照常,动作是「…」(停用 / 移除 / 设置);有要处理的事(去授权 / 开启 / 立即生效 /
+  // 审查更新 / 会话开关)时那颗按钮就是动作 —— 停用、移除在详情页;进不了详情页的行(项目行、手动加的连接器、
+  // 本地导入的技能)「…」照样留在旁边,移除入口一个不少。
   const InstalledRow = (cp: { row: ManageRow }) => {
     const row = cp.row
+    const rowKey = `${row.type}:${row.name}`
     const ic = iconForRow(row.entry, row.type, row.name)
     const openRow = () => {
       if (row.entry) {
@@ -2016,7 +1673,7 @@ export function ExtensionHub(props: {
     const clickable = () =>
       row.receipt.scope !== "project" &&
       (!!row.entry || (row.type === "agent" && ext.store.agents.some((x) => x.name === row.name)))
-    // health 三态:governance 只读真源按 (id,scope) join;MCP 实时错误(SDK 真相)叠加在最上(操作性失败最重)。
+    // health 三态:governance 只读真源按 (id,scope) join。
     const gov = () => inventoryInstallRow(governance(), row.receipt.id, row.receipt.scope)
     const health = () => {
       const g = gov()
@@ -2044,8 +1701,7 @@ export function ExtensionHub(props: {
       }
     }
     // #397 策展身份 → #408 PR-C:labs(session-grant)行的真实会话开关 —— 状态机真源 = main grant
-    // 登记 + 本地连接结果(sessionViewFor);非 mcp 的 labs 行无引擎瞬态激活面,不渲染开关(假开关
-    // 禁止),状态行如实说明。
+    // 登记 + 本地连接结果(sessionViewFor);非 mcp 的 labs 行无引擎瞬态激活面,不给开关(假开关禁止)。
     const rowCst = createMemo(() => statusOf(row.receipt.id))
     const rowSessionGrant = () => isSessionGrant(rowCst())
     const rowSessionView = createMemo(() => sessionViewFor(row.receipt.id))
@@ -2055,16 +1711,7 @@ export function ExtensionHub(props: {
         : undefined,
     )
     const activationText = () => {
-      const project = projectMcpView()
-      if (project) return t(project.textKey)
-      if (rowSessionGrant())
-        return row.type === "mcp" ? t(rowSessionView().textKey) : t("alpha.ext.sessionKindUnsupportedRow")
-      if (row.type !== "mcp") return desiredOn() ? t("alpha.ext.installed") : t("alpha.ext.notEnabledHint")
-      // `#733`:`needs_auth` 不是「未连接」——它是一个用户能自己修好的状态,
-      // 说成「未连接」等于把唯一的补救路径从界面上抹掉。
-      if (row.mcp?.needsAuth) return t("alpha.ext.mcpNeedsAuth")
-      // `#1563`:还在后台启动(准备中)不是「已停用」;复用定制中心三档视图给同一状态的文案键(定稿归 T19)。
-      if (row.mcp?.pending) return t("alpha.ext.hubReasonNotLoaded")
+      if (row.type !== "mcp") return desiredOn() ? t("alpha.ext.installed") : t("alpha.ext.notOn")
       return row.mcp?.connected ? t("alpha.ext.enabledLive") : t("alpha.ext.disabled")
     }
     const isUpdatable = () =>
@@ -2082,130 +1729,96 @@ export function ExtensionHub(props: {
         setReloadBusy(false)
       }
     }
+    // #395:开关只给**有禁用生效面**的类型 —— mcp/agent(主权注入)、plugin(alpha.jsonc plugin[])、skill(允许集)。
+    // Codex r12 Major3:command/bundle 无生效面,cloud 无本地运行面;project 收据只读(Codex r1 M2 + #307);
+    // #397:session-grant 行不给持久开关(main 闸拒持久启用)。
+    const hasToggle = () =>
+      (row.type === "mcp" || row.type === "agent" || row.type === "plugin" || row.type === "skill") &&
+      row.receipt.scope !== "project" &&
+      !rowSessionGrant()
+    const isOn = () => (row.type === "mcp" && row.receipt.installedAt === "" ? !!row.mcp?.connected : desiredOn())
+
+    // 一行状态:取最要紧的那一件。
+    const line = (): { text: string; err?: boolean; hub?: string; detail?: string } => {
+      if (row.type === "mcp" && row.mcp?.error)
+        return { text: row.mcp.repair === "reinstall-app" ? t("alpha.ext.officeRuntimeMissing") : row.mcp.error, err: true }
+      // `#733`:`needs_auth` 不是「未连接」——它是一个用户能自己修好的状态。
+      if (row.type === "mcp" && row.mcp?.needsAuth) return { text: t("alpha.ext.mcpNeedsAuth") }
+      if (rowSessionGrant())
+        return { text: row.type === "mcp" ? t(rowSessionView().textKey) : t("alpha.ext.sessionKindUnsupportedRow") }
+      const hs = hubState()
+      const hubText = hs ? (hs.reasonKey ? `${t(hs.textKey)} · ${t(hs.reasonKey)}` : t(hs.textKey)) : ""
+      // #395:账本 disabled 的诚实呈现(未完成审核的扩展装上默认关闭)。`#1529`:停用也要一次重载才生效 ——
+      // 还没生效时两件事一起说,「立即生效」照给。
+      if (!desiredOn())
+        return hs && hs.reloadNow
+          ? { text: `${t("alpha.ext.notOn")} · ${hubText}`, hub: hs.state, detail: hs.detail }
+          : { text: t("alpha.ext.notOn") }
+      if (hs && hs.state !== "available") return { text: hubText, hub: hs.state, detail: hs.detail }
+      const hp = health()
+      if (hp && hp.tone === "warn") return { text: t(hp.textKey) }
+      // `#1563`:还在后台启动(准备中)不是「已停用」。
+      if (row.mcp?.pending) return { text: t("alpha.ext.hubReasonNotLoaded") }
+      // REQ-105:上游归档(禁自动更新);REQ-135:已退役的社区 Office 连接器。
+      if (officeAdvisoryFor({ id: row.receipt.id, name: row.name })) return { text: t("alpha.ext.advArchivedUnsupported") }
+      if (retiredCommunityOfficeFor({ id: row.receipt.id, name: row.name })) return { text: t("alpha.ext.retiredCommunityChip") }
+      if (row.entry) return { text: catalogDescription(row.entry), hub: hs?.state }
+      return { text: hs ? t(hs.textKey) : activationText(), hub: hs?.state }
+    }
+    const attention = (): "auth" | "session" | "enable" | "reload" | "update" | undefined => {
+      if (row.type === "mcp" && row.mcp?.needsAuth) return "auth"
+      if (row.type === "mcp" && row.receipt.scope !== "project" && rowSessionGrant()) return "session"
+      if (hubState()?.reloadNow) return "reload"
+      if (hasToggle() && !isOn()) return "enable"
+      if (isUpdatable()) return "update"
+      return undefined
+    }
+    const menuItems = () => [
+      ...(hasToggle()
+        ? [{ key: isOn() ? "disable" : "enable", label: isOn() ? t("alpha.ext.turnOff") : t("alpha.ext.turnOn"), disabled: stateBusy[0](), onSelect: () => void toggleState() }]
+        : []),
+      { key: "remove", label: t("alpha.ext.remove"), danger: true, onSelect: () => void onUninstall(row.receipt) },
+      ...(clickable() ? [{ key: "settings", label: t("alpha.ext.rowSetup"), onSelect: openRow }] : []),
+    ]
     return (
-      <div class="alpha-ext-man" data-clickable={clickable() ? "" : undefined} onClick={() => clickable() && openRow()}>
-        <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
+      <div
+        class="alpha-ext-kit"
+        data-installed-row={rowKey}
+        data-clickable={clickable() ? "" : undefined}
+        onClick={() => clickable() && openRow()}
+      >
+        <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
           {ic.glyph}
         </span>
-        <div class="alpha-ext-man-body">
-          <div class="alpha-ext-man-nm">
+        <div class="alpha-ext-kit-body">
+          <div class="alpha-ext-kit-ttl">
             <b title={row.name}>{row.displayName}</b>
-            {/* #397:分级 chip(与浏览页同词;未分级 = 缺席即身份) */}
-            <Show when={curatedOf(rowCst())}>
-              {(c) => (
-                <span class="alpha-ext-chip" data-shelf={c().tier}>
-                  {t(SHELF_CHIP_KEYS[c().tier] as never)}
-                </span>
-              )}
-            </Show>
-            <span class="alpha-ext-type-pill">{typeLabel(row.type)}</span>
-            <Show when={row.version}>
-              <span class="alpha-ext-ver">v{row.version}</span>
-            </Show>
-            {/* #397:归档已装行如实警示(可继续使用或卸载,不强拆;REQ-105 同一诚实原则) */}
-            <Show when={isArchived(rowCst())}>
-              <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.shelfArchivedChip")}</span>
-            </Show>
-            {/* #395:未启用徽标(账本 disabled 的诚实呈现;开关打开即消失)。
-                #408 r1 Major:session-grant 行排除 —— 其账本恒 disabled 是设计(持久 enable 非法),
-                desiredOn() 恒 false 会让「已安装 · 未启用」与「本次会话已启用」并存;会话态由
-                状态行 + 琥珀开关承载(v6 稿改动四帧的实验室行本就无此徽标,off 态语义 =
-                「每次会话单独开启」,持久「未启用」措辞在此即误导)。 */}
-            <Show when={row.receipt.scope !== "project" && !desiredOn() && !rowSessionGrant()}>
-              <span class="alpha-ext-type-pill" data-off="">
-                {t("alpha.ext.notEnabledChip")}
-              </span>
-            </Show>
-            {/* `#784`:这一条属于某个扩展包 —— 如实标出来。这枚标是「为什么它不能被单独移除」
-                这句话在界面上唯一的前情提要;没有它,那条拒绝会显得毫无来由。 */}
-            <Show when={packageOwnerOf().get(`${row.type}:${row.name}`)}>
-              {(owner) => (
-                <span class="alpha-ext-type-pill" data-off="" data-package-member={owner().packageId}>
-                  {t("alpha.ext.memberOfPackage", { pack: owner().label })}
-                </span>
-              )}
-            </Show>
-            {/* REQ-105:archived + unsupported 徽标(上游归档;禁自动更新) */}
-            <Show when={officeAdvisoryFor({ id: row.receipt.id, name: row.name })}>
-              <span class="alpha-ext-verify-chip" data-archived="">
-                {t("alpha.ext.advArchivedUnsupported")}
-              </span>
-            </Show>
-            <Show when={retiredCommunityOfficeFor({ id: row.receipt.id, name: row.name })}>
-              <span class="alpha-ext-verify-chip" data-archived="">
-                {t("alpha.ext.retiredCommunityChip")}
-              </span>
-            </Show>
           </div>
-          {/* 状态行:健康点 + 健康文字 · 启用态(来源/类型/版本收进详情页) */}
-          <div class="alpha-ext-man-st">
-            <Show
-              when={projectMcpView()}
-              fallback={
-                <Show
-                  when={row.type === "mcp" && row.mcp?.error}
-                  fallback={
-                    <Show
-                      when={health()}
-                      fallback={
-                        <>
-                          {/* #408:会话行的点随开关状态机走(ok=已启用已连接 / warn=已开但连接未成功 / muted=关) */}
-                          <span
-                            class="alpha-ext-man-dot"
-                            data-tone={rowSessionGrant() && row.type === "mcp" ? rowSessionView().tone : undefined}
-                            data-on={!rowSessionGrant() && (row.type !== "mcp" || row.mcp?.connected) ? "" : undefined}
-                          />
-                          {activationText()}
-                        </>
-                      }
-                    >
-                      {(hp) => (
-                        <>
-                          <span class="alpha-ext-man-dot" data-tone={hp().tone} />
-                          {t(hp().textKey)} · {activationText()}
-                        </>
-                      )}
-                    </Show>
-                  }
-                >
-                  <span class="alpha-ext-man-dot" data-err="" />
-                  {row.mcp?.repair === "reinstall-app" ? t("alpha.ext.officeRuntimeMissing") : row.mcp?.error}
-                </Show>
-              }
-            >
-              {(project) => (
-                <>
-                  <span
-                    class="alpha-ext-man-dot"
-                    data-tone={project().tone}
-                    data-project-mcp-state={project().state}
-                  />
-                  {activationText()}
-                  <Show when={health()}>{(hp) => <> · {t(hp().textKey)}</>}</Show>
-                </>
-              )}
-            </Show>
-          </div>
-          <Show when={hubState()}>
-            {(hs) => (
-              <div class="alpha-ext-man-st" data-hub-state={hs().state} title={hs().detail}>
-                <span class="alpha-ext-man-dot" data-tone={hs().tone} />
-                {t(hs().textKey)}
-                <Show when={hs().reasonKey}>{(key) => <> · {t(key())}</>}</Show>
+          {/* REQ-136:项目行的状态只消费 main 给的项目范围判定(name-only 的全局实时状态不许串进来)。 */}
+          <Show
+            when={projectMcpView()}
+            fallback={
+              <div class="alpha-ext-kit-desc" data-err={line().err ? "" : undefined} data-hub-state={line().hub} title={line().detail}>
+                {line().text}
+              </div>
+            }
+          >
+            {(project) => (
+              <div class="alpha-ext-kit-desc" data-project-mcp-state={project().state}>
+                {t(project().textKey)}
               </div>
             )}
           </Show>
-          {/* `#784` 第 8 跳:单独移除被拒 ⇒ **明确拒绝 + 指向正确动作**,不是静默什么都不做,
-              更不是回一句「已移除」而东西还在。注意开关仍然可用:单独**停用**是合法的,
-              不能单独**移除**而已。 */}
-          <Show when={rowRefusal()[`${row.type}:${row.name}`]}>
+          <Show when={updErr()[row.receipt.id]}>
+            <p class="alpha-ext-card-err">{updErr()[row.receipt.id]}</p>
+          </Show>
+          {/* `#784` 第 8 跳:单独移除被拒 ⇒ **明确拒绝 + 指向正确动作**(移除整个扩展包,在连接器页)。
+              单独**停用**仍然合法,不能单独**移除**而已。 */}
+          <Show when={rowRefusal()[rowKey]}>
             {(packageId) => (
-              <div class="alpha-ext-man-refusal" data-row-refusal={`${row.type}:${row.name}`} role="alert">
+              <div class="alpha-ext-man-refusal" data-row-refusal={rowKey} role="alert">
                 <div class="alpha-ext-man-st" data-err="">
-                  <span class="alpha-ext-man-dot" data-tone="warn" />
-                  {t("alpha.ext.componentOwnedByPackage", {
-                    pack: packageOwnerOf().get(`${row.type}:${row.name}`)?.label ?? packageId(),
-                  })}
+                  {t("alpha.ext.componentOwnedByPackage", { pack: packageOwnerOf().get(rowKey)?.label ?? packageId() })}
                 </div>
                 <button
                   class="alpha-ext-updbtn"
@@ -2213,6 +1826,7 @@ export function ExtensionHub(props: {
                   onClick={(ev) => {
                     ev.stopPropagation()
                     setHighlightPackage(packageId())
+                    gotoSection("connectors")
                   }}
                 >
                   {t("alpha.ext.removeWholePackage")}
@@ -2221,105 +1835,264 @@ export function ExtensionHub(props: {
             )}
           </Show>
         </div>
-        {/* `#733`:MCP 走 OAuth 且当前没令牌 ⇒ 行内出一颗能点的「去授权」。
-            这颗按钮与状态行那句「需要重新登录」是同一个事实的两半,缺任何一半用户都走不出去。 */}
-        <Show when={row.type === "mcp" && row.mcp?.needsAuth}>
-          <McpNeedsAuthAction name={row.name} />
+        <Show when={attention()}>
+          {(kind) => (
+            <>
+              {/* `#733`:MCP 走 OAuth 且当前没令牌 ⇒ 一颗能点的「去授权」,与状态「需要重新登录」是同一个事实的两半。 */}
+              <Show when={kind() === "auth"}>
+                <McpNeedsAuthAction name={row.name} />
+              </Show>
+              {/* #408 PR-C:labs mcp 行的会话开关 —— 开 = grant + 同 directory 热连,关 = 撤销 + 断连;会话结束自动归位。
+                  home/new-session 无 instance 上下文 → 禁用 + 如实提示(main 要求绝对 directory,fail-closed)。 */}
+              <Show when={kind() === "session"}>
+                <button
+                  class="alpha-ext-add"
+                  data-session-toggle={rowSessionView().on ? "on" : "off"}
+                  disabled={sessionBusy() === row.receipt.id || !sessionDirectory()}
+                  title={!sessionDirectory() ? t("alpha.ext.sessionNeedsProject") : undefined}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    void runSessionToggle({ catalogId: row.receipt.id, name: row.name, on: !rowSessionView().on })
+                  }}
+                >
+                  {rowSessionView().on ? t("alpha.ext.close") : t("alpha.ext.turnOn")}
+                </button>
+              </Show>
+              <Show when={kind() === "enable"}>
+                <button
+                  class="alpha-ext-add"
+                  data-enable-row={rowKey}
+                  disabled={stateBusy[0]()}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    void toggleState()
+                  }}
+                >
+                  {t("alpha.ext.turnOn")}
+                </button>
+              </Show>
+              {/* REQ-234 `#1529`:待生效的行给一个显式「立即生效」—— 唯一会跳过「等对话空闲」的入口,悬停说清代价。 */}
+              <Show when={kind() === "reload"}>
+                <button
+                  class="alpha-ext-add"
+                  data-hub-reload-now=""
+                  title={t("alpha.ext.hubReloadNowHint")}
+                  disabled={reloadBusy()}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    void reloadNow()
+                  }}
+                >
+                  {t("alpha.ext.hubReloadNow")}
+                </button>
+              </Show>
+              {/* REQ-103:审查更新(复用既有 runUpdate —— MCP 走确认框重装,其余原子更新) */}
+              <Show when={kind() === "update"}>
+                <button
+                  class="alpha-ext-add"
+                  data-update-row={rowKey}
+                  disabled={updBusy() === row.receipt.id}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    void runUpdate(row.receipt)
+                  }}
+                >
+                  {updBusy() === row.receipt.id ? t("alpha.ext.adding") : t("alpha.ext.reviewUpdate")}
+                </button>
+              </Show>
+            </>
+          )}
         </Show>
-        {/* REQ-234 `#1529`:待重载的行给一个显式「现在重载」—— 唯一会跳过「等对话空闲」的入口,按钮上说清代价。 */}
-        <Show when={hubState()?.reloadNow}>
-          <button
-            class="alpha-ext-updbtn"
-            data-hub-reload-now=""
-            title={t("alpha.ext.hubReloadNowHint")}
-            disabled={reloadBusy()}
-            onClick={(ev) => {
-              ev.stopPropagation()
-              void reloadNow()
-            }}
-          >
-            {t("alpha.ext.hubReloadNow")}
-          </button>
+        <Show when={!attention() || !clickable()}>
+          <MoreMenu id={`installed:${rowKey}:${row.receipt.scope ?? "global"}`} items={menuItems()} />
         </Show>
-        {/* REQ-103:审查更新入口(有更新的行内;复用既有 runUpdate —— MCP 走确认框重装,其余原子更新) */}
-        <Show when={isUpdatable()}>
-          <button
-            class="alpha-ext-updbtn"
-            disabled={updBusy() === row.receipt.id}
-            onClick={(ev) => {
-              ev.stopPropagation()
-              void runUpdate(row.receipt)
-            }}
-          >
-            {updBusy() === row.receipt.id ? t("alpha.ext.adding") : t("alpha.ext.reviewUpdate")}
-          </button>
-        </Show>
-        {/* #395:开关只给**有禁用生效面**的类型 —— mcp/agent(主权注入)、plugin(alpha.jsonc plugin[])、
-            skill(允许集)。Codex r12 Major3:command/bundle 无生效面(翻 desiredState 谎报已禁),cloud 无
-            本地运行面,一律不出行内开关。project 收据只读不出开关(Codex r1 M2 + #307)。 */}
-        {/* #397:session-grant 行不渲染持久开关(main 闸拒持久启用;假开关禁止 —— 状态行已如实说明) */}
-        <Show when={(row.type === "mcp" || row.type === "agent" || row.type === "plugin" || row.type === "skill") && row.receipt.scope !== "project" && !rowSessionGrant()}>
-          <button
-            class="alpha-ext-sw"
-            data-on={(row.type === "mcp" && row.receipt.installedAt === "" ? row.mcp?.connected : desiredOn()) ? "" : undefined}
-            disabled={stateBusy[0]()}
-            aria-label={desiredOn() ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
-            onClick={(ev) => {
-              ev.stopPropagation()
-              void toggleState()
-            }}
-          />
-        </Show>
-        {/* #408 PR-C:labs mcp 行的**会话开关**(琥珀;v6 稿改动四)—— 开 = grant + 同 directory 热连,
-            关 = 撤销 + 断连;会话结束自动归位(数据层清空)。home/new-session 无 instance 上下文 →
-            禁用 + 如实提示(main 要求绝对 directory,fail-closed;非 mcp labs 行无开关,见状态行)。 */}
-        <Show when={row.type === "mcp" && row.receipt.scope !== "project" && rowSessionGrant()}>
-          <button
-            class="alpha-ext-sw"
-            data-session=""
-            data-on={rowSessionView().on ? "" : undefined}
-            disabled={sessionBusy() === row.receipt.id || !sessionDirectory()}
-            title={!sessionDirectory() ? t("alpha.ext.sessionNeedsProject") : undefined}
-            aria-label={rowSessionView().on ? t("alpha.ext.sessionOnRow") : t("alpha.ext.sessionOffRow")}
-            onClick={(ev) => {
-              ev.stopPropagation()
-              void runSessionToggle({ catalogId: row.receipt.id, name: row.name, on: !rowSessionView().on })
-            }}
-          />
-        </Show>
-        <button
-          class="alpha-ext-iconbtn"
-          title={t("alpha.ext.remove")}
-          aria-label={t("alpha.ext.remove")}
-          onClick={(ev) => {
-            ev.stopPropagation()
-            void onUninstall(row.receipt)
-          }}
-        >
-          <Svg class="alpha-ic alpha-ic-sm" d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
-        </button>
       </div>
     )
   }
+
+  // 平台云连接器(非目录条目,点开专属详情)。批准稿:已登录平台时在「已安装」组,否则在「Code Puppy 云」组首行,
+  // 动作是「登录」或「切换到平台模式」。
+  const CloudConnectorRow = () => (
+    <div class="alpha-ext-kit" data-clickable="" data-cloud-connector="" onClick={() => setDetail({ kind: "cloud-connector" })}>
+      <span class="alpha-ext-kit-ic" style={{ background: "#5c7cbf" }}>
+        云
+      </span>
+      <div class="alpha-ext-kit-body">
+        <div class="alpha-ext-kit-ttl">
+          <b>{t("alpha.ext.cloudConnectorTitle")}</b>
+        </div>
+        <div class="alpha-ext-kit-desc">
+          {/* `#733`:云连接器是用户看这条状态的**主要**地方 —— `needs_auth` 在这里也必须说成「需要重新登录」并给出动作。
+              `#624`:恢复中不能说「需登录平台模式」—— 用户已登录。 */}
+          <span
+            class="alpha-ext-cloudst"
+            data-st={
+              cloudReady()
+                ? cloudLive()?.needsAuth
+                  ? "idle"
+                  : cloudLive()?.connected
+                    ? "on"
+                    : "idle"
+                : cloudRecovering()
+                  ? "idle"
+                  : "off"
+            }
+          >
+            {cloudReady()
+              ? cloudLive()?.needsAuth
+                ? t("alpha.ext.mcpNeedsAuth")
+                : cloudLive()?.connected
+                  ? t("alpha.ext.cloudConnConnected")
+                  : t("alpha.ext.cloudConnDisconnected")
+              : cloudRecovering()
+                ? t("alpha.ext.cloudConnRecovering")
+                : t("alpha.ext.cloudConnNeedLogin")}
+          </span>
+        </div>
+      </div>
+      {/* server 名取**引擎报回来的那个**(`InstalledState.name`),不在 renderer 再写一遍字面量。 */}
+      <Show
+        when={cloudReady()}
+        fallback={
+          // `#624`:恢复中的用户**已登录、已在 platform 模式** —— 不给「登录 / 切换」(点下去是 no-op)。
+          <Show when={!cloudRecovering()}>
+            <Show
+              when={authState().status !== "logged-in"}
+              fallback={
+                <button
+                  class="alpha-ext-add"
+                  data-variant="primary"
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    void window.api.auth.setMode("platform")
+                  }}
+                >
+                  {t("alpha.ext.cloudSwitchMode")}
+                </button>
+              }
+            >
+              <button
+                class="alpha-ext-add"
+                data-variant="primary"
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  void window.api.auth.start()
+                }}
+              >
+                {t("alpha.ext.cloudLoginCta")}
+              </button>
+            </Show>
+          </Show>
+        }
+      >
+        <Show
+          when={cloudLive()?.needsAuth}
+          fallback={
+            <MoreMenu
+              id="cloud-connector"
+              items={[{ key: "settings", label: t("alpha.ext.rowSetup"), onSelect: () => setDetail({ kind: "cloud-connector" }) }]}
+            />
+          }
+        >
+          <McpNeedsAuthAction name={cloudLive()!.name} />
+        </Show>
+      </Show>
+    </div>
+  )
+
+  // ── 页 ───────────────────────────────────────────────────────────────────────────────────
+  const currentTab = () => TABS.find((x) => x.key === section()) ?? TABS[0]!
+  const installedPage = createMemo(() => installedFor(section()))
+  const pageHasUpdates = () => updatable().some((r) => pageOfType(r.type) === section())
+  const ownAgentsUnreceipted = createMemo(() => {
+    const q = query().trim().toLowerCase()
+    return ownAgents().filter(
+      (a) => !ext.store.receipts.some((r) => r.type === "agent" && r.name === a.name) && (!q || matchesAgent(a)),
+    )
+  })
+  const factorySkillNames = createMemo(() => ext.factorySkills().filter((name) => matchesAgent({ name })))
+  const cloudConnectorMatches = () => matchesAgent({ name: t("alpha.ext.cloudConnectorTitle") })
+  // 「添加 ▾」(批准稿 `#hub-add`,取代「导入」页签):每一项打开的都是原来那个导入窗口,窗口本身不改。
+  const addItems = (): MoreMenuItem[] => [
+    { key: "folder", label: t("alpha.ext.importFolder"), disabled: importBusy(), onSelect: () => void runImportFolder() },
+    {
+      key: "git",
+      label: t("alpha.ext.importGit"),
+      disabled: importBusy(),
+      onSelect: () => {
+        setImportErr("")
+        setImportInput("")
+        setImportDialog("git")
+      },
+    },
+    {
+      key: "custom-connector",
+      label: t("alpha.ext.customMcp"),
+      disabled: cmBusy(),
+      onSelect: () => {
+        setCmErr("")
+        setCustomMcpOpen(true)
+      },
+    },
+    { key: "agent", label: t("alpha.ext.importAgent"), disabled: agentBusy(), onSelect: () => void runPickAgentFile() },
+  ]
+  const InstalledHead = () => (
+    <SecRow
+      label={t("alpha.ext.tabInstalled")}
+      actionLabel={pageHasUpdates() ? t("alpha.ext.updateAll") : undefined}
+      onAction={() => void runUpdateAll()}
+    />
+  )
+  const ProjectGroup = () => (
+    <Show when={projectDir() && installedPage().project.length > 0}>
+      <div class="alpha-ext-scopeh">
+        {t("alpha.ext.scopeProjectGroup")} · {projectLabel(projectDir()!)}
+      </div>
+      <div class="alpha-ext-grid" data-group="project">
+        <For each={installedPage().project}>{(row) => <InstalledRow row={row} />}</For>
+      </div>
+    </Show>
+  )
+  const Skeleton = () => (
+    <Show when={!ext.store.ready && installedAll().length === 0}>
+      <div class="alpha-ext-grid" aria-hidden="true">
+        <div class="alpha-ext-skel-row" />
+        <div class="alpha-ext-skel-row" />
+      </div>
+    </Show>
+  )
+  const Segments = () => (
+    <div class="alpha-ext-seg" role="tablist">
+      <button role="tab" data-segment="recommended" data-on={segment() === "recommended" ? "" : undefined} onClick={() => setSegment("recommended")}>
+        {t("alpha.ext.tabFeatured")}
+      </button>
+      <button role="tab" data-segment="system" data-on={segment() === "system" ? "" : undefined} onClick={() => setSegment("system")}>
+        {t("alpha.ext.segSystem")}
+      </button>
+    </div>
+  )
+  const NoMatches = (cp: { when: boolean }) => (
+    <Show when={searching() && cp.when}>
+      <EmptyState title={t("alpha.ext.noResults")} />
+    </Show>
+  )
 
   return (
     <Show when={props.open()}>
       <Portal mount={host}>
         <div class="a-ui alpha-ext-page" role="region" aria-label={t("alpha.ext.hub")}>
-          {/* ░░ HORIZONTAL TAB BAR (user-approved IA) ░░ */}
+          {/* ░░ HORIZONTAL TAB BAR(批准稿 `#hub-tabs`:连接器 / 技能 / 助手) ░░ */}
           <nav class="alpha-ext-tabs">
             <div class="alpha-ext-tabs-inner">
               <For each={TABS}>
                 {(item) => (
                   <button
                     class="alpha-ext-tab"
+                    data-tab={item.key}
                     data-active={section() === item.key ? "" : undefined}
                     onClick={() => gotoSection(item.key)}
                   >
                     {t(item.labelKey as never)}
-                    <Show when={item.key === "installed" && updatable().length > 0}>
-                      <span class="alpha-ext-tab-badge">{updatable().length}</span>
-                    </Show>
                   </button>
                 )}
               </For>
@@ -2377,548 +2150,204 @@ export function ExtensionHub(props: {
                   />
                 }
               >
-                {/* Global persistent search — browse tabs only; a non-empty query shows
-                    cross-type grouped results (REQ-019 T1). */}
-                <Show when={BROWSE_SECTIONS.includes(section())}>
+                {/* 页头(批准稿 `#hub-connectors`):标题 + 一行副标题 + 本页搜索 +「添加 ▾」。 */}
+                <header class="alpha-ext-pagehd">
+                  <div class="alpha-ext-pagehd-t">
+                    <h1 class="alpha-ext-title">{t(currentTab().labelKey as never)}</h1>
+                    <p class="alpha-ext-sub">{t(currentTab().subKey as never)}</p>
+                  </div>
                   <div class="alpha-ext-search">
                     <span class="alpha-ext-search-ic">
                       <SearchIc />
                     </span>
                     <input
                       type="search"
-                      placeholder={t("alpha.ext.search")}
+                      placeholder={t(currentTab().searchKey as never)}
                       value={query()}
                       onInput={(ev) => setQuery(ev.currentTarget.value)}
                     />
                   </div>
+                  <MoreMenu id="add" trigger={`${t("alpha.ext.add")} ▾`} primary items={addItems()} />
+                </header>
+                {/* B11:导入失败行内呈现(文件夹 / 助手文件走这里;Git 与自定义连接器的失败落在各自窗口内) */}
+                <Show when={importErr() && !importDialog()}>
+                  <p class="alpha-ext-import-err">{importErr()}</p>
+                </Show>
+                <Show when={agentErr() && !agentPreview()}>
+                  <p class="alpha-ext-import-err">{agentErr()}</p>
+                </Show>
+                <Show when={importBusy() && !importDialog()}>
+                  <p class="alpha-ext-dnote">{t("alpha.ext.importing")}</p>
                 </Show>
 
-                {/* ░░ GLOBAL SEARCH RESULTS ░░ */}
-                <Show when={searching() && BROWSE_SECTIONS.includes(section())}>
-                  <Show
-                    when={searchGroups().length > 0 || searchPackages().length > 0 || searchAgents().length > 0}
-                    fallback={<EmptyState title={t("alpha.ext.noResults")} />}
-                  >
-                    <Show when={searchPackages().length > 0}>
-                      <SecRow label={t("alpha.ext.packageType")} count={searchPackages().length} />
-                      <PackageGrid items={searchPackages()} />
+                {/* ░░ 连接器 ░░ */}
+                <Show when={section() === "connectors"}>
+                  {/* T3:存量迁移条(仅门控开启且检测到旧安装时;不碰用户自建内容) */}
+                  <Show when={migrateCandidates().length > 0}>
+                    <div class="alpha-ext-migrate">
+                      <div class="alpha-ext-migrate-t">{t("alpha.ext.migrateTitle", { count: migrateCandidates().length })}</div>
+                      <div class="alpha-ext-migrate-sub">{t("alpha.ext.migrateSub")}</div>
+                      <button class="alpha-ext-add" data-variant="primary" disabled={migrating()} onClick={() => void runMigration()}>
+                        {migrating() ? t("alpha.ext.migrating") : t("alpha.ext.migrateAction")}
+                      </button>
+                    </div>
+                  </Show>
+                  <InstalledHead />
+                  <PackageFeedback />
+                  <Skeleton />
+                  <div class="alpha-ext-grid" data-group="installed">
+                    <Show when={cloudReady() && cloudConnectorMatches()}>
+                      <CloudConnectorRow />
                     </Show>
-                    <For each={searchGroups()}>
+                    <For each={orderedPackages()}>{(pack) => <InstalledPackageRow pack={pack} />}</For>
+                    <For each={installedPage().global}>{(row) => <InstalledRow row={row} />}</For>
+                  </div>
+                  {/* `#784` R1 Major:扩展包清单读不出时**不许**同时说「还没有安装」—— 两条互相矛盾的信息摆在一起,
+                      用户会当成东西丢了而去重装,而重装会撞上同名拒绝。 */}
+                  <Show
+                    when={
+                      ext.store.ready &&
+                      !searching() &&
+                      !packagesUnreadable() &&
+                      !cloudReady() &&
+                      orderedPackages().length === 0 &&
+                      installedPage().global.length === 0 &&
+                      installedPage().project.length === 0
+                    }
+                  >
+                    <p class="alpha-ext-man-empty">{t("alpha.ext.empty")}</p>
+                  </Show>
+                  <ProjectGroup />
+                  <For each={connectorGroups()}>
+                    {(g) => (
+                      <>
+                        <SecRow label={catLabel(g.cat)} />
+                        <Grid items={g.items} group={g.cat} />
+                      </>
+                    )}
+                  </For>
+                  <Show when={browsablePackages().length > 0}>
+                    <SecRow label={t("alpha.ext.packageType")} />
+                    <div class="alpha-ext-grid" data-group="packages">
+                      <For each={browsablePackages()}>{(view) => <PackageRow view={view} />}</For>
+                    </div>
+                  </Show>
+                  {/* Code Puppy 云(原「云能力」页):灰显 ≠ 隐藏 —— 未登录 / 自带 Key 时可浏览,启用与发送被门控。 */}
+                  <Show
+                    when={(!cloudReady() && cloudConnectorMatches()) || browsableCloud().length > 0 || browsableCloudPackages().length > 0}
+                  >
+                    <SecRow label={t("alpha.ext.cat.cloud")} />
+                    <div class="alpha-ext-grid" data-group="cloud">
+                      <Show when={!cloudReady() && cloudConnectorMatches()}>
+                        <CloudConnectorRow />
+                      </Show>
+                      <For each={browsableCloud()}>{(e) => <EntryRow e={e} dim={!cloudReady()} />}</For>
+                      <For each={browsableCloudPackages()}>{(view) => <PackageRow view={view} dim={!cloudReady()} />}</For>
+                    </div>
+                  </Show>
+                  <Show when={browsable("bundle").length > 0}>
+                    <SecRow label={t("alpha.ext.tabBundles")} />
+                    <Grid items={browsable("bundle")} group="bundles" />
+                  </Show>
+                  <NoMatches
+                    when={
+                      installedPage().global.length === 0 &&
+                      installedPage().project.length === 0 &&
+                      orderedPackages().length === 0 &&
+                      !cloudConnectorMatches() &&
+                      connectorGroups().length === 0 &&
+                      browsablePackages().length === 0 &&
+                      browsableCloud().length === 0 &&
+                      browsableCloudPackages().length === 0 &&
+                      browsable("bundle").length === 0
+                    }
+                  />
+                </Show>
+
+                {/* ░░ 技能 ░░ */}
+                <Show when={section() === "skills"}>
+                  <InstalledHead />
+                  <Skeleton />
+                  <Show
+                    when={installedPage().global.length > 0}
+                    fallback={
+                      <Show when={ext.store.ready && !searching()}>
+                        <p class="alpha-ext-man-empty">
+                          {ext.factorySkills().length > 0 ? t("alpha.ext.skillsEmptyHint") : t("alpha.ext.empty")}
+                        </p>
+                      </Show>
+                    }
+                  >
+                    <div class="alpha-ext-grid" data-group="installed">
+                      <For each={installedPage().global}>{(row) => <InstalledRow row={row} />}</For>
+                    </div>
+                  </Show>
+                  <ProjectGroup />
+                  <Segments />
+                  <Show when={segment() === "recommended"}>
+                    <For each={skillGroups()}>
                       {(g) => (
                         <>
-                          <SecRow label={g.label} count={g.items.length} />
-                          <Grid items={g.items} />
+                          <SecRow label={catLabel(g.cat)} />
+                          <Grid items={g.items} group={g.cat} />
                         </>
                       )}
                     </For>
-                    <Show when={searchAgents().length > 0}>
-                      <SecRow label={t("alpha.ext.typeAgent")} count={searchAgents().length} />
-                      <div class="alpha-ext-grid">
-                        <For each={searchAgents()}>{(a) => <AgentCard a={a} />}</For>
+                    <NoMatches when={skillGroups().length === 0 && installedPage().global.length === 0} />
+                  </Show>
+                  {/* 「系统」= 应用自带的技能与内置命令(原「已安装 → 应用自带的功能」);隐藏 / 停用 / 自定义收进「…」。 */}
+                  <Show when={segment() === "system"}>
+                    <Show when={factorySkillNames().length > 0}>
+                      <div class="alpha-ext-grid" data-group="system">
+                        <For each={factorySkillNames()}>{(name) => <FactorySkillRow name={name} />}</For>
                       </div>
                     </Show>
-                  </Show>
-                </Show>
-
-                <Show when={!searching() || !BROWSE_SECTIONS.includes(section())}>
-                  {/* ░░ FEATURED ░░ */}
-                  <Show when={section() === "featured"}>
-                    <Hero title={t("alpha.ext.hub")} sub={t("alpha.ext.heroSub")} />
-                    {/* T3:存量迁移条(仅门控开启且检测到旧安装时;不碰用户自建内容) */}
-                    <Show when={migrateCandidates().length > 0}>
-                      <div class="alpha-ext-migrate">
-                        <div class="alpha-ext-migrate-t">
-                          {t("alpha.ext.migrateTitle", { count: migrateCandidates().length })}
-                        </div>
-                        <div class="alpha-ext-migrate-sub">{t("alpha.ext.migrateSub")}</div>
-                        <button class="alpha-ext-add" data-variant="primary" disabled={migrating()} onClick={() => void runMigration()}>
-                          {migrating() ? t("alpha.ext.migrating") : t("alpha.ext.migrateAction")}
-                        </button>
-                      </div>
-                    </Show>
-                    <Show when={installedAll().length > 0}>
-                      <SecRow
-                        label={t("alpha.ext.tabInstalled")}
-                        count={installedAll().length}
-                        actionLabel={t("alpha.ext.manage")}
-                        onAction={() => gotoSection("installed")}
-                      />
-                      <div class="alpha-ext-chips">
-                        <For each={installedAll()}>
-                          {(row) => {
-                            const ic = iconForRow(row.entry, row.type, row.name)
-                            return (
-                              <span class="alpha-ext-chip-pill" title={row.name}>
-                                <span class="alpha-ext-chip-d" style={{ background: ic.color }}>
-                                  {ic.glyph}
-                                </span>
-                                {row.displayName}
-                                <Show when={row.mcp?.connected}>
-                                  <span class="alpha-ext-chip-dot" />
-                                </Show>
-                              </span>
-                            )
-                          }}
-                        </For>
-                      </div>
-                    </Show>
-
-                    <Show when={installablePackages().length > 0}>
-                      <SecRow label={t("alpha.ext.packageType")} count={installablePackages().length} />
-                      <PackageGrid items={installablePackages()} />
-                    </Show>
-
-                    {/* #397 改动一:推荐 = 甄选驱动四货架(固定序 核心→精选→接入→实验室;空货架
-                        隐藏不造数据;未策展/归档/失养/过期/公示不进推荐 —— 它们仍在类型 tab 与搜索)。 */}
-                    <For each={shelves()}>
-                      {(shelf) => (
-                        <>
-                          <div class="alpha-ext-shelf-h">
-                            <b>{t(SHELF_TITLE_KEYS[shelf.tier].title as never)}</b>
-                            <span>{t(SHELF_TITLE_KEYS[shelf.tier].sub as never)}</span>
-                          </div>
-                          <Grid items={shelf.items} />
-                        </>
-                      )}
-                    </For>
-                    {/* r1-1:公示事实三态的诚实呈现 —— 核实中 / 不可核实(保守不推荐,分类页仍可浏览)/
-                        就绪但目录无已审核条目。绝不以空集当「没有公示」上架。 */}
-                    <Show when={advisoryState() === "loading"}>
-                      <EmptyState title={t("alpha.ext.advisoriesChecking")} />
-                    </Show>
-                    <Show when={advisoryState() === "unavailable"}>
-                      <EmptyState title={t("alpha.ext.advisoriesUnavailable")} />
-                    </Show>
-                    <Show when={advisoryState() === "ready" && shelves().length === 0}>
-                      <EmptyState title={t("alpha.ext.noShelves")} />
-                    </Show>
-                  </Show>
-
-                  {/* ░░ CONNECTORS (grouped by category) ░░ */}
-                  <Show when={section() === "connectors"}>
-                    <Hero title={t("alpha.ext.tabConnectors")} sub={t("alpha.ext.connectorsSub")} />
-                    <Filters />
-                    <Show when={groupedConnectors().length > 0 || ungradedConnectors().length > 0} fallback={<FilteredEmpty />}>
-                      <For each={groupedConnectors()}>
-                        {(g) => (
-                          <>
-                            <div class="alpha-ext-grp">
-                              {catLabel(g.cat)}
-                              <span class="alpha-ext-grp-ct">{g.items.length}</span>
-                            </div>
-                            <Grid items={g.items} />
-                          </>
-                        )}
-                      </For>
-                      {/* #397:未分级尾组(category 分组只对已分级;未策展/校验失败收尾,诚实组头) */}
-                      <UngradedGroup items={ungradedConnectors()} />
-                    </Show>
-                  </Show>
-
-                  {/* ░░ SKILLS ░░ */}
-                  <Show when={section() === "skills"}>
-                    <Hero title={t("alpha.ext.tabSkills")} sub={t("alpha.ext.skillsSub")} />
-                    <Filters />
-                    <Show
-                      when={byTypeF("skill").length > 0}
-                      fallback={<FilteredEmpty />}
-                    >
-                      <Show when={splitBrowse(byTypeF("skill"), curationById()).graded.length > 0}>
-                        <SecRow label={t("alpha.ext.allSkills")} count={splitBrowse(byTypeF("skill"), curationById()).graded.length} />
-                        <Grid items={splitBrowse(byTypeF("skill"), curationById()).graded} />
-                      </Show>
-                      <UngradedGroup items={splitBrowse(byTypeF("skill"), curationById()).ungraded} />
-                    </Show>
-                  </Show>
-
-                  {/* ░░ AGENTS ░░ (REQ-018 T7 / ADR-014 O2:Agent 作一等原语) */}
-                  <Show when={section() === "agents"}>
-                    <Hero title={t("alpha.ext.tabAgents")} sub={t("alpha.ext.agentsSub")} />
-                    <div class="alpha-ext-callout">
-                      {t("alpha.ext.agentsNote")}
-                      {/* REQ-036:创建表单已移除;创建 = 会话内经 agent-creator(出厂技能)对话式生成 */}
-                      <span class="alpha-ext-dnote"> {t("alpha.ext.createAgentViaChat")}</span>
-                    </div>
-                    <Show when={byTypeF("agent").length > 0}>
-                      <Show when={splitBrowse(byTypeF("agent"), curationById()).graded.length > 0}>
-                        <SecRow label={t("alpha.ext.installableAgents")} count={splitBrowse(byTypeF("agent"), curationById()).graded.length} />
-                        <Grid items={splitBrowse(byTypeF("agent"), curationById()).graded} />
-                      </Show>
-                      <UngradedGroup items={splitBrowse(byTypeF("agent"), curationById()).ungraded} />
-                    </Show>
-                    {/* REQ-079:引擎原生内置不再平铺(管理归治理面板);浏览面只剩精选 + 自建 */}
-                    <Show when={ownAgents().length > 0}>
-                      <SecRow label={t("alpha.ext.ownAgents")} count={ownAgents().length} />
-                      <div class="alpha-ext-grid">
-                        <For each={ownAgents()}>{(a) => <AgentCard a={a} />}</For>
-                      </div>
-                    </Show>
-                    <Show when={byTypeF("agent").length === 0 && ownAgents().length === 0}>
-                      <EmptyState title={t("alpha.ext.noResults")} />
-                    </Show>
-                  </Show>
-
-                  {/* ░░ PLUGINS ░░ */}
-                  <Show when={section() === "plugins"}>
-                    <Hero title={t("alpha.ext.tabPlugins")} sub={t("alpha.ext.pluginsSub")} />
-                    <div class="alpha-ext-callout">{t("alpha.ext.pluginNote")}</div>
-                    <Filters />
-                    <Show when={byTypeF("plugin").length > 0} fallback={<FilteredEmpty />}>
-                      <Show when={splitBrowse(byTypeF("plugin"), curationById()).graded.length > 0}>
-                        <SecRow label={t("alpha.ext.allPlugins")} count={splitBrowse(byTypeF("plugin"), curationById()).graded.length} />
-                        <Grid items={splitBrowse(byTypeF("plugin"), curationById()).graded} />
-                      </Show>
-                      <UngradedGroup items={splitBrowse(byTypeF("plugin"), curationById()).ungraded} />
-                    </Show>
-                  </Show>
-
-                  {/* ░░ BUNDLES ░░ */}
-                  <Show when={section() === "bundles"}>
-                    <Hero title={t("alpha.ext.tabBundles")} sub={t("alpha.ext.bundlesSub")} />
-                    <Filters />
-                    <Show when={byTypeF("bundle").length > 0} fallback={<FilteredEmpty />}>
-                      <Show when={splitBrowse(byTypeF("bundle"), curationById()).graded.length > 0}>
-                        <SecRow label={t("alpha.ext.allBundles")} count={splitBrowse(byTypeF("bundle"), curationById()).graded.length} />
-                        <Grid items={splitBrowse(byTypeF("bundle"), curationById()).graded} />
-                      </Show>
-                      <UngradedGroup items={splitBrowse(byTypeF("bundle"), curationById()).ungraded} />
-                    </Show>
-                  </Show>
-
-                  {/* ░░ INSTALLED (manage;顶部 = 有更新分组,T5 接动作) ░░ */}
-                  <Show when={section() === "installed"}>
-                    <Hero title={t("alpha.ext.tabInstalled")} sub={t("alpha.ext.installedSub")} />
-                    {/* REQ-105(#197):归档连接器诚实警示 —— 已安装的 Word/PPT 连接器上游已归档,
-                        标注 archived+unsupported、禁自动更新、给出处置指引;绝不静默删除用户安装
-                        (卸载 = 行内既有可审计路径;日期取自 advisory 记录,零硬编码)。 */}
-                    <Show when={advisoryRows().length > 0}>
-                      <div class="alpha-ext-verify-note" data-archived="" role="alert">
-                        <b>{t("alpha.ext.advArchivedTitle")}</b>
-                        <p>
-                          {t("alpha.ext.advArchivedBody", {
-                            names: advisoryRows()
-                              .map(({ row }) => row.displayName)
-                              .join("、"),
-                            date: advisoryRows()[0]!.adv.archivedAt,
-                          })}
-                        </p>
-                      </div>
-                    </Show>
-                    {/* REQ-037:内置(上游)治理分组 —— REQ-019 递延的 V2 内置管理位落点 */}
-                    <SecRow label={t("alpha.builtin.builtinSection")} />
                     <BuiltinControlsPanel
+                      part="commands"
                       agents={ext.store.agents}
                       requestReload={() => ext.requestEngineReload("built-in policy changed")}
                       reloadAgents={ext.reloadAgents}
                       flash={flash}
                     />
-                    <Show when={updatable().length > 0}>
-                      <SecRow
-                        label={t("alpha.ext.tabUpdates")}
-                        count={updatable().length}
-                        warn
-                        actionLabel={t("alpha.ext.updateAll")}
-                        onAction={() => void runUpdateAll()}
-                      />
-                      <div class="alpha-ext-manage">
-                        <For each={updatable()}>
-                          {(r) => {
-                            const target = byId(r.id)
-                            const ic = iconForRow(target, r.type, r.name)
-                            return (
-                              <div
-                                class="alpha-ext-man"
-                                data-clickable={target ? "" : undefined}
-                                onClick={() => target && openEntryDetail(target)}
-                              >
-                                <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
-                                  {ic.glyph}
-                                </span>
-                                <div class="alpha-ext-man-body">
-                                  <div class="alpha-ext-man-nm">
-                                    <b title={r.name}>{target?.displayName ?? r.name}</b>
-                                    <span class="alpha-ext-type-pill">{typeLabel(r.type)}</span>
-                                  </div>
-                                  <div class="alpha-ext-man-st">
-                                    {t("alpha.ext.updateAvailable", { from: r.version ?? "?", to: entryVersion(byId(r.id)) })}
-                                  </div>
-                                  <Show when={updErr()[r.id]}>
-                                    <div class="alpha-ext-man-st" data-err="">
-                                      {updErr()[r.id]}
-                                    </div>
-                                  </Show>
-                                </div>
-                                <button
-                                  class="alpha-ext-updbtn"
-                                  disabled={updBusy() === r.id}
-                                  onClick={(ev) => {
-                                    ev.stopPropagation()
-                                    void runUpdate(r)
-                                  }}
-                                >
-                                  {updBusy() === r.id ? t("alpha.ext.adding") : t("alpha.ext.update")}
-                                </button>
-                              </div>
-                            )
-                          }}
-                        </For>
-                      </div>
-                    </Show>
-                    {/* ░░ REQ-128 Phase 3 `#784` 第 6/7/9 跳:已装扩展包 ░░
-                        放在「已安装」清单**之前**:先看到整体,再往下看到零件。
-                        本地导入的包**没有目录详情页可去**,所以这里是它唯一的移除入口。 */}
-                    <InstalledPackagesSection />
-                    <Show when={!ext.store.ready && installedAll().length === 0}>
-                      <div class="alpha-ext-manage" aria-hidden="true">
-                        <div class="alpha-ext-skel-row" />
-                        <div class="alpha-ext-skel-row" />
-                        <div class="alpha-ext-skel-row" />
-                      </div>
-                    </Show>
-                    <Show
-                      when={installedAll().length > 0}
-                      fallback={
-                        // `#784` R1 Major:账本损坏时**不许**同时喊「读不出」和「尚未安装任何扩展」。
-                        // 两条互相矛盾的信息摆在一起,用户会当成「东西丢了」而去重装 —— 而重装会
-                        // 撞上同名拒绝。已装扩展包清单读不出来 ⇒ 已装列表**本身**也未必是真的空,
-                        // 通用空态在这一刻是一句没有依据的断言,不许说。
-                        <Show when={ext.store.ready && !packagesUnreadable()}>
-                        <EmptyState
-                          title={t("alpha.ext.empty")}
-                          sub={t("alpha.ext.emptySub")}
-                          action={
-                            <button class="alpha-ext-add" data-variant="primary" onClick={() => gotoSection("featured")}>
-                              {t("alpha.ext.browseRecommended")}
-                            </button>
-                          }
-                        />
-                        </Show>
-                      }
-                    >
-                      <SecRow label={t("alpha.ext.installedSection")} count={installedAll().length} />
-                      {/* REQ-103(#195,AC5)scope 分组:全局 / 本项目;同名可并存,各自独立操作。 */}
-                      <Show when={installedByScope().global.length > 0}>
-                        <div class="alpha-ext-scopeh">{t("alpha.ext.scopeGlobalGroup")}</div>
-                        <div class="alpha-ext-manage">
-                          <For each={installedByScope().global}>{(row) => <InstalledRow row={row} />}</For>
-                        </div>
-                      </Show>
-                      {/* #307 项目组做实:有项目上下文即渲染组头(空账本 = 空态说明行,让用户知道
-                          组的存在与来路);无项目上下文 = 组整体不渲染(设计稿空态 B)。 */}
-                      <Show when={projectDir()}>
-                        {(dir) => (
-                          <>
-                            <div class="alpha-ext-scopeh">
-                              {t("alpha.ext.scopeProjectGroup")} · {projectLabel(dir())}
-                              <span class="alpha-ext-type-pill">{t("alpha.ext.scopeProjectReadonly")}</span>
-                            </div>
-                            <Show
-                              when={installedByScope().project.length > 0}
-                              fallback={<div class="alpha-ext-man-empty">{t("alpha.ext.scopeProjectEmpty")}</div>}
-                            >
-                              <div class="alpha-ext-manage">
-                                <For each={installedByScope().project}>{(row) => <InstalledRow row={row} />}</For>
-                              </div>
-                            </Show>
-                          </>
-                        )}
-                      </Show>
-                    </Show>
                   </Show>
+                </Show>
 
-                  {/* ░░ IMPORT(REQ-036:创建表单已移除 —— 创建走技能;本 tab 语义收敛为导入,
-                      并给「对话式创建」指引卡。X8 挂点:REQ-033 的任意 MCP 添加/agent 导入落这里) ░░ */}
-                  <Show when={section() === "create"}>
-                    <Hero title={t("alpha.ext.tabCreate")} sub={t("alpha.ext.createSub")} />
-                    <div class="alpha-ext-form">
-                      {/* 对话式创建指引(skill-creator / agent-creator 出厂即有;C28:文案与出厂
-                          注入状态一致 —— 逃生开关关闭时如实降级为「安装 skill-creator 后可用」) */}
-                      <div class="alpha-ext-callout">
-                        <b>{t("alpha.ext.createViaChatTitle")}</b>
-                        <p class="alpha-ext-dnote" style={{ margin: "6px 0 0" }}>
-                          {ext.factorySkills().length > 0
-                            ? t("alpha.ext.createViaChatBody")
-                            : t("alpha.ext.createViaChatBodyDisabled")}
+                {/* ░░ 助手 ░░(REQ-018 T7 / ADR-014 O2:Agent 作一等原语) */}
+                <Show when={section() === "agents"}>
+                  <InstalledHead />
+                  <Skeleton />
+                  <Show
+                    when={installedPage().global.length > 0 || ownAgentsUnreceipted().length > 0}
+                    fallback={
+                      <Show when={ext.store.ready && !searching()}>
+                        <p class="alpha-ext-man-empty">
+                          {ext.factorySkills().length > 0 ? t("alpha.ext.agentsEmptyHint") : t("alpha.ext.empty")}
                         </p>
-                      </div>
-
-                      <div class="alpha-ext-import">
-                        <SecRow label={t("alpha.ext.importFrom")} />
-                        <div class="alpha-ext-import-row">
-                          <button class="alpha-ext-import-card" disabled={importBusy()} onClick={() => void runImportFolder()}>
-                            <Svg d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z" />
-                            <span>
-                              <b>{t("alpha.ext.importFolder")}</b>
-                              <small>{t("alpha.ext.importFolderSub")}</small>
-                            </span>
-                          </button>
-                          <button
-                            class="alpha-ext-import-card"
-                            disabled={importBusy()}
-                            onClick={() => {
-                              setImportErr("")
-                              setImportInput("")
-                              setImportDialog("git")
-                            }}
-                          >
-                            <svg class="alpha-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                              <circle cx="6" cy="6" r="2.5" stroke="currentColor" stroke-width="1.6" />
-                              <circle cx="6" cy="18" r="2.5" stroke="currentColor" stroke-width="1.6" />
-                              <circle cx="18" cy="12" r="2.5" stroke="currentColor" stroke-width="1.6" />
-                              <path d="M6 8.5v7M8.4 17l7.2-3.6M8.4 7l7.2 3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                            </svg>
-                            <span>
-                              <b>{t("alpha.ext.importGit")}</b>
-                              <small>{t("alpha.ext.importGitSub")}</small>
-                            </span>
-                          </button>
-                          <button class="alpha-ext-import-card" disabled={cmBusy()} onClick={() => { setCmErr(""); setCustomMcpOpen(true) }}>
-                            <Svg d="M8 12h8M12 8v8M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0" />
-                            <span>
-                              <b>{t("alpha.ext.customMcp")}</b>
-                              <small>{t("alpha.ext.customMcpSub")}</small>
-                            </span>
-                          </button>
-                          <button class="alpha-ext-import-card" disabled={agentBusy()} onClick={() => void runPickAgentFile()}>
-                            <Svg d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-                            <span>
-                              <b>{t("alpha.ext.importAgent")}</b>
-                              <small>{t("alpha.ext.importAgentSub")}</small>
-                            </span>
-                          </button>
-                        </div>
-                        <Show when={agentErr()}>
-                          <p class="alpha-ext-import-err">{agentErr()}</p>
-                        </Show>
-                        <p class="alpha-ext-dnote" style={{ margin: "10px 2px 0" }}>{t("alpha.ext.compatNote")}</p>
-                        {/* B11:导入失败行内呈现(folder 路径失败落这里;git/npm 失败落弹窗内) */}
-                        <Show when={importErr() && !importDialog()}>
-                          <p class="alpha-ext-import-err">{importErr()}</p>
-                        </Show>
-                        <Show when={importBusy() && !importDialog()}>
-                          <p class="alpha-ext-dnote">{t("alpha.ext.importing")}</p>
-                        </Show>
-                      </div>
+                      </Show>
+                    }
+                  >
+                    <div class="alpha-ext-grid" data-group="installed">
+                      <For each={installedPage().global}>{(row) => <InstalledRow row={row} />}</For>
+                      <For each={ownAgentsUnreceipted()}>{(a) => <AgentRow a={a} />}</For>
                     </div>
                   </Show>
-
-                  {/* ░░ CLOUD (REQ-020 T2/T4:登录门控 + 连接器卡 + pipeline 条目) ░░ */}
-                  <Show when={section() === "cloud"}>
-                    <Hero title={t("alpha.ext.tabCloud")} sub={t("alpha.ext.cloudSub")} />
-                    {/* 门控条:未登录 → 登录 CTA;BYOK → 切平台模式说明(诚实:切换/登录后由
-                        sidecar 注入 mcp.cloud,注入发生在启动装配,未点亮时重启完成注入)。 */}
-                    <Show when={!cloudReady()}>
-                      {/* `#624`:三态,不是两态。恢复中的用户**已登录、已在 platform 模式** ——
-                          落进「切换到平台模式」那一支会给出一句假话,而且按钮点下去是 no-op。
-                          恢复中因此自成一支:说清「凭证正在恢复、会自动重试」,**不给动作**
-                          (用户此刻无事可做,给按钮就是 placebo)。 */}
-                      <div class="alpha-ext-cloudgate" data-recovering={cloudRecovering() ? "" : undefined}>
-                        <div class="alpha-ext-cloudgate-t">
-                          {cloudRecovering()
-                            ? t("alpha.ext.cloudGateTitleRecovering")
-                            : authState().status !== "logged-in"
-                              ? t("alpha.ext.cloudGateTitleLogin")
-                              : t("alpha.ext.cloudGateTitleMode")}
-                        </div>
-                        <div class="alpha-ext-cloudgate-sub">
-                          {cloudRecovering() ? t("alpha.ext.cloudGateSubRecovering") : t("alpha.ext.cloudGateSub")}
-                        </div>
-                        <Show when={!cloudRecovering()}>
-                          <Show
-                            when={authState().status !== "logged-in"}
-                            fallback={
-                              <button
-                                class="alpha-ext-add"
-                                data-variant="primary"
-                                onClick={() => void window.api.auth.setMode("platform")}
-                              >
-                                {t("alpha.ext.cloudSwitchMode")}
-                              </button>
-                            }
-                          >
-                            <button class="alpha-ext-add" data-variant="primary" onClick={() => void window.api.auth.start()}>
-                              {t("alpha.ext.cloudLoginCta")}
-                            </button>
-                          </Show>
-                        </Show>
-                      </div>
-                    </Show>
-
-                    {/* 平台连接器卡(固定展示;非 catalog 条目,点开专属详情) */}
-                    <SecRow label={t("alpha.ext.cloudConnectorSection")} />
-                    <div
-                      class="alpha-ext-kit"
-                      data-clickable=""
-                      data-dim={cloudReady() ? undefined : ""}
-                      onClick={() => setDetail({ kind: "cloud-connector" })}
-                    >
-                      <span class="alpha-ext-kit-ic" style={{ background: "#5c7cbf" }}>
-                        云
-                      </span>
-                      <div class="alpha-ext-kit-body">
-                        <div class="alpha-ext-kit-ttl">
-                          <b>{t("alpha.ext.cloudConnectorTitle")}</b>
-                          <span class="alpha-ext-chip" data-source="alpha">
-                            {sourceLabel("alpha")}
-                          </span>
-                        </div>
-                        <div class="alpha-ext-kit-desc">
-                          {/* `#733`:云连接器是用户看这条状态的**主要**地方 —— `needs_auth` 在这里
-                              也必须说成「需要重新登录」并给出动作,否则用户读到的是「未连接(引擎会
-                              自动重连)」,而引擎其实永远不会自己连上。 */}
-                          {/* `#624`:恢复中不能说「需登录平台模式」—— 用户已登录。 */}
-                          <span
-                            class="alpha-ext-cloudst"
-                            data-st={
-                              cloudReady()
-                                ? cloudLive()?.needsAuth
-                                  ? "idle"
-                                  : cloudLive()?.connected
-                                    ? "on"
-                                    : "idle"
-                                : cloudRecovering()
-                                  ? "idle"
-                                  : "off"
-                            }
-                          >
-                            {cloudReady()
-                              ? cloudLive()?.needsAuth
-                                ? t("alpha.ext.mcpNeedsAuth")
-                                : cloudLive()?.connected
-                                  ? t("alpha.ext.cloudConnConnected")
-                                  : t("alpha.ext.cloudConnDisconnected")
-                              : cloudRecovering()
-                                ? t("alpha.ext.cloudConnRecovering")
-                                : t("alpha.ext.cloudConnNeedLogin")}
-                          </span>
-                          {" · "}
-                          {t("alpha.ext.cloudConnectorDesc")}
-                        </div>
-                      </div>
-                      {/* server 名取**引擎报回来的那个**(`InstalledState.name`),不在 renderer 再写
-                          一遍 `"cloud"` 字面量 —— 注入面改名时这里会跟着走,而字面量会静默指错。 */}
-                      <Show when={cloudReady() && cloudLive()?.needsAuth}>
-                        <McpNeedsAuthAction name={cloudLive()!.name} />
-                      </Show>
-                      <button
-                        class="alpha-ext-add"
-                        onClick={(ev) => {
-                          ev.stopPropagation()
-                          setDetail({ kind: "cloud-connector" })
-                        }}
-                      >
-                        {t("alpha.ext.openDetail")}
-                      </button>
-                    </div>
-
-                    {/* 云 pipeline 条目(灰显 ≠ 隐藏:BYOK/未登录可浏览,启用/派发被门控) */}
-                    <SecRow label={t("alpha.ext.cloudPipelines")} count={byType("cloud").length + cloudPackages().length} />
-                    <div data-dim={cloudReady() ? undefined : ""}>
-                      <Grid items={byType("cloud")} />
-                      <Show when={cloudPackages().length > 0}>
-                        <PackageGrid items={cloudPackages()} />
-                      </Show>
-                    </div>
+                  <ProjectGroup />
+                  <Segments />
+                  <Show when={segment() === "recommended"}>
+                    <Grid items={browsable("agent")} group="recommended" />
+                    <NoMatches
+                      when={browsable("agent").length === 0 && installedPage().global.length === 0 && ownAgentsUnreceipted().length === 0}
+                    />
+                  </Show>
+                  {/* 「系统」= build、plan 等应用自带的助手(REQ-037 内置治理);隐藏 / 停用 / 自定义收进「…」。 */}
+                  <Show when={segment() === "system"}>
+                    <BuiltinControlsPanel
+                      part="agents"
+                      agents={ext.store.agents}
+                      requestReload={() => ext.requestEngineReload("built-in policy changed")}
+                      reloadAgents={ext.reloadAgents}
+                      flash={flash}
+                    />
                   </Show>
                 </Show>
               </Show>

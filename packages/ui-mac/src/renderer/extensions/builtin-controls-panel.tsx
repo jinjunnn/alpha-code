@@ -1,11 +1,13 @@
-// BuiltinControlsPanel — 定制中心「已安装」内的「内置(上游)」治理分组(REQ-037,即 REQ-019 递延的 V2
-// 内置管理位)。列原生 agent / 内置 command,逐项 隐藏·禁用·重写;保护项灰显并说明
-// 原因(C28 诚实控件);denylist/allowlist 可切;「重置治理」全量净除。
+// BuiltinControlsPanel — 定制中心的「内置(上游)」治理(REQ-037,即 REQ-019 递延的 V2 内置管理位)。
+// 列原生 agent / 内置 command,逐项 隐藏·禁用·重写;保护项灰显并说明原因(C28 诚实控件);
+// denylist/allowlist 可切;「重置治理」全量净除。`#1594`(批准稿 `#hub-skills`):住进技能页与助手页的
+// 「系统」分段 —— `part="agents"` 列原生助手(连同名单模式与重置),`part="commands"` 列内置命令;
+// 每行 = 名称 + 一行状态 +「…」(隐藏 / 停用 / 自定义)。
 //
 // 数据流:extIpc.builtinRead/builtinApply/builtinReset(main 校验+物化 home jsonc 受控叶子)→
 // props.requestReload()(REQ-234 `#1529`:请 ext 调度器在会话空闲时重载)→ 重载之后的下一条消息生效 → props.reloadAgents() 刷新列表。
 
-import { extensionError } from "./ext-presentation"
+import { extensionError, iconForRow, MoreMenu } from "./ext-presentation"
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaBuiltinPolicy } from "../../preload/types"
 import type { HubAgent } from "./use-extensions"
@@ -24,6 +26,8 @@ const DEFAULT_GOV: AlphaBuiltinPolicy = {
 }
 
 export function BuiltinControlsPanel(props: {
+  /** 只列哪一半;缺省两半都列。 */
+  part?: "agents" | "commands"
   agents: HubAgent[]
   /** 请 ext 调度器重载(等会话空闲);false = 请求没被受理。 */
   requestReload: () => Promise<boolean>
@@ -155,105 +159,121 @@ export function BuiltinControlsPanel(props: {
   }
 
   const g = gov
+  const showAgents = () => props.part !== "commands"
+  const showCommands = () => props.part !== "agents"
   return (
     <div class="alpha-gov">
-      <div class="alpha-ext-callout">
-        {t("alpha.builtin.note")}
-        <span class="alpha-gov-mode">
-          <button data-on={g().mode === "denylist" ? "" : undefined} disabled={busy()} onClick={() => switchMode("denylist")}>
-            {t("alpha.builtin.denylist")}
+      <Show when={showAgents()}>
+        <div class="alpha-gov-bar">
+          <span class="alpha-gov-mode">
+            <button data-on={g().mode === "denylist" ? "" : undefined} disabled={busy()} onClick={() => switchMode("denylist")}>
+              {t("alpha.builtin.denylist")}
+            </button>
+            <button data-on={g().mode === "allowlist" ? "" : undefined} disabled={busy()} onClick={() => switchMode("allowlist")}>
+              {t("alpha.builtin.allowlist")}
+            </button>
+          </span>
+          <button class="alpha-ext-inline-cta" disabled={busy()} onClick={() => void reset()}>
+            {t("alpha.builtin.reset")}
           </button>
-          <button data-on={g().mode === "allowlist" ? "" : undefined} disabled={busy()} onClick={() => switchMode("allowlist")}>
-            {t("alpha.builtin.allowlist")}
-          </button>
-        </span>
-        <button class="alpha-ext-inline-cta" disabled={busy()} onClick={() => void reset()}>
-          {t("alpha.builtin.reset")}
-        </button>
-      </div>
+        </div>
+      </Show>
       <Show when={err()}>
         <p class="alpha-ext-import-err">{err()}</p>
       </Show>
 
-      {/* agents */}
-      <div class="alpha-ext-manage">
-        <For each={agentNames()}>
-          {(name) => {
-            const prot = () => protectedReason(name)
-            const hidden = () => g().agents.hide.includes(name)
-            const disabled = () => g().agents.disable.includes(name)
-            const overridden = () => !!g().agents.override[name]?.prompt
-            const allowed = () => g().agents.allow.includes(name)
-            return (
-              <div class="alpha-ext-man" data-gov-dim={disabled() || hidden() ? "" : undefined}>
-                <span class="alpha-ext-man-name">
-                  {name}
-                  <span class="alpha-ext-chip">{t("alpha.ext.builtinAgentLabel")}</span>
-                  <Show when={hidden()}>
-                    <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateHidden")}</span>
-                  </Show>
-                  <Show when={disabled()}>
-                    <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateDisabled")}</span>
-                  </Show>
-                  <Show when={overridden()}>
-                    <span class="alpha-ext-chip">{t("alpha.builtin.stateOverridden")}</span>
-                  </Show>
-                </span>
-                <Show
-                  when={!prot()}
-                  fallback={<span class="alpha-gov-prot" title={prot() ?? undefined}>{t("alpha.builtin.protected")}</span>}
-                >
-                  <span class="alpha-gov-acts">
-                    <Show when={g().mode === "allowlist"}>
-                      <button disabled={busy()} onClick={() => toggleAllow(name)}>
-                        {allowed() ? t("alpha.builtin.inAllow") : t("alpha.builtin.notInAllow")}
-                      </button>
-                    </Show>
-                    <button disabled={busy()} onClick={() => toggle("hide", name)}>
-                      {hidden() ? t("alpha.builtin.unhide") : t("alpha.builtin.hide")}
-                    </button>
-                    <button disabled={busy()} onClick={() => toggle("disable", name)}>
-                      {disabled() ? t("alpha.builtin.enable") : t("alpha.builtin.disable")}
-                    </button>
-                    <button
-                      disabled={busy()}
-                      onClick={() => setAgentEdit({ name, prompt: String(g().agents.override[name]?.prompt ?? "") })}
-                    >
-                      {t("alpha.builtin.override")}
-                    </button>
+      <div class="alpha-ext-grid">
+        {/* agents */}
+        <Show when={showAgents()}>
+          <For each={agentNames()}>
+            {(name) => {
+              const prot = () => protectedReason(name)
+              const hidden = () => g().agents.hide.includes(name)
+              const disabled = () => g().agents.disable.includes(name)
+              const overridden = () => !!g().agents.override[name]?.prompt
+              const allowed = () => g().agents.allow.includes(name)
+              const ic = iconForRow(undefined, "agent", name)
+              const state = () =>
+                [
+                  hidden() ? t("alpha.builtin.stateHidden") : "",
+                  disabled() ? t("alpha.builtin.stateDisabled") : "",
+                  overridden() ? t("alpha.builtin.stateOverridden") : "",
+                  g().mode === "allowlist" ? (allowed() ? t("alpha.builtin.inAllow") : t("alpha.builtin.notInAllow")) : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || t("alpha.ext.builtinAgentLabel")
+              return (
+                <div class="alpha-ext-kit alpha-ext-man" data-gov-dim={disabled() || hidden() ? "" : undefined} data-builtin-agent={name}>
+                  <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
+                    {ic.glyph}
                   </span>
-                </Show>
-              </div>
-            )
-          }}
-        </For>
+                  <div class="alpha-ext-kit-body">
+                    <div class="alpha-ext-kit-ttl">
+                      <b class="alpha-ext-man-name">{name}</b>
+                    </div>
+                    <div class="alpha-ext-kit-desc" title={prot() ?? undefined}>
+                      {prot() ? `${t("alpha.builtin.protected")} · ${prot()}` : state()}
+                    </div>
+                  </div>
+                  <Show when={!prot()}>
+                    <MoreMenu
+                      id={`builtin-agent:${name}`}
+                      disabled={busy()}
+                      items={[
+                        ...(g().mode === "allowlist"
+                          ? [{ key: "allow", label: allowed() ? t("alpha.builtin.deny") : t("alpha.builtin.allow"), onSelect: () => toggleAllow(name) }]
+                          : []),
+                        { key: "hide", label: hidden() ? t("alpha.builtin.unhide") : t("alpha.builtin.hide"), onSelect: () => toggle("hide", name) },
+                        { key: "disable", label: disabled() ? t("alpha.builtin.enable") : t("alpha.builtin.disable"), onSelect: () => toggle("disable", name) },
+                        {
+                          key: "override",
+                          label: t("alpha.builtin.override"),
+                          onSelect: () => setAgentEdit({ name, prompt: String(g().agents.override[name]?.prompt ?? "") }),
+                        },
+                      ]}
+                    />
+                  </Show>
+                </div>
+              )
+            }}
+          </For>
+        </Show>
 
         {/* builtin commands */}
-        <For each={BUILTIN_COMMANDS}>
-          {(name) => {
-            const overridden = () => !!g().commands.override[name]
-            return (
-              <div class="alpha-ext-man">
-                <span class="alpha-ext-man-name">
-                  /{name}
-                  <span class="alpha-ext-chip">{t("alpha.ext.typeCommand")}</span>
-                  <Show when={overridden()}>
-                    <span class="alpha-ext-chip">{t("alpha.builtin.stateOverridden")}</span>
-                  </Show>
-                </span>
-                <span class="alpha-gov-acts">
-                  <button
+        <Show when={showCommands()}>
+          <For each={BUILTIN_COMMANDS}>
+            {(name) => {
+              const overridden = () => !!g().commands.override[name]
+              const ic = iconForRow(undefined, "command", name)
+              return (
+                <div class="alpha-ext-kit alpha-ext-man" data-builtin-command={name}>
+                  <span class="alpha-ext-kit-ic" style={{ background: ic.color }}>
+                    /
+                  </span>
+                  <div class="alpha-ext-kit-body">
+                    <div class="alpha-ext-kit-ttl">
+                      <b class="alpha-ext-man-name">/{name}</b>
+                    </div>
+                    <div class="alpha-ext-kit-desc" title={t("alpha.builtin.cmdNote")}>
+                      {overridden() ? t("alpha.builtin.stateOverridden") : t("alpha.ext.typeCommand")}
+                    </div>
+                  </div>
+                  <MoreMenu
+                    id={`builtin-command:${name}`}
                     disabled={busy()}
-                    onClick={() => setCmdEdit({ name, template: g().commands.override[name]?.template ?? "" })}
-                    title={t("alpha.builtin.cmdNote")}
-                  >
-                    {overridden() ? t("alpha.builtin.editOverride") : t("alpha.builtin.override")}
-                  </button>
-                </span>
-              </div>
-            )
-          }}
-        </For>
+                    items={[
+                      {
+                        key: "override",
+                        label: overridden() ? t("alpha.builtin.editOverride") : t("alpha.builtin.override"),
+                        onSelect: () => setCmdEdit({ name, template: g().commands.override[name]?.template ?? "" }),
+                      },
+                    ]}
+                  />
+                </div>
+              )
+            }}
+          </For>
+        </Show>
       </div>
 
       {/* command 重写编辑器(极简:模板 textarea;空 = 恢复上游) */}

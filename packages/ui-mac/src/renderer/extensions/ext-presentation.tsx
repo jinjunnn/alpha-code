@@ -3,7 +3,7 @@
 // detail page (extension-detail.tsx) can reuse them without a hub ↔ detail import cycle.
 // Pure presentation: no store access, no IPC.
 
-import { Show } from "solid-js"
+import { createEffect, createRoot, createSignal, For, onCleanup, Show } from "solid-js"
 import type { CatalogEntry, CatalogSource } from "./catalog-types"
 import type { InstallReceiptType } from "../../preload/types"
 import type { PackageListingV1 } from "../../shared/host-extension-package-contract/decoder"
@@ -111,6 +111,74 @@ export const LockIc = () => (
     <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" stroke-width="1.7" />
   </svg>
 )
+
+export type MoreMenuItem = { key: string; label: string; onSelect: () => void; disabled?: boolean; danger?: boolean }
+
+// 同一时刻只开一个菜单:点开另一个「…」时上一个自动收起。
+const [openMenu, setOpenMenu] = createSignal<object | null>(null)
+createRoot(() =>
+  createEffect(() => {
+    if (!openMenu()) return
+    const close = () => setOpenMenu(null)
+    document.addEventListener("click", close)
+    onCleanup(() => document.removeEventListener("click", close))
+  }),
+)
+
+/**
+ * `#1594`(批准稿 `#hub-add` / `#hub-skills`):定制中心行上的「…」与页头的「添加 ▾」—— 一颗按钮,
+ * 点开一列动作。点菜单外任意处收起。按钮与菜单项都拦住冒泡:行本身点下去是进详情页,不能顺带触发。
+ */
+export function MoreMenu(p: { id: string; items: MoreMenuItem[]; trigger?: string; primary?: boolean; disabled?: boolean }) {
+  const self = {}
+  const open = () => openMenu() === self
+  const setOpen = (value: boolean) => setOpenMenu(value ? self : null)
+  onCleanup(() => {
+    if (open()) setOpenMenu(null)
+  })
+  return (
+    <div class="alpha-ext-more">
+      <button
+        class="alpha-ext-add"
+        data-variant={p.primary ? "primary" : undefined}
+        data-more={p.id}
+        aria-haspopup="menu"
+        aria-expanded={open()}
+        aria-label={p.trigger ? undefined : t("alpha.ext.more")}
+        title={p.trigger ? undefined : t("alpha.ext.more")}
+        disabled={p.disabled}
+        onClick={(ev) => {
+          ev.stopPropagation()
+          setOpen(!open())
+        }}
+      >
+        {p.trigger ?? "…"}
+      </button>
+      <Show when={open()}>
+        <div class="alpha-ext-menu" role="menu" data-menu={p.id}>
+          <For each={p.items}>
+            {(item) => (
+              <button
+                class="alpha-ext-menu-item"
+                role="menuitem"
+                data-menu-item={item.key}
+                data-variant={item.danger ? "danger" : undefined}
+                disabled={item.disabled}
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  setOpen(false)
+                  item.onSelect()
+                }}
+              >
+                {item.label}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
+}
 
 /**
  * `#1287`:签名扩展包的方形图标 —— 卡片与详情页共用这一份。

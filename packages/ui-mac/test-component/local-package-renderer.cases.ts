@@ -482,11 +482,26 @@ function ledgerPackageIds(): string[] {
   return state.ok ? state.packageGraphs.map((graph) => graph.packageId).sort() : ["<unreadable>"]
 }
 
-/** 回到已安装页并等它画完 —— 包清单的 resource key 里带着 tab,离开这一页它就不再取数。 */
+/** 回到连接器页(`#1594`:已装扩展包在它的「已安装」组)并等它画完 —— 包清单的 resource key 里带着 tab,
+ *  离开这一页它就不再取数。 */
 async function gotoInstalled(): Promise<void> {
-  setHubSection("installed")
-  await waitFor(() => expect(q(".alpha-ext-page")?.textContent ?? "").toContain(zh["alpha.ext.tabInstalled"]))
+  setHubSection("connectors")
+  await waitFor(() => expect(q("[data-group='installed']")).toBeInstanceOf(HTMLElement))
 }
+/** 离开连接器页(去技能页)—— 回来时包清单重读一次。 */
+async function leaveInstalled(): Promise<void> {
+  setHubSection("skills")
+  await flush()
+}
+/** `#1594`:行上的「…」→ 某一项。 */
+async function chooseFromMenu(row: Element | null, item: string): Promise<void> {
+  expect(row).toBeInstanceOf(HTMLElement)
+  click(row!.querySelector("[data-more]"))
+  await waitFor(() => expect(row!.querySelector(`[data-menu-item="${item}"]`)).toBeInstanceOf(HTMLElement))
+  click(row!.querySelector(`[data-menu-item="${item}"]`))
+}
+/** 整包移除:扩展包那一行的「…」→「移除此扩展包」。 */
+const removePackage = (packageId: string) => chooseFromMenu(packCard(packageId), "remove-package")
 
 /**
  * 用**生产写器**在账本里种一张包图。
@@ -541,12 +556,14 @@ function seedPackage(input: {
   if (!applied.ok) throw new Error(`fixture: seeding ${input.packageId} failed: ${applied.reason}`)
 }
 
-/** 走生产路径打开预览屏:切到导入页 → 点「文件夹」卡。**不直接调 IPC**。 */
+/** 走生产路径打开预览屏:页头「添加 ▾」→「从文件夹导入」(`#1594`,原「导入」页的文件夹卡)。**不直接调 IPC**。 */
 async function openImportFolder(dir: string): Promise<void> {
   pickDir = dir
-  setHubSection("create")
-  await waitFor(() => expect(q(".alpha-ext-import-row")).toBeInstanceOf(HTMLElement))
-  click(qa(".alpha-ext-import-card")[0])
+  setHubSection("skills")
+  await waitFor(() => expect(q("[data-more='add']")).toBeInstanceOf(HTMLElement))
+  click(q("[data-more='add']"))
+  await waitFor(() => expect(q("[data-menu-item='folder']")).toBeInstanceOf(HTMLElement))
+  click(q("[data-menu-item='folder']"))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════
@@ -562,6 +579,8 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     mkdirSync(globalRoot, { recursive: true })
     writeFileSync(ledgerFile, "{ this is not json", "utf8")
     try {
+      // `#1594`:连接器页是默认页,挂载时已经读过一次(那时账本还没写坏)—— 离开再回来,重读到的就是坏账本。
+      await leaveInstalled()
       await gotoInstalled()
       await waitFor(() => expect(q("[data-packages-unreadable]")).toBeInstanceOf(HTMLElement))
       const banner = q("[data-packages-unreadable]")!
@@ -576,8 +595,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
       expect(q("[data-installed-package]")).toBeNull()
     } finally {
       rmSync(ledgerFile, { force: true })
-      setHubSection("featured")
-      await flush()
+      await leaveInstalled()
       await gotoInstalled()
       await waitFor(() => expect(q("[data-packages-unreadable]")).toBeNull())
     }
@@ -630,14 +648,14 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect(ledgerPackageIds()).toEqual([])
   })
 
-  test("第 4→6 跳:确认 ⇒ 一次事务装进去 ⇒ 已安装页当场出现扩展包卡,技能**全部未启用**", async () => {
+  test("第 4→6 跳:确认 ⇒ 一次事务装进去 ⇒ 连接器页「已安装」当场出现扩展包,技能**全部未启用**", async () => {
     clearToasts()
     reloadRequests.length = 0
     await openImportFolder(tidePlugin)
     await waitFor(() => expect(previewDialog()).toBeInstanceOf(HTMLElement))
     click(q(".a-dialog-footer .a-btn:last-child"))
 
-    // 装完自动落在已安装页(裁决 B 之下不跳页 = 用户按完确认什么都看不到)。
+    // 装完自动落在连接器页的「已安装」组(裁决 B 之下不跳页 = 用户按完确认什么都看不到)。
     await waitFor(() => expect(packCard("local:tide")).toBeInstanceOf(HTMLElement))
     expect(previewDialog()).toBeNull()
 
@@ -650,22 +668,27 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect(await engineInjectedSkillPaths()).toEqual([])
     expect(engineAllowSet()).toEqual([])
 
-    // 界面上必须看得见「已安装 · 未启用」,而且每个技能各有开关。
+    // 界面上必须看得见「都未开启」,而且每个技能各有「开启」。
     const card = packCard("local:tide")!
     // `#784` owner 裁决:卡上写的是**插件作者自己声明的名字**(`plugin.json` 的 `name`),
     // 既不是包里某个技能的名字(`postmarket-review`),也不是目录名(`tide-folder-name`)。
     expect(card.querySelector('[data-package-label="local:tide"]')?.textContent).toBe("tide")
     expect(card.textContent).not.toContain("tide-folder-name")
     expect(card.querySelector('[data-package-label="local:tide"]')?.textContent).not.toBe("postmarket-review")
-    expect(card.textContent).toContain(zh["alpha.ext.packageAllOffLead"])
-    expect(qa('[data-package-switch^="local:tide/"]').map((n) => n.getAttribute("data-package-switch")).sort()).toEqual([
-      "local:tide/postmarket-review",
-      "local:tide/premarket-briefing",
-    ])
-    expect(qa('[data-package-switch^="local:tide/"]').every((n) => !n.hasAttribute("data-on"))).toBe(true)
-    expect(card.textContent).toContain(zh["alpha.ext.packageFromLocalFolder"])
-    // 版本如实取自 manifest;`v0.1.0` 而不是造一个。
-    expect(card.textContent).toContain("v0.1.0")
+    expect(card.textContent).toContain(zh["alpha.ext.packageAllOffRow"].replace("{{count}}", "2"))
+    // 来源只从 child record 的 origin 读,留作行的属性;`#1594` AC3:来源与版本不在列表行上。
+    expect(card.getAttribute("data-package-origin")).toBe("imported-claude")
+    expect(card.textContent).not.toContain("v0.1.0")
+    // 包内技能各是技能页「已安装」组里的一行:「未开启」+「开启」(`#1594` AC7)。
+    setHubSection("skills")
+    await waitFor(() =>
+      expect(qa('[data-enable-row^="skill:p"]').map((n) => n.getAttribute("data-enable-row")).sort()).toEqual([
+        "skill:postmarket-review",
+        "skill:premarket-briefing",
+      ]),
+    )
+    for (const name of ["postmarket-review", "premarket-briefing"])
+      expect(q(`[data-installed-row="skill:${name}"] .alpha-ext-kit-desc`)?.textContent).toBe(zh["alpha.ext.notOn"])
 
     // G20 前半:confirm 成功 ⇒ 引擎被要求重扫(`#1529`:一条发往 ext 调度器的重载请求;renderer 自己不 dispose)。
     expect(reloadRequests.filter((m) => m.type === "alpha.reload.request").length).toBeGreaterThan(0)
@@ -674,10 +697,10 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect(toasts().join("\n")).toContain(zh["alpha.ext.localPackageInstalled"].replace("{{count}}", "2"))
   })
 
-  test("第 9 跳:显示未启用 → 用户拨开关 → **引擎允许集里当场出现它** → 引擎重载", async () => {
+  test("第 9 跳:显示未启用 → 用户点「开启」→ **引擎允许集里当场出现它** → 引擎重载", async () => {
     reloadRequests.length = 0
     expect(await engineInjectedSkillPaths()).toEqual([])
-    click(q('[data-package-switch="local:tide/premarket-briefing"]'))
+    click(q('[data-enable-row="skill:premarket-briefing"]'))
 
     // 「下一条消息里技能真可用」在无头进程里可判的最强形式:**跑生产引擎的 config hook**,
     // 看它到底往 `cfg.skills.paths` 里注入了什么。这条链包含允许集版本闸、SAFE_KEY、
@@ -694,30 +717,34 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // 拨开关同时请引擎重载(`use-extensions.setInstallState` → `ext-reload-request`)。
     await waitFor(() => expect(reloadRequests.filter((m) => m.type === "alpha.reload.request").length).toBeGreaterThan(0))
 
-    // 卡上「全部未启用」的引导条随之消失,开关翻成 on。
+    // 这一行的「开启」随之消失;包那一行不再说「都未开启」。
+    await waitFor(() => expect(q('[data-enable-row="skill:premarket-briefing"]')).toBeNull())
+    expect(q('[data-enable-row="skill:postmarket-review"]')).toBeInstanceOf(HTMLElement)
+    await gotoInstalled()
     await waitFor(() =>
-      expect(q('[data-package-switch="local:tide/premarket-briefing"]')?.hasAttribute("data-on")).toBe(true),
+      expect(packCard("local:tide")!.textContent).not.toContain(zh["alpha.ext.packageAllOffRow"].replace("{{count}}", "2")),
     )
-    expect(packCard("local:tide")!.textContent).not.toContain(zh["alpha.ext.packageAllOffLead"])
   })
 
   test("第 8 跳:包内单个技能点「移除」⇒ **明确拒绝 + 指向整包移除**,实物一个字节不动", async () => {
     clearToasts()
     const beforeSkills = ledgerSkillNames()
     const beforeInjected = await engineInjectedSkillPaths()
-    const row = qa(".alpha-ext-man").find((node) => node.textContent?.includes("premarket-briefing"))
-    expect(row).toBeInstanceOf(HTMLElement)
-    // 这一行必须先标出「属于扩展包 X」—— 否则那句拒绝毫无来由。
-    expect(row!.querySelector("[data-package-member]")?.getAttribute("data-package-member")).toBe("local:tide")
-    click(row!.querySelector(".alpha-ext-iconbtn"))
+    setHubSection("skills")
+    await waitFor(() => expect(q('[data-installed-row="skill:premarket-briefing"]')).toBeInstanceOf(HTMLElement))
+    const row = q('[data-installed-row="skill:premarket-briefing"]')
+    // `#1594`:移除在行上的「…」里。
+    await chooseFromMenu(row, "remove")
 
     await waitFor(() => expect(q('[data-row-refusal="skill:premarket-briefing"]')).toBeInstanceOf(HTMLElement))
     const refusal = q('[data-row-refusal="skill:premarket-briefing"]')!
     // 包在界面上的名字 = **插件作者声明的名字**(`#784`)。写死这个值是刻意的:
     // 从 projection 里现算一个期望值,等于让错误实现自己给自己打分。
     expect(refusal.textContent).toContain(zh["alpha.ext.componentOwnedByPackage"].replace("{{pack}}", "tide"))
-    // 「怎么办」必须给得出来。
+    // 「怎么办」必须给得出来:点下去落到连接器页的那个扩展包上。
     expect(refusal.querySelector("[data-goto-package]")?.getAttribute("data-goto-package")).toBe("local:tide")
+    click(refusal.querySelector("[data-goto-package]"))
+    await waitFor(() => expect(packCard("local:tide")).toBeInstanceOf(HTMLElement))
     // **不是假成功**:没有任何一条 toast 说「已移除」。
     expect(toasts().join("\n")).not.toContain(zh["alpha.ext.removed"])
     // 实物没动。
@@ -730,7 +757,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     clearToasts()
     forceUninstallFailure = "另一个安装正在进行,这次没有动任何文件。"
     try {
-      click(q('[data-package-remove="local:tide"]'))
+      await removePackage("local:tide")
       await waitFor(() => expect(q('[data-package-error="local:tide"]')).toBeInstanceOf(HTMLElement))
     } finally {
       forceUninstallFailure = null
@@ -747,7 +774,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     clearToasts()
     reloadRequests.length = 0
     expect(injectedSkillNames(await engineInjectedSkillPaths())).toEqual(["premarket-briefing"])
-    click(q('[data-package-remove="local:tide"]'))
+    await removePackage("local:tide")
 
     await waitFor(() => expect(packCard("local:tide")).toBeNull())
     expect(ledgerPackageIds()).toEqual([])
@@ -776,10 +803,11 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     }
   })
 
-  test("区块列的是**账本里有什么**:版本缺失如实写「未提供版本」,不造一个 1.0.0", () => {
+  test("区块列的是**账本里有什么**:版本缺失不造一个 1.0.0(`#1594` AC3:版本不在列表行上)", () => {
     const card = packCard("local:solo")!
-    expect(card.textContent).toContain(zh["alpha.ext.packageNoVersion"])
-    expect(card.textContent).not.toContain("v1.0.0")
+    expect(card.textContent).not.toContain("1.0.0")
+    expect(card.textContent).not.toContain(zh["alpha.ext.packageNoVersion"])
+    expect(card.querySelector("[data-package-label='local:solo']")?.textContent).toBe("solo")
   })
 
   test("重复导入 ⇒ 在**按确认之前**说清「先移除整包」", async () => {
@@ -812,7 +840,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // 先把 solo 拿掉,好让这一次导入是一次真安装。
     await gotoInstalled()
     await waitFor(() => expect(packCard("local:solo")).toBeInstanceOf(HTMLElement))
-    click(q('[data-package-remove="local:solo"]'))
+    await removePackage("local:solo")
     await waitFor(() => expect(packCard("local:solo")).toBeNull())
 
     let entered!: () => void
@@ -853,10 +881,10 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     copyFileSync(ledgerFile, backup)
     try {
       writeFileSync(ledgerFile, "{ this is not json", "utf8")
-      // 走用户真走得到的路径:离开已安装页再回来 ⇒ 重读一次。
-      setHubSection("featured")
+      // 走用户真走得到的路径:离开连接器页再回来 ⇒ 重读一次。
+      await leaveInstalled()
       await waitFor(() => expect(q("[data-installed-package]")).toBeNull())
-      setHubSection("installed")
+      setHubSection("connectors")
       await waitFor(() => expect(q("[data-packages-unreadable]")).toBeInstanceOf(HTMLElement))
 
       const banner = q("[data-packages-unreadable]")!
@@ -869,9 +897,8 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
       expect(q("[data-installed-package]")).toBeNull()
     } finally {
       copyFileSync(backup, ledgerFile)
-      setHubSection("featured")
-      await flush()
-      setHubSection("installed")
+      await leaveInstalled()
+      setHubSection("connectors")
       await waitFor(() => expect(q("[data-packages-unreadable]")).toBeNull())
     }
   })
@@ -890,8 +917,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
 
   test("存量图没有显示名 ⇒ **回退到 root 组件名**,不显示 undefined 也不空白", async () => {
     seedPackage({ packageId: "local:legacy-pack", children: [{ name: "legacy-alpha" }, { name: "legacy-beta" }] })
-    setHubSection("featured")
-    await flush()
+    await leaveInstalled()
     await gotoInstalled()
     await waitFor(() => expect(packCard("local:legacy-pack")).toBeInstanceOf(HTMLElement))
     const label = q('[data-package-label="local:legacy-pack"]')!
@@ -901,35 +927,33 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect((label.textContent ?? "").trim().length).toBeGreaterThan(0)
   })
 
-  test("显示名再怎么撒谎,**来源标仍然只由 child record 的 `origin` 决定**", async () => {
+  test("显示名再怎么撒谎,**来源仍然只由 child record 的 `origin` 决定**", async () => {
     // 这是行为闸,不是源码文本闸:把显示名写成最容易被误读成 provenance 的值,
-    // 而这个包的 child record 的 origin 是 `imported-claude` ⇒ 界面必须说「来自本地文件夹」。
+    // 而这个包的 child record 的 origin 是 `imported-claude` ⇒ 行的来源属性必须是本地导入。
     seedPackage({
       packageId: "local:liar",
       displayName: "official-catalog-package",
       children: [{ name: "liar-skill", origin: "imported-claude" }],
     })
-    setHubSection("featured")
-    await flush()
+    await leaveInstalled()
     await gotoInstalled()
     await waitFor(() => expect(packCard("local:liar")).toBeInstanceOf(HTMLElement))
     const card = packCard("local:liar")!
     expect(q('[data-package-label="local:liar"]')?.textContent).toBe("official-catalog-package")
-    expect(card.textContent).toContain(zh["alpha.ext.packageFromLocalFolder"])
+    // `#1594` AC3:来源不再是行上的标签,只留作行的身份属性 —— 仍然只由 origin 决定。
+    expect(card.getAttribute("data-package-origin")).toBe("imported-claude")
     expect(card.textContent).not.toContain(zh["alpha.ext.packageFromCatalog"])
-    expect(card.querySelector("[data-package-origin]")?.getAttribute("data-package-origin")).toBe("imported-claude")
   })
 
   test("整包移除后,「留下了什么、为什么」**不随包卡一起消失**(R1 Major 5)", async () => {
     // 两个包共享同一个 child —— 移除其中一个,那个 child 必须被保留并说得出理由。
     seedPackage({ packageId: "local:pack-a", displayName: "pack-a", children: [{ name: "a-only" }, { name: "shared-skill" }] })
     seedPackage({ packageId: "local:pack-b", displayName: "pack-b", children: [{ name: "b-only" }, { name: "shared-skill" }] })
-    setHubSection("featured")
-    await flush()
+    await leaveInstalled()
     await gotoInstalled()
     await waitFor(() => expect(packCard("local:pack-a")).toBeInstanceOf(HTMLElement))
 
-    click(q('[data-package-remove="local:pack-a"]'))
+    await removePackage("local:pack-a")
     // 包卡确实没了(移除成功)。
     await waitFor(() => expect(packCard("local:pack-a")).toBeNull())
     // **而解释还在。** 挂在包卡内部的实现会在这一行变红:卡一消失,原因跟着消失,
@@ -975,7 +999,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect(graph).toBeDefined()
     expect(graph && "displayName" in graph).toBe(false)
 
-    click(q(`[data-package-remove="local:${"a".repeat(128)}"]`))
+    await removePackage(`local:${"a".repeat(128)}`)
     await waitFor(() => expect(packCard("local:" + "a".repeat(128))).toBeNull())
   })
 
@@ -991,7 +1015,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // 控制字符一个都没进账本(它连字段都没进)。
     const raw = readFileSync(join(globalRoot, "installs.json"), "utf8")
     expect(raw.includes(String.fromCharCode(1))).toBe(false)
-    click(q('[data-package-remove="local:tide-plugin"]'))
+    await removePackage("local:tide-plugin")
     await waitFor(() => expect(packCard("local:tide-plugin")).toBeNull())
   })
 
