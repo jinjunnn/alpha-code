@@ -851,7 +851,7 @@ export const dict = {
   "alpha.ext.projectMcpUnverifiable": "Activation unverifiable",
   "alpha.ext.reviewUpdate": "Review update",
   // \u2500\u2500 #395(REQ-104):third-party disabled-by-default + universal enable switch \u2500\u2500
-  "alpha.ext.addedDisabled": "Installed but off. Turn on its switch under “Installed.”",
+  "alpha.ext.addedDisabled": "Installed but off. Click “Turn on” under “Installed” on this page.",
   "alpha.ext.stateFailed": "Failed to change enable state",
   "alpha.ext.statePendingReload": "The setting is saved and will take effect after reloading. The app may still be using the previous setting; restart the app.",
   // \u2500\u2500 #396(REQ-104):bundle detail "pack facts" section \u2500\u2500

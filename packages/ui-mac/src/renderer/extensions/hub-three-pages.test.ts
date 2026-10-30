@@ -13,8 +13,8 @@ test("定制中心三页结构:页签、页头、列表行、「添加 ▾」、
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  // 条数是先单跑 cases 文件确认 7 pass 之后才写上来的(AC1–AC7 各一条)。
-  expect(output).toContain(" 7 pass")
+  // 条数是先单跑 cases 文件确认 pass 数之后才写上来的:AC1–AC7 各一条(7);审计 r1 补「全部更新只管本页」与「菜单不重复开启」两条(9)。
+  expect(output).toContain(" 9 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 7 tests across 1 file/)
+  expect(output).toMatch(/Ran 9 tests across 1 file/)
 })

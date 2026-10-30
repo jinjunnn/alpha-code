@@ -467,3 +467,44 @@ test("AC7 未完成审核的扩展装上默认关闭:行上「未开启」+「�
   expect(html(q("[data-installed-row='skill:brand-guidelines'] [data-hub-reload-now]"))).toBeNull()
   expect(q("[data-installed-row='skill:brand-guidelines'] [data-more]")).toBeInstanceOf(HTMLElement)
 })
+
+test("AC5 每页「已安装」组上的「全部更新」只更新这一页的条目(显示与执行同一判据)", async () => {
+  reset()
+  // 两条都落后于目录版本:一条技能(技能页)、一条连接器(连接器页)。技能排在前面 ——
+  // 不按页过滤的实现会在连接器页先去更新那个技能。
+  const old = "0.0.1" // 目录条目版本是 1.0.x(随包目录 `mcp:fetch` 1.0.1、`skill:safe-refactor` 1.0.0)
+  receipts = [
+    { ...receipt("skill:safe-refactor", "safe-refactor", "skill"), version: old },
+    { ...receipt("mcp:fetch", "fetch", "mcp"), version: old },
+  ]
+  mount("connectors")
+  await waitFor(() => expect(q("[data-installed-row='mcp:fetch'] [data-update-row]")).toBeInstanceOf(HTMLElement))
+  const updateAll = () => qa(".alpha-ext-secrow .alpha-ext-link").find((node) => node.textContent === zh["alpha.ext.updateAll"]) ?? null
+  click(updateAll())
+  // 连接器的更新走确认框重装(既有行为);技能一条都不许被碰。
+  await waitFor(() => expect(q("[role='dialog']")).toBeInstanceOf(HTMLElement))
+  expect(calls.installCatalog).toEqual([])
+  click(qa("[role='dialog'] .a-dialog-footer .a-btn")[0]!)
+  await waitFor(() => expect(html(q("[role='dialog']"))).toBeNull())
+  // 技能页的「全部更新」只更新技能,不弹连接器的确认框。
+  click(q("[data-tab='skills']"))
+  await waitFor(() => expect(updateAll()).toBeInstanceOf(HTMLElement))
+  click(updateAll())
+  await waitFor(() => expect(calls.installCatalog).toEqual([expect.objectContaining({ catalogId: "skill:safe-refactor" })]))
+  expect(html(q("[role='dialog']"))).toBeNull()
+})
+
+test("AC7 进不了详情页的默认关闭行:行上「开启」,「…」里只剩移除,不再重复一个「开启」", async () => {
+  reset()
+  receipts = [{ ...receipt("user:local-notes", "local-notes", "skill"), origin: "imported", version: undefined }]
+  inventoryRows = [inventoryRow("user:local-notes", "local-notes", "skill", "disabled")]
+  mount("skills")
+  await waitFor(() => expect(q("[data-installed-row='skill:local-notes'] [data-enable-row]")).toBeInstanceOf(HTMLElement))
+  const row = q("[data-installed-row='skill:local-notes']")!
+  expect(q(".alpha-ext-kit-desc", row)?.textContent).toBe(zh["alpha.ext.notOn"])
+  // 没有目录条目 ⇒ 进不了详情页 ⇒「…」留着,移除入口不丢;但「开启」只出现一次。
+  expect(await openMenu(q("[data-more]", row))).toEqual(["remove"])
+  // 装完默认关闭的提示指向的正是这颗「开启」(原来指向已拆掉的「已安装」页签与开关)。
+  expect(zh["alpha.ext.addedDisabled"]).toContain(zh["alpha.ext.turnOn"])
+  expect(zh["alpha.ext.addedDisabled"]).not.toContain("开关")
+})

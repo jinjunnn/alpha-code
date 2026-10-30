@@ -1052,10 +1052,12 @@ export function ExtensionHub(props: {
   const runUpdateAll = async () => {
     // #348(Codex 裁决 D2 + review Major 2):遇任何弹框(authorize / MCP 确认)必须停 ——
     // 不能一边开着弹框一边继续更新其它条目;整个批量持 updFlight 单飞。
+    // `#1594`:「全部更新」挂在每页「已安装」组上,只更新这一页的条目(与它显不显示同一判据)。
     if (updateBlocked()) return
     setUpdFlight(true)
     try {
-      for (const r of updatable()) if ((await runUpdateOne(r)) !== undefined) break
+      for (const r of updatable().filter((r) => pageOfType(r.type) === section()))
+        if ((await runUpdateOne(r)) !== undefined) break
     } finally {
       setUpdFlight(false)
     }
@@ -1773,8 +1775,9 @@ export function ExtensionHub(props: {
       if (isUpdatable()) return "update"
       return undefined
     }
+    // 「开启」已经是行上的那颗按钮时,菜单里不再重复一遍(移除、设置照常在菜单里)。
     const menuItems = () => [
-      ...(hasToggle()
+      ...(hasToggle() && attention() !== "enable"
         ? [{ key: isOn() ? "disable" : "enable", label: isOn() ? t("alpha.ext.turnOff") : t("alpha.ext.turnOn"), disabled: stateBusy[0](), onSelect: () => void toggleState() }]
         : []),
       { key: "remove", label: t("alpha.ext.remove"), danger: true, onSelect: () => void onUninstall(row.receipt) },

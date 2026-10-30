@@ -831,7 +831,7 @@ export const dict = {
   "alpha.ext.projectMcpUnverifiable": "无法核验激活状态",
   "alpha.ext.reviewUpdate": "审查更新",
   // ── #395(REQ-104):第三方默认关 + 全类型启用开关 ──
-  "alpha.ext.addedDisabled": "已安装，尚未开启。请到「已安装」打开对应开关。",
+  "alpha.ext.addedDisabled": "已安装，尚未开启。请在本页「已安装」里点「开启」。",
   "alpha.ext.stateFailed": "启用状态切换失败",
   "alpha.ext.statePendingReload": "设置已保存，重新加载后生效。应用目前可能仍在使用原设置，请重启应用。",
   // ── #396(REQ-104):套件详情页「整包事实」段 ──
