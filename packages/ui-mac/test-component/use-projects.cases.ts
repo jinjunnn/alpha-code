@@ -40,7 +40,7 @@ const { render } = solidWeb
 Bun.plugin({
   name: "solid-component-tests",
   setup(builder) {
-    builder.onLoad({ filter: /packages\/ui-mac\/src\/.*\.tsx$/ }, async (args) => {
+    builder.onLoad({ filter: /packages\/(ui|ui-mac)\/src\/.*\.tsx$/ }, async (args) => {
       const transformed = await transformAsync(await Bun.file(args.path).text(), {
         filename: args.path,
         presets: [

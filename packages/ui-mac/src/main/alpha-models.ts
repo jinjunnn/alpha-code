@@ -41,7 +41,7 @@ const BUNDLED = catalog as unknown as Pick<AlphaModelCatalog, "defaultModel" | "
 export const PLATFORM_API_KEY_PLACEHOLDER = "alpha-platform-credential-from-request-header"
 
 /** BYOK 段的**唯一**投影:已应用 BYOK 目录 × App 内置适配器表(方案 §2.3)。provider 身份 / 名称 / preset / 模型 /
- *  逐模型元数据取目录;`compat` / `baseURL` / `keyEnv` / `pico` 只取适配器表 —— 目录里不认识的 provider 没有适配器,
+ *  逐模型元数据 / 品牌取目录;`compat` / `baseURL` / `keyEnv` 只取适配器表 —— 目录里不认识的 provider 没有适配器,
  *  投影不出来(采纳时已跳过,这里是同一判据的读侧)。 */
 export function projectByokProviders(byok: ByokCatalogV1): ByokProvider[] {
   return byok.providers.flatMap((provider): ByokProvider[] => {
@@ -55,7 +55,7 @@ export function projectByokProviders(byok: ByokCatalogV1): ByokProvider[] {
         compat: adapter.compat,
         baseURL: adapter.baseURL,
         keyEnv: adapter.keyEnv,
-        pico: adapter.pico,
+        brand: provider.brand,
         models: provider.models.map((model) => model.id),
         modelMeta: Object.fromEntries(
           provider.models.map((model) => [

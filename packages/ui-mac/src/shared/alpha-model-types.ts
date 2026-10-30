@@ -13,7 +13,7 @@
 
 /** A BYOK (自带 Key) provider as the picker and the engine injection see it —— REQ-237 `#1556` 起是**投影**,
  *  不是随包数据:provider 身份、名称、preset、模型与逐模型元数据来自已应用 BYOK 目录(远程 `GET /v1/byok-catalog`
- *  或随包首启引导,ByokCatalogV1),`compat` / `baseURL` / `keyEnv` / `pico` 来自 App 内置适配器表
+ *  或随包首启引导,ByokCatalogV1),`compat` / `baseURL` / `keyEnv` 来自 App 内置适配器表
  *  (main/byok-adapters.ts)。唯一的投影函数是 main/alpha-models.ts `projectByokProviders`。 */
 export type ByokProvider = {
   id: string
@@ -23,7 +23,8 @@ export type ByokProvider = {
   compat: "openai" | "anthropic"
   baseURL: string
   keyEnv: string
-  pico: { letter: string; color: string }
+  /** 品牌(BYOK 目录 provider 的 `brand`),picker 据它出图标(alpha-code#1558)。 */
+  brand: string
   models: string[]
   /** 逐模型元数据(键 = `models` 里每一个 id,来自 BYOK 目录)。读它的只有 {@link byokModelMeta}。
    *  REQ-153 #1267 的教训(`glm-4.5-air` 无徽标却锁在思考档)仍成立:元数据必须是这个 provider 自己的,

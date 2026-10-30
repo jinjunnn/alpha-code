@@ -241,7 +241,7 @@ mock.module("../src/renderer/alpha-ui/providers", () => ({ useCommand: () => com
 Bun.plugin({
   name: "session-second-send-component-test",
   setup(builder) {
-    builder.onLoad({ filter: /packages\/ui-mac\/src\/.*\.tsx$/ }, async (args) => {
+    builder.onLoad({ filter: /packages\/(ui|ui-mac)\/src\/.*\.tsx$/ }, async (args) => {
       const transformed = await transformAsync(await Bun.file(args.path).text(), {
         filename: args.path,
         presets: [

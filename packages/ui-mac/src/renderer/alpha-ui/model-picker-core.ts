@@ -14,7 +14,9 @@ export type ModelPickerRow = {
   group: "platform" | "byok"
   model: ComposerModel
   providerName: string
-  pico: { letter: string; color: string }
+  /** 品牌:平台行取已应用快照的 `display.brand`,BYOK 行取 BYOK 目录 provider 的 `brand`;自定义节点**不猜**,
+   *  恒缺省(= 中性图形)。不来自路由腿 `provider`(qwen 经 OpenRouter 路由,品牌仍是 qwen)。 */
+  brand?: string
   /** #679:平台下发的双倍数,**只在平台组的行上出现**(BYOK / 自定义节点走用户自己的 KEY,
    *  与代理计价无关)。缺失 = 平台段没有有效 V2/LKG,该行渲染「计价信息暂不可用」而不是数字。
    *  客户端不做除法、不 rounding、不分桶、不折叠成单一 scalar —— 值就是平台原值。 */
@@ -29,9 +31,32 @@ export type ModelPickerRow = {
   engineIndependent?: true
 }
 
-/** 平台行的字母图标。`#1556` 删掉了随包 `platformProvider.pico`(平台展示字段只归网关);在按品牌出图
- *  (alpha-code#1558,读 `PlatformModel.brand`)落地之前,平台行保留原来那枚 Code Puppy「C」,用户看到的不变。 */
-const PLATFORM_PICO = { letter: "C", color: "#4f46e5" }
+/** alpha-code#1558:品牌 → 上游 `ProviderIcon` 图标集(`@opencode-ai/ui` provider-icons/sprite.svg)里的图形 id。
+ *  App 内固定小表(方案 req236 §2.6);新品牌要有自己的图标需要发版,表外品牌与自定义节点回落为图标组件自带的
+ *  通用图形 `synthetic`。不新增图形资源。 */
+const BRAND_ICONS = new Map([
+  ["anthropic", "anthropic"],
+  ["openai", "openai"],
+  ["deepseek", "deepseek"],
+  ["zhipu", "zhipuai"],
+  ["qwen", "alibaba"],
+  ["moonshot", "moonshotai"],
+  ["minimax", "minimax"],
+])
+export const NEUTRAL_BRAND_ICON = "synthetic"
+
+export function brandIconId(brand: string | undefined): string {
+  return (brand && BRAND_ICONS.get(brand)) || NEUTRAL_BRAND_ICON
+}
+
+/** 已选模型(输入框模型按钮)的品牌,与 picker 行同源:平台模型 → 快照 `brand`;直连 BYOK 节点 → 目录 provider
+ *  `brand`;其余(自定义节点、未选、目录未到)→ 缺省(中性图形)。 */
+export function modelBrandOf(model: ModelRef | null | undefined, catalog: EffectiveCatalog | null): string | undefined {
+  if (!model || !catalog) return undefined
+  if (model.providerID === catalog.platformProvider.id)
+    return catalog.platformModels.find((platform) => platform.id === model.id)?.brand
+  return catalog.byokProviders.find((provider) => byokEngineId(provider.id) === model.providerID)?.brand
+}
 
 /** 平台已把倍数 half-up 到一位小数(契约 docs/contracts,`isTrustedPair` 拒绝不落在 0.1 网格上的值),
  *  所以 `toFixed(1)` 是**本地化**不是 rounding:它只决定 `1` 要不要写成 `1.0`,不会改变任何数值。 */
@@ -116,7 +141,7 @@ export function buildModelPickerRows(input: {
         variants: model.variants ? Object.keys(model.variants) : [],
       },
       providerName: input.catalog.platformProvider.name,
-      pico: PLATFORM_PICO,
+      brand: model.brand,
       ...(model.pricing ? { pricing: model.pricing } : {}),
       reasoning: !!model.reasoning,
       availability: availability.kind,
@@ -132,7 +157,7 @@ export function buildModelPickerRows(input: {
           group: "byok",
           model: { id: provider.models[0] ?? "", providerID: provider.id, name: provider.name, variants: [] },
           providerName: provider.name,
-          pico: provider.pico,
+          brand: provider.brand,
           reasoning: false,
           availability: input.keyStatusState === "loading" ? "loading" : "unavailable",
           reason: input.keyStatusState === "loading" ? t("alpha.model.keyLoading") : t("alpha.model.keyFailed"),
@@ -146,7 +171,7 @@ export function buildModelPickerRows(input: {
           group: "byok",
           model: { id: provider.models[0] ?? "", providerID: provider.id, name: provider.name, variants: [] },
           providerName: provider.name,
-          pico: provider.pico,
+          brand: provider.brand,
           reasoning: false,
           availability: "needs-key",
           reason: t("alpha.model.keyMissing"),
@@ -160,7 +185,7 @@ export function buildModelPickerRows(input: {
     return provider.models.map((id): ModelPickerRow => {
       // The engine injects BYOK nodes under `<id>-byok` (byokEngineId) to dodge the models.dev
       // collision, so carry the engine id as the selectable model's providerID — inference must route
-      // to the injected node. Display id (provider.id) stays for keyStatus/pico/name/key above.
+      // to the injected node. Display id (provider.id) stays for keyStatus/brand/name/key above.
       // REQ-153 #1236:name/reasoning 与 sidecar 注入(main/alpha-models.ts)同一个函数派生 —— 徽标
       // 亮 ⇔ 引擎 capabilities.reasoning === true。
       // REQ-153 #1266:variants 同源 —— 此前这里写死 `[]`,直连 deepseek-v4-pro / glm-5.2 亮着徽标
@@ -173,7 +198,7 @@ export function buildModelPickerRows(input: {
         group: "byok",
         model: { id, providerID: engineID, name: meta.name, variants: Object.keys(meta.variants ?? {}) },
         providerName: provider.name,
-        pico: provider.pico,
+        brand: provider.brand,
         reasoning: meta.reasoning,
         availability: "available",
         // 「当前可执行」是另一个谓词:引擎未 ready 时如实说明还要等什么,但不撤销可选择性。
@@ -221,7 +246,6 @@ export function buildModelPickerRows(input: {
                     variants: model.variants.map((variant) => variant.id),
                   },
                   providerName: providerID,
-                  pico: { letter: providerID.slice(0, 1).toUpperCase() || "?", color: "var(--a-accent-solid)" },
                   reasoning: false,
                   availability: available
                     ? "available"

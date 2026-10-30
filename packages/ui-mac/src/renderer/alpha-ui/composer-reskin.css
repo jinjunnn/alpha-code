@@ -89,27 +89,6 @@
   border-radius: var(--a-radius-md) !important;
 }
 
-/* Unify the in-session model chip with the home composer's α-pill (#18/#19): drop opencode's
- * provider glyph (whale/etc.) and prepend the alpha α pico, so it reads "α <model>" exactly like
- * AlphaHome's ModelChip ("α ALPHA"). provider-icon is a stable data-component hook. The two
- * composers now differ ONLY in position (centred on home, docked in-session) — one design, not two. */
-[data-action="prompt-model"] [data-component="provider-icon"] {
-  display: none !important;
-}
-[data-action="prompt-model"]::before {
-  content: "α";
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-right: 6px;
-  border-radius: 5px;
-  background: var(--a-accent);
-  color: #fff;
-  display: inline-grid;
-  place-items: center;
-  font-size: 10px;
-  font-weight: 700;
-}
 [data-action="prompt-model"] {
   border-radius: var(--a-radius-md) !important;
 }

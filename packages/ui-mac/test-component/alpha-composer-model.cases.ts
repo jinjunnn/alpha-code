@@ -69,7 +69,7 @@ const activeDisposals: Array<() => void> = []
 Bun.plugin({
   name: "solid-component-tests",
   setup(builder) {
-    builder.onLoad({ filter: /packages\/ui-mac\/src\/.*\.tsx$/ }, async (args) => {
+    builder.onLoad({ filter: /packages\/(ui|ui-mac)\/src\/.*\.tsx$/ }, async (args) => {
       const transformed = await transformAsync(await Bun.file(args.path).text(), {
         filename: args.path,
         presets: [
@@ -108,6 +108,7 @@ const {
 const { ALPHA_V2_CATALOG_READY_PROVIDER_ID } = await import("../src/shared/alpha-config")
 const { createModelContract } = await import("../src/renderer/alpha-ui/model-contract")
 const { byokEngineId } = await import("../src/shared/alpha-model-types")
+const { brandIconId } = await import("../src/renderer/alpha-ui/model-picker-core")
 const { resetAuthRecoveryForTests } = await import("../src/renderer/auth-recovery")
 const { setLocale } = await import("../src/renderer/i18n")
 
@@ -1070,7 +1071,7 @@ describe("AlphaComposer production model seam", () => {
 })
 
 describe("ModelPickPop production component", () => {
-  test("#1507 AC2/AC3:Code Puppy 读屏名与 C 小标不改变 alpha 模型选择身份", async () => {
+  test("#1507 AC2/AC3:Code Puppy 读屏名与品牌图标(#1558)不改变 alpha 模型选择身份", async () => {
     installApi()
     const picks: ComposerModel[] = []
     const mounted = mount(() =>
@@ -1085,7 +1086,9 @@ describe("ModelPickPop production component", () => {
     await waitFor(() => expect(mounted.host.querySelector(".a-mpp-row")?.getAttribute("aria-label")).toContain("Code Puppy"))
     const rows = [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].filter((row) => row.getAttribute("aria-label")?.includes(",Code Puppy,"))
     expect(rows).toHaveLength(catalog.platformModels.length)
-    expect(rows.map((row) => row.querySelector(".a-pico")?.textContent)).toEqual(catalog.platformModels.map(() => "C"))
+    expect(rows.map((row) => row.querySelector("[data-brand-icon]")?.getAttribute("data-brand-icon"))).toEqual(
+      catalog.platformModels.map((model) => brandIconId(model.brand)),
+    )
     expect(catalog.platformProvider.id).toBe("alpha")
     click(rows[0] ?? null)
     await waitFor(() => expect(picks).toHaveLength(1))
@@ -3799,13 +3802,15 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
   const expectRowExactly = (
     row: HTMLButtonElement,
     dict: Record<string, string>,
-    spec: { letter: string; name: string; id: string; providerName: string; group: "platform" | "byok"; parts: string[] },
+    spec: { icon: string; name: string; id: string; providerName: string; group: "platform" | "byok"; parts: string[] },
   ) => {
     const where = `${spec.group}/${spec.id}`
     expect(descTexts(row), `${where} 行尾状态元素列表`).toEqual(spec.parts)
+    // #1558:行首是品牌图标格(装饰,不出可见文字),图形 id 按品牌固定映射。
+    expect(row.querySelector("[data-brand-icon]")?.getAttribute("data-brand-icon"), `${where} 品牌图标`).toBe(spec.icon)
     const suffix = spec.group === "byok" ? ` · ${spec.providerName}` : ""
     expect(row.textContent, `${where} 整行可见文本`).toBe(
-      `${spec.letter}${spec.name}${spec.id}${suffix}${spec.parts.join("")}`,
+      `${spec.name}${spec.id}${suffix}${spec.parts.join("")}`,
     )
     expect(row.getAttribute("aria-label"), `${where} aria-label`).toBe(
       ariaFor(dict, spec.name, spec.providerName, spec.parts),
@@ -3818,7 +3823,7 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
     expect(platform.length, "平台行数").toBe(pricedCatalog.platformModels.length)
     for (const model of pricedCatalog.platformModels) {
       expectRowExactly(rowFor(model.id), dict, {
-        letter: "C",
+        icon: brandIconId(model.brand),
         name: model.name,
         id: model.id,
         providerName: pricedCatalog.platformProvider.name,
@@ -3832,7 +3837,7 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
   const expectNonPlatformRowsCarryNoPricing = (dict: Record<string, string>) => {
     for (const id of keyedByok.models) {
       expectRowExactly(rowFor(id, "byok"), dict, {
-        letter: keyedByok.pico.letter,
+        icon: brandIconId(keyedByok.brand),
         name: keyedByok.modelMeta[id]?.name ?? id,
         id,
         providerName: keyedByok.name,
@@ -3844,7 +3849,7 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
       // 未配 KEY 的供应商只有一行占位,展示名是**供应商名**(model-picker-core 的 needs-key 分支),
       // 不是模型名 —— 期望值照生产写,不照直觉写。
       expectRowExactly(rowFor(provider.models[0]!, "byok"), dict, {
-        letter: provider.pico.letter,
+        icon: brandIconId(provider.brand),
         name: provider.name,
         id: provider.models[0]!,
         providerName: provider.name,
@@ -3853,7 +3858,7 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
       })
     }
     expectRowExactly(rowFor(CUSTOM.id, "byok"), dict, {
-      letter: CUSTOM.providerID.slice(0, 1).toUpperCase(),
+      icon: "synthetic",
       name: CUSTOM.name,
       id: CUSTOM.id,
       providerName: CUSTOM.providerID,
@@ -4688,6 +4693,83 @@ describe("#1557 模型状态行与清单失败提示", () => {
     await eventually(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelNotLoadedDetail"]))
     expect(slotNotices(mounted.host)).toHaveLength(1)
     expect(mounted.host.querySelector("[data-alpha-catalog-unavailable]")).toBeNull()
+    mounted.dispose()
+  })
+})
+
+describe("#1558 输入框模型按钮与添加供应商卡按品牌出图", () => {
+  const chipButton = (host: HTMLElement) => host.querySelector<HTMLButtonElement>('[data-kind="model"] > button')
+  const chipIcon = (host: HTMLElement) => chipButton(host)?.querySelector<HTMLElement>("[data-brand-icon]") ?? null
+
+  test("AC4 home 模型按钮:未选时中性图形,选中后显示所选模型品牌(平台 / 直连 / 自定义);固定「α」已移除", async () => {
+    installApi()
+    const models = deferred<ModelV2Info[]>()
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        // 引擎清单不回 ⇒ 不会自动默认,停在「未选」。
+        modelContract: { list: () => models.promise, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    await waitFor(() => expect(chipIcon(mounted.host)?.getAttribute("data-brand-icon")).toBe("synthetic"))
+    expect(composerModel()).toBeNull()
+    expect(chipIcon(mounted.host)?.classList.contains("neutral")).toBe(true)
+    expect(chipIcon(mounted.host)?.getAttribute("aria-hidden")).toBe("true")
+    expect(chipIcon(mounted.host)?.querySelector('svg[data-component="provider-icon"] use')?.getAttribute("href")).toEndWith(
+      "#synthetic",
+    )
+    expect(visibleText(chipButton(mounted.host)!)).not.toContain("α")
+    expect(mounted.host.querySelector('[data-kind="model"] .a-pico')).toBeNull()
+
+    const cases: Array<[ComposerModel, string]> = [
+      [{ providerID: catalog.platformProvider.id, id: "qwen3.7-max", name: "Qwen3.7 Max", variants: [] }, "alibaba"],
+      [{ providerID: catalog.platformProvider.id, id: "claude-opus-4.8", name: "Claude Opus 4.8", variants: [] }, "anthropic"],
+      [{ providerID: byokEngineId("moonshot"), id: "kimi-k2", name: "Kimi K2", variants: [] }, "moonshotai"],
+      // 自定义节点:名字里带 qwen 也不猜品牌。
+      [{ providerID: "office-gateway", id: "qwen2.5-72b-instruct", name: "qwen2.5-72b-instruct", variants: [] }, "synthetic"],
+    ]
+    for (const [model, icon] of cases) {
+      setComposerModel(model)
+      await waitFor(() => expect(chipIcon(mounted.host)?.getAttribute("data-brand-icon"), model.id).toBe(icon))
+      expect(chipIcon(mounted.host)?.classList.contains("neutral"), model.id).toBe(icon === "synthetic")
+      expect(chipButton(mounted.host)?.querySelector(".a-chip-label")?.textContent).toBe(model.name)
+      expect(visibleText(chipButton(mounted.host)!)).not.toContain("α")
+    }
+    mounted.dispose()
+  })
+
+  test("AC4 添加供应商卡:预置供应商按 BYOK 目录品牌出图,「自定义端点」用中性图形", async () => {
+    installApi()
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+    const entry = () =>
+      [...mounted.host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes(zh["alpha.model.addProvider"]),
+      ) ?? null
+    await waitFor(() => expect(entry()?.disabled).toBe(false))
+    click(entry())
+    const overlay = () => mounted.host.querySelector<HTMLElement>(".a-mpa")!
+    await waitFor(() => expect(overlay().textContent).toContain(zh["alpha.provider.intro"]))
+    const icons = [...overlay().querySelectorAll<HTMLElement>(".a-mpa-preset")].map((card) => {
+      const icon = card.querySelector<HTMLElement>(".a-brand.lg[data-brand-icon]")
+      return icon?.getAttribute("data-brand-icon")
+    })
+    expect(icons).toEqual([
+      ...catalog.presetIds.map((id) => brandIconId(catalog.byokProviders.find((provider) => provider.id === id)!.brand)),
+      "synthetic",
+    ])
+    expect(icons.slice(0, -1)).not.toContain("synthetic") // 预置供应商都在映射表里,没有一张落回通用图形
+    expect(overlay().querySelector(".a-pico")).toBeNull()
     mounted.dispose()
   })
 })
