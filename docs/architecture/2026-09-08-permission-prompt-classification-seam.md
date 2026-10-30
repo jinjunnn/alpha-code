@@ -105,6 +105,10 @@ Permission.ask         permission="edit"  patterns=["…/P1285-C.txt"]          
 Event.Asked            info.permission="edit"  info.patterns=["…/P1285-C.txt"]  info.metadata={filepath,diff}
 ```
 
+> 2026-10-30 订正(`alpha-code#1574`):上面是 2026-09-08 的实测,保留为历史。现行次序里身份轴那一问已移到
+> `tool.execute.before` **之后**、实现之前(钩子之前只做拒绝判定),问的是钩子改过的参数;见
+> [REQ-236 方案 §2.5](../design/req236-permissions-and-provenance.md)。
+
 **这一条时序是本文档最重要的一句话**:`Event.Asked` 只有一条,而它属于**能力轴**那一问。
 身份轴那一问因为 ruleset 说 allow,`needsAsk=false`,**根本没有弹框**。
 webfetch 臂与 bash 臂的形状完全相同。
@@ -280,7 +284,7 @@ $ # 再往 11 个候选文件各加一行之后
 | `gateToolExecution`(`alpha-tool-policy-gate.ts:138`) | 否(§2.2/§3) | **否**(§2.4) | **0**(ADR-043 alpha 自有) |
 | **`Permission.ask`**(`permission/index.ts:158`) | **是**(§3 唯一发布点) | **是,除远端 MCP 外**(§2.4/§2.5) | **0**(ADR-038 已收编) |
 | 各工具体内 `ctx.ask` 逐处 | 否(只覆盖自己那一种) | 是 | **7 个文件判红,各需一条收编 ADR** |
-| `tool.execute.before` 钩子 | 否 —— 它在身份轴 ask **之后**、能力轴 ask **之前**(§2.2),且无结构化通道把结论传给后面的 ask | 是(`output.args`) | 0(`packages/ext`) |
+| `tool.execute.before` 钩子 | 否 —— 它在身份轴 ask **之后**(`#1574` 起改为之前,见 §2.2 订正)、能力轴 ask **之前**(§2.2),且无结构化通道把结论传给后面的 ask | 是(`output.args`) | 0(`packages/ext`) |
 
 ⚠️ **`packages/ext` 装不下这个分类模块。** `packages/ext/package.json` 的 `name` 是
 `@alpha-code/ext`、`private: true`,`packages/opencode/package.json` **对它零依赖**——

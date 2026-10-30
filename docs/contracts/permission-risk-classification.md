@@ -62,7 +62,7 @@ metadata.alphaRisk = {
 | `bash` | `patterns` = tree-sitter 按命令切好的原文;`always` = `BashArity.prefix` 算出的命令头 ⇒ 程序名 |
 | `webfetch` | `patterns[0]` / `metadata.url` 交给平台 `URL` 解析(scheme / userinfo / query) |
 | `external_directory` / `glob` / `grep` / `websearch` / `task` / `doom_loop` / `workflow_tool_approval` / … | 各自的 `patterns` 与 `metadata` |
-| 身份轴(`gateToolExecution`) | `metadata.identity` / `authority` / `transport` / `args`,由 `alpha-tool-policy-gate.ts` 写入 |
+| 身份轴(`alpha-tool-policy-gate.ts` 的 `confirm`,在 `tool.execute.before` 之后) | `metadata.identity` / `authority` / `transport` / `args`(钩子之后、实现将收到的那一份)/ `policy`(`{directory, canonical, bindingDigest, askedBy}`,不参与分级),由 `alpha-tool-policy-gate.ts` 写入 |
 
 词法探针(凭据路径、秘密形状 token、URL 抽取、持久化落点)一律 raise-only:命中只抬档,未命中不降档。
 输入有上限(每段文本 200 000 字符、512 个字符串叶子)。
