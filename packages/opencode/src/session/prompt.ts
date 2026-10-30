@@ -417,18 +417,42 @@ const layer = Layer.effect(
         { args: taskArgs },
       )
 
-      let error: Error | undefined
-      const taskAbort = new AbortController()
-      // REQ-236 C2(#1574):身份轴那一问在钩子之后、实现之前,按钩子改过的 taskArgs 问,批准后复核;
-      // 拒绝 / 复核不过与实现失败同样收口(这条 part 记成 error)。
-      const confirmed = AlphaToolPolicyGate.confirm(decision, {
+      // REQ-236 C2(#1574):身份轴那一问在钩子之后、实现之前,按钩子改过的 taskArgs 问,批准后复核。
+      // 拒绝 / 复核不过 / 超时:这条 part 记成 error、助手消息以 error 收尾,再把拒绝抛给 loop ——
+      // 与派出前的拒绝一样结束本轮,不留一条还在跑的子任务。
+      yield* AlphaToolPolicyGate.confirm(decision, {
         ...gate,
         permission,
         sessionID,
         tool: { messageID: assistantMessage.id, callID: part.callID },
         metadata: { agent: task.agent, description: task.description },
         args: taskArgs,
-      }).pipe(Effect.orDie)
+      }).pipe(
+        Effect.orDie,
+        Effect.onError((cause) =>
+          Effect.gen(function* () {
+            const refusal = Cause.squash(cause)
+            const now = Date.now()
+            assistantMessage.finish = "error"
+            assistantMessage.error = MessageV2.fromError(refusal, { providerID: taskModel.providerID })
+            assistantMessage.time.completed = now
+            yield* sessions.updateMessage(assistantMessage)
+            yield* sessions.updatePart({
+              ...part,
+              state: {
+                status: "error",
+                error: refusal instanceof Error ? refusal.message : String(refusal),
+                time: { start: part.state.status === "running" ? part.state.time.start : now, end: now },
+                metadata: part.state.status === "pending" ? undefined : part.state.metadata,
+                input: part.state.input,
+              },
+            } satisfies SessionV1.ToolPart)
+          }),
+        ),
+      )
+
+      let error: Error | undefined
+      const taskAbort = new AbortController()
       const result = yield* taskTool
         .execute(taskArgs, {
           agent: task.agent,
@@ -456,7 +480,6 @@ const layer = Layer.effect(
               .pipe(Effect.orDie),
         })
         .pipe(
-          (execute) => Effect.andThen(confirmed, execute),
           Effect.catchCause((cause) => {
             const defect = Cause.squash(cause)
             error = defect instanceof Error ? defect : new Error(String(defect))

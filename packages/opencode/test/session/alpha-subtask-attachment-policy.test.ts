@@ -5,8 +5,9 @@
 // E6:direct subtask 绕过 SessionTools ——
 //   · identity deny(`builtin::task`)⇒ loop 以 DeniedError 收口,零子会话、零 assistant
 //     tool part 持久化(prompt.ts 的 disabled 检查);
-//   · identity ask ⇒ **先**进真 Permission 待批队列,批准前零子会话、零消息持久化;
-//     reject ⇒ fail-closed,依旧零副作用(#1129 新接的 ask 闸;deny-only 时代这里直接放行)。
+//   · identity ask ⇒ 进真 Permission 待批队列,批准前零子会话;#1574 起这一问在 `tool.execute.before`
+//     之后(批准的是钩子改过的参数),此时这条 task part 已持久化为 running;
+//     reject ⇒ fail-closed:loop 以 RejectedError 收口、零子会话,那条 part 记成 error。
 //
 // E7:attachment ingestion(prompt.ts 的 execRead,`ask: () => Effect.void`)是**显式排除**:
 //   宿主替用户读其已选择的附件,不是模型 tool call。负向锁 = 把 `builtin::read` identity 与
@@ -275,7 +276,7 @@ it.instance(
 )
 
 it.instance(
-  "E6 ask:builtin::task ask ⇒ 先进真待批队列,批准前零子会话零持久化;reject ⇒ fail-closed",
+  "E6 ask:builtin::task ask ⇒ 钩子之后进真待批队列,批准前零子会话;reject ⇒ fail-closed,那条 part 记成 error",
   () =>
     Effect.gen(function* () {
       const prompt = yield* SessionPrompt.Service
@@ -300,16 +301,22 @@ it.instance(
       expect(pending.length).toBe(1)
       expect(pending[0]!.permission).toBe(ID_BUILTIN_TASK)
       expect(pending[0]!.sessionID).toBe(chat.id)
-      // 挂起期间:子会话、assistant tool part 一个都不许出现(副作用在批准之后)。
+      // 挂起期间:子会话一个都不许出现(实现在批准之后);#1574:问在钩子之后,task part 已是 running。
       expect(yield* sessions.children(chat.id)).toEqual([])
-      expect(yield* assistantToolParts(chat.id)).toEqual([])
+      const taskStates = () =>
+        assistantToolParts(chat.id).pipe(
+          Effect.map((entries) =>
+            entries.flatMap((entry) => entry.parts).flatMap((part) => (part.type === "tool" ? [part.state.status] : [])),
+          ),
+        )
+      expect(yield* taskStates()).toEqual(["running"])
 
       yield* permission.reply({ requestID: pending[0]!.id, reply: "reject" })
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
       expect(yield* sessions.children(chat.id)).toEqual([])
-      expect(yield* assistantToolParts(chat.id)).toEqual([])
+      expect(yield* taskStates()).toEqual(["error"])
     }),
   { config: cfg },
 )
