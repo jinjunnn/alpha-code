@@ -25,7 +25,7 @@
 //   工作区内」的答案),bash 的 `patterns` 是 tree-sitter 按命令切好的原文、`always` 是 `BashArity.prefix`
 //   算出的命令头(程序名从这里取,不自己 tokenize),webfetch 的 `patterns[0]` 是完整 URL(交给平台的
 //   `URL` 解析,不自己拆)。
-// · 身份轴那一问(`gateToolExecution`):`metadata.identity` / `authority` / `transport` / `args` 由
+// · 身份轴那一问(`AlphaToolPolicyGate.confirm`):`metadata.identity` / `authority` / `transport` / `args` 由
 //   `alpha-tool-policy-gate.ts` 供数(#1285 的供数缺口就在这里补:远端 MCP 的目的地 = transport.url,
 //   载荷 = args 的字符串叶子)。
 // · 词法探针(凭据路径、秘密形状的 token、URL 抽取)一律 **raise-only**:命中只能抬高档位,未命中不降档。

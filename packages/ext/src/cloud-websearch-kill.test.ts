@@ -376,15 +376,17 @@ describe("治理豁免绑定端点身份,名字伪造不了(R6 Blocker)", () => 
   })
 })
 
-// 反向测试:R2/R3 的判据是「可覆盖的 permission 不能证明 kill-switch 真能关」。这里复刻引擎两条
-// 云工具执行链的**次序**(#1129 起:identity ask → hook → callTool),把 ask 配成「后置
-// agent/session allow + approved 全开」的最有利于绕过的状态,断言 callTool 一次都没被打到 ——
-// ask 先跑并且放行了,也照样到不了传输:kill-switch 钩子不是 permission,不参与被覆盖。
+// 反向测试:R2/R3 的判据是「可覆盖的 permission 不能证明 kill-switch 真能关」。引擎两条云工具执行链的
+// 次序是 decide → hook → confirm → callTool(#1574:钩子之前只判拒绝,那一问在钩子之后)。这里把
+// permission 的结论(下面的 `ask:`)配成「后置 agent/session allow + approved 全开」的最有利于绕过的
+// 状态并先算出来,断言 callTool 一次都没被打到 —— 放行已经成立,也照样到不了传输:kill-switch 钩子不是
+// permission,不参与被覆盖。
 describe("后置 allow / approved 覆盖不了 kill-switch", () => {
   type Chain = { calls: string[]; run: (tool: string) => void }
 
-  /** `session/tools.ts`(register 的 identityGate)与 `tool/code-mode.ts` 的共同骨架(#1129 / #724 §6):
-   *  先 identity ask,再 trigger 钩子,再 callTool。 */
+  /** `session/tools.ts`(register 的 identityGate)与 `tool/code-mode.ts` 的共同骨架(#1129 / #724 §6,#1574):
+   *  decide → trigger 钩子 → confirm → callTool。这里只留与 kill-switch 有关的两样:permission 的结论
+   *  (预先算成最有利于绕过的放行)与钩子;callTool 只可能出现在钩子之后。 */
   const engineChain = (env: Record<string, string | undefined>): Chain => {
     const calls: string[] = []
     const ownership = owned(env)

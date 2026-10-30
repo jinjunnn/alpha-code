@@ -34,6 +34,7 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import type { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Effect, Fiber, Layer } from "effect"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
@@ -132,7 +133,10 @@ function testServer() {
           inputSchema: { type: "object", properties: { destination: { type: "string" }, body: { type: "string" } } },
         },
       ]
-      const protocol = new Server({ name: "alpha-1574", version: "1.0.0" }, { capabilities: { tools: {}, resources: {} } })
+      const protocol = new Server(
+        { name: "alpha-1574", version: "1.0.0" },
+        { capabilities: { tools: {}, resources: {} } },
+      )
       protocol.setRequestHandler(ListToolsRequestSchema, () => Promise.resolve({ tools: listed }))
       protocol.setRequestHandler(CallToolRequestSchema, (req) => {
         counts.call += 1
@@ -213,7 +217,10 @@ function testSession(ruleset: PermissionV1.Ruleset, id = SESSION_ID): Session.In
   }
 }
 
-type Processor = Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "registerToolDisplay">
+type Processor = Pick<
+  SessionProcessor.Handle,
+  "message" | "updateToolCall" | "completeToolCall" | "registerToolDisplay"
+>
 
 function testProcessor(): Processor {
   return {
@@ -411,25 +418,33 @@ describe("#1574 AC2 / AC7:询问在钩子之后、实现之前,metadata.args 就
     }),
   )
 
-  it.instance("内置 write:钩子改了 content ⇒ 那一问带改后的 args;once 后落盘的就是改后的内容", () =>
-    Effect.gen(function* () {
-      const { hooks } = yield* setup()
-      const test = yield* TestInstance
-      yield* (yield* AlphaToolPolicy.Service).setRecord({ selector: { level: "tool", canonical: ID_WRITE }, state: "ask" })
-      const tools = yield* resolveTools([ALLOW_ALL])
-      const target = path.join(test.directory, "AC2-WRITE.txt")
-      const run = launch(tools["write"]!, "ac2-w", { filePath: target, content: "original" })
-      const request = yield* onlyPending(run)
-      expect(yield* hooks()).toEqual(["write"])
-      expect(request.permission).toBe(ID_WRITE)
-      expect(request.metadata["args"]).toEqual({ filePath: target, content: HOOKED })
-      expect(request.metadata["policy"]).toMatchObject({ bindingDigest: APP_BUILTIN_BINDING_DIGEST, askedBy: "policy" })
-      expect(yield* Effect.promise(() => Bun.file(target).exists())).toBe(false)
-      yield* reply(request, "once")
-      expect((yield* finish(run)).ok).toBe(true)
-      expect(yield* Effect.promise(() => Bun.file(target).text())).toBe(HOOKED)
-      expect(yield* (yield* Permission.Service).list()).toEqual([])
-    }),
+  it.instance(
+    "内置 write:钩子改了 content ⇒ 那一问带改后的 args;once 后落盘的就是改后的内容",
+    () =>
+      Effect.gen(function* () {
+        const { hooks } = yield* setup()
+        const test = yield* TestInstance
+        yield* (yield* AlphaToolPolicy.Service).setRecord({
+          selector: { level: "tool", canonical: ID_WRITE },
+          state: "ask",
+        })
+        const tools = yield* resolveTools([ALLOW_ALL])
+        const target = path.join(test.directory, "AC2-WRITE.txt")
+        const run = launch(tools["write"]!, "ac2-w", { filePath: target, content: "original" })
+        const request = yield* onlyPending(run)
+        expect(yield* hooks()).toEqual(["write"])
+        expect(request.permission).toBe(ID_WRITE)
+        expect(request.metadata["args"]).toEqual({ filePath: target, content: HOOKED })
+        expect(request.metadata["policy"]).toMatchObject({
+          bindingDigest: APP_BUILTIN_BINDING_DIGEST,
+          askedBy: "policy",
+        })
+        expect(yield* Effect.promise(() => Bun.file(target).exists())).toBe(false)
+        yield* reply(request, "once")
+        expect((yield* finish(run)).ok).toBe(true)
+        expect(yield* Effect.promise(() => Bun.file(target).text())).toBe(HOOKED)
+        expect(yield* (yield* Permission.Service).list()).toEqual([])
+      }),
     { git: true },
   )
 
@@ -443,7 +458,11 @@ describe("#1574 AC2 / AC7:询问在钩子之后、实现之前,metadata.args 就
       const cases = [
         { name: "list_mcp_resources", args: {}, hooked: { server: SERVER } },
         { name: "list_mcp_resource_templates", args: {}, hooked: { server: SERVER } },
-        { name: "read_mcp_resource", args: { server: SERVER, uri: "mem://one" }, hooked: { server: SERVER, uri: "mem://two" } },
+        {
+          name: "read_mcp_resource",
+          args: { server: SERVER, uri: "mem://one" },
+          hooked: { server: SERVER, uri: "mem://two" },
+        },
       ]
       for (const item of cases) {
         const run = launch(tools[item.name]!, `ac2-${item.name}`, item.args)
@@ -551,46 +570,53 @@ describe("#1574 AC4:会话放行只对同一 binding、同一策略修订号生�
       yield* (yield* MCP.Service).add(SERVER, remote(running2.url))
       const third = launch(tools[ALIAS_UPLOAD]!, "ac4-3", { destination: EXFIL, body: "3" })
       const request = yield* onlyPending(third)
-      expect(request.metadata["policy"]).toMatchObject({ bindingDigest: mcpBindingDigest(SERVER, remote(running2.url)) })
+      expect(request.metadata["policy"]).toMatchObject({
+        bindingDigest: mcpBindingDigest(SERVER, remote(running2.url)),
+      })
       yield* reply(request, "reject")
       expect((yield* finish(third)).ok).toBe(false)
       expect(moved.counts.call).toBe(0)
     }),
   )
 
-  it.instance("同项目另一个工作目录写入工具策略 ⇒ 本目录的旧放行失效,同一工具重新询问", () =>
-    Effect.gen(function* () {
-      const { counts } = yield* setup()
-      const test = yield* TestInstance
-      const tools = yield* resolveTools([ALLOW_ALL])
-      const first = launch(tools[ALIAS_UPLOAD]!, "ac4b-1", { destination: EXFIL, body: "1" })
-      yield* reply(yield* onlyPending(first), "always")
-      expect((yield* finish(first)).ok).toBe(true)
-      const second = launch(tools[ALIAS_UPLOAD]!, "ac4b-2", { destination: EXFIL, body: "2" })
-      expect(yield* askedOrRan(second)).toBeUndefined()
-      yield* finish(second)
-      expect(counts.call).toBe(2)
-      // 目录 B = 同一 git 仓库里的子目录:同一个项目(策略分区相同)、另一个实例(会话放行各自一份)。
-      const dirB = path.join(test.directory, "packages", "b")
-      yield* Effect.promise(() => fs.mkdir(dirB, { recursive: true }))
-      const projectA = (yield* InstanceState.context).project.id
-      const projectB = yield* InstanceState.context.pipe(
-        Effect.map((ctx) => ctx.project.id),
-        provideInstance(dirB),
-      )
-      expect(projectB).toBe(projectA)
-      yield* Effect.gen(function* () {
-        expect(yield* InstanceState.directory).toBe(dirB)
-        // 写一条与这个工具无关的记录:任何写入都换修订号。
-        yield* (yield* AlphaToolPolicy.Service).setRecord({ selector: { level: "class", class: "plugin" }, state: "ask" })
-      }).pipe(provideInstance(dirB))
-      const third = launch(tools[ALIAS_UPLOAD]!, "ac4b-3", { destination: EXFIL, body: "3" })
-      const request = yield* onlyPending(third)
-      expect(request.permission).toBe(ID_UPLOAD)
-      yield* reply(request, "reject")
-      yield* finish(third)
-      expect(counts.call).toBe(2)
-    }),
+  it.instance(
+    "同项目另一个工作目录写入工具策略 ⇒ 本目录的旧放行失效,同一工具重新询问",
+    () =>
+      Effect.gen(function* () {
+        const { counts } = yield* setup()
+        const test = yield* TestInstance
+        const tools = yield* resolveTools([ALLOW_ALL])
+        const first = launch(tools[ALIAS_UPLOAD]!, "ac4b-1", { destination: EXFIL, body: "1" })
+        yield* reply(yield* onlyPending(first), "always")
+        expect((yield* finish(first)).ok).toBe(true)
+        const second = launch(tools[ALIAS_UPLOAD]!, "ac4b-2", { destination: EXFIL, body: "2" })
+        expect(yield* askedOrRan(second)).toBeUndefined()
+        yield* finish(second)
+        expect(counts.call).toBe(2)
+        // 目录 B = 同一 git 仓库里的子目录:同一个项目(策略分区相同)、另一个实例(会话放行各自一份)。
+        const dirB = path.join(test.directory, "packages", "b")
+        yield* Effect.promise(() => fs.mkdir(dirB, { recursive: true }))
+        const projectA = (yield* InstanceState.context).project.id
+        const projectB = yield* InstanceState.context.pipe(
+          Effect.map((ctx) => ctx.project.id),
+          provideInstance(dirB),
+        )
+        expect(projectB).toBe(projectA)
+        yield* Effect.gen(function* () {
+          expect(yield* InstanceState.directory).toBe(dirB)
+          // 写一条与这个工具无关的记录:任何写入都换修订号。
+          yield* (yield* AlphaToolPolicy.Service).setRecord({
+            selector: { level: "class", class: "plugin" },
+            state: "ask",
+          })
+        }).pipe(provideInstance(dirB))
+        const third = launch(tools[ALIAS_UPLOAD]!, "ac4b-3", { destination: EXFIL, body: "3" })
+        const request = yield* onlyPending(third)
+        expect(request.permission).toBe(ID_UPLOAD)
+        yield* reply(request, "reject")
+        yield* finish(third)
+        expect(counts.call).toBe(2)
+      }),
     { git: true },
   )
 })
@@ -811,36 +837,48 @@ const promptConfig = (url: string) =>
       },
     },
     command: {
-      [COMMAND_SUBTASK]: { template: "inspect the cache key path", agent: "general", subtask: true, description: "inspect" },
+      [COMMAND_SUBTASK]: {
+        template: "inspect the cache key path",
+        agent: "general",
+        subtask: true,
+        description: "inspect",
+      },
     },
   }) satisfies Partial<ConfigV1.Info> as Partial<ConfigV1.Info>
+
+/** 设置里 task 为询问,发 subtask 命令,等到那一问挂进待批队列。 */
+const subtaskPending = Effect.fn("alpha1574.subtaskPending")(function* () {
+  policyAccount = `t-${Math.random().toString(36).slice(2)}`
+  taskHooks = 0
+  const { directory } = yield* TestInstance
+  const llm = yield* TestLLMServer
+  yield* (yield* FSUtil.Service).writeWithDirs(
+    path.join(directory, "opencode.json"),
+    JSON.stringify({ $schema: "https://opencode.ai/config.json", ...promptConfig(llm.url) }),
+  )
+  yield* (yield* Config.Service).get()
+  yield* (yield* AlphaToolPolicy.Service).setRecord({ selector: { level: "tool", canonical: ID_TASK }, state: "ask" })
+  const sessions = yield* Session.Service
+  const permission = yield* Permission.Service
+  const prompt = yield* SessionPrompt.Service
+  const chat = yield* sessions.create({ title: "REQ-236 C2 direct subtask" })
+  const fiber = yield* prompt
+    .command({ sessionID: chat.id, command: COMMAND_SUBTASK, arguments: "" })
+    .pipe(Effect.exit, Effect.forkChild)
+  const pending = yield* pollWithTimeout(
+    permission.list().pipe(Effect.map((list) => (list.length > 0 ? list : undefined))),
+    "直接子任务没有进入待批队列 —— 它没有在问",
+    "10 seconds",
+  )
+  return { sessions, permission, prompt, chat, fiber, pending }
+})
 
 describe("#1574 AC2:直接子任务的身份轴询问在钩子之后,问的就是交给子任务的那一份", () => {
   itPrompt.instance(
     "subtask 命令:设置里 task 为询问 ⇒ 钩子先改 prompt,那一问带改后的 args,批准后子会话收到的就是改后的 prompt",
     () =>
       Effect.gen(function* () {
-        policyAccount = `t-${Math.random().toString(36).slice(2)}`
-        taskHooks = 0
-        const { directory } = yield* TestInstance
-        const llm = yield* TestLLMServer
-        yield* (yield* FSUtil.Service).writeWithDirs(
-          path.join(directory, "opencode.json"),
-          JSON.stringify({ $schema: "https://opencode.ai/config.json", ...promptConfig(llm.url) }),
-        )
-        yield* (yield* Config.Service).get()
-        yield* (yield* AlphaToolPolicy.Service).setRecord({ selector: { level: "tool", canonical: ID_TASK }, state: "ask" })
-        const sessions = yield* Session.Service
-        const permission = yield* Permission.Service
-        const chat = yield* sessions.create({ title: "REQ-236 C2 direct subtask" })
-        const fiber = yield* (yield* SessionPrompt.Service)
-          .command({ sessionID: chat.id, command: COMMAND_SUBTASK, arguments: "" })
-          .pipe(Effect.exit, Effect.forkChild)
-        const pending = yield* pollWithTimeout(
-          permission.list().pipe(Effect.map((list) => (list.length > 0 ? list : undefined))),
-          "直接子任务没有进入待批队列 —— 它没有在问",
-          "10 seconds",
-        )
+        const { sessions, permission, chat, fiber, pending } = yield* subtaskPending()
         expect(pending).toHaveLength(1)
         expect(pending[0]!.permission).toBe(ID_TASK)
         expect(taskHooks).toBe(1) // 钩子已经跑过,问在它之后
@@ -857,6 +895,30 @@ describe("#1574 AC2:直接子任务的身份轴询问在钩子之后,问的就�
           .flatMap((part) => (part.type === "text" ? [part.text] : []))
         expect(childText).toContain(HOOKED)
         expect(taskHooks).toBe(1)
+        expect(yield* permission.list()).toEqual([])
+      }),
+    30_000,
+  )
+
+  itPrompt.instance(
+    "询问挂起时用户停止 ⇒ 那条 task part 收口成 Cancelled,不留报错的助手消息,零子会话",
+    () =>
+      Effect.gen(function* () {
+        const { sessions, permission, prompt, chat, fiber } = yield* subtaskPending()
+        yield* prompt.cancel(chat.id)
+        yield* Fiber.join(fiber)
+        const history = yield* MessageV2.filterCompactedEffect(chat.id)
+        const assistants = history.filter((entry) => entry.info.role === "assistant")
+        const task = assistants
+          .flatMap((entry) => entry.parts)
+          .find((part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task")
+        expect(task?.state).toMatchObject({ status: "error", error: "Cancelled" })
+        expect(
+          assistants.flatMap((entry) =>
+            entry.info.role === "assistant" && entry.info.error ? [entry.info.error] : [],
+          ),
+        ).toEqual([])
+        expect(yield* sessions.children(chat.id)).toEqual([])
         expect(yield* permission.list()).toEqual([])
       }),
     30_000,

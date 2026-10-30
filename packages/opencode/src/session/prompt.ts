@@ -419,7 +419,8 @@ const layer = Layer.effect(
 
       // REQ-236 C2(#1574):身份轴那一问在钩子之后、实现之前,按钩子改过的 taskArgs 问,批准后复核。
       // 拒绝 / 复核不过 / 超时:这条 part 记成 error、助手消息以 error 收尾,再把拒绝抛给 loop ——
-      // 与派出前的拒绝一样结束本轮,不留一条还在跑的子任务。
+      // 与派出前的拒绝一样结束本轮,不留一条还在跑的子任务。挂起时用户停止(只有中断):与下面运行中
+      // 子任务被中断同样收口成「Cancelled」,不写报错的助手消息。
       yield* AlphaToolPolicyGate.confirm(decision, {
         ...gate,
         permission,
@@ -431,17 +432,18 @@ const layer = Layer.effect(
         Effect.orDie,
         Effect.onError((cause) =>
           Effect.gen(function* () {
+            const cancelled = Cause.hasInterruptsOnly(cause)
             const refusal = Cause.squash(cause)
             const now = Date.now()
-            assistantMessage.finish = "error"
-            assistantMessage.error = MessageV2.fromError(refusal, { providerID: taskModel.providerID })
+            assistantMessage.finish = cancelled ? "tool-calls" : "error"
+            if (!cancelled) assistantMessage.error = MessageV2.fromError(refusal, { providerID: taskModel.providerID })
             assistantMessage.time.completed = now
             yield* sessions.updateMessage(assistantMessage)
             yield* sessions.updatePart({
               ...part,
               state: {
                 status: "error",
-                error: refusal instanceof Error ? refusal.message : String(refusal),
+                error: cancelled ? "Cancelled" : refusal instanceof Error ? refusal.message : String(refusal),
                 time: { start: part.state.status === "running" ? part.state.time.start : now, end: now },
                 metadata: part.state.status === "pending" ? undefined : part.state.metadata,
                 input: part.state.input,

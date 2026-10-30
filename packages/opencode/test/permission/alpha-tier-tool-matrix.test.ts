@@ -5,7 +5,7 @@
 //   · 真 `injectAlphaConfig`(ui-mac 主进程写给引擎的那份 config,临时盘)→ 真 `Agent.Service` 拿到三档载体
 //     (「全部批准」= 引擎默认 build、「请求审批」= alpha-ask、「只读」= alpha-readonly)的规则集;
 //   · 能力轴:真 `Permission.Service.ask`(工具体内 `ctx.ask` 的同一个服务);
-//   · 身份轴:真 `AlphaToolPolicyGate.gateToolExecution` + 真 `AlphaToolPolicy`(真 store,生产 `setRecord` 写设置);
+//   · 身份轴:真 `AlphaToolPolicyGate.decide` + `confirm` + 真 `AlphaToolPolicy`(真 store,生产 `setRecord` 写设置);
 //   · R9/R10 的 subject 由**生产形状**的云 MCP 定义(真 `materializeCloudMcpConfig`,`{file:}` 引用)与装载后 entry
 //     (引用已被引擎换成令牌字面量)经真 `authorityForMcp` 派生,binding 用真 `mcpBindingDigest`(与 session/tools.ts 同口径)。
 // `ALPHA_PERMISSION_ASK_TIMEOUT_MS=300`:「真的在问、没人答」以 `UnansweredError` 落地。
