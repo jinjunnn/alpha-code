@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>对话里的生图卡片 · 组件增量</title>
+<link rel="stylesheet" href="../current/conversation-timeline/design.css" />
+<style>
+/* 本稿自有类一律 ig- 前缀。token、按钮基础、图标尺寸来自链接的 current/conversation-timeline/design.css。
+   该文件的 token 值与 tokens.css 有已知漂移(docs/design/README.md「token drift」);本稿依赖对比度的几项
+   按 packages/ui-mac/src/renderer/alpha-ui/tokens.css 的实值覆盖,实现时直接用 tokens.css,不另加 token。 */
+:root{/* 提议新增(见 system/tokens.md「待批新增」):媒体上的半透明压暗与其上的文字 */--a-media-scrim:rgba(15,17,21,.62);--a-text-on-media:#ffffff;--a-text-tertiary:#64656d;--a-error-on-subtle:#b91c1c;--a-error-subtle:rgba(220,38,38,.12);
+  --a-user-bubble:#e6f1fd;--a-user-bubble-text:#11233f;--a-space-1:4px;--a-space-2:8px;--a-space-3:12px;--a-space-4:16px;
+  --a-dur-fast:130ms;--a-dur-base:190ms;--a-dur-slow:280ms}
+html[data-theme="dark"]{--a-text-tertiary:#86878f;--a-error-on-subtle:#f87171;--a-error-subtle:rgba(248,113,113,.14);
+  --a-surface:#121316;--a-border:#232428;--a-user-bubble:#193767;--a-user-bubble-text:#f5f9fd}
+
+/* ── 稿件外框(帧外) ── */
+body{padding:0 0 96px}
+.ig-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--a-border-faint);background:color-mix(in srgb,var(--a-bg-canvas) 90%,transparent);backdrop-filter:blur(14px)}
+.ig-bar b{font-size:var(--a-text-sm)}
+.ig-bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.ig-grow{flex:1}
+.ig-wrap{max-width:1120px;margin:0 auto;padding:30px 24px 0}
+.ig-intro h1{margin:0 0 10px;font-size:24px;letter-spacing:-.02em}
+.ig-intro p{margin:0 0 8px;color:var(--a-text-secondary);font-size:var(--a-text-md);line-height:1.65;max-width:72ch}
+.ig-h2{margin:44px 0 6px;font-size:var(--a-text-xl);letter-spacing:-.015em}
+.ig-sub{margin:0 0 16px;color:var(--a-text-secondary);font-size:var(--a-text-sm);max-width:78ch;line-height:1.6}
+.ig-rel{margin:18px 0 0;padding:16px 18px;border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);background:var(--a-bg-canvas);font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.65}
+.ig-rel h3{margin:0 0 8px;font-size:var(--a-text-md);color:var(--a-text)}
+.ig-rel b{color:var(--a-text)}
+.ig-rel ul{margin:4px 0 8px;padding-left:18px}
+.ig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ig-stage),1fr));gap:20px;align-items:start}
+.ig-frame{display:flex;flex-direction:column;gap:8px}
+.ig-cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:1.5}
+.ig-cap b{color:var(--a-text);font-weight:var(--a-weight-semibold);font-size:var(--a-text-sm);margin-right:6px}
+.ig-stage{width:var(--ig-stage);max-width:100%;padding:20px 24px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas)}
+.ig-note{margin:14px 0 0;padding:12px 14px;border:1px solid var(--a-border);border-left:3px solid var(--a-text-tertiary);border-radius:var(--a-radius-md);background:var(--a-bg-canvas);font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.6;max-width:86ch}
+.ig-note b{color:var(--a-text)}
+.ig-spec{width:100%;border-collapse:collapse;font-size:var(--a-text-sm);background:var(--a-bg-canvas);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);overflow:hidden}
+.ig-spec th{background:var(--a-bg-subtle);text-align:left;font-size:var(--a-text-xs);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);padding:8px 12px}
+.ig-spec td{padding:9px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top;line-height:1.55}
+.ig-spec td:first-child{color:var(--a-text);white-space:nowrap}
+.ig-spec code{font-family:var(--a-font-mono);font-size:11px;color:var(--a-text)}
+body{--ig-stage:520px;--ig-card:480px}
+body[data-width="narrow"]{--ig-stage:428px;--ig-card:100%}
+body[data-width="narrow"] .ig-stage{padding:20px 0}
+
+/* ── 对话上下文(帧内,只为定位;样式取自时间线现行实现的尺寸) ── */
+.ig-tl{display:flex;flex-direction:column;gap:16px}
+.ig-user{align-self:flex-end;max-width:82%;padding:10px 14px;border-radius:var(--a-radius-lg);background:var(--a-user-bubble);color:var(--a-user-bubble-text);font-size:var(--a-text-md);line-height:1.58}
+.ig-fold{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;margin-left:-8px;padding:4px 8px;border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-tertiary)}
+.ig-fold .ic{width:12px;height:12px}
+.ig-fold .live{width:6px;height:6px;border-radius:50%;background:var(--a-accent);animation:ig-pulse 1.6s var(--a-ease-out) infinite}
+.ig-answer{font-size:var(--a-text-md);line-height:1.62;color:var(--a-text);max-width:68ch}
+.ig-ctx-dim{opacity:.55}
+
+/* ════════════════ 本增量:生图卡 ════════════════ */
+.ig-card{width:var(--ig-card);max-width:100%;align-self:flex-start;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-xl);box-shadow:var(--a-edge-light);overflow:hidden;font-size:var(--a-text-sm)}
+/* 头:标题恒定,状态在右 */
+.ig-head{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 12px 0 14px}
+.ig-head>.ic{color:var(--a-text-secondary);flex:none}
+.ig-title{font-weight:var(--a-weight-semibold);color:var(--a-text);white-space:nowrap}
+.ig-state{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-width:0;font-size:var(--a-text-xs);color:var(--a-text-secondary);white-space:nowrap}
+.ig-state .tm{font-variant-numeric:tabular-nums;color:var(--a-text-tertiary)}
+.ig-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--a-text-tertiary)}
+.ig-dot.hollow{background:transparent;box-shadow:inset 0 0 0 1.5px var(--a-text-tertiary)}
+.ig-dot.live{background:var(--a-accent);animation:ig-pulse 1.6s var(--a-ease-out) infinite}
+.ig-dot.warn{background:var(--a-warning)}
+.ig-dot.err{background:var(--a-error)}
+.ig-spin{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--a-border-strong);border-top-color:var(--a-accent);animation:ig-rot .8s linear infinite;flex:none}
+/* 画框:1:1,从「正在提交」起就占位,直到出图,尺寸不跳 */
+.ig-media{position:relative;margin:0 12px;aspect-ratio:1/1;border-radius:var(--a-radius-lg);background:var(--a-bg-subtle);overflow:hidden;display:grid;place-items:center}
+.ig-media.dashed{background:transparent;box-shadow:inset 0 0 0 1px var(--a-border)}
+.ig-media .ig-tray{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 24px;text-align:center}
+.ig-media .ig-tray .ic{width:26px;height:26px;color:var(--a-text-tertiary);stroke-width:1.4}
+.ig-media .ig-tray span{font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:1.5}
+.ig-media.shimmer::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,var(--a-overlay-hover) 45%,var(--a-overlay-active) 50%,var(--a-overlay-hover) 55%,transparent 70%);background-size:250% 100%;animation:ig-sweep 2.4s linear infinite}
+.ig-media .ig-pic{position:absolute;inset:0;width:100%;height:100%;cursor:zoom-in;border:0;padding:0;background:none;display:block}
+.ig-media .ig-pic svg{width:100%;height:100%}
+.ig-media .ig-pic:focus-visible{outline:none;box-shadow:inset 0 0 0 3px var(--a-accent-ring)}
+.ig-zoom{position:absolute;right:8px;top:8px;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:var(--a-radius-full);background:var(--a-media-scrim);color:var(--a-text-on-media);font-size:var(--a-text-xs);opacity:0;transition:opacity var(--a-dur-fast) var(--a-ease-out);pointer-events:none}
+.ig-zoom .ic{width:13px;height:13px}
+.ig-media:hover .ig-zoom,.ig-media .ig-pic:focus-visible+.ig-zoom,.ig-zoom.show{opacity:1}
+.ig-media.cloud{background:var(--a-bg-subtle)}
+/* 描述与事实 */
+.ig-prompt{margin:10px 14px 0;color:var(--a-text-secondary);line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ig-prompt.open{display:block;max-height:180px;overflow:auto;-webkit-line-clamp:unset}
+.ig-prompt-more{margin:2px 14px 0;padding:0;border:0;background:none;color:var(--a-accent);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);border-radius:var(--a-radius-xs)}
+.ig-prompt-more:focus-visible{outline:none;box-shadow:var(--a-ring-focus)}
+.ig-facts{margin:6px 14px 0;font-size:var(--a-text-xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+/* 说明块:琥珀 = 需要你做点什么;红 = 系统这次没成;与输入框提示槽同一套语义 */
+.ig-notice{margin:2px 12px 0;padding:10px 12px;border-left:3px solid var(--a-error);border-radius:var(--a-radius-md);background:var(--a-error-subtle)}
+.ig-notice.warn{border-left-color:var(--a-warning);background:var(--a-warning-subtle)}
+.ig-notice.neutral{border-left-color:var(--a-border-strong);background:var(--a-bg-subtle)}
+.ig-notice b{display:block;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text);line-height:1.45}
+.ig-notice span{display:block;margin-top:2px;font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:1.5}
+/* 动作排 */
+.ig-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:12px 12px 12px}
+.ig-btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);white-space:nowrap}
+.ig-btn .ic{width:14px;height:14px;color:var(--a-text-secondary)}
+.ig-btn:hover{background:var(--a-overlay-hover)}
+.ig-btn:focus-visible,.ig-link:focus-visible{outline:none;box-shadow:var(--a-ring-focus)}
+.ig-btn.primary{background:var(--a-accent-solid);border-color:transparent;color:var(--a-text-on-accent)}
+.ig-btn.primary .ic{color:var(--a-text-on-accent)}
+.ig-btn.primary:hover{background:var(--a-accent-hover)}
+.ig-btn[disabled]{opacity:.5;cursor:default}
+.ig-link{margin-left:auto;display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 6px;border:0;border-radius:var(--a-radius-md);background:none;color:var(--a-text-tertiary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.ig-link:hover{color:var(--a-text);background:var(--a-overlay-hover)}
+.ig-link .ic{width:12px;height:12px;transition:transform var(--a-dur-fast) var(--a-ease-out)}
+.ig-link[aria-expanded="true"] .ic{transform:rotate(180deg)}
+.ig-hint{width:100%;margin:0;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+/* 保存反馈:跟在动作排下,不弹浮层 */
+.ig-result{display:flex;align-items:flex-start;gap:6px;margin:-4px 14px 12px;font-size:var(--a-text-xs);line-height:1.5;color:var(--a-text-secondary)}
+.ig-result .ic{width:14px;height:14px;flex:none;margin-top:1px}
+.ig-result.ok .ic{color:var(--a-success)}
+.ig-result.bad .ic{color:var(--a-error)}
+.ig-result .ig-inline{border:0;background:none;padding:0;color:var(--a-accent);font:inherit;font-weight:var(--a-weight-medium);border-radius:var(--a-radius-xs)}
+/* 详情(默认收起) */
+.ig-details{margin:0 12px 12px;padding:4px 12px;border-radius:var(--a-radius-md);background:var(--a-bg-subtle)}
+.ig-details dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:8px 0;font-size:var(--a-text-xs)}
+.ig-details dt{color:var(--a-text-tertiary);white-space:nowrap}
+.ig-details dd{margin:0;color:var(--a-text);min-width:0;overflow-wrap:anywhere}
+.ig-details .mono{font-size:11px}
+.ig-details .ok{color:var(--a-text-secondary)}
+.ig-details .ok::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--a-success);margin-right:5px;vertical-align:1px}
+.ig-copy{margin-left:6px;border:0;background:none;padding:0;color:var(--a-accent);font-size:var(--a-text-xs)}
+.ig-dev{border-top:1px solid var(--a-border-faint);padding:8px 0 6px;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.ig-dev summary{cursor:pointer;list-style:none}
+.ig-dev summary::before{content:"›";display:inline-block;margin-right:6px;transition:transform var(--a-dur-fast)}
+.ig-dev[open] summary::before{transform:rotate(90deg)}
+.ig-dev pre{margin:8px 0 2px;padding:8px 10px;border-radius:var(--a-radius-sm);background:var(--a-bg-canvas);font-family:var(--a-font-mono);font-size:11px;color:var(--a-text-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
+/* 多张(预留) */
+.ig-multi{display:grid;gap:4px;margin:0 12px;border-radius:var(--a-radius-lg);overflow:hidden}
+.ig-multi.n2{grid-template-columns:1fr 1fr}
+.ig-multi.n4{grid-template-columns:1fr 1fr}
+.ig-multi>div{position:relative;aspect-ratio:1/1;background:var(--a-bg-subtle)}
+.ig-multi svg{width:100%;height:100%;display:block}
+.ig-multi .more{position:absolute;inset:0;display:grid;place-items:center;background:var(--a-media-scrim);color:var(--a-text-on-media);font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold)}
+/* 状态流转示意 */
+.ig-flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.ig-flow span{padding:4px 9px;border:1px solid var(--a-border);border-radius:var(--a-radius-full);background:var(--a-bg-canvas)}
+.ig-flow span.end{border-color:var(--a-accent-border);color:var(--a-text)}
+.ig-flow span.bad{border-color:color-mix(in srgb,var(--a-error) 45%,transparent)}
+.ig-flow i{font-style:normal;color:var(--a-text-tertiary)}
+/* 原样对照(今天) */
+.ig-old{font-size:var(--a-text-sm);color:var(--a-text-tertiary);line-height:1.9}
+.ig-old .r{display:flex;gap:8px;align-items:center}
+.ig-old .warn{color:var(--a-warning)}
+.ig-old .box{margin:2px 0 6px 22px;padding:8px 12px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);font-size:var(--a-text-xs)}
+
+@keyframes ig-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes ig-rot{to{transform:rotate(360deg)}}
+@keyframes ig-sweep{from{background-position:150% 0}to{background-position:-100% 0}}
+@media (prefers-reduced-motion:reduce){.ig-dot.live,.ig-fold .live,.ig-spin,.ig-media.shimmer::after{animation:none}.ig-zoom,.ig-link .ic{transition:none}}
+@media (max-width:600px){.ig-wrap{padding:24px 16px 0}body{--ig-stage:100%;--ig-card:100%}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="g-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.7"/><path d="M20.5 15.5l-4.6-4.6L7 19.5"/></symbol>
+    <symbol id="g-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></symbol>
+    <symbol id="g-save" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></symbol>
+    <symbol id="g-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8.5 8.5M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></symbol>
+    <symbol id="g-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="g-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16 9.6"/></symbol>
+    <symbol id="g-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/></symbol>
+    <symbol id="g-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/><path d="M12 11v5M9.8 13.8L12 16l2.2-2.2"/></symbol>
+    <symbol id="g-retry" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1L20 9.5M20 4.5v5h-5M19.5 12a7.5 7.5 0 0 1-13 5.1L4 14.5M4 19.5v-5h5"/></symbol>
+    <symbol id="g-wallet" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="13" rx="2.5"/><path d="M3.5 10h17M15.5 14.5h2"/></symbol>
+    <!-- 示意图片(帧内代表「生成出来的那张图」;图里的颜色是内容,不是界面颜色) -->
+    <symbol id="scene" viewBox="0 0 400 400">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2d3a5c"/><stop offset=".48" stop-color="#9a6b72"/><stop offset=".7" stop-color="#e7a879"/><stop offset=".74" stop-color="#f3cf9c"/></linearGradient>
+        <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5b6f8f"/><stop offset="1" stop-color="#1c2638"/></linearGradient>
+        <radialGradient id="beam" cx="0" cy=".5" r="1"><stop offset="0" stop-color="#fff3cf" stop-opacity=".55"/><stop offset="1" stop-color="#fff3cf" stop-opacity="0"/></radialGradient>
+      </defs>
+      <rect width="400" height="400" fill="url(#sky)"/>
+      <circle cx="132" cy="286" r="34" fill="#f8deb0" opacity=".9"/>
+      <rect y="292" width="400" height="108" fill="url(#sea)"/>
+      <path d="M40 318h120M70 334h160M30 356h90M150 372h120M210 314h60" stroke="#f3cf9c" stroke-opacity=".35" stroke-width="2" stroke-linecap="round"/>
+      <path d="M302 202 L400 168 L400 236 Z" fill="url(#beam)"/>
+      <path d="M248 400 C252 352 270 330 300 322 C326 316 352 322 372 336 C388 348 396 372 400 400 Z" fill="#1b2230"/>
+      <path d="M288 326 L296 214 L308 214 L316 326 Z" fill="#efe6d8"/>
+      <path d="M291.3 280 L312.7 280 L313.9 298 L290.1 298 Z" fill="#b5544a"/>
+      <path d="M293.9 244 L310.1 244 L311.1 260 L292.9 260 Z" fill="#b5544a"/>
+      <rect x="292" y="200" width="20" height="16" rx="2" fill="#fff4cf"/>
+      <path d="M288 200 L302 188 L316 200 Z" fill="#3a3f4d"/>
+      <path d="M56 290 L74 290 L70 296 L60 296 Z" fill="#2a3245"/>
+      <path d="M65 258 L65 289 L52 289 Z" fill="#f4e9dc"/>
+      <path d="M67 262 L67 289 L78 289 Z" fill="#e9dccb"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="ig-bar">
+  <b>对话里的生图卡片</b><span>组件增量 · 时间线回合末(与产物链接行同位,取代它)</span>
+  <div class="ig-grow"></div>
+  <div class="seg" id="widthSeg" aria-label="时间线宽度"><button data-w="wide" class="on">宽窗口</button><button data-w="narrow">右栏打开 / 窄窗口</button></div>
+  <div class="seg" id="themeSeg" aria-label="主题"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="ig-wrap">
+  <div class="ig-intro">
+    <h1>画一张图:从按下那一刻起,就在对话里看得见</h1>
+    <p>用户让助手画图之后,关心的只有三件事:图在不在路上、要等多久、画出来是什么样。今天这三件事都藏在一串写着技术名的步骤后面,图要到右边去找。这张卡把它们放回对话里:同一个位置、同一个尺寸,从「正在提交」一路变成那张图本身。</p>
+    <p>右上角切换浅深两色,以及「宽窗口 / 右栏打开」两种时间线宽度;下面每一帧都随之变化。</p>
+  </div>
+
+  <div class="ig-rel" id="relation">
+    <h3>与上一稿的关系</h3>
+    <b>继承</b>(时间线活稿 <code>current/conversation-timeline/design.html</code> 与现行实现,不动):
+    <ul>
+      <li>回合结构:工作过程一行(<code>#process-fold</code>,2026-10-10 批准)在上,回答在中,回合末的结果行在下。生图卡住在<b>结果行</b>的位置 —— 也就是今天产物链接行(<code>#artifacts</code>)所在的地方。</li>
+      <li>工作过程里那几步(连上云端、提交、等待)照旧记录,可以展开核对;失败的那一步照旧标「没成功」。卡片不吞掉它们,只是让用户<b>不必</b>展开它们。</li>
+      <li>卡片外壳语言:<code>--a-surface</code> 底、1px <code>--a-border</code>、<code>--a-radius-xl</code>、<code>--a-edge-light</code>,与提问卡、审批卡同族;红 / 琥珀的含义与输入框提示槽一致(红 = 系统这次没成,可以重试;琥珀 = 需要你做点什么)。</li>
+      <li>大图与保存走右栏产物面板与既有「用预览打开」,不新增窗口或浮层。</li>
+    </ul>
+    <b>改了</b>:
+    <ul>
+      <li><b>新增</b>回合末的一类结果行「生图卡」,覆盖从提交到出图(或失败)的全部状态。</li>
+      <li><b>取代</b>同一回合里同一个任务的产物链接行 —— 图已经在卡里,链接再出现一次是重复。</li>
+      <li>不取代:工作过程本身、回答文字、其他类型任务(研究、文档等)的产物链接行。</li>
+    </ul>
+    <b>为什么</b>:今天的样子见帧外参照(owner 2026-10-29 截图):回合顶上一行「alpha_cloud_access 1 次 · cloud_dispatch 1 次 · cloud_await 1 次 · 1 步没成功」,展开后是三张写着「这个工具来自第三方(cloud),我们不显示它收到和返回的内容」的卡。用户要的图、图的进度,在主视图里一样都看不到。
+  </div>
+
+  <!-- ─────────── 1. 在对话里的位置 ─────────── -->
+  <h2 class="ig-h2" id="in-turn">一、在一个回合里的位置</h2>
+  <p class="ig-sub">左:生成中(回合还在跑)。右:回合结束、图已存到本机。工作过程那一行与回答文字只为定位,淡显,它们的样式与措辞归工作过程稿;本稿只负责下方的卡。</p>
+  <div class="ig-grid">
+    <div class="ig-frame">
+      <div class="ig-cap"><b>回合进行中</b>助手已经提交,任务在云端生成</div>
+      <div class="ig-stage"><div class="ig-tl">
+        <div class="ig-user">画一张黄昏时分的海边灯塔,胶片质感,远处有一艘小帆船。</div>
+        <div class="ig-fold ig-ctx-dim"><span class="live"></span>正在等待云端结果 · 0:31</div>
+        <div class="ig-answer ig-ctx-dim">好的,已经交给云端去画了,好了会直接出现在下面。</div>
+        <div class="ig-card" aria-label="生成图片,正在生成">
+          <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+            <span class="ig-state" aria-live="polite"><span class="ig-dot live"></span>正在生成<span class="tm" aria-hidden="true">0:31</span></span></div>
+          <div class="ig-media shimmer"><div class="ig-tray"><svg class="ic"><use href="#g-image"/></svg></div></div>
+          <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+          <div class="ig-actions"><span class="ig-hint">生成好会直接显示在这里,不用切到别处。</span></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="ig-frame">
+      <div class="ig-cap"><b>回合结束</b>工作过程收成一行;主视图里只剩回答与这张卡</div>
+      <div class="ig-stage"><div class="ig-tl">
+        <div class="ig-user">画一张黄昏时分的海边灯塔,胶片质感,远处有一艘小帆船。</div>
+        <div class="ig-fold ig-ctx-dim"><svg class="ic"><use href="#g-chev"/></svg>使用云端 3 次 · 1 分 2 秒</div>
+        <div class="ig-answer ig-ctx-dim">画好了。灯塔放在右侧礁石上,帆船在夕阳左边,整体压低了饱和度。</div>
+        <div class="ig-card" aria-label="生成图片,已完成">
+          <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
+          <div class="ig-media"><button class="ig-pic" aria-label="查看大图:黄昏时分的海边灯塔"><svg><use href="#scene"/></svg></button><span class="ig-zoom"><svg class="ic"><use href="#g-expand"/></svg>查看大图</span></div>
+          <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+          <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+          <div class="ig-actions">
+            <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
+            <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
+            <button class="ig-btn"><svg class="ic"><use href="#g-open"/></svg>用「预览」打开</button>
+            <button class="ig-link" aria-expanded="false">详情<svg class="ic"><use href="#g-chev"/></svg></button>
+          </div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+  <div class="ig-note"><b>帧外 · 工作过程那一行写什么不归本稿。</b>帧里「正在等待云端结果」「使用云端 3 次」是按工作过程稿的规则推出来的示意。今天这几步显示成原始工具名,是因为云端工具被判成了第三方来源 —— 那是权限与来源方案要修的事。即便它没修,卡片照样成立:工作过程回合结束后本来就收起,用户在主视图里看到的就是回答加这张卡。</div>
+
+  <!-- ─────────── 2. 状态全集 ─────────── -->
+  <h2 class="ig-h2" id="states">二、全部状态</h2>
+  <p class="ig-sub">按发生顺序排列。每一帧标题下一行写它由什么事实触发 —— 状态只来自这次调用的状态、云端任务的状态和本机核验结果,<b>助手说的话不参与判定</b>。</p>
+  <div class="ig-grid">
+
+    <!-- 2.1 正在提交 -->
+    <div class="ig-frame" id="st-submitting">
+      <div class="ig-cap"><b>① 正在提交</b>助手刚发出请求,云端还没回话(通常 1–2 秒)</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-spin" aria-hidden="true"></span>正在提交</span></div>
+        <div class="ig-media"><div class="ig-tray"><svg class="ic"><use href="#g-image"/></svg><span>正在交给 Code Puppy 云</span></div></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions"></div>
+      </div></div>
+    </div>
+
+    <!-- 2.2 排队中 -->
+    <div class="ig-frame" id="st-queued">
+      <div class="ig-cap"><b>② 排队中</b>云端已受理,任务还没开始;计时从受理那一刻起</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-dot hollow"></span>排队中<span class="tm">0:06</span></span></div>
+        <div class="ig-media dashed"><div class="ig-tray"><svg class="ic"><use href="#g-image"/></svg><span>已受理,轮到后会自动开始</span></div></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions"></div>
+      </div></div>
+    </div>
+
+    <!-- 2.3 正在生成 -->
+    <div class="ig-frame" id="st-running">
+      <div class="ig-cap"><b>③ 正在生成</b>云端任务在跑;计时接着走,不清零</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-dot live"></span>正在生成<span class="tm">0:42</span></span></div>
+        <div class="ig-media shimmer"><div class="ig-tray"><svg class="ic"><use href="#g-image"/></svg></div></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions"></div>
+      </div></div>
+    </div>
+
+    <!-- 2.4 已生成,正在存到本机 -->
+    <div class="ig-frame" id="st-saving">
+      <div class="ig-cap"><b>④ 已生成,正在存到本机</b>云端任务完成,宿主在下载并核验文件</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-spin" aria-hidden="true"></span>已生成,正在存到本机</span></div>
+        <div class="ig-media shimmer"><div class="ig-tray"><svg class="ic"><use href="#g-cloud"/></svg><span>正在下载到本机并核对文件</span></div></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions"></div>
+      </div></div>
+    </div>
+
+    <!-- 2.5 完成 -->
+    <div class="ig-frame" id="st-done">
+      <div class="ig-cap"><b>⑤ 完成,直接出图</b>本机文件已核验;成功不挂状态字</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
+        <div class="ig-media"><button class="ig-pic" aria-label="查看大图:黄昏时分的海边灯塔"><svg><use href="#scene"/></svg></button><span class="ig-zoom show"><svg class="ic"><use href="#g-expand"/></svg>查看大图</span></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+        <div class="ig-actions">
+          <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
+          <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
+          <button class="ig-btn"><svg class="ic"><use href="#g-open"/></svg>用「预览」打开</button>
+          <button class="ig-link" aria-expanded="false">详情<svg class="ic"><use href="#g-chev"/></svg></button>
+        </div>
+      </div></div>
+      <div class="ig-cap">帧内「查看大图」角标为悬停态示意:鼠标移到图上或键盘聚焦到图时出现。</div>
+    </div>
+
+    <!-- 2.6 保存成功 / 详情展开 -->
+    <div class="ig-frame" id="st-saved-copy">
+      <div class="ig-cap"><b>⑤-a 保存成功 · 详情展开</b>用户点了「保存到…」并选好位置;又点开了详情</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
+        <div class="ig-media"><button class="ig-pic" aria-label="查看大图"><svg><use href="#scene"/></svg></button></div>
+        <div class="ig-prompt open">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+        <div class="ig-actions">
+          <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
+          <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
+          <button class="ig-btn"><svg class="ic"><use href="#g-open"/></svg>用「预览」打开</button>
+          <button class="ig-link" aria-expanded="true">收起详情<svg class="ic"><use href="#g-chev"/></svg></button>
+        </div>
+        <div class="ig-result ok" role="status"><svg class="ic"><use href="#g-check"/></svg><span>已保存到「下载」文件夹:海边灯塔.png</span></div>
+        <div class="ig-details">
+          <dl>
+            <dt>任务编号</dt><dd><span class="mono">run_7f3c2a91e04b</span><button class="ig-copy">复制</button></dd>
+            <dt>文件</dt><dd>lighthouse-dusk.png · 1.4 MB</dd>
+            <dt>校验</dt><dd><span class="ok">与云端一致</span> <span class="mono" style="color:var(--a-text-tertiary)">sha256 3f9a…c07d</span></dd>
+            <dt>存放位置</dt><dd>这个项目的产物文件夹(在右栏「产物」里管理)</dd>
+            <dt>来源</dt><dd>Code Puppy 云 · 图片生成</dd>
+          </dl>
+          <details class="ig-dev"><summary>开发者详情</summary>
+<pre>tool    cloud_dispatch
+kind    image-generation
+input   {"prompt":"黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。"}
+job     run_7f3c2a91e04b
+artifact art_7f3c2a91e04b_0_3f9ac07d</pre></details>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- 2.7 保存失败 -->
+    <div class="ig-frame" id="st-save-failed">
+      <div class="ig-cap"><b>⑤-b 保存失败</b>点「保存到…」时复核本机文件不通过 —— 不弹保存窗口,直接说清楚</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
+        <div class="ig-media"><button class="ig-pic" aria-label="查看大图"><svg><use href="#scene"/></svg></button></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-facts">1024 × 1024 · PNG · 1.4 MB</div>
+        <div class="ig-actions">
+          <button class="ig-btn"><svg class="ic"><use href="#g-expand"/></svg>查看大图</button>
+          <button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>保存到…</button>
+          <button class="ig-btn"><svg class="ic"><use href="#g-open"/></svg>用「预览」打开</button>
+          <button class="ig-link" aria-expanded="false">详情<svg class="ic"><use href="#g-chev"/></svg></button>
+        </div>
+        <div class="ig-result bad" role="alert"><svg class="ic"><use href="#g-alert"/></svg><span>没有保存:本机这份图片和生成时的不一致,可能被改动过。<button class="ig-inline">重新下载</button>后再保存。</span></div>
+      </div></div>
+      <div class="ig-cap">另一种失败(选的位置写不进去)写:「没有保存:那个位置不能写入,换一个文件夹试试。」用户在保存窗口里点取消:什么都不显示。</div>
+    </div>
+
+    <!-- 2.8 没有开始 · 额度 -->
+    <div class="ig-frame" id="st-refused-quota">
+      <div class="ig-cap"><b>⑥ 没有开始 · 额度不足</b>请求在受理前被拒,原因是额度或余额</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-dot warn"></span>没有开始</span></div>
+        <div class="ig-notice warn"><b>本期的云端额度已经用完</b><span>这张图没有开始画,也没有扣费。充值后让助手再画一次。</span></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions">
+          <button class="ig-btn primary"><svg class="ic"><use href="#g-wallet"/></svg>去充值</button>
+          <button class="ig-link" aria-expanded="false">详情<svg class="ic"><use href="#g-chev"/></svg></button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- 2.9 没有开始 · 一般原因 -->
+    <div class="ig-frame" id="st-refused">
+      <div class="ig-cap"><b>⑦ 没有开始 · 一般原因</b>受理前被拒,原因取自这次调用的错误(例:网络)</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-dot err"></span>没有开始</span></div>
+        <div class="ig-notice"><b>没有连上 Code Puppy 云</b><span>请求没有送到云端,这张图没有开始画。检查网络后,让助手再试一次。</span></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions">
+          <button class="ig-link" aria-expanded="false">详情<svg class="ic"><use href="#g-chev"/></svg></button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- 2.10 任务失败 -->
+    <div class="ig-frame" id="st-failed">
+      <div class="ig-cap"><b>⑧ 没有生成出来</b>云端受理了,但任务失败(例:描述没通过图片内容审核)</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-dot warn"></span>没有生成出来</span></div>
+        <div class="ig-notice warn"><b>这段描述没有通过图片内容审核</b><span>换一种说法描述你想要的画面,再让助手重新生成。</span></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions">
+          <button class="ig-link" aria-expanded="false">详情<svg class="ic"><use href="#g-chev"/></svg></button>
+        </div>
+      </div></div>
+      <div class="ig-cap">原因是服务出错这类「系统这次没成」时用红色,文案见第五节对照表。</div>
+    </div>
+
+    <!-- 2.11 已生成但没存到本机 -->
+    <div class="ig-frame" id="st-undelivered">
+      <div class="ig-cap"><b>⑨ 已生成,但没存到本机</b>云端完成;下载、核验或登记失败(自动重试 3 次后)</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-dot err"></span>没存到本机</span></div>
+        <div class="ig-media cloud"><div class="ig-tray"><svg class="ic"><use href="#g-cloud"/></svg><span>图片在云端,还没有存到这台电脑</span></div></div>
+        <div class="ig-notice"><b>下载时网络中断了</b><span>重新下载只是把同一张图再取一次,不会重新生成,也不会再次扣费。</span></div>
+        <div class="ig-prompt">黄昏时分的海边灯塔,低饱和胶片质感,暖色夕阳贴着海平线,远处海面上有一艘小帆船,画面安静、留白多。</div>
+        <div class="ig-actions">
+          <button class="ig-btn primary"><svg class="ic"><use href="#g-retry"/></svg>重新下载</button>
+          <button class="ig-link" aria-expanded="false">详情<svg class="ic"><use href="#g-chev"/></svg></button>
+        </div>
+      </div></div>
+      <div class="ig-cap">点「重新下载」→ 回到 ④「已生成,正在存到本机」,成功则到 ⑤。在右栏产物面板手动下载成功,这张卡同样直接变成 ⑤。</div>
+    </div>
+
+    <!-- 2.12 描述很长 / 展开 -->
+    <div class="ig-frame" id="st-prompt">
+      <div class="ig-cap"><b>描述的收与放</b>超过两行时截断,「展开全文」就地展开,最高 180px,再长在框内滚动</div>
+      <div class="ig-stage"><div class="ig-card">
+        <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span>
+          <span class="ig-state"><span class="ig-dot live"></span>正在生成<span class="tm">1:05</span></span></div>
+        <div class="ig-media shimmer" style="aspect-ratio:3/1"></div>
+        <div class="ig-prompt">一张用于产品发布页首屏的插画:清晨的城市天际线,一只戴着耳机的柴犬坐在屋顶边缘看日出,前景有几盆绿植和一台打开的笔记本电脑,屏幕上是代码编辑器;整体用低饱和的蓝灰与暖橙,扁平插画风格,留出左侧三分之一的空白用于放标题文字,不要出现任何真实品牌标志。</div>
+        <button class="ig-prompt-more" aria-expanded="false">展开全文</button>
+        <div class="ig-actions"></div>
+      </div></div>
+      <div class="ig-cap">帧内画框高度为了省版面裁短了;实际画框始终 1:1。</div>
+    </div>
+  </div>
+
+  <!-- ─────────── 3. 状态之间怎么变 ─────────── -->
+  <h2 class="ig-h2" id="transitions">三、状态之间怎么变</h2>
+  <p class="ig-sub">卡片从出现到出图<b>只占一个位置、一个尺寸</b>:画框从第一帧起就是 1:1,图在原地淡入,不把下面的内容往下推。只有「没有开始」和「没有生成出来」两种结局会收起画框 —— 那时已经没有图可等了。</p>
+  <div class="ig-flow" aria-label="状态顺序">
+    <span>① 正在提交</span><i>→</i><span>② 排队中</span><i>→</i><span>③ 正在生成</span><i>→</i><span>④ 正在存到本机</span><i>→</i><span class="end">⑤ 出图</span>
+  </div>
+  <div class="ig-flow" style="margin-top:8px">
+    <span class="bad">①</span><i>→</i><span class="bad">⑥ / ⑦ 没有开始</span><i>　·　</i><span class="bad">② / ③</span><i>→</i><span class="bad">⑧ 没有生成出来</span><i>　·　</i><span class="bad">④</span><i>→</i><span class="bad">⑨ 没存到本机</span><i>→ 重新下载 →</i><span>④</span>
+  </div>
+  <table class="ig-spec" style="margin-top:16px">
+    <tr><th>变化</th><th>画面上发生什么</th><th>时长与曲线</th></tr>
+    <tr><td>出现(①)</td><td>卡片在回合末出现,画框占好 1:1 的位置。不做入场动画 —— 它出现的那一刻就是用户刚刚等待的那个结果。</td><td>无</td></tr>
+    <tr><td>状态字更替(①→②→③→④)</td><td>右上状态字原地交叉淡化;点的样式随之切换(转圈 → 空心点 → 脉冲点 → 转圈)。计时从 ② 开始,跨 ② ③ 连续累计,到 ④ 停止并隐去。</td><td>130ms <code>--a-ease-out</code></td></tr>
+    <tr><td>画框活动(③④)</td><td>一道很淡的斜向光扫过画框,告诉人「还在动」;没有百分比,因为云端不报进度,不编一个。</td><td>2.4s 一轮,线性</td></tr>
+    <tr><td>出图(④→⑤)</td><td>图在画框内从 0 淡到 1,光扫停止;状态字淡出;下方出现尺寸一行与动作排(高度展开)。</td><td>图 280ms,动作排 190ms,<code>--a-ease-out</code></td></tr>
+    <tr><td>收起画框(①→⑥⑦,②③→⑧)</td><td>画框高度收到 0,说明块在原位置淡入。</td><td>190ms <code>--a-ease-out</code></td></tr>
+    <tr><td>没存到本机(④→⑨)</td><td>画框保留(图确实存在,只是不在本机),框内换成云朵图标与一句说明;下方出现红色说明块与「重新下载」。</td><td>130ms</td></tr>
+    <tr><td>重新下载(⑨→④)</td><td>说明块收起,回到 ④ 的样子。按钮在请求发出期间不可再点。</td><td>130ms</td></tr>
+    <tr><td>减少动态效果</td><td>系统开启「减少动态效果」时:没有光扫、没有脉冲、没有转圈动画(转圈换成静止的空心圈),所有淡入淡出瞬时完成。状态字照常更替。</td><td>0</td></tr>
+  </table>
+
+  <!-- ─────────── 4. 宽窄 ─────────── -->
+  <h2 class="ig-h2" id="widths">四、宽窗口与窄窗口</h2>
+  <p class="ig-sub">时间线正文最宽 768px(<code>.a-tl</code> 820px 减两侧内边距);右栏打开或窗口变窄时最窄 428px(会话区下限 480px)。</p>
+  <table class="ig-spec">
+    <tr><th>宽度</th><th>卡片</th><th>画框</th><th>动作排</th></tr>
+    <tr><td>正文 ≥ 560px</td><td>固定 480px,靠左(助手一侧)</td><td>456 × 456</td><td>一行:三个按钮 + 右端「详情」</td></tr>
+    <tr><td>正文 &lt; 560px</td><td>占满正文宽度</td><td>随宽度,最小约 404 × 404</td><td>按钮按需换行;「详情」始终在最后一个按钮之后靠右,不单独占一行(除非一行只放得下它)</td></tr>
+  </table>
+  <div class="ig-note">卡片宽度不随图片原始尺寸变化。平台今天每次只出一张 1024 × 1024 的图,1:1 画框正好装下;如果将来出现非方形的图,画框改按图片比例,宽度不变、高度最多 1.25 倍宽,超出部分按「完整显示、两侧留底色」处理 —— 这条是预留规则,不进本次验收。</div>
+
+  <!-- ─────────── 5. 文案与原因对照 ─────────── -->
+  <h2 class="ig-h2" id="copy">五、原因与下一步(文案对照)</h2>
+  <p class="ig-sub">左列是平台已经在发的稳定原因码,仅供实现对照,界面上不出现。没列出的码一律走每组最后一行的兜底文案,不显示原始报错(原始报错在「详情 › 开发者详情」里)。</p>
+  <table class="ig-spec">
+    <tr><th>原因码(帧外)</th><th>状态字</th><th>说明块标题</th><th>说明块正文 / 动作</th><th>颜色</th></tr>
+    <tr><td><code>account_allowance_exhausted</code></td><td>没有开始</td><td>本期的云端额度已经用完</td><td>这张图没有开始画,也没有扣费。充值后让助手再画一次。【去充值】</td><td>琥珀</td></tr>
+    <tr><td><code>account_wallet_insufficient</code></td><td>没有开始</td><td>钱包余额不够画这张图</td><td>这张图没有开始画,也没有扣费。充值后让助手再画一次。【去充值】</td><td>琥珀</td></tr>
+    <tr><td><code>account_suspended</code></td><td>没有开始</td><td>账户暂时不能使用云端功能</td><td>这张图没有开始画。到账户页可以看到原因。(无按钮)</td><td>琥珀</td></tr>
+    <tr><td><code>account_admission_rate_exceeded</code></td><td>没有开始</td><td>提交得太频繁了</td><td>稍等一分钟,再让助手试一次。</td><td>琥珀</td></tr>
+    <tr><td><code>pipeline_input_invalid</code>(超长)</td><td>没有开始</td><td>描述超过了 4000 字</td><td>让助手把描述写短一些再试。</td><td>琥珀</td></tr>
+    <tr><td>连不上 / 超时(无码)</td><td>没有开始</td><td>没有连上 Code Puppy 云</td><td>请求没有送到云端,这张图没有开始画。检查网络后,让助手再试一次。</td><td>红</td></tr>
+    <tr><td>其他受理前拒绝</td><td>没有开始</td><td>云端没有接受这次请求</td><td>这张图没有开始画。可以让助手再试一次。</td><td>红</td></tr>
+    <tr><td><code>image_safety_rejected</code></td><td>没有生成出来</td><td>这段描述没有通过图片内容审核</td><td>换一种说法描述你想要的画面,再让助手重新生成。</td><td>琥珀</td></tr>
+    <tr><td><code>image_region_rejected</code></td><td>没有生成出来</td><td>当前所在地区暂时不能生成图片</td><td>这是图片服务的地区限制,重试不会改变结果。</td><td>红</td></tr>
+    <tr><td><code>image_upstream_failed</code> · <code>image_backend_unavailable</code></td><td>没有生成出来</td><td>图片服务这会儿出错了</td><td>稍后让助手再试一次。</td><td>红</td></tr>
+    <tr><td><code>image_artifact_failed</code></td><td>没有生成出来</td><td>图片画好了,但云端没能保存它</td><td>让助手再试一次。</td><td>红</td></tr>
+    <tr><td>任务被取消</td><td>已取消</td><td>这次生成已经取消</td><td>(无动作)</td><td>中性</td></tr>
+    <tr><td>其他任务失败</td><td>没有生成出来</td><td>这张图没有生成出来</td><td>可以让助手再试一次。</td><td>红</td></tr>
+    <tr><td>下载:网络类(重试 3 次后)</td><td>没存到本机</td><td>下载时网络中断了</td><td>重新下载只是把同一张图再取一次,不会重新生成,也不会再次扣费。【重新下载】</td><td>红</td></tr>
+    <tr><td>下载:校验不一致 / 无法校验</td><td>没存到本机</td><td>下载到的文件不完整</td><td>同上。【重新下载】</td><td>红</td></tr>
+    <tr><td>下载:登录失效 / 被拒绝</td><td>没存到本机</td><td>登录已过期,下载被拒绝</td><td>重新登录后再点重新下载。【重新下载】</td><td>红</td></tr>
+    <tr><td>下载:文件不存在</td><td>没存到本机</td><td>云端的这张图已经不在了</td><td>需要的话,让助手重新生成一张。(无按钮)</td><td>红</td></tr>
+    <tr><td>下载:项目空间已满</td><td>没存到本机</td><td>这个项目存放云端结果的空间满了</td><td>空间腾出来之前,重新下载也存不下。(无按钮,见帧外缺口)</td><td>红</td></tr>
+    <tr><td>登记失败</td><td>没存到本机</td><td>图片下载了,但没能记进这个项目</td><td>重新下载会再登记一次。【重新下载】</td><td>红</td></tr>
+  </table>
+  <table class="ig-spec" style="margin-top:12px">
+    <tr><th>固定文案</th><th>中文</th><th>English</th></tr>
+    <tr><td>卡片标题</td><td>生成图片</td><td>Image</td></tr>
+    <tr><td>状态字</td><td>正在提交 / 排队中 / 正在生成 / 已生成,正在存到本机 / 没有开始 / 没有生成出来 / 没存到本机 / 已取消</td><td>Submitting / Queued / Generating / Saving to this Mac / Not started / Not generated / Not saved / Cancelled</td></tr>
+    <tr><td>画框说明</td><td>正在交给 Code Puppy 云 / 已受理,轮到后会自动开始 / 正在下载到本机并核对文件 / 图片在云端,还没有存到这台电脑</td><td>Sending to Code Puppy Cloud / Accepted — starts automatically / Downloading and checking the file / The image is in the cloud, not on this Mac yet</td></tr>
+    <tr><td>动作</td><td>查看大图 / 保存到… / 用「预览」打开 / 详情 / 收起详情 / 去充值 / 重新下载 / 展开全文 / 收起</td><td>View larger / Save to… / Open in Preview / Details / Hide details / Add credit / Download again / Show full prompt / Show less</td></tr>
+    <tr><td>保存反馈</td><td>已保存到「<i>文件夹</i>」文件夹:<i>文件名</i> / 没有保存:……</td><td>Saved to “<i>folder</i>”: <i>name</i> / Not saved: …</td></tr>
+    <tr><td>进行中提示</td><td>生成好会直接显示在这里,不用切到别处。</td><td>It will appear right here when it’s ready.</td></tr>
+  </table>
+
+  <!-- ─────────── 6. 排版规格 ─────────── -->
+  <h2 class="ig-h2" id="spec">六、排版规格</h2>
+  <table class="ig-spec">
+    <tr><th>部位</th><th>尺寸 / 间距</th><th>字号与颜色</th></tr>
+    <tr><td>卡片</td><td>宽 480(窄时 100%);圆角 <code>--a-radius-xl</code> 14;1px <code>--a-border</code>;阴影 <code>--a-edge-light</code>;与上一行间距沿用时间线行距 16</td><td>底 <code>--a-surface</code></td></tr>
+    <tr><td>头</td><td>最小高 40;左内边距 14,右 12;图标 16 与标题间距 8</td><td>标题 <code>--a-text-sm</code> 12.5 / 600 / <code>--a-text</code>;状态字 <code>--a-text-xs</code> 11.5 / <code>--a-text-secondary</code>;计时等宽数字 / <code>--a-text-tertiary</code></td></tr>
+    <tr><td>状态点</td><td>7 × 7 圆;转圈 12 × 12,1.5px 描边</td><td>排队空心 <code>--a-text-tertiary</code>;生成中 <code>--a-accent</code> 脉冲;琥珀 <code>--a-warning</code>;红 <code>--a-error</code>(颜色不单独承载信息:旁边永远有状态字)</td></tr>
+    <tr><td>画框</td><td>左右外边距 12;1:1;圆角 <code>--a-radius-lg</code> 11</td><td>占位底 <code>--a-bg-subtle</code>;排队态为 1px <code>--a-border</code> 内描边、无底色;框内说明 <code>--a-text-xs</code> / <code>--a-text-tertiary</code>(在 <code>--a-bg-subtle</code> 上 5.41:1,深色 5.37:1);框内图标 26,描边 1.4</td></tr>
+    <tr><td>描述</td><td>上 10,左右 14;两行截断;展开后最高 180 内滚动</td><td><code>--a-text-sm</code> 12.5 / 行高 1.55 / <code>--a-text-secondary</code>(7.73:1,深色 7.25:1)</td></tr>
+    <tr><td>尺寸一行</td><td>上 6,左右 14</td><td><code>--a-text-xs</code> / <code>--a-text-tertiary</code>(5.79:1,深色 5.20:1)/ 等宽数字</td></tr>
+    <tr><td>说明块</td><td>左右外边距 12;内边距 10 × 12;左边框 3;圆角 <code>--a-radius-md</code></td><td>标题 12.5 / 600 / <code>--a-text</code>;正文 11.5 / <code>--a-text-secondary</code>;琥珀底上 15.61 / 6.81:1,红底上 14.71 / 6.42:1(深色 13.42 / 5.46、14.72 / 6.00)</td></tr>
+    <tr><td>动作排</td><td>内边距 12;按钮高 28、内边距 0 10、间距 6;图标 14</td><td>按钮 11.5 / 500;主按钮 <code>--a-accent-solid</code> + <code>--a-text-on-accent</code>;「详情」<code>--a-text-tertiary</code>,悬停 <code>--a-text</code></td></tr>
+    <tr><td>保存反馈</td><td>动作排之下,左右 14,下 12;图标 14</td><td>11.5 / <code>--a-text-secondary</code>;成功图标 <code>--a-success</code>(非文字图形 3.30:1),失败图标 <code>--a-error</code></td></tr>
+    <tr><td>详情</td><td>左右外边距 12;内边距 4 × 12;两列(标签 / 值)行距 6、列距 14</td><td>底 <code>--a-bg-subtle</code>;标签 <code>--a-text-tertiary</code>;值 <code>--a-text</code>;编号与校验值等宽 11px</td></tr>
+  </table>
+
+  <!-- ─────────── 7. 交互与无障碍 ─────────── -->
+  <h2 class="ig-h2" id="a11y">七、交互与无障碍</h2>
+  <table class="ig-spec">
+    <tr><th>项</th><th>规则</th></tr>
+    <tr><td>点图</td><td>点图片本身 = 「查看大图」:在右栏产物面板打开这张图的预览(右栏关着就打开它,开着就切到「产物」并选中这次结果)。鼠标形状为放大镜。</td></tr>
+    <tr><td>保存到…</td><td>先复核本机文件与生成时一致,通过才弹系统保存窗口,默认文件名取产物名。成功后动作排下出现一行「已保存到……」,一直留到这张卡下次重新渲染(例如重开会话);它是本次操作的回执,不写进记录。</td></tr>
+    <tr><td>用「预览」打开</td><td>用系统「预览」打开这张图的一份副本,不改动产物本身。</td></tr>
+    <tr><td>详情</td><td>默认收起,点开在卡片底部展开;展开状态只在本次窗口内记住。开发者详情在详情最底部,再收一层。</td></tr>
+    <tr><td>键盘</td><td>Tab 次序:图片 → 查看大图 → 保存到… → 用「预览」打开 → 详情 → (展开后)复制 → 开发者详情。进行中的卡片没有可聚焦元素(描述过长时只有「展开全文」)。每个可聚焦元素都有 <code>--a-ring-focus</code> 焦点环。</td></tr>
+    <tr><td>读屏</td><td>卡片是一个带名称的区域「生成图片」;状态字所在区域 <code>aria-live="polite"</code>,只在状态变化时播报,不播报每秒的计时;出图时播报「图片已生成」;保存回执 <code>role="status"</code>,保存失败 <code>role="alert"</code>。图片的替代文字为描述的前 80 个字。</td></tr>
+    <tr><td>重开会话</td><td>卡片从本机记录与云端任务事实恢复:本机已核验的直接出图;任务仍在进行的接着更新(计时按受理时刻重算);记录里没有的不猜。</td></tr>
+    <tr><td>哪些调用会出卡</td><td>只有我方云端的「生成图片」请求才出卡。参数写错、类型不对的请求不出卡,照常作为工作过程里的一步失败显示 —— 不猜它「本来想画图」。</td></tr>
+  </table>
+
+  <!-- ─────────── 8. 多张(预留) ─────────── -->
+  <h2 class="ig-h2" id="multi">八、一次多张(预留,不进本次验收)</h2>
+  <p class="ig-sub">平台今天的图片合同固定每次一张(<code>image_count</code> 恒为 1)。下面只定下将来出现多张时的排布,避免到时候另起一套:2 张并排;3–4 张两列网格;超过 4 张时第 4 格盖一层「+N」,点开进右栏看全部。每格点开都是「查看大图」。</p>
+  <div class="ig-grid">
+    <div class="ig-frame"><div class="ig-cap"><b>2 张</b></div><div class="ig-stage"><div class="ig-card">
+      <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
+      <div class="ig-multi n2"><div><svg><use href="#scene"/></svg></div><div><svg style="filter:hue-rotate(160deg) saturate(.8)"><use href="#scene"/></svg></div></div>
+      <div class="ig-prompt">黄昏时分的海边灯塔,两种配色各一张。</div>
+      <div class="ig-facts">2 张 · 1024 × 1024 · PNG · 共 2.7 MB</div>
+      <div class="ig-actions"><button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>全部保存到…</button><button class="ig-link">详情<svg class="ic"><use href="#g-chev"/></svg></button></div>
+    </div></div></div>
+    <div class="ig-frame"><div class="ig-cap"><b>6 张</b></div><div class="ig-stage"><div class="ig-card">
+      <div class="ig-head"><svg class="ic"><use href="#g-image"/></svg><span class="ig-title">生成图片</span></div>
+      <div class="ig-multi n4"><div><svg><use href="#scene"/></svg></div><div><svg style="filter:hue-rotate(40deg)"><use href="#scene"/></svg></div><div><svg style="filter:hue-rotate(200deg)"><use href="#scene"/></svg></div><div><svg style="filter:grayscale(.7)"><use href="#scene"/></svg><span class="more">+3</span></div></div>
+      <div class="ig-prompt">黄昏时分的海边灯塔,六种构图。</div>
+      <div class="ig-facts">6 张 · 1024 × 1024 · PNG · 共 8.1 MB</div>
+      <div class="ig-actions"><button class="ig-btn"><svg class="ic"><use href="#g-save"/></svg>全部保存到…</button><button class="ig-link">详情<svg class="ic"><use href="#g-chev"/></svg></button></div>
+    </div></div></div>
+  </div>
+
+  <!-- ─────────── 9. 今天(反面参照) ─────────── -->
+  <h2 class="ig-h2" id="today">九、今天的样子(帧外参照,不沿用)</h2>
+  <div class="ig-stage" style="width:100%;max-width:760px"><div class="ig-old">
+    <div class="r">⌄ alpha_cloud_access 1 次 · cloud_dispatch 1 次 · cloud_await 1 次 · <span class="warn">1 步没成功</span> · 1 分 0 秒</div>
+    <div class="r">　☁ 思考 2 秒</div>
+    <div class="r">　⚡ cloud　cloud_dispatch <span class="warn" style="margin-left:auto">没成功</span></div>
+    <div class="box">这个工具来自第三方(cloud),我们不显示它收到和返回的内容。　› 开发者详情</div>
+    <div class="r">　⚡ cloud　cloud_dispatch<span style="margin-left:auto">11 秒</span></div>
+    <div class="r">图片生成任务已派发,正在生成中,稍等片刻…</div>
+    <div class="r">　⚡ cloud　cloud_await<span style="margin-left:auto">20 秒</span></div>
+    <div class="r" style="color:var(--a-accent)">🔗 lighthouse-dusk.png</div>
+  </div></div>
+  <div class="ig-note"><b>帧外 · 本稿不改的两件事。</b>① 第一次提交写错参数那一步,仍然只在工作过程里显示「没成功」,不出卡、不做「一键重新生成」(再次生成会再扣费,也绕过了助手 —— 编排器默认,可撤)。② 那几步的名字与来源说明(「来自第三方」)由权限与来源方案修;修好前,工作过程展开后仍会看到原始工具名。</div>
+  <div class="ig-note"><b>帧外 · 已知缺口。</b>下载失败原因为「项目空间已满」时,今天没有在界面里腾空间的办法(按次删除结果的功能被推迟),所以这一种不给按钮,只如实说明。</div>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  var seg=document.getElementById('themeSeg'),wseg=document.getElementById('widthSeg');
+  function mark(s,attr,v){s.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset[attr]===v)});}
+  var q=new URLSearchParams(location.search);
+  var dark=q.get('theme')?q.get('theme')==='dark':(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  root.setAttribute('data-theme',dark?'dark':'light');mark(seg,'theme',dark?'dark':'light');
+  if(q.get('w')==='narrow'){document.body.setAttribute('data-width','narrow');mark(wseg,'w','narrow');}
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){root.setAttribute('data-theme',b.dataset.theme);mark(seg,'theme',b.dataset.theme);};});
+  wseg.querySelectorAll('button').forEach(function(b){b.onclick=function(){document.body.setAttribute('data-width',b.dataset.w);mark(wseg,'w',b.dataset.w);};});
+  document.querySelectorAll('.ig-prompt-more').forEach(function(b){b.onclick=function(){var p=b.previousElementSibling;var o=p.classList.toggle('open');b.textContent=o?'收起':'展开全文';b.setAttribute('aria-expanded',o);};});
+})();
+</script>
+</body>
+</html>

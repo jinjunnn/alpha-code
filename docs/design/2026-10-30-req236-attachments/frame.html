@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>附件卡与读取状态 · 组件增量</title>
+<link rel="stylesheet" href="../current/composer/design.css" />
+<style>
+/* 本稿自有类一律 at- 前缀。输入框外壳(.composer / .input / .toolbar / .chip / .send)与 token 来自链接的
+   current/composer/design.css;依赖对比度的几项按 tokens.css 实值覆盖(见 docs/design/README.md「token drift」)。 */
+:root{/* 提议新增(见 system/tokens.md「待批新增」) */--a-media-scrim:rgba(15,17,21,.62);--a-text-on-media:#ffffff;--a-text-tertiary:#64656d;--a-error-on-subtle:#b91c1c;--a-error-subtle:rgba(220,38,38,.12);
+  --a-user-bubble:#e6f1fd;--a-user-bubble-text:#11233f;--a-bg-subtle:#f6f7f9;--a-dur-fast:130ms;--a-dur-base:190ms}
+html[data-theme="dark"]{--a-text-tertiary:#86878f;--a-error-on-subtle:#f87171;--a-error-subtle:rgba(248,113,113,.14);
+  --a-user-bubble:#193767;--a-user-bubble-text:#f5f9fd}
+
+body{background:var(--a-bg-subtle);padding:0 0 96px}
+.at-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 90%,transparent);backdrop-filter:blur(14px)}
+.at-bar b{font-size:var(--a-text-sm)}.at-bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.at-grow{flex:1}
+.at-wrap{max-width:1120px;margin:0 auto;padding:30px 24px 0}
+.at-intro h1{margin:0 0 10px;font-size:24px;letter-spacing:-.02em}
+.at-intro p{margin:0 0 8px;color:var(--a-text-secondary);font-size:var(--a-text-md);line-height:1.65;max-width:72ch}
+.at-h2{margin:44px 0 6px;font-size:19px;letter-spacing:-.015em}
+.at-sub{margin:0 0 16px;color:var(--a-text-secondary);font-size:var(--a-text-sm);max-width:80ch;line-height:1.6}
+.at-rel{margin:18px 0 0;padding:16px 18px;border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);background:var(--a-bg-canvas);font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.65}
+.at-rel h3{margin:0 0 8px;font-size:var(--a-text-md);color:var(--a-text)}
+.at-rel b{color:var(--a-text)}.at-rel ul{margin:4px 0 8px;padding-left:18px}
+.at-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--at-col),1fr));gap:20px;align-items:start}
+.at-cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:1.5;margin:0 0 8px}
+.at-cap b{color:var(--a-text);font-size:var(--a-text-sm);margin-right:6px}
+.at-stage{width:var(--at-stage);max-width:100%;padding:22px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas)}
+.at-note{margin:14px 0 0;padding:12px 14px;border:1px solid var(--a-border);border-left:3px solid var(--a-text-tertiary);border-radius:var(--a-radius-md);background:var(--a-bg-canvas);font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.6;max-width:86ch}
+.at-note b{color:var(--a-text)}
+.at-spec{width:100%;border-collapse:collapse;font-size:var(--a-text-sm);background:var(--a-bg-canvas);border:1px solid var(--a-border)}
+.at-spec th{background:var(--a-bg-subtle);text-align:left;font-size:var(--a-text-xs);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);padding:8px 12px}
+.at-spec td{padding:9px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top;line-height:1.55}
+.at-spec td:first-child{color:var(--a-text);white-space:nowrap}
+.at-spec code{font-family:var(--a-font-mono);font-size:11px;color:var(--a-text)}
+body{--at-stage:760px;--at-col:520px;--at-tl:720px}
+body[data-width="narrow"]{--at-stage:440px;--at-col:440px;--at-tl:428px}
+.composer{max-width:100%}
+
+/* ════════════ 输入框里:附件条 ════════════ */
+.at-strip-wrap{position:relative}
+.at-strip{display:flex;gap:8px;padding:12px 14px 2px;overflow-x:auto;scrollbar-width:none}
+.at-strip::-webkit-scrollbar{display:none}
+.at-strip-wrap.overflow::after{content:"";position:absolute;right:0;top:0;bottom:0;width:40px;pointer-events:none;background:linear-gradient(90deg,transparent,var(--a-surface));border-top-right-radius:var(--a-radius-2xl)}
+/* 图片:缩略图本身就是卡 */
+.at-thumb{position:relative;flex:none;width:56px;height:56px;border-radius:10px;overflow:visible}
+.at-thumb>button.pic{display:block;width:56px;height:56px;padding:0;border:1px solid var(--a-border);border-radius:10px;overflow:hidden;background:var(--a-bg-subtle);cursor:zoom-in}
+.at-thumb>button.pic svg{width:100%;height:100%;display:block}
+.at-thumb>button.pic:focus-visible{outline:none;box-shadow:var(--a-ring-focus)}
+.at-thumb .rt{position:absolute;left:4px;bottom:4px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:var(--a-media-scrim);color:var(--a-text-on-media);pointer-events:none}
+.at-thumb .rt svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+/* 「看不了图」标记与其他标记同色:琥珀图形落在压暗层上、底下是浅色图片时只有 1.67:1,低于图形 3:1;靠图形(划掉的眼睛)与条下那句琥珀图标说明区分 */
+.at-thumb.loading>button.pic{display:grid;place-items:center}
+.at-thumb.bad>button.pic{border-color:color-mix(in srgb,var(--a-error) 55%,transparent);cursor:default}
+.at-x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--a-surface);background:var(--a-text);color:var(--a-bg-canvas);display:grid;place-items:center;padding:0;cursor:pointer}
+.at-x svg{width:10px;height:10px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round}
+.at-x:focus-visible{outline:none;box-shadow:var(--a-ring-focus)}
+/* 文件卡 */
+.at-file{position:relative;flex:none;display:flex;align-items:center;gap:10px;width:var(--at-fw,216px);min-height:56px;padding:7px 10px 7px 7px;border:1px solid var(--a-border);border-radius:10px;background:var(--a-bg-subtle)}
+.at-file.bad{border-color:color-mix(in srgb,var(--a-error) 45%,transparent);background:var(--a-error-subtle)}
+.at-type{flex:none;position:relative;width:40px;height:40px;border-radius:8px;background:var(--a-surface);border:1px solid var(--a-border-faint);display:grid;place-items:center}
+.at-type svg.doc{width:24px;height:30px;stroke:var(--a-text-tertiary);stroke-width:1.4;fill:none;stroke-linejoin:round}
+.at-type i{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-style:normal;font-family:var(--a-font-mono);font-size:7.5px;line-height:1;font-weight:700;letter-spacing:.02em;color:var(--a-text-secondary)}
+.at-type .glyph{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:12px;height:10px;stroke:var(--a-text-secondary);stroke-width:1.5;fill:none;stroke-linecap:round}
+.at-meta{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
+.at-name{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.at-line{display:flex;flex-wrap:wrap;align-items:center;gap:2px 5px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);white-space:nowrap;line-height:1.35}
+.at-line .sz{font-variant-numeric:tabular-nums}
+.at-line .sep{color:var(--a-text-tertiary)}
+.at-line svg{flex:none;width:12px;height:12px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.at-line .route{display:inline-flex;align-items:center;gap:4px;color:var(--a-text-secondary)}
+.at-line.err{color:var(--a-error-on-subtle);white-space:normal}
+.at-line.err svg{color:var(--a-error-on-subtle)}
+.at-line button{border:0;background:none;padding:0;font:inherit;font-weight:var(--a-weight-semibold);color:var(--a-accent);border-radius:3px}
+.at-line.err button{color:var(--a-error-on-subtle);text-decoration:underline;text-underline-offset:2px}
+.at-file .at-x{top:-6px;right:-6px}
+.at-spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--a-border-strong);border-top-color:var(--a-accent);animation:at-rot .8s linear infinite;flex:none}
+.at-spin.lg{width:16px;height:16px}
+/* 附件条下的一句:这些图会怎样被看 */
+.at-route-line{display:flex;align-items:flex-start;gap:6px;line-height:1.5;margin:6px 14px 0;font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.at-route-line svg{margin-top:2px;width:13px;height:13px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none;color:var(--a-text-tertiary)}
+.at-route-line.warn svg{color:var(--a-warning)}
+.at-route-line .muted{color:var(--a-text-tertiary)}
+/* 预览浮层(时间线弹出层家族 #overlays 的「浮层」) */
+.at-peek{position:relative;width:300px;padding:8px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface-raised,var(--a-surface));box-shadow:var(--a-shadow-lg)}
+.at-peek .img{aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:var(--a-bg-subtle)}
+.at-peek .img svg{width:100%;height:100%;display:block}
+.at-peek .cap{display:flex;justify-content:space-between;gap:8px;padding:8px 4px 2px;font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.at-peek .cap span:last-child{color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+.at-peek::after{content:"";position:absolute;left:30px;bottom:-6px;width:10px;height:10px;background:var(--a-surface);border-right:1px solid var(--a-border);border-bottom:1px solid var(--a-border);transform:rotate(45deg)}
+/* 拖入 */
+.composer.drop{outline:2px dashed var(--a-accent);outline-offset:-2px}
+.at-drop{display:flex;align-items:center;justify-content:center;gap:8px;height:84px;margin:10px 12px 0;border-radius:var(--a-radius-lg);background:var(--a-accent-subtle);color:var(--a-accent);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.at-drop svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+
+/* ════════════ 发送后:用户消息 ════════════ */
+.at-tl{width:var(--at-tl);max-width:100%;display:flex;flex-direction:column;gap:16px}
+.at-user{display:flex;flex-direction:column;gap:6px;align-items:flex-end;align-self:flex-end;max-width:82%}
+.at-bubble{padding:10px 14px;border-radius:var(--a-radius-lg);background:var(--a-user-bubble);color:var(--a-user-bubble-text);font-size:var(--a-text-md);line-height:1.58}
+.at-imgs{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.at-img{display:block;padding:0;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;background:var(--a-bg-subtle);cursor:zoom-in}
+.at-img svg{display:block;width:100%;height:100%}
+.at-img.one{width:240px;height:180px}
+.at-img.tile{width:104px;height:104px}
+.at-img:focus-visible{outline:none;box-shadow:var(--a-ring-focus)}
+.at-files{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.at-files .at-file{--at-fw:248px;background:var(--a-surface);box-shadow:var(--a-shadow-xs)}
+.at-line .ok{color:var(--a-success)}
+.at-line .warn{color:var(--a-warning)}
+.at-line .bad{color:var(--a-error)}
+.at-line .dot{width:6px;height:6px;border-radius:50%;background:var(--a-text-tertiary);flex:none}
+.at-ai{align-self:flex-start;font-size:var(--a-text-md);line-height:1.62;color:var(--a-text);opacity:.55;max-width:66ch}
+.at-fold{align-self:flex-start;font-size:var(--a-text-sm);color:var(--a-text-tertiary);opacity:.55}
+
+@keyframes at-rot{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.at-spin{animation:none}}
+@media (max-width:600px){.at-wrap{padding:24px 16px 0}body{--at-stage:100%;--at-col:100%;--at-tl:100%}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="doc" viewBox="0 0 22 26" preserveAspectRatio="none"><path d="M3 1.5h10.5L19.5 7.5v16a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 23.5v-20.5A1.5 1.5 0 0 1 3 1.5z"/><path d="M13.5 1.5v6h6"/></symbol>
+    <symbol id="r-text" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+    <symbol id="r-local" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2.5 19.5h19"/></symbol>
+    <symbol id="r-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+    <symbol id="r-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/></symbol>
+    <symbol id="r-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.6A9 9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.6 3.4M6.4 6.9C3.9 8.6 2.5 12 2.5 12S6 18.5 12 18.5a8.7 8.7 0 0 0 4.2-1.1"/></symbol>
+    <symbol id="r-q" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.1-2.4 3.6M12 17v.1"/></symbol>
+    <symbol id="s-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16 9.6"/></symbol>
+    <symbol id="s-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/></symbol>
+    <symbol id="s-tri" viewBox="0 0 24 24"><path d="M12 3.5L2.5 20h19z"/><path d="M12 10v4.5M12 17.3v.1"/></symbol>
+    <symbol id="s-minus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></symbol>
+    <symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+    <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="clip" viewBox="0 0 24 24"><path d="M20 11.5l-8.3 8.3a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.6-7.6"/></symbol>
+    <!-- 示意图片(内容,非界面颜色) -->
+    <symbol id="ph1" viewBox="0 0 120 90" preserveAspectRatio="xMidYMid slice"><rect width="120" height="90" fill="#cfd8e3"/><rect y="52" width="120" height="38" fill="#7c8fa6"/><circle cx="88" cy="30" r="12" fill="#f4e3c1"/><path d="M0 60 L30 40 L52 58 L78 36 L120 64 V90 H0z" fill="#5b6d83"/></symbol>
+    <symbol id="ph2" viewBox="0 0 120 90" preserveAspectRatio="xMidYMid slice"><rect width="120" height="90" fill="#f1ede6"/><rect x="14" y="14" width="92" height="62" rx="4" fill="#fff" stroke="#d9d2c6"/><rect x="22" y="24" width="40" height="5" rx="2" fill="#3d4757"/><rect x="22" y="34" width="70" height="3" rx="1.5" fill="#a5adba"/><rect x="22" y="41" width="62" height="3" rx="1.5" fill="#a5adba"/><rect x="22" y="52" width="30" height="16" rx="2" fill="#7aa2d6"/><rect x="56" y="58" width="30" height="10" rx="2" fill="#e3b96b"/></symbol>
+    <symbol id="ph3" viewBox="0 0 120 90" preserveAspectRatio="xMidYMid slice"><rect width="120" height="90" fill="#2c3440"/><rect x="10" y="10" width="100" height="70" rx="3" fill="#1e252f"/><path d="M18 22h30M18 30h52M24 38h40M24 46h28M18 54h44M18 62h20" stroke="#8fb3a0" stroke-width="3" stroke-linecap="round"/><path d="M60 22h22M74 46h18" stroke="#d6a86c" stroke-width="3" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="at-bar">
+  <b>附件:放进来时与发出去后</b><span>组件增量 · 输入框附件条 + 用户消息里的附件</span>
+  <div class="at-grow"></div>
+  <div class="seg" id="widthSeg"><button data-w="wide" class="on">宽窗口</button><button data-w="narrow">右栏打开 / 窄窗口</button></div>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="at-wrap">
+  <div class="at-intro">
+    <h1>放进来的每个文件,都看得见它会怎样被读、读到了没有</h1>
+    <p>拖一张截图、一份 Word 进输入框,用户想知道两件事:助手看不看得到它,以及发出去之后到底读到了没有。今天输入框里只有一个 20px 的小图标加文件名,发出去后变成一个写着扩展名的方块;PDF 显示「已发送」,其实模型一个字也没读到。</p>
+    <p>这一稿让图片以缩略图出现、文件以文件卡出现,并在卡上如实写出读取路径(放进来时)和读取结果(发出去后)。「已读取」只表示助手用本机读取工具成功打开过这个文件,不代表、也不转述它读懂了什么。</p>
+  </div>
+
+  <div class="at-rel" id="relation">
+    <h3>与上一稿的关系</h3>
+    <b>继承</b>(输入框活稿 <code>current/composer/design.html</code>、时间线活稿 <code>#user</code> 与现行实现,不动):
+    <ul>
+      <li>附件在输入框里的位置:文字区之上(<code>.a-comp-atts</code>);拖入时整框虚线描边;粘贴、选择、拖入三个入口。</li>
+      <li>发出去后附件在用户气泡<b>之上</b>、靠右,卡片放在 <code>--a-surface</code> 上,不进气泡(气泡已是浅蓝 / 深蓝,附件卡保持自己的颜色)。</li>
+      <li>重载后附件仍在(图片数据与附件记录都随消息存在本机)。</li>
+    </ul>
+    <b>改了</b>:
+    <ul>
+      <li>输入框里:图片由 20px 小图标改为 <b>56px 缩略图</b>(可点开看大、可移除);文件由图标 + 文件名改为<b>文件卡</b>(类型图形、文件名、大小、读取路径);拒绝从「一闪而过的提示」改为<b>卡内说明</b>。</li>
+      <li>输入框里新增一行:这些图片会被怎样看(模型直接看 / 云端识图 / 当前模型看不了图 / 还不确定)。</li>
+      <li>用户消息里:图片由扩展名方块改为<b>缩略图</b>;文件卡新增<b>读取状态</b>一行。</li>
+      <li>新增一个小浮层:点缩略图在原位看大图(时间线弹出层家族里的「浮层」,同一套外观与关闭方式)。</li>
+    </ul>
+    <b>取代</b>:输入框 <code>.a-comp-att</code> 与时间线 <code>.a-tl-attach</code> 的视觉形态。
+  </div>
+
+  <!-- ════════ 一、输入框里 ════════ -->
+  <h2 class="at-h2" id="composer">一、放进输入框时</h2>
+  <p class="at-sub">图片是缩略图,文件是文件卡,两者同高 56px、排成一行。右上角的叉移除;点缩略图在上方看大图。读取路径写在文件卡的第二行;图片的读取路径取决于当前选的模型,所以对一组图片只写一次,放在附件条下方。</p>
+
+  <div class="at-cap"><b>常态 · 已登录、当前模型能直接看图</b>两张截图 + 一份 Word + 一个文本文件 + 一份 PDF</div>
+  <div class="at-stage"><div class="composer focus">
+    <div class="at-strip-wrap overflow"><div class="at-strip" role="list" aria-label="5 个附件">
+      <div class="at-thumb" role="listitem"><button class="pic" aria-label="查看大图:首页截图.png,模型直接看"><svg><use href="#ph2"/></svg></button><span class="rt" title="模型直接看"><svg><use href="#r-eye"/></svg></span><button class="at-x" aria-label="移除 首页截图.png"><svg><use href="#x"/></svg></button></div>
+      <div class="at-thumb" role="listitem"><button class="pic" aria-label="查看大图:报错.png,模型直接看"><svg><use href="#ph3"/></svg></button><span class="rt" title="模型直接看"><svg><use href="#r-eye"/></svg></span><button class="at-x" aria-label="移除 报错.png"><svg><use href="#x"/></svg></button></div>
+      <div class="at-file" role="listitem"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">2026 第三季度经营复盘.docx</span><span class="at-line"><span class="sz">1.8 MB</span><span class="sep">·</span><span class="route"><svg><use href="#r-local"/></svg>本机读取</span></span></span><button class="at-x" aria-label="移除 2026 第三季度经营复盘.docx"><svg><use href="#x"/></svg></button></div>
+      <div class="at-file" role="listitem"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>MD</i></span><span class="at-meta"><span class="at-name">会议纪要.md</span><span class="at-line"><span class="sz">12 KB</span><span class="sep">·</span><span class="route"><svg><use href="#r-text"/></svg>直接进对话</span></span></span><button class="at-x" aria-label="移除 会议纪要.md"><svg><use href="#x"/></svg></button></div>
+      <div class="at-file" role="listitem"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>PDF</i></span><span class="at-meta"><span class="at-name">供应商合同(终版).pdf</span><span class="at-line"><span class="sz">3.2 MB</span><span class="sep">·</span><span class="route"><svg><use href="#r-local"/></svg>本机读取</span></span></span><button class="at-x" aria-label="移除 供应商合同(终版).pdf"><svg><use href="#x"/></svg></button></div>
+    </div></div>
+    <div class="at-route-line"><svg><use href="#r-eye"/></svg><span>2 张图片:当前模型可以直接看图</span></div>
+    <div class="input">对照这两张截图和复盘文档,看看首页改版之后转化率下降的原因</div>
+    <div class="toolbar">
+      <button class="chip iconbtn" aria-label="添加"><svg class="ic"><use href="#plus"/></svg></button>
+      <div class="grow"></div>
+      <button class="send ready" aria-label="发送"><svg class="ic"><use href="#up"/></svg></button>
+    </div>
+  </div></div>
+
+  <div class="at-grid" style="margin-top:20px">
+    <div>
+      <div class="at-cap"><b>读取路径的四种说法(图片)</b>同一组图片,随当前模型与登录状态变化</div>
+      <div class="at-stage" style="display:flex;flex-direction:column;gap:12px">
+        <div class="composer"><div class="at-strip"><div class="at-thumb"><button class="pic"><svg><use href="#ph1"/></svg></button><span class="rt"><svg><use href="#r-eye"/></svg></span></div></div><div class="at-route-line"><svg><use href="#r-eye"/></svg><span>1 张图片:当前模型可以直接看图</span></div><div class="toolbar" style="height:12px"></div></div>
+        <div class="composer"><div class="at-strip"><div class="at-thumb"><button class="pic"><svg><use href="#ph1"/></svg></button><span class="rt"><svg><use href="#r-cloud"/></svg></span></div></div><div class="at-route-line"><svg><use href="#r-cloud"/></svg><span>1 张图片:当前模型看不了图,发送时由 Code Puppy 云识图后转成文字 <span class="muted">· 按次计费,图片会上传</span></span></div><div class="toolbar" style="height:12px"></div></div>
+        <div class="composer"><div class="at-strip"><div class="at-thumb"><button class="pic"><svg><use href="#ph1"/></svg></button><span class="rt warn"><svg><use href="#r-eyeoff"/></svg></span></div></div><div class="at-route-line warn"><svg><use href="#r-eyeoff"/></svg><span>1 张图片:当前模型看不了图 <span class="muted">· 换一个能看图的模型,或登录后用云端识图</span></span></div><div class="toolbar" style="height:12px"></div></div>
+        <div class="composer"><div class="at-strip"><div class="at-thumb"><button class="pic"><svg><use href="#ph1"/></svg></button><span class="rt"><svg><use href="#r-q"/></svg></span></div></div><div class="at-route-line"><svg><use href="#r-q"/></svg><span>1 张图片:还不确定当前模型能不能看图</span></div><div class="toolbar" style="height:12px"></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="at-cap"><b>读取路径(文件)与放进来的过程</b>读盘、存到本机、失败、拒绝</div>
+      <div class="at-stage"><div class="composer"><div class="at-strip" style="flex-wrap:wrap;row-gap:12px">
+        <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>XLSX</i></span><span class="at-meta"><span class="at-name">渠道投放明细.xlsx</span><span class="at-line"><span class="at-spin"></span>正在存到本机…</span></span><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+        <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>PPTX</i></span><span class="at-meta"><span class="at-name">新版首页方案.pptx</span><span class="at-line"><span class="sz">6.4 MB</span><span class="sep">·</span><span class="route"><svg><use href="#r-local"/></svg>本机读取</span></span></span><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+        <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>JSON</i></span><span class="at-meta"><span class="at-name">埋点配置.json</span><span class="at-line"><span class="sz">48 KB</span><span class="sep">·</span><span class="route"><svg><use href="#r-text"/></svg>直接进对话</span></span></span><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+        <div class="at-file bad" role="group" aria-label="没能存到本机"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>PDF</i></span><span class="at-meta"><span class="at-name">年度审计报告.pdf</span><span class="at-line err"><svg><use href="#s-alert"/></svg>没能存到本机 <button>重试</button></span></span><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+        <div class="at-file bad"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>PDF</i></span><span class="at-meta"><span class="at-name">扫描件合集.pdf</span><span class="at-line err"><svg><use href="#s-alert"/></svg>超过 20 MB,不能附上</span></span><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+        <div class="at-file bad"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>ZIP</i></span><span class="at-meta"><span class="at-name">素材包.zip</span><span class="at-line err"><svg><use href="#s-alert"/></svg>这种文件还不能附上</span></span><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+        <div class="at-thumb loading"><button class="pic" aria-label="正在读取图片"><span class="at-spin lg"></span></button><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+        <div class="at-thumb bad"><button class="pic" aria-label="图片超过 5 MB,不能附上" style="display:grid;place-items:center;background:var(--a-error-subtle)"><svg style="width:18px;height:18px;stroke:var(--a-error-on-subtle);fill:none;stroke-width:1.8"><use href="#s-alert"/></svg></button><button class="at-x" aria-label="移除"><svg><use href="#x"/></svg></button></div>
+      </div><div class="at-route-line" style="color:var(--a-error-on-subtle)"><svg style="color:var(--a-error-on-subtle)"><use href="#s-alert"/></svg><span>有 1 张图片超过 5 MB,不能附上</span></div><div class="toolbar" style="height:14px"></div></div></div>
+    </div>
+  </div>
+
+  <div class="at-grid" style="margin-top:20px">
+    <div>
+      <div class="at-cap"><b>点缩略图看大图</b>在缩略图上方弹出;Esc、再点一次或点别处关闭</div>
+      <div class="at-stage" style="padding-top:30px">
+        <div class="at-peek" role="dialog" aria-label="首页截图.png"><div class="img"><svg preserveAspectRatio="xMidYMid slice"><use href="#ph2"/></svg></div><div class="cap"><span>首页截图.png</span><span>1440 × 1080 · 860 KB</span></div></div>
+        <div class="composer" style="margin-top:12px"><div class="at-strip"><div class="at-thumb"><button class="pic" style="box-shadow:var(--a-ring-focus)"><svg><use href="#ph2"/></svg></button><span class="rt"><svg><use href="#r-eye"/></svg></span><button class="at-x"><svg><use href="#x"/></svg></button></div><div class="at-thumb"><button class="pic"><svg><use href="#ph3"/></svg></button><span class="rt"><svg><use href="#r-eye"/></svg></span><button class="at-x"><svg><use href="#x"/></svg></button></div></div><div class="toolbar" style="height:14px"></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="at-cap"><b>拖进来时</b>整框虚线(沿用),附件条位置给出可放下的范围</div>
+      <div class="at-stage"><div class="composer drop">
+        <div class="at-drop"><svg><use href="#clip"/></svg>松开即可附上</div>
+        <div class="input empty">问点什么…</div>
+        <div class="toolbar"><button class="chip iconbtn"><svg class="ic"><use href="#plus"/></svg></button><div class="grow"></div><button class="send"><svg class="ic"><use href="#up"/></svg></button></div>
+      </div></div>
+      <div class="at-cap" style="margin-top:8px">放得下的:图片(每张 ≤ 5 MB)、PDF / Word / Excel / PPT(每个 ≤ 20 MB)、文本与代码(每个 ≤ 256 KB),一共最多 8 个。</div>
+    </div>
+  </div>
+
+  <div class="at-cap" style="margin-top:24px"><b>附件多、放不下一行时</b>横向排开,右边缘渐隐提示还有;触控板横扫或 Tab 键移到哪个,哪个自动滚进视野。不换行,不把文字区往下推。</div>
+  <div class="at-stage"><div class="composer">
+    <div class="at-strip-wrap overflow"><div class="at-strip">
+      <div class="at-thumb"><button class="pic"><svg><use href="#ph1"/></svg></button><span class="rt"><svg><use href="#r-eye"/></svg></span><button class="at-x"><svg><use href="#x"/></svg></button></div>
+      <div class="at-thumb"><button class="pic"><svg><use href="#ph2"/></svg></button><span class="rt"><svg><use href="#r-eye"/></svg></span><button class="at-x"><svg><use href="#x"/></svg></button></div>
+      <div class="at-thumb"><button class="pic"><svg><use href="#ph3"/></svg></button><span class="rt"><svg><use href="#r-eye"/></svg></span><button class="at-x"><svg><use href="#x"/></svg></button></div>
+      <div class="at-thumb"><button class="pic"><svg style="filter:hue-rotate(90deg)"><use href="#ph1"/></svg></button><span class="rt"><svg><use href="#r-eye"/></svg></span><button class="at-x"><svg><use href="#x"/></svg></button></div>
+      <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">需求说明 v3.docx</span><span class="at-line"><span class="sz">920 KB</span><span class="sep">·</span><span class="route"><svg><use href="#r-local"/></svg>本机读取</span></span></span><button class="at-x"><svg><use href="#x"/></svg></button></div>
+      <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>XLSX</i></span><span class="at-meta"><span class="at-name">渠道投放明细.xlsx</span><span class="at-line"><span class="sz">2.1 MB</span><span class="sep">·</span><span class="route"><svg><use href="#r-local"/></svg>本机读取</span></span></span><button class="at-x"><svg><use href="#x"/></svg></button></div>
+      <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>TXT</i></span><span class="at-meta"><span class="at-name">用户反馈原文.txt</span><span class="at-line"><span class="sz">88 KB</span><span class="sep">·</span><span class="route"><svg><use href="#r-text"/></svg>直接进对话</span></span></span><button class="at-x"><svg><use href="#x"/></svg></button></div>
+    </div></div>
+    <div class="at-route-line"><svg><use href="#r-eye"/></svg><span>4 张图片:当前模型可以直接看图</span></div>
+    <div class="input empty">问点什么…</div>
+    <div class="toolbar"><button class="chip iconbtn"><svg class="ic"><use href="#plus"/></svg></button><div class="grow"></div><button class="send ready"><svg class="ic"><use href="#up"/></svg></button></div>
+  </div></div>
+
+  <!-- ════════ 二、发出去后 ════════ -->
+  <h2 class="at-h2" id="timeline">二、发出去之后:用户消息里</h2>
+  <p class="at-sub">图片以缩略图跟在消息上方(一张时 240 × 180 按原比例裁切,多张时 104 × 104 方块),点开看大图。文件卡和输入框里同形,第二行换成<b>读取结果</b>:文本文件在发送那一刻已经进了对话;PDF 与 Office 文件要等助手用本机读取工具打开它,结果按事实变化。</p>
+
+  <div class="at-cap"><b>一个回合里 · 读取结果按事实变化</b>Word 已读取、PDF 读到 0 字、Excel 读取失败、文本已随消息发出</div>
+  <div class="at-stage"><div class="at-tl">
+    <div class="at-user">
+      <div class="at-imgs"><button class="at-img tile" aria-label="查看大图:首页截图.png"><svg preserveAspectRatio="xMidYMid slice"><use href="#ph2"/></svg></button><button class="at-img tile" aria-label="查看大图:报错.png"><svg preserveAspectRatio="xMidYMid slice"><use href="#ph3"/></svg></button></div>
+      <div class="at-files">
+        <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">2026 第三季度经营复盘.docx</span><span class="at-line"><svg class="ok"><use href="#s-check"/></svg><span class="route">已读取</span><span class="sep">·</span><span class="sz">1.8 MB</span></span></span></div>
+        <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>PDF</i></span><span class="at-meta"><span class="at-name">扫描版合同.pdf</span><span class="at-line"><svg class="warn"><use href="#s-tri"/></svg><span class="route">读到 0 字,可能是扫描件</span></span></span></div>
+        <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>XLSX</i></span><span class="at-meta"><span class="at-name">渠道投放明细.xlsx</span><span class="at-line"><svg class="bad"><use href="#s-alert"/></svg><span class="route">读取失败</span><button>重新读取</button></span></span></div>
+        <div class="at-file"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>MD</i></span><span class="at-meta"><span class="at-name">会议纪要.md</span><span class="at-line"><svg><use href="#r-text"/></svg><span class="route">已随消息发出</span><span class="sep">·</span><span class="sz">12 KB</span></span></span></div>
+      </div>
+      <div class="at-bubble">对照这两张截图和复盘文档,看看首页改版之后转化率下降的原因</div>
+    </div>
+    <div class="at-fold">› 读取 3 个文件 · 搜索 2 次 · 48 秒</div>
+    <div class="at-ai">从复盘文档第 4 节看,改版后首屏的主按钮下移到了第二屏……(回答正文,淡显)</div>
+  </div></div>
+
+  <div class="at-grid" style="margin-top:20px">
+    <div>
+      <div class="at-cap"><b>PDF / Office 文件的读取结果,全部七种</b>按出现顺序;同一张卡原位变化</div>
+      <div class="at-stage" style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+        <div class="at-files"><div class="at-file" style="--at-fw:280px"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">需求说明 v3.docx</span><span class="at-line"><span class="dot"></span><span class="route">已存到本机,等助手读取</span></span></span></div></div>
+        <div class="at-files"><div class="at-file" style="--at-fw:280px"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">需求说明 v3.docx</span><span class="at-line"><span class="at-spin"></span><span class="route">等待本机读取工具</span><span class="sep">·</span>准备中</span></span></div></div>
+        <div class="at-files"><div class="at-file" style="--at-fw:280px"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">需求说明 v3.docx</span><span class="at-line"><svg class="ok"><use href="#s-check"/></svg><span class="route">已读取</span><span class="sep">·</span><span class="sz">920 KB</span></span></span></div></div>
+        <div class="at-files"><div class="at-file" style="--at-fw:280px"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">需求说明 v3.docx</span><span class="at-line"><svg class="bad"><use href="#s-alert"/></svg><span class="route">读取失败:读取工具没有启动</span><button>重新读取</button></span></span></div></div>
+        <div class="at-files"><div class="at-file" style="--at-fw:280px"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">需求说明 v3.docx</span><span class="at-line"><svg class="bad"><use href="#s-alert"/></svg><span class="route">读取失败:文件打不开</span><button>重新读取</button></span></span></div></div>
+        <div class="at-files"><div class="at-file" style="--at-fw:280px"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>DOCX</i></span><span class="at-meta"><span class="at-name">需求说明 v3.docx</span><span class="at-line"><svg class="warn"><use href="#s-minus"/></svg><span class="route">这一轮助手没有读取</span><button>请助手读取</button></span></span></div></div>
+        <div class="at-files"><div class="at-file" style="--at-fw:280px"><span class="at-type"><svg class="doc"><use href="#doc"/></svg><i>PDF</i></span><span class="at-meta"><span class="at-name">扫描版合同.pdf</span><span class="at-line"><svg class="warn"><use href="#s-tri"/></svg><span class="route">读到 0 字,可能是扫描件</span></span></span></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="at-cap"><b>只有图片 · 单张</b>240 × 180,超出按中心裁切;点开看完整图</div>
+      <div class="at-stage"><div class="at-tl" style="width:100%">
+        <div class="at-user"><div class="at-imgs"><button class="at-img one" aria-label="查看大图:报错.png"><svg preserveAspectRatio="xMidYMid slice"><use href="#ph3"/></svg></button></div><div class="at-bubble">这个报错是什么意思?</div></div>
+      </div></div>
+      <div class="at-cap" style="margin-top:20px"><b>多张图片</b>104 × 104 方块,一行放不下就换行;最多 8 张</div>
+      <div class="at-stage"><div class="at-tl" style="width:100%">
+        <div class="at-user"><div class="at-imgs">
+          <button class="at-img tile"><svg preserveAspectRatio="xMidYMid slice"><use href="#ph1"/></svg></button><button class="at-img tile"><svg preserveAspectRatio="xMidYMid slice"><use href="#ph2"/></svg></button><button class="at-img tile"><svg preserveAspectRatio="xMidYMid slice"><use href="#ph3"/></svg></button><button class="at-img tile"><svg preserveAspectRatio="xMidYMid slice" style="filter:hue-rotate(90deg)"><use href="#ph1"/></svg></button><button class="at-img tile"><svg preserveAspectRatio="xMidYMid slice" style="filter:hue-rotate(200deg)"><use href="#ph2"/></svg></button>
+        </div><div class="at-bubble">这五个版本哪个更清楚?</div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="at-note"><b>帧外 · 「已读取」说的是什么、不说什么。</b>它只在同一个会话里出现了一次本机读取工具的成功调用、且调用的文件正是这一份时出现。卡片不显示摘要、页数或「助手理解了什么」—— 那些都要从模型或工具输出里转述,会把「打开过」说成「读懂了」。想核对助手读了哪一段,展开回答上方的工作过程,那里有读取这一步。</div>
+  <div class="at-note"><b>帧外 · 图片发出去之后不再写读取路径。</b>放进来时的路径(直接看 / 云端识图)取决于发送那一刻的模型,消息记录里今天没有存下它;发出去之后写一个推测的路径就是编。若以后记录里存了,再加在缩略图角上。</div>
+
+  <!-- ════════ 三、规格 ════════ -->
+  <h2 class="at-h2" id="spec">三、文案、尺寸与交互</h2>
+  <table class="at-spec">
+    <tr><th>槽位</th><th>中文</th><th>English</th></tr>
+    <tr><td>文件读取路径</td><td>直接进对话 / 本机读取</td><td>Sent as text / Read on this Mac</td></tr>
+    <tr><td>图片读取路径(条下一行)</td><td>N 张图片:当前模型可以直接看图 / 当前模型看不了图,发送时由 Code Puppy 云识图后转成文字 · 按次计费,图片会上传 / 当前模型看不了图 · 换一个能看图的模型,或登录后用云端识图 / 还不确定当前模型能不能看图</td><td>N images: this model can see images / This model can’t see images — Code Puppy Cloud will describe them in text when you send · billed per use, images are uploaded / This model can’t see images · pick one that can, or sign in to use cloud recognition / Not sure whether this model can see images</td></tr>
+    <tr><td>放进来的过程</td><td>正在读取… / 正在存到本机… / 没能存到本机【重试】</td><td>Reading… / Saving to this Mac… / Couldn’t save to this Mac [Retry]</td></tr>
+    <tr><td>拒绝</td><td>超过 5 MB,不能附上(图片)/ 超过 20 MB,不能附上(PDF、Office)/ 超过 256 KB,不能附上(文本)/ 这种文件还不能附上 / 最多附 8 个文件</td><td>Over 5 MB / Over 20 MB / Over 256 KB — can’t attach / This file type can’t be attached yet / Up to 8 files</td></tr>
+    <tr><td>读取结果</td><td>已随消息发出 / 已存到本机,等助手读取 / 等待本机读取工具 · 准备中(连接中)/ 已读取 / 读取失败:<i>原因</i>【重新读取】/ 这一轮助手没有读取【请助手读取】/ 读到 0 字,可能是扫描件</td><td>Sent with the message / Saved, waiting to be read / Waiting for the local reader · starting (connecting) / Read / Couldn’t read: <i>reason</i> [Read again] / Not read this turn [Ask to read] / 0 characters found — may be a scan</td></tr>
+    <tr><td>读取失败原因</td><td>本机读取工具没有启动 / 文件打不开 / 读取超时</td><td>The local reader isn’t running / The file can’t be opened / Reading timed out</td></tr>
+  </table>
+  <table class="at-spec" style="margin-top:12px">
+    <tr><th>部位</th><th>规格</th></tr>
+    <tr><td>附件条</td><td>文字区之上;内边距 12 14 2;卡间距 8;单行横排,溢出横向滚动、右缘 40px 渐隐到 <code>--a-surface</code>;不显示滚动条</td></tr>
+    <tr><td>缩略图</td><td>56 × 56,圆角 10,1px <code>--a-border</code>,裁切填满;左下角 18px 圆形读取路径标记(<code>--a-media-scrim</code> 底 + <code>--a-text-on-media</code> 11px 图标,压在纯白图片上仍有 5.33:1;「看不了图」靠划掉的眼睛图形区分,不换颜色);图片仅为装饰性预览,替代文字写在按钮名称上</td></tr>
+    <tr><td>文件卡</td><td>高 56、宽 216(输入框)/ 248(消息里);内边距 7 10 7 7;圆角 10;输入框里底 <code>--a-bg-subtle</code>,消息里底 <code>--a-surface</code> + 极轻阴影;类型图形 40 × 40 圆角 8,文档轮廓 + 扩展名(等宽 8.5px / 700 / <code>--a-text-secondary</code>)</td></tr>
+    <tr><td>文件卡文字</td><td>文件名 <code>--a-text-sm</code> 12.5 / 500 / <code>--a-text</code>,单行末尾省略,完整名在悬停提示;第二行 <code>--a-text-xs</code> 11.5,大小用 <code>--a-text-tertiary</code>(在 <code>--a-bg-subtle</code> 上 5.41:1),路径与结果用 <code>--a-text-secondary</code>;状态图标 12px:成功 <code>--a-success</code>、注意 <code>--a-warning</code>、失败 <code>--a-error</code>(图形对比度 ≥ 3:1;文字不用这三色,颜色从不单独承载含义)</td></tr>
+    <tr><td>失败的卡</td><td>边框 <code>--a-error</code> 45% 混合,底 <code>--a-error-subtle</code>;说明文字 <code>--a-error-on-subtle</code>(5.37:1,深色 5.56:1);「重试」下划线文字按钮</td></tr>
+    <tr><td>移除</td><td>右上角外挂 20px 圆,<code>--a-text</code> 底、<code>--a-bg-canvas</code> 色叉,1.5px <code>--a-surface</code> 描边隔开卡片;常显(不只悬停才出现),键盘可达</td></tr>
+    <tr><td>消息里的图片</td><td>单张 240 × 180、多张 104 × 104,间距 6,圆角 <code>--a-radius-lg</code>,靠右;在气泡上方,先图片后文件</td></tr>
+    <tr><td>看大图浮层</td><td>宽 300,内边距 8,圆角 <code>--a-radius-lg</code>,<code>--a-shadow-lg</code>;图片按原比例完整显示(最高 360);下方文件名 + 像素尺寸 + 大小;贴缩略图上方 8px 弹出,带小尖角;Esc、点别处、再点缩略图关闭;焦点回到缩略图。与时间线弹出层家族同一套关闭规则</td></tr>
+    <tr><td>键盘</td><td>每张缩略图是一个按钮(Enter / 空格看大图),其后是它的移除按钮;文件卡本身不可聚焦,只有移除、重试、重新读取可聚焦。Backspace 在输入框为空时不删附件(防误删)</td></tr>
+    <tr><td>读屏</td><td>附件条是一个列表「N 个附件」;每项读出名字、大小、读取路径或失败原因;读取结果变化时以 <code>role="status"</code> 播报一次(「需求说明 v3.docx 已读取」)</td></tr>
+    <tr><td>窄窗口</td><td>输入框里:卡宽不变,条内横向滚动;消息里:文件卡宽 248 不变、按行换行,整组最宽为时间线正文的 82%(与气泡同上限)</td></tr>
+    <tr><td>重开会话</td><td>缩略图、文件卡与读取结果全部从消息记录恢复;正在等待的读取工具状态按当下重新取</td></tr>
+    <tr><td>「重新读取」/「请助手读取」</td><td>在输入框里以同一个附件再发一条请求读取这个文件的消息(用户看得到这条消息),不在后台悄悄重读</td></tr>
+  </table>
+  <div class="at-note"><b>帧外 · 超出验收条目的两处,按 owner 2026-10-30 的要求加入,需要一并认可:</b>① 点缩略图看大图的小浮层(票面没有这一项;它属于时间线弹出层家族,不是新路由或新窗口);② 输入框里的图片读取路径改为「条下一行 + 缩略图角标」,而不是逐张写字 —— 读取路径取决于当前模型,同一组图片永远相同,逐张写八遍只是重复。</div>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement,seg=document.getElementById('themeSeg'),wseg=document.getElementById('widthSeg');
+  function mark(s,a,v){s.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset[a]===v)});}
+  var q=new URLSearchParams(location.search);
+  var dark=q.get('theme')?q.get('theme')==='dark':(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  root.setAttribute('data-theme',dark?'dark':'light');mark(seg,'theme',dark?'dark':'light');
+  if(q.get('w')==='narrow'){document.body.setAttribute('data-width','narrow');mark(wseg,'w','narrow');}
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){root.setAttribute('data-theme',b.dataset.theme);mark(seg,'theme',b.dataset.theme);};});
+  wseg.querySelectorAll('button').forEach(function(b){b.onclick=function(){document.body.setAttribute('data-width',b.dataset.w);mark(wseg,'w',b.dataset.w);};});
+})();
+</script>
+</body>
+</html>
