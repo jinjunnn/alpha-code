@@ -36,9 +36,12 @@ plugin、MCP、host 或 V2。因而从 alias、标题、URL、图标或 annotati
 4. 唯一持久化形状是 schema 包的 `ToolDisplaySnapshotV1`，挂在首个 `ToolPart` 写入上：
    `identity + technicalId + authority`。后续 rename/delete/rebind、catalog 不可用或 replay 均不得覆盖。
    历史记录允许缺席，并保持 unknown；不得 live lookup 或推断补写。
+   alpha-code#1576 起快照多一个可选字段 `location`（`local` 或 `remote` + 主机名）：注册时由宿主写，
+   内置 / host / 插件为 `local`，MCP 由生效条目的去秘密传输事实派生；缺席即显示「位置未知」，无回填。
 5. `alpha-cloud` authority 只可由现有 verified binding graph 的精确 MCP 定义校验产生，并同时持久化
    `bindingId` 与 `sha256:` evidence digest。域名、标题、图标、annotation 或相似 URL 均只能得到
-   `not-asserted`。
+   `not-asserted`。alpha-code#1576：注入定义里值为 `{file:}` 引用的 header 只核对装载条目有同名字符串
+   header、不比值（令牌是凭据不是来源）；其余字段与键集合仍逐字相等，evidence 仍是注入定义原文。
 6. V1、V2 共享上述 schema 与 canonicalizer。V2 不另造兼容表、dual read 或迁移；SDK 只投影同一份
    可选持久化字段。
 
