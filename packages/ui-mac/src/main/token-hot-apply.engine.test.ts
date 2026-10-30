@@ -21,11 +21,17 @@ import * as path from "node:path"
 import { pathToFileURL } from "node:url"
 import { PLATFORM_API_KEY_PLACEHOLDER, buildAlphaModelConfig } from "./alpha-models"
 import { applyPlatformCredentialsHot, secretFilePath, secretFileRef, syncSecretFiles } from "./alpha-secret-files"
+import { pinAppliedCatalog, writeCatalogSnapshot } from "./alpha-live-allowlist"
 
 const repoRoot = path.resolve(import.meta.dir, "../../../..")
 const engineEntry = path.resolve(repoRoot, "packages/opencode/src/index.ts")
 const extEntry = path.resolve(repoRoot, "packages/ext/src/plugin.ts")
 const modelsFixture = path.resolve(repoRoot, "packages/opencode/test/tool/fixtures/models-api.json")
+/** 平台目录的真样本:上游 V3 producer fixture(`#1556` 起平台段只来自已应用快照,没有随包回落)。 */
+const V3_PRODUCER = path.resolve(
+  repoRoot,
+  "packages/alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v3/fixtures/producer/model-catalog.json",
+)
 /** 全量并跑时有测试文件会改写 `process.env.PATH`:引擎子进程用绝对 bun 路径 + 装载期 PATH 快照。 */
 const BUN_EXEC = process.execPath
 const PATH_AT_LOAD = process.env.PATH ?? ""
@@ -66,6 +72,15 @@ beforeAll(() => {
   userData = path.join(root, "userdata")
   process.env.ALPHA_GLOBAL_DIR = path.join(root, "alpha-global", "alpha-code-state", "env", "dev")
   fs.mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
+  // 生产刷新器 + fork 同一条路:写 LKG 快照,再钉成已应用目录(平台 provider 的模型清单读这一份)。
+  const rows = (JSON.parse(fs.readFileSync(V3_PRODUCER, "utf8")) as { value: { data: Array<Record<string, any>> } }).value.data
+  writeCatalogSnapshot(userData, {
+    fetchedAt: "2026-10-30T00:00:00Z",
+    edition: "intl",
+    pricingBasisModelId: rows[0]!.id,
+    models: rows.map((row) => ({ id: row.id, provider: row.provider, minPlan: row.min_plan, pricing: row.pricing_multiplier, display: row.display })),
+  })
+  pinAppliedCatalog(userData, 1)
   // 假网关:只认已签发的两个令牌;别的(含占位值)一律 401 —— 与真网关「凭据不对就拒」同一结论。
   gateway = Bun.serve({
     port: 0,
