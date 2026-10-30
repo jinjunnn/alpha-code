@@ -157,7 +157,7 @@ test("真 host + 真协调器:阶段查询经子进程往返;退出 ⇒ pendingF
 // 拿这份 env 认得出 main 写策略写下的四条命令(两边对资源根的解析一致、清单与模板逐 token 对上)。
 // 删掉注入 ⇒ env 里没有这个键;注入的路径与写策略的资源根解析不一致 ⇒ 四条都拿不到声明定义。
 test("#1565: fork 注入 ALPHA_OFFICE_MCP_MANIFEST,引擎据它认出写策略写下的四条文档工具命令", async () => {
-  const { OFFICE_MCP_MANIFEST_ENV, declaredFirstPartyTools } = await import("../../../plugin/src/alpha-first-party-mcp")
+  const { OFFICE_MCP_MANIFEST_ENV, declaredFirstPartyTools } = await import("../../../opencode/src/mcp/alpha-first-party-mcp")
   const { applyMcpWritePolicy } = await import("./ext-mcp-policy")
   const { ALPHA_OFFICE_CONNECTORS } = await import("../shared/office-advisories")
   const child = new RecordingChild()

@@ -549,7 +549,7 @@ export async function spawnLocalServer(
   const sidecarEnv = createSidecarEnv()
   // uv's default ~/.cache/uv is outside the fence; keep Office dependencies under the existing W3 root.
   sidecarEnv.UV_CACHE_DIR = join(options.userDataPath, "uv-cache")
-  // #1565:引擎在四个文档工具连上之前,用这份随包清单给出它们的声明定义(packages/plugin/src/alpha-first-party-mcp.ts)。
+  // #1565:引擎在四个文档工具连上之前,用这份随包清单给出它们的声明定义(packages/opencode/src/mcp/alpha-first-party-mcp.ts)。
   // 与写策略(ext-mcp-policy)一样按资源根的 realpath 解析,配置里那四条命令才能逐 token 对上。路径不是秘密。
   sidecarEnv.ALPHA_OFFICE_MCP_MANIFEST = join(realpathSync(resourcesRoot()), "office-mcp", "tools.json")
   // REQ-137 `#1379`:这一代的 BYOK 放行集合。平台无关(代理只在 darwin 起,但「放行集合 = 这一代的配置」

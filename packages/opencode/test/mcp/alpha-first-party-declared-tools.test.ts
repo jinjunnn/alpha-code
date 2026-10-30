@@ -19,7 +19,7 @@ import { expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"
-import { OFFICE_MCP_MANIFEST_ENV } from "../../../plugin/src/alpha-first-party-mcp"
+import { OFFICE_MCP_MANIFEST_ENV } from "../../src/mcp/alpha-first-party-mcp"
 import {
   ALPHA_OFFICE_PYTHON_SLOT,
   ALPHA_OFFICE_SERVER_SLOT,

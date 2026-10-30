@@ -58,8 +58,7 @@ import {
   governedMcpEvidence,
   isGovernedMcpEntry,
 } from "@opencode-ai/plugin/alpha-cloud-authority"
-// #1565: relative, not `@opencode-ai/plugin/…` — a new subpath export would edit the upstream package.json.
-import { declaredFirstPartyTools } from "../../../plugin/src/alpha-first-party-mcp"
+import { declaredFirstPartyTools } from "./alpha-first-party-mcp"
 import { ToolAliasLedger, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 const DEFAULT_TIMEOUT = 30_000

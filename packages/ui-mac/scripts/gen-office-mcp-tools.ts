@@ -6,7 +6,7 @@
 // 字节码,server.py 所在目录一个字节都不动),逐格式取 tools_for(),连同每个格式的随包命令模板
 // (office-advisories.ts 的 alphaOfficeInstallCommand,`{alphaResources}` 槽原样保留)与 server.py 的 sha256 写成
 // `{serverSha256, formats}`,入库。引擎只对命令与模板逐 token 相等、且随包 server.py 摘要仍与清单一致的条目使用它
-// (packages/plugin/src/alpha-first-party-mcp.ts)。
+// (packages/opencode/src/mcp/alpha-first-party-mcp.ts)。
 //
 // 改了 server.py 的工具 schema 或命令模板之后重跑:`bun scripts/gen-office-mcp-tools.ts`。
 // office-mcp-tools-snapshot.test.ts 重新生成并与入库内容逐字节比较,忘了重跑即红。
