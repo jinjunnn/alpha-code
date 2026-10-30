@@ -202,8 +202,8 @@ Word / Excel / PowerPoint / PDF 四个文档工具的命令是 `<Resources>/offi
 构建日志里的体积行(2026-10-30,CPython 3.11.15 + 11 个发行包,本机未签名构建实测):
 
 ```
-[alpha:office-runtime] arm64: 111.5 MB (4753 files, 48 Mach-O, 11 top-level modules imported, 4 formats round-tripped)
-[alpha:office-runtime] x64: 104.6 MB (4753 files, 48 Mach-O, 11 top-level modules imported, 4 formats round-tripped)
+[alpha:office-runtime] arm64: 111.2 MB (4750 files, 48 Mach-O, 11 top-level modules imported, 4 formats round-tripped)
+[alpha:office-runtime] x64: 104.4 MB (4750 files, 48 Mach-O, 11 top-level modules imported, 4 formats round-tripped)
 ```
 本仓 CI 与开发机都没有 x86_64 运行时,上面的 `lipo` 只证明**装进去的片对**,不证明跑得起来。
 

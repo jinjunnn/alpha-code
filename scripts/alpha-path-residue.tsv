@@ -34,7 +34,7 @@ packages/ui-mac/src/main/alpha-workdir.ts	132	retired-guard	项目三态解析�
 packages/ui-mac/src/main/cloud-envelope-guard.ts	11	historical	`#918` 已删除规则的**逐字引用**(原 denied_paths 缺省注入清单 `.env* / *.pem / .alpha/ / .git/`)。改引用内容 = 伪造那条规则曾经的样子。
 packages/ui-mac/src/main/engine-config-dangling.ts	200	retired-guard	dangling 清扫的 guardRoots 之一 —— 退役根仍须被认出。
 packages/ui-mac/src/main/engine-config-truth-boot.ts	243	retired-guard	boot truth reconcile 的退役根比对。
-packages/ui-mac/src/main/ext-install-planner.ts	438	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/main/ext-install-planner.ts	440	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
 packages/ui-mac/src/main/factory-skills.ts	4	historical	抬头「通道演进」列表里的 REQ-036 初版条目,行内自带「已迁移」。记的是当时违反的那条不变量的当时叫法。
 packages/ui-mac/src/main/factory-skills.ts	181	historical	标注的是「拆 REQ-052 遗留的存量出厂链」这段代码;它拆的正是退役 `.alpha` 链,且与同段落 191 行那条不可改的字符串字面量成对。改注释会让它与所标注的代码脱节。
 packages/ui-mac/src/main/factory-skills.ts	191	retired-guard	字符串字面量(诊断 reason),不是注释;语义正确 —— 它说的就是退役的 `.alpha` symlink。
