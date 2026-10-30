@@ -27,7 +27,7 @@ test(
     // 否则子进程匹配 0 个文件时「0 fail」是假绿。
     const fail = output.match(/(\d+) fail\b/)?.[1]
     const pass = Number(output.match(/(\d+) pass\b/)?.[1] ?? 0)
-    expect({ fail, pass }).toEqual({ fail: "0", pass: 4 })
+    expect({ fail, pass }).toEqual({ fail: "0", pass: 3 })
     expect(output.match(/Ran \d+ tests? across (\d+) files?/)?.[1]).toBe("1")
   },
   60_000,

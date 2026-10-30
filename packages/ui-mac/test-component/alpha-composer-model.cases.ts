@@ -4727,7 +4727,8 @@ describe("#1557 模型状态行与清单失败提示", () => {
     const byokHead = { group: zh["alpha.model.byokGroup"], note: "network" }
     await eventually(() => expect(heads().find((head) => head.group === zh["alpha.model.byokGroup"])).toEqual(byokHead))
     // 平台那份有已应用旧版本 ⇒ 平台组头不提示,只在底部一行;自带 Key 那份不进底部、不进输入框。
-    expect(heads().find((head) => head.group === zh["alpha.model.platformGroup"])?.note).toBeNull()
+    // (未登录时平台组头本身按既有 IA 不出现;出现与否都不该带提示。)
+    expect(heads().filter((head) => head.note !== null)).toEqual([byokHead])
     expect(picker().querySelector("[data-alpha-catalog-stale]")?.getAttribute("data-alpha-catalog-stale")).toBe("http-503")
     expect(picker().querySelectorAll("[data-alpha-catalog-stale]")).toHaveLength(1)
     expect(slotNotices(mounted.host)).toEqual([])
