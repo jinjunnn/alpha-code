@@ -1113,6 +1113,47 @@ describe("#568 回合末富脚注(A6)", () => {
   })
 })
 
+describe("#1560 实际执行模型与所选不一致时脚注说明「实际使用 X」", () => {
+  const turn = (user: UserMessage, assistant: AssistantMessage) =>
+    project([user, assistant], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [textPart("prt_t1", "msg_a1", "答")],
+    })
+  const footnoteRow = (rows: TimelineRow[]) => {
+    const last = rows.at(-1)!
+    if (last.kind !== "footnote") throw new Error("expected footnote row")
+    return last
+  }
+
+  test("不一致(modelID 或 providerID 不同):脚注带实际执行的模型,且进 rev 以触发重渲染", () => {
+    const byModel = footnoteRow(
+      turn(
+        userMsg("msg_u1", 1000, { model: { providerID: "deepseek", modelID: "deepseek-chat" } }),
+        assistantMsg("msg_a1", "msg_u1"),
+      ),
+    )
+    expect(byModel.footnote.actualModel).toBe("deepseek-reasoner")
+    expect(byModel.rev).toContain("deepseek-reasoner")
+
+    const byProvider = footnoteOf([assistantMsg("msg_a1", "msg_u1")], {
+      providerID: "deepseek-byok",
+      modelID: "deepseek-reasoner",
+    })
+    expect(byProvider?.actualModel).toBe("deepseek-reasoner")
+  })
+
+  test("一致或用户消息没记模型:不出说明,脚注与原来逐字段相同", () => {
+    const same = footnoteRow(turn(userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")))
+    expect(same.footnote.actualModel).toBeUndefined()
+    expect(Object.keys(same.footnote)).not.toContain("actualModel")
+
+    const unrecorded = footnoteRow(
+      turn(userMsg("msg_u1", 1000, { model: undefined as never }), assistantMsg("msg_a1", "msg_u1")),
+    )
+    expect(unrecorded.footnote.actualModel).toBeUndefined()
+  })
+})
+
 describe("#568 本回合改动汇总(S2)", () => {
   test("userMessage.summary.diffs 投影为 diffsum 行:合计与文件行;非法条目丢弃", () => {
     const rows = project(
