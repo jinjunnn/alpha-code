@@ -416,12 +416,15 @@
   line-height: var(--a-leading-snug);
 }
 
+/* 票 1550:用户气泡 = owner 指定的浅蓝/深蓝(tokens.css `--a-user-bubble*`),无描边。
+   气泡内的子代理提及(唯一的「链接」形态)与截断提示改用与这层底配对过的色,
+   对比度判据在 contrast-ratchet.test.ts。 */
 .a-tl-bubble {
   padding: 10px 14px;
-  border: 1px solid var(--a-accent-border);
+  border: 1px solid transparent;
   border-radius: var(--a-radius-lg);
-  background: var(--a-accent-subtle);
-  color: var(--a-text);
+  background: var(--a-user-bubble);
+  color: var(--a-user-bubble-text);
   font-size: var(--a-text-md);
   line-height: var(--a-leading-normal);
   overflow-wrap: anywhere;
@@ -445,6 +448,14 @@
 .a-tl-mention[data-mention="agent"] {
   background: var(--a-accent-subtle);
   color: var(--a-accent);
+}
+
+.a-tl-bubble .a-tl-mention[data-mention="agent"] {
+  color: var(--a-user-bubble-link);
+}
+
+.a-tl-bubble .a-tl-truncated-inline {
+  color: var(--a-text-secondary);
 }
 
 /* 连接器 chip(design ① .conn-chip):资源提及以「来源徽标 + 来源名」成 chip 内联在气泡里。 */

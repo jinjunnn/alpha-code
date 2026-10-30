@@ -20,7 +20,7 @@ the `prefers-color-scheme` block if color) — never inlined at the call site.
 
 | Category | Tokens | Scale / notes |
 | --- | --- | --- |
-| **Color** | `--a-bg-*`, `--a-surface*`, `--a-scrim`, `--a-border*`, `--a-text*`, `--a-accent*`, `--a-send*`, `--a-overlay-*`, `--a-success/warning/error/info(-subtle)` | see [`color.md`](color.md); light + dark |
+| **Color** | `--a-bg-*`, `--a-surface*`, `--a-scrim`, `--a-border*`, `--a-text*`, `--a-accent*`, `--a-send*`, `--a-overlay-*`, `--a-success/warning/error/info(-subtle)`, `--a-perm-*`, `--a-user-bubble*` | see [`color.md`](color.md); light + dark |
 | **Font** | `--a-font-sans`, `--a-font-mono`, `--a-font-display` | system stack; `sans` = `-apple-system`/SF Pro; no webfonts |
 | **Text size** | `--a-text-2xs … 3xl` | `10.5, 11.5, 12.5, 13(base), 14(md), 16, 19, 23, 30`px |
 | **Leading** | `--a-leading-tight/snug/normal` | `1.2 / 1.4 / 1.55` |

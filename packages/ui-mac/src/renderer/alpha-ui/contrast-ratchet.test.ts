@@ -50,6 +50,24 @@ const TINTED_TEXT = [
     base: "--a-surface",
     where: "输入框提示槽三条红提示(.a-comp-model-alert)",
   },
+  {
+    fg: "--a-user-bubble-link",
+    tint: "--a-accent-subtle",
+    base: "--a-user-bubble",
+    where: "用户气泡内的子代理提及(.a-tl-bubble .a-tl-mention[data-mention=agent])",
+  },
+] as const
+
+/**
+ * `#1550`:除 tertiary 之外,同样要在**每一层**容器面上过 AA 的文字色 —— 三档运行权限色。
+ * 入口 chip 落在 composer 面上、菜单落在浮起面上、悬停时落在 muted 上,所以按全部背景判。
+ */
+const TEXT_ON_EVERY_BACKGROUND = ["--a-text-tertiary", "--a-perm-allow", "--a-perm-ask", "--a-perm-readonly"] as const
+
+/** `#1550`:只落在一种特定实色底上的文字(用户气泡的正文与截断提示)。 */
+const SOLID_TEXT = [
+  { fg: "--a-user-bubble-text", bg: "--a-user-bubble", where: "用户气泡正文" },
+  { fg: "--a-text-secondary", bg: "--a-user-bubble", where: "用户气泡内的截断提示" },
 ] as const
 
 const TEXT_MIN = 4.5 // WCAG 1.4.3 正文
@@ -171,13 +189,19 @@ export function offenders(source: string, label: string) {
       if (ratio < min) found.push(`${where}: ${fgLabel} on ${bgLabel} = ${ratio.toFixed(2)}`)
     }
 
-    const tertiary = solid("--a-text-tertiary", values.get("--a-text-tertiary"))
+    const texts = TEXT_ON_EVERY_BACKGROUND.map((token) => [token, solid(token, values.get(token))] as const)
     const ring = solid("焦点指示器", focusIndicatorColor(values))
     for (const background of BACKGROUNDS) {
       const bg = solid(background, values.get(background))
       if (bg === undefined) continue
-      measure(tertiary, "--a-text-tertiary", bg, background, TEXT_MIN)
+      for (const [token, fg] of texts) measure(fg, token, bg, background, TEXT_MIN)
       measure(ring, "focus ring", bg, background, NON_TEXT_MIN)
+    }
+
+    for (const pair of SOLID_TEXT) {
+      const bg = solid(pair.bg, values.get(pair.bg))
+      if (bg === undefined) continue
+      measure(solid(pair.fg, values.get(pair.fg)), pair.fg, bg, `${pair.bg}(${pair.where})`, TEXT_MIN)
     }
 
     // `#1375`:半透明 tint 上的文字 —— 先合成到它所在的那层底上,再判。
@@ -334,6 +358,41 @@ describe("alpha-ui contrast ratchet", () => {
     `
     expect(offenders(partial, "fixture.css").filter((entry) => entry.includes("--a-bg-subtle 未在本主题块定义"))).toHaveLength(3)
     expect(offenders(partial, "fixture.css").filter((entry) => entry.includes("--a-bg-inset 未在本主题块定义"))).toHaveLength(3)
+  })
+
+  test("#1550 AC3 用户气泡用 owner 参考色,正文 / 提及 / 截断提示在三个主题块都过 AA", async () => {
+    const source = await Bun.file(tokensPath).text()
+    // 期望值是 owner 截图的取样值(票面原文),不取自 tokens.css —— 那是被测对象本身。
+    const reference = {
+      light: { bubble: "#e6f1fd", text: "#11233f" },
+      dark: { bubble: "#193767", text: "#f5f9fd" },
+      "os-dark": { bubble: "#193767", text: "#f5f9fd" },
+    } as const
+    for (const [name, selector] of Object.entries(THEME_BLOCKS)) {
+      const values = theme(source, selector)
+      const want = reference[name as keyof typeof reference]
+      expect({ name, bubble: values.get("--a-user-bubble"), text: values.get("--a-user-bubble-text") }).toEqual({
+        name,
+        ...want,
+      })
+    }
+    expect(offenders(source, "tokens.css").filter((entry) => entry.includes("用户气泡"))).toEqual([])
+    // 反向对照:把深色的提及色换回 --a-accent(#818cf8),判据必须点名那一对(合成后 3.23:1)。
+    const regressed = source.replaceAll("--a-user-bubble-link: #a5b4fc;", "--a-user-bubble-link: #818cf8;")
+    expect(regressed).not.toBe(source)
+    const found = offenders(regressed, "tokens.css").filter((entry) => entry.includes("--a-user-bubble-link on"))
+    expect(found).toHaveLength(2) // dark + os-dark
+    expect(found[0]).toContain("= 3.23")
+    // 气泡真的用这组 token(而不是 token 在、样式没接)。
+    const timeline = (await Bun.file(join(import.meta.dir, "session-timeline/session-timeline.css")).text()).replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    )
+    const bubble = timeline.match(/\n\.a-tl-bubble \{([^}]*)\}/)?.[1] ?? ""
+    expect(bubble).toContain("background: var(--a-user-bubble);")
+    expect(bubble).toContain("color: var(--a-user-bubble-text);")
+    expect(timeline).toMatch(/\.a-tl-bubble \.a-tl-mention\[data-mention="agent"\] \{\s*color: var\(--a-user-bubble-link\);/)
+    expect(timeline).toMatch(/\.a-tl-bubble \.a-tl-truncated-inline \{\s*color: var\(--a-text-secondary\);/)
   })
 
   test("tokens.css clears AA on every adjacent background in all three theme blocks", async () => {

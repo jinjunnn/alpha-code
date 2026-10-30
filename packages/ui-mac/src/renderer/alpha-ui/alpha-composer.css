@@ -206,15 +206,33 @@
 .a-chip-model {
   padding-left: 6px;
 }
-.a-chip-perm[data-mode="readonly"],
-.a-chip-perm[data-mode="readonly"] .a-ic {
-  color: var(--a-accent);
-}
-/* #1413:「全部批准」按活稿(docs/design/current/composer/design.css `.chip.perm[data-mode="full"]`)用警示色 ——
- * 它是三档里最宽的那档,也是新会话的默认档;「请求审批」保持中性色(活稿同款)。 */
+/* #1550:三档运行权限各一种颜色(tokens.css `--a-perm-*`),输入框入口、权限菜单每一行的图标、
+ * 菜单选中态三处引用同一个 token —— 此前入口用警示黄 / 中性 / indigo,菜单选中态一律 indigo,
+ * 于是「全部批准」入口黄、菜单里蓝。判据:perm-tier-color.test.ts。 */
 .a-chip-perm[data-mode="allow"],
-.a-chip-perm[data-mode="allow"] .a-ic {
-  color: var(--a-warning);
+.a-chip-perm[data-mode="allow"] .a-ic,
+.a-pop-item[data-perm="allow"] .a-ic,
+.a-pop-item.is-on[data-perm="allow"],
+.a-pop-item.is-on[data-perm="allow"] .a-ic {
+  color: var(--a-perm-allow);
+}
+.a-chip-perm[data-mode="ask"],
+.a-chip-perm[data-mode="ask"] .a-ic,
+.a-pop-item[data-perm="ask"] .a-ic,
+.a-pop-item.is-on[data-perm="ask"],
+.a-pop-item.is-on[data-perm="ask"] .a-ic {
+  color: var(--a-perm-ask);
+}
+.a-chip-perm[data-mode="readonly"],
+.a-chip-perm[data-mode="readonly"] .a-ic,
+.a-pop-item[data-perm="readonly"] .a-ic,
+.a-pop-item.is-on[data-perm="readonly"],
+.a-pop-item.is-on[data-perm="readonly"] .a-ic {
+  color: var(--a-perm-readonly);
+}
+/* 选中态除了颜色还要有一个不靠颜色的信号(「请求审批」是中性色,只靠颜色分不出选中)。 */
+.a-pop-item.is-on[data-perm] {
+  font-weight: var(--a-weight-semibold);
 }
 .a-chip[data-disabled] {
   opacity: 0.55;
@@ -283,11 +301,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 审批挂起:权限 chip 转琥珀提示当前模式(审批呈现走独立 Permission surface,
-      此处仅 composer 侧挂起提示;owner 裁决 2026-07-25,#619)── */
-.a-comp[data-approval] .a-chip-perm {
-  color: var(--a-warning);
-}
+/* 审批挂起时权限 chip **不变色**(票 1550,owner 2026-10-30「一档一色」推翻 2026-07-25 #619 的琥珀挂起提示):
+   等待审批由审批卡本身表达;chip 只说当前是哪一档。判据:perm-tier-color.test.ts。 */
 
 /* ── 发送 / 中止 ── */
 .a-comp-send {
