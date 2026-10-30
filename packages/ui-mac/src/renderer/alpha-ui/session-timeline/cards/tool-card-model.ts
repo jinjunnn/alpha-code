@@ -12,6 +12,7 @@
 // normalization(I2 防御读取),再过共享 redactor(tool-redactor);redactor
 // 任一步失败即隐藏整字段(AC5),不回退 raw string。
 import type { ToolAuthority, ToolIdentity, ToolLocation, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
+import { isNetFailureLayer, type NetFailureLayer } from "@opencode-ai/schema/alpha-net-failure"
 import { DIFF_PATCH_MAX_CHARS } from "./tool-diff"
 import { redactPath, redactText, redactUrl, type RedactResult } from "./tool-redactor"
 
@@ -711,7 +712,8 @@ export type ToolCardBody =
   | { type: "write"; path?: string; preview: string[]; totalLines: number; approx: boolean }
   | { type: "patch"; files: PatchFileRow[]; truncated: boolean }
   | { type: "links"; links: SearchLink[]; truncated: boolean }
-  | { type: "error"; message: string; truncated: boolean }
+  /** `#1572`:`netLayer` = 引擎结算时认出的网络层(`http` 沿用原文案,不在此列),`host` = 该调用目标的主机名(只取主机名)。 */
+  | { type: "error"; message: string; truncated: boolean; netLayer?: NetFailureLayer; host?: string }
 
 // ── #583 list 目录网格(CT `#tools` G6 帧;基线 §5.2「文件读取/列表」类) ────
 /**
@@ -996,6 +998,15 @@ export function searchLinksOf(output: string): { links: SearchLink[]; truncated:
   return { links, truncated: dropped }
 }
 
+/** `#1572`:processor.ts 写进 ToolPart metadata 的 `alphaNetFailure`(只认九个层名)+ 目标 URL 的主机名(不带路径与查询)。 */
+function netFailureOf(part: ToolPart): { netLayer?: NetFailureLayer; host?: string } {
+  const layer = (metadataOf(part).alphaNetFailure as { layer?: unknown } | undefined)?.layer
+  if (!isNetFailureLayer(layer) || layer === "http") return {}
+  const url = (part.state.input as { url?: unknown } | undefined)?.url
+  const host = typeof url === "string" && URL.canParse(url) ? new URL(url).hostname.slice(0, 253) : ""
+  return host ? { netLayer: layer, host } : { netLayer: layer }
+}
+
 function linksBodyOf(output: string): ToolCardBody {
   const { links, truncated } = searchLinksOf(output)
   if (links.length === 0) return { type: "none" }
@@ -1019,7 +1030,7 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
     const message = part.state.status === "error" && typeof part.state.error === "string" ? part.state.error : ""
     const clean = redactText(message, TOOL_ERROR_MAX_CHARS)
     if (!clean.ok) return { type: "hidden" }
-    return { type: "error", message: clean.value, truncated: clean.truncated }
+    return { type: "error", message: clean.value, truncated: clean.truncated, ...netFailureOf(part) }
   }
   if (status === "pending") return { type: "none" }
 

@@ -72,7 +72,7 @@ export function CloudFormBox(props: { cloud: CloudBehaviorV1; ready: boolean; re
     }
     const result = await window.api.cloud.dispatch(envelope)
     if ("error" in result) {
-      setState({ phase: "failed", err: dispatchError(result.error), errAction: failureCopy(result.error)?.action ?? null })
+      setState({ phase: "failed", err: dispatchError(result.error, undefined, result.netLayer), errAction: failureCopy(result.error)?.action ?? null })
       return
     }
     await lifecycle.beginJob(directory, result, envelope, false)

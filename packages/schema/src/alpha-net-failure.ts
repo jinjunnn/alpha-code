@@ -24,6 +24,23 @@ export type NetFailureLayer =
   | "http"
   | "timeout"
 
+const LAYERS: Record<NetFailureLayer, true> = {
+  policy: true,
+  dns: true,
+  tcp: true,
+  "connect-timeout": true,
+  "tls-silent": true,
+  "tls-failed": true,
+  "tls-cert": true,
+  http: true,
+  timeout: true,
+}
+
+/** 读持久化记录 / 线上数据里的层名:只认上面这九个,其余一律当作没有(认不出就不归因)。 */
+export function isNetFailureLayer(value: unknown): value is NetFailureLayer {
+  return typeof value === "string" && Object.hasOwn(LAYERS, value)
+}
+
 export type NetFailurePath = { via: "egress-proxy"; proxyOrigin: string } | { via: "other" }
 
 export type NetFailure = { layer: NetFailureLayer; code: string }

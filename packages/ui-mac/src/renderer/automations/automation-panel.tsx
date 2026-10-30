@@ -313,7 +313,7 @@ export function AutomationPanel(props: {
       // [#969] 拒绝带**结构槽** `code`(云端注册被拒 / 改本地时云端删除被拒 / [#1001] 本机校验或落盘
       // 失败)—— 换成人话再上屏。`reason` 是 main 的日志串(英文或半英半中),**永不上屏**:万一没带
       // code,说一句通用的保存失败。
-      if (!r.ok) return setFErr(r.code ? scheduleRefusalCopy(r.code) : t("alpha.auto.saveFailed"))
+      if (!r.ok) return setFErr(r.code ? scheduleRefusalCopy(r.code, r.netLayer) : t("alpha.auto.saveFailed"))
       pushToast({ kind: "success", title: t("alpha.auto.saved") })
       setNlInput("")
       await refresh()
@@ -333,7 +333,7 @@ export function AutomationPanel(props: {
       const r = await window.api.automations.remove(id)
       // [#994] 云端没删掉时 main 返回 `{ ok:false, code }` 而不是抛出 —— 过去这里整个丢弃,用户
       // 回到列表看见那条还在、没有任何解释,而云端那条照常按时跑。原因换成人话放进提示里。
-      if (!r.ok) pushToast({ kind: "error", title: t("alpha.auto.removeFailed"), detail: r.code ? scheduleRefusalCopy(r.code) : undefined })
+      if (!r.ok) pushToast({ kind: "error", title: t("alpha.auto.removeFailed"), detail: r.code ? scheduleRefusalCopy(r.code, r.netLayer) : undefined })
     } catch {
       // remove threw (IPC/main) → toast so a failed delete isn't silent
       pushToast({ kind: "error", title: t("alpha.auto.removeFailed") })
@@ -524,7 +524,7 @@ export function AutomationPanel(props: {
                                 void window.api.automations.toggle(task.id, !task.enabled).then((r) => {
                                   // [#994] 云端没停掉/没开起来:开关随 refresh 回到原状态,并说明原因(不再静默弹回)。
                                   if (!r.ok)
-                                    pushToast({ kind: "error", title: t("alpha.auto.toggleFailed"), detail: r.code ? scheduleRefusalCopy(r.code) : undefined })
+                                    pushToast({ kind: "error", title: t("alpha.auto.toggleFailed"), detail: r.code ? scheduleRefusalCopy(r.code, r.netLayer) : undefined })
                                   void refresh()
                                 })
                               }}

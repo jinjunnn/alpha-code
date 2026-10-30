@@ -24,6 +24,7 @@ import type {
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
 import { egressPolicyDenialOf } from "../../../shared/egress-denial"
+import { isNetFailureLayer, type NetFailureLayer } from "@opencode-ai/schema/alpha-net-failure"
 import { isCloudFacadeToolPart } from "../cloud-facade-identity"
 import type { AlphaSessionIdentity } from "../session-workspace/session-workspace-core"
 import { toolCardDispatchOf, toolTitleKeyOf } from "./cards/tool-card-model"
@@ -233,6 +234,10 @@ export type TimelineRow =
       message: string
       /** `#1382`:这次失败是**这台电脑上的出网策略**拒的,带上被拒的目的地。缺席 = 普通失败,文案不变。 */
       egressDenied?: { authority: string }
+      /** `#1572`:引擎结算时认出的网络层(`http` 不在此列 —— 那一层沿用原文案)。缺席 = 认不出,文案不变。 */
+      netLayer?: NetFailureLayer
+      /** `#1572`:模型请求一个 HTTP 应答都没拿到、层又认不出(引擎记 `alphaNetCode: "unattributed"`)。 */
+      netUnattributed?: true
     }
   | {
       kind: "divider"
@@ -1039,17 +1044,23 @@ export function slashOriginForTurn(
  */
 export function turnErrorOf(
   assistants: readonly AssistantMessage[],
-): { name: string; message: string; egressDenied?: { authority: string } } | undefined {
+): { name: string; message: string; egressDenied?: { authority: string }; netLayer?: NetFailureLayer; netUnattributed?: true } | undefined {
   const failed = assistants.find((message) => message.error && message.error.name !== "MessageAbortedError")
   if (!failed?.error) return undefined
-  const data = (failed.error as { data?: { message?: unknown; responseBody?: unknown } }).data
+  const data = (failed.error as { data?: { message?: unknown; responseBody?: unknown; metadata?: Record<string, unknown> } }).data
   const raw = typeof data?.message === "string" ? data.message : ""
   const body = typeof data?.responseBody === "string" ? data.responseBody : ""
   const egressDenied = egressPolicyDenialOf(raw) ?? egressPolicyDenialOf(body)
+  // `#1572`:引擎在 processor.ts 结算 APIError 时写进 metadata 的层(只认九个层名;`http` 沿用原文案)。
+  const layer = data?.metadata?.alphaNetLayer
+  const netLayer = isNetFailureLayer(layer) && layer !== "http" ? layer : undefined
+  const netUnattributed = layer === undefined && data?.metadata?.alphaNetCode === "unattributed"
   return {
     name: failed.error.name,
     message: boundedText(raw, TURN_ERROR_MAX_CHARS).text,
     ...(egressDenied ? { egressDenied } : {}),
+    ...(netLayer ? { netLayer } : {}),
+    ...(netUnattributed ? { netUnattributed: true as const } : {}),
   }
 }
 
@@ -1408,11 +1419,13 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       rows.push({
         kind: "turnError",
         key: `turn-error:${userMessage.id}`,
-        rev: `${turnError.name}§${turnError.message}§${turnError.egressDenied?.authority ?? ""}`,
+        rev: `${turnError.name}§${turnError.message}§${turnError.egressDenied?.authority ?? ""}§${turnError.netLayer ?? (turnError.netUnattributed ? "unattributed" : "")}`,
         userMessageID: userMessage.id,
         name: turnError.name,
         message: turnError.message,
         ...(turnError.egressDenied ? { egressDenied: turnError.egressDenied } : {}),
+        ...(turnError.netLayer ? { netLayer: turnError.netLayer } : {}),
+        ...(turnError.netUnattributed ? { netUnattributed: true as const } : {}),
       })
   })
 

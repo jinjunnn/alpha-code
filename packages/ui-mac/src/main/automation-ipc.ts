@@ -39,7 +39,7 @@ export function registerAutomationIpcHandlers() {
       const up = await upsertCloudSchedule({ ...task, cloudScheduleId: prev?.cloudScheduleId })
       // [#969] `code` 是承重接线:renderer 唯一有 i18n 的那一层据它选文案。丢掉这个槽 ⇒
       // 面板永远走回落 ⇒ 用户照旧读到「云端注册失败:schedule_limit_reached」。
-      if (!up.ok) return { ok: false as const, reason: up.reason, code: up.code }
+      if (!up.ok) return { ok: false as const, reason: up.reason, code: up.code, netLayer: up.netLayer }
       task.cloudScheduleId = up.scheduleId
       const res = saveAutomation(task)
       if (!res.ok && !wasCloud) {
@@ -57,7 +57,7 @@ export function registerAutomationIpcHandlers() {
       const del = await deleteCloudSchedule(prev.cloudScheduleId)
       // [#969] 「云档改本地」这一跳的失败也走 automations-save 的返回值 → 面板同一行
       // `.alpha-auto-err`。它与上面的注册失败是同一个用户可观察面,所以同样带 code。
-      if (!del.ok) return { ok: false as const, reason: del.reason, code: del.code }
+      if (!del.ok) return { ok: false as const, reason: del.reason, code: del.code, netLayer: del.netLayer }
       delete task.cloudScheduleId
     }
     const res = saveAutomation(task)
@@ -70,7 +70,7 @@ export function registerAutomationIpcHandlers() {
     if (prev?.cloudScheduleId) {
       const del = await deleteCloudSchedule(prev.cloudScheduleId)
       // 云侧删不掉不静默(否则离线幽灵触发)。[#994] `code` 是承重接线:面板据它给删除失败的提示选人话。
-      if (!del.ok) return { ok: false as const, reason: del.reason, code: del.code }
+      if (!del.ok) return { ok: false as const, reason: del.reason, code: del.code, netLayer: del.netLayer }
     }
     const res = deleteAutomation(id)
     if (res.ok) rearmAutomations()
@@ -85,7 +85,7 @@ export function registerAutomationIpcHandlers() {
     if (task.cloudScheduleId) {
       const r = await setCloudScheduleEnabled(task.cloudScheduleId, task.enabled)
       // [#994] 云端没停掉/没开起来 ⇒ 不落盘(本地开关态保持),`code` 交面板给提示选人话。
-      if (!r.ok) return { ok: false as const, reason: r.reason, code: r.code }
+      if (!r.ok) return { ok: false as const, reason: r.reason, code: r.code, netLayer: r.netLayer }
     }
     const res = saveAutomation(task)
     if (res.ok) rearmAutomations()

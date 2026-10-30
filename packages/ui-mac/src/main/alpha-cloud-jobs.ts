@@ -21,6 +21,7 @@ import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 // [#918→#940] 平台拒绝 → 错误字符串的唯一咽喉(分类码优先,无码保持 http-<status> 不猜)。
 import { httpErrorCode } from "./platform-error-code"
+import { classifyNetFailure } from "@opencode-ai/schema/alpha-net-failure"
 import { guardCloudEnvelope } from "./cloud-envelope-guard"
 import {
   artifactDownloadFailureLog,
@@ -110,10 +111,12 @@ async function authed<T>(
     }
     // #1551 R1:带底层错误码,否则「连不上 / 超时 / 被重置」在日志里都只是一句 fetch failed。
     // 只写 message 与码 —— 不写 URL(含 job id 之外的 query)、不写 token。
+    // `#1572`:另带卡在哪一层(main 直连,路径恒为 other),并经 `netLayer` 交给 renderer 选分层文案。
+    const net = classifyNetFailure(error, { via: "other" })
     getLogger().warn(
-      `alpha-cloud-jobs: fetch failed (network) cause=${errorCauseCode(error) ?? "-"} detail=${sanitizeTransportError(error instanceof Error ? error.message : String(error))}`,
+      `alpha-cloud-jobs: fetch failed (network) layer=${net?.layer ?? "-"} cause=${errorCauseCode(error) ?? "-"} detail=${sanitizeTransportError(error instanceof Error ? error.message : String(error))}`,
     )
-    return { error: "network" }
+    return { error: "network", ...(net ? { netLayer: net.layer } : {}) }
   }
 }
 
@@ -170,8 +173,9 @@ export async function dispatchExplicitCloudUpload(input: {
       reportContractFailure(error)
       return { error: "contract-incompatible" }
     }
-    getLogger().warn("alpha-cloud-jobs: explicit upload failed code=network")
-    return { error: "network" }
+    const net = classifyNetFailure(error, { via: "other" })
+    getLogger().warn(`alpha-cloud-jobs: explicit upload failed code=network layer=${net?.layer ?? "-"}`)
+    return { error: "network", ...(net ? { netLayer: net.layer } : {}) }
   }
 }
 

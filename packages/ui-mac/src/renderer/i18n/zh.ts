@@ -2167,4 +2167,16 @@ export const dict = {
   "alpha.ext.agentDocReadFailed": "暂时无法读取助手原文，请重新打开详情页。",
   "alpha.ext.skillDocMissing": "此版本未包含该技能原文，目前无法查看。",
   "alpha.ext.agentDocMissing": "此版本未包含该助手原文，目前无法查看。",
+  // `#1572` 联网失败按层说出卡在哪一步(alpha-ui/net-failure-copy.ts)
+  "alpha.net.hostFallback": "对方服务器",
+  "alpha.net.policy": "这台电脑的网络策略没有放行 {{host}},批准该地址后再试",
+  "alpha.net.dns": "解析不了 {{host}},检查网络或代理软件后重试",
+  "alpha.net.tcp": "连不上 {{host}},稍后重试",
+  "alpha.net.connectTimeout": "与 {{host}} 建立连接超时,稍后重试",
+  "alpha.net.tlsSilent": "{{host}} 的加密握手没有回应,切换网络或代理节点后重试",
+  "alpha.net.tlsFailed": "与 {{host}} 的加密握手失败,切换网络或代理节点后重试",
+  "alpha.net.tlsCert": "{{host}} 的证书校验失败,先检查系统时间和网络再继续",
+  "alpha.net.http": "{{host}} 返回了错误",
+  "alpha.net.timeout": "等待 {{host}} 超时,稍后重试",
+  "alpha.net.unattributed": "连接中途断开了",
 }

@@ -498,6 +498,41 @@ const LOCAL_STORE_CODE_KEYS = {
   "automation-storage-failed": "alpha.auto.localErrStorage",
 } as const
 
+// ── `#1572` AC5:`network` 且 main 认出卡在哪一层(`netLayer`)⇒ 三个动作都说那一层的那一句 ──────────
+// 没有 netLayer 的 `network` 逐字不变,由上面「云档改本地时云端删除被拒」与 [#994] 删除那一格守着(仍断 cloudErrNetwork)。
+// 期望值是字典原文代入「对方服务器」:日程走 main 直连,界面拿不到云服务的主机名。
+const layered = (key: "alpha.net.dns" | "alpha.net.tcp" | "alpha.net.tlsSilent") => zh[key].replace("{{host}}", zh["alpha.net.hostFallback"])
+
+describe("`#1572` 日程保存 / 删除 / 开关的联网失败说出卡在哪一层", () => {
+  test("保存:network + netLayer:dns ⇒ 错误行说「解析不了」,不是泛化的网络错误", async () => {
+    runtime.queueSaveResult({ ok: false, reason: "云端注册失败:network", code: "network", netLayer: "dns" })
+    await saveAsCloudTask()
+    expect(errorLine()).toContain("解析不了")
+    expect(errorLine()).toBe(layered("alpha.net.dns"))
+    expect(errorLine()).not.toBe(zh["alpha.ext.cloudErrNetwork"])
+  })
+
+  test("删除:network + netLayer:tcp ⇒ 提示说「连不上」", async () => {
+    runtime.queueRemoveResult({ ok: false, reason: "云端删除失败:network", code: "network", netLayer: "tcp" })
+    await renderListWith(cloudTask("auto-1572-del", "sched_1572_del"))
+    click(query(".alpha-auto-row"))
+    await flush()
+    click(query(".alpha-auto-actions .alpha-ext-add[data-variant='danger']"))
+    await flush()
+    expect(runtime.removeCalls()).toEqual(["auto-1572-del"])
+    expect(errorToasts()).toEqual([{ title: zh["alpha.auto.removeFailed"], detail: layered("alpha.net.tcp") }])
+  })
+
+  test("开关:network + netLayer:tls-silent ⇒ 提示说加密握手没有回应", async () => {
+    runtime.queueToggleResult({ ok: false, reason: "云端状态更新失败:network", code: "network", netLayer: "tls-silent" })
+    await renderListWith(cloudTask("auto-1572-sw", "sched_1572_sw"))
+    click(query(".alpha-auto-row .alpha-ext-sw"))
+    await flush()
+    expect(runtime.toggleCalls()).toEqual([["auto-1572-sw", false]])
+    expect(errorToasts()).toEqual([{ title: zh["alpha.auto.toggleFailed"], detail: layered("alpha.net.tlsSilent") }])
+  })
+})
+
 describe("[#1001] 保存时本机失败给人话", () => {
   test("本地档保存、本机校验不过 ⇒ 错误行是人话,不是英文串", async () => {
     runtime.queueSaveResult({ ok: false, reason: "projectDir not a directory", code: "automation-project-dir-invalid" })

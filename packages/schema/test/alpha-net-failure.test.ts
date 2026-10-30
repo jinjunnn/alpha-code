@@ -14,7 +14,7 @@ import { describe, expect, test } from "bun:test"
 import { lookup } from "node:dns/promises"
 import { connect, createServer, type AddressInfo } from "node:net"
 import { HttpClientError, HttpClientRequest } from "effect/unstable/http"
-import { classifyNetFailure, EGRESS_DIAL_FAILURE_STATUS, engineNetFailurePath, type NetFailurePath } from "../src/alpha-net-failure"
+import { classifyNetFailure, EGRESS_DIAL_FAILURE_STATUS, engineNetFailurePath, isNetFailureLayer, type NetFailurePath } from "../src/alpha-net-failure"
 
 const PROXY: NetFailurePath = { via: "egress-proxy", proxyOrigin: "http://127.0.0.1:61234" }
 const OTHER: NetFailurePath = { via: "other" }
@@ -190,5 +190,12 @@ describe("engineNetFailurePath:引擎请求走不走本机出网代理", () => {
     expect(engineNetFailurePath("https://mcp.exa.ai/", {})).toEqual({ via: "other" })
     expect(engineNetFailurePath("not a url", env)).toEqual({ via: "other" })
     expect(engineNetFailurePath(undefined, env)).toEqual({ via: "other" })
+  })
+})
+
+describe("isNetFailureLayer:读回来的层名只认九个", () => {
+  test("九个层名认,别的字符串 / 非字符串 / 原型链上的名字一律不认", () => {
+    for (const layer of ["policy", "dns", "tcp", "connect-timeout", "tls-silent", "tls-failed", "tls-cert", "http", "timeout"]) expect(isNetFailureLayer(layer)).toBe(true)
+    for (const value of ["transport", "unattributed", "toString", "constructor", "", 1, null, undefined, {}]) expect(isNetFailureLayer(value)).toBe(false)
   })
 })

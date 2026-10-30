@@ -11,6 +11,7 @@ test("cloud job action-selection cases run green in an isolated child process", 
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 13 pass")
+  // `#1572`:请求出口的网络失败带 netLayer 且日志带层名(13 → 14)。
+  expect(output).toContain(" 14 pass")
   expect(output).toContain(" 0 fail")
 })
