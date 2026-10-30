@@ -8,7 +8,8 @@
 //   · `#1473`(REQ-229 AC1–AC3):每个回合的思考 / 工具调用 / 过渡话(后面还有工具调用的 text)
 //     投影成**一个** process 行(有序步骤;连续、同类、同来源、都已结束的步骤合成一组),
 //     回答 = 最后一次工具调用之后的 text;助手侧 file part → media 预览行;完成的第一方
-//     cloud facade 工具(identity 判定)→ artifacts 产物链接行 —— 二者都挂在回答之后;
+//     cloud facade 工具(identity 判定)→ artifacts 产物链接行 —— 二者都挂在回答之后;REQ-236 `#1552`:
+//     第一方云端生图派发 → cloudImage 生图卡(同位,同回合取代同一任务的产物链接行);
 //   · 回合级错误(非中断)→ turnError 行;session_status=retry → 工作过程实时标题写重试(`#1474`,不再另挂重试行);
 //   · 未知 part 类型 fail-closed:不渲染、不猜测(subtask 同上游 v1/v2 一致不渲染);
 //   · I7 有界:boundedText 把超大文本截断后才交给渲染管线(sanitizer/Shiki 不吃整串)。
@@ -225,6 +226,8 @@ export type TimelineRow =
     }
   | { kind: "media"; key: string; rev: string; media: TimelineMediaSource }
   | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
+  /** REQ-236 `#1552`:第一方云端生图派发 → 生图卡(挂在回答之后,同回合取代同一任务的产物链接行)。 */
+  | { kind: "cloudImage"; key: string; rev: string; image: TimelineCloudImage }
   | {
       kind: "turnError"
       key: string
@@ -697,6 +700,175 @@ export function artifactLinksOf(part: ToolPart): TimelineArtifactLink[] {
   return links
 }
 
+// ── REQ-236 `#1552` 生图卡(方案 §2.4):派发调用的事实 → 卡片状态 ─────────────────
+// 准入 = 与产物行同一枚铸币(isCloudFacadeToolPart)+ 远端名 cloud_dispatch + input.kind 精确为
+// image-generation;kind 写错的那次调用不出卡、不猜「它本来想画图」,由通用工具卡照常显示失败。
+// 状态只来自三类事实:这次调用的状态(part)、云端任务状态与交付结论(宿主 tracker 的 cloud-run-state)、
+// 本机核验(manifest + sha256 复核)。模型说的话不参与任何判定。
+export const CLOUD_IMAGE_KIND = "image-generation"
+const CLOUD_IMAGE_PROMPT_MAX_CHARS = 4_000
+const CLOUD_IMAGE_ERROR_MAX_CHARS = 2_000
+
+/** 受理前被拒的原因(决定文案与有没有「去充值」);码取自这次调用的错误原文里平台给的稳定码。 */
+export type CloudImageRefusal = "allowance" | "wallet" | "suspended" | "rate" | "too-long" | "network" | "other"
+
+export type TimelineCloudImageCall =
+  | { phase: "submitting" }
+  | { phase: "refused"; refusal: CloudImageRefusal; error: string }
+  /** acceptedAt = 派发调用完成(= 受理)的时刻;计时起点。 */
+  | { phase: "accepted"; runId: string; acceptedAt?: number }
+
+export interface TimelineCloudImage {
+  partID: string
+  prompt: string
+  call: TimelineCloudImageCall
+}
+
+const REFUSAL_BY_CODE: Record<string, CloudImageRefusal> = {
+  account_allowance_exhausted: "allowance",
+  account_wallet_insufficient: "wallet",
+  account_suspended: "suspended",
+  account_admission_rate_exceeded: "rate",
+  pipeline_input_invalid: "too-long",
+}
+
+/**
+ * 错误原文 → 拒绝原因。平台拒绝时 MCP 把响应体(JSON,带 `code`)原样作为错误文本;解析不出任何 JSON
+ * 对象 = 请求没有送到云端(连不上 / 超时)。
+ */
+export function cloudImageRefusalOf(error: string): CloudImageRefusal {
+  const start = error.indexOf("{")
+  const end = error.lastIndexOf("}")
+  if (start < 0 || end <= start) return "network"
+  let body: unknown
+  try {
+    body = JSON.parse(error.slice(start, end + 1))
+  } catch {
+    return "network"
+  }
+  if (typeof body !== "object" || body === null) return "network"
+  const code = (body as { code?: unknown }).code
+  return (typeof code === "string" && REFUSAL_BY_CODE[code]) || "other"
+}
+
+/** 受理回执(CloudJobAcceptedV1:schema_version 1、status queued、job_id)→ job_id。与 run-watcher 同一形判据。 */
+function acceptedJobIdOf(output: unknown): string | undefined {
+  if (typeof output !== "string" || output.length > ARTIFACT_OUTPUT_PARSE_MAX) return undefined
+  let accepted: unknown
+  try {
+    accepted = JSON.parse(output)
+  } catch {
+    return undefined
+  }
+  if (typeof accepted !== "object" || accepted === null) return undefined
+  const record = accepted as { schema_version?: unknown; status?: unknown; job_id?: unknown }
+  if (record.schema_version !== 1 || record.status !== "queued") return undefined
+  return typeof record.job_id === "string" && record.job_id.length > 0 && record.job_id.length <= ARTIFACT_ID_MAX_CHARS
+    ? record.job_id
+    : undefined
+}
+
+/** fail-closed:非第一方 facade / 不是 cloud_dispatch / kind 不精确 → 不出卡。 */
+export function cloudImageOf(part: ToolPart): TimelineCloudImage | undefined {
+  if (!isCloudFacadeToolPart(part)) return undefined
+  if ((part.display as { identity?: { name?: unknown } } | undefined)?.identity?.name !== "cloud_dispatch") return undefined
+  const input = part.state.input as { kind?: unknown; input?: { prompt?: unknown } } | undefined
+  if (input?.kind !== CLOUD_IMAGE_KIND) return undefined
+  const rawPrompt = input.input && typeof input.input.prompt === "string" ? input.input.prompt.trim() : ""
+  const prompt = rawPrompt.slice(0, CLOUD_IMAGE_PROMPT_MAX_CHARS)
+  const state = part.state
+  if (state.status === "pending" || state.status === "running")
+    return { partID: part.id, prompt, call: { phase: "submitting" } }
+  if (state.status === "error") {
+    const error = typeof state.error === "string" ? state.error.slice(0, CLOUD_IMAGE_ERROR_MAX_CHARS) : ""
+    return { partID: part.id, prompt, call: { phase: "refused", refusal: cloudImageRefusalOf(error), error } }
+  }
+  const runId = acceptedJobIdOf(state.output)
+  // 调用完成但输出不是受理回执:没有任务可跟,按「云端没有接受这次请求」如实呈现。
+  if (!runId) return { partID: part.id, prompt, call: { phase: "refused", refusal: "other", error: "" } }
+  const end = (state.time as { end?: unknown } | undefined)?.end
+  return {
+    partID: part.id,
+    prompt,
+    call: { phase: "accepted", runId, ...(typeof end === "number" && Number.isFinite(end) ? { acceptedAt: end } : {}) },
+  }
+}
+
+/** 宿主 tracker 广播的交付快照(cloud-run-state,#1551 冻结面)里卡片读的那几项。 */
+export interface CloudImageRunFacts {
+  job: { status: string; code?: string }
+  delivery: { status: "pending" | "downloading" | "saved" | "failed"; failure?: { scope: string; code: string } }
+}
+
+export type CloudImageJobFailure = "safety" | "region" | "upstream" | "artifact" | "other"
+export type CloudImageDeliveryFailure = "network" | "incomplete" | "auth" | "gone" | "full" | "register" | "other"
+
+/** 卡片的显示态(方案 §2.4 的状态全集;批准稿 ①–⑨)。 */
+export type CloudImageView =
+  | { state: "submitting" }
+  | { state: "refused"; refusal: CloudImageRefusal; billing: boolean }
+  | { state: "queued"; since?: number }
+  | { state: "running"; since?: number }
+  | { state: "saving" }
+  | { state: "saved" }
+  | { state: "failed"; reason: CloudImageJobFailure }
+  | { state: "cancelled" }
+  | { state: "undelivered"; reason: CloudImageDeliveryFailure; retryable: boolean }
+
+const JOB_FAILURE_BY_CODE: Record<string, CloudImageJobFailure> = {
+  image_safety_rejected: "safety",
+  image_region_rejected: "region",
+  image_upstream_failed: "upstream",
+  image_backend_unavailable: "upstream",
+  image_artifact_failed: "artifact",
+}
+
+function deliveryFailureOf(failure: CloudImageRunFacts["delivery"]["failure"]): CloudImageDeliveryFailure {
+  if (!failure) return "other"
+  const code = failure.code
+  if (code === "network" || code === "retryable" || /^http-5\d\d$/.test(code)) return "network"
+  if (code === "unauthorized" || code === "forbidden") return "auth"
+  if (code === "not-found") return "gone"
+  if (code === "over-limit") return "full"
+  if (failure.scope === "register") return "register"
+  if (failure.scope === "verify" || code === "sha256-mismatch" || code === "unverifiable" || code === "size-mismatch")
+    return "incomplete"
+  return "other"
+}
+
+/**
+ * 调用事实 + tracker 快照 + 本机核验 → 显示态。`localVerified` = 本机 manifest 里这次的产物全部现盘
+ * sha256 复核通过(或 tracker 已判 saved 之后读到的已核验条目)—— 它是最强的事实,直接出图。
+ */
+export function cloudImageViewOf(
+  call: TimelineCloudImageCall,
+  run: CloudImageRunFacts | null | undefined,
+  localVerified: boolean,
+): CloudImageView {
+  if (call.phase === "submitting") return { state: "submitting" }
+  if (call.phase === "refused")
+    return {
+      state: "refused",
+      refusal: call.refusal,
+      billing: call.refusal === "allowance" || call.refusal === "wallet",
+    }
+  if (localVerified) return { state: "saved" }
+  const since = call.acceptedAt
+  // 受理回执本身就是「排队中」这一事实;宿主还没给出任务状态之前停在这里。
+  if (!run) return { state: "queued", since }
+  const job = run.job.status
+  if (job === "failed") return { state: "failed", reason: JOB_FAILURE_BY_CODE[run.job.code ?? ""] ?? "other" }
+  if (job === "cancelled" || job === "cancelling") return { state: "cancelled" }
+  if (run.delivery.status === "saved") return { state: "saved" }
+  if (run.delivery.status === "failed") {
+    const reason = deliveryFailureOf(run.delivery.failure)
+    return { state: "undelivered", reason, retryable: reason !== "gone" && reason !== "full" }
+  }
+  if (job === "completed") return { state: "saving" }
+  if (job === "running") return { state: "running", since }
+  return { state: "queued", since }
+}
+
 // ── 回合末富脚注(A6):数据源 = 已消费的 SDK 助手消息元数据 ──────────────────
 function cappedField(value: unknown, max = FOOTNOTE_FIELD_MAX_CHARS): string | undefined {
   if (typeof value !== "string" || value.length === 0) return undefined
@@ -1012,7 +1184,25 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
     let emitted = 0
     const assistants = turnAssistants
 
+    // REQ-236 `#1552`:本回合生图卡跟住的任务 —— 它们的产物链接行由卡片取代(图已经在卡里)。
+    const imageRuns = new Set<string>()
     const pushToolTrailing = (part: ToolPart) => {
+      const image = cloudImageOf(part)
+      if (image) {
+        const call = image.call
+        if (call.phase === "accepted") imageRuns.add(call.runId)
+        trailing.push({
+          kind: "cloudImage",
+          key: `cloudImage:${part.id}`,
+          rev: [
+            call.phase,
+            call.phase === "accepted" ? `${call.runId}/${call.acceptedAt ?? ""}` : "",
+            call.phase === "refused" ? `${call.refusal}/${call.error}` : "",
+            image.prompt,
+          ].join("§"),
+          image,
+        })
+      }
       const links = artifactLinksOf(part)
       if (links.length > 0)
         trailing.push({
@@ -1182,7 +1372,11 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         streaming: item.streaming,
       })
     })
-    rows.push(...trailing)
+    rows.push(
+      ...trailing.filter(
+        (row) => !(row.kind === "artifacts" && row.links.every((link) => imageRuns.has(link.runId))),
+      ),
+    )
 
     // 回合末富脚注(A6):只在回合尾态成功完成且有可见内容时出行;当前活跃回合
     // (busy/retry 等非 idle)尾态未定,一律不出(审计 Major-1)。

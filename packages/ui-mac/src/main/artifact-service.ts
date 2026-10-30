@@ -1461,6 +1461,41 @@ export async function verifyArtifact(
 }
 
 // ---------------------------------------------------------------------------
+// 保存一份副本到用户选的位置(REQ-236 #1552,方案 §2.4「保存到…」)
+// ---------------------------------------------------------------------------
+
+export type RunArtifactSaveCopyResult =
+  | { ok: true; canceled: true }
+  /** folder = 目标所在文件夹的名字(回执「已保存到「下载」文件夹:…」);不回绝对路径。 */
+  | { ok: true; canceled?: false; folder: string; name: string }
+  | { ok: false; code: "verify-failed" | "write-failed" }
+
+/**
+ * 先全量 sha256 复核(verifyArtifact),**只有 verified 才弹保存对话框**;复核不通过直接拒,对话框不出现。
+ * pickTarget 由 IPC 层注入(electron 的 showSaveDialog),本函数保持 electron-free。
+ */
+export async function saveRunArtifactCopy(
+  projectDir: string,
+  runId: string,
+  artifactId: string,
+  pickTarget: (defaultName: string) => Promise<string | undefined>,
+): Promise<RunArtifactSaveCopyResult> {
+  const checked = await verifyArtifact(projectDir, runId, artifactId)
+  if (!checked.ok || checked.entry.local.state !== "verified") return { ok: false, code: "verify-failed" }
+  const source = safeResolveInAlpha(projectDir, "runs", runId, ...checked.entry.local.savedPath.split("/"))
+  if (!source) return { ok: false, code: "verify-failed" }
+  const target = await pickTarget(path.basename(checked.entry.local.savedPath))
+  if (!target) return { ok: true, canceled: true }
+  try {
+    // 系统保存对话框已经替用户确认过覆盖(与 workspace-file-service 的 saveCopy 同形)。
+    fs.copyFileSync(source, target)
+  } catch {
+    return { ok: false, code: "write-failed" }
+  }
+  return { ok: true, folder: path.basename(path.dirname(target)), name: path.basename(target) }
+}
+
+// ---------------------------------------------------------------------------
 // 受控内容读取(REQ-094/095 Workbench 预览面;#186/#187)
 // ---------------------------------------------------------------------------
 //

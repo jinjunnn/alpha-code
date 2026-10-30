@@ -44,7 +44,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // `#1474`:回合脚行并入工作过程实时标题 —— 原 4 条按新位置改写,新增 8 条状态迁移(72 → 80)。
     // #1503: two same-name media sources and cross-run image/document previews (80 → 83).
     // `#1576`:来源 × 位置(行尾 / 详情底部 / 开发者详情)+ 旧记录内置步骤底部一句(83 → 85)。
-    expect(output).toContain("85 pass")
+    // REQ-236 #1552: image card — snapshot+subscribe on mount, local-first after reload, broadcast → image, refusal + save receipt (85 → 89).
+    expect(output).toContain("89 pass")
     expect(output).toContain("0 fail")
   })
 })

@@ -17,9 +17,9 @@ import {
   type AlphaSessionLiveContext,
   type SessionRailApi,
 } from "../../session-workspace/session-workspace-shell"
-import type { ArtifactsPhase, RunRowModel } from "./artifacts-core"
+import type { ArtifactSaveReceipt, ArtifactsPhase, ArtifactsScope, RunDelivery, RunOwner, RunRowModel } from "./artifacts-core"
 import { SessionRailArtifactsView } from "./artifacts-panel-view"
-import { SessionRailArtifacts } from "./session-rail-artifacts"
+import { SessionRailArtifacts, type SessionParentOf } from "./session-rail-artifacts"
 
 export function fakeCard(input: Partial<ArtifactCard> & { key: string; name: string }): ArtifactCard {
   return { state: "verified", bytes: 1024, warnings: [], downloadable: false, ...input }
@@ -51,7 +51,15 @@ export function createArtifactsViewHarness() {
   const [quota, setQuota] = createSignal<{ usedBytes: number; maxBytes: number } | undefined>()
   const [cloudUnavailable, setCloudUnavailable] = createSignal(false)
   const [downloadPhases, setDownloadPhases] = createSignal<Record<string, DownloadPhase>>({})
+  const [scope, setScope] = createSignal<ArtifactsScope>("session")
+  const [owners, setOwners] = createSignal<Record<string, RunOwner>>({})
+  const [deliveries, setDeliveries] = createSignal<Record<string, RunDelivery>>({})
+  const [saveReceipt, setSaveReceipt] = createSignal<ArtifactSaveReceipt | null>(null)
   const calls = {
+    scope: [] as ArtifactsScope[],
+    retryDelivery: 0,
+    save: 0,
+    openExternal: 0,
     select: [] as string[],
     retry: 0,
     escape: 0,
@@ -66,6 +74,23 @@ export function createArtifactsViewHarness() {
     <SessionRailArtifactsView
       phase={phase()}
       errorReason={errorReason()}
+      scope={scope()}
+      onScope={(next) => {
+        calls.scope.push(next)
+        setScope(next)
+      }}
+      owners={owners()}
+      deliveries={deliveries()}
+      onRetryDelivery={() => {
+        calls.retryDelivery += 1
+      }}
+      onSave={() => {
+        calls.save += 1
+      }}
+      onOpenExternal={() => {
+        calls.openExternal += 1
+      }}
+      saveReceipt={saveReceipt()}
       runs={runs()}
       selectedRunId={selectedRunId()}
       onSelectRun={(runId) => {
@@ -121,6 +146,10 @@ export function createArtifactsViewHarness() {
     setQuota,
     setCloudUnavailable,
     setDownloadPhases,
+    setScope,
+    setOwners,
+    setDeliveries,
+    setSaveReceipt,
   }
 }
 
@@ -134,7 +163,7 @@ function snapshotFor(sessionID: string): AlphaSessionLiveSnapshot {
 }
 
 /** Real shell + real artifacts container; the cases file supplies the fake preload channel. */
-export function createArtifactsShellHarness() {
+export function createArtifactsShellHarness(options?: { parentOf?: SessionParentOf }) {
   const [current, setCurrent] = createSignal<AlphaSessionLiveSnapshot | undefined>(snapshotFor("ses_a"))
   const live: AlphaSessionLiveContext = {
     current,
@@ -153,7 +182,7 @@ export function createArtifactsShellHarness() {
             </button>
           )
         },
-        artifacts: (rail) => <SessionRailArtifacts live={live} rail={rail} />,
+        artifacts: (rail) => <SessionRailArtifacts live={live} rail={rail} parentOf={options?.parentOf} />,
       }}
     />
   )

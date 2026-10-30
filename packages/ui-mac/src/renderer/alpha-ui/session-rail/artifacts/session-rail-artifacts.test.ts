@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { artifactsPhaseOf, createRunOwnership, runDeliveryOf, SCOPE_ANCESTRY_MAX_DEPTH } from "./artifacts-core"
 
 const core = readFileSync(join(import.meta.dir, "artifacts-core.ts"), "utf8")
 const view = readFileSync(join(import.meta.dir, "artifacts-panel-view.tsx"), "utf8")
@@ -27,7 +28,8 @@ describe("REQ-125 C4 artifacts panel real Solid mount", () => {
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
     // `#906`:时间线第 N 行 → 面板选中第 N 个(联动两半都是生产实现)(21 → 22)。
-    expect(output).toContain("22 pass")
+    // REQ-236 #1552:tabs 用例改写为「结果优先 + 技术详情折叠」;+ 真容器的本次对话 / 项目全部(22 → 23)。
+    expect(output).toContain("23 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -63,7 +65,7 @@ describe("REQ-125 C4 I1 whitelist ratchet (baseline §③)", () => {
       expect({ file: name, offenders }).toEqual({ file: name, offenders: [] })
     }
     // The only out-of-tree climb is the type-only preload contract.
-    expect(wiring).toContain(`import type { ArtifactReadRef } from "../../../../preload/types"`)
+    expect(wiring).toContain(`import type { ArtifactReadRef, CloudRunState } from "../../../../preload/types"`)
   })
 })
 
@@ -73,7 +75,6 @@ describe("REQ-125 C4 verbatim workbench embed (I5) and channel discipline", () =
     expect(view).toContain("alpha-wb-cardlist")
     expect(view).toContain("alpha-wb-card-main")
     expect(view).toContain("STATE_LABEL_KEYS")
-    expect(view).toContain("TAB_LABEL_KEYS")
     expect(view).toContain("RENDERER_COMPONENTS")
     expect(view).toContain("MetadataView")
     // The rail chrome css never redefines workbench selectors (workbench styles stay sovereign).
@@ -96,13 +97,19 @@ describe("REQ-125 C4 verbatim workbench embed (I5) and channel discipline", () =
       [...wiring.matchAll(new RegExp(`window\\.api\\.${face}\\s*\\.\\s*(\\w+)\\(`, "g"))]
         .map((match) => match[1]!)
         .sort()
-    expect([...new Set(callsOf("runArtifacts"))]).toEqual(["list", "projectUsage", "read", "verify"])
+    // REQ-236 #1552: + openExternal / saveCopy (result-first action row; main re-checks sha256 before
+    // the save dialog) and the tracker's frozen face — getRunState / onRunState (delivery state of
+    // unfinished runs) and retry (「重新下载」; never re-dispatches). Still no saveRun, delete or GC.
+    expect([...new Set(callsOf("runArtifacts"))]).toEqual(["list", "openExternal", "projectUsage", "read", "saveCopy", "verify"])
     expect([...new Set(callsOf("cloud"))]).toEqual([
       "artifacts",
       "cancelArtifactDownload",
       "downloadArtifact",
+      "getRunState",
       "onArtifactProgress",
       "onRunSaved",
+      "onRunState",
+      "retry",
     ])
     // And no third face at all: every window.api usage in the container is one of the two.
     const faces = [...wiring.matchAll(/window\.api\.(\w+)/g)].map((match) => match[1]!)
@@ -178,5 +185,74 @@ describe("REQ-125 C4 shell seam: fourth tab, badge, dot, grip, and the focus mou
     const state = readFileSync(join(import.meta.dir, "../terminal/terminal-rail-state.ts"), "utf8")
     expect(state).not.toContain("publishTerminalAnyRunning")
     expect(state).toContain("next.delete(key)")
+  })
+})
+
+describe("REQ-236 #1552 AC4 本次对话 / 项目全部:归属从记录的会话向上解析", () => {
+  // 会话树:ses_root ← ses_child ← ses_grand;ses_other 是同项目另一棵树的根。
+  const parents: Record<string, string | null> = { ses_root: null, ses_child: "ses_root", ses_grand: "ses_child", ses_other: null }
+  const lookups: string[] = []
+  const parentOf = async (id: string) => {
+    lookups.push(id)
+    if (!(id in parents)) throw new Error("session not found")
+    return parents[id]
+  }
+
+  test("同项目两会话各看各的:A 的 run 只属于 A,B 的只属于 B", async () => {
+    const forA = createRunOwnership("ses_root", parentOf)
+    const forB = createRunOwnership("ses_other", parentOf)
+    expect(await forA("ses_root")).toBe("this")
+    expect(await forA("ses_other")).toBe("other")
+    expect(await forB("ses_other")).toBe("this")
+    expect(await forB("ses_root")).toBe("other")
+  })
+
+  test("子会话 run 经 session.get 上溯归入父会话(冷启动不依赖已加载会话列表),结果按会话缓存", async () => {
+    lookups.length = 0
+    const ownerOf = createRunOwnership("ses_root", parentOf)
+    expect(await ownerOf("ses_grand")).toBe("this")
+    expect(lookups).toEqual(["ses_grand", "ses_child"])
+    expect(await ownerOf("ses_grand")).toBe("this")
+    expect(lookups).toEqual(["ses_grand", "ses_child"])
+    // 从子会话的视角,父会话的 run 不是它的(只向上找,不向下)。
+    expect(await createRunOwnership("ses_child", parentOf)("ses_root")).toBe("other")
+  })
+
+  test("无归属只在项目全部:sessionID 为 null / 查询失败 / 超过深度上限都不属于本次对话", async () => {
+    const ownerOf = createRunOwnership("ses_root", parentOf)
+    expect(await ownerOf(null)).toBe("none")
+    expect(await ownerOf("ses_unknown")).toBe("none")
+    let calls = 0
+    const endless = createRunOwnership("ses_root", async (id) => {
+      calls += 1
+      return `${id}x`
+    })
+    expect(await endless("ses_deep")).toBe("other")
+    expect(calls).toBe(SCOPE_ANCESTRY_MAX_DEPTH)
+    // 范围为空但项目里有 run ⇒ 「本次对话还没有生成过文件」,不是项目级空态。
+    const phase = (scopeHidesRuns: boolean) =>
+      artifactsPhaseOf({ usage: { ok: true }, runId: undefined, list: undefined, cloud: undefined, cardCount: 0, scopeHidesRuns })
+    expect(phase(true)).toBe("empty-scope")
+    expect(phase(false)).toBe("empty")
+  })
+})
+
+describe("REQ-236 #1552 AC5 未完成的 run 显示交付状态", () => {
+  test("未完成 run 不显示空态:排队 / 生成中 / 正在保存 / 没存到本机 → run-status;已交付才可能是「这次没有产生文件」", () => {
+    const phase = (delivery: ReturnType<typeof runDeliveryOf>) =>
+      artifactsPhaseOf({ usage: { ok: true }, runId: "job_1", list: { ok: true }, cloud: { ok: true }, cardCount: 0, delivery })
+    const state = (job: string, delivery: "pending" | "downloading" | "saved" | "failed", code?: string) => ({
+      job: { status: job },
+      delivery: { status: delivery, ...(code ? { failure: { scope: "download", code } } : {}) },
+    })
+    expect(runDeliveryOf(state("queued", "pending"), 1_000)).toEqual({ state: "queued", since: 1_000 })
+    expect(phase(runDeliveryOf(state("queued", "pending")))).toBe("run-status")
+    expect(phase(runDeliveryOf(state("running", "pending")))).toBe("run-status")
+    expect(phase(runDeliveryOf(state("completed", "downloading")))).toBe("run-status")
+    expect(runDeliveryOf(state("completed", "failed", "network"))).toEqual({ state: "undelivered", reason: "network", retryable: true })
+    expect(phase(runDeliveryOf(state("completed", "failed", "network")))).toBe("run-status")
+    expect(runDeliveryOf(state("completed", "saved"))).toBeUndefined()
+    expect(runDeliveryOf(null)).toBeUndefined()
+    expect(phase(runDeliveryOf(state("completed", "saved")))).toBe("empty-run")
   })
 })

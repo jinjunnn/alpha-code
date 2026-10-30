@@ -6,6 +6,7 @@
 // workbench-core (REQ-093/094 truth), untouched.
 import type { ArtifactCard, RunArtifactUsage } from "../../artifact-workbench/workbench-core"
 import type { AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
+import { cloudImageViewOf, type CloudImageRunFacts, type CloudImageView } from "../../session-timeline/timeline-model"
 
 /**
  * #660:两种空是两个事实,不得合并 —— `empty` = 这个项目一次云任务都没有(连切换条都不画,
@@ -14,7 +15,17 @@ import type { AlphaSessionIdentity } from "../../session-workspace/session-works
  * **绝不宣称这一次是空的**:没拿到平台的答案之前,「这次没有产生文件」是一句没有根据的断言,
  * 正是本票要消灭的那类毛病。
  */
-export type ArtifactsPhase = "loading" | "error" | "empty" | "empty-run" | "empty-unknown" | "cards"
+export type ArtifactsPhase =
+  | "loading"
+  | "error"
+  | "empty"
+  | "empty-run"
+  | "empty-unknown"
+  | "cards"
+  /** REQ-236 `#1552`:「本次对话」范围里一次都没有(项目里别的对话可能有)。 */
+  | "empty-scope"
+  /** REQ-236 `#1552`:选中的这次还没交付完(排队 / 生成 / 正在保存 / 没存到本机)—— 显示交付状态,不说「没有产物」。 */
+  | "run-status"
 
 /**
  * Honest panel phase from the three read channels. Fail-closed: anything not proven readable
@@ -28,13 +39,18 @@ export function artifactsPhaseOf(input: {
   /** 平台列表:undefined = 尚未回答(pending);ok:false = 取不到(离线/未登录)。 */
   cloud: { ok: boolean } | undefined
   cardCount: number
+  /** REQ-236 `#1552`:范围过滤之后、项目里是否还有别的 run(「本次对话」为空 ≠ 项目为空)。 */
+  scopeHidesRuns?: boolean
+  /** REQ-236 `#1552`:宿主 tracker 对选中 run 的交付态(runDeliveryOf);undefined = 已交付或宿主不知道。 */
+  delivery?: RunDelivery
 }): ArtifactsPhase {
   if (input.usage === undefined) return "loading"
   if (!input.usage.ok) return "error"
-  if (input.runId === undefined) return "empty"
+  if (input.runId === undefined) return input.scopeHidesRuns ? "empty-scope" : "empty"
   if (input.list === undefined) return "loading"
   if (!input.list.ok) return "error"
   if (input.cardCount > 0) return "cards"
+  if (input.delivery) return "run-status"
   if (input.cloud === undefined) return "loading"
   return input.cloud.ok ? "empty-run" : "empty-unknown"
 }
@@ -122,3 +138,63 @@ export function artifactsIdentityKeyOf(identity: AlphaSessionIdentity | undefine
   if (!identity) return undefined
   return [identity.serverKey, identity.directory, identity.sessionID].join("\u0000")
 }
+
+// ---------------------------------------------------------------------------
+// REQ-236 #1552:「本次对话 / 项目全部」与未完成 run 的交付态
+// ---------------------------------------------------------------------------
+
+export type ArtifactsScope = "session" | "project"
+/** run 归谁:本次对话(含其后代会话)/ 另一个对话 / 来源未记录(或查不到 —— 不猜)。 */
+export type RunOwner = "this" | "other" | "none"
+
+/** 沿 parentID 上溯的深度上限(方案 §2.5)。 */
+export const SCOPE_ANCESTRY_MAX_DEPTH = 16
+
+/**
+ * 归属判定(AC4):run 记录的归属会话就是当前会话 ⇒ 属于;否则经 `parentOf`(生产 = v1 `session.get` 的
+ * parentID)向上解析,命中当前会话 ⇒ 属于,到根 / 超深 / 查询失败 ⇒ 不属于。不依赖已加载的会话列表
+ * (冷启动 renderer 只有根会话)。结果按会话缓存,寿命 = 面板这次挂载。
+ */
+export function createRunOwnership(
+  currentSessionID: string,
+  parentOf: (sessionID: string) => Promise<string | null | undefined>,
+): (sessionID: string | null) => Promise<RunOwner> {
+  const cache = new Map<string, Promise<RunOwner>>()
+  return (sessionID) => {
+    if (sessionID === null) return Promise.resolve("none")
+    if (sessionID === currentSessionID) return Promise.resolve("this")
+    const cached = cache.get(sessionID)
+    if (cached) return cached
+    const resolved = (async (): Promise<RunOwner> => {
+      let id = sessionID
+      for (let depth = 0; depth < SCOPE_ANCESTRY_MAX_DEPTH; depth += 1) {
+        let parent: string | null | undefined
+        try {
+          parent = await parentOf(id)
+        } catch {
+          return "none"
+        }
+        if (!parent) return "other"
+        if (parent === currentSessionID) return "this"
+        id = parent
+      }
+      return "other"
+    })()
+    cache.set(sessionID, resolved)
+    return resolved
+  }
+}
+
+/** 交付还没落定的 run 在面板里怎么说 —— 与对话里的生图卡同源同词(cloudImageViewOf 是唯一判定)。 */
+export type RunDelivery = Extract<CloudImageView, { state: "queued" | "running" | "saving" | "undelivered" }>
+
+export function runDeliveryOf(state: CloudImageRunFacts | null | undefined, since?: number): RunDelivery | undefined {
+  if (!state) return undefined
+  const view = cloudImageViewOf({ phase: "accepted", runId: "", ...(since !== undefined ? { acceptedAt: since } : {}) }, state, false)
+  return view.state === "queued" || view.state === "running" || view.state === "saving" || view.state === "undelivered"
+    ? view
+    : undefined
+}
+
+/** 「保存到…」的回执(本次操作的结果,不写进记录)。 */
+export type ArtifactSaveReceipt = { kind: "ok"; folder: string; name: string } | { kind: "mismatch" } | { kind: "write" }

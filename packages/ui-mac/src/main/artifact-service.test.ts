@@ -19,6 +19,7 @@ import {
   removeArtifact,
   resolveArtifact,
   runArtifactUsage,
+  saveRunArtifactCopy,
   verifyArtifact,
 } from "./artifact-service"
 
@@ -593,5 +594,49 @@ describe("recordRunOrigin (#1551)", () => {
     fs.writeFileSync(manifestPath(), "{ not json")
     expect(recordRunOrigin(projectDir, RUN, ORIGIN)).toMatchObject({ ok: false })
     expect(fs.readFileSync(manifestPath(), "utf8")).toBe("{ not json")
+  })
+})
+
+describe("run-artifact-save-copy(REQ-236 #1552 AC3)", () => {
+  function seedRegistered(name: string, content: string) {
+    const a = seedArtifact(name, content)
+    const reg = registerDownloadedArtifact(projectDir, RUN, {
+      descriptor: a.descriptor,
+      savedPath: a.savedPath,
+      verifiedSha256: a.digest,
+    })
+    if (!reg.ok) throw new Error(reg.reason)
+    return a
+  }
+
+  test("复核失败不出对话框:本机文件被改过 ⇒ verify-failed,pickTarget 一次都没被调用,目标不存在", async () => {
+    const a = seedRegistered("lighthouse.png", "png-bytes")
+    fs.writeFileSync(path.join(artifactsDir(), "lighthouse.png"), "png-bytez") // 同尺寸、不同内容
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "save-copy-"))
+    const asked: string[] = []
+    const res = await saveRunArtifactCopy(projectDir, RUN, a.descriptor.id, async (name) => {
+      asked.push(name)
+      return path.join(outDir, name)
+    })
+    expect(res).toEqual({ ok: false, code: "verify-failed" })
+    expect(asked).toEqual([])
+    expect(fs.existsSync(path.join(outDir, "lighthouse.png"))).toBe(false)
+    fs.rmSync(outDir, { recursive: true, force: true })
+  })
+
+  test("复核通过:默认名取产物名,复制字节逐一相同,回执只有文件夹名与文件名;取消 = 什么都不写", async () => {
+    const a = seedRegistered("lighthouse.png", "png-bytes")
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "save-copy-"))
+    const asked: string[] = []
+    const res = await saveRunArtifactCopy(projectDir, RUN, a.descriptor.id, async (name) => {
+      asked.push(name)
+      return path.join(outDir, "海边灯塔.png")
+    })
+    expect(asked).toEqual(["lighthouse.png"])
+    expect(res).toEqual({ ok: true, folder: path.basename(outDir), name: "海边灯塔.png" })
+    expect(fs.readFileSync(path.join(outDir, "海边灯塔.png"), "utf8")).toBe("png-bytes")
+    const canceled = await saveRunArtifactCopy(projectDir, RUN, a.descriptor.id, async () => undefined)
+    expect(canceled).toEqual({ ok: true, canceled: true })
+    fs.rmSync(outDir, { recursive: true, force: true })
   })
 })

@@ -2,7 +2,7 @@
 // 薄 wiring:参数字符串校验后直调 artifact-service(全部业务/守卫逻辑在那里,electron-free 可单测)。
 //
 // 边界(与 cloud-ipc.ts 同风格):
-//   · identity-bound —— list / inspect / usage / verify / read + external-open;不下载字节(下载归 #184 云 artifact 通道)、
+//   · identity-bound —— list / inspect / usage / verify / read + external-open + save-copy(#1552,复核后才弹对话框);不下载字节(下载归 #184 云 artifact 通道)、
 //     不删除(GC 钩子是 main 内部服务面,策略未定前不给 renderer 写面);
 //   · read(REQ-094/095,#186/#187)是唯一内容出口:只可寻址 run artifacts/ 内文件、text 2 MiB
 //     截断 + 诚实标记、bytes 20 MiB 超限拒绝 —— 决策记录见 artifact-service.readArtifactContent;
@@ -11,13 +11,14 @@
 //   · 响应内无 bearer、无绝对路径 —— entry.local.savedPath 是 run 目录内相对路径,
 //     descriptor.contentRef.url 是 server-relative 路径(manifest 写入时已强制)。
 
-import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from "electron"
+import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron"
 import {
   listRunArtifacts,
   projectArtifactUsage,
   readArtifactContent,
   resolveArtifact,
   runArtifactUsage,
+  saveRunArtifactCopy,
   verifyArtifact,
   type ArtifactReadRef,
 } from "./artifact-service"
@@ -60,6 +61,18 @@ export function registerArtifactIpcHandlers() {
     const maxBytes = typeof o?.maxBytes === "number" && Number.isFinite(o.maxBytes) ? o.maxBytes : undefined
     return readArtifactContent(directory, runId, readRef, { mode, maxBytes })
   })
+  // REQ-236 #1552「保存到…」:main 先复核 sha256,通过才弹系统保存对话框;renderer 只送身份、只收文件夹名与文件名。
+  ipcMain.handle("run-artifact-save-copy", (e: IpcMainInvokeEvent, directory: unknown, runId: unknown, artifactId: unknown) =>
+    str(directory) && str(runId) && str(artifactId)
+      ? saveRunArtifactCopy(directory, runId, artifactId, async (defaultName) => {
+          const owner = BrowserWindow.fromWebContents(e.sender)
+          const picked = owner
+            ? await dialog.showSaveDialog(owner, { defaultPath: defaultName })
+            : await dialog.showSaveDialog({ defaultPath: defaultName })
+          return picked.canceled || !picked.filePath ? undefined : picked.filePath
+        })
+      : { ok: false as const, code: "verify-failed" as const },
+  )
   // REQ-093(#281):external open crosses the renderer/main trust boundary by identity only. Main
   // re-resolves the manifest entry, pins/copies its bytes, and independently re-runs the OOXML gate.
   ipcMain.handle("run-artifact-open-external", (_e: IpcMainInvokeEvent, directory: unknown, runId: unknown, artifactId: unknown) =>

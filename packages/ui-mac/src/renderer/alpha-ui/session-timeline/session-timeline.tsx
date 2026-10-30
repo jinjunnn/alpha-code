@@ -170,6 +170,10 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     get editUserMessage() {
       return props.onEditUserMessage
     },
+    // REQ-236 `#1552`:生图卡跟住的 run 所在目录 = 会话身份的 directory(右栏产物面板同一货币)。
+    get cloudDirectory() {
+      return live.current()?.identity.directory
+    },
     // 空回合行「修改后再试」:只把焦点交回 composer,不代发任何东西(`#1318` AC3)。
     get focusPrompt() {
       return props.onFocusPrompt

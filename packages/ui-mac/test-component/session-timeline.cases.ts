@@ -175,6 +175,7 @@ const previewFixture = await import("./inline-preview.fixture")
 const previewShell = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-shell")
 const previewFiles = await import("../src/renderer/alpha-ui/session-rail/files/session-rail-files")
 const previewArtifacts = await import("../src/renderer/alpha-ui/session-rail/artifacts/session-rail-artifacts")
+const i18n = await import("../src/renderer/i18n")
 
 const disposers: Array<() => void> = []
 
@@ -4029,7 +4030,8 @@ test.each(["image", "document"])("AC2 #1503: cloud %s click previews the selecte
           : { ok: true, kind: "text", text: new TextDecoder().decode(bytes), totalBytes: bytes.length, readBytes: bytes.length, binary: false, truncated: false }
       },
     },
-    cloud: { artifacts: async (id: string) => runs.find((run) => run.runId === id)!.response, onRunSaved: () => () => {}, onArtifactProgress: () => () => {} },
+    // REQ-236 #1552: the panel also reads the tracker's frozen face (delivery state of unfinished runs).
+    cloud: { artifacts: async (id: string) => runs.find((run) => run.runId === id)!.response, onRunSaved: () => () => {}, onArtifactProgress: () => () => {}, getRunState: async () => null, onRunState: () => () => {} },
   }
   const parts = runs.map((run, index) => ({ ...toolPartFixture(`prt_cloud_${index}`, "cloud_artifacts", {
     status: "completed", input: { job_id: run.runId }, output: JSON.stringify(run.response), title: "artifacts", metadata: {}, time: { start: 10 + index, end: 11 + index },
@@ -4049,7 +4051,8 @@ test.each(["image", "document"])("AC2 #1503: cloud %s click previews the selecte
       await settlePreview()
     }
     const descriptor = runs[index].response.artifacts[selected]
-    expect(host.querySelector(".a-rart-runhead-id")!.getAttribute("title")).toBe(runs[index].runId) // selectedRunId
+    // REQ-236 #1552 AC5: the run id left the bar for the folded technical details; the bar still names the run it shows.
+    expect(host.querySelector("[data-artifacts-runbar]")!.getAttribute("data-artifacts-run")).toBe(runs[index].runId) // selectedRunId
     expect(host.querySelector(`[data-artifact-card='${descriptor.id}']`)!.closest(".alpha-wb-card")!.hasAttribute("data-active")).toBe(true) // selectedKey
     expect(reads).toContain(`${runs[index].runId}:${descriptor.id}`)
     if (kind === "image") {
@@ -4059,3 +4062,217 @@ test.each(["image", "document"])("AC2 #1503: cloud %s click previews the selecte
   }
   delete (window as never as Record<string, unknown>).api
 })
+
+// ═══════════════ REQ-236 #1552 — 对话里的生图卡(真 Solid 挂载 + 假 preload 通道) ═══════════════
+
+describe("REQ-236 #1552 生图卡", () => {
+  const DIRECTORY = "/tmp/workspace"
+  const RUN = "job_img1"
+  const imageId = `art_${RUN}_0_deadbeef`
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const imageEntry = (state = "verified") => ({
+    descriptor: {
+      schemaVersion: 1,
+      id: imageId,
+      source: "cloud",
+      name: "lighthouse.png",
+      size: png.length,
+      sha256: "a".repeat(64),
+      claimedMime: "image/png",
+      trust: "sandboxed",
+      role: "primary",
+      contentRef: { kind: "http-stream", url: `/v1/cloud/artifacts/${imageId}/content`, auth: "bearer" },
+      verification: { status: "verified" },
+      provenance: { producer: "pipeline", jobId: RUN },
+    },
+    local: { savedPath: "artifacts/lighthouse.png", downloadedAt: "2026-10-30T00:00:00Z", bytesOnDisk: png.length, state, warnings: [] },
+  })
+  const facade = (name: string) => ({
+    identity: { source: "mcp", origin: "cloud", name },
+    technicalId: name,
+    authority: { kind: "not-asserted" },
+  })
+  const dispatchPart = (state: Record<string, unknown>) =>
+    toolPartFixture("prt_img", "cloud_cloud_dispatch", state, facade("cloud_dispatch"))
+  const accepted = () =>
+    dispatchPart({
+      status: "completed",
+      input: { autonomy: "pipeline", kind: "image-generation", input: { prompt: "黄昏时分的海边灯塔" } },
+      output: JSON.stringify({ schema_version: 1, status: "queued", job_id: RUN }),
+      title: "dispatch",
+      metadata: {},
+      time: { start: Date.now() - 42_000, end: Date.now() - 42_000 },
+    })
+
+  function installCloudApi(options: { snapshot?: unknown; entries?: unknown[]; save?: unknown } = {}) {
+    const calls = { track: [] as string[], retry: [] as string[], getRunState: 0, billing: [] as string[], save: 0, list: 0, verify: 0 }
+    const listeners = new Set<(state: unknown) => void>()
+    let entries = options.entries ?? []
+    ;(window as never as Record<string, unknown>).api = {
+      cloud: {
+        getRunState: async () => {
+          calls.getRunState += 1
+          return options.snapshot ?? null
+        },
+        onRunState: (cb: (state: unknown) => void) => {
+          listeners.add(cb)
+          return () => listeners.delete(cb)
+        },
+        trackRun: async (_dir: string, run: string, origin?: unknown) => {
+          calls.track.push(origin === undefined ? run : `${run}+origin`)
+          return { ok: true }
+        },
+        retry: async (_dir: string, run: string) => {
+          calls.retry.push(run)
+          return { ok: true }
+        },
+        openBillingPage: async (page: string) => {
+          calls.billing.push(page)
+        },
+      },
+      runArtifacts: {
+        list: async () => {
+          calls.list += 1
+          return { ok: true, runId: RUN, entries, legacyFiles: [], warnings: [] }
+        },
+        verify: async (_dir: string, _run: string, id: string) => {
+          calls.verify += 1
+          const entry = (entries as Array<{ descriptor: { id: string } }>).find((candidate) => candidate.descriptor.id === id)
+          return entry ? { ok: true, entry } : { ok: false, reason: "artifact not found" }
+        },
+        read: async () => ({ ok: true, kind: "bytes", bytes: png, totalBytes: png.length }),
+        saveCopy: async () => {
+          calls.save += 1
+          return options.save ?? { ok: true, canceled: true }
+        },
+        openExternal: async () => ({ ok: true }),
+      },
+    }
+    return {
+      calls,
+      setEntries: (next: unknown[]) => {
+        entries = next
+      },
+      emit: (state: unknown) => listeners.forEach((listener) => listener(state)),
+    }
+  }
+  const state = (job: Record<string, unknown>, delivery: Record<string, unknown>) => ({
+    directory: DIRECTORY,
+    runId: RUN,
+    sessionID: "ses_1",
+    job,
+    delivery,
+  })
+  const card = (host: Element) => host.querySelector<HTMLElement>("[data-cloud-image]")!
+  afterEach(() => {
+    delete (window as never as Record<string, unknown>).api
+    runtime.resetTimelineHarness()
+  })
+
+  test("挂载即取快照并续订:宿主在跟的 run 直接用快照(生成中 + 计时),不再 trackRun;广播 saved 后出图", async () => {
+    const api = installCloudApi({ snapshot: state({ status: "running" }, { status: "pending" }) })
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(assistantFixture([accepted()]))
+    await settleCard()
+    expect(card(host).getAttribute("data-cloud-image")).toBe("running")
+    expect(host.querySelector("[data-cloud-image-state]")!.textContent).toContain(i18n.t("alpha.timeline.image.state.running"))
+    expect(host.querySelector("[data-cloud-image-elapsed]")!.textContent).toMatch(/^0:4\d$/)
+    expect(api.calls.getRunState).toBe(1)
+    expect(api.calls.track).toEqual([])
+
+    api.setEntries([imageEntry()])
+    api.emit(state({ status: "completed" }, { status: "saved" }))
+    await settleCard()
+    expect(card(host).getAttribute("data-cloud-image")).toBe("saved")
+    expect(host.querySelector("[data-cloud-image-pic] img")).not.toBeNull()
+    expect(host.querySelector("[data-cloud-image-state]")!.textContent).toBe(i18n.t("alpha.timeline.image.done"))
+  })
+
+  test("重载后宿主没跟过:本机已核验 ⇒ 直接出图且不联网(不 trackRun);本机没有 ⇒ trackRun 且不带归属", async () => {
+    const local = installCloudApi({ entries: [imageEntry()] })
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(assistantFixture([accepted()]))
+    await settleCard()
+    expect(card(host).getAttribute("data-cloud-image")).toBe("saved")
+    expect(local.calls.verify).toBe(1)
+    expect(local.calls.track).toEqual([])
+    expect(host.querySelector("[data-cloud-image-pic] img")).not.toBeNull()
+    disposers.splice(0).forEach((dispose) => dispose())
+    document.body.replaceChildren()
+
+    const remote = installCloudApi({ entries: [] })
+    const second = mount()
+    runtime.setTimelineRows(assistantFixture([accepted()]))
+    await settleCard()
+    expect(remote.calls.track).toEqual([RUN])
+    expect(card(second).getAttribute("data-cloud-image")).toBe("queued")
+  })
+
+  test("面板手动下载成功 → 广播 → 时间线卡出图:没存到本机(重新下载可点)→ 收到 saved 广播即显示图片", async () => {
+    const api = installCloudApi({
+      snapshot: state({ status: "completed" }, { status: "failed", failure: { scope: "download", code: "network" } }),
+    })
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(assistantFixture([accepted()]))
+    await settleCard()
+    expect(card(host).getAttribute("data-cloud-image")).toBe("undelivered")
+    expect(host.querySelector("[data-cloud-image-notice]")!.textContent).toContain(
+      i18n.t("alpha.timeline.image.undelivered.network.title"),
+    )
+    const retry = host.querySelector<HTMLButtonElement>("[data-cloud-image-retry]")!
+    retry.click()
+    await settleCard()
+    expect(api.calls.retry).toEqual([RUN])
+    expect(host.querySelector<HTMLButtonElement>("[data-cloud-image-retry]")!.disabled).toBe(true)
+
+    // 右栏产物面板手动补下成功 → main 的 tracker.reverify 广播 saved(#1551 冻结面)→ 卡片出图。
+    api.setEntries([imageEntry()])
+    api.emit(state({ status: "completed" }, { status: "saved" }))
+    await settleCard()
+    expect(card(host).getAttribute("data-cloud-image")).toBe("saved")
+    expect(host.querySelector("[data-cloud-image-pic] img")).not.toBeNull()
+  })
+
+  test("没有开始 · 额度不足:说明块 + 「去充值」打开充值页;保存复核失败:不出对话框的回执写明原因", async () => {
+    const api = installCloudApi({ entries: [imageEntry()], save: { ok: false, code: "verify-failed" } })
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(
+      assistantFixture([
+        dispatchPart({
+          status: "error",
+          input: { autonomy: "pipeline", kind: "image-generation", input: { prompt: "灯塔" } },
+          error: JSON.stringify({ error: "会员额度已用尽", code: "account_allowance_exhausted" }),
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await settleCard()
+    expect(card(host).getAttribute("data-cloud-image")).toBe("refused")
+    expect(host.querySelector("[data-cloud-image-notice]")!.textContent).toContain(
+      i18n.t("alpha.timeline.image.refused.allowance.title"),
+    )
+    host.querySelector<HTMLButtonElement>("[data-cloud-image-billing]")!.click()
+    expect(api.calls.billing).toEqual(["recharge"])
+    expect(api.calls.getRunState).toBe(0)
+
+    runtime.setTimelineRows(assistantFixture([accepted()]))
+    await settleCard()
+    host.querySelector<HTMLButtonElement>("[data-cloud-image-save]")!.click()
+    await settleCard()
+    expect(api.calls.save).toBe(1)
+    expect(host.querySelector("[data-cloud-image-receipt='bad']")!.textContent).toContain(
+      i18n.t("alpha.timeline.image.saveMismatch"),
+    )
+  })
+})
+
+async function settleCard() {
+  for (let index = 0; index < 4; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    await flush()
+  }
+}

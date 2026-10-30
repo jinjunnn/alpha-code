@@ -66,6 +66,10 @@ const harnessIntents = {
         }
       : undefined
   },
+  // REQ-236 #1552:生图卡的项目目录(与生产绑定同一货币:会话身份的 directory)。
+  get cloudDirectory() {
+    return intentsEnabled() ? "/tmp/workspace" : undefined
+  },
 }
 
 export { render }

@@ -12,6 +12,8 @@ import type {
 import {
   artifactLinksOf,
   boundedText,
+  cloudImageOf,
+  cloudImageViewOf,
   commentOf,
   footnoteOf,
   formatTurnElapsed,
@@ -1403,5 +1405,146 @@ describe("#1399 回合脚行计时 m:ss(从用户消息 time.created 起算,不�
     expect(formatTurnElapsed(3_599_999)).toBe("59:59")
     expect(formatTurnElapsed(3_600_000)).toBe("60:00")
     expect(formatTurnElapsed(-5_000)).toBe("0:00")
+  })
+})
+
+describe("REQ-236 #1552 生图卡:派发调用事实 → cloudImage 行与显示态", () => {
+  const facade = (name: string) =>
+    ({
+      identity: { source: "mcp", origin: "cloud", name },
+      technicalId: name,
+      authority: { kind: "not-asserted" },
+    }) as ToolPart["display"]
+  const imageInput = { autonomy: "pipeline", kind: "image-generation", input: { prompt: "黄昏时分的海边灯塔" } }
+  const dispatch = (state: ToolPart["state"], over: Partial<ToolPart> = {}) =>
+    toolPart("prt_d1", "msg_a1", "cloud_cloud_dispatch", { display: facade("cloud_dispatch"), state, ...over })
+  const accepted = JSON.stringify({ schema_version: 1, status: "queued", job_id: "job_img1" })
+  const done = (output: string, input: unknown = imageInput) =>
+    ({ status: "completed", input, output, title: "dispatch", metadata: {}, time: { start: 100, end: 1_100 } }) as ToolPart["state"]
+  const turn = (...parts: ToolPart[]) =>
+    project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "画一张灯塔")],
+      msg_a1: parts,
+    })
+
+  test("pending 即出卡(正在提交),挂在回答之后、不进工作过程", () => {
+    const pending = dispatch({ status: "pending", input: imageInput, raw: "" } as ToolPart["state"])
+    const rows = turn(pending, textPart("prt_t1", "msg_a1", "好的"))
+    expect(rows.map((row) => row.kind)).toEqual(["user", "process", "markdown", "cloudImage", "footnote"])
+    const card = rows.find((row) => row.kind === "cloudImage")!
+    if (card.kind !== "cloudImage") throw new Error("expected cloudImage")
+    expect(card.image).toEqual({ partID: "prt_d1", prompt: "黄昏时分的海边灯塔", call: { phase: "submitting" } })
+    expect(cloudImageViewOf(card.image.call, null, false)).toEqual({ state: "submitting" })
+  })
+
+  test("受理前 error 读这次调用的错误;额度类拒绝带充值入口,连不上与其它拒绝不带", () => {
+    const refused = (error: string) =>
+      cloudImageOf(dispatch({ status: "error", input: imageInput, error, time: { start: 0, end: 1 } } as ToolPart["state"]))!
+    const quota = refused(JSON.stringify({ error: "会员额度已用尽", code: "account_allowance_exhausted" }))
+    expect(quota.call).toEqual({
+      phase: "refused",
+      refusal: "allowance",
+      error: JSON.stringify({ error: "会员额度已用尽", code: "account_allowance_exhausted" }),
+    })
+    expect(cloudImageViewOf(quota.call, null, false)).toEqual({ state: "refused", refusal: "allowance", billing: true })
+    const wallet = refused(`Error: ${JSON.stringify({ error: "x", code: "account_wallet_insufficient" })}`)
+    expect(cloudImageViewOf(wallet.call, null, false)).toEqual({ state: "refused", refusal: "wallet", billing: true })
+    expect(cloudImageViewOf(refused("MCP error -32001: Request timed out").call, null, false)).toEqual({
+      state: "refused",
+      refusal: "network",
+      billing: false,
+    })
+    expect(cloudImageViewOf(refused(JSON.stringify({ error: "forbidden" })).call, null, false)).toEqual({
+      state: "refused",
+      refusal: "other",
+      billing: false,
+    })
+    // 模型的文字不参与判定:同一回合里助手说「已经画好了」,卡片仍是「没有开始」。
+    const rows = turn(
+      dispatch({ status: "error", input: imageInput, error: "fetch failed", time: { start: 0, end: 1 } } as ToolPart["state"]),
+      textPart("prt_t1", "msg_a1", "图片已经画好并保存了"),
+    )
+    const card = rows.find((row) => row.kind === "cloudImage")!
+    if (card.kind !== "cloudImage") throw new Error("expected cloudImage")
+    expect(card.image.call.phase).toBe("refused")
+  })
+
+  test("各交付态映射:排队 / 生成中(计时起点 = 受理时刻)/ 正在保存 / 出图 / 任务失败 / 取消 / 没存到本机", () => {
+    const image = cloudImageOf(dispatch(done(accepted)))!
+    expect(image.call).toEqual({ phase: "accepted", runId: "job_img1", acceptedAt: 1_100 })
+    const call = image.call
+    const run = (job: string, delivery: "pending" | "downloading" | "saved" | "failed", extra: object = {}) => ({
+      job: { status: job, ...extra },
+      delivery: { status: delivery },
+    })
+    expect(cloudImageViewOf(call, null, false)).toEqual({ state: "queued", since: 1_100 })
+    expect(cloudImageViewOf(call, run("unknown", "pending"), false)).toEqual({ state: "queued", since: 1_100 })
+    expect(cloudImageViewOf(call, run("queued", "pending"), false)).toEqual({ state: "queued", since: 1_100 })
+    expect(cloudImageViewOf(call, run("running", "pending"), false)).toEqual({ state: "running", since: 1_100 })
+    expect(cloudImageViewOf(call, run("completed", "downloading"), false)).toEqual({ state: "saving" })
+    expect(cloudImageViewOf(call, run("completed", "saved"), false)).toEqual({ state: "saved" })
+    expect(cloudImageViewOf(call, run("failed", "saved", { code: "image_safety_rejected" }), false)).toEqual({
+      state: "failed",
+      reason: "safety",
+    })
+    expect(cloudImageViewOf(call, run("failed", "saved", { code: "image_backend_unavailable" }), false)).toEqual({
+      state: "failed",
+      reason: "upstream",
+    })
+    expect(cloudImageViewOf(call, run("failed", "saved"), false)).toEqual({ state: "failed", reason: "other" })
+    expect(cloudImageViewOf(call, run("cancelled", "saved"), false)).toEqual({ state: "cancelled" })
+    const failed = (scope: string, code: string) => ({
+      job: { status: "completed" },
+      delivery: { status: "failed" as const, failure: { scope, code } },
+    })
+    expect(cloudImageViewOf(call, failed("download", "network"), false)).toEqual({
+      state: "undelivered",
+      reason: "network",
+      retryable: true,
+    })
+    expect(cloudImageViewOf(call, failed("verify", "sha256-mismatch"), false)).toMatchObject({ reason: "incomplete" })
+    expect(cloudImageViewOf(call, failed("download", "unauthorized"), false)).toMatchObject({ reason: "auth", retryable: true })
+    expect(cloudImageViewOf(call, failed("download", "not-found"), false)).toMatchObject({ reason: "gone", retryable: false })
+    expect(cloudImageViewOf(call, failed("download", "over-limit"), false)).toMatchObject({ reason: "full", retryable: false })
+    expect(cloudImageViewOf(call, failed("register", "disk"), false)).toMatchObject({ reason: "register", retryable: true })
+    // 本机核验通过是最强的事实:tracker 还没给状态(重载后)也直接出图。
+    expect(cloudImageViewOf(call, null, true)).toEqual({ state: "saved" })
+    expect(cloudImageViewOf(call, failed("download", "network"), true)).toEqual({ state: "saved" })
+  })
+
+  test("kind 不精确 / 非第一方 identity / 不是 dispatch 一律不出行", () => {
+    const wrongKind = { autonomy: "pipeline", kind: "image-generation.prompt", input: { prompt: "x" } }
+    expect(cloudImageOf(dispatch(done(accepted, wrongKind)))).toBeUndefined()
+    expect(
+      cloudImageOf(
+        dispatch(done(accepted), {
+          display: {
+            identity: { source: "plugin", origin: "cloud", name: "cloud_dispatch" },
+            technicalId: "cloud_dispatch",
+            authority: { kind: "not-asserted" },
+          } as ToolPart["display"],
+        }),
+      ),
+    ).toBeUndefined()
+    expect(cloudImageOf(dispatch(done(accepted), { display: undefined }))).toBeUndefined()
+    expect(cloudImageOf(dispatch(done(accepted), { display: facade("cloud_status") }))).toBeUndefined()
+    const rows = turn(dispatch(done(accepted, wrongKind)))
+    expect(rows.some((row) => row.kind === "cloudImage")).toBe(false)
+  })
+
+  test("同回合取代产物链接行:同一任务的 await 产物行不重复出现,别的任务照常出行", () => {
+    const awaitOut = (jobId: string) =>
+      JSON.stringify({ job_id: jobId, status: "completed", artifacts: [{ id: `art_${jobId}_0_deadbeef`, name: "lighthouse.png" }] })
+    const awaited = (id: string, jobId: string) =>
+      toolPart(id, "msg_a1", "cloud_cloud_await", {
+        display: facade("cloud_await"),
+        state: { status: "completed", input: { job_id: jobId }, output: awaitOut(jobId), title: "await", metadata: {}, time: { start: 0, end: 1 } },
+      })
+    const rows = turn(dispatch(done(accepted)), awaited("prt_w1", "job_img1"), awaited("prt_w2", "job_other"))
+    expect(rows.filter((row) => row.kind === "cloudImage")).toHaveLength(1)
+    const artifactRows = rows.filter((row) => row.kind === "artifacts")
+    expect(artifactRows).toHaveLength(1)
+    if (artifactRows[0]!.kind !== "artifacts") throw new Error("expected artifacts")
+    expect(artifactRows[0]!.links[0]!.runId).toBe("job_other")
   })
 })

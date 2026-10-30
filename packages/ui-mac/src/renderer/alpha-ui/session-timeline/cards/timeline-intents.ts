@@ -82,6 +82,11 @@ export interface TimelineIntents {
    * 返回 Promise 时,拒绝 = 失败,由该行就地提示,不得静默吞掉。
    */
   focusPrompt?: () => void | Promise<void>
+  /**
+   * REQ-236 `#1552`:生图卡所在项目目录(宿主 tracker 与右栏产物面板同一货币:会话身份的 directory)。
+   * 缺席 = 卡片只呈现调用阶段(正在提交 / 没有开始 / 排队中),不取任务状态、不读本机产物。
+   */
+  cloudDirectory?: string
 }
 
 export const TimelineIntentsContext = createContext<TimelineIntents>({})
