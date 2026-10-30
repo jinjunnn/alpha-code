@@ -34,13 +34,25 @@ mock.module("./alpha-auth", () => ({ getAccessToken: () => "tok.cloud.dispatch" 
 mock.module("./alpha-endpoints", () => ({ resolveEndpoints: () => ({ cloud: BASE }) }))
 mock.module("./logging", () => ({ getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }) }))
 mock.module("./store", () => ({ getStore: () => ({ get: () => 0, set: () => {} }) }))
-mock.module("./alpha-automations", () => ({ getAutomation: () => null, listAutomations: () => [], saveAutomation: () => ({ ok: true }) }))
-mock.module("./alpha-workdir", () => ({ saveCloudRun: async () => ({ ok: false, reason: "unused" }) }))
+// #1551:拉回用例逐条改写的任务表 / 落盘结果 / 落账捕获(其余用例保持空表,零影响)。
+let automations: AutomationTask[] = []
+let saveResult: unknown = { ok: false, reason: "unused" }
+const savedTasks: AutomationTask[] = []
+mock.module("./alpha-automations", () => ({
+  getAutomation: () => null,
+  listAutomations: () => automations,
+  saveAutomation: (task: AutomationTask) => {
+    savedTasks.push(structuredClone(task))
+    return { ok: true }
+  },
+}))
+mock.module("./alpha-workdir", () => ({ saveCloudRun: async () => saveResult }))
 mock.module("./alpha-user-workspace", () => ({ mirrorRunArtifacts: () => {} }))
 mock.module("./artifact-service", () => ({ finalizeArtifactWithQuota: () => ({ ok: true }), registerDownloadedArtifact: () => {}, registeredArtifactNameOwner: () => undefined }))
+let jobStatus: unknown = { error: "unused" }
 mock.module("./alpha-cloud-jobs", () => ({
   downloadCloudArtifactTo: async () => ({ ok: false, error: "unused" }),
-  getCloudJobStatus: async () => ({ error: "unused" }),
+  getCloudJobStatus: async () => jobStatus,
   listCloudArtifacts: async () => ({ error: "unused" }),
 }))
 
@@ -154,4 +166,28 @@ test("删除因别的原因失败(403 无码)⇒ 结构槽透出咽喉铸的 htt
     reason: "云端删除失败:http-403",
     code: "http-403",
   })
+})
+
+// REQ-236 #1551 AC2:saveCloudRun 的第二个生产消费者(定时任务开机拉回)—— 产物没齐不记成「结果已拉回」。
+test("#1551 定时任务拉回:产物没全部存到本机 ⇒ 历史记 failed,不写「结果已拉回」", async () => {
+  automations = [{ ...TASK, cloudScheduleId: "sched_1551" }]
+  jobStatus = { job_id: "job_1551", status: "completed" }
+  saveResult = {
+    ok: true,
+    dir: "/project/.code-puppy/runs/job_1551",
+    files: ["status.json"],
+    warnings: [],
+    failures: [{ scope: "download", artifactId: "art_1", code: "network" }],
+  }
+  responses.push({ status: 200, body: JSON.stringify({ jobs: [{ schedule_id: "sched_1551", job_id: "job_1551", fired_at: 1_761_800_000_000 }] }) })
+  try {
+    expect(await schedules.pullCloudScheduleRuns()).toEqual({ pulled: 1 })
+    const record = savedTasks.at(-1)?.lastRun
+    expect(record).toMatchObject({ status: "failed", sessionID: "job_1551" })
+    expect(record?.summary).not.toContain("结果已拉回")
+  } finally {
+    automations = []
+    jobStatus = { error: "unused" }
+    saveResult = { ok: false, reason: "unused" }
+  }
 })

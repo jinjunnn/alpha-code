@@ -78,14 +78,18 @@ export function createCloudJobLifecycle(input: {
       : code ?? failureCodeFromEvent({ data: await window.api.cloud.status(id) })
     const saved = await window.api.cloud.saveRun(directory, id, contract)
     if (saved.ok) {
-      setState({ savedDir: saved.dir, phase: terminal === "job.completed" ? "done" : "failed", errAction: null })
+      // #1551 AC2:列表 / 下载 / 登记任一失败,任务虽已完成也不报「完成」。
+      const incomplete = saved.failures.length > 0
+      setState({ savedDir: saved.dir, phase: terminal === "job.completed" && !incomplete ? "done" : "failed", errAction: null })
       if (input.pipelineKind() !== "code-review") {
         setState({ files: saved.files.filter((file) => file.startsWith("artifacts/")), err: saved.warnings.join("\n") })
       }
       if (terminal !== "job.completed") {
         const failure = failureCopy(reason ?? "")
         setState({ err: failure?.text ?? t("alpha.ext.cloudRunFailed"), errAction: failure?.action ?? null })
+        return
       }
+      if (incomplete) setState({ err: t("alpha.ext.cloudSaveFailed") })
       return
     }
     setState({ phase: "failed", err: t("alpha.ext.cloudSaveFailed"), errAction: null })

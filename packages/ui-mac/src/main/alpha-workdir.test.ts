@@ -341,10 +341,36 @@ describe("saveCloudRun", () => {
     expect(fs.existsSync(path.join(projectDir, ".code-puppy", "runs", "job-1", "status.json"))).toBe(false)
   })
 
-  test("artifact list error degrades to warning; run still ok", async () => {
+  // #1551 AC2(R2):列表失败不再被折成「空列表 + 一条 warning」—— 那正是「已回流」假成功的来源。
+  test("artifact list error is a structured list failure (status.json still written)", async () => {
     const res = await saveCloudRun(projectDir, "job-1", deps({ artifacts: async () => ({ error: "network" }) }))
     expect(res.ok).toBe(true)
-    if (res.ok) expect(res.warnings).toEqual(["artifacts: network"])
+    if (!res.ok) return
+    expect(res.failures).toEqual([{ scope: "list", code: "network" }])
+    expect(res.files).toEqual(["status.json"])
+  })
+
+  test("#1551 manifest register failure is a structured register failure, not a warning", async () => {
+    // 列表取自平台契约的 producer 夹具(vendor/alpha-platform contracts v1 artifact-list.json),真 descriptor 形状。
+    const list = (
+      await Bun.file(
+        path.join(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-platform/contracts/v1/fixtures/producer/artifact-list.json"),
+      ).json()
+    ).value
+    const res = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({
+        artifacts: async () => list,
+        register: () => ({ ok: false, reason: "manifest is read-only: corrupt (x)" }),
+      }),
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.failures).toEqual([
+      { scope: "register", artifactId: list.artifacts[0].id, code: "register-failed", detail: "manifest is read-only: corrupt (x)" },
+    ])
+    expect(res.warnings).toEqual([])
   })
 
   test("hostile artifact name is sanitized into the artifacts dir (no escape)", async () => {
@@ -494,7 +520,7 @@ describe("saveCloudRun", () => {
     expect(fs.readdirSync(runDir2).sort()).toEqual([`${B.id}-report.bin`, "report.bin"])
   })
 
-  test("download failure (e.g. over-limit at the streaming writer) degrades to warning, no file listed", async () => {
+  test("download failure (e.g. over-limit at the streaming writer) is a structured download failure, no file listed", async () => {
     const res = await saveCloudRun(
       projectDir,
       "job-1",
@@ -502,7 +528,7 @@ describe("saveCloudRun", () => {
     )
     expect(res.ok).toBe(true)
     if (res.ok) {
-      expect(res.warnings.some((w) => w.includes("over-limit"))).toBe(true)
+      expect(res.failures).toEqual([{ scope: "download", artifactId: "a1", code: "over-limit", detail: "descriptor size 5 > max 2" }])
       expect(res.files).toEqual(["status.json"])
       // REQ-092 AC#4:失败绝不产出看似成功的最终文件
       expect(fs.readdirSync(path.join(projectDir, ".code-puppy", "runs", "job-1", "artifacts"))).toEqual([])

@@ -48,6 +48,9 @@ mock.module("./logging", () => ({
 mock.module("./alpha-auth", () => ({
   getAccessToken: () => "tok.gate1113",
   getAccessTokenIdentity: () => ({ ok: true, token: "tok.gate1113", tenantId: "t_gate", subject: "u_gate" }),
+  // #1551:cloud-ipc 的交付 tracker 读身份代(本 harness 不跑交付,只需让 import 解析)。
+  getAuthIdentityEpoch: () => 0,
+  getAuthIdentityTag: () => undefined,
 }))
 
 // ---- 真 HTTP origin(canned JSON;本闸只判 JSON 决策面,流式/框定语义归 #402 格 2–6)----

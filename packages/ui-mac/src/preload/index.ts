@@ -5,6 +5,7 @@ import {
   type CloudArtifactProgress,
   type CatalogRefreshFailure,
   type CloudRunSavedEvent,
+  type CloudRunState,
   type ContractFailure,
   type DeepLinkBatch,
   type ElectronAPI,
@@ -312,6 +313,14 @@ const api: ElectronAPI = {
       const h = (_e: unknown, e: CloudRunSavedEvent) => cb(e)
       ipcRenderer.on("cloud-run-saved", h)
       return () => ipcRenderer.removeListener("cloud-run-saved", h)
+    },
+    trackRun: (directory, runId, origin) => ipcRenderer.invoke("cloud-run-track", directory, runId, origin),
+    retry: (directory, runId) => ipcRenderer.invoke("cloud-run-retry", directory, runId),
+    getRunState: (directory, runId) => ipcRenderer.invoke("cloud-run-state-get", directory, runId),
+    onRunState: (cb) => {
+      const h = (_e: unknown, state: CloudRunState) => cb(state)
+      ipcRenderer.on("cloud-run-state", h)
+      return () => ipcRenderer.removeListener("cloud-run-state", h)
     },
     subscribe: (jobId) => ipcRenderer.invoke("cloud-subscribe", jobId),
     unsubscribe: (jobId) => ipcRenderer.invoke("cloud-unsubscribe", jobId),

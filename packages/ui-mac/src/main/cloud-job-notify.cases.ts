@@ -63,6 +63,9 @@ mock.module("./artifact-service", () => ({
   finalizeArtifactWithQuota: () => ({ ok: false, reason: "unused in this harness" }),
   registerDownloadedArtifact: () => ({ ok: false, reason: "unused in this harness" }),
   registeredArtifactNameOwner: () => undefined,
+  // #1551:cloud-ipc 的交付 tracker 引用(本 harness 不跑交付,只需让 import 解析)。
+  recordRunOrigin: () => ({ ok: false, reason: "unused in this harness" }),
+  verifyArtifact: async () => ({ ok: false, reason: "unused in this harness" }),
 }))
 mock.module("./alpha-cloud-jobs", () => ({
   dispatchCloudJob: async () => ({ error: "unused" }),
@@ -81,6 +84,8 @@ mock.module("./alpha-cloud-events", () => ({
 }))
 mock.module("./alpha-auth", () => ({
   getAccessTokenIdentity: async () => ({ error: "unused" }),
+  getAuthIdentityEpoch: () => 0,
+  getAuthIdentityTag: () => undefined,
 }))
 mock.module("./alpha-web-upload-consent", () => ({
   requestUploadConsent: async () => ({ error: "unused" }),
