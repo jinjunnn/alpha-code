@@ -99,6 +99,8 @@ function afterRunSaved(directory: string, runId: string, saved: CloudRunManifest
   // 关心这次结果的产物面板可能在另一个窗口 —— 单窗口发送会漏掉跨窗口那一半。
   // 载荷只有 directory + runId:这是「去重读」的提示,不是数据源(面板收到后仍走
   // projectUsage / list 重新取真相),多带任何字段都会变成第二份会漂移的真相。
+  // #1551:面板据它提示「有一次新的云任务结果已回到本地」—— 列表 / 下载 / 登记有任何失败都不是这句话。
+  if (saved.failures.length > 0) return
   broadcast("cloud-run-saved", { directory, runId })
 }
 
