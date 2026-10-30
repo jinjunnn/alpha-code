@@ -61,7 +61,7 @@ permission.ask 可用，而后续勘破指出缺少触发点；设计应核对�
 | 平台模型、路由、价格 | alpha-platform registry/edition；本地 `alpha-live-allowlist.ts` 校验投影 | 本地保存已验证快照并后台刷新；引擎报告应用版本，不另造允许列表或从 models.dev 覆盖价格。 |
 | BYOK 公共模型元数据 | REQ-237 的独立远程目录；自定义节点仍由本机用户决定 | 与平台复用拉取/缓存机制，权限和数据真源分开；不因云账户失败停用 BYOK，不用远程目录改写用户 key/baseURL。 |
 | 模型和工作模式选择 | Code Puppy composer 的显式用户意图；引擎会话字段保存已应用事实 | 选中、正在应用、可执行分开。使用现有 model-contract 与发送入口，补最终执行模型回执；agent 模型只作未显式选择时的默认。 |
-| 工具身份、官方来源、策略 | 共享 identity schema、已验证 binding graph、现有 policy gate | 在注册端产生，执行端核对；UI 只展示。`not-asserted` 是来源证明不足，不等于工具坏了，也不能仅因品牌相似改成官方。 |
+| 工具身份、官方来源、策略 | 共享 identity schema、已验证 binding graph、现有 policy gate | 在注册端产生，执行端核对；UI 只展示。现有 `not-asserted` 表示没有声明已验证云来源，不是通用“不可信”等级，也不能仅因品牌相似改成官方云工具。 |
 | 工具可用性 | 现有 MCP runtime 的每个服务状态；main 管运行依赖准备 | 发布逐服务状态，不以“出现在目录里”代表连接成功。第一次调用只等待目标服务。 |
 | 生命周期与恢复 | main 的 sidecar-generation、token-rotation、现有恢复入口 | main 决定是否重启，renderer 发重试意图；原因细分并合并在途工作，取消无关功能引发的全局重启。 |
 | 消息、工具执行记录、推理循环 | OpenCode 当前 v1 会话/持久化服务 | 产品拥有输入和展示合同；不在 main 复制一份可写消息历史，不以 UI 乐观状态宣布执行完成。 |
@@ -165,6 +165,13 @@ MCP 的 initialize/initialized 顺序仍须遵守；异步化只改变客户端�
 不能覆盖禁用、撤权或出网围栏。审批绑定真实主体、资源、参数和请求 ID；若 hook 改变了审批
 依赖的事实，必须重新判定或拒绝，不能把批准原参数当作批准新参数。实现复用现有 permission
 receipt/binding 语义，不增加第二个 approval service。
+
+**来源显示**：当前 `schema/src/tool-identity.ts:16` 的 ToolAuthority 只有 `not-asserted`
+和带 binding/evidence 的 `alpha-cloud` 两种形状，没有定义通用信任分数。内置/宿主工具的
+来源还由 `identity.source` 与应用注册链表达，不能因为没有云声明就显示“不可信”。
+正常界面分别呈现“Code Puppy 内置 / 已验证的 Code Puppy 云 / 第三方来源”和实际执行位置；
+没有来源证据的项目插件不能仅凭文件名升级为官方。技术详情保留精确身份与证据，
+品牌迁移时按同一 schema 和 binding 入口改名，不在 UI 推断补造 authority。
 
 **模型**：Code Puppy 持有显式选择，agent 提供缺省建议；展示目录、执行投影及已应用模型要能
 核对同一版本。保留当前 v1 会话执行代次；v2 model 元数据接口不意味着会话执行已迁移。
