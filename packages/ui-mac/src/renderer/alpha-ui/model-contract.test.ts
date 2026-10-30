@@ -900,3 +900,110 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
     expect(probes).toBe(1)
   })
 })
+
+describe("#1557 在途阶段进度与失败分类", () => {
+  test("AC3 进入屏障、每次单探针到期、发出 model.list 各报一次进度", async () => {
+    let probes = 0
+    const progress: unknown[] = []
+    let clock = 100
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              // 前两轮不答(连接接受、响应不到),第三轮答 ready。
+              get: (_input: unknown, options?: { signal?: AbortSignal }) => {
+                const round = ++probes
+                if (round > 2) return Promise.resolve({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } })
+                return new Promise((resolve) => {
+                  options?.signal?.addEventListener("abort", () => resolve({ error: options.signal?.reason }), {
+                    once: true,
+                  })
+                })
+              },
+            },
+            model: {
+              list: async () => {
+                progress.push("model.list sent")
+                return { data: { data: [model] } }
+              },
+            },
+          },
+        }) as never,
+      {
+        probeTimeoutMs: 5,
+        wait: () => new Promise<void>(() => {}),
+        now: () => clock++,
+        onProgress: (p) => progress.push(p),
+      },
+    )
+
+    expect(await contract.list("/progress")).toEqual([model])
+    // 删掉任何一处 report(进入屏障 / 到期 / 发 list)都会让这张表少一行。
+    expect(progress).toEqual([
+      { stage: "barrier", probes: 0, probeTimeouts: 0, since: 100 },
+      { stage: "barrier", probes: 1, probeTimeouts: 1, since: 100 },
+      { stage: "barrier", probes: 2, probeTimeouts: 2, since: 100 },
+      { stage: "list", probes: 3, probeTimeouts: 2, since: 100 },
+      "model.list sent",
+    ])
+  })
+
+  test("AC3 首轮屏障一直不答时 list() 不落定,但每次到期都报出来", async () => {
+    const progress: Array<{ probeTimeouts: number }> = []
+    const controller = new AbortController()
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: (_input: unknown, options?: { signal?: AbortSignal }) =>
+                new Promise((resolve) => {
+                  options?.signal?.addEventListener("abort", () => resolve({ error: options.signal?.reason }), {
+                    once: true,
+                  })
+                }),
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      { probeTimeoutMs: 5, wait: () => new Promise<void>(() => {}), onProgress: (p) => progress.push(p) },
+    )
+    const listing = contract.list("/never-answers", controller.signal)
+    listing.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    expect(progress.length).toBeGreaterThanOrEqual(4)
+    expect(progress.map((p) => p.probeTimeouts)).toEqual(progress.map((_, index) => index))
+    controller.abort(new Error("done"))
+    await expect(listing).rejects.toBeInstanceOf(ModelContractError)
+  })
+
+  test("AC3 失败错误带阶段与类别:屏障 HTTP / 屏障网络 / 列表 HTTP / 列表没答", async () => {
+    const failing = (provider: () => unknown, list: () => unknown = async () => ({ data: { data: [model] } })) =>
+      createModelContract(() => ({ v2: { provider: { get: provider }, model: { list } } }) as never, {
+        probeTimeoutMs: 5,
+        wait: () => new Promise<void>(() => {}),
+      })
+    const ready = async () => ({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } })
+
+    await expect(
+      failing(async () => ({ error: { _tag: "InternalError" }, response: { status: 503 } })).list("/a"),
+    ).rejects.toMatchObject({ operation: "list", stage: "barrier", kind: "http" })
+    await expect(
+      failing(async () => ({ error: new TypeError("fetch failed"), response: undefined })).list("/b"),
+    ).rejects.toMatchObject({ stage: "barrier", kind: "network" })
+    await expect(
+      failing(ready, async () => ({ error: { _tag: "InternalError" }, response: { status: 500 } })).list("/c"),
+    ).rejects.toMatchObject({ stage: "list", kind: "http" })
+    await expect(
+      failing(ready, async () => {
+        throw new DOMException("signal timed out", "TimeoutError")
+      }).list("/d"),
+    ).rejects.toMatchObject({ stage: "list", kind: "no-answer" })
+    await expect(
+      failing(ready, async () => {
+        throw new TypeError("fetch failed")
+      }).list("/e"),
+    ).rejects.toMatchObject({ stage: "list", kind: "network" })
+  })
+})
