@@ -38,6 +38,14 @@
 #      `prepare` 每次 install 都改它,而在 worktree 里改的是所有 worktree 共用的那份)。
 #      本条先把值**设成 `.githooks`** 再跑 —— 不设的话,机器上本来就漂成 `.husky/_` 时
 #      「前后相等」会**恒真**,断言粒度比缺陷粗一格。
+#      另一臂判**install 期间**:「跑完没变」挡不住事后还原之前的窗口 —— 窗口里并发 lane 的
+#      门读到 `.husky/_` 就假红。判据是**本探针私有**的:husky 9.1.7 先 `git config core.hooksPath`
+#      成功、**然后**才在 install 的 cwd 建 `.husky/_/`(node_modules/husky/index.js)⇒ 这个目录
+#      在 install 之后出现 ⟺ husky 写过共享配置。PATH 前面垫一个 bun 包装,逐次记录;每次都必须
+#      「未写」,且至少一次(否则本臂没测到东西)。摘掉 bootstrap 里的 `HUSKY=0` ⇒ 这一臂转红。
+#      **不**直接采样共享配置:它是所有 lane 共用的,别的 lane 的 install 会写进我们的样本 ——
+#      实测 2026-10-30 第二轮门,我们的 install 带着 HUSKY=0,样本里仍出现并发 lane 写的 `.husky/_`,
+#      直采版本身就成了一个新的假红来源。
 #  [4/6] 幂等:对**已存在且已装好**的 worktree 重跑必须 exit 0,**且重跑之后 typecheck 仍绿**
 #      —— 只断重跑的退出码会被「重跑时把树删了再报 0」满足。
 #  [5/6] **非网络原因的失败必须仍然拦住**(owner 点名要补的那条)。让 `bun install` 真的失败
@@ -320,6 +328,24 @@ COPY_PROBE="$(mktemp -d)"
 # 强制 clone 失败,正向必须真走普通复制;不替换 Electron 的文件格式。
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> "$0.calls"\n[ "$1" != -Rc ] || exit 47\nexec /bin/cp "$@"\n' > "$COPY_PROBE/cp"
 chmod +x "$COPY_PROBE/cp"
+# [3/6]「install 期间」臂:包住真 bun,每次 `bun install` 记一行 —— install 的 cwd 里 `.husky/_`
+# 之前就在(测不了)/ 之后出现(husky 写过共享 core.hooksPath)/ 始终没有(没写)。证据在本探针
+# 自己的树里,不受并发 lane 影响。只垫在会跑 install 的那几次调用的 PATH 前面,其余步骤照旧用真 bun。
+# 找不到真 bun ⇒ 不建包装 ⇒ 零记录 ⇒ [3/6] 响亮地红,不静默跳过。
+HOOKS_SAMPLES="$COPY_PROBE/install-husky.samples"
+REAL_BUN="$(command -v bun 2>/dev/null || true)"
+if [ -n "$REAL_BUN" ]; then
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'if [ "${1:-}" != install ]; then exec '"$(printf '%q' "$REAL_BUN")"' "$@"; fi'
+    echo 'pre=absent; [ -e .husky/_ ] && pre=present'
+    printf '%q "$@"; rc=$?\n' "$REAL_BUN"
+    echo 'if [ "$pre" = present ]; then v=unmeasurable; elif [ -e .husky/_ ]; then v=husky-wrote; else v=untouched; fi'
+    printf 'printf "%%s %%s\\n" "$v" "$PWD" >> %q\n' "$HOOKS_SAMPLES"
+    echo 'exit "$rc"'
+  } > "$COPY_PROBE/bun"
+  chmod +x "$COPY_PROBE/bun"
+fi
 fence_tests_in() {
   [ "$(uname -s)" = Darwin ] && [ -f "$SELF_ROOT/packages/ui-mac/scripts/build-fence-addon.ts" ] || return 0
   local f rc=0
@@ -330,6 +356,10 @@ fence_tests_in() {
 }
 
 echo "  · 探针 id=$ID,base=$BASE_SHA${NESTED:+ ,nested=$NESTED}"
+
+# ── [3/6] 的前置:把共享 core.hooksPath 设成一个**确定**的值,再跑任何 install ──────────
+# 放在 [1/6] 之前:[1/6] 的围栏反向探针也跑一次 bare `bun install`,它的样本同样要判。
+git -C "$MAIN" config --local core.hooksPath .githooks 2>/dev/null || true
 
 # ── [1/6] 反向:没 bootstrap 的全新 worktree 必须仍然假红 ──────────────────────────
 echo "  · [1/6] 反向:未 bootstrap 的全新 worktree 必须产生模块解析错误"
@@ -351,7 +381,8 @@ if ! grep -aq "Cannot find module 'bun:test'" <<<"$neg_out"; then
   red "未 bootstrap 的 worktree 没有出现票面点名的 \`Cannot find module 'bun:test'\`"
 fi
 if [ "$(uname -s)" = Darwin ] && [ -f "$SELF_ROOT/packages/ui-mac/scripts/build-fence-addon.ts" ]; then
-  if ! run_owned bash -c 'cd "$1" && bun install' bash "$MAIN/.worktrees/$NEG" >/dev/null 2>&1; then
+  # HUSKY=0:这次 install 同样跑在共享 .git 上,husky 写的是所有 lane 共用的 core.hooksPath。
+  if ! run_owned env "PATH=$COPY_PROBE:$PATH" HUSKY=0 bash -c 'cd "$1" && bun install' bash "$MAIN/.worktrees/$NEG" >/dev/null 2>&1; then
     note_bootstrap_failure "建不出 bare bun install 的围栏反向探针"
   else
     rm -rf "$MAIN/.worktrees/$NEG/packages/ui-mac/node_modules/electron/dist" \
@@ -370,9 +401,6 @@ if [ "$(uname -s)" = Darwin ] && [ -f "$SELF_ROOT/packages/ui-mac/scripts/build-
   fi
 fi
 git -C "$MAIN" worktree remove --force "$MAIN/.worktrees/$NEG" 2>/dev/null || true
-
-# ── [3/6] 的前置:把共享 core.hooksPath 设成一个**确定**的值,再跑 [2/6] ──────────────
-git -C "$MAIN" config --local core.hooksPath .githooks 2>/dev/null || true
 
 # ── [2/6] 正向:bootstrap 一步建出来的 worktree 必须能给出可信 typecheck ──────────────
 echo "  · [2/6] 正向:bootstrap 建出的 worktree 必须 typecheck 干净"
@@ -408,6 +436,15 @@ if [ "$hooks_now" != ".githooks" ]; then
   red "bootstrap 改掉了**共享** .git/config 的 core.hooksPath:.githooks → ${hooks_now:-(unset)}(husky 的 prepare);下一个人的 git push 会撞上上游那份恒红钩子,然后 --no-verify"
 else
   echo "    ✓ core.hooksPath 仍是 .githooks"
+fi
+hooks_samples="$(cat "$HOOKS_SAMPLES" 2>/dev/null || true)"
+hooks_bad="$(grep -avc '^untouched ' <<<"$hooks_samples" 2>/dev/null || true)"
+if [ -z "$hooks_samples" ]; then
+  red "install 期间一次记录都没有(找不到真 bun,或包装没被调用)—— 本臂什么都没测,不许读成绿"
+elif [ "${hooks_bad:-0}" -ne 0 ]; then
+  red "bun install 期间 husky 写了共享 core.hooksPath(或测不了):$(grep -av '^untouched ' <<<"$hooks_samples" | tr '\n' ';')—— 事后还原之前的窗口里,并发 lane 的门读到 .husky/_ 就假红;install 要带 HUSKY=0"
+else
+  echo "    ✓ $(grep -ac . <<<"$hooks_samples") 次 bun install 都没让 husky 写共享 core.hooksPath(探针树里没出现 .husky/_)"
 fi
 
 # ── [4/6] 幂等:对已装好的 worktree 重跑,不破坏它 ──────────────────────────────────
