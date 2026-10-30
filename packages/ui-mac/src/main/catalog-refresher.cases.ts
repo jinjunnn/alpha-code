@@ -97,7 +97,7 @@ const realFetch = globalThis.fetch
 globalThis.fetch = (async (url: string, init?: RequestInit) => {
   const headers = (init?.headers ?? {}) as Record<string, string>
   const { promise, resolve } = Promise.withResolvers<Response | Error>()
-  const bucket = new URL(String(url)).pathname === "/v1/byok-catalog" ? byokRequests : requests
+  const bucket = String(url).endsWith("/v1/byok-catalog") ? byokRequests : requests
   bucket.push({ bearer: headers.authorization ?? null, headers, settle: resolve })
   const outcome = await promise
   if (outcome instanceof Error) throw outcome

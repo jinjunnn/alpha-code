@@ -39,8 +39,10 @@ mock.module("./logging", () => ({
 }))
 const { clearByokKeys, getByokKey, initByokKeys, injectByokKeysIntoEnv } = await import("./alpha-byok-keys")
 const { secretFilePath, secretFileRef, syncSecretFiles } = await import("./alpha-secret-files")
-const { pinAppliedCatalog } = await import("./alpha-live-allowlist")
-const { buildAlphaModelConfig } = await import("./alpha-models")
+const { pinAppliedCatalog, writeByokCatalogLkg } = await import("./alpha-live-allowlist")
+const { buildAlphaModelConfig, getModelCatalog } = await import("./alpha-models")
+const { buildModelPickerRows } = await import("../renderer/alpha-ui/model-picker-core")
+const bundled = (await import("./alpha-models.json")).default.byokCatalog
 
 const repoRoot = path.resolve(import.meta.dir, "../../../..")
 const engineEntry = path.resolve(repoRoot, "packages/opencode/src/index.ts")
@@ -140,12 +142,55 @@ test("`#1556` AC5:迁移前已存的 BYOK Key → 物化为密钥文件、注入
   expect(JSON.stringify(config)).not.toContain(STORED_KEY) // 配置里只有 {file:} 引用(A6)
 
   // ③ 真引擎发一次请求:只把这个 provider 的端点改指本地桩,鉴权头必须是金库里那把 Key。
+  const { rc, log, completions } = await engineRequest(config, "deepseek-v4-pro")
+  expect(rc, log).toBe(0)
+  expect(completions.length, log).toBeGreaterThan(0)
+  for (const entry of completions) expect(entry.authorization).toBe(`Bearer ${STORED_KEY}`)
+}, 120_000)
+
+// `#1556` AC7 的本地代理(正式证据是共享 RC 回归 T23 格「发布一次 BYOK 目录变化 → 同一打包客户端拉取 → picker 出现 →
+// 真实发送」,要等平台部署 V3 后在打包客户端上做):远程目录在已有 provider 上新增一个模型,经采纳落成 LKG、下一次 fork
+// 钉住之后,它出现在 picker 的可选行里,真引擎用这把已存的 Key 经它发出请求。采纳规则本身在 byok-catalog-adopt.cases.ts。
+test("`#1556` AC7(本地代理):远程目录新增的模型 → 钉住 → picker 可选 → 真引擎经它带 Key 发出请求", async () => {
+  const added = "deepseek-v5-preview"
+  const doc = structuredClone(bundled)
+  doc.catalog_version += 1
+  doc.providers.find((provider) => provider.id === "deepseek")!.models.push({ id: added, name: "DeepSeek V5 Preview", image_input: false } as never)
+  expect(writeByokCatalogLkg(userData, doc as never)).toBe(true)
+  syncSecretFiles(userData, process.env, {})
+  pinAppliedCatalog(userData, 3)
+
+  const catalog = getModelCatalog(userData)
+  const row = buildModelPickerRows({
+    catalog: { ...catalog, liveSync: { status: "static" }, pricingBasisModelId: null, applied: { platformFetchedAt: null, byokVersion: doc.catalog_version }, downloaded: { platformFetchedAt: null, byokVersion: doc.catalog_version } },
+    models: [],
+    listState: "ready",
+    keyStatusState: "ready",
+    keyStatus: { deepseek: { configured: true, source: "keychain" } },
+    accountState: "out",
+    sessionScoped: false,
+    query: "",
+  }).find((candidate) => candidate.key === `deepseek:${added}`)
+  expect(row).toMatchObject({ availability: "available", model: { id: added, providerID: "deepseek-byok", name: "DeepSeek V5 Preview" } })
+
+  const config = buildAlphaModelConfig(userData)!
+  expect(Object.keys((config.provider["deepseek-byok"] as { models: Record<string, unknown> }).models)).toContain(added)
+  const before = seen.length
+  const { rc, log, completions } = await engineRequest(config, added, before)
+  expect(rc, log).toBe(0)
+  expect(completions.length, log).toBeGreaterThan(0)
+  for (const entry of completions) expect(entry.authorization).toBe(`Bearer ${STORED_KEY}`)
+}, 120_000)
+
+/** 一次真引擎 `run`(alpha-reasoning-badge-parity.test.ts 同款隔离):deepseek-byok 的端点改指本地桩,返回桩收到的补全请求。 */
+async function engineRequest(config: NonNullable<ReturnType<typeof buildAlphaModelConfig>>, model: string, from = 0) {
+  const node = config.provider["deepseek-byok"] as { options: { baseURL: string } }
   node.options.baseURL = `http://127.0.0.1:${server!.port}/byok/v1`
-  const dir = path.join(root, "run")
+  const dir = fs.mkdtempSync(path.join(root, "run-"))
   for (const sub of ["home", "xdg-config", "xdg-data", "xdg-cache", "xdg-state", "proj"]) fs.mkdirSync(path.join(dir, sub), { recursive: true })
   const configPath = path.join(dir, "config.json")
   fs.writeFileSync(configPath, JSON.stringify(config))
-  const proc = Bun.spawn([BUN_EXEC, "run", engineEntry, "run", "--print-logs", "--dir", path.join(dir, "proj"), "--model", "deepseek-byok/deepseek-v4-pro", "hi"], {
+  const proc = Bun.spawn([BUN_EXEC, "run", engineEntry, "run", "--print-logs", "--dir", path.join(dir, "proj"), "--model", `deepseek-byok/${model}`, "hi"], {
     cwd: repoRoot,
     stdin: "ignore",
     stdout: "pipe",
@@ -172,9 +217,9 @@ test("`#1556` AC5:迁移前已存的 BYOK Key → 物化为密钥文件、注入
   const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
   const rc = await proc.exited
   clearTimeout(killer)
-  const log = `${stdout}\n${stderr}`.slice(-1500)
-  expect(rc, log).toBe(0)
-  const completions = seen.filter((entry) => entry.path.endsWith("/chat/completions"))
-  expect(completions.length, log).toBeGreaterThan(0)
-  for (const entry of completions) expect(entry.authorization).toBe(`Bearer ${STORED_KEY}`)
-}, 120_000)
+  return {
+    rc,
+    log: `${stdout}\n${stderr}`.slice(-1500),
+    completions: seen.slice(from).filter((entry) => entry.path.endsWith("/chat/completions")),
+  }
+}
