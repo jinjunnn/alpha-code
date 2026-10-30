@@ -1,5 +1,6 @@
-// alpha model-catalog IPC (main process). Exposes the config-driven catalog (main/alpha-models.json,
-// via alpha-models.ts) to the renderer's model picker. Read-only; no secrets.
+// alpha model-catalog IPC (main process). Exposes the applied model catalog (the platform snapshot and the
+// BYOK catalog pinned before the current fork, projected by alpha-models.ts; `#1556`) to the renderer's model
+// picker. Read-only; no secrets.
 //
 // REQ-001:catalog 改为 effective 视图(内置 snapshot 按 B 网关 edition 白名单收窄 + liveSync 来源
 // 标注)。`#1555` 起平台段读 fork 前钉住的「已应用目录」,与 sidecar 的 buildAlphaModelConfig 同一份;

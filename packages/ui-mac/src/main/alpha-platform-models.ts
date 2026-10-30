@@ -33,6 +33,7 @@ import type { CloudResult, PlatformLiveModel } from "../preload/types"
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { getModelCatalog } from "./alpha-models"
 import {
+  type CatalogSnapshot,
   downloadedByokCatalog,
   isTrustedPair,
   readAppliedByokCatalog,
@@ -173,6 +174,15 @@ export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformM
   return r
 }
 
+/** 两份平台快照的内容是否相同(edition / basis / 逐行模型,不含刷新时刻)。两份都出自同一个写入映射,键序一致。 */
+function samePlatformContent(a: CatalogSnapshot, b: CatalogSnapshot): boolean {
+  return (
+    a.edition === b.edition &&
+    a.pricingBasisModelId === b.pricingBasisModelId &&
+    JSON.stringify(a.models) === JSON.stringify(b.models)
+  )
+}
+
 /** picker 的目录视图(models-catalog IPC):两段都读 fork 前钉住的已应用目录、走与 sidecar 同一份投影
  *  (getModelCatalog)。平台段:已应用快照缺失/无效 ⇒ 空且无价格(static,picker 标「平台模型清单尚未获取」,`#1556` AC1);
  *  BYOK 段:已应用 BYOK 目录(#595:平台不得远程干预,不按账户/edition 收窄)。刷新成功只改「已下载」,
@@ -180,8 +190,12 @@ export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformM
  *  本函数不引用任何拉取的失败状态 —— 网络失败与契约不兼容都只损失新鲜度,绝不阻断目录返回。 */
 export function getEffectiveCatalog(userDataPath: string): EffectiveCatalog {
   const snapshot = readAppliedPlatformSnapshot(userDataPath)
-  // 「已下载」只取版本字段,不拿它拼目录(方案 I2)。
-  const downloaded = readCatalogSnapshot(userDataPath)
+  // 「已下载」只取版本字段,不拿它拼目录(方案 I2)。syncLiveAllowlist 每次成功都写新的 fetchedAt(内容相同也写),
+  // 所以「有没有新清单」按**内容**判:与已应用那份内容相同就报同一个版本,否则开机刷新 / 30 分钟刷新之后 picker
+  // 底部的「将在引擎下次启动后生效」会常驻(`#1556` 审计 r1)。BYOK 那份的版本是 catalog_version,只在采纳更高版本时变,
+  // 本身就是内容标识。
+  const lkg = readCatalogSnapshot(userDataPath)
+  const downloaded = lkg && snapshot && samePlatformContent(lkg, snapshot) ? snapshot : lkg
   return {
     ...getModelCatalog(userDataPath),
     pricingBasisModelId: snapshot?.pricingBasisModelId ?? null,

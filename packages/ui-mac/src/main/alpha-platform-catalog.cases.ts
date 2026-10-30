@@ -363,6 +363,33 @@ describe("`#1555` AC5:picker 与引擎读同一份已应用目录", () => {
   })
 })
 
+// ── REQ-237 `#1556` AC9(审计 r1 Major):「有新清单」按**内容**判,不按刷新时刻判。syncLiveAllowlist 每次成功都写新的
+// fetchedAt(内容相同也写),开机刷新、30 分钟定时刷新之后时刻必然与钉住时不同 —— 按时刻判,picker 底部
+// 「模型清单已更新,将在引擎下次启动后生效」就几乎常驻,重启也消不掉。内容相同 ⇒ 已下载 = 已应用;内容不同 ⇒ 不同。
+describe("`#1556` AC9:平台清单只有内容变了才算「已下载 ≠ 已应用」", () => {
+  test("刷新回来的内容与钉住时相同、仅时刻不同 ⇒ 两字段相同;内容不同 ⇒ 不同", async () => {
+    stubFetch(catalogV3())
+    expect("error" in (await syncLiveAllowlist(userData))).toBe(false)
+    pinAppliedCatalog(userData, 1)
+    const pinnedAt = getEffectiveCatalog(userData).applied.platformFetchedAt
+
+    await Bun.sleep(5) // 让 fetchedAt 的 ISO 时间戳一定前进
+    stubFetch(catalogV3())
+    expect("error" in (await syncLiveAllowlist(userData))).toBe(false)
+    expect(JSON.parse(readFileSync(liveAllowlistPath(userData), "utf8")).fetchedAt).not.toBe(pinnedAt) // 前提:时刻真的变了
+    const same = getEffectiveCatalog(userData)
+    expect(same.downloaded).toEqual(same.applied)
+
+    const repriced = catalogV3()
+    repriced.data[0].pricing_multiplier = { input: 2, output: 2 }
+    stubFetch(repriced)
+    expect("error" in (await syncLiveAllowlist(userData))).toBe(false)
+    const changed = getEffectiveCatalog(userData)
+    expect(changed.downloaded.platformFetchedAt).not.toBe(changed.applied.platformFetchedAt)
+    expect(changed.applied.platformFetchedAt).toBe(pinnedAt)
+  })
+})
+
 // ── REQ-237 `#1556` AC9:BYOK 那份同样分「已下载」与「已应用」—— 下载了新版本之后 picker 视图两字段不同,
 // 下一次 fork 钉住后相同。picker 据此显示「模型清单已更新,将在引擎下次启动后生效」(组件判据在
 // test-component/alpha-composer-model.cases.ts)。把 getEffectiveCatalog 的 downloaded.byokVersion 改回读已应用,本条转红。

@@ -12,8 +12,9 @@
 // 补 DeepSeek 和智谱,下一个供应商照样 403;而「下一个供应商」恰恰是这条路的卖点。手写清单与缺陷同形。
 // 放行集合从**引擎真正会去连的那个值**派生 —— 有效配置里 `provider.<id>.options.baseURL`(回退字段
 // `api`;alpha-config-injection.ts:457-462 的 v2 桥读的就是这两个,判据与顺序也逐字照它)。
-//   谁写这个值:目录 BYOK 节点 = alpha-models.json 的 `baseURL`(编译进包的常量),且**只在密钥文件在场时**
-//               才注入(alpha-models.ts:68-99 —— 「用户配置过这一家」在这里就是一个文件在不在的问题)。
+//   谁写这个值:目录 BYOK 节点 = App 内置适配器表 byok-adapters.ts 的 `baseURL`(编译进包的常量;远程 BYOK 目录
+//               改不了它,`#1556`),且**只在密钥文件在场时**才注入(alpha-models.ts buildAlphaModelConfig 第 (1) 段 ——
+//               「用户配置过这一家」在这里就是一个文件在不在的问题)。
 //   谁读这个值:引擎(AI SDK)照它发请求 ⇒ 策略代理看到的那条 CONNECT authority 就是它的 `host:port`。
 // 同一个值两边读,结构上不可能分叉 —— 这是「不再手写清单」的全部意义,也是评审该盯的那一点。
 //
