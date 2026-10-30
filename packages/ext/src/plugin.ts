@@ -13,6 +13,7 @@ import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
 import { platformOutputCap } from "./platform-output-cap"
+import { platformCredentialHeader } from "./platform-credential-header"
 import { byokOutputCap } from "./byok-output-cap"
 // REQ-157 `#1284`:alpha 送进模型上下文的每段字都在 context-injection.ts 登记并声明上限。import 本身就是
 // 一道闸 —— 任何片段超限,登记簿在模块装载时抛出,ext 整个装不上(上游记 failed to load plugin),
@@ -146,6 +147,15 @@ export const AlphaExt: Plugin = async (input) => {
         current: output.maxOutputTokens,
       })
       if (byok.raise) output.maxOutputTokens = byok.value
+    },
+    // REQ-236 `#1562`:平台代理节点的凭据每次请求现读(platform-credential-header.ts),续期热应用不必重启引擎;
+    // 读不到就抛 LoadAPIKeyError,请求在发出前以认证错误失败,不回落任何旧值。
+    "chat.headers": async (hookInput, output) => {
+      const authorization = platformCredentialHeader({
+        providerBaseURL: hookInput.provider.options?.baseURL,
+        env: process.env,
+      })
+      if (authorization) output.headers.authorization = authorization
     },
     // REQ-060 项目级扩展物 `.code-puppy`-only:config hook 按 instance 读 `<directory>/.code-puppy/alpha.jsonc`
     // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生
