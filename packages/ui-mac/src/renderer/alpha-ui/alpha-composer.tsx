@@ -63,8 +63,10 @@ import {
   permLocksAgent,
   failComposerModelProjection,
   invalidateComposerModelProjection,
+  isRememberedExplicit,
   releaseComposerAgentScope,
   releaseComposerPermScope,
+  rememberExplicitModel,
   resetComposerModelProjection,
   resolveComposerModelProjection,
   routeSlash,
@@ -78,6 +80,7 @@ import {
   tierAgent,
   v1CommandModelFields,
   v1PromptModelFields,
+  type ComposerModel,
   type PermMode,
   type SlashCommandSource,
 } from "./composer-state"
@@ -1090,6 +1093,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       }
     }
     setComposerModel(model, true) // #1560:picker / 档位芯片是唯一的显式写入口
+    // #1560 r1:按会话记住(首页无会话,发出后由 seed 交给新会话)。
+    if (composerScope) rememberExplicitModel(composerScope, modelRefOf(model))
     clearSuspendedModel()
   }
 
@@ -1181,11 +1186,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       setModelChainState("error")
       return
     }
+    // #1560 r1:会话模型若就是本次运行里用户在这个会话显式选过的那个,投影后仍算显式。
+    const projectSession = (next: ComposerModel | null) =>
+      resolveComposerModelProjection(sessionID!, next, isRememberedExplicit(composerScope, next))
     if (sessionID && currentRead?.status === "ready") {
-      resolveComposerModelProjection(
-        sessionID,
-        currentRead.data ? composerModelFromRef(currentRead.data, null) : null,
-      )
+      projectSession(currentRead.data ? composerModelFromRef(currentRead.data, null) : null)
     }
 
     const cat = await catalogRead
@@ -1195,10 +1200,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       return
     }
     if (sessionID && currentRead?.status === "ready") {
-      resolveComposerModelProjection(
-        sessionID,
-        currentRead.data ? composerModelFromRef(currentRead.data, cat.data) : null,
-      )
+      projectSession(currentRead.data ? composerModelFromRef(currentRead.data, cat.data) : null)
     }
 
     const [auth, keys] = await Promise.all([authRead, keysRead])
@@ -1650,6 +1652,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         if (seedKey) {
           seedComposerAgentScope(seedKey, submittedAgent)
           seedComposerPermScope(seedKey, submittedPerm)
+          // #1560 r1:首页的显式选择就是新会话的显式选择 —— 少了它,第二条消息又让推荐模型赢回来。
+          if (submittedExplicitModel) rememberExplicitModel(seedKey, submittedExplicitModel)
         }
         setText("")
         setMentions([])
