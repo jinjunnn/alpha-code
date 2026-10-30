@@ -47,6 +47,26 @@ export function isGovernedMcpEntry(
 }
 
 /**
+ * alpha 注入面产出的 `{file:<abs path>}` 引用(ui-mac `secretFileRef`)在 alpha 代码里的**唯一**文法;第 1 组是路径。
+ * 引擎自己的配置加载器(上游 `config/variable.ts`)另有一份,那是上游的。不带 `g`:`test` / `exec` 无 lastIndex 状态。
+ */
+export const FILE_REF = /\{file:([^}]+)\}/
+
+/**
+ * 把值里每个 `{file:}` 引用换成文件内容(trim)—— 引擎 `ConfigVariable.substitute` 在配置文本阶段做同一件事,
+ * 而 ext 的 config 钩子拿到的是已解析对象、钩子阶段新装进去的定义不会再被替换,所以 ext 自己解析(读不到就抛,
+ * 由调用方 fail-closed)。递归处理数组与对象。
+ */
+export function resolveFileRefs(value: unknown, readFile: (path: string) => string): unknown {
+  if (typeof value === "string")
+    return value.replace(new RegExp(FILE_REF, "g"), (_, path: string) => readFile(path).trim())
+  if (Array.isArray(value)) return value.map((item) => resolveFileRefs(item, readFile))
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveFileRefs(item, readFile)]))
+  return value
+}
+
+/**
  * REQ-236 §2.1-5(`#1562`):治理云 MCP 条目每次请求的凭据,从 `ALPHA_CLOUD_MCP_DEF` 定义里
  * `headers.Authorization` 的 `{file:}` 引用**现读**(权限方案冻结接口),不读已装载条目里的字面量 ——
  * 那个字面量是引擎配置加载器(生产分支)或 ext `installCloudMcp`(kill-switch 分支)在装载时替换进去的,
@@ -87,8 +107,6 @@ function governedAuthorizationTemplate(env: Record<string, string | undefined>):
   }
 }
 
-const FILE_REF = /\{file:([^}]+)\}/
-
 async function resolveAuthorization(template: string, readFile: (path: string) => Promise<string>) {
   const match = FILE_REF.exec(template)
   if (!match) return undefined
@@ -112,8 +130,6 @@ function canonicalJson(value: unknown): string {
   if (encoded === undefined) throw new Error("MCP evidence contains a non-JSON value")
   return encoded
 }
-
-const FILE_REF = /\{file:[^}]+\}/
 
 /**
  * #1576:the engine resolves `{file:}` references while it parses config text (production branch) and

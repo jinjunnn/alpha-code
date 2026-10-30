@@ -16,7 +16,7 @@
 
 import { readFileSync } from "node:fs"
 import { LoadAPIKeyError } from "@ai-sdk/provider"
-import { resolveFileRefs } from "./cloud-websearch-kill"
+import { FILE_REF } from "@opencode-ai/plugin/alpha-cloud-authority"
 import { isPlatformProvider } from "./platform-output-cap"
 
 export const PLATFORM_AUTH_REF_ENV = "ALPHA_PLATFORM_AUTH_REF"
@@ -38,10 +38,12 @@ export function platformCredentialHeader(input: {
   return `Bearer ${token}`
 }
 
+/** 引用必须整串就是一个 `{file:}`(文法取 alpha 唯一的那份 FILE_REF);别的形状(含字面令牌)一律当读不到。 */
 function readCredential(ref: string | undefined, readFile: (path: string) => string): string | undefined {
-  if (!ref || !/^\{file:[^}]+\}$/.test(ref)) return undefined
+  const match = ref ? FILE_REF.exec(ref) : null
+  if (!match || match[0] !== ref) return undefined
   try {
-    return String(resolveFileRefs(ref, readFile))
+    return readFile(match[1]!).trim()
   } catch {
     return undefined
   }
