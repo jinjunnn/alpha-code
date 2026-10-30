@@ -45,7 +45,7 @@ function harness(input: {
   servers: string[]
   permission?: PermissionV1.Rule[]
   trigger?: Plugin.Interface["trigger"]
-  /** #1129:E4 identity 闸经 gateToolExecution 走 Permission.Service(不再经 ctx.ask)。 */
+  /** #1129:E4 identity 闸经 AlphaToolPolicyGate(decide → 钩子 → confirm)走 Permission.Service(不再经 ctx.ask)。 */
   ask?: (req: { permission: string }) => Effect.Effect<void>
 }) {
   const mcpTools = Object.fromEntries(
@@ -403,7 +403,7 @@ describe("code mode execute", () => {
   })
 
   test("asks permission before each child tool call", async () => {
-    // #1129:identity ask 经 Permission 引擎(gateToolExecution),探头随之从 ctx.ask 移过去。
+    // #1129:identity ask 经 Permission 引擎(AlphaToolPolicyGate.confirm),探头随之从 ctx.ask 移过去。
     const asked: string[] = []
     const ok = () => ({ content: [{ type: "text", text: "ok" }] })
     const tool = await build({ a_tool: mcpTool("tool", ok), b_tool: mcpTool("tool", ok) }, undefined, undefined, undefined, (req) =>

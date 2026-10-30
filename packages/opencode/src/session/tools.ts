@@ -77,16 +77,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const flags = yield* RuntimeFlags.Service
   const aliases = new ToolAliasLedger()
 
-  // #1129 / #724 §6(E1/E2/E3)—— 所有来源共用的执行闸,包在公共 register() 上:
-  // identity 三态早于 `tool.execute.before` 钩子与实现本体(闸在 wrapper、钩子在被包的
-  // execute 内,先后是结构性的,不靠纪律)。两条轴在 alpha-tool-policy-gate 里按 §4 合成:
-  // ruleset 轴(config/agent/session 的 identity 规则,#1121/#1135)deny 折进 cap、
-  // ask/allow 原地生效;**策略文档轴**(#1128 的 resolve:managed/entitlement cap →
-  // 用户 selector(binding guard)→ 四类默认)在**每次调用时重读** —— Settings/managed
-  // 在模型拿到旧 catalog 后收紧,缓存的工具对象也执行不了(§6 executor 重读)。
-  // deny ⇒ 具名响亮拒绝、零 hook/零副作用;ask ⇒ 同一次 Permission.ask 挂起等批准
-  // (once/always 会话语义在 permission/index.ts);allow ⇒ 不加 identity prompt,
-  // 工具自身的 read/edit/bash/external_directory 等 ability 闸原样留在 execute 内部。
+  // #1129 / #724 §6(E1/E2/E3)—— 所有来源共用的执行闸,包在公共 register() 上。
+  // REQ-236 C2(#1574,方案 §2.5):wrapper 里依次是 decide → `tool.execute.before` 钩子 → confirm →
+  // 实现本体,五个分支共用,次序是结构性的(各分支的实现体里不再触发 before 钩子):
+  // · decide:两条轴在 alpha-tool-policy-gate 里按 §4 合成 —— ruleset 轴(config/agent/session 的
+  //   identity 规则,#1121/#1135)deny 折进 cap;**策略文档轴**(managed/entitlement cap → 用户
+  //   selector(binding guard)→ 四类默认)在**每次调用时重读**。deny ⇒ 具名响亮拒绝、零 hook/零副作用。
+  // · 钩子可原地改 args;confirm 按**钩子之后**的 args 问(一次调用恰好一问),批准返回后再 decide 一次 ——
+  //   挂起期间停用或服务重绑 ⇒ 具名拒绝,实现不运行。allow ⇒ 不加 identity prompt,
+  //   工具自身的 read/edit/bash/external_directory 等 ability 闸原样留在 execute 内部。
   // 不放行任何缺 identity 的工具 —— display.identity 是 register 的必填参。
   //
   // 当前 binding(§5)也在调用时重新派生:mcp = 生效配置 entry 的去秘密 digest
@@ -118,16 +117,27 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute: (args, options) =>
         run
           .promise(
-            AlphaToolPolicyGate.gateToolExecution({
-              policy: toolPolicy,
-              permission,
-              subject: currentSubject(display),
-              ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
-              sessionID: input.session.id,
-              tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-              metadata: {},
-              // #1285:载荷供数 —— 模型给这个工具的原始参数,此前这一问上没有它。
-              args,
+            Effect.gen(function* () {
+              const gate = {
+                policy: toolPolicy,
+                subject: currentSubject(display),
+                ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+              }
+              const decision = yield* AlphaToolPolicyGate.decide(gate)
+              yield* plugin.trigger(
+                "tool.execute.before",
+                { tool: display.technicalId, sessionID: input.session.id, callID: options.toolCallId },
+                { args },
+              )
+              yield* AlphaToolPolicyGate.confirm(decision, {
+                ...gate,
+                permission,
+                sessionID: input.session.id,
+                tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+                metadata: {},
+                // #1285 载荷供数;钩子原地改过的就是实现将收到的这一份。
+                args,
+              })
             }).pipe(Effect.orDie),
           )
           .then(() => execute.call(value, args, options)),
@@ -187,11 +197,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args as Record<string, unknown>, options)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
-              { args },
-            )
             const result = yield* item.execute(args, ctx)
             const output = {
               ...result,
@@ -262,11 +267,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const permissionPatterns = parsed.server
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.list, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
             yield* ctx.ask({
               permission: "read",
               metadata: parsed.server ? { server: parsed.server } : {},
@@ -351,11 +351,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const permissionPatterns = parsed.server
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.listTemplates, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
             yield* ctx.ask({
               permission: "read",
               metadata: parsed.server ? { server: parsed.server } : {},
@@ -437,11 +432,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             if (!client.getServerCapabilities()?.resources) {
               throw new Error(`MCP server "${parsed.server}" does not support resources`)
             }
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.read, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
             yield* ctx.ask({
               permission: "read",
               metadata: { server: parsed.server, uri: parsed.uri },
@@ -534,14 +524,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       run.promise(
         Effect.gen(function* () {
           const ctx = context(args, opts)
-          yield* plugin.trigger(
-            "tool.execute.before",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
-            { args },
-          )
-          // #1129 / #724 §6 E3:这里原有一条 hook 之后的 canonical identity ask。它已并入
-          // register() 的 identityGate(在 hook **之前**问)—— 留着会把同一次调用问两遍,
-          // `once` 放行第一问后第二问再挂起,用户一次批准走不完一次调用。
+          // `tool.execute.before` 钩子与 identity 那一问都在 register() 的 wrapper 里(钩子在前、问在后,
+          // #1574);这里不再问 —— 留一条会把同一次调用问两遍,`once` 放行第一问后第二问再挂起。
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             return yield* Effect.promise(() => execute(args, opts))
           }).pipe(

@@ -14,16 +14,23 @@
 //     deny  ⇒ 具名响亮拒绝(`PermissionV1.DeniedError`,载明 canonical 与 reason),
 //             零 hook / 零副作用;session grant 结构性接触不到它。
 //     ask   ⇒ 在这一次 `Permission.ask` 的 ruleset 末尾追加一条 exact-canonical 的 ask
-//             (findLast 语义下压过默认 allow 底)⇒ 挂起等批准;once/always 的会话语义
-//             原样是 #1128 的 grants。ruleset 轴自己的 ask 同样在这一问里生效 ——
-//             **一次调用恰好一问**(§6 E3 的去重不回潮)。
+//             (findLast 语义下压过默认 allow 底)⇒ 挂起等批准。ruleset 轴自己的 ask 同样在
+//             这一问里生效 —— **一次调用恰好一问**(§6 E3 的去重不回潮)。
 //     allow ⇒ 文档轴不加 identity prompt;ruleset 轴与工具自身 ability 闸原样保留(§6)。
+//
+// ── 两段:decide 在钩子之前,confirm 在钩子之后(REQ-236 C2 / #1574,方案 §2.5)──────────
+// `decide`:重读策略与当前 binding,deny 即抛 —— 早于任何 `tool.execute.before` 钩子。
+// `confirm`:钩子(可原地改 args)之后、实现之前问,`metadata.args` 就是实现将收到的那一份;
+// 问完(含挂起后被唤醒)再跑一次 `decide`:挂起期间停用 ⇒ 具名拒绝;binding 变了 ⇒ 具名拒绝、请重试。
+// 会话放行(`always`)的 pattern:文档轴的询问 = `<bindingDigest>@<策略修订号>`(服务定义变了、或同项目
+// 任一目录写了策略,旧放行不再命中);ruleset 轴(档位 / 用户规则)要求的询问 = `call:<callID>` 且
+// `always: []` —— 不产生放行,已有放行也消不掉它。
 //
 // ── snapshot vs 每次重读(§6)─────────────────────────────────────────────────
 // 目录(catalog / DWS 预批清单 / inventory)可用**当轮 snapshot**(`snapshotEffective*`);
-// **executor 必须在调用时重读**(`gateToolExecution` 每次调用走 `resolve()`,它重读
-// managed cap 与用户文档;MCP 的当前 binding 也在调用时重新派生)—— Settings/managed/
-// kill-switch 在模型拿到旧 catalog 后收紧,缓存的工具对象也执行不了。
+// **executor 必须在调用时重读**(`decide` 每次调用都重新取 `snapshot()`,它重读 managed cap
+// 与用户文档;MCP 的当前 binding 也在调用时重新派生)—— Settings/managed/kill-switch 在模型
+// 拿到旧 catalog 后收紧,缓存的工具对象也执行不了。
 //
 // ── 为什么 gate 收**服务句柄**而不是 yield 服务 ───────────────────────────────
 // code-mode 的子工具闸跑在 ToolRegistry 自己 materialize 的工具里 —— 若本模块 yield*
@@ -31,6 +38,7 @@
 // 已有的句柄递进来,subject 的派生(mcp / plugin / builtin)也由调用方用自己的句柄完成。
 import { Effect } from "effect"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { InstanceRef } from "@/effect/instance-ref"
 import type { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
 import { canonicalToolIdentity, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 import type { ToolPolicySubject } from "@opencode-ai/schema/alpha-tool-policy"
@@ -39,6 +47,7 @@ import type { ToolTransportFact } from "./alpha-risk-classification"
 import {
   AlphaToolPolicy,
   resolveToolPolicy,
+  subjectBindingDigest,
   type EffectiveToolPolicy,
   type ToolPolicyCaps,
   type ToolPolicyUserLayer,
@@ -60,8 +69,8 @@ export function builtinSubject(identity: ToolIdentity, authority: ToolAuthority)
 }
 
 /**
- * ruleset 轴对 exact canonical 的判定 —— 用**引擎自己的** `Permission.evaluate`
- * (identity ask 的 patterns 恒为 `["*"]`,与执行时同一形参),不手写第二个匹配器。
+ * ruleset 轴对 exact canonical 的判定 —— 用**引擎自己的** `Permission.evaluate`,不手写第二个匹配器。
+ * 身份轴规则的 pattern 一律是 `*`(配置写法 `"mcp:*": "ask"`),对任何询问 pattern 都同样命中。
  */
 export function rulesetIdentityAction(canonical: string, ruleset: PermissionV1.Ruleset): PermissionV1.Action {
   return Permission.evaluate(canonical, "*", ruleset).action
@@ -81,14 +90,7 @@ function foldRulesetCap(
   return rulesetIdentityAction(canonical, ruleset) === "deny" ? { hardDeny: [RULESET_HARD_DENY_SOURCE] } : { hardDeny: [] }
 }
 
-/** 文档轴 + ruleset-deny cap 的合成判定(executor 侧:调用方每次调用重新进入,`resolve` 重读)。 */
-export const effectiveToolPolicyNow = (
-  policy: AlphaToolPolicy.Interface,
-  subject: ToolPolicySubject,
-  ruleset: PermissionV1.Ruleset,
-): Effect.Effect<EffectiveToolPolicy> => policy.resolve(subject, foldRulesetCap(subject, ruleset))
-
-/** 同一合成,但对**已取好的 snapshot** 求值(目录 / 预批 / inventory;§6 允许当轮 snapshot)。 */
+/** 文档轴 + ruleset-deny cap 的合成,对**已取好的 snapshot** 求值(executor 的 `decide` 每次调用现取一份)。 */
 export function effectiveFromSnapshot(
   snapshot: { managed: ManagedPolicyResult; user: ToolPolicyUserLayer },
   subject: ToolPolicySubject,
@@ -106,7 +108,7 @@ function describeIdentity(identity: ToolIdentity): string {
   }
 }
 
-function namedDeny(identity: ToolIdentity, effective: EffectiveToolPolicy): PermissionV1.DeniedError {
+function namedDeny(identity: ToolIdentity, reason: string, detail?: string): PermissionV1.DeniedError {
   // `ruleset` 载荷是 Schema.Any:这里放一条自述来源的记录,让 DeniedError.message
   // (JSON.stringify(ruleset))**点名 canonical 与拒绝原因** —— 用户与模型读到的是同一句话。
   return new PermissionV1.DeniedError({
@@ -116,7 +118,8 @@ function namedDeny(identity: ToolIdentity, effective: EffectiveToolPolicy): Perm
         pattern: "*",
         action: "deny",
         source: "alpha-tool-policy",
-        reason: effective.reason.kind,
+        reason,
+        ...(detail ? { detail } : {}),
       },
     ],
   })
@@ -137,56 +140,87 @@ export function mcpTransportFact(entry: ConfigMCPV1.Info | undefined): ToolTrans
   return { kind: "mcp-local", command: [...entry.command] }
 }
 
-export interface GateInput<R> {
+export interface DecideInput<R> {
   readonly policy: AlphaToolPolicy.Interface
-  readonly permission: Permission.Interface
   /** 调用方派生的**当前**主体(mcp 当前 entry digest / plugin loader digest / builtin 常量)。 */
   readonly subject: Effect.Effect<GateSubject, never, R>
   readonly ruleset: PermissionV1.Ruleset
+}
+
+export interface GateInput<R> extends DecideInput<R> {
+  readonly permission: Permission.Interface
   readonly sessionID: PermissionV1.AskInput["sessionID"]
-  readonly tool?: { messageID: string; callID: string }
+  readonly tool: { messageID: string; callID: string }
   readonly metadata?: Record<string, unknown>
   /**
-   * #1285 / REQ-158 供数:模型交给这个工具的**原始参数**。它一直在调用方的词法作用域里
-   * (`session/tools.ts` 的 `execute(args, …)`、`code-mode.ts` 的 `input.args`),此前没进这一问 ——
-   * 于是远端 MCP 的授权提示上目的地与载荷一个字都没有(勘破 §2.5 实测 `patterns:["*"]` / `metadata:{}`)。
+   * #1285 / REQ-158 供数:**钩子之后**、实现将收到的参数(#1574:钩子原地改过的那一份)。
    * 只做供数,不在这里分类;分类在 `Permission.ask`(唯一的 Request 构造点)。
    */
   readonly args?: unknown
 }
 
+/** `decide` 的结论,交给同一次调用的 `confirm`。 */
+export interface GateDecision {
+  readonly subject: GateSubject
+  readonly effective: EffectiveToolPolicy
+  readonly revision: string
+}
+
 /**
- * 执行咽喉的统一闸(E1/E2/E3 经 `SessionTools.register`、E4 code-mode child、E6 direct
- * subtask 共用)。每次调用重读文档轴与当前 binding;deny 早于任何 hook/副作用。
+ * 钩子之前(E1/E2/E3 经 `SessionTools.register`、E4 code-mode child、E6 direct subtask 共用):
+ * 重读文档轴与当前 binding;deny ⇒ 具名拒绝,早于任何 hook/副作用。
  */
-export const gateToolExecution = <R>(input: GateInput<R>): Effect.Effect<void, PermissionV1.Error, R> =>
+export const decide = <R>(input: DecideInput<R>): Effect.Effect<GateDecision, PermissionV1.DeniedError, R> =>
   Effect.gen(function* () {
     const subject = yield* input.subject
-    const effective = yield* effectiveToolPolicyNow(input.policy, subject, input.ruleset)
-    if (effective.action === "deny") return yield* namedDeny(subject.identity, effective)
-    // 到这里 identity 一定铸得出 canonical(否则上面已按 invalid-identity deny)。
+    const snapshot = yield* input.policy.snapshot()
+    const effective = effectiveFromSnapshot(snapshot, subject, input.ruleset)
+    if (effective.action === "deny") return yield* namedDeny(subject.identity, effective.reason.kind)
+    return { subject, effective, revision: snapshot.revision }
+  })
+
+/**
+ * 钩子之后、实现之前:必要时问(`metadata.args` = 钩子之后的参数),问完再 `decide` 一次。
+ * 挂起期间停用 ⇒ 具名拒绝;当前 binding 与请求里写的不同(审批期间重绑、换端点)⇒ 具名拒绝、请重试。
+ */
+export const confirm = <R>(decision: GateDecision, input: GateInput<R>): Effect.Effect<void, PermissionV1.Error, R> =>
+  Effect.gen(function* () {
+    const subject = decision.subject
+    // 到这里 identity 一定铸得出 canonical(否则 decide 已按 invalid-identity deny)。
     const canonical = canonicalToolIdentity(subject.identity)
-    const askRuleset: PermissionV1.Ruleset =
-      effective.action === "ask"
-        ? [...input.ruleset, { permission: canonical, pattern: "*", action: "ask" }]
-        : input.ruleset
+    const bindingDigest = subjectBindingDigest(subject)
+    // ruleset 轴先看:档位或用户规则要求询问时,文档轴是什么都不改变这一问的性质(方案 §2.4 第 1 条)。
+    const askedBy = rulesetIdentityAction(canonical, input.ruleset) === "ask" ? "ruleset" : "policy"
+    const patterns =
+      askedBy === "ruleset"
+        ? [`call:${input.tool.callID}`]
+        : [`${bindingDigest ?? "binding:unknown"}@${decision.revision}`]
+    const instance = yield* InstanceRef
     yield* input.permission.ask({
       permission: canonical,
       sessionID: input.sessionID,
       // #1285:身份轴那一问带上分类需要的全部事实 —— identity / authority(受信目的地判定)/
-      // transport(远端 MCP 的目的地)/ args(载荷)。调用方给的 metadata 保留,这几个键由本闸写。
+      // transport(远端 MCP 的目的地)/ args(载荷)。#1574:`policy` 给审批面分流与持久授权写入用。
+      // 调用方给的 metadata 保留,这几个键由本闸写。
       metadata: {
         ...(input.metadata ?? {}),
         identity: subject.identity,
         authority: subject.authority,
         ...(subject.transport ? { transport: subject.transport } : {}),
         ...(input.args !== undefined ? { args: input.args } : {}),
+        policy: { directory: instance?.directory, canonical, bindingDigest, askedBy },
       },
-      patterns: ["*"],
-      always: ["*"],
+      patterns,
+      always: askedBy === "ruleset" ? [] : patterns,
       tool: input.tool,
-      ruleset: askRuleset,
+      ruleset:
+        decision.effective.action === "ask"
+          ? [...input.ruleset, { permission: canonical, pattern: "*", action: "ask" }]
+          : input.ruleset,
     })
+    const now = yield* decide(input)
+    if (subjectBindingDigest(now.subject) !== bindingDigest)
+      return yield* namedDeny(subject.identity, "binding-changed-during-approval", "服务配置在审批期间变化,请重试")
   })
 
 export interface CatalogSubject {

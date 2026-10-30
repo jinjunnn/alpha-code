@@ -3,9 +3,9 @@
 // #725 只对 E4 做过源码级确认(探针把 experimentalCodeMode 钉成 false,运行期从没量到);
 // 本文件把它变成运行期可判:真的 `CodeModeTool`(真 CodeMode 解释器 + 真 in-memory MCP
 // server,server 侧对每次 `tools/call` 计数),断言:
-//   · identity 闸(ctx.ask)在 `tool.execute.before` 插件钩子**之前**解析 —— 未放行前钩子
-//     看不到这次调用,传输零字节(deny/ask-reject 两种收口都一样);
-//   · 放行后次序 = ask → hook → transport(次序由三方各自把事件推进同一个数组);
+//   · 文档轴 deny 在 `tool.execute.before` 插件钩子**之前**判(钩子看不到这次调用);要问的那一问在
+//     钩子**之后**(#1574:批准的是钩子改过的参数),未放行前传输零字节;
+//   · 放行后次序 = hook → ask → transport(次序由三方各自把事件推进同一个数组);
 //   · identity deny 的 child 不进 child catalog(code-mode.ts 的 visibleTools 过滤),
 //     且只有它消失,同 server 兄弟工具照常可调。
 // 事件序列的记录方是三个互相独立的探头(ask mock / plugin mock / 真 server handler),
@@ -113,12 +113,15 @@ async function buildTool(input: {
   ruleset?: PermissionV1.Rule[]
   /** 文档轴用户记录(可变引用 —— 重读判据靠调用后改它)。缺省为空 ⇒ 四类默认。 */
   records?: ToolPolicyRecord[]
+  /** server 每收到一次 tools/call 后调用(重读判据在两次调用之间收紧文档轴)。 */
+  onTransport?: () => void
 }) {
   const server = new Server({ name: SERVER, version: "1.0.0" }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFS }))
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     input.probe.events.push(`transport:${req.params.name}`)
     input.probe.transport[req.params.name] = (input.probe.transport[req.params.name] ?? 0) + 1
+    input.onTransport?.()
     return { content: [{ type: "text", text: "SIDE-EFFECT-EXECUTED" }] }
   })
 
@@ -141,7 +144,7 @@ async function buildTool(input: {
   const ruleset = input.ruleset ?? [ALLOW_ALL]
   const records = input.records ?? []
   const layer = Layer.mergeAll(
-    // #1129:E4 的 identity 闸经 gateToolExecution 走 **Permission.Service**(不再经 ctx.ask);
+    // #1129:E4 的 identity 闸经共享 gate(#1574 起 decide → 钩子 → confirm)走 **Permission.Service**(不再经 ctx.ask);
     // ask 探头随之移到这里 —— 事件名与断言不变。
     Layer.mock(Permission.Service, {
       ask: ((req: PermissionV1.AskInput) =>
@@ -201,8 +204,8 @@ const runFailed = async (
   return Cause.squash(exit.cause) as Error
 }
 
-describe("#1129 E4:code-mode child 的 identity 闸在 hook 之前、传输之前(运行期)", () => {
-  test("ask 未放行(deny/reject 收口)⇒ 插件钩子零触发、tools/call 零调用、程序响亮失败", async () => {
+describe("#1129 / #1574 E4:code-mode child 的 identity 闸 —— deny 在 hook 之前,询问在 hook 之后、传输之前(运行期)", () => {
+  test("ask 被拒 ⇒ 钩子已先跑过一次(问在钩子之后)、tools/call 零调用、程序响亮失败", async () => {
     const p = probe()
     const built = await buildTool({
       probe: p,
@@ -210,13 +213,15 @@ describe("#1129 E4:code-mode child 的 identity 闸在 hook 之前、传输之�
     })
     const error = await runFailed(built, "return await tools.fixtures.get_text({ name: 'world' })")
     expect(error.message).toContain(ID_CHILD_GET_TEXT)
-    // 闸响过 —— 且响在钩子与传输都还没发生的时候。
+    // 闸响过 —— 响在钩子之后、传输之前:钩子恰一次,传输为零。
     expect(p.events).toContain(`ask:${ID_CHILD_GET_TEXT}`)
-    expect(p.events.filter((event) => event.startsWith("hook:tool.execute.before"))).toEqual([])
+    expect(p.events.filter((event) => event.startsWith("hook:tool.execute.before"))).toEqual([
+      `hook:tool.execute.before:${SERVER}_get_text`,
+    ])
     expect(p.transport["get_text"] ?? 0).toBe(0)
   })
 
-  test("ask 放行 ⇒ 次序恰为 ask → tool.execute.before → transport,且传输恰好一次", async () => {
+  test("ask 放行 ⇒ 次序恰为 tool.execute.before → ask → transport,且传输恰好一次", async () => {
     const p = probe()
     const built = await buildTool({ probe: p, ask: () => Effect.void })
     await Effect.runPromise(built.tool.execute({ code: "return await tools.fixtures.get_text({ name: 'w' })" }, built.ctx))
@@ -227,8 +232,8 @@ describe("#1129 E4:code-mode child 的 identity 闸在 hook 之前、传输之�
         event.startsWith("transport:"),
     )
     expect(relevant).toEqual([
-      `ask:${ID_CHILD_GET_TEXT}`,
       `hook:tool.execute.before:${SERVER}_get_text`,
+      `ask:${ID_CHILD_GET_TEXT}`,
       "transport:get_text",
     ])
     expect(p.transport["get_text"]).toBe(1)
@@ -286,21 +291,21 @@ describe("#1129 E4:code-mode child 的 identity 闸在 hook 之前、传输之�
 
   test("executor 调用时重读:child catalog 发出后收紧文档轴 ⇒ 同一 held 闭包的下一次调用当场 deny", async () => {
     // code-mode 每次 execute 重建子目录 ⇒ 「held」必须钉在**同一次 execute 内**捕获的
-    // callTool 闭包上:程序连调两次,mock 在放行第一问的同时把文档轴收紧成 disabled ——
-    // 目录与闭包都是收紧**前**的,第二次调用只有「调用时重读」能拦住。
+    // callTool 闭包上:程序连调两次,server 收到第一次调用后把文档轴收紧成 disabled ——
+    // 目录与闭包都是收紧**前**的,第二次调用只有「调用时重读」能拦住。(收紧若发生在第一问挂起期间,
+    // 拦住的是第一次调用本身 —— 那是 #1574 批准后复核的判据,在 alpha-approval-binding.test.ts。)
     const p = probe()
     const records: ToolPolicyRecord[] = []
     let armed = true
     const built = await buildTool({
       probe: p,
-      ask: () => {
-        if (armed) {
-          armed = false
-          records.push({ selector: { level: "tool", canonical: ID_CHILD_GET_TEXT }, state: "disabled" })
-        }
-        return Effect.void
-      },
+      ask: () => Effect.void,
       records,
+      onTransport: () => {
+        if (!armed) return
+        armed = false
+        records.push({ selector: { level: "tool", canonical: ID_CHILD_GET_TEXT }, state: "disabled" })
+      },
     })
     const error = await runFailed(
       built,

@@ -5,7 +5,7 @@
 //   · 真 `injectAlphaConfig`(ui-mac 主进程写给引擎的那份 config,临时盘)→ 真 `Agent.Service` 拿到三档载体
 //     (「全部批准」= 引擎默认 build、「请求审批」= alpha-ask、「只读」= alpha-readonly)的规则集;
 //   · 能力轴:真 `Permission.Service.ask`(工具体内 `ctx.ask` 的同一个服务);
-//   · 身份轴:真 `AlphaToolPolicyGate.gateToolExecution` + 真 `AlphaToolPolicy`(真 store,生产 `setRecord` 写设置);
+//   · 身份轴:真 `AlphaToolPolicyGate.decide` + `confirm` + 真 `AlphaToolPolicy`(真 store,生产 `setRecord` 写设置);
 //   · R9/R10 的 subject 由**生产形状**的云 MCP 定义(真 `materializeCloudMcpConfig`,`{file:}` 引用)与装载后 entry
 //     (引用已被引擎换成令牌字面量)经真 `authorityForMcp` 派生,binding 用真 `mcpBindingDigest`(与 session/tools.ts 同口径)。
 // `ALPHA_PERMISSION_ASK_TIMEOUT_MS=300`:「真的在问、没人答」以 `UnansweredError` 落地。
@@ -164,17 +164,27 @@ const ability = (tier: Tier, permission: string, pattern: string) =>
       .pipe(Effect.exit)
   })
 
-/** 身份轴一问(session/tools.ts 的 identityGate 调的同一个闸)。 */
+/** 身份轴一问(session/tools.ts 的 identityGate 调的同一个闸:decide → 钩子 → confirm;规则层没有钩子)。 */
 const identity = (tier: Tier, subject: ToolPolicySubject) =>
   Effect.gen(function* () {
-    return yield* AlphaToolPolicyGate.gateToolExecution({
+    const permission = yield* Permission.Service
+    const gate = {
       policy: yield* AlphaToolPolicy.Service,
-      permission: yield* Permission.Service,
       subject: Effect.succeed(subject),
       ruleset: yield* ruleset(tier),
-      sessionID: sid(),
-      metadata: {},
-    }).pipe(Effect.exit)
+    }
+    return yield* AlphaToolPolicyGate.decide(gate).pipe(
+      Effect.flatMap((decision) =>
+        AlphaToolPolicyGate.confirm(decision, {
+          ...gate,
+          permission,
+          sessionID: sid(),
+          tool: { messageID: "msg_1573_matrix", callID: `call_1573_matrix_${seq}` },
+          metadata: {},
+        }),
+      ),
+      Effect.exit,
+    )
   })
 
 /** 内置/宿主工具一次调用:先身份轴(包在执行外层),再能力轴(工具体内)。 */
