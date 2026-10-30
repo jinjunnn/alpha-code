@@ -61,7 +61,9 @@ mock.module("./alpha-auth", () => ({ getAccessToken: () => undefined, getAuthIde
 
 const { fetchPlatformModels, getEffectiveCatalog, syncLiveAllowlist } = await import("./alpha-platform-models")
 const { getModelCatalog } = await import("./alpha-models")
-const { liveAllowlistPath, projectPlatformModels, writeCatalogSnapshot } = await import("./alpha-live-allowlist")
+const { liveAllowlistPath, pinAppliedCatalog, projectPlatformModels, writeCatalogSnapshot } = await import(
+  "./alpha-live-allowlist"
+)
 const { getContractFailure } = await import("./alpha-contract-health")
 
 const realFetch = globalThis.fetch
@@ -107,6 +109,7 @@ describe("#595 退出条件 4:BYOK 目录不受 live allowlist / 平台连通性
         models: [{ id: "deepseek-v4-flash", pricing: { input: 1, output: 1 } }],
       }),
     )
+    pinAppliedCatalog(userData, 1) // `#1555`:picker 读 fork 前钉住的已应用目录;这里模拟那次 fork
     const effective = getEffectiveCatalog(userData)
     expect(effective.byokProviders.map((provider) => provider.id)).toEqual(localByokIds)
     // 平台段仍按 live 清单收窄 —— 撤销只针对 BYOK 段。
@@ -157,6 +160,7 @@ describe("#595 退出条件 5:平台目录契约不兼容不得阻断本地目�
     })
     globalThis.fetch = (async () => new Response("{ not json")) as typeof fetch
     await fetchPlatformModels()
+    pinAppliedCatalog(userData, 1) // `#1555`:picker 读 fork 前钉住的已应用目录;这里模拟那次 fork
     const effective = getEffectiveCatalog(userData)
     expect(effective.platformModels.map((model) => model.id)).toEqual(["deepseek-v4-flash"])
     expect(effective.byokProviders.map((provider) => provider.id)).toEqual(localByokIds)
@@ -188,6 +192,7 @@ describe("#681:fetch → LKG → 投影 全程只认 ModelCatalogV2", () => {
     expect(diskById.get("claude-fable-5")).toEqual({ input: 71.4, output: 178.6 })
     expect(diskById.get("brand-new-model")).toEqual({ input: 2.5, output: 7.5 })
 
+    pinAppliedCatalog(userData, 1) // `#1555`:picker 读 fork 前钉住的已应用目录;这里模拟那次 fork
     const effective = getEffectiveCatalog(userData)
     expect(effective.pricingBasisModelId).toBe("deepseek-v4-flash")
     const rows = new Map(effective.platformModels.map((model) => [model.id, model]))
@@ -249,6 +254,7 @@ describe("#681:fetch → LKG → 投影 全程只认 ModelCatalogV2", () => {
     expect(await fetchPlatformModels()).toEqual({ error: "contract-incompatible" })
     expect(readFileSync(liveAllowlistPath(userData)).equals(before)).toBe(true)
 
+    pinAppliedCatalog(userData, 1) // `#1555`:picker 读 fork 前钉住的已应用目录;这里模拟那次 fork
     const effective = getEffectiveCatalog(userData)
     expect(effective.platformModels.find((m) => m.id === "claude-fable-5")!.pricing).toEqual({
       input: 71.4,
@@ -268,6 +274,7 @@ describe("#681:fetch → LKG → 投影 全程只认 ModelCatalogV2", () => {
     await syncLiveAllowlist(userData)
 
     expect(readFileSync(liveAllowlistPath(userData)).equals(before)).toBe(true)
+    pinAppliedCatalog(userData, 1) // `#1555`:picker 读 fork 前钉住的已应用目录;这里模拟那次 fork
     expect(getEffectiveCatalog(userData).platformModels.length).toBe(12)
   })
 })
@@ -294,3 +301,32 @@ describe("ac#962:平台拒绝的分类码穿过生产 fetchPlatformModels()", ()
 
 // 「sidecar 引擎配置与 IPC 投影不再分叉」的闸在 models-catalog-v2.wiring.cases.ts —— 那里从**真实**
 // registerModelsIpcHandlers 出发观察,而不是直接调内部函数。
+
+// ── REQ-237 `#1555` AC5(方案 req236 §2.4):刷新成功只改「已下载」,picker 在下一次引擎换代前仍显示已应用版本 ──
+// 现码(picker 直接读 LKG)上这条红:刷新一成功 picker 就变,而引擎要等下一次 fork —— 两边不是同一份。
+describe("`#1555` AC5:picker 与引擎读同一份已应用目录", () => {
+  test("刷新成功后 picker 仍显示已应用版本,目录视图同时带「已下载」与「已应用」两个版本", async () => {
+    writeCatalogSnapshot(userData, {
+      fetchedAt: "2026-07-24T00:00:00Z",
+      edition: "cn",
+      pricingBasisModelId: "deepseek-v4-flash",
+      models: [{ id: "deepseek-v4-flash", pricing: { input: 1, output: 1 } }],
+    })
+    pinAppliedCatalog(userData, 1) // 这一代引擎 fork 时钉住的版本
+
+    stubFetch(catalogV2())
+    expect("error" in (await syncLiveAllowlist(userData))).toBe(false)
+    const downloadedAt = JSON.parse(readFileSync(liveAllowlistPath(userData), "utf8")).fetchedAt
+    expect(downloadedAt).not.toBe("2026-07-24T00:00:00Z")
+
+    const before = getEffectiveCatalog(userData)
+    expect(before.platformModels.map((model) => model.id)).toEqual(["deepseek-v4-flash"])
+    expect(before.applied).toEqual({ platformFetchedAt: "2026-07-24T00:00:00Z", byokVersion: getModelCatalog().version })
+    expect(before.downloaded).toEqual({ platformFetchedAt: downloadedAt, byokVersion: getModelCatalog().version })
+
+    pinAppliedCatalog(userData, 2) // 下一次引擎换代
+    const after = getEffectiveCatalog(userData)
+    expect(after.platformModels).toHaveLength(12)
+    expect(after.applied).toEqual(after.downloaded)
+  })
+})

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { projectPlatformModels, readCatalogSnapshot, writeCatalogSnapshot } from "./alpha-live-allowlist"
+import { appliedCatalogPath, pinAppliedCatalog, projectPlatformModels, readCatalogSnapshot, writeCatalogSnapshot } from "./alpha-live-allowlist"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { buildModelPickerRows } from "../renderer/alpha-ui/model-picker-core"
@@ -511,6 +511,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     plantSecret("DEEPSEEK_API_KEY", "sk-1")
     plantSecret("ZHIPU_API_KEY", "sk-2")
     writeCatalogSnapshot(userData, { ...liveBase, models: [{ id: "deepseek-v4-flash", pricing: pair }] })
+    pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("deepseek-byok")
     expect(cfg.provider["zhipuai-byok"]).toBeDefined()
@@ -524,6 +525,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
       path.join(userData, "alpha-live-models.json"),
       JSON.stringify({ ...liveBase, byokProviders: ["deepseek"], models: [] }),
     )
+    pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("deepseek-byok")
     expect(cfg.enabled_providers).toContain("zhipuai-byok")
@@ -539,6 +541,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
         { id: "brand-new-model", pricing: { input: 2.5, output: 7.5 } },
       ],
     })
+    pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).sort()).toEqual(["brand-new-model", "deepseek-v4-flash"])
     const snapshotName = getModelCatalog().platformModels.find((m) => m.id === "deepseek-v4-flash")!.name
@@ -567,20 +570,47 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
     writeCatalogSnapshot(userData, { ...liveBase, models: [] })
+    pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
   })
 
   test("用户自定义 provider 不受白名单约束(2026-07-03 拍板:目录跟随 edition,自定义不拦;`#1392` 起来自真源)", () => {
     writeCatalogSnapshot(userData, { ...liveBase, models: [] })
+    pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     writeCustomProviderTruth(truthPath(), [{ id: "myco", name: "MyCo", compat: "openai", baseURL: "https://myco.invalid/v1", models: ["m"] }], fs)
     expect(buildAlphaModelConfig(userData)!.enabled_providers).toContain("myco")
+  })
+
+  // `#1555` AC4(方案 req236 I2):引擎配置**只**读 fork 前钉住的已应用目录。刷新器在钉住之后改写 LKG,
+  // 这一代引擎的模型配置也不得跟着变;没有钉住文件时回退内置 snapshot,而不是去读 LKG。
+  // 把 alpha-models.ts 改回 readCatalogSnapshot(读 LKG),本条转红。
+  test("`#1555` AC4:只读钉住的已应用目录 —— 钉住后 LKG 再变,引擎配置不变;无钉住文件不读 LKG", () => {
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+    const ids = () => Object.keys((buildAlphaModelConfig(userData)!.provider.alpha as any).models).sort()
+    writeCatalogSnapshot(userData, { ...liveBase, models: [{ id: "deepseek-v4-flash", pricing: pair }] })
+    pinAppliedCatalog(userData, 7)
+    writeCatalogSnapshot(userData, {
+      ...liveBase,
+      fetchedAt: "2026-07-04T00:00:00Z",
+      models: [{ id: "glm-5.2", pricing: pair }, { id: "brand-new-model", pricing: pair }],
+    })
+    expect(ids()).toEqual(["deepseek-v4-flash"])
+    expect(JSON.parse(fs.readFileSync(appliedCatalogPath(userData), "utf8")).generation).toBe(7)
+
+    fs.rmSync(appliedCatalogPath(userData))
+    expect(ids()).toEqual(getModelCatalog().platformModels.map((m) => m.id).sort())
+
+    pinAppliedCatalog(userData, 8)
+    expect(ids()).toEqual(["brand-new-model", "glm-5.2"])
   })
 
   test("缓存损坏 → 视同无缓存(内置 snapshot,不 throw)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
     fs.writeFileSync(path.join(userData, "alpha-live-models.json"), "{corrupt")
+    pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
   })
@@ -717,6 +747,7 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
         { id: "claude-fable-5", pricing: pair },
       ],
     })
+    pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
     const cfg = buildAlphaModelConfig(userData)!
     const injected = injectedReasoning(cfg)
 

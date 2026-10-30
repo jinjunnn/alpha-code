@@ -2,9 +2,10 @@
 // 「main 写 / sidecar 读」模式),外加平台段的**唯一投影**。
 //
 // 网关 GET /v1/models 是「允许哪些**平台代理**模型、以及它们各自的计价倍数」的权威源
-// (edition-scoped)。main 在启动 / 登录后 respawn 时把一份**已通过严格 ModelCatalogV2 校验**的
-// 快照写到 <userData>/alpha-live-models.json;fork 期的 buildAlphaModelConfig(sidecar)与
-// picker 的 effective catalog(main)都读这份快照。
+// (edition-scoped)。后台刷新器(catalog-refresher.ts)把一份**已通过严格 ModelCatalogV2 校验**的
+// 快照写到 <userData>/alpha-live-models.json(已下载);每次 fork 前 main 把它钉成
+// alpha-applied-catalog.json(已应用,`#1555`),buildAlphaModelConfig(sidecar)与 picker 的
+// effective catalog(main)只读钉住的那份。
 //
 // 三条本模块承重的纪律:
 //
@@ -96,14 +97,51 @@ export function readCatalogSnapshot(userDataPath: string): CatalogSnapshot | nul
 }
 
 /** 写快照。**校验不过直接不写**(保留旧 LKG),过了才原子替换(tmp → fsync → rename)。
- *  原子写只保证不出现半个文件,不保证并发响应的新旧顺序 —— 刷新点因此只留启动与登录后两处
- *  (models-ipc 刻意不做后台刷新,见该文件抬头)。
+ *  原子写只保证不出现半个文件,不保证并发响应的新旧顺序 —— 唯一写入方是 catalog-refresher.ts 的单飞轮次。
  *  @returns 是否真的落盘。 */
 export function writeCatalogSnapshot(userDataPath: string, snapshot: CatalogSnapshot): boolean {
   if (!isValidCatalogSnapshot(snapshot)) return false
   fs.mkdirSync(userDataPath, { recursive: true })
   writeFileAtomicSync(liveAllowlistPath(userDataPath), JSON.stringify(snapshot))
   return true
+}
+
+// ── REQ-237 `#1555`(方案 req236 §2.4):「已应用目录」—— fork 前钉住的那一份 ─────────────────
+//
+// LKG(上面那份)是**已下载**:后台刷新器随时可能改写它。引擎配置(buildAlphaModelConfig)与 picker
+// (getEffectiveCatalog)若直接读 LKG,刷新一成功 picker 就变、引擎要等下一次 fork 才变 —— 两边不是同一份。
+// 所以 main 在每次 fork 前(spawnLocalServer,紧接密钥文件之后)把当刻的 LKG 钉成这份文件,两个读者
+// **只读它**;刷新器只写 LKG,从不写它。写失败 ⇒ 抛出,调用方按密钥文件写失败同样拒绝本次 fork。
+
+const APPLIED_FILE = "alpha-applied-catalog.json"
+
+export type AppliedCatalog = {
+  /** 钉住它的那一代 sidecar(诊断用)。 */
+  generation: number
+  /** 钉住当刻的平台 LKG;没有有效 LKG ⇒ null(读者回退内置 snapshot 且不声称价格,同 LKG 缺失)。 */
+  platform: CatalogSnapshot | null
+}
+
+export function appliedCatalogPath(userDataPath: string): string {
+  return path.join(userDataPath, APPLIED_FILE)
+}
+
+/** fork 前调用:把当刻 LKG 原子写成「已应用目录」。写失败直接抛(fail closed,由 spawnLocalServer 拒绝 fork)。 */
+export function pinAppliedCatalog(userDataPath: string, generation: number): AppliedCatalog {
+  const applied: AppliedCatalog = { generation, platform: readCatalogSnapshot(userDataPath) }
+  fs.mkdirSync(userDataPath, { recursive: true })
+  writeFileAtomicSync(appliedCatalogPath(userDataPath), JSON.stringify(applied))
+  return applied
+}
+
+/** 读已应用目录的平台段。缺失 / 坏 JSON / 快照过不了同一份判据 → null(与 readCatalogSnapshot 同一退化语义)。 */
+export function readAppliedPlatformSnapshot(userDataPath: string): CatalogSnapshot | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(appliedCatalogPath(userDataPath), "utf8")) as Partial<AppliedCatalog> | null
+    return isValidCatalogSnapshot(parsed?.platform) ? parsed.platform : null
+  } catch {
+    return null
+  }
 }
 
 /** 平台段的**唯一**投影。picker(getEffectiveCatalog)与 sidecar(buildAlphaModelConfig)必须都走这里。

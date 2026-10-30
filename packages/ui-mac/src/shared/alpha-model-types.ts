@@ -161,7 +161,15 @@ export type EffectiveCatalog = AlphaModelCatalog & {
    *  它出现在 platformModels 里(edition 白名单可以把它筛掉)。基准由平台下发,客户端不硬编码:
    *  平台换基准,展示跟着变才是诚实的。 */
   pricingBasisModelId: string | null
+  /** `#1555`(方案 req236 §2.4):fork 前钉住、picker 与引擎都在用的那一份(已应用)。 */
+  applied: CatalogVersions
+  /** 后台刷新器最近一次落盘的那一份(已下载);与 `applied` 不同 = 新清单要等下次引擎换代才生效。 */
+  downloaded: CatalogVersions
 }
+
+/** 两份目录各自的版本标识。`platformFetchedAt` = 平台快照的同步时刻,`null` = 没有有效快照;
+ *  `byokVersion` = BYOK 目录版本(远程 BYOK 文档上线前恒为随包目录的 `version`)。 */
+export type CatalogVersions = { platformFetchedAt: string | null; byokVersion: string }
 
 /** #1084:平台模型目录**刷新**的失败结局(main → renderer 的可观察出口)。
  *  `code` 是 `fetchPlatformModels()` 已经算出来的稳定分类码(`rate_limited` / `unauthorized` /

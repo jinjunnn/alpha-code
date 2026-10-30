@@ -25,7 +25,7 @@
 import catalog from "./alpha-models.json"
 import type { AlphaModelCatalog } from "../shared/alpha-model-types"
 import { byokEngineId, byokModelMeta } from "../shared/alpha-model-types"
-import { projectPlatformModels, readCatalogSnapshot } from "./alpha-live-allowlist"
+import { projectPlatformModels, readAppliedPlatformSnapshot } from "./alpha-live-allowlist"
 import { customProviderSecretName, hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { readCustomProviderRecords } from "./custom-provider-records"
 // NOTE: this module is loaded by the SIDECAR (utilityProcess) via buildAlphaModelConfig, so it must
@@ -66,11 +66,12 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   const provider: Record<string, unknown> = {}
   const enabled: string[] = []
 
-  // REQ-001:B 网关 edition 白名单(main 经 syncLiveAllowlist 同步的本地 catalog LKG;缺失/损坏/旧代
-  // → 不限制,内置 snapshot 兜底,fail-open)。约束对象**只有平台模型清单**;用户自定义节点(下方
+  // REQ-001:B 网关 edition 白名单。`#1555` 起读 fork 前钉住的「已应用目录」(alpha-applied-catalog.json),
+  // 不读后台刷新器随时改写的 LKG —— picker 读同一份,两边永远是同一个版本。缺失/损坏/旧代
+  // → 不限制,内置 snapshot 兜底,fail-open。约束对象**只有平台模型清单**;用户自定义节点(下方
   // 第 (3) 段,来自真源)不受限;BYOK 目录自 REQ-109 #595 起也不受限 —— owner 裁决 BYOK 走全主权,
   // 本地 alpha-models.json 即权威,平台不得远程干预(契约 docs/contracts/byok-availability.md)。
-  const snapshot = readCatalogSnapshot(userDataPath)
+  const snapshot = readAppliedPlatformSnapshot(userDataPath)
   // REQ-127 #681:平台段的**唯一**投影,算一次。平台节点直接用它;BYOK 节点的 reasoning 元数据也从它
   // 派生(byokModelMeta),与 picker 的 BYOK 行(getEffectiveCatalog → 同一投影)同一份判据。
   const platformModels = projectPlatformModels(CATALOG.platformModels, snapshot)

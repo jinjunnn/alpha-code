@@ -1,8 +1,10 @@
 // REQ-127 #681 / ADR-039 §4 —— **生产 wiring** 闸门(不是 schema 存在性,不是类型检查)。
 //
-// 判据从真实用户入口出发:调 `registerModelsIpcHandlers`,拿它注册到 `models-catalog` /
-// `models-platform-live` 上的**那两个 handler**,让 V2 fetch → 严格 decoder → 原子 LKG →
-// effective projection 整条链真跑一遍,再看 IPC 返回了什么。中间函数一律不直接调。
+// 判据从真实用户入口出发:调 `registerModelsIpcHandlers`,拿它注册到 `models-catalog` 上的**那个
+// handler**,让 V2 fetch → 严格 decoder → 原子 LKG → fork 前钉住 → effective projection 整条链真跑一遍,
+// 再看 IPC 返回了什么。`#1555` 删掉了零调用的 `models-platform-live` IPC:刷新侧的生产入口是
+// catalog-refresher 驱动的那一轮 `syncLiveAllowlist`(本文件直接驱动它,刷新器自己的触发点/单飞判据在
+// catalog-refresher.cases.ts),每轮之后按生产顺序调 `pinAppliedCatalog` 模拟下一次 fork。
 //
 // 三件事在这里落闸:
 //   1. **正向**:V2 响应经生产 IPC 后,basis 与逐行双倍数出现在 `models-catalog` 的返回里;
@@ -83,8 +85,9 @@ mock.module("./alpha-endpoints", () => ({
 mock.module("./alpha-auth", () => ({ getAccessToken: () => accessToken, getAuthIdentityTag: () => identity }))
 
 const { registerModelsIpcHandlers } = await import("./models-ipc")
+const { syncLiveAllowlist } = await import("./alpha-platform-models")
 const { buildAlphaModelConfig, getModelCatalog } = await import("./alpha-models")
-const { liveAllowlistPath } = await import("./alpha-live-allowlist")
+const { liveAllowlistPath, pinAppliedCatalog } = await import("./alpha-live-allowlist")
 const { getContractFailure } = await import("./alpha-contract-health")
 const { registerCatalogHealthIpcHandlers } = await import("./alpha-catalog-health")
 const { initAlphaEnvironment } = await import("./alpha-environment")
@@ -130,8 +133,13 @@ const saved: Record<string, string | undefined> = {}
 const stubFetch = (body: unknown) => {
   globalThis.fetch = (async () => new Response(JSON.stringify(body))) as unknown as typeof fetch
 }
-/** 真实生产入口:renderer 调 window.api.models.platformLive() 时跑的就是这个 handler。 */
-const invokePlatformLive = () => handlers.get("models-platform-live")!() as Promise<Record<string, unknown>>
+/** `#1555`:刷新器跑的那一轮(含补试),之后按生产顺序在下一次 fork 前钉住已应用目录。 */
+let generation = 0
+const refreshThenFork = async () => {
+  const result = (await syncLiveAllowlist(userData)) as Record<string, unknown>
+  pinAppliedCatalog(userData, ++generation)
+  return result
+}
 /** 真实生产入口:renderer 调 window.api.models.catalog() 时跑的就是这个 handler。 */
 const invokeCatalog = () => handlers.get("models-catalog")!() as EffectiveCatalog
 
@@ -207,7 +215,7 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
     expect(before.platformModels.every((model) => model.pricing === undefined)).toBe(true)
 
     stubFetch(catalogV2())
-    const live = await invokePlatformLive()
+    const live = await refreshThenFork()
     expect(live.error).toBeUndefined()
     expect(live.pricingBasisModelId).toBe("deepseek-v4-flash")
 
@@ -232,7 +240,7 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
   // 这条把 pin 当真实响应体喂进生产入口,走完 fetch → decoder → 后置语义校验 → LKG → 投影。
   test("提交给平台 cutover gate 的 consumer pin,经生产入口跑通全链(schema 之外的语义也过)", async () => {
     stubFetch(consumerPin())
-    const live = await invokePlatformLive()
+    const live = await refreshThenFork()
     expect(live.error, "consumer pin 被生产链路拒绝 —— 这份 pin 不能提交给平台 cutover gate").toBeUndefined()
     expect(existsSync(liveAllowlistPath(userData))).toBe(true)
 
@@ -249,7 +257,7 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
   // ── 反向闸(持久 negative gate)。把生产入口改回 V1,这条必须红。 ──────────────────────
   test("同一生产入口喂 V1 响应 → 无 basis、无 pricing、contract-health 亮 model-catalog", async () => {
     stubFetch(catalogV1())
-    expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
+    expect(await refreshThenFork()).toEqual({ error: "contract-incompatible" })
 
     const failure = getContractFailure()
     expect(failure?.surface).toBe("model-catalog")
@@ -266,11 +274,11 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
 
   test("已有合法 LKG 时,一次 V1 响应也不得把它降级(旧 pair 仍在,字节不变)", async () => {
     stubFetch(catalogV2())
-    await invokePlatformLive()
+    await refreshThenFork()
     const bytes = readFileSync(liveAllowlistPath(userData))
 
     stubFetch(catalogV1())
-    expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
+    expect(await refreshThenFork()).toEqual({ error: "contract-incompatible" })
     expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
 
     const catalog = invokeCatalog()
@@ -285,7 +293,7 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
 describe("#681 反分叉:sidecar 引擎配置与 IPC 投影是同一份投影", () => {
   test("有效 LKG:两侧 id 列表逐项相等", async () => {
     stubFetch(catalogV2())
-    await invokePlatformLive()
+    await refreshThenFork()
     expect(engineModelIds()).toEqual(invokeCatalog().platformModels.map((m) => m.id))
     expect(engineModelIds().length).toBe(12)
   })
@@ -294,7 +302,7 @@ describe("#681 反分叉:sidecar 引擎配置与 IPC 投影是同一份投影", 
     const empty = catalogV2()
     empty.data = []
     stubFetch(empty)
-    await invokePlatformLive()
+    await refreshThenFork()
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     expect(engineModelIds()).toEqual(invokeCatalog().platformModels.map((m) => m.id))
     expect(engineModelIds().length).toBe(getModelCatalog().platformModels.length)
@@ -308,7 +316,7 @@ describe("#681 反分叉:sidecar 引擎配置与 IPC 投影是同一份投影", 
 
   test("引擎配置不携带 pricing(展示投影不进 opencode provider 契约)", async () => {
     stubFetch(catalogV2())
-    await invokePlatformLive()
+    await refreshThenFork()
     const models = (buildAlphaModelConfig(userData)!.provider.alpha as any).models
     expect(Object.values(models).every((m: any) => m.pricing === undefined)).toBe(true)
     // 但 variants 仍随投影下发(REQ-029 不能被本次切换弄丢)。
@@ -319,7 +327,7 @@ describe("#681 反分叉:sidecar 引擎配置与 IPC 投影是同一份投影", 
 // ── #1084(#987 CHOICE=A,DECIDE #1078):平台拒绝的分类码必须到得了用户 ────────────────────
 //
 // 在此之前这条链的终点是 `fetchPlatformModels()` 的返回值:main/index.ts 两处 `.catch(() => {})`
-// 把它扔掉,`models-platform-live` 有 preload 桥却零 renderer 消费者 —— 目录刷新失败在产品面上
+// 把它扔掉,`models-platform-live`(`#1555` 已删)有 preload 桥却零 renderer 消费者 —— 目录刷新失败在产品面上
 // 完全不存在。判据因此不看「函数返回了什么」,只看**renderer 拿得到什么**:renderer 侧只有
 // `alpha-catalog-health`(invoke)与 `alpha-catalog-failure`(push)这两个口子。
 //
@@ -335,7 +343,7 @@ describe("#1084 目录刷新失败的用户可观察出口", () => {
   test("网关拒绝 ⇒ 分类码经生产入口到达 renderer 的两个口子(不是被吞掉)", async () => {
     // 响应字节照抄 alpha-platform packages/gateway/src/worker.ts 的 rateLimitRequest 拒绝体。
     stubRejection(429, '{"error":{"message":"rate limited: too many requests from this IP","code":"rate_limited"}}')
-    expect(await invokePlatformLive()).toEqual({ error: "rate_limited" })
+    expect(await refreshThenFork()).toEqual({ error: "rate_limited" })
 
     expect(invokeRefreshHealth()).toMatchObject({ code: "rate_limited" })
     expect(lastPush()).toMatchObject({ code: "rate_limited" })
@@ -343,23 +351,23 @@ describe("#1084 目录刷新失败的用户可观察出口", () => {
 
   test("无码的拒绝也有出口(http-<status> 同样是分类结果,不许静默)", async () => {
     stubRejection(503, "upstream is down")
-    expect(await invokePlatformLive()).toEqual({ error: "http-503" })
+    expect(await refreshThenFork()).toEqual({ error: "http-503" })
     expect(invokeRefreshHealth()).toMatchObject({ code: "http-503" })
   })
 
   test("契约不兼容同样进出口(main 侧「最后一次刷新结局」是单一真源)", async () => {
     stubFetch(catalogV1())
-    expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
+    expect(await refreshThenFork()).toEqual({ error: "contract-incompatible" })
     expect(invokeRefreshHealth()).toMatchObject({ code: "contract-incompatible" })
   })
 
   test("下一次刷新成功 ⇒ 出口清空(横幅不许永远挂着)", async () => {
     stubRejection(429, '{"error":{"message":"rate limited","code":"rate_limited"}}')
-    await invokePlatformLive()
+    await refreshThenFork()
     expect(invokeRefreshHealth()).toMatchObject({ code: "rate_limited" })
 
     stubFetch(catalogV2())
-    expect((await invokePlatformLive()).error).toBeUndefined()
+    expect((await refreshThenFork()).error).toBeUndefined()
     expect(invokeRefreshHealth()).toBeNull()
     expect(lastPush()).toBeNull()
   })
@@ -377,7 +385,9 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       // Keep each response pending until its behavioral boundary has been observed.
       return requests.length === 1 ? first.promise : retry.promise
     })
-    expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+    // `#1555`:一轮覆盖首试与补试(刷新器据此单飞);首试到期的结局在补试之前就已上报。
+    const round = syncLiveAllowlist(userData)
+    await waitFor(() => completed().length === 1)
     events.push("first-returned")
     expect(events).toEqual(["request-1", "first-returned"])
     expect(requests).toEqual(["GET"])
@@ -390,7 +400,9 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
     expect(existsSync(liveAllowlistPath(userData))).toBe(false)
     expect(invokeRefreshHealth()).toMatchObject({ code: "timeout" })
     retry.resolve(Response.json(catalogV2()))
-    await waitFor(() => completed().length === 2)
+    expect((await round).error).toBeUndefined()
+    pinAppliedCatalog(userData, ++generation)
+    expect(completed()).toHaveLength(2)
     expect(requests).toEqual(["GET", "GET"])
     expect(invokeCatalog().liveSync.status).toBe("live")
     expect(invokeCatalog().pricingBasisModelId).toBe("deepseek-v4-flash")
@@ -432,12 +444,12 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
       }
       return Response.json(catalogV2())
     })
-    await invokePlatformLive()
+    await refreshThenFork()
     const bytes = readFileSync(liveAllowlistPath(userData))
     const byok = structuredClone(invokeCatalog().byokProviders)
     delayed = true
     logged.length = 0
-    expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+    expect(await refreshThenFork()).toEqual({ error: "timeout" })
     await waitFor(() => completed().length === 2)
     expect(completed().map((entry) => entry[1])).toEqual([
       expect.objectContaining({ attempt: 1, exception: "TimeoutError", durationMs: expect.any(Number) }),
@@ -469,12 +481,12 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
     const origin = endpoint
     endpoint += "?token=query-secret-1500"
     accessToken = "request-secret-1500"
-    expect(await invokePlatformLive()).toEqual({ error: "rate_limited" })
+    expect(await refreshThenFork()).toEqual({ error: "rate_limited" })
     expect(invokeRefreshHealth()).toMatchObject({ code: "rate_limited" })
     await Bun.sleep(1200)
     expect(requests).toHaveLength(1)
     rejected = false
-    expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
+    expect(await refreshThenFork()).toEqual({ error: "contract-incompatible" })
     expect(invokeRefreshHealth()).toMatchObject({ code: "contract-incompatible" })
     await Bun.sleep(1200)
     expect(requests).toEqual(["GET", "GET"])
@@ -522,15 +534,18 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
         if (phase === "first") await Bun.sleep(8500)
         return Response.json(phase === "new" ? newer : catalogV2())
       })
-      await invokePlatformLive()
+      await refreshThenFork()
       phase = "first"
-      expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+      logged.length = 0
+      const round = syncLiveAllowlist(userData)
+      await waitFor(() => completed().length === 1)
       expect(requests).toHaveLength(1)
       if (change === "refresh") {
         phase = "new"
-        expect((await invokePlatformLive()).error).toBeUndefined()
+        expect((await syncLiveAllowlist(userData)).error).toBeUndefined()
       }
       if (change === "account") identity = "account-b"
+      expect(await round).toEqual({ error: "timeout" })
       const bytes = readFileSync(liveAllowlistPath(userData))
       const health = invokeRefreshHealth()
       const pushes = pushed.length
@@ -571,19 +586,21 @@ describe("#1500 真实 HTTP 超时的后台补试与状态仲裁", () => {
         }
         return Response.json(attempt === 3 ? newer : catalogV2())
       })
-      await invokePlatformLive()
+      await refreshThenFork()
       seeded = true
       logged.length = 0
-      expect(await invokePlatformLive()).toEqual({ error: "timeout" })
+      const round = syncLiveAllowlist(userData)
+      await waitFor(() => completed().length === 1)
       expect(requests).toHaveLength(1)
       await waitFor(() => requests.length === 2)
-      if (race.change === "refresh") expect((await invokePlatformLive()).error).toBeUndefined()
+      if (race.change === "refresh") expect((await syncLiveAllowlist(userData)).error).toBeUndefined()
       if (race.change === "account") identity = "account-b"
       const bytes = readFileSync(liveAllowlistPath(userData))
       const health = invokeRefreshHealth()
       const contract = getContractFailure()
       const pushes = pushed.length
       release.resolve()
+      await round
       await waitFor(() => completed().length === (race.change === "refresh" ? 3 : 2))
       expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
       expect(invokeRefreshHealth()).toEqual(health)

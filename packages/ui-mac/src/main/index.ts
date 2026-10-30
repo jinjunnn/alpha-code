@@ -39,7 +39,7 @@ import { initAutomationLlm } from "./automation-llm"
 import { registerToolPolicyIpcHandlers } from "./tool-policy-ipc"
 import { pullCloudScheduleRuns } from "./alpha-cloud-schedules"
 import { registerModelsIpcHandlers } from "./models-ipc"
-import { syncLiveAllowlist } from "./alpha-platform-models"
+import { requestCatalogRefresh } from "./catalog-refresher"
 import { registerProviderIpcHandlers } from "./provider-ipc"
 import { setProviderLifecycleDeps } from "./provider-lifecycle"
 import { forwardInitializationFailure } from "./initialization"
@@ -733,6 +733,8 @@ const main = Effect.gen(function* () {
       // ⇒ 静默放弃 ⇒ 此后最长一刻钟发送前的拦截是空的。令牌换好了走的正是这个回调。
       // 未初始化 ⇒ no-op;在途的同步会合流,所以每次 publish 都调是安全的,也不会打日志。
       notifyModerationAuthChanged()
+      // `#1555`:续期每次都走到这里;刷新器自己比对身份标签,只有身份真变了才拉平台目录。同步返回,不 await。
+      requestCatalogRefresh("identity-change")
     },
   })
   // Windows/Linux cold start: the OS launches the FIRST process with the link on its command
@@ -758,10 +760,10 @@ const main = Effect.gen(function* () {
   // {file:} channel (A6). Off-catalog keys skip env (spawnLocalServer → extra). See alpha-byok-keys.ts.
   initByokKeys(app.getPath("userData"))
   injectByokKeysIntoEnv()
-  // REQ-001:异步同步 B 网关 edition 白名单缓存(fire-and-forget,不阻塞窗口/首个 fork——B1 纪律)。
-  // 首启无缓存 → 本次 fork 用内置 snapshot;同步成功后 picker 立即收窄,装配随下次 fork/respawn 生效。
-  // 这里的 catch 只吞 rejection;分类失败已由 syncLiveAllowlist 自己送到 alpha-catalog-health(#1084)。
-  void syncLiveAllowlist(app.getPath("userData")).catch(() => {})
+  // REQ-001 / `#1555`:启动刷新远程目录(同步返回,不阻塞窗口/首个 fork——B1 纪律)。首启无缓存 → 本次 fork
+  // 用内置 snapshot;刷新成功只更新「已下载」,picker 与引擎在下一次 fork 钉住后一起变。分类失败由
+  // syncLiveAllowlist 自己送到 alpha-catalog-health(#1084)。
+  requestCatalogRefresh("boot")
 
   if (!TEST_ONBOARDING) migrate()
   // REQ-059:存量引擎配置(~/.opencode/opencode.jsonc + XDG provider 域)迁进当前环境 alpha.jsonc
@@ -1352,6 +1354,7 @@ const main = Effect.gen(function* () {
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => handleSidecarExit(spawnGen, code),
         timelineContext: "boot",
+        generation: spawnGen,
         alphaSidecar,
       })
       void spawning.then(
@@ -1453,9 +1456,6 @@ const main = Effect.gen(function* () {
     let terminal: Promise<boolean> | null = null
     try {
       logger.log("respawning sidecar", { reason })
-      // REQ-001:respawn 前刷新 edition 白名单缓存(登录刚建立 → 按租户 edition 收窄;8s 超时内置,
-      // 失败保留 last-known/内置 snapshot,不阻断 respawn)。
-      await syncLiveAllowlist(app.getPath("userData")).catch(() => {})
       const lockedSweep = withConfigWriteLock(() => ({
         acquired: true as const,
         outcome: sweepEngineConfigDanglingUnlocked({
@@ -1509,6 +1509,7 @@ const main = Effect.gen(function* () {
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => handleSidecarExit(spawnGen, code),
         timelineContext: "respawn",
+        generation: spawnGen,
         alphaSidecar,
       })
       void spawning.then(
