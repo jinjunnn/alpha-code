@@ -301,11 +301,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 审批挂起:权限 chip 转琥珀提示当前模式(审批呈现走独立 Permission surface,
-      此处仅 composer 侧挂起提示;owner 裁决 2026-07-25,#619)── */
-.a-comp[data-approval] .a-chip-perm {
-  color: var(--a-warning);
-}
+/* 审批挂起时权限 chip **不变色**(票 1550,owner 2026-10-30「一档一色」推翻 2026-07-25 #619 的琥珀挂起提示):
+   等待审批由审批卡本身表达;chip 只说当前是哪一档。判据:perm-tier-color.test.ts。 */
 
 /* ── 发送 / 中止 ── */
 .a-comp-send {

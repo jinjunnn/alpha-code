@@ -17,6 +17,7 @@
   --a-accent-subtle:rgba(79,70,229,.10); --a-accent-border:rgba(79,70,229,.35); --a-accent-ring:rgba(79,70,229,.45);
   /* semantic */
   --a-success:#16a34a; --a-warning:#d97706; --a-error:#dc2626; --a-info:#2563eb;
+  --a-perm-allow:#4f46e5; --a-perm-ask:#18181b; --a-perm-readonly:#166534;
   --a-success-subtle:rgba(22,163,74,.12); --a-warning-subtle:rgba(217,119,6,.12); --a-error-subtle:rgba(220,38,38,.12);
   /* radii */
   --a-radius-xs:4px; --a-radius-sm:6px; --a-radius-md:8px; --a-radius-lg:11px; --a-radius-xl:14px; --a-radius-2xl:18px; --a-radius-full:9999px;
@@ -49,6 +50,7 @@ html[data-theme="dark"]{
   --a-accent-solid:#4f46e5; --a-accent-solid-hover:#5b54ea; --a-accent-solid-active:#4338ca;
   --a-accent-subtle:rgba(129,140,248,.14); --a-accent-border:rgba(129,140,248,.38); --a-accent-ring:rgba(129,140,248,.45);
   --a-success:#4ade80; --a-warning:#fbbf24; --a-error:#f87171; --a-info:#60a5fa;
+  --a-perm-allow:#818cf8; --a-perm-ask:#fafafa; --a-perm-readonly:#4ade80;
   --a-success-subtle:rgba(74,222,128,.14); --a-warning-subtle:rgba(251,191,36,.14); --a-error-subtle:rgba(248,113,113,.14);
   --a-shadow-xs:0 1px 2px rgba(0,0,0,.4);
   --a-shadow-sm:0 1px 3px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.4);
@@ -136,9 +138,12 @@ svg{display:block}
 .chip .chev{width:12px;height:12px;opacity:.6;margin-left:-1px}
 .chip.model{padding-left:6px}
 .chip .pico{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;flex:none}
-.chip.perm[data-mode="full"]{color:var(--a-warning)}
-.chip.perm[data-mode="full"] .ic{color:var(--a-warning)}
-.chip.perm[data-mode="ask"]{color:var(--a-text-secondary)}
+/* 一档一色(alpha-code#1550,color.md「Run-permission tiers」):入口 chip、菜单每行图标、菜单选中态同一个 --a-perm-*;
+   没有一档用琥珀,等待审批时 chip 也不变色(由审批卡表达)。 */
+.chip.perm[data-mode="full"],.chip.perm[data-mode="full"] .ic,.perm-menu .menu-item[data-pm="全部批准"] .ic,.perm-menu .menu-item.is-on[data-pm="全部批准"],.perm-menu .menu-item.is-on[data-pm="全部批准"] .ic{color:var(--a-perm-allow)}
+.chip.perm[data-mode="ask"],.chip.perm[data-mode="ask"] .ic,.perm-menu .menu-item[data-pm="请求审批"] .ic,.perm-menu .menu-item.is-on[data-pm="请求审批"],.perm-menu .menu-item.is-on[data-pm="请求审批"] .ic{color:var(--a-perm-ask)}
+.chip.perm[data-mode="readonly"],.chip.perm[data-mode="readonly"] .ic,.perm-menu .menu-item[data-pm="只读"] .ic,.perm-menu .menu-item.is-on[data-pm="只读"],.perm-menu .menu-item.is-on[data-pm="只读"] .ic{color:var(--a-perm-readonly)}
+.perm-menu .menu-item.is-on{font-weight:var(--a-weight-semibold)}
 .chip.effort .lvl{font-variant-numeric:tabular-nums}
 .chip.usage{padding-left:7px}
 .chip.usage .ring{width:14px;height:14px;border-radius:50%;background:conic-gradient(var(--a-text-tertiary) 38%,var(--a-bg-inset) 0);position:relative;flex:none}/* 中性默认,≥80% 才转 accent/warning */

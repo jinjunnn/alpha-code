@@ -78,8 +78,8 @@
 
   /* ── Run-permission tiers (#1550) — one color per tier, used by the composer chip, every
      row of the permission menu and its selected state alike. Full approval = the indigo accent
-     (the default tier), ask = primary neutral, read-only = deep green. None is amber: amber stays
-     reserved for "an approval is pending" (.a-comp[data-approval]). Literal hex, not var(): the
+     (the default tier), ask = primary neutral, read-only = deep green. None is amber, and the chip
+     keeps its tier color while an approval is pending (the approval card says that). Literal hex, not var(): the
      contrast ratchet must read a measurable color in every theme block. */
   --a-perm-allow: #4f46e5;
   --a-perm-ask: #18181b;
@@ -180,6 +180,9 @@
   --a-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --a-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --a-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Layout ──────────────────────────────────────────────────────────── */
+  --a-home-top: 40px;  /* window-button (macOS traffic-light) strip that full-window pages leave clear */
 
   /* ── Z-index scale ───────────────────────────────────────────────────── */
   --a-z-base: 0;

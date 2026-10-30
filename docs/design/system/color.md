@@ -85,8 +85,9 @@ selected).
 | `--a-perm-ask` | 请求审批 (ask before changes) | `#18181b` | `#fafafa` |
 | `--a-perm-readonly` | 只读 (read-only) | `#166534` | `#4ade80` |
 
-No tier uses `--a-warning`: amber on the chip means only "an approval is
-pending" (`.a-comp[data-approval]`). Each tier clears AA on every container
+No tier uses `--a-warning`, and the chip keeps its tier color while an
+approval is pending — the approval card itself says that, the chip only says
+which tier is active. Each tier clears AA on every container
 background in all three theme blocks (`contrast-ratchet.test.ts`).
 
 ## User message bubble

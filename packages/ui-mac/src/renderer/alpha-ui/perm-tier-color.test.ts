@@ -61,6 +61,18 @@ describe("#1550 AC1 permission tier colors", () => {
     }
   })
 
+  test("while an approval is pending the chip keeps its tier color — no amber, no override", async () => {
+    // owner 2026-10-30「一档一色」推翻了 2026-07-25 #619 的 `.a-comp[data-approval] .a-chip-perm { color: var(--a-warning) }`:
+    // 那条规则让「全部批准」在挂起时变黄。等待审批由审批卡表达,chip 只说当前是哪一档。
+    const composer = await Bun.file(join(dir, "alpha-composer.tsx")).text()
+    expect(composer).toContain('data-approval={approvalPending() ? "" : undefined}') // 挂起态真实存在,本条不是空判
+    const all = await styleRules()
+    const onChip = all.filter((rule) => rule.selectors.some((s) => s.includes(".a-chip-perm")))
+    const pendingOverrides = onChip.filter((rule) => rule.selectors.some((s) => s.includes("data-approval")))
+    expect(pendingOverrides.map((rule) => rule.selectors.join(", "))).toEqual([])
+    expect(onChip.filter((rule) => rule.body.includes("--a-warning")).map((rule) => rule.selectors.join(", "))).toEqual([])
+  })
+
   test("the chip and menu rows carry the attributes those selectors key on", async () => {
     const source = await Bun.file(join(dir, "alpha-composer.tsx")).text()
     expect(source).toContain('class="a-chip a-chip-perm"')
