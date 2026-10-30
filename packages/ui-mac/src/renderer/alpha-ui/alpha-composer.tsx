@@ -33,13 +33,15 @@ import {
   ATTACH_MAX_COUNT,
   buildAttachmentParts,
   classifyAttachment,
-  IMAGE_MAX_BYTES,
+  imageRouteOf,
   mergeAttachments,
-  PDF_MAX_BYTES,
+  revalidateStagedDirectory,
+  textAttachmentUrl,
   type AttachmentReadResult,
   type ComposerAttachment,
   type PendingAttachmentRead,
 } from "./composer-attachments-core"
+import { ComposerAttachmentStrip } from "./attachment-cards"
 import { pathHitsPopover } from "./popover-hit"
 import { claimOverlay, releaseOverlay } from "./overlay-stack"
 import { Tooltip } from "./Tooltip"
@@ -323,12 +325,6 @@ const ArrowUp = () => (
 const StopSquare = () => (
   <svg class="a-ic" viewBox={ico} style={{ fill: "currentColor", stroke: "none" }}>
     <rect x="7" y="7" width="10" height="10" rx="2" />
-  </svg>
-)
-const FileGlyph = () => (
-  <svg class="a-ic" viewBox={ico}>
-    <path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z" />
-    <path d="M14 4v5h6" />
   </svg>
 )
 const TermGlyph = () => (
@@ -824,10 +820,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
   onMount(() => markStartupTimeline("renderer.composer.mount", { mode: props.mode }))
 
-  /* ── 附件真通道(REQ-078 T2:图片/PDF → dataUrl FilePart;纯核 = composer-attachments-core)──
+  /* ── 附件真通道(REQ-078 T2;REQ-236 `#1553` 逐类路径见 composer-attachments-core 抬头)──
      入口三通道:弹窗「添加附件」→ 隐藏 <input type=file>;textarea 粘贴;整框拖拽。
-     不合规(类型/超限)如实 toast 拒绝,绝不静默丢(C28 —— 旧「文件和文件夹」行正是静默吞)。 */
+     不合规(类型/超限/读盘/暂存失败)在附件条里以卡片如实说明,绝不静默丢(C28 —— 旧「文件和文件夹」行正是静默吞);
+     只有超出总数上限仍是 toast(没有卡可放)。 */
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([...(props.initialAttachments ?? [])])
+  // REQ-236 `#1553`:已存到本机的文档属于存进去的那个实例目录;目录换了(新对话页切目录)读取工具就够不着它,
+  // 改成可重试的失败卡,不带着一个读不到的路径发出去。
+  createEffect(() => {
+    const directory = props.directory()
+    if (directory) setAttachments((xs) => revalidateStagedDirectory(xs, directory))
+  })
   const [dragOver, setDragOver] = createSignal(false)
   // REQ-126:有附件正在读盘(FileReader 未 settle)。这段窗口里内容既不在 attachments() 里、
   // 也无处可存 —— 宿主据此拦住会触发重挂的操作(见 onAttachmentReadPending)。
@@ -849,24 +852,41 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     })
   // 读一批文件,**不碰任何实例状态** —— 并入谁、由谁报拒绝,交给 trackRead 里那个「settle 时还
   // 活着的实例」决定(#663)。这是工单可以跨实例移交的前提。
+  // REQ-236 `#1553`:拒绝与失败不再只弹一次 toast —— 一律作为卡片进附件条(卡内说明,可移除;读盘 / 暂存失败可重试)。
+  // 文档在这里(用户选择 / 拖入 / 粘贴的这一刻)经 main 存进实例目录的隐藏目录,只此一处调用暂存。
   const readFiles = async (list: ArrayLike<File>): Promise<AttachmentReadResult> => {
-    const rejected: Array<{ name: string; reason: string }> = []
     const accepted: ComposerAttachment[] = []
     for (const f of Array.from(list)) {
       const name = f.name || t("alpha.composer.pastedAttachment", { count: ++pasteSeq })
       const c = classifyAttachment({ name, type: f.type, size: f.size })
+      const id = nextAttachmentId()
       if (!c.ok) {
-        rejected.push({ name, reason: c.reason })
+        accepted.push({ id, name, size: f.size, kind: "failed", reason: c.reason })
         continue
       }
       try {
-        const url = await readAsDataUrl(f)
-        accepted.push({ id: nextAttachmentId(), name, mime: f.type, kind: c.kind, size: f.size, url })
+        if (c.kind === "image") {
+          accepted.push({ id, name, mime: f.type, kind: "image", size: f.size, url: await readAsDataUrl(f) })
+          continue
+        }
+        const bytes = await f.arrayBuffer()
+        if (c.kind === "text") {
+          const url = textAttachmentUrl(new Uint8Array(bytes))
+          accepted.push(url ? { id, name, mime: "text/plain", kind: "text", size: f.size, url } : { id, name, size: f.size, kind: "failed", reason: "type" })
+          continue
+        }
+        const directory = props.directory()
+        const staged = directory ? await window.api.attachments.stage(directory, name, c.reader, bytes) : ({ ok: false, reason: "not-project" } as const)
+        accepted.push(
+          staged.ok
+            ? { id, name, mime: c.mime, kind: "document", size: f.size, reader: c.reader, directory: directory!, path: staged.path, file: f }
+            : { id, name, size: f.size, kind: "failed", reason: staged.reason, file: f },
+        )
       } catch {
-        rejected.push({ name, reason: t("alpha.composer.attachmentReadFailed") })
+        accepted.push({ id, name, size: f.size, kind: "failed", reason: "read", file: f })
       }
     }
-    return { accepted, rejected }
+    return { accepted, rejected: [] }
   }
   /** 认领一份读盘工单:挂起计数 +1,settle 时并入**当时活着的这个实例**并如实 toast 拒绝。
    *  已卸载则原地让位 —— 结果已经随工单交给了接手方,这里再写就是覆盖活人的状态。 */
@@ -879,7 +899,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       setAttachmentReads((n) => n - 1)
       if (disposed) return
       const merged = mergeAttachments(attachments(), result.accepted)
-      setAttachments(merged.next)
+      setAttachments(revalidateStagedDirectory(merged.next, props.directory()))
       const bad = [...result.rejected, ...merged.rejected]
       if (bad.length)
         pushToast({
@@ -905,6 +925,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   // promise 记着结果,接手即并入;「读完时正好没人活着」因此不再是丢失,只是晚一点并进来。
   props.initialPendingReads?.forEach(trackRead)
   const removeAttachment = (id: string) => setAttachments((xs) => xs.filter((a) => a.id !== id))
+  /** 失败卡的「重试」:拿留着的原文件重走一遍读盘 / 暂存(仍是用户这一次点击发起的)。 */
+  const retryAttachment = (id: string) => {
+    const failed = attachments().find((a) => a.id === id)
+    if (failed?.kind !== "failed" || !failed.file) return
+    removeAttachment(id)
+    addFiles([failed.file])
+  }
   const hasDragFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")
 
   // REQ-073 拍板③:模式是会话级的 —— home 是新会话入口,挂载即回默认(build)。
@@ -1011,6 +1038,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   /* #595 谓词 2 的事实源:引擎本次实际注册的模型。撤销豁免(checkSelectedModel)让「选择」活了下来,
      发送门就必须自己拿这份清单挡住不可执行的提交 —— 两个谓词各自执行,谁也不代替谁。 */
   const [engineModelRefs, setEngineModelRefs] = createSignal<EngineModelRef[]>([])
+  /* REQ-236 `#1553` AC7:引擎对每个已注册模型的 `capabilities.input` 是否含 image —— 与 ext 云识图读同一格,
+     图片读取方式(直接看 / 云端识图 / 看不了 / 未知)只从这里派生。 */
+  const [engineImageInput, setEngineImageInput] = createSignal<ReadonlyMap<string, boolean>>(new Map())
   const [authEpoch, setAuthEpoch] = createSignal(0)
   const [modelRetryEpoch, setModelRetryEpoch] = createSignal(0)
   let chainSeq = 0
@@ -1052,6 +1082,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const accountRetryWakeup = createRetryWakeup()
   const authSignature = (state: AuthState) =>
     `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
+  const imageRoute = createMemo(() => {
+    const model = composerModel()
+    return imageRouteOf({
+      image: model ? engineImageInput().get(`${model.providerID}\u0000${model.id}`) : undefined,
+      loggedIn: lastAuth()?.status === "logged-in" && (lastAuth()?.platformStatus ?? "ready") === "ready",
+    })
+  })
   const preflightCtx = () => ({
     // #686:链的引擎事实(下面四项)在 runModelChain 起手时被整批复位 —— 未就绪时把它们喂给判据
     // 只会得到一条编造的拒绝。就绪与否因此是判据的**必填入参**,不再是一句请求调用方自觉的注释。
@@ -1340,6 +1377,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       .filter((model) => model.enabled && model.status !== "deprecated")
       .map((model) => ({ providerID: model.providerID, id: model.id }))
     setEngineModelRefs(engineModels)
+    setEngineImageInput(new Map(loaded.data.map((model) => [`${model.providerID}\u0000${model.id}`, model.capabilities.input.includes("image")])))
     setHasConfiguredByok(
       configured.some(
         (id) =>
@@ -1868,33 +1906,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           e.currentTarget.value = "" // 允许再次选择同一文件
         }}
       />
-      <Show when={attachments().length > 0}>
-        <div class="a-comp-atts">
-          <For each={attachments()}>
-            {(a) => (
-              <span class="a-comp-att" data-kind={a.kind}>
-                <Show when={a.kind === "image"} fallback={<FileGlyph />}>
-                  <img src={a.url} alt="" />
-                </Show>
-                <Tooltip label={`${a.name} · ${(a.size / 1024 / 1024).toFixed(1)}MB`}>
-                  <span class="a-comp-att-name" tabindex="0">
-                    {a.name}
-                  </span>
-                </Tooltip>
-                <Tooltip label={t("alpha.composer.removeAttachment")}>
-                  <button
-                    class="a-comp-att-x"
-                    aria-label={t("alpha.composer.removeAttachment")}
-                    onClick={() => removeAttachment(a.id)}
-                  >
-                    ×
-                  </button>
-                </Tooltip>
-              </span>
-            )}
-          </For>
-        </div>
-      </Show>
+      <ComposerAttachmentStrip
+        attachments={attachments()}
+        reading={attachmentReads() > 0}
+        imageRoute={imageRoute()}
+        onRemove={removeAttachment}
+        onRetry={retryAttachment}
+      />
       <textarea
         ref={taRef}
         class="a-comp-input"
@@ -2076,11 +2094,6 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 }
 
 function attachmentReason(reason: string) {
-  if (reason.startsWith("仅支持")) return t("alpha.composer.attachmentTypeUnsupported")
-  if (reason.startsWith("超过图片"))
-    return t("alpha.composer.attachmentImageTooLarge", { size: IMAGE_MAX_BYTES / 1024 / 1024 })
-  if (reason.startsWith("超过PDF"))
-    return t("alpha.composer.attachmentPdfTooLarge", { size: PDF_MAX_BYTES / 1024 / 1024 })
   if (reason.startsWith("最多")) return t("alpha.composer.attachmentCountExceeded", { count: ATTACH_MAX_COUNT })
   return reason
 }

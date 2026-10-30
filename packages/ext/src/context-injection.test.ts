@@ -31,6 +31,7 @@ import {
   explainConfigReference,
   explainConfigString,
   explainInstructionBody,
+  explainAttachmentBlock,
   explainVisionBlock,
   HOOK_CONTEXT_CLASS,
   IDENTITY_FRAGMENT_ID,
@@ -52,6 +53,7 @@ import { ALPHA_AGENT_TEXT } from "../../ui-mac/src/main/alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
 import { buildAlphaIdentity } from "../../ui-mac/src/main/alpha-identity"
 import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV } from "./cloud-websearch-kill"
+import { ATTACHMENT_METADATA_KEY } from "../../ui-mac/src/shared/attachment-path"
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..")
 const HOOKS_SOURCE = join(REPO_ROOT, "packages", "plugin", "src", "index.ts")
@@ -494,17 +496,30 @@ const userParts = (sessionID: string, messageID: string) => [
   { id: "prt_a", sessionID, messageID, type: "text", text: "看看这张图" },
   { id: "prt_b", sessionID, messageID, type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${PNG_1x1}` },
 ]
-/** 判官:原有 part 逐字不变;新 part 必须是 synthetic text 且 text 由登记簿解释。 */
+/** 判官:原有 part 逐字不变;新 part 必须是 synthetic text 且 text 由登记簿解释(识图块 `#1419` / 附件读取指令 `#1553`)。 */
 function unexplainedNewParts(before: unknown[], after: unknown[]): string[] {
   const bad: string[] = []
   for (let i = 0; i < before.length; i++) if (JSON.stringify(after[i]) !== JSON.stringify(before[i])) bad.push(`part ${i} changed`)
   for (const part of after.slice(before.length)) {
     const p = part as { type?: unknown; synthetic?: unknown; text?: unknown }
     if (p.type !== "text" || p.synthetic !== true) bad.push(`new part is not synthetic text: ${JSON.stringify(part)}`)
-    else if (!explainVisionBlock(String(p.text)).ok) bad.push(`new part text is not a registered vision block: ${String(p.text).slice(0, 40)}`)
+    else if (!explainVisionBlock(String(p.text)).ok && !explainAttachmentBlock(String(p.text)).ok)
+      bad.push(`new part text is not a registered vision block or attachment instruction: ${String(p.text).slice(0, 40)}`)
   }
   return bad
 }
+/** `#1553`:composer 发来的暂存附件记录(synthetic 空文本 + metadata)。 */
+const stagedAttachmentPart = (sessionID: string, messageID: string) => ({
+  id: "prt_c",
+  sessionID,
+  messageID,
+  type: "text",
+  text: "",
+  synthetic: true,
+  metadata: {
+    [ATTACHMENT_METADATA_KEY]: { v: 1, name: "a.docx", mime: "application/x", size: 3, path: "attachments/0b8c7f9e-1d2a-4c3b-9e8f-7a6b5c4d3e2f/a.docx", reader: "word" },
+  },
+})
 
 describe("③g chat.message 咽喉:追加进用户消息的每个 part 都是登记过的识图块", () => {
   test("看不了图 + 云端不可用:恰好追加一个 synthetic text,text 是登记项,原有 part 不动;能看图:一个都不加", async () => {
@@ -531,6 +546,22 @@ describe("③g chat.message 咽喉:追加进用户消息的每个 part 都是登
     expect(bad.length).toBe(2)
     expect(bad[0]).toContain("not synthetic text")
     expect(bad[1]).toContain("not a registered vision block")
+  })
+  test("`#1553` 暂存附件:恰好追加一个 synthetic 读取指令,text 是登记项(sink=attachment-block),原有 part 不动;判官不串格", async () => {
+    const hooks = await loadHooks()
+    const real = hooks["chat.message"] as ChatHook
+    const parts: unknown[] = [{ id: "prt_a", sessionID: "s-att", messageID: "msg_4", type: "text", text: "读一下" }, stagedAttachmentPart("s-att", "msg_4")]
+    const before = clone(parts)
+    await real({ sessionID: "s-att", model: { providerID: "alpha", modelID: "kimi-k3" } }, { message: { id: "msg_4", model: { providerID: "alpha", modelID: "kimi-k3" } }, parts })
+    expect(parts.length).toBe(3)
+    expect(unexplainedNewParts(before, parts)).toEqual([])
+    const instruction = String((parts[2] as { text: unknown }).text)
+    expect(explainAttachmentBlock(instruction).ok).toBe(true)
+    expect(explainVisionBlock(instruction).ok).toBe(false)
+    // 已知的坏:登记过的指令被改一个字 / 包一层真钩子再推一段散文 synthetic —— 判官各点名。
+    expect(explainAttachmentBlock(instruction.replace("如实", "随便")).ok).toBe(false)
+    parts.push({ id: "prt_r3", sessionID: "s-att", messageID: "msg_4", type: "text", text: "请读取附件 a.docx", synthetic: true } as never)
+    expect(unexplainedNewParts(before, parts)).toEqual([expect.stringContaining("not a registered vision block or attachment instruction")])
   })
 })
 

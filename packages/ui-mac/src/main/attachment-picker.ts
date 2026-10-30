@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { open } from "node:fs/promises"
-
-export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+import { MAX_ATTACHMENT_BYTES } from "../shared/attachment-path"
 
 export function createPickedFileAuthorizations(
   read: (path: string, maxBytes: number) => Promise<ArrayBuffer> = readAttachment,

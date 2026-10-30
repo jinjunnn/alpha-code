@@ -21,6 +21,7 @@ import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ToolPolicyApi } from "../shared/tool-policy-wire"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import type { OfficeRuntimeReadiness } from "../shared/office-advisories"
+import type { AttachmentReader, AttachmentStageResult } from "../shared/attachment-path"
 import type {
   PackageAdmissionAuthorizationV1,
   PackageAdmissionPreviewV1,
@@ -786,6 +787,11 @@ export type ElectronAPI = {
    *  (已批设计 `docs/design/2026-09-19-req160-send-blocked-notice/design.md` §3)。 */
   moderation: {
     check: (text: string) => Promise<boolean>
+  }
+  /** REQ-236 `#1553` AC2:把一份 PDF / Word / Excel / PPT 附件存进 `directory`(会话实例目录)的隐藏目录
+   *  `attachments/<uuid>/<净化后的文件名>`;只在用户选择、拖入、粘贴时调用。`path` 相对隐藏目录根。 */
+  attachments: {
+    stage: (directory: string, name: string, reader: AttachmentReader, bytes: ArrayBuffer) => Promise<AttachmentStageResult>
   }
   /** REQ-098:App 环境快照(只读)。main 启动时解析后冻结;此 IPC 无参数、无对应写面 —— renderer
    *  既不能伪造环境,也没有任何通道改写环境根(AC#6)。 */

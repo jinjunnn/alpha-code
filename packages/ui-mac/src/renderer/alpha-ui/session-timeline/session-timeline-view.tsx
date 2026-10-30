@@ -15,6 +15,7 @@ import {
   TurnDiffSummaryRow,
   TurnErrorCard,
 } from "./cards/tool-cards"
+import { TimelineAttachments } from "../attachment-cards"
 import { CloudImageCard } from "./cards/cloud-image-card"
 import { TimelineIntentsContext, type TimelineIntents, useTimelineIntents } from "./cards/timeline-intents"
 import { createProcessOpenState, ProcessOpenContext, ProcessRow } from "./process-fold"
@@ -507,30 +508,10 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
   return (
     <article class="a-tl-row a-tl-user" data-alpha-timeline-row="user">
       <Show when={props.row.attachments.length > 0}>
-        <div class="a-tl-attachments">
-          <For each={props.row.attachments}>
-            {(attachment) => (
-              <span class="a-tl-attach" data-media={attachment.media}>
-                <span class="a-tl-attach-badge" data-media={attachment.media} aria-hidden="true">
-                  <Show
-                    when={attachment.media === "image"}
-                    fallback={<span class="a-tl-attach-ext">{attachment.label.slice(0, 4)}</span>}
-                  >
-                    <svg viewBox="0 0 24 24">
-                      <rect x="3" y="4" width="18" height="16" rx="2" />
-                      <circle cx="8.5" cy="10" r="1.6" />
-                      <path d="M21 16l-5-5L6 20" />
-                    </svg>
-                  </Show>
-                </span>
-                <span class="a-tl-attach-name">
-                  <b>{attachment.name}</b>
-                  <small>{attachment.label}</small>
-                </span>
-              </span>
-            )}
-          </For>
-        </div>
+        <TimelineAttachments
+          attachments={props.row.attachments}
+          onReadAgain={intents.readAttachment ? (attachment) => attachment.staged && intents.readAttachment?.(attachment.staged) : undefined}
+        />
       </Show>
       <Show when={props.row.comments.length > 0}>
         <div class="a-tl-comments">

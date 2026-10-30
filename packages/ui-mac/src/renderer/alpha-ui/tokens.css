@@ -19,6 +19,9 @@
   --a-surface: #ffffff;            /* cards, panels, popovers */
   --a-surface-raised: #ffffff;     /* modals (paired with shadow) */
   --a-scrim: rgba(15, 17, 21, 0.45);
+  /* REQ-236 附件缩略图角标:压在任意图片上(含纯白)仍可读,两种主题同值。 */
+  --a-media-scrim: rgba(15, 17, 21, 0.72);
+  --a-text-on-media: #ffffff;
 
   --a-border-faint: #eef0f3;       /* hairline dividers */
   --a-border: #e4e6ea;             /* default control border */

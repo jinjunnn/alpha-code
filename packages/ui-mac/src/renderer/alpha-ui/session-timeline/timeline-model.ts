@@ -27,6 +27,9 @@ import { egressPolicyDenialOf } from "../../../shared/egress-denial"
 import { isCloudFacadeToolPart } from "../cloud-facade-identity"
 import type { AlphaSessionIdentity } from "../session-workspace/session-workspace-core"
 import { toolCardDispatchOf, toolTitleKeyOf } from "./cards/tool-card-model"
+import { attachmentRev, timelineAttachmentsOf, type TimelineAttachment, type TimelineAttachmentContext } from "./timeline-attachments"
+
+export type { TimelineAttachment, TimelineAttachmentRead } from "./timeline-attachments"
 
 /** I7 资源耗尽面:单块内容进渲染管线前的硬上限(字符)。 */
 export const MARKDOWN_MAX_CHARS = 60_000
@@ -85,13 +88,6 @@ export interface TimelineSegment {
 
 /** 连接器来源名的字段帽(I7)。 */
 export const MENTION_LABEL_MAX_CHARS = 60
-
-export interface TimelineAttachment {
-  partID: string
-  name: string
-  media: "image" | "file"
-  label: string
-}
 
 export interface TimelineComment {
   partID: string
@@ -292,30 +288,12 @@ export interface TimelineProjectionInput {
   retry?: { attempt: number; message: string }
   /** 斜杠命令来源登记(C7 可选供给;缺席 = 不出 chip,fail-closed)。 */
   slashOrigins?: readonly TimelineSlashOrigin[]
+  /** REQ-236 `#1553`:附件读取结果的输入 —— 会话实例目录与本机读取工具的逐服务状态(缺席 = 不下「已读取 / 失败」结论)。 */
+  attachments?: TimelineAttachmentContext
 }
 
 /** 被 dock/审批面接管、时间线不渲染的**宿主内建**工具(identity 判定;别名不是准入)。 */
 const HIDDEN_TOOLS = new Set(["todowrite"])
-
-function attachmentOf(part: FilePart): TimelineAttachment | undefined {
-  if (!part.url.startsWith("data:")) return undefined
-  const name = part.filename?.trim() || part.mime
-  return {
-    partID: part.id,
-    name,
-    media: part.mime.startsWith("image/") ? "image" : "file",
-    label: attachmentLabel(name, part.mime),
-  }
-}
-
-function attachmentLabel(name: string, mime: string) {
-  if (mime.startsWith("image/")) return mime.slice("image/".length).toUpperCase()
-  if (mime === "application/pdf") return "PDF"
-  const base = name.split("/").at(-1) ?? name
-  const dot = base.lastIndexOf(".")
-  if (dot <= 0) return "FILE"
-  return base.slice(dot + 1).toUpperCase()
-}
 
 const COMMENT_NOTE_RE =
   /^The user made the following comment regarding (this file|line (\d+)|lines (\d+) through (\d+)) of (.+?): ([\s\S]+)$/
@@ -1104,13 +1082,24 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       ? streamingAssistant.parentID
       : undefined) ?? (input.status !== "idle" ? users.at(-1)?.id : undefined)
 
+  // REQ-236 `#1553`:「已读取」看的是**同一会话**的读取调用 —— 只在真有暂存附件时才把全会话的工具 part 收一遍。
+  let tools: Part[] | undefined
+  const sessionTools = () =>
+    (tools ??= input.messages.flatMap((message) =>
+      message.role === "assistant" ? input.partsOf(message.id).filter((part) => part.type === "tool") : [],
+    ))
+
   users.forEach((userMessage, index) => {
     const userParts = input.partsOf(userMessage.id)
     const textPart = userParts.find((part): part is TextPart => part.type === "text" && !part.synthetic)
     const rawText = textPart?.text ?? ""
     const { text, truncated } = boundedText(rawText, USER_TEXT_MAX_CHARS)
     const segments = segmentUserText(text, mentionSpans(userParts))
-    const attachments = userParts.flatMap((part) => (part.type === "file" ? (attachmentOf(part) ?? []) : []))
+    const attachments = timelineAttachmentsOf(userParts, () => ({
+      ...input.attachments,
+      tools: sessionTools(),
+      turnActive: userMessage.id === activeUserID,
+    }))
     const comments = userParts.flatMap((part) => commentOf(part) ?? [])
     const turnAssistants = assistantsByParent.get(userMessage.id) ?? []
     const slash = slashOriginForTurn(input.slashOrigins, new Set(turnAssistants.map((message) => message.id)))
@@ -1138,7 +1127,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           text,
           String(truncated),
           segments.map((segment) => `${segment.kind ?? "t"}:${segment.text.length}:${segment.label ?? ""}`).join(","),
-          attachments.map((attachment) => attachment.partID).join(","),
+          attachments.map(attachmentRev).join(","),
           comments.map((comment) => comment.partID).join(","),
           slash ? `${slash.command}\u0000${slash.arguments ?? ""}\u0000${slash.source ?? ""}` : "",
         ].join("§"),

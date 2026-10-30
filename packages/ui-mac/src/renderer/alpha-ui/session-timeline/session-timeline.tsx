@@ -17,6 +17,7 @@ import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import { useAlphaSessionLiveContext } from "../session-workspace/alpha-session-workspace"
 import type { SessionRailApi } from "../session-workspace/session-workspace-shell"
+import type { StagedAttachmentMeta } from "../../../shared/attachment-path"
 import { bindFocusArtifact, type TimelineEditUserMessageIntent, type TimelineIntents } from "./cards/timeline-intents"
 import { SessionTimelineView, type TimelineDisplayNames } from "./session-timeline-view"
 import {
@@ -42,6 +43,8 @@ export interface AlphaSessionTimelineProps {
   turnWait?: Accessor<TimelineTurnWait | undefined>
   /** `#1318` AC3:把焦点放回会话输入框(workspace 焦点通道);缺席 = 空回合行只陈述事实。 */
   onFocusPrompt?: () => void
+  /** REQ-236 `#1553` AC4:附件卡「重新读取」—— 在输入框里以同一个暂存附件预填读取请求;缺席 = 不出按钮。 */
+  onReadAttachment?: (attachment: StagedAttachmentMeta) => void
 }
 
 export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
@@ -100,6 +103,18 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
             ? { attempt: status.attempt, message: typeof status.message === "string" ? status.message : "" }
             : undefined,
         slashOrigins: slashOrigins(),
+        // REQ-236 `#1553`:附件读取结果的输入 —— 会话目录 + 本机读取工具的逐服务状态(引擎 mcp.status,事件驱动刷新)。
+        // getter:只有真有暂存附件的消息才会读它,其余会话不为此拉起 MCP 状态查询。
+        attachments: {
+          directory: live.current()?.identity.directory,
+          get services() {
+            const directory = live.current()?.identity.directory
+            if (!directory) return undefined
+            // 状态还没取到(mcp_ready 假)时 `mcp` 是空表 —— 那不是「没装」,不下结论。
+            const [store] = serverSync().child(directory, { mcp: true })
+            return store.mcp_ready ? store.mcp : undefined
+          },
+        },
       }),
     )
   })
@@ -169,6 +184,9 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     },
     get editUserMessage() {
       return props.onEditUserMessage
+    },
+    get readAttachment() {
+      return props.onReadAttachment
     },
     // REQ-236 `#1552`:生图卡跟住的 run 所在目录 = 会话身份的 directory(右栏产物面板同一货币)。
     get cloudDirectory() {

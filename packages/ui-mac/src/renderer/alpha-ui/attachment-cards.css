@@ -1,0 +1,285 @@
+/* REQ-236 `#1553` 附件条与附件卡 —— 规格见批准稿 docs/design/2026-10-30-req236-attachments/frame.html 第三节。
+   取代输入框 .a-comp-att 与时间线 .a-tl-attach 的旧视觉形态(类名保留,组件测试按它定位)。 */
+
+.a-att-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── 输入框附件条:文字区之上,单行横排,溢出横向滚动、右缘渐隐 ── */
+.a-comp-atts {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+}
+.a-comp-atts::-webkit-scrollbar {
+  display: none;
+}
+.a-comp-att {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  padding: 6px 6px 0 0;
+}
+
+.a-att-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 216px;
+  height: 56px;
+  padding: 7px 10px 7px 7px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: 10px;
+  background: var(--a-bg-subtle);
+}
+.a-att-card[data-failed] {
+  border-color: color-mix(in srgb, var(--a-error) 45%, transparent);
+  background: var(--a-error-subtle);
+}
+.a-att-card[data-pending] {
+  width: 140px;
+  justify-content: center;
+}
+.a-att-glyph {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--a-text-secondary);
+}
+.a-att-glyph svg {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.a-att-glyph-ext {
+  position: relative;
+  margin-top: 8px;
+  font-family: var(--a-font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+}
+.a-att-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.a-comp-att-name {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--a-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.a-att-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+  white-space: nowrap;
+}
+.a-att-size {
+  color: var(--a-text-tertiary);
+}
+.a-att-fail {
+  color: var(--a-error-on-subtle);
+}
+.a-att-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.a-att-status-ic {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.a-att-status-ic[data-tone="ok"] {
+  stroke: var(--a-success);
+}
+.a-att-status-ic[data-tone="warn"] {
+  stroke: var(--a-warning);
+}
+.a-att-status-ic[data-tone="error"] {
+  stroke: var(--a-error);
+}
+
+/* 移除:右上角外挂 20px 圆,常显,键盘可达 */
+.a-comp-att-x {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1.5px solid var(--a-surface);
+  border-radius: 50%;
+  background: var(--a-text);
+  color: var(--a-bg-canvas);
+  cursor: pointer;
+}
+.a-comp-att-x svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+/* ── 缩略图:56×56,左下角 18px 读取方式标记;点开看大图 ── */
+.a-att-thumb-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.a-att-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--a-border);
+  border-radius: 10px;
+  background: var(--a-bg-subtle);
+  cursor: zoom-in;
+}
+.a-att-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.a-att-thumb-route {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--a-media-scrim);
+  color: var(--a-text-on-media);
+}
+.a-att-route-ic {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.a-att-image-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px 0;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+}
+.a-att-image-route .a-att-route-ic {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.a-att-lightbox {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 8px);
+  left: 0;
+  box-sizing: border-box;
+  width: 300px;
+  padding: 8px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-lg);
+}
+.a-att-lightbox img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.a-att-lightbox-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 2px 0;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.a-att-lightbox-meta b {
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--a-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ── 用户消息上方:靠右,先图片后文件;卡放在 --a-surface 上,不进气泡 ── */
+.a-tl-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  align-self: flex-end;
+  max-width: 82%;
+}
+.a-tl-attach-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  width: 100%;
+}
+.a-tl-attach-thumbs .a-att-thumb {
+  width: 104px;
+  height: 104px;
+  border-radius: var(--a-radius-lg);
+}
+.a-tl-attach-thumbs .a-att-thumb[data-large] {
+  width: 240px;
+  height: 180px;
+}
+.a-tl-attachments .a-att-lightbox {
+  left: auto;
+  right: 0;
+}
+.a-tl-attach.a-att-card {
+  width: 248px;
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+}
+.a-tl-attach.a-att-card[data-failed] {
+  background: var(--a-error-subtle);
+}

@@ -8,6 +8,8 @@
 // 手段自证:同一台引擎、同一份注入,只删掉 `modalities` ⇒ 引擎判 false;把引擎给的 JSON 里那一格抠掉 ⇒ 读出来是
 // undefined(不是 false)—— 「不知道」与「不能」在读端是两个值,插件对前者才走 fail-closed。
 // 引擎离线跑:OPENCODE_MODELS_PATH 指向仓内真快照,`models` 命令不发网络请求。
+// 只验形状,不验围栏下的传输:插件经哪条路问到 /provider(出货 = 进程内交接;input.client 在围栏下连不上)
+// 由 packages/ui-mac/src/main/process-fence-engine.test.ts 的 `#1553` 两臂判(`#1553` 审计 r1)。
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"

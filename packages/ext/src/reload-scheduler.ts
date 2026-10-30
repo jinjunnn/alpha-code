@@ -32,16 +32,11 @@ export type ReloadClient = {
   instance: { dispose(): Promise<unknown> }
 }
 
-/**
- * 审计 R1 Major 1:**进程内**问引擎的 client(GET /session/status、POST /instance/dispose)。引擎一监听,插件拿到的 input.client
- * 就走 TCP 连自己的端口,而出货围栏只放行出网代理端口 ⇒ 那条连接被拒(process-fence-engine.test.ts 的 #1531 三臂实测)。
- * 这里经 sidecar 交来的 app.fetch 直接进引擎(与 sidecar 的 prewarm 同一调用方式),目录与凭据和 v1 SDK 同形
- * (`?directory=` + `x-opencode-directory`;Basic = OPENCODE_SERVER_USERNAME / PASSWORD,引擎自己的 ServerAuth 读的就是它们)。
- */
-export function inProcessReloadClient(engineFetch: EngineFetch, directory: string, env: NodeJS.ProcessEnv = process.env): ReloadClient {
+/** 进程内调用本实例的引擎路由(带目录头与 server 口令),返回 hey-api 同形信封。`#1553` 的附件读取指令也经它读 `/mcp`。 */
+export function inProcessEngineRequest(engineFetch: EngineFetch, directory: string, env: NodeJS.ProcessEnv = process.env) {
   const password = env.OPENCODE_SERVER_PASSWORD
   const authorization = password ? `Basic ${Buffer.from(`${env.OPENCODE_SERVER_USERNAME ?? "opencode"}:${password}`).toString("base64")}` : undefined
-  const call = async (method: "GET" | "POST", path: string) => {
+  return async (method: "GET" | "POST", path: string): Promise<{ data?: unknown; error?: { status: number } }> => {
     const url = new URL(path, "http://alpha-engine.invalid")
     url.searchParams.set("directory", directory)
     const response = await engineFetch(
@@ -50,6 +45,16 @@ export function inProcessReloadClient(engineFetch: EngineFetch, directory: strin
     if (!response.ok) return { error: { status: response.status } }
     return { data: await response.json() }
   }
+}
+
+/**
+ * 审计 R1 Major 1:**进程内**问引擎的 client(GET /session/status、POST /instance/dispose)。引擎一监听,插件拿到的 input.client
+ * 就走 TCP 连自己的端口,而出货围栏只放行出网代理端口 ⇒ 那条连接被拒(process-fence-engine.test.ts 的 #1531 三臂实测)。
+ * 这里经 sidecar 交来的 app.fetch 直接进引擎(与 sidecar 的 prewarm 同一调用方式),目录与凭据和 v1 SDK 同形
+ * (`?directory=` + `x-opencode-directory`;Basic = OPENCODE_SERVER_USERNAME / PASSWORD,引擎自己的 ServerAuth 读的就是它们)。
+ */
+export function inProcessReloadClient(engineFetch: EngineFetch, directory: string, env: NodeJS.ProcessEnv = process.env): ReloadClient {
+  const call = inProcessEngineRequest(engineFetch, directory, env)
   return { session: { status: () => call("GET", "/session/status") }, instance: { dispose: () => call("POST", "/instance/dispose") } }
 }
 

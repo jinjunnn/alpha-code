@@ -27,10 +27,11 @@ import {
   type McpOwnership,
 } from "./cloud-websearch-kill"
 import { createCloudVisionHooks } from "./cloud-vision-hooks"
+import { createAttachmentReaderHooks } from "./attachment-reader-hooks"
 import { cloudAccessState } from "./cloud-access"
 import { createHubBridge, processParentPort } from "./hub-bridge"
 import { createHubTools, pinHubInstallPermission } from "./hub-tools"
-import { createReloadScheduler, inProcessReloadClient } from "./reload-scheduler"
+import { createReloadScheduler, inProcessEngineRequest, inProcessReloadClient } from "./reload-scheduler"
 import { inProcessEngine } from "../../ui-mac/src/main/in-process-engine"
 
 // REQ-234 `#1531`:一个引擎进程一份(插件模块被 import 缓存)—— 定制中心的 parentPort 桥与重载调度器(唯一执行者)。
@@ -85,20 +86,36 @@ export const AlphaExt: Plugin = async (input) => {
   // 这个闭包里,由本实例的 config 钩子写、显式传给本实例的执行钩子,模块侧不留任何可变状态。
   let mcpOwnership: McpOwnership = UNVERIFIED_MCP_OWNERSHIP
 
+  // 进程内问本实例的引擎(同 reloadClient 的理由:围栏下 input.client 的 TCP 连不上自己,`#1531`);
+  // 没有交接(CLI / 测试宿主,不在围栏里)才退回 input.client。云识图与附件读取指令都经它读引擎。
+  const engineRequest = engine ? inProcessEngineRequest(engine, input.directory) : undefined
+
   // `#1419`(REQ-228):看不了图的模型 —— 贴图与 Read 读到的图自动送云端识图,模型可按编号 / 路径追问。
   // 状态按实例(同 mcpOwnership 的理由);能力真源走引擎 `/provider` 与钩子递进来的 Model 对象。
+  // `#1553` 审计 r1:两次读引擎改走进程内 —— 经 input.client 时围栏下必然失败,能看图的模型也被当成看不了(fail-closed)。
   const vision = createCloudVisionHooks({
     directory: input.directory,
-    listProviders: async () => input.client.provider.list(),
+    listProviders: async () => (engineRequest ? engineRequest("GET", "/provider") : input.client.provider.list()),
     // `#1447` R1 M1:进程重启后登记簿是空的 —— 第一次碰到某会话时从它的历史消息恢复(转写正文与原图哈希都在持久化标记里)。
-    listMessages: async (sessionID) => input.client.session.messages({ path: { id: sessionID } }),
+    listMessages: async (sessionID) =>
+      engineRequest
+        ? engineRequest("GET", `/session/${encodeURIComponent(sessionID)}/message`)
+        : input.client.session.messages({ path: { id: sessionID } }),
     log: (m) => console.log(m),
+    error: (m) => console.error(m),
+  })
+
+  // `#1553`(REQ-236):暂存附件 ⇒ 追加读取指令(本机读取工具可用时叫模型去读,不可用时如实说明)。逐服务状态同样走进程内引擎。
+  const attachments = createAttachmentReaderHooks({
+    directory: input.directory,
+    mcpStatus: async () => (engineRequest ? engineRequest("GET", "/mcp") : input.client.mcp.status()),
     error: (m) => console.error(m),
   })
 
   const ownHooks: Awaited<ReturnType<Plugin>> = {
     "chat.message": async (hookInput, output) => {
       await vision.chatMessage(hookInput, output)
+      await attachments.chatMessage(hookInput, output)
     },
     "tool.execute.before": async (hookInput, output) => {
       // #223 R3→R5:web search 主权判决在 **MCP 工具**一侧的最终闸,必须是本钩子的第一句 ——

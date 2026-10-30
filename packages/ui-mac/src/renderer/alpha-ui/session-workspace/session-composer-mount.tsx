@@ -10,6 +10,7 @@
 import { createMemo, Show } from "solid-js"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { AlphaComposer, type ComposerSessionDockApi } from "../alpha-composer"
+import type { ComposerAttachment } from "../composer-attachments-core"
 import type { createComposerDraftStash } from "./session-dock-core"
 import { type AlphaSessionIdentity, identityKey } from "./session-workspace-core"
 
@@ -17,6 +18,8 @@ export interface SessionComposerEditRequest {
   identityKey: string
   revision: number
   text: string
+  /** REQ-236 `#1553`:附件卡「重新读取」带回的同一个暂存附件(不重新暂存,metadata 原样)。 */
+  attachments?: readonly ComposerAttachment[]
 }
 
 export function SessionComposerMount(props: {
@@ -31,8 +34,8 @@ export function SessionComposerMount(props: {
       const key = identityKey(props.identity())
       if (!key) return undefined
       const edit = props.editRequest?.()
-      if (edit?.identityKey === key) return { key, revision: edit.revision, initialText: edit.text }
-      return { key, revision: 0, initialText: props.drafts.restore(key) }
+      if (edit?.identityKey === key) return { key, revision: edit.revision, initialText: edit.text, initialAttachments: edit.attachments }
+      return { key, revision: 0, initialText: props.drafts.restore(key), initialAttachments: undefined }
     },
     undefined,
     {
@@ -54,6 +57,7 @@ export function SessionComposerMount(props: {
           serverKey={() => props.identity()?.serverKey}
           sessionDock={props.dock}
           initialText={mounted.initialText}
+          initialAttachments={mounted.initialAttachments}
           onDraftCapture={(draft) => props.drafts.capture(mounted.key, draft)}
         />
       )}

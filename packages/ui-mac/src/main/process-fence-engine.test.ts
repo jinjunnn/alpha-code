@@ -43,6 +43,8 @@ import { planProcessFence } from "./process-fence-plan"
 import { startEgressPolicyProxy, type EgressLogRecord, type EgressProxyHandle } from "./network-egress-proxy"
 import { sidecarEgressProxyEnv } from "./sidecar-env"
 import { buildReloadRequest } from "./alpha-sidecar-messages"
+import { attachmentAbsolutePath } from "../shared/attachment-path"
+import { explainAttachmentBlock } from "../../../ext/src/context-injection"
 
 const describeDarwin = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") ? describe : describe.skip
 const repoRoot = resolve(import.meta.dir, "../../../..")
@@ -140,11 +142,11 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
     } catch {}
   })
 
-  /** `#1531`:额外的 preload(在围栏 preload 之后)与 node IPC(经它接成引擎的 process.parentPort)。 */
-  async function bootEngine(arm: Arm, extra: { preloads?: string[]; ipc?: boolean } = {}): Promise<Engine> {
+  /** `#1531`:额外的 preload(在围栏 preload 之后)与 node IPC(经它接成引擎的 process.parentPort)。`#1553`:额外的 config 键。 */
+  async function bootEngine(arm: Arm, extra: { preloads?: string[]; ipc?: boolean; config?: Record<string, unknown> } = {}): Promise<Engine> {
     const port = 43000 + Math.floor(Math.random() * 2000)
-    const configPath = join(iso, `config-${arm}.json`)
-    writeFileSync(configPath, JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: [extBundle] }))
+    const configPath = join(iso, `config-${arm}-${engines.length}.json`)
+    writeFileSync(configPath, JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: [extBundle], ...extra.config }))
     const env: Record<string, string> = {
       PATH: process.env.PATH ?? "",
       HOME: home,
@@ -348,6 +350,94 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
     expect(engine.log.join("")).toContain("engine-fence-preload: fence applied")
     const reports = await reloadViaParentPort(engine, 2)
     expect(reports[0], engine.log.join("").slice(-2000)).toEqual({ type: "alpha.reload.report", generation: 2, scope: "global", outcome: "reloaded", directories: [ws] })
+    engine.proc.kill("SIGTERM")
+  }, 180_000)
+
+  // ── REQ-236 `#1553`(审计 r1 第 5、6 条):ext 在**围栏 + 引擎已监听**下读引擎的三处 —— 附件读取指令的逐服务状态(GET /mcp)、
+  // 云识图的模型能力(GET /provider)与会话历史(GET /session/<id>/message)。驱动 = 真 POST /session/<id>/message(noReply:只建
+  // 用户消息、不发模型请求),带一张图 + Word / PDF 两条暂存附件记录;读回持久化的用户消息里 ext 追加的 part,并看 ext 的错误日志。
+  // 两臂同一份 config:一个**声明能看图**的本地 provider(隔离引擎没有凭据、不拉目录,`/provider` 否则是空表;只列出来、不发请求),
+  // 外加一个名叫 alpha-word 的 MCP(探针 server);alpha-pdf 不配置。
+  //   对照臂:没有进程内交接 ⇒ 三处都只能走 input.client(TCP)⇒ 围栏拒掉 ⇒ 两条指令都按「状态未知」叫模型去读,日志点名三处都读不到,
+  //           能看图的模型被当成看不了、原图旁多出一个识图块 —— 修之前的出货形态;
+  //   被测臂:出货的进程内交接 ⇒ 三处都读得到 ⇒ Word 指令带 alpha-word_read_docx 与绝对路径(服务在表里),PDF 指令改为如实告知
+  //           (alpha-pdf 不在表里)—— 证明读到的就是 GET /mcp 那张按服务名索引、带 status 的表;能看图 ⇒ 不追加识图块。
+  // 口径(如实):进程内交接的是 Server.Default() 那张服务图,TCP 监听另建一张(Server.listen 用新的 memoMap);运行期状态
+  // (connected / failed)各记各的 —— 本臂只证明配置决定的那一半(在不在、停没停用),见交回的「发现」。
+  const STAGED_DOCX = { v: 1, name: "复盘.docx", mime: "application/x", size: 3, path: "attachments/0b8c7f9e-1d2a-4c3b-9e8f-7a6b5c4d3e2f/复盘.docx", reader: "word" }
+  const STAGED_PDF = { v: 1, name: "合同.pdf", mime: "application/pdf", size: 3, path: "attachments/1c9d8a0f-2e3b-4d4c-8f9a-8b7c6d5e4f30/合同.pdf", reader: "pdf" }
+  const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+  const READ_FAILURES = ["attachment reader: MCP status unavailable", "cloud vision: provider list unavailable", "cloud vision: session history unavailable"]
+  const PROBE_CONFIG = () => ({
+    provider: {
+      vprobe: {
+        npm: "@ai-sdk/openai-compatible",
+        name: "vprobe",
+        options: { baseURL: "http://127.0.0.1:9/v1", apiKey: "not-a-key" },
+        models: { see: { name: "see", modalities: { input: ["text", "image"], output: ["text"] } } },
+      },
+    },
+    mcp: { "alpha-word": { type: "local", command: ["node", join(fixtures, "mcp-probe.mjs"), ws, esc, "word1553"], enabled: true } },
+  })
+
+  async function attachmentProbe(engine: Engine) {
+    const project = await api(engine, "GET", "/project/current")
+    expect(project.status, `project/current ${JSON.stringify(project.json).slice(0, 300)}`).toBe(200)
+    const session = await api(engine, "POST", "/session", {})
+    expect(session.status).toBe(200)
+    const sessionID = (session.json as { id: string }).id
+    const sent = await api(engine, "POST", `/session/${sessionID}/message`, {
+      noReply: true,
+      agent: "build",
+      model: { providerID: "vprobe", modelID: "see" },
+      parts: [
+        { type: "text", text: "看看这两份" },
+        { type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${PNG_1X1}` },
+        { type: "text", text: "", synthetic: true, metadata: { "codepuppy.attachment": STAGED_DOCX } },
+        { type: "text", text: "", synthetic: true, metadata: { "codepuppy.attachment": STAGED_PDF } },
+      ],
+    })
+    expect(sent.status, `message ${JSON.stringify(sent.json).slice(0, 500)}\n${engine.log.join("").slice(-2000)}`).toBe(200)
+    const messages = await api(engine, "GET", `/session/${sessionID}/message`)
+    const user = (messages.json as Array<{ info: { role: string }; parts: Array<{ id: string; type: string; text?: string; synthetic?: boolean }> }>).find(
+      (m) => m.info.role === "user",
+    )
+    const instructions = user?.parts.filter((p) => p.type === "text" && p.synthetic === true && p.id.endsWith("-read")).map((p) => p.text ?? "") ?? []
+    // 云识图追加的块(id 接在图片 part 后面 `-vision`):模型能看图时一个都不该有。
+    const visionBlocks = user?.parts.filter((p) => p.id.endsWith("-vision")).length ?? -1
+    return { instructions, visionBlocks, log: engine.log.join("") }
+  }
+
+  test("#1553 对照臂:围栏 + 已监听 + 没有进程内交接 ⇒ ext 经 input.client 读不到 MCP 状态 / 模型能力 / 会话历史", async () => {
+    const engine = await bootEngine("fenced", { config: PROBE_CONFIG() })
+    expect(engine.log.join("")).toContain("engine-fence-preload: fence applied")
+    const probe = await attachmentProbe(engine)
+    expect(probe.instructions.map((text) => explainAttachmentBlock(text)), probe.log.slice(-2000)).toEqual([
+      { ok: true, id: "attachment.read", kind: "wrapper" },
+      { ok: true, id: "attachment.read", kind: "wrapper" },
+    ])
+    for (const failure of READ_FAILURES) expect(probe.log, failure).toContain(failure)
+    expect(probe.visionBlocks).toBe(1)
+    engine.proc.kill("SIGTERM")
+  }, 180_000)
+
+  test("#1553 被测臂:围栏 + 已监听 + 出货的进程内交接 ⇒ GET /mcp、/provider、/session/<id>/message 都读得到", async () => {
+    const engine = await bootEngine("fenced", { preloads: [join(fixtures, "engine-in-process-preload.ts")], config: PROBE_CONFIG() })
+    expect(engine.log.join("")).toContain("engine-fence-preload: fence applied")
+    const probe = await attachmentProbe(engine)
+    for (const failure of READ_FAILURES) expect(probe.log, failure).not.toContain(failure)
+    const [word, pdf] = probe.instructions
+    expect([word, pdf].map((text) => explainAttachmentBlock(text ?? "")), probe.log.slice(-2000)).toEqual([
+      { ok: true, id: "attachment.read", kind: "wrapper" },
+      { ok: true, id: "attachment.unavailable.missing", kind: "template" },
+    ])
+    expect(word).toContain("alpha-word_read_docx")
+    // 插件实例目录与引擎实例目录逐字相同:指令里的绝对路径 = attachmentAbsolutePath(工作区, 记录路径)。
+    expect(word).toContain(attachmentAbsolutePath(ws, STAGED_DOCX.path))
+    expect(pdf).toContain("合同.pdf")
+    // 云识图拿到了引擎对这个模型的 capabilities.input.image = true:不判未知,也不追加识图块。
+    expect(probe.log).not.toContain("capabilities.input.image unknown")
+    expect(probe.visionBlocks).toBe(0)
     engine.proc.kill("SIGTERM")
   }, 180_000)
 })

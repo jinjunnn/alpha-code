@@ -30,7 +30,7 @@ packages/ui-mac/src/main/alpha-auth.ts	1024	provider-id	`provider.alpha` 是引�
 packages/ui-mac/src/main/alpha-environment.ts	343	retired-guard	assertOutsideRetiredRoot 的退役根 `~/.alpha`;环境根与它有关系即抛错。
 packages/ui-mac/src/main/alpha-environment.ts	354	retired-guard	retiredCanonical 在 ENOENT 时派生退役全局根 `~/.alpha`;assertOutsideRetiredRoot 据它拒绝落在旧址里的环境根。
 packages/ui-mac/src/main/alpha-migrate.ts	3	historical	过去时记述:REQ-018 T2 当时把安装迁到了名为 `.alpha` 的真源根(并配 `~/.opencode` 桥,该桥已于 REQ-059 T3 退役)。改它 = 篡改历史记录。
-packages/ui-mac/src/main/alpha-workdir.ts	132	retired-guard	项目三态解析里的退役根比对。
+packages/ui-mac/src/main/alpha-workdir.ts	133	retired-guard	项目三态解析里的退役根比对。
 packages/ui-mac/src/main/cloud-envelope-guard.ts	11	historical	`#918` 已删除规则的**逐字引用**(原 denied_paths 缺省注入清单 `.env* / *.pem / .alpha/ / .git/`)。改引用内容 = 伪造那条规则曾经的样子。
 packages/ui-mac/src/main/engine-config-dangling.ts	200	retired-guard	dangling 清扫的 guardRoots 之一 —— 退役根仍须被认出。
 packages/ui-mac/src/main/engine-config-truth-boot.ts	243	retired-guard	boot truth reconcile 的退役根比对。

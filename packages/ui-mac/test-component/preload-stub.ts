@@ -60,6 +60,8 @@ function createBaseStub(data: PreloadStubData, overrides: PreloadStubOverrides) 
     endpoints: async () => null,
     openLink: () => {},
     moderation: { check: overrides.moderationCheck ?? (async () => false) },
+    // REQ-236 `#1553`:composer 收到 PDF / Office 时经它存到本机;挂 composer 的用例没有真 main,默认如实失败。
+    attachments: { stage: async () => ({ ok: false as const, reason: "not-project" as const }) },
     models: {
       catalog: overrides.catalog ?? (async () => data.catalog),
       refreshHealth: overrides.refreshHealth ?? (async () => ({ platform: null, byok: null })),

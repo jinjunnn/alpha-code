@@ -7,6 +7,7 @@
 // (右栏审查面板的文件卡,write/edit pill 与 diffsum 行同一通道)。
 import { createContext, useContext } from "solid-js"
 import type { TimelineMediaSource } from "../timeline-model"
+import type { StagedAttachmentMeta } from "../../../../shared/attachment-path"
 
 export interface TimelineFocusArtifactIntent {
   name: string
@@ -87,6 +88,11 @@ export interface TimelineIntents {
    * 缺席 = 卡片只呈现调用阶段(正在提交 / 没有开始 / 排队中),不取任务状态、不读本机产物。
    */
   cloudDirectory?: string
+  /**
+   * REQ-236 `#1553` AC4:附件卡「重新读取 / 请助手读取」—— 宿主在输入框里以同一个暂存附件预填一条请求读取的消息
+   * (用户看得到、自己发出),不在后台悄悄重读。缺席即不出按钮。
+   */
+  readAttachment?: (attachment: StagedAttachmentMeta) => void
 }
 
 export const TimelineIntentsContext = createContext<TimelineIntents>({})
