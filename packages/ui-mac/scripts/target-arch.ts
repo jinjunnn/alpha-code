@@ -50,6 +50,13 @@ export function macNativePackages(arch: TargetArch): string[] {
   return [nodePtyPackage("darwin", arch), `@parcel/watcher-darwin-${arch}`]
 }
 
+/**
+ * #1564:随包 Office 运行时(Python + 文档库)的构建产物根,相对 packages/ui-mac,下面每个目标架构一份
+ * (`<这里>/<arch>/bin/python3`)。build-office-runtime.ts 写它,electron-builder 的 extraResources 把
+ * `<这里>/<arch>/` 装成 `<Resources>/office-runtime/`,beforePack 用 checkOfficeRuntime 在装包前核对它。
+ */
+export const OFFICE_RUNTIME_BUILD_DIR = path.join("native", "office-runtime", "build")
+
 // ── Mach-O 头解析(不依赖 `file` / `lipo`,linux 上的单测也能跑)────────────────────────────
 
 const CPU_TYPE: Record<number, TargetArch> = { 0x01000007: "x64", 0x0100000c: "arm64" }
@@ -148,8 +155,28 @@ export function checkBundledNodePty(outMainDir: string, platform: string, arch: 
 }
 
 /**
+ * #1564 AC5:随包 Office 运行时在、`bin/python3` 在,且目录里**每一个** Mach-O(解释器、libpython、
+ * 各库的 `.so`)都含目标架构片。返回问题清单(空 = 通过)。符号链接不跟(`bin/python3` → `python3.11` 只判一次)。
+ */
+export function checkOfficeRuntime(dir: string, arch: TargetArch): string[] {
+  if (!fs.existsSync(path.join(dir, "bin", "python3")))
+    return [`${path.join(dir, "bin", "python3")} 不存在(先跑 \`${TARGET_ARCH_ENV}=${arch} bun ./scripts/build-office-runtime.ts\`)`]
+  const problems: string[] = []
+  let machO = 0
+  for (const file of walk(dir)) {
+    const archs = machOArchs(readHead(file))
+    if (archs === null) continue
+    machO++
+    if (!archs.includes(arch)) problems.push(`office-runtime/${path.relative(dir, file)} 只含 [${archs.join(", ")}],缺 ${arch}`)
+  }
+  if (machO === 0) problems.push(`${dir} 里没有任何 Mach-O 文件`)
+  return problems
+}
+
+/**
  * electron-builder beforePack 调用:正在打的 mac 架构必须 == ALPHA_TARGET_ARCH(缺省宿主),
- * 产物里的 node-pty 包名 == 该架构,且该架构的原生包齐全、二进制片对得上。任一不过即抛,拒绝打包。
+ * 产物里的 node-pty 包名 == 该架构,且该架构的原生包齐全、二进制片对得上,随包 Office 运行时同样逐个
+ * Mach-O 对得上(#1564)。任一不过即抛,拒绝打包。
  */
 export function assertMacTargetArch(input: {
   packingArch: string
@@ -166,6 +193,7 @@ export function assertMacTargetArch(input: {
   else {
     problems.push(...checkBundledNodePty(path.join(input.packageDir, "out", "main"), "darwin", target))
     for (const pkg of macNativePackages(target)) problems.push(...checkNativePackage(pkg, target, input.packageDir))
+    problems.push(...checkOfficeRuntime(path.join(input.packageDir, OFFICE_RUNTIME_BUILD_DIR, target), target))
   }
   if (problems.length) throw new Error(`[target-arch] 拒绝打 mac-${input.packingArch} 包:\n  - ${problems.join("\n  - ")}`)
 }

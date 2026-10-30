@@ -19,6 +19,10 @@ await $`bun ./scripts/build-office-preview.ts`
 // 缺片 / 空壳片脚本自己红。extraResources 把它带进包(alpha-fence/),sidecar 在 import 引擎前 dlopen。
 await $`bun ./scripts/build-fence-addon.ts`
 
+// #1564:四个文档工具(Word/Excel/PowerPoint/PDF)的随包 Python 运行时 —— 目标架构一份,按 resources/office-runtime/
+// 的 lock 以哈希校验安装,并在构建期验证四种格式真能读写;打印本架构实际体积。extraResources 把它带进包(office-runtime/)。
+await $`bun ./scripts/build-office-runtime.ts`
+
 // Bundle @alpha-code/ext to self-contained ESM so the embedded Node server can load it
 // without resolving raw TS at runtime (see .claude/rules/DECISIONS.md ADR-006).
 await $`cd ../ext && bun run build`

@@ -4,7 +4,8 @@
 // `@lydell/node-pty-darwin-arm64`,装出来的 Intel 包终端打不开。下面每一条都对准它的一个侧面:
 //   ① 生产 vite 配置在「目标 ≠ 宿主」时选的是目标那个 node-pty 包(子进程真加载 electron.vite.config.ts);
 //   ② 生产 electron-builder 配置的 beforePack 真的会拒绝「打的架构 ≠ 目标架构」;
-//   ③ beforePack 用的核对函数:产物引用了宿主架构包 / 原生包缺席 / 二进制片不对 ⇒ 一律拒绝,全对才放行。
+//   ③ beforePack 用的核对函数:产物引用了宿主架构包 / 原生包缺席 / 二进制片不对 ⇒ 一律拒绝,全对才放行;
+//   ④ #1564:随包 Office 运行时(native/office-runtime/build/<arch>/)缺席或任一 Mach-O 缺目标片 ⇒ 同样拒绝。
 import { afterEach, describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
@@ -14,6 +15,7 @@ import path from "node:path"
 import { Arch } from "electron-builder"
 
 import {
+  OFFICE_RUNTIME_BUILD_DIR,
   TARGET_ARCH_ENV,
   assertMacTargetArch,
   machOArchs,
@@ -51,10 +53,21 @@ afterEach(() => {
   for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true })
 })
 
-/** 造一个最小的 packages/ui-mac:out/main 产物 + node_modules 里的原生包。 */
+/** 随包 Office 运行时的最小形状(#1564):解释器、libpython、一个库的原生扩展,外加一个非 Mach-O 文件。 */
+function goodOfficeRuntime(arch: TargetArch): Record<string, Buffer> {
+  return {
+    "bin/python3.11": thin(arch),
+    "lib/libpython3.11.dylib": thin(arch),
+    "lib/python3.11/site-packages/lxml/etree.cpython-311-darwin.so": fat(["arm64", "x64"]),
+    "lib/python3.11/os.py": Buffer.from("import abc\n"),
+  }
+}
+
+/** 造一个最小的 packages/ui-mac:out/main 产物 + node_modules 里的原生包 + 两种架构的随包 Office 运行时。 */
 function fixture(opts: {
   bundled: string[] // out/main 里引用的 node-pty 包名
   packages: { name: string; cpu: TargetArch; binaries: Record<string, Buffer> }[]
+  officeRuntime?: Partial<Record<TargetArch, Record<string, Buffer>>>
 }): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-target-arch-"))
   tmpDirs.push(dir)
@@ -64,6 +77,14 @@ function fixture(opts: {
     path.join(dir, "out", "main", "chunks", "index.js"),
     opts.bundled.map((n) => `import * as pty from "${n}";`).join("\n") + "\nexport {}\n",
   )
+  for (const [arch, files] of Object.entries(opts.officeRuntime ?? { arm64: goodOfficeRuntime("arm64"), x64: goodOfficeRuntime("x64") })) {
+    const root = path.join(dir, OFFICE_RUNTIME_BUILD_DIR, arch)
+    for (const [rel, bytes] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
+      fs.writeFileSync(path.join(root, rel), bytes)
+    }
+    if (files["bin/python3.11"]) fs.symlinkSync("python3.11", path.join(root, "bin", "python3"))
+  }
   for (const p of opts.packages) {
     const pdir = path.join(dir, "node_modules", ...p.name.split("/"))
     fs.mkdirSync(pdir, { recursive: true })
@@ -165,6 +186,16 @@ describe("生产 electron-builder.config.ts 的 beforePack", () => {
   })
 })
 
+describe("#1564 生产 electron-builder.config.ts 把随包 Office 运行时装进包", () => {
+  test("darwin extraResources:目标架构那一份 → <Resources>/office-runtime/(main 模板的命令头所在);别的平台不带", async () => {
+    const { getConfig } = await import("../../electron-builder.config")
+    const entries = (getConfig("prod").extraResources ?? []) as Array<{ from: string; to: string }>
+    expect(entries.filter((entry) => entry.to === "office-runtime/")).toEqual(
+      process.platform === "darwin" ? [{ from: `${OFFICE_RUNTIME_BUILD_DIR}/${resolveTargetArch()}/`, to: "office-runtime/" }] : [],
+    )
+  })
+})
+
 describe("assertMacTargetArch(beforePack 的核对)", () => {
   for (const target of ["x64", "arm64"] as const) {
     const wrong = otherArch(target)
@@ -208,6 +239,27 @@ describe("assertMacTargetArch(beforePack 的核对)", () => {
       const dir = fixture({ bundled: [nodePtyPackage("darwin", target)], packages: pkgs })
       expect(() => assertMacTargetArch({ packingArch: target, packageDir: dir, env, hostArch: wrong })).toThrow(
         new RegExp(`spawn-helper 只含 \\[${wrong}\\],缺 ${target}[\\s\\S]*watcher\\.node 只含 \\[${wrong}\\],缺 ${target}`),
+      )
+    })
+  }
+
+  for (const target of ["x64", "arm64"] as const) {
+    const wrong = otherArch(target)
+    const env = { [TARGET_ARCH_ENV]: target }
+
+    test(`#1564 ${target}:随包 Office 运行时只有 ${wrong} 那一份 ⇒ 拒绝并给出构建命令`, () => {
+      const dir = fixture({ bundled: [nodePtyPackage("darwin", target)], packages: goodPackages(target), officeRuntime: { [wrong]: goodOfficeRuntime(wrong) } })
+      expect(() => assertMacTargetArch({ packingArch: target, packageDir: dir, env, hostArch: wrong })).toThrow(
+        new RegExp(`office-runtime/build/${target}/bin/python3 不存在[\\s\\S]*build-office-runtime\\.ts`),
+      )
+    })
+
+    test(`#1564 ${target}:运行时里有一个 Mach-O 只含 ${wrong} 片 ⇒ 拒绝并点名那个文件`, () => {
+      const runtime = goodOfficeRuntime(target)
+      runtime["lib/python3.11/site-packages/PIL/_imaging.cpython-311-darwin.so"] = thin(wrong)
+      const dir = fixture({ bundled: [nodePtyPackage("darwin", target)], packages: goodPackages(target), officeRuntime: { [target]: runtime } })
+      expect(() => assertMacTargetArch({ packingArch: target, packageDir: dir, env, hostArch: wrong })).toThrow(
+        new RegExp(`office-runtime/lib/python3\\.11/site-packages/PIL/_imaging\\.cpython-311-darwin\\.so 只含 \\[${wrong}\\],缺 ${target}`),
       )
     })
   }
