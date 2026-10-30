@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设置 · 定制中心 · 自动化:体验与文案增量</title>
+<link rel="stylesheet" href="../current/settings/design.css" />
+<style>
+/* 本稿自有类一律 ux- 前缀;token 来自链接的 current/settings/design.css,tertiary 按 tokens.css 实值覆盖以过对比度。 */
+:root{--a-text-tertiary:#64656d}
+html[data-theme="dark"]{--a-text-tertiary:#86878f}
+body{padding:0 0 96px}
+.ux-wrap{max-width:1220px;margin:0 auto;padding:28px 24px 0}
+.ux-intro h1{margin:0 0 10px;font-size:24px;letter-spacing:-.02em}
+.ux-intro p{margin:0 0 8px;color:var(--a-text-secondary);font-size:14px;line-height:1.65;max-width:76ch}
+.ux-rel{margin:18px 0 0;padding:16px 18px;border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:8px;background:var(--a-bg-canvas);font-size:12.5px;color:var(--a-text-secondary);line-height:1.65}
+.ux-rel h3{margin:0 0 8px;font-size:14px;color:var(--a-text)}.ux-rel b{color:var(--a-text)}.ux-rel ul{margin:4px 0 8px;padding-left:18px}
+.ux-rel code,.ux-spec code,.ux-ann code{font-family:var(--a-font-mono);font-size:11px;color:var(--a-text)}
+.ux-h2{margin:48px 0 6px;font-size:20px;letter-spacing:-.015em}
+.ux-h3{margin:30px 0 4px;font-size:15px}
+.ux-sub{margin:0 0 14px;color:var(--a-text-secondary);font-size:12.5px;max-width:84ch;line-height:1.6}
+.ux-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(520px,1fr));gap:22px;align-items:start}
+.ux-cap{font-size:11.5px;color:var(--a-text-tertiary);margin:0 0 8px;line-height:1.5}
+.ux-cap b{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.ux-cap b.after{background:var(--a-accent-subtle);color:var(--a-accent)}
+.ux-ann{margin:10px 0 0;padding:10px 12px;border:1px dashed var(--a-border-strong);border-radius:8px;font-size:11.5px;color:var(--a-text-secondary);line-height:1.6;background:transparent}
+.ux-ann b{color:var(--a-text)}
+.ux-spec{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--a-bg-canvas);border:1px solid var(--a-border);margin-top:10px}
+.ux-spec th{background:var(--a-bg-subtle);text-align:left;font-size:11.5px;color:var(--a-text-tertiary);font-weight:600;padding:8px 12px}
+.ux-spec td{padding:9px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top;line-height:1.55}
+.ux-spec td:first-child{color:var(--a-text);white-space:nowrap}
+
+/* ── 屏框 ── */
+.ux-screen{border:1px solid var(--a-border);border-radius:12px;background:var(--a-bg-canvas);overflow:hidden;box-shadow:var(--a-shadow-sm)}
+.ux-head{display:flex;align-items:center;gap:8px;padding:12px 18px;border-bottom:1px solid var(--a-border-faint)}
+.ux-head h4{font-size:15px;margin:0}
+.ux-head .crumb{font-size:12.5px;color:var(--a-text-secondary)}
+.ux-head .x{margin-left:auto;width:26px;height:26px;display:grid;place-items:center;border-radius:7px;color:var(--a-text-tertiary)}
+.ux-body{padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px}
+.ux-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:9px 12px;border-radius:8px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);font-size:12px;color:var(--a-text-secondary);line-height:1.5}
+.ux-note>span:first-child{flex:1 1 260px}
+.ux-chk{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--a-text)}
+.ux-chk i{width:13px;height:13px;border:1px solid var(--a-border-strong);border-radius:3px;display:inline-block;background:var(--a-surface)}
+.ux-chk i.on{background:var(--a-accent-solid);border-color:transparent}
+.ux-hint{margin:0;font-size:12px;color:var(--a-text-secondary);line-height:1.55}
+.ux-new{display:flex;gap:8px}
+.ux-inp{flex:1;height:32px;padding:0 10px;border:1px solid var(--a-border);border-radius:8px;background:var(--a-surface);font-size:12.5px;color:var(--a-text-tertiary);display:flex;align-items:center;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ux-inp.val{color:var(--a-text)}
+.ux-inp.mono{font-family:var(--a-font-mono);font-size:11.5px}
+.ux-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--a-border);border-radius:8px;background:var(--a-surface);color:var(--a-text);font-size:12px;font-weight:500;white-space:nowrap}
+.ux-btn.primary{background:var(--a-accent-solid);border-color:transparent;color:var(--a-text-on-accent)}
+.ux-btn.sm{height:26px;padding:0 9px;font-size:11.5px}
+.ux-btn.ghost{border-color:transparent;background:transparent;color:var(--a-text-secondary)}
+.ux-btn[disabled]{opacity:.5}
+.ux-link{font-size:12px;color:var(--a-accent);font-weight:500}
+.ux-tpl{align-self:flex-start;font-size:12px;color:var(--a-text-secondary);padding:5px 10px;border:1px dashed var(--a-border-strong);border-radius:999px}
+.ux-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--a-border);border-radius:10px;background:var(--a-surface)}
+.ux-dot{width:8px;height:8px;border-radius:50%;background:var(--a-text-disabled);flex:none}
+.ux-dot.ok{background:var(--a-success)}.ux-dot.err{background:var(--a-error)}
+.ux-rb{flex:1;min-width:0}
+.ux-rn{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.ux-rn b{font-size:13px}
+.ux-pill{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:999px;background:var(--a-bg-muted);font-size:11px;color:var(--a-text-secondary)}
+.ux-pill.muted{background:transparent;border:1px solid var(--a-border-faint)}
+.ux-rs{margin-top:3px;font-size:11.5px;color:var(--a-text-tertiary);line-height:1.45}
+.ux-sw{width:30px;height:18px;border-radius:999px;background:var(--a-accent-solid);position:relative;flex:none}
+.ux-sw::after{content:"";position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.ux-sw.off{background:var(--a-bg-inset)}.ux-sw.off::after{right:auto;left:2px}
+.ux-field{display:flex;flex-direction:column;gap:6px}
+.ux-field>label{font-size:12px;font-weight:600;color:var(--a-text)}
+.ux-seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:8px;gap:2px;align-self:flex-start}
+.ux-seg span{padding:4px 10px;border-radius:6px;font-size:12px;color:var(--a-text-secondary)}
+.ux-seg span.on{background:var(--a-surface-raised);color:var(--a-text);font-weight:600;box-shadow:0 0 0 1px var(--a-border),var(--a-shadow-xs)}
+.ux-seg span.dis{color:var(--a-text-disabled)}
+.ux-pre{margin:0;font-size:11.5px;color:var(--a-text-tertiary);line-height:1.55}
+.ux-inline{display:flex;flex-wrap:wrap;gap:12px 22px;align-items:flex-start}
+.ux-cond{padding:10px 12px;border-radius:8px;border:1px solid var(--a-border);background:var(--a-bg-subtle);font-size:12px;color:var(--a-text-secondary);line-height:1.6}
+.ux-cond b{display:block;color:var(--a-text);font-size:12px;margin-bottom:2px}
+.ux-cond ul{margin:2px 0 0;padding-left:16px}
+.ux-err{margin:0;font-size:12px;color:var(--a-error)}
+.ux-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border-radius:8px;border-left:3px solid var(--a-warning);background:var(--a-warning-subtle);font-size:12px;color:var(--a-text);line-height:1.55}
+.ux-confirm>span:first-child{flex:1 1 280px}
+.ux-native{align-self:center;width:320px;padding:16px;border-radius:12px;background:var(--a-surface-raised);box-shadow:var(--a-shadow-overlay);font-size:12px;line-height:1.55;color:var(--a-text)}
+.ux-native .t{font-weight:600;margin-bottom:6px}
+.ux-native .b{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.ux-mark{background:var(--a-error-subtle);border-radius:3px;padding:0 2px;color:var(--a-text)}
+/* 设置 */
+.ux-set{display:grid;grid-template-columns:120px 1fr;min-height:300px}
+.ux-nav{padding:12px 8px;border-right:1px solid var(--a-border-faint);display:flex;flex-direction:column;gap:2px}
+.ux-nav span{padding:6px 10px;border-radius:7px;font-size:12.5px;color:var(--a-text-secondary)}
+.ux-nav span.on{background:var(--a-bg-muted);color:var(--a-text);font-weight:600}
+.ux-main{padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.ux-main h5{margin:0;font-size:15px}
+.ux-srow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--a-border-faint)}
+.ux-srow .c{flex:1;min-width:0}
+.ux-srow strong{display:block;font-size:12.5px;font-weight:500}
+.ux-srow small{display:block;font-size:11.5px;color:var(--a-text-tertiary)}
+.ux-srow code{font-family:var(--a-font-mono);font-size:11px}
+.ux-kin{width:150px;height:28px;padding:0 9px;border:1px solid var(--a-border);border-radius:7px;background:var(--a-surface);font-family:var(--a-font-mono);font-size:11.5px;color:var(--a-text-tertiary);display:flex;align-items:center}
+.ux-keys{display:inline-flex;gap:3px;min-width:64px;justify-content:flex-end}
+.ux-keys kbd{min-width:20px;height:20px;padding:0 5px;display:inline-grid;place-items:center;border:1px solid var(--a-border);border-bottom-width:2px;border-radius:5px;background:var(--a-surface);font-family:var(--a-font-sans);font-size:11px;color:var(--a-text-secondary)}
+.ux-banner{display:flex;gap:10px;padding:10px 12px;border-radius:8px;border-left:3px solid var(--a-info);background:var(--a-bg-subtle);font-size:12px;line-height:1.5}
+.ux-banner.ok{border-left-color:var(--a-success)}.ux-banner.warn{border-left-color:var(--a-warning)}
+.ux-banner b{display:block;font-size:12.5px}
+.ux-banner p{margin:2px 0 0;color:var(--a-text-secondary)}
+.ux-grp{display:flex;align-items:center;gap:8px;margin-top:4px}
+.ux-grp b{font-size:13px}
+.ux-grp .n{font-size:11.5px;color:var(--a-text-tertiary)}
+.ux-slot{display:inline-block;width:64px;height:18px;border:1px dashed var(--a-border-strong);border-radius:999px}
+.ux-gcap{margin:0;font-size:11.5px;color:var(--a-text-tertiary);line-height:1.5}
+.ux-card{border:1px solid var(--a-border);border-radius:10px;background:var(--a-surface)}
+.ux-trow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--a-border-faint)}
+.ux-trow:first-child{border-top:0}
+.ux-trow .c{flex:1;min-width:0}
+.ux-trow b{font-size:12.5px;font-weight:500}
+.ux-trow small{display:block;font-size:11px;color:var(--a-text-tertiary)}
+.ux-badge{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:5px;background:var(--a-bg-muted);font-size:10.5px;color:var(--a-text-secondary);margin-left:6px}
+.ux-tri{display:inline-flex;padding:2px;border:1px solid var(--a-border);border-radius:7px;gap:2px}
+.ux-tri span{padding:2px 7px;border-radius:5px;font-size:11px;color:var(--a-text-secondary)}
+.ux-tri span.on{background:var(--a-bg-muted);color:var(--a-text);font-weight:600}
+.ux-stat{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--a-text-secondary)}
+.ux-stat i{width:7px;height:7px;border-radius:50%;background:var(--a-warning)}
+/* 定制中心 */
+.ux-dt{display:flex;flex-direction:column;gap:10px}
+.ux-dt-h{display:flex;align-items:center;gap:10px}
+.ux-ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:#5c7cbf;color:#fff;font-size:13px;font-weight:700;flex:none}
+.ux-dt-h b{font-size:15px}
+.ux-dt-h small{display:block;font-size:11.5px;color:var(--a-text-tertiary)}
+.ux-fact{display:grid;grid-template-columns:132px 1fr;gap:4px 12px;font-size:12px;line-height:1.55}
+.ux-fact dt{color:var(--a-text-tertiary)}
+.ux-fact dd{margin:0;color:var(--a-text);min-width:0;overflow-wrap:anywhere}
+.ux-fact code{font-family:var(--a-font-mono);font-size:11px}
+.ux-sumry{display:flex;flex-direction:column;gap:6px}
+.ux-sumry div{display:flex;gap:10px;font-size:12.5px;line-height:1.55}
+.ux-sumry div span:first-child{flex:none;width:84px;color:var(--a-text-tertiary)}
+.ux-fold{border:1px solid var(--a-border-faint);border-radius:8px;background:var(--a-bg-subtle)}
+.ux-fold>div:first-child{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:12px;font-weight:500;color:var(--a-text-secondary)}
+.ux-fold .in{padding:4px 12px 10px}
+.ux-tool{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--a-border-faint);font-size:12px}
+.ux-tool:first-child{border-top:0}
+.ux-tool code{flex:none;width:118px;font-family:var(--a-font-mono);font-size:11px;color:var(--a-text)}
+.ux-tool span{color:var(--a-text-secondary)}
+.ux-tool b{font-weight:500;color:var(--a-text);flex:none;width:118px}
+.ux-cst{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.ux-cst i{width:7px;height:7px;border-radius:50%;background:var(--a-text-disabled)}
+.ux-dnote{margin:0;font-size:11.5px;color:var(--a-text-tertiary);line-height:1.55}
+.ux-irow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--a-border);border-radius:10px;background:var(--a-surface)}
+.ux-irow .c{flex:1;min-width:0}
+.ux-irow b{font-size:12.5px}
+.ux-irow small{display:block;font-size:11.5px;color:var(--a-text-tertiary)}
+.ux-amber{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--a-text-secondary)}
+.ux-amber i{width:7px;height:7px;border-radius:50%;background:var(--a-warning)}
+.ux-dialog{max-width:420px;padding:16px 18px;border-radius:12px;border:1px solid var(--a-border);background:var(--a-surface-raised);box-shadow:var(--a-shadow-md);display:flex;flex-direction:column;gap:10px}
+.ux-dialog h6{margin:0;font-size:14px}
+.ux-dialog .f{display:flex;justify-content:flex-end;gap:8px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">设置 · 定制中心 · 自动化</div>
+  <nav><a href="#automation">自动化</a><a href="#settings">设置</a><a href="#hub">定制中心</a><a href="#spec">规格</a></nav>
+  <div class="spacer"></div>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="ux-wrap">
+  <div class="ux-intro">
+    <h1>三页的体验与文案增量</h1>
+    <p>每一节左边是现在的样子(照源码画),右边是改后。只改文字、按条件收起不起作用的字段、把原生确认框换成表单内确认,不加新功能、新设置项或新页面。</p>
+    <p>改动的出处、条数和每句话的原文 / 新文见同目录的 <code>audit.md</code>。</p>
+  </div>
+
+  <div class="ux-rel" id="relation">
+    <h3>与上一稿的关系</h3>
+    <ul>
+      <li><b>自动化</b>:此前没有任何稿子,这是第一份。画的是现有列表页和编辑页,继承现行实现的结构与控件。</li>
+      <li><b>设置</b>:继承 <code>current/settings/design.html</code> 的通用 / 快捷键版式与已批的「工具」三态节(<code>#set-tools</code>)。只改快捷键行、工具行计费徽标和几句说明。</li>
+      <li><b>定制中心</b>:继承 <code>current/customization-center/design.html</code> 的详情事实段(<code>#detail</code>)与生效状态流(<code>#enable-flow</code>)。活稿里没有「云能力」的帧,本稿补云端任务详情与云连接器详情两块。</li>
+      <li><b>留位不定样式</b>:工具来源标签、「已核验」徽标、工具的技术名格式、每个连接器的启动状态词、确认卡的「始终允许」都由别的稿子定;帧里画成虚线空位或沿用现状。</li>
+    </ul>
+  </div>
+
+  <!-- ════════════════ 一、自动化 ════════════════ -->
+  <h2 class="ux-h2" id="automation">一、自动化</h2>
+  <p class="ux-sub">一句话说清本机和云端各在什么时候跑、用谁的额度;云端任务的「立即运行」说实话;选云端时不再展示云端不看的字段;没登录平台账户时不让选云端,而不是保存时才报错。</p>
+
+  <h3 class="ux-h3" id="auto-list">1.1 任务列表</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>页头说明不提补跑和云端;云端那一行的「立即运行」其实在本机跑</p>
+      <div class="ux-screen">
+        <div class="ux-head"><h4>自动化</h4><span class="x">✕</span></div>
+        <div class="ux-body">
+          <div class="ux-note"><span>任务只在应用运行时执行 —— 应用没开就不会跑(不是后台常驻服务)。</span><span class="ux-chk"><i class="on"></i>登录时启动 Code Puppy</span><span class="ux-chk"><i></i>全部暂停</span></div>
+          <p class="ux-hint">当前为平台代付模式:任务执行会消耗平台额度。</p>
+          <div class="ux-new"><div class="ux-inp">一句话描述:每天早上 9 点,检查本项目未处理的 TODO 并生成清单</div><span class="ux-btn primary">创建</span></div>
+          <span class="ux-tpl">模板:每日总结 → code-puppy/Journal</span>
+          <div class="ux-row"><span class="ux-dot ok"></span><div class="ux-rb"><div class="ux-rn"><b>每日总结</b><span class="ux-pill">每天 21:00</span><span class="ux-pill muted">code-puppy</span></div><div class="ux-rs">下次 今天 21:00 · 上次成功 · 今天完成 3 件事,遗留 1 项</div></div><span class="ux-btn sm">立即运行</span><span class="ux-sw"></span></div>
+          <div class="ux-row"><span class="ux-dot err"></span><div class="ux-rb"><div class="ux-rn"><b>竞品周报</b><span class="ux-pill">每周一 09:00</span><span class="ux-pill muted">research</span><span class="ux-pill">☁ 云端</span></div><div class="ux-rs">下次 11/3 09:00 · 上次失败 · <span class="ux-mark">scheduler not started</span></div></div><span class="ux-btn sm">立即运行</span><span class="ux-sw"></span></div>
+          <div class="ux-row"><span class="ux-dot"></span><div class="ux-rb"><div class="ux-rn"><b>依赖检查</b><span class="ux-pill">每 60 分钟</span><span class="ux-pill muted">app</span></div><div class="ux-rs">已自动停用(连续失败 3 次)—— 修复后重新启用</div></div><span class="ux-btn sm">立即运行</span><span class="ux-sw off"></span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>页头说清补跑与云端差别;云端行按钮说实话;失败行给下一步</p>
+      <div class="ux-screen">
+        <div class="ux-head"><h4>自动化</h4><span class="x">✕</span></div>
+        <div class="ux-body">
+          <div class="ux-note"><span>本机任务只在 Code Puppy 开着时运行,错过的不会补跑;云端任务不受影响。</span><span class="ux-chk"><i class="on"></i>登录时启动 Code Puppy</span><span class="ux-chk"><i></i>全部暂停</span></div>
+          <p class="ux-hint">你在使用平台账户:本机任务每次运行都会用掉平台额度。</p>
+          <div class="ux-new"><div class="ux-inp">一句话描述:每天早上 9 点,检查本项目未处理的 TODO 并生成清单</div><span class="ux-btn primary">创建</span></div>
+          <span class="ux-tpl">用模板:每日总结</span>
+          <div class="ux-row"><span class="ux-dot ok"></span><div class="ux-rb"><div class="ux-rn"><b>每日总结</b><span class="ux-pill">每天 21:00</span><span class="ux-pill muted">code-puppy</span></div><div class="ux-rs">下次 今天 21:00 · 上次成功 · 今天完成 3 件事,遗留 1 项</div></div><span class="ux-btn sm" title="现在跑一次,不改下次时间;计入每天最多 24 次。">立即运行</span><span class="ux-sw"></span></div>
+          <div class="ux-row"><span class="ux-dot err"></span><div class="ux-rb"><div class="ux-rn"><b>竞品周报</b><span class="ux-pill">每周一 09:00</span><span class="ux-pill muted">research</span><span class="ux-pill">☁ 云端</span></div><div class="ux-rs">下次 11/3 09:00 · 上次失败 · 应用还没准备好,这次没有运行</div></div><span class="ux-btn sm" title="云端按计划运行;这里只在你的电脑上跑一次,计入每天最多 24 次。">在本机试跑</span><span class="ux-sw"></span></div>
+          <div class="ux-row"><span class="ux-dot"></span><div class="ux-rb"><div class="ux-rn"><b>依赖检查</b><span class="ux-pill">每 60 分钟</span><span class="ux-pill muted">app</span></div><div class="ux-rs">连续失败 3 次,已暂停。打开任务看最近一次的原因,改好后重新打开开关。</div></div><span class="ux-btn sm">立即运行</span><span class="ux-sw off"></span></div>
+        </div>
+      </div>
+      <p class="ux-ann"><b>帧外标注</b>:按钮的悬停说明逐字如上;「24」「3」取应用里的常量,不写进词典。未知原因的失败行写「上次失败 · 打开任务看原因」,原始报错只留在运行记录。</p>
+    </div>
+  </div>
+
+  <h3 class="ux-h3" id="auto-edit-cloud">1.2 编辑任务 · 执行位置选「云端」</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>权限、单次最长、完成后通知仍在,云端不看它们;说明里是平台的内部上限数字</p>
+      <div class="ux-screen">
+        <div class="ux-head"><span class="crumb">‹ 自动化 /</span><h4>任务详情</h4><span class="x">✕</span></div>
+        <div class="ux-body">
+          <div class="ux-field"><label>执行内容(任务指令)</label><div class="ux-inp val">调研本周三家竞品的发布与定价变化,列出来源</div></div>
+          <div class="ux-field"><label>执行位置</label><div class="ux-seg"><span>本地</span><span class="on">云端</span></div>
+            <p class="ux-pre">云端执行:应用不在线也按时运行。任务描述将作为调研问题发送到云端(仅任务文本本身,不上传项目文件);结果在打开应用时自动拉回项目的 .code-puppy/runs 留档。预算受云端硬帽(15 轮/15 万 token/5 分钟)。</p></div>
+          <div class="ux-inline">
+            <div class="ux-field"><label>权限档</label><div class="ux-seg"><span class="on">只读</span><span>可写</span></div><p class="ux-pre">只读档:可读文件/检索/联网查询,不能改文件、不能执行命令;无人值守全程零弹窗。</p></div>
+            <div class="ux-field"><label>单次最长</label><div class="ux-inp val" style="width:90px;flex:none">15 分钟</div></div>
+            <span class="ux-chk" style="margin-top:22px"><i class="on"></i>完成后系统通知</span>
+          </div>
+          <div style="display:flex;gap:8px"><span class="ux-btn primary">保存</span><span class="ux-btn">取消</span><span class="ux-btn" style="color:var(--a-error)">删除任务</span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>三项收起,换成一块「云端运行条件」;不写平台数字</p>
+      <div class="ux-screen">
+        <div class="ux-head"><span class="crumb">‹ 自动化 /</span><h4>任务详情</h4><span class="x">✕</span></div>
+        <div class="ux-body">
+          <div class="ux-field"><label>执行内容</label><div class="ux-inp val">调研本周三家竞品的发布与定价变化,列出来源</div></div>
+          <div class="ux-field"><label>执行位置</label><div class="ux-seg"><span>本机</span><span class="on">云端</span></div></div>
+          <div class="ux-cond"><b>在云端运行时</b><ul><li>应用关着也按时运行。</li><li>云端只做联网调研:只发送上面的「执行内容」,看不到这个项目的文件,也不会改文件或运行命令。</li><li>结果在你下次打开应用时存进项目的结果文件夹。</li><li>每次运行有时长和用量上限,到了就停。</li></ul></div>
+          <div style="display:flex;gap:8px"><span class="ux-btn primary">保存</span><span class="ux-btn">取消</span><span class="ux-btn" style="color:var(--a-error)">删除任务</span></div>
+        </div>
+      </div>
+      <p class="ux-ann"><b>帧外标注</b>:切回「本机」时,权限、单次最长、完成后通知原样回来(值不丢)。「项目」字段两种位置都保留:云端结果存进它的结果文件夹。</p>
+    </div>
+  </div>
+
+  <h3 class="ux-h3" id="auto-cloud-locked">1.3 没登录平台账户时的执行位置 · 选「可改文件」时的确认</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>「云端」随时可选,保存才报「尚未登录或登录已过期」;「可写」保存时弹系统原生确认框</p>
+      <div class="ux-screen">
+        <div class="ux-body">
+          <div class="ux-field"><label>执行位置</label><div class="ux-seg"><span>本地</span><span class="on">云端</span></div></div>
+          <p class="ux-err">尚未登录或登录已过期。请登录平台账号后重试。</p>
+          <div class="ux-native"><div class="t">Code Puppy</div>standard 档 = 无人值守时 AI 可以改文件、执行常规命令。破坏类命令(删除/系统级/发布)被拦截,但拦截清单非穷尽。确定启用?<div class="b"><span class="ux-btn sm">取消</span><span class="ux-btn sm primary">确定</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>非平台模式时「云端」置灰并给出下一步;确认放进表单,用界面上已有的词</p>
+      <div class="ux-screen">
+        <div class="ux-body">
+          <div class="ux-field"><label>执行位置</label><div class="ux-seg"><span class="on">本机</span><span class="dis">云端</span></div>
+            <p class="ux-pre">云端运行需要登录平台账户并使用平台模式。 <span class="ux-link">登录平台账户</span></p></div>
+          <div class="ux-field"><label>权限</label><div class="ux-seg"><span>只读</span><span class="on">可改文件</span></div>
+            <p class="ux-pre">可改文件:无人看着时,助手可以修改项目文件、运行常规命令。删除、系统级和发布类命令会被拦下,但拦不全 —— 只给你信任的重复任务用。</p></div>
+          <div class="ux-confirm"><span>这个任务会在无人看着时修改文件、运行命令。删除、系统级和发布类命令会被拦下,但拦不全。确定让它可改文件吗?</span><span class="ux-btn sm primary">确定</span><span class="ux-btn sm">改回只读</span></div>
+        </div>
+      </div>
+      <p class="ux-ann"><b>帧外标注</b>:已登录但用自带密钥时,按钮换成「切换到平台模式」(沿用定制中心云能力的同一对按钮与文案)。确认条只在「从只读改成可改文件」并点保存时出现一次,样式沿用设置页工具节的行内确认。</p>
+    </div>
+  </div>
+
+  <h3 class="ux-h3" id="auto-parse">1.4 「用 AI 解析」的结果提示</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>成功时露出未替换的占位;失败时显示模型返回的技术原因</p>
+      <div class="ux-screen"><div class="ux-body">
+        <p class="ux-hint">AI 解析:<span class="ux-mark">{desc}</span>(临时会话已删除;可修改后保存)</p>
+        <p class="ux-err">模型返回的结构不合法(缺 name/schedule/prompt 或周期过密)</p>
+      </div></div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>成功说结果;失败归成三句,每句带下一步</p>
+      <div class="ux-screen"><div class="ux-body">
+        <p class="ux-hint">已按 AI 的理解填好:每周一 09:00。每一项都还能改。</p>
+        <p class="ux-err">AI 没能解析这句话,请在下面手动选周期。</p>
+        <p class="ux-pre">另两句:AI 暂时用不了,稍后再试或手动设置。/ 这段内容没有通过安全审核,请修改后再试。</p>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ════════════════ 二、设置 ════════════════ -->
+  <h2 class="ux-h2" id="settings">二、设置</h2>
+  <p class="ux-sub">快捷键照着提示就能填对、默认值写对;工具节不再每行挂「计费:未知」;去掉「权威值」「renderer-safe」这类词。</p>
+
+  <h3 class="ux-h3" id="set-shortcuts">2.1 快捷键</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>占位用符号,框却只认文字写法;「新建会话」默认写错;小字是内部名</p>
+      <div class="ux-screen"><div class="ux-set">
+        <div class="ux-nav"><span>通用</span><span class="on">快捷键</span><span>扩展存储</span><span>工具</span></div>
+        <div class="ux-main">
+          <h5>快捷键</h5><p class="ux-hint">输入组合键名称;留空会恢复应用默认值。</p>
+          <div class="ux-srow"><div class="c"><strong>打开设置</strong><small><code>settings.open</code></small></div><div class="ux-kin">⌘,</div></div>
+          <div class="ux-srow"><div class="c"><strong>打开命令面板</strong><small><code>command.palette</code></small></div><div class="ux-kin">⌘K</div></div>
+          <div class="ux-srow"><div class="c"><strong>打开项目</strong><small><code>project.open</code></small></div><div class="ux-kin">⌘O</div></div>
+          <div class="ux-srow"><div class="c"><strong>新建会话</strong><small><code>session.new</code></small></div><div class="ux-kin"><span class="ux-mark">⌘N</span></div></div>
+        </div>
+      </div></div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>写清格式;占位就是能用的写法,右侧按键帽显示当前生效的组合</p>
+      <div class="ux-screen"><div class="ux-set">
+        <div class="ux-nav"><span>通用</span><span class="on">快捷键</span><span>扩展存储</span><span>工具</span></div>
+        <div class="ux-main">
+          <h5>快捷键</h5><p class="ux-hint">用 + 连接按键,例如 mod+shift+s(mod 在 Mac 上是 ⌘);多个组合用逗号隔开。留空恢复默认。</p>
+          <div class="ux-srow"><div class="c"><strong>打开设置</strong></div><span class="ux-keys"><kbd>⌘</kbd><kbd>,</kbd></span><div class="ux-kin">mod+comma</div></div>
+          <div class="ux-srow"><div class="c"><strong>搜索会话</strong></div><span class="ux-keys"><kbd>⌘</kbd><kbd>K</kbd></span><div class="ux-kin">mod+k</div></div>
+          <div class="ux-srow"><div class="c"><strong>打开项目</strong></div><span class="ux-keys"><kbd>⌘</kbd><kbd>O</kbd></span><div class="ux-kin">mod+o</div></div>
+          <div class="ux-srow"><div class="c"><strong>新建会话</strong></div><span class="ux-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>S</kbd></span><div class="ux-kin">mod+shift+s</div></div>
+        </div>
+      </div></div>
+      <p class="ux-ann"><b>帧外标注</b>:占位与按键帽都取注册时的默认值,不在设置页再写一份;用户填了自己的组合时,按键帽显示他填的那一组。「搜索会话」的默认写法以注册处为准,帧里 mod+k 为示意。</p>
+    </div>
+  </div>
+
+  <h3 class="ux-h3" id="set-tools">2.2 工具 · 云端与第三方分组</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>每一行都挂「计费:未知」;组说明是工程话</p>
+      <div class="ux-screen"><div class="ux-main">
+        <div class="ux-grp"><b>云端工具</b><span class="n">1 个服务 · 4 项</span></div>
+        <p class="ux-gcap">默认每次询问 · 云端调用可能计费;启用只免去询问,不能越过套餐限制</p>
+        <div class="ux-card">
+          <div class="ux-trow"><div class="c"><b>cloud_dispatch</b><span class="ux-badge">计费:未知</span><small>生效:每次询问 · 默认,首次使用前询问</small></div><span class="ux-tri"><span>启用</span><span>询问</span><span>停用</span></span></div>
+          <div class="ux-trow"><div class="c"><b>cloud_status</b><span class="ux-badge">计费:未知</span><small>生效:每次询问 · 默认,首次使用前询问</small></div><span class="ux-tri"><span>启用</span><span>询问</span><span>停用</span></span></div>
+        </div>
+        <div class="ux-grp"><b>第三方 MCP</b><span class="n">2 个服务 · 9 项</span></div>
+        <p class="ux-gcap">默认每次询问 · 第三方服务的自我描述不参与判定;计费与风险按服务标注,标不出即「未知」</p>
+        <div class="ux-card"><div class="ux-trow"><div class="c"><b>github</b><small>7 个工具 · 计费:未知 · 继承:默认,每次询问</small></div><span class="ux-tri"><span>启用</span><span class="on">询问</span><span>停用</span></span></div></div>
+        <p class="ux-dnote">有 1 项注册身份无法核验,已自动停用,不会提供给模型。</p>
+      </div></div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>计费说一次,放在组说明;行内只留真实数据;来源标签位置留空</p>
+      <div class="ux-screen"><div class="ux-main">
+        <div class="ux-grp"><b>云端工具</b><span class="ux-slot" aria-hidden="true"></span><span class="n">1 个服务 · 4 项</span></div>
+        <p class="ux-gcap">默认每次询问 · 云端调用可能计费;启用只免去询问,不能越过套餐限制</p>
+        <div class="ux-card">
+          <div class="ux-trow"><div class="c"><b>cloud_dispatch</b><small>生效:每次询问 · 默认,首次使用前询问</small></div><span class="ux-tri"><span>启用</span><span>询问</span><span>停用</span></span></div>
+          <div class="ux-trow"><div class="c"><b>cloud_status</b><small>生效:每次询问 · 默认,首次使用前询问</small></div><span class="ux-tri"><span>启用</span><span>询问</span><span>停用</span></span></div>
+        </div>
+        <div class="ux-grp"><b>第三方 MCP</b><span class="ux-slot" aria-hidden="true"></span><span class="n">2 个服务 · 9 项</span></div>
+        <p class="ux-gcap">默认每次询问 · 是否收费、会做什么由服务方决定,Code Puppy 无法替它担保</p>
+        <div class="ux-card"><div class="ux-trow"><div class="c"><b>github</b><small>7 个工具 · 继承:默认,每次询问</small></div><span class="ux-tri"><span>启用</span><span class="on">询问</span><span>停用</span></span></div></div>
+        <p class="ux-dnote">有 1 项工具无法确认来源,已停用,助手用不到它们。</p>
+      </div></div>
+      <p class="ux-ann"><b>帧外标注</b>:虚线空位是来源标签与「已核验」徽标的位置,样式由另一份稿子定;组名、工具名、服务名同样跟随那份稿子与命名迁移,这里沿用现状文字。将来有真实计费数据时,行内再出现「计费:按用量」。</p>
+    </div>
+  </div>
+
+  <h3 class="ux-h3" id="set-copy">2.3 保存结果与扩展存储的说法</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b></p>
+      <div class="ux-screen"><div class="ux-main">
+        <div class="ux-banner ok"><div><b>设置已保存</b><p>页面已切换到刚刚确认的权威值。</p></div></div>
+        <div class="ux-banner warn"><div><b>已存设置无法校验</b><p>页面显示安全默认值。保存后会显式修复权威值。</p></div></div>
+        <div class="ux-srow"><div class="c"><strong>缓存检查</strong><small>只显示 renderer-safe 聚合计数</small></div></div>
+        <div class="ux-stat"><i></i>状态:安全关闭 <code style="font-family:var(--a-font-mono);font-size:11px">fail-closed</code></div>
+      </div></div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b></p>
+      <div class="ux-screen"><div class="ux-main">
+        <div class="ux-banner ok"><div><b>设置已保存</b><p>现在显示的就是已生效的设置。</p></div></div>
+        <div class="ux-banner warn"><div><b>已存设置无法校验</b><p>现在显示的是默认设置。点「保存更改」会用它替换读不了的那份。</p></div></div>
+        <div class="ux-srow"><div class="c"><strong>缓存检查</strong><small>只显示数量,不显示文件名</small></div></div>
+        <div class="ux-stat"><i></i>状态:为安全起见没有清理</div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ════════════════ 三、定制中心 ════════════════ -->
+  <h2 class="ux-h2" id="hub">三、定制中心</h2>
+  <p class="ux-sub">云端任务先说做什么、最长多久、会发出去什么,轮次和 token 收进技术详情;云连接器的工具先写动作;安装确认不再报错误的文件路径;「重载」改说「生效」。</p>
+
+  <h3 class="ux-h3" id="cloud-task">3.1 云能力 · 云端任务详情(以「云端深度调研」为例)</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>首屏是内部参数</p>
+      <div class="ux-screen"><div class="ux-body ux-dt">
+        <div class="ux-dt-h"><span class="ux-ic">云</span><div><b>云端深度调研(research)</b><small>提供调研问题,云端会分解问题、联网检索,并整理带来源的回答。结果保存到本地 .code-puppy/runs。</small></div></div>
+        <dl class="ux-fact">
+          <dt>任务类型</dt><dd><code>research</code></dd>
+          <dt>执行层</dt><dd>Tier-1:在云端联网检索,不使用沙箱</dd>
+          <dt>预算默认</dt><dd>25 iter · 300,000 tokens · 600s</dd>
+          <dt>预算上限(云侧 clamp)</dt><dd>50 iter · 500,000 tokens · 1800s</dd>
+          <dt>需要提供的内容</dt><dd><code>input.question *</code> 你想调研的问题</dd>
+          <dt>发送到云端的内容</dt><dd>发送你填写的调研问题(input.question)。<br>派发信封元数据(预算/约束;denied_paths 缺省注入)</dd>
+        </dl>
+      </div></div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>首屏三行人话;参数原值进折叠</p>
+      <div class="ux-screen"><div class="ux-body ux-dt">
+        <div class="ux-dt-h"><span class="ux-ic">云</span><div><b>云端深度调研</b><small>提供调研问题,云端会分解问题、联网检索,并整理带来源的回答。结果存到项目的结果文件夹。</small></div></div>
+        <div class="ux-sumry">
+          <div><span>做什么</span><span>在云端联网检索,整理带来源的回答</span></div>
+          <div><span>最长运行</span><span>默认约 10 分钟,最多约 30 分钟</span></div>
+          <div><span>会发出去</span><span>你填写的调研问题,以及这次任务的设置(额度、限制)</span></div>
+        </div>
+        <div class="ux-fold"><div>▸ 技术详情</div></div>
+        <div class="ux-fold"><div>▾ 技术详情</div><div class="in"><dl class="ux-fact">
+          <dt>任务类型</dt><dd><code>research</code></dd>
+          <dt>运行环境</dt><dd>在云端运行,不在隔离环境里</dd>
+          <dt>默认额度</dt><dd>25 轮 · 300,000 tokens · 600 秒</dd>
+          <dt>额度上限</dt><dd>50 轮 · 500,000 tokens · 1800 秒</dd>
+          <dt>输入字段</dt><dd><code>input.question</code>(必填)</dd>
+        </dl></div></div>
+      </div></div>
+      <p class="ux-ann"><b>帧外标注</b>:「最长运行」由目录里的秒数换算,不写进词典;费用仍由发送框里的「预留 US$… ,按实际用量结算」那一句交代(原文保留)。上方折叠两种状态并排画出,实际只出现一个。</p>
+    </div>
+  </div>
+
+  <h3 class="ux-h3" id="cloud-connector">3.2 云能力 · 云连接器详情</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>标题带括号原名;工具以函数名打头;状态说「未注入」</p>
+      <div class="ux-screen"><div class="ux-body ux-dt">
+        <div class="ux-dt-h"><span class="ux-ic">云</span><div><b>云连接器(cloud)</b><small>登录平台模式后,应用会自动连接云服务,让助手可以发送云端任务,无需另外安装。</small></div></div>
+        <dl class="ux-fact"><dt>连接状态</dt><dd><span class="ux-cst"><i></i>未注入 —— 需登录平台模式</span></dd><dt>连接方式</dt><dd>远程(HTTP)</dd></dl>
+        <div><div class="ux-dnote" style="font-weight:600;color:var(--a-text);margin-bottom:4px">提供的工具</div>
+          <div class="ux-tool"><code>cloud_dispatch</code><span>将任务发送到云端处理</span></div>
+          <div class="ux-tool"><code>cloud_status</code><span>查询任务状态、进度与用量计数</span></div>
+          <div class="ux-tool"><code>cloud_await</code><span>等待任务完成、失败或取消,并获取最终状态</span></div>
+          <div class="ux-tool"><code>cloud_artifacts</code><span>查看并下载任务生成的文件</span></div></div>
+        <div class="ux-cond"><b>注入方式</b>登录平台模式后自动连接,无需安装。…</div>
+      </div></div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>动作在前,技术名进折叠;状态说清下一步</p>
+      <div class="ux-screen"><div class="ux-body ux-dt">
+        <div class="ux-dt-h"><span class="ux-ic">云</span><div><b>云连接器</b><small>登录平台模式后,应用会自动连接云服务,让助手可以发送云端任务,无需另外安装。</small></div></div>
+        <dl class="ux-fact"><dt>连接状态</dt><dd><span class="ux-cst"><i></i>未连接:需要登录平台账户</span> <span class="ux-link">登录平台账户</span></dd><dt>连接方式</dt><dd>远程(HTTP)</dd></dl>
+        <div><div class="ux-dnote" style="font-weight:600;color:var(--a-text);margin-bottom:4px">提供的工具</div>
+          <div class="ux-tool"><b>发送云端任务</b><span>将任务发送到云端处理</span></div>
+          <div class="ux-tool"><b>查看任务进度</b><span>查询任务状态、进度与用量计数</span></div>
+          <div class="ux-tool"><b>等待任务结束</b><span>等待任务完成、失败或取消,并获取最终状态</span></div>
+          <div class="ux-tool"><b>取回任务文件</b><span>查看并下载任务生成的文件</span></div></div>
+        <div class="ux-fold"><div>▸ 技术详情(工具的技术名)</div></div>
+        <div class="ux-cond"><b>怎么连上的</b>登录平台模式后自动连接,无需安装。…(正文保留)</div>
+      </div></div>
+      <p class="ux-ann"><b>帧外标注</b>:行首的自然语言名称取命名词典(由命名迁移那张票给出,帧里四个名字为示意),说明沿用原文;折叠里的技术名按命名规范显示,这里不写具体字样。</p>
+    </div>
+  </div>
+
+  <h3 class="ux-h3" id="enable-flow">3.3 安装确认说明 · 已安装行的生效状态</h3>
+  <div class="ux-pair">
+    <div>
+      <p class="ux-cap"><b>现状</b>说要改一个应用早已不写的文件;状态说「重载」</p>
+      <div class="ux-screen"><div class="ux-body">
+        <div class="ux-dialog"><h6>添加连接器 GitHub</h6><p class="ux-dnote">会更新你的 <span class="ux-mark">~/.opencode/opencode.jsonc</span> 设置文件,仅修改允许的扩展设置。保存后立即生效,无需重启。</p><div class="f"><span class="ux-btn sm ghost">取消</span><span class="ux-btn sm primary">添加</span></div></div>
+        <div class="ux-irow"><div class="c"><b>skill-creator</b><small><span class="ux-amber"><i></i>待重载</span> · 等所有对话空闲后会自动重载</small></div><span class="ux-btn sm" title="现在重载会打断正在输出的回答">现在重载</span><span class="ux-sw"></span></div>
+      </div></div>
+    </div>
+    <div>
+      <p class="ux-cap"><b class="after">改后</b>不写路径,说清改的范围;「重载」改说「生效」</p>
+      <div class="ux-screen"><div class="ux-body">
+        <div class="ux-dialog"><h6>添加连接器 GitHub</h6><p class="ux-dnote">只改 Code Puppy 自己的扩展设置,不动你的其它配置。保存后立即生效,无需重启。</p><div class="f"><span class="ux-btn sm ghost">取消</span><span class="ux-btn sm primary">添加</span></div></div>
+        <div class="ux-irow"><div class="c"><b>skill-creator</b><small><span class="ux-amber"><i></i>待生效</span> · 所有对话停下后自动生效</small></div><span class="ux-btn sm" title="现在生效会打断正在输出的回答">现在生效</span><span class="ux-sw"></span></div>
+      </div></div>
+      <p class="ux-ann"><b>帧外标注</b>:连接器行的启动状态词(等待中 / 已连接 / 失败)不在本稿范围,沿用现状。</p>
+    </div>
+  </div>
+
+  <!-- ════════════════ 规格 ════════════════ -->
+  <h2 class="ux-h2" id="spec">四、规格</h2>
+  <table class="ux-spec">
+    <tr><th>项</th><th>规则</th></tr>
+    <tr><td>自动化 · 云端条件块</td><td>执行位置为云端时出现,替代权限 / 单次最长 / 完成后通知三项;底 <code>--a-bg-subtle</code>,边 <code>--a-border</code>,正文 12 / <code>--a-text-secondary</code></td></tr>
+    <tr><td>自动化 · 云端置灰</td><td>非平台模式时「云端」段用 <code>--a-text-disabled</code>,不可点;下方一行原因 + 文字按钮(登录平台账户 / 切换到平台模式),与定制中心云能力同一套</td></tr>
+    <tr><td>自动化 · 可改文件确认</td><td>表单内,保存按钮上方;左边框 3px <code>--a-warning</code>,底 <code>--a-warning-subtle</code>;主按钮「确定」,次按钮「改回只读」;取代系统原生确认框</td></tr>
+    <tr><td>自动化 · 云端行按钮</td><td>文字「在本机试跑」,悬停说明逐字见 1.1;本机行仍为「立即运行」</td></tr>
+    <tr><td>设置 · 快捷键行</td><td>删除内部名小字;右侧按键帽(11px,边 <code>--a-border</code>,下边 2px)显示当前生效组合;输入框占位 = 注册默认值的文字写法</td></tr>
+    <tr><td>设置 · 工具行计费</td><td>没有计费数据时不出徽标;计费说法只在组说明出现一次</td></tr>
+    <tr><td>定制中心 · 云端任务</td><td>首屏三行:做什么 / 最长运行 / 会发出去;标签列 84px <code>--a-text-tertiary</code>;「技术详情」默认收起,内为原参数(单位写成 轮 / tokens / 秒)</td></tr>
+    <tr><td>定制中心 · 云连接器工具</td><td>动作名 12 / 500 在前,说明在后;技术名只在折叠里</td></tr>
+    <tr><td>深色</td><td>全部沿用 token,无单独色值;tertiary 文字 <code>#86878f</code>(浅色 <code>#64656d</code>)以过对比度</td></tr>
+  </table>
+  <table class="ux-spec" style="margin-top:12px">
+    <tr><th>文案</th><th>中文</th><th>English</th></tr>
+    <tr><td>页头说明</td><td>本机任务只在 Code Puppy 开着时运行,错过的不会补跑;云端任务不受影响。</td><td>Local tasks run only while Code Puppy is open, and missed runs are not made up. Cloud tasks are not affected.</td></tr>
+    <tr><td>云端行按钮</td><td>在本机试跑</td><td>Try on this Mac</td></tr>
+    <tr><td>云端条件</td><td>在云端运行时 / 应用关着也按时运行。/ 云端只做联网调研:只发送上面的「执行内容」,看不到这个项目的文件,也不会改文件或运行命令。/ 结果在你下次打开应用时存进项目的结果文件夹。/ 每次运行有时长和用量上限,到了就停。</td><td>When it runs in the cloud / Runs on schedule even when the app is closed. / The cloud only does web research: it receives the instructions above and cannot see this project's files, change files or run commands. / Results are saved to the project's results folder the next time you open the app. / Each run has a time and usage limit and stops when it reaches it.</td></tr>
+    <tr><td>云端置灰</td><td>云端运行需要登录平台账户并使用平台模式。</td><td>Running in the cloud needs a platform account in platform mode.</td></tr>
+    <tr><td>快捷键说明</td><td>用 + 连接按键,例如 mod+shift+s(mod 在 Mac 上是 ⌘);多个组合用逗号隔开。留空恢复默认。</td><td>Join keys with +, for example mod+shift+s (mod is ⌘ on Mac). Separate alternatives with commas. Leave empty to restore the default.</td></tr>
+    <tr><td>生效状态</td><td>待生效 / 所有对话停下后自动生效 / 现在生效</td><td>Pending / Takes effect when all chats are idle / Apply now</td></tr>
+  </table>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement,seg=document.getElementById('themeSeg');
+  function mark(v){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===v)});}
+  var q=new URLSearchParams(location.search);
+  var dark=q.get('theme')?q.get('theme')==='dark':(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  root.setAttribute('data-theme',dark?'dark':'light');mark(dark?'dark':'light');
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){root.setAttribute('data-theme',b.dataset.theme);mark(b.dataset.theme);};});
+})();
+</script>
+</body>
+</html>

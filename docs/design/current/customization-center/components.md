@@ -24,7 +24,7 @@ review_after: 2027-01-16
   早于本层存在,实现票已不可靠追溯。
 - **`设计中` 的行,锚是已约定但尚未存在的 id** —— 增量帧获批并入活稿的那一刻
   才写进 `design.html`。这是 README 增量五步序的第 2 步(先定锚再画),不是断链。
-  本文件目前**没有**这样的行。
+  本文件目前的 `设计中` 行都来自 `2026-10-30-req236-ux-config-pages/`。
 
 ## 组件
 
@@ -39,6 +39,9 @@ review_after: 2027-01-16
 | 降级与失败态(拉取失败 / 复审过期 / 保守处理) | `#states` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#397 | — | `renderer/extensions/extension-detail.tsx` | 未登记(历史) |
 | 已安装行:启用开关 · 会话开关 · 归档警示 | `#policy` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#395 · ac#408 | — | `renderer/extensions/extension-hub.tsx`(`InstalledRow`) | 未登记(历史) |
 | 整包事实段 | `#packrel` | `2026-07-17-req104-pack-facts/` | 2026-07-17 | ac#396 | — | `renderer/extensions/extension-detail.tsx` | 未登记(历史) |
+| 云能力 · 云端任务详情(首屏「做什么 / 最长运行 / 会发出去」,轮次与 token 收进技术详情) | `#cloud-task` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`renderer/extensions/extension-detail.tsx`(`cloudSpec` 段);条目文字 `renderer/extensions/alpha-catalog.json` | 设计中 |
+| 云能力 · 云连接器详情(工具先写自然语言名称,技术名进折叠;状态写下一步) | `#cloud-connector` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`renderer/extensions/extension-detail.tsx`(`isCloudConnector` 段)、`extension-hub.tsx`(云能力页卡) | 设计中 |
+| 安装确认说明与生效状态词(不写配置文件路径;「待重载」改「待生效」) | `#enable-flow` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`renderer/extensions/install-confirm.tsx`、`use-extensions.ts`(生效状态) | 设计中 |
 
 ## 登记时记下的两处现状 —— 已随本次实现闭合
 
