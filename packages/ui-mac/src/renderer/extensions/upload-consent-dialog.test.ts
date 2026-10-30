@@ -514,6 +514,10 @@ describe("#1595 AC2 云端任务详情首屏:最长运行 / 发送内容 / 结�
     await flush()
 
     const facts = document.querySelector("[data-alpha-cloud-task-facts]")?.textContent ?? ""
+    // 「做什么」取条目自身的描述;页头简介不再重复同一段。
+    expect(facts).toContain(zh["alpha.ext.cloudWhat"])
+    expect(facts).toContain(research().description)
+    expect(document.querySelector(".alpha-ext-dabout") === null).toBe(true)
     for (const label of [zh["alpha.ext.cloudMaxRun"], zh["alpha.ext.cloudSends"], zh["alpha.ext.cloudResult"], zh["alpha.ext.cloudCost"]]) {
       expect(facts).toContain(label)
     }
@@ -595,6 +599,7 @@ describe("#1595 AC4 发送框、结果、生效状态、npm 导入与云端错�
       "alpha.ext.cloudDone": "已完成",
       "alpha.ext.cloudSaved": "已保存",
       "alpha.ext.cloudErrConsentDeclined": "未同意上传,未发送",
+      "alpha.ext.cloudErrNetwork": "暂时连不上云端服务,稍后重试",
     }
     for (const [key, value] of Object.entries(expected)) expect(zh[key as keyof typeof zh], key).toBe(value)
     for (const key of ["alpha.cloud.runSaved", "alpha.ext.cloudSub", "alpha.ext.cloudInputHint"] as const) {

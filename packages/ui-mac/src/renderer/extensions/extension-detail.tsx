@@ -939,7 +939,10 @@ export function ExtensionDetail(props: {
 
       {/* ── 简介 ── */}
       <Section title={t("alpha.ext.detailAbout")}>
-        <p class="alpha-ext-dabout">{header().desc}</p>
+        {/* #1595 AC2:云端任务的描述就是首屏「做什么」那一行,这里不再重复。 */}
+        <Show when={!(entry() && cloudSpec(entry()!))}>
+          <p class="alpha-ext-dabout">{header().desc}</p>
+        </Show>
         {/* REQ-105(#197):归档警示 —— 已装用户的诚实处置指引(禁用/卸载/替代);永不静默删除。 */}
         <Show when={entry() && advisoryOf(entry()!)}>
           {(adv) => (
@@ -1155,6 +1158,7 @@ export function ExtensionDetail(props: {
                   return (
                     <>
                       <div data-alpha-cloud-task-facts>
+                        <FactRow label={t("alpha.ext.cloudWhat")}>{catalogDescription(e())}</FactRow>
                         <FactRow label={t("alpha.ext.cloudMaxRun")}>
                           {t("alpha.ext.cloudMaxRunValue", { min: cloudMaxRunMinutes(spec().budgetDefaults.max_wall_clock_sec) })}
                         </FactRow>

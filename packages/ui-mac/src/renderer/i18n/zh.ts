@@ -405,6 +405,7 @@ export const dict = {
   "alpha.ext.confirmBundle": "将安装 {{count}} 项",
   "alpha.ext.confirmNote": "保存后立即生效",
   "alpha.ext.confirmNoteUnreviewed": "未经审核,装好后默认关闭",
+  "alpha.ext.confirmNoteDefaultOff": "装好后默认关闭",
   // #348:能力授权确认框(stage="authorize";设计稿 2026-07-15-capability-authorize-dialog)
   "alpha.ext.authz.titleFirst": "允许此扩展执行哪些操作",
   "alpha.ext.authz.titleEscalation": "请确认权限变更",
@@ -593,6 +594,7 @@ export const dict = {
   "alpha.ext.cloudBudgetLimits": "额度上限",
   "alpha.ext.cloudInputContract": "输入字段",
   // #1595 AC2:云端任务详情首屏(批准稿 #cloud-task);技术参数进「开发者详情」。
+  "alpha.ext.cloudWhat": "做什么",
   "alpha.ext.cloudMaxRun": "最长运行",
   "alpha.ext.cloudMaxRunValue": "约 {{min}} 分钟",
   "alpha.ext.cloudSends": "发送内容",
@@ -639,7 +641,7 @@ export const dict = {
   "alpha.ext.cloudGoRecharge": "去充值",
   "alpha.ext.cloudOpenOverflow": "打开余额支付",
   "alpha.ext.cloudErrEndpoint": "暂时无法找到云服务地址。请登录平台账号后重试；如果你自行设置了 ALPHA_CLOUD_URL，请检查该地址。",
-  "alpha.ext.cloudErrNetwork": "网络错误 —— 云端点不可达",
+  "alpha.ext.cloudErrNetwork": "暂时连不上云端服务,稍后重试",
   "alpha.ext.cloudErrConsentDeclined": "未同意上传,未发送",
   "alpha.ext.cloudErrDeniedPaths": "任务未被云端接收，因为无法执行你设置的路径访问限制（denied_paths）。如果必须保留此限制，请不要发送；若你接受没有此限制，再移除该设置并重试。",
   "alpha.ext.cloudErrToolsUndeclared": "任务尚未发送，因为没有列出需要使用的工具。请补充工具列表后重试；未列出的工具无法在云端使用。",

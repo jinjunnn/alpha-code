@@ -415,6 +415,7 @@ export const dict = {
   "alpha.ext.confirmBundle": "Installs {{count}} items",
   "alpha.ext.confirmNote": "Takes effect as soon as it is saved",
   "alpha.ext.confirmNoteUnreviewed": "Not reviewed — off by default after install",
+  "alpha.ext.confirmNoteDefaultOff": "Off by default after install",
   // #348: capability authorization dialog (stage="authorize"; design 2026-07-15-capability-authorize-dialog)
   "alpha.ext.authz.titleFirst": "Allow this extension's operations",
   "alpha.ext.authz.titleEscalation": "Confirm permission changes",
@@ -603,6 +604,7 @@ export const dict = {
   "alpha.ext.cloudBudgetLimits": "Allowance ceiling",
   "alpha.ext.cloudInputContract": "Input fields",
   // #1595 AC2: cloud task detail first screen (approved draft #cloud-task); technical parameters go to Developer details.
+  "alpha.ext.cloudWhat": "What it does",
   "alpha.ext.cloudMaxRun": "Longest run",
   "alpha.ext.cloudMaxRunValue": "About {{min}} min",
   "alpha.ext.cloudSends": "What is sent",
@@ -649,7 +651,7 @@ export const dict = {
   "alpha.ext.cloudGoRecharge": "Recharge",
   "alpha.ext.cloudOpenOverflow": "Enable wallet payments",
   "alpha.ext.cloudErrEndpoint": "The cloud service address could not be found. Sign in to a platform account and try again. If you set ALPHA_CLOUD_URL yourself, check that address.",
-  "alpha.ext.cloudErrNetwork": "Network error — cloud endpoint unreachable",
+  "alpha.ext.cloudErrNetwork": "Can't reach the cloud service right now — try again later",
   "alpha.ext.cloudErrConsentDeclined": "Upload not approved, nothing was sent",
   "alpha.ext.cloudErrDeniedPaths": "The cloud did not accept the task because it cannot enforce your path access restrictions (denied_paths). Do not send it if those restrictions are required. If you accept running without them, remove the setting and try again.",
   "alpha.ext.cloudErrToolsUndeclared": "The task has not been sent because its required tools were not listed. Add the tool list and try again. Unlisted tools cannot be used in the cloud.",

@@ -12,6 +12,7 @@ import {
   buildShelves,
   confirmNoteKey,
   curationMapOf,
+  packageConfirmNoteKey,
   downloadPresentation,
   foldDomains,
   formatBytesApprox,
@@ -173,9 +174,19 @@ describe("#1595 AC1 添加确认框的一句话", () => {
     expect(zh["alpha.ext.confirmNote"]).toBe("保存后立即生效")
   })
 
-  test("两句都不出现配置文件路径", () => {
+  test("已审核但声明默认关闭的条目(mcp:filesystem,curation default-disabled)⇒「装好后默认关闭」,不说「未经审核」", () => {
+    expect(confirmNoteKey(entry("mcp:filesystem"), catalog, now)).toBe("alpha.ext.confirmNoteDefaultOff")
+    expect(zh["alpha.ext.confirmNoteDefaultOff"]).toBe("装好后默认关闭")
+  })
+
+  test("包确认屏同一判定(main package-admission 的入参):含会关着的组件 ⇒ 未经审核,全是装好即用的 ⇒ 保存后立即生效", () => {
+    expect(packageConfirmNoteKey(["skill", "command"])).toBe("alpha.ext.confirmNoteUnreviewed")
+    expect(packageConfirmNoteKey(["command"])).toBe("alpha.ext.confirmNote")
+  })
+
+  test("三句都不出现配置文件路径", () => {
     for (const dict of [zh, en]) {
-      for (const key of ["alpha.ext.confirmNote", "alpha.ext.confirmNoteUnreviewed"] as const) {
+      for (const key of ["alpha.ext.confirmNote", "alpha.ext.confirmNoteDefaultOff", "alpha.ext.confirmNoteUnreviewed"] as const) {
         expect(dict[key]).not.toMatch(/opencode|\.jsonc|~\/|\.code-puppy/)
       }
     }
