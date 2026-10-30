@@ -329,6 +329,9 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     await flush()
     runtime.ask(hubRequest("mcp:alpha-word", "req_hub_office_ready"))
     await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
+    // 确认框不再把卡片残留的 runtimeDep(uv)列成「需要先安装的程序」—— 运行环境随应用自带。
+    expect(document.body.textContent).not.toContain(zh["alpha.ext.confirmRuntime"])
+    expect([...document.querySelectorAll(".alpha-ext-confirm-line code")].map((node) => node.textContent)).not.toContain("uv")
     button(zh["alpha.ext.confirmInstall"])!.click()
     await until(() => replies().length > 0, "the reply")
     expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
