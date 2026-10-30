@@ -65,12 +65,15 @@ describe("AC8 附件代码里没有隐藏目录名 / 附件目录的字面量", 
     "packages/ui-mac/src/renderer/alpha-ui/session-timeline/timeline-attachments.ts",
     "packages/ext/src/attachment-reader-hooks.ts",
   ]
-  const HIDDEN_LITERAL = /["'`]\.code-?puppy["'`/]/
+  // 两种写法都抓:引号起头(`".code-puppy"`、`'.codepuppy/…'`)与路径中段(`${dir}/.codepuppy/x`、`"./.code-puppy"`)。
+  const HIDDEN_LITERAL = /["'`]\.code-?puppy["'`/]|\/\.code-?puppy(\/|["'`])/
   const ATTACHMENTS_LITERAL = /["'`]attachments\/|["'`]attachments["'`]|\/attachments\//
   test("判据先测出已知的坏", () => {
     expect(HIDDEN_LITERAL.test('path.join(dir, ".code-puppy")')).toBe(true)
-    expect(HIDDEN_LITERAL.test("`${dir}/.codepuppy/x`")).toBe(false)
-    expect(HIDDEN_LITERAL.test('"./.codepuppy/x"')).toBe(false)
+    expect(HIDDEN_LITERAL.test("`${dir}/.codepuppy/x`")).toBe(true)
+    expect(HIDDEN_LITERAL.test('"./.codepuppy/x"')).toBe(true)
+    expect(HIDDEN_LITERAL.test('`${root}/.code-puppy`')).toBe(true)
+    expect(HIDDEN_LITERAL.test("path.join(dir, PROJECT_HIDDEN_DIR)")).toBe(false)
     expect(HIDDEN_LITERAL.test("'.codepuppy/attachments'")).toBe(true)
     expect(ATTACHMENTS_LITERAL.test('safeResolveInAlpha(d, "attachments", id)')).toBe(true)
     expect(ATTACHMENTS_LITERAL.test("`${root}/attachments/${id}`")).toBe(true)
