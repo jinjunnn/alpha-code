@@ -1871,6 +1871,49 @@ unix(
   30_000,
 )
 
+// alpha: REQ-236 T24 §2.4(alpha-code#1560)—— 命令模型优先级:显式 input.model 压过命令 agent 绑定的模型。
+it.instance(
+  "command runs the explicitly requested model over the command agent's bound model",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => {
+        const base = providerCfg(url)
+        return {
+          ...base,
+          provider: {
+            test: {
+              ...base.provider.test,
+              models: {
+                ...base.provider.test.models,
+                "model-b": { ...base.provider.test.models["test-model"], id: "model-b", name: "Model B" },
+              },
+            },
+          },
+          agent: { pinned: { model: "test/model-b", mode: "primary" } },
+          command: { probe: { template: "Probe", agent: "pinned" } },
+        }
+      })
+
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+      const explicit = yield* prompt.command({
+        sessionID: chat.id,
+        command: "probe",
+        arguments: "",
+        model: "test/test-model",
+      })
+      expect(explicit.info.role).toBe("assistant")
+      if (explicit.info.role === "assistant") expect(explicit.info.modelID).toBe(ModelV2.ID.make("test-model"))
+
+      yield* llm.text("done")
+      const recommended = yield* prompt.command({ sessionID: chat.id, command: "probe", arguments: "" })
+      expect(recommended.info.role).toBe("assistant")
+      if (recommended.info.role === "assistant") expect(recommended.info.modelID).toBe(ModelV2.ID.make("model-b"))
+    }),
+  30_000,
+)
+// alpha: end REQ-236 T24 §2.4
+
 unixNoLLMServer(
   "cancel interrupts shell and resolves cleanly",
   () =>

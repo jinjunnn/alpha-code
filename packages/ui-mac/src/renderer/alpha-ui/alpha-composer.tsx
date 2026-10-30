@@ -55,6 +55,7 @@ import {
   composerAgent,
   composerEffortSel,
   composerModel,
+  composerModelExplicit,
   composerModelProjection,
   composerModelSuspended,
   composerPerm,
@@ -62,8 +63,10 @@ import {
   permLocksAgent,
   failComposerModelProjection,
   invalidateComposerModelProjection,
+  isRememberedExplicit,
   releaseComposerAgentScope,
   releaseComposerPermScope,
+  rememberExplicitModel,
   resetComposerModelProjection,
   resolveComposerModelProjection,
   routeSlash,
@@ -75,6 +78,9 @@ import {
   slashSourceOf,
   suspendComposerModel,
   tierAgent,
+  v1CommandModelFields,
+  v1PromptModelFields,
+  type ComposerModel,
   type PermMode,
   type SlashCommandSource,
 } from "./composer-state"
@@ -1086,7 +1092,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         throw new Error("model switch failed")
       }
     }
-    setComposerModel(model)
+    setComposerModel(model, true) // #1560:picker / 档位芯片是唯一的显式写入口
+    // #1560 r1:按会话记住(首页无会话,发出后由 seed 交给新会话)。
+    if (composerScope) rememberExplicitModel(composerScope, modelRefOf(model))
     clearSuspendedModel()
   }
 
@@ -1178,11 +1186,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       setModelChainState("error")
       return
     }
+    // #1560 r1:会话模型若就是本次运行里用户在这个会话显式选过的那个,投影后仍算显式。
+    const projectSession = (next: ComposerModel | null) =>
+      resolveComposerModelProjection(sessionID!, next, isRememberedExplicit(composerScope, next))
     if (sessionID && currentRead?.status === "ready") {
-      resolveComposerModelProjection(
-        sessionID,
-        currentRead.data ? composerModelFromRef(currentRead.data, null) : null,
-      )
+      projectSession(currentRead.data ? composerModelFromRef(currentRead.data, null) : null)
     }
 
     const cat = await catalogRead
@@ -1192,10 +1200,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       return
     }
     if (sessionID && currentRead?.status === "ready") {
-      resolveComposerModelProjection(
-        sessionID,
-        currentRead.data ? composerModelFromRef(currentRead.data, cat.data) : null,
-      )
+      projectSession(currentRead.data ? composerModelFromRef(currentRead.data, cat.data) : null)
     }
 
     const [auth, keys] = await Promise.all([authRead, keysRead])
@@ -1582,6 +1587,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       perm: submittedPerm,
       agent: submittedAgent,
     })
+    // #1560(REQ-236 §2.8):只有用户显式选的模型才随消息/命令发出 —— 它压过 agent 与命令自带的推荐模型;
+    // 没显式选时不带,推荐模型照旧作默认。与档位同理在这里定格。
+    const submittedExplicitModel = composerModelExplicit() ? req.model : undefined
     const submissionGeneration = runtimeGenerationEpoch
     const interrupted = () => submissionGeneration !== runtimeGenerationEpoch
     submittedText = text() // 已提交文本快照(在途未编辑判据)
@@ -1610,6 +1618,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           homePendingSession && homePendingSession.directory === dir ? homePendingSession.sessionID : undefined
         const id = await props.projects.startChat(dir, body, req.parts.slice(1), {
           model: req.model,
+          explicitModel: submittedExplicitModel,
           agent: req.agent,
           perm: submittedPerm,
           existingSessionID: reuseSessionID,
@@ -1643,6 +1652,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         if (seedKey) {
           seedComposerAgentScope(seedKey, submittedAgent)
           seedComposerPermScope(seedKey, submittedPerm)
+          // #1560 r1:首页的显式选择就是新会话的显式选择 —— 少了它,第二条消息又让推荐模型赢回来。
+          if (submittedExplicitModel) rememberExplicitModel(seedKey, submittedExplicitModel)
         }
         setText("")
         setMentions([])
@@ -1675,6 +1686,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
             command: slash.name,
             arguments: slash.args,
             ...(tier ? { agent: tier } : {}),
+            ...v1CommandModelFields(submittedExplicitModel),
           } as any)
           if (interrupted()) return
           if (error) {
@@ -1719,6 +1731,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         directory: dir,
         parts: req.parts,
         ...(req.agent ? { agent: req.agent } : {}),
+        ...v1PromptModelFields(submittedExplicitModel),
       } as any)
       if (interrupted()) return
       if (error) {

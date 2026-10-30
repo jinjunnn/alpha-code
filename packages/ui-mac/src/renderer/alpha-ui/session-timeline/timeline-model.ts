@@ -156,6 +156,9 @@ export interface TimelineFootnote {
   // 与整轮计时同名不同量,故不再出现在脚注里。
   /** 效率段:本回合提示词的缓存命中率(0–100 整数);无缓存读取即缺席(见 footnoteOf)。 */
   cacheHit?: number
+  /** #1560(REQ-236 §2.8):实际执行的模型与本回合用户消息记下的所选模型不一致时 = 实际执行的 modelID;
+   *  一致(或用户消息没记模型)即缺席 —— 不新增常驻显示。 */
+  actualModel?: string
 }
 
 /** 本回合改动汇总(S2)的一行;file = 服务端 git 相对路径(review 面板同一货币)。 */
@@ -729,13 +732,18 @@ export function isEmptyUnknownTurn(assistant: AssistantMessage, emitted: number)
   return typeof tokens === "object" && tokens !== null && tokens.output === 0
 }
 
-export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFootnote | undefined {
+export function footnoteOf(
+  assistants: readonly AssistantMessage[],
+  selected?: UserMessage["model"],
+): TimelineFootnote | undefined {
   const source = assistants.at(-1)
   if (!source || typeof source.time.completed !== "number" || source.error) return undefined
   const footnote: TimelineFootnote = {}
   footnote.provider = cappedField(source.providerID)
   footnote.agent = cappedField(source.agent)
   footnote.model = cappedField(source.modelID)
+  if (selected && (selected.providerID !== source.providerID || selected.modelID !== source.modelID))
+    footnote.actualModel = footnote.model
   const tokens = source.tokens
   if (typeof tokens === "object" && tokens !== null) {
     const total = [tokens.input, tokens.output, tokens.reasoning]
@@ -1178,7 +1186,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
 
     // 回合末富脚注(A6):只在回合尾态成功完成且有可见内容时出行;当前活跃回合
     // (busy/retry 等非 idle)尾态未定,一律不出(审计 Major-1)。
-    const footnote = emitted > 0 && !turnActive ? footnoteOf(assistants) : undefined
+    const footnote = emitted > 0 && !turnActive ? footnoteOf(assistants, userMessage.model) : undefined
     if (footnote)
       rows.push({
         kind: "footnote",
@@ -1189,6 +1197,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           footnote.model ?? "",
           footnote.cacheHit ?? "",
           footnote.tokens ?? "",
+          footnote.actualModel ?? "",
         ].join("§"),
         userMessageID: userMessage.id,
         footnote,

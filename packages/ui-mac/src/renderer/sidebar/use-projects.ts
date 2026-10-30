@@ -25,7 +25,7 @@ import {
 } from "../runtime-recovery"
 import { markStartupTimeline } from "../startup-timeline"
 import { nextEngineRetryDelay } from "../alpha-ui/model-picker-logic"
-import { tierAgent, type PermMode } from "../alpha-ui/composer-state"
+import { tierAgent, v1CommandModelFields, v1PromptModelFields, type PermMode } from "../alpha-ui/composer-state"
 
 export interface ServerInfo {
   baseUrl: string
@@ -85,6 +85,8 @@ export interface AlphaProjectsApi {
     extraParts?: unknown[],
     opts?: {
       model?: ModelRef
+      /** #1560:用户显式选的模型 —— 只有它随首条消息/命令发出;`model` 只用于建会话。 */
+      explicitModel?: ModelRef
       agent?: string
       /** 本条消息的权限档;斜杠命令只带它强制的 agent(`tierAgent`,与普通发送同一张表)。 */
       perm?: PermMode
@@ -449,6 +451,8 @@ export function useAlphaProjects(
     extraParts?: unknown[],
     opts?: {
       model?: ModelRef
+      /** #1560:用户显式选的模型 —— 只有它随首条消息/命令发出;`model` 只用于建会话。 */
+      explicitModel?: ModelRef
       agent?: string
       /** 本条消息的权限档;斜杠命令只带它强制的 agent(`tierAgent`,与普通发送同一张表)。 */
       perm?: PermMode
@@ -495,6 +499,7 @@ export function useAlphaProjects(
                 command: name,
                 arguments: tail.join(" "),
                 ...(tier ? { agent: tier } : {}),
+                ...v1CommandModelFields(opts?.explicitModel),
               } as any)
               .catch(() => null)
             if (!command || command.error) return undefined
@@ -505,6 +510,7 @@ export function useAlphaProjects(
             .promptAsync({
               sessionID: id,
               ...(opts?.agent ? { agent: opts.agent } : {}),
+              ...v1PromptModelFields(opts?.explicitModel),
               parts: [{ type: "text", text: body }, ...(extraParts ?? [])],
             } as any)
             .catch(() => null)

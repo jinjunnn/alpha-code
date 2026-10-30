@@ -79,7 +79,15 @@ export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-st
 
 /* ── signals(模块级 = 所有渲染面共享)──────────────────────────────────────── */
 
-const [model, setModelSignal] = createSignal<ComposerModel | null>(null)
+const [model, setModelValue] = createSignal<ComposerModel | null>(null)
+/* #1560(REQ-236 §2.8):当前选择是不是用户**显式**选的。只有 `selectComposerModel` 那条写入口置真;
+ * 默认解析、会话投影、挂起、清空一律复位为假。发送时据此决定带不带 `model`:显式才带(压过 agent /
+ * 命令自带的推荐模型),否则不带(推荐模型照旧作默认)。 */
+const [modelExplicit, setModelExplicit] = createSignal(false)
+function setModelSignal(m: ComposerModel | null, explicit = false) {
+  setModelValue(m)
+  setModelExplicit(explicit && m !== null)
+}
 export type ComposerModelProjection = {
   status: "loading" | "ready" | "error"
   sessionID: string | null
@@ -93,6 +101,7 @@ const [agent, setAgent] = createSignal<string | null>(null) // null = 引擎默�
 const [agents, setAgents] = createSignal<ComposerAgent[]>([])
 
 export const composerModel = model
+export const composerModelExplicit = modelExplicit
 export const composerModelProjection = modelProjection
 export const composerEffortSel = () => model()?.variant ?? null
 export const composerPerm = perm
@@ -249,6 +258,31 @@ export function resetComposerPermScopesForTests() {
   permScopeOwner = null
 }
 
+/* ── 显式选择的会话归属(#1560 r1)────────────────────────────────────────────
+ * 上面的 `modelExplicit` 是模块级的,每次会话投影都会复位它 —— 于是「首页显式选了模型 → 发出 → 在新会话
+ * 里发第二条」与「离开会话再回来」都会让显式选择失效,agent / 命令自带的推荐模型又赢回来。这里按会话记住
+ * 用户显式选过的那个模型,只活在本次运行的内存里(应用重启即回到默认,不落盘 —— 与档位登记同理)。
+ * 键与档位登记是同一把 canonical 会话身份键(`identityKey`,#891);写入口只有两处:会话里的显式选择,
+ * 与首页发出后对新会话的 seed。投影时只有服务端的会话模型与登记的**同一个模型**时才算显式 —— 服务端
+ * 已经不是它(别处改过),登记就不再作数,不拿旧登记去压新事实。 */
+const explicitByScope = new Map<string, ModelRef>()
+
+export function rememberExplicitModel(scopeKey: string, ref: ModelRef) {
+  explicitByScope.set(scopeKey, ref)
+}
+
+/** 该会话登记的显式选择是否就是 `m` 这个模型(provider + id 相同)。 */
+export function isRememberedExplicit(scopeKey: string | null, m: ComposerModel | null): boolean {
+  if (!scopeKey || !m) return false
+  const ref = explicitByScope.get(scopeKey)
+  return !!ref && ref.providerID === m.providerID && ref.id === m.id
+}
+
+/** 测试隔离:清空显式选择登记(模块级状态跨用例会串)。 */
+export function resetComposerExplicitModelsForTests() {
+  explicitByScope.clear()
+}
+
 /* ── REQ-069:当前选择的挂起/恢复 ────────────────────────────────────────────── */
 
 export type SuspendReason = "needs-login" | "needs-credit" | "provider-gone"
@@ -268,8 +302,8 @@ export function clearSuspendedModel() {
   setSuspended(null)
 }
 
-export function setComposerModel(m: ComposerModel | null) {
-  setModelSignal(m?.variant && !m.variants.includes(m.variant) ? { ...m, variant: undefined } : m)
+export function setComposerModel(m: ComposerModel | null, explicit = false) {
+  setModelSignal(m?.variant && !m.variants.includes(m.variant) ? { ...m, variant: undefined } : m, explicit)
 }
 
 /** Session 路由一进入新的同步 epoch 就先撤销旧投影，避免上一会话的 Ref 仍可被操作。 */
@@ -279,8 +313,8 @@ export function invalidateComposerModelProjection(sessionID: string) {
   setModelProjection({ status: "loading", sessionID })
 }
 
-export function resolveComposerModelProjection(sessionID: string, next: ComposerModel | null) {
-  setComposerModel(next)
+export function resolveComposerModelProjection(sessionID: string, next: ComposerModel | null, explicit = false) {
+  setComposerModel(next, explicit)
   setSuspended(null)
   setModelProjection({ status: "ready", sessionID })
 }
@@ -333,6 +367,18 @@ export type PromptRequest = {
   parts: unknown[]
   model?: ModelRef
   agent?: string
+}
+
+/** #1560:显式选择写进 v1 `session.promptAsync` 的字段(引擎 `PromptInput.model` + `variant`);未显式 = 空。 */
+export function v1PromptModelFields(ref: ModelRef | undefined) {
+  if (!ref) return {}
+  return { model: { providerID: ref.providerID, modelID: ref.id }, ...(ref.variant ? { variant: ref.variant } : {}) }
+}
+
+/** #1560:显式选择写进 v1 `session.command` 的字段(引擎 `CommandInput.model` 是 `provider/model` 字符串)。 */
+export function v1CommandModelFields(ref: ModelRef | undefined) {
+  if (!ref) return {}
+  return { model: `${ref.providerID}/${ref.id}`, ...(ref.variant ? { variant: ref.variant } : {}) }
 }
 
 /** 提交参数构造:

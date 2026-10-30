@@ -360,7 +360,12 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
         </span>
       </Show>
       <Show when={footnote().model}>
-        <span class="a-tl-fn-item">{footnote().model}</span>
+        {/* #1560:实际执行的模型与所选不一致时如实说「实际使用 X」;一致时与原来逐字相同。 */}
+        <span class="a-tl-fn-item">
+          {footnote().actualModel
+            ? t("alpha.timeline.actualModel", { model: footnote().actualModel! })
+            : footnote().model}
+        </span>
       </Show>
       <Show when={footnote().cacheHit !== undefined}>
         <Tooltip label={t("alpha.timeline.cacheHit", { percent: footnote().cacheHit! })}>

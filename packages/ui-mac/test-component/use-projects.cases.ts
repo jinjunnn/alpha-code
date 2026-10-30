@@ -145,6 +145,9 @@ let experimentalPageRequests = 0
 const projectSessionDirectories: string[] = []
 let globalEventController: ReadableStreamDefaultController<Uint8Array> | undefined
 const encoder = new TextEncoder()
+/** #1560:首发发送用例 —— 记下 session.command / promptAsync 真正发给引擎的请求体。 */
+let sendScenario = false
+const sendBodies: Array<{ path: string; body: Record<string, unknown> }> = []
 
 const jsonResponse = (body: unknown, headers?: Record<string, string>) =>
   new Response(JSON.stringify(body), {
@@ -171,6 +174,21 @@ globalThis.fetch = ((input: unknown, init?: RequestInit) => {
         commandBodies.push(JSON.parse(body) as Record<string, unknown>)
         return jsonResponse({ info: { id: "msg_1573" }, parts: [] })
       })
+    }
+  }
+  if (sendScenario) {
+    const parsed = new URL(url)
+    if (parsed.pathname === "/command") return Promise.resolve(jsonResponse([{ name: "review" }]))
+    if (/^\/session\/[^/]+\/(command|prompt_async)$/.test(parsed.pathname)) {
+      return (input as Request)
+        .clone()
+        .json()
+        .then((body: Record<string, unknown>) => {
+          sendBodies.push({ path: parsed.pathname, body })
+          return parsed.pathname.endsWith("/command")
+            ? jsonResponse({ info: { id: "msg_cmd" }, parts: [] })
+            : new Response(null, { status: 204 })
+        })
     }
   }
   if (sidebarScenario) {
@@ -314,6 +332,8 @@ afterEach(() => {
   sidebarScenario = false
   commandScenario = false
   commandBodies.splice(0)
+  sendScenario = false
+  sendBodies.splice(0)
   experimentalPageRequests = 0
   projectSessionDirectories.splice(0)
   globalEventController = undefined
@@ -743,6 +763,47 @@ test("#882 global 事件流把 catalog.updated 按 directory 派发给就绪屏�
   // 判据:第二次探针是**事件**推动的 —— 它发生时一个兜底 tick 都还没烧掉。
   expect(ticksAtProbe[1]).toBe(0)
   expect(await listing).toHaveLength(1)
+})
+
+test("#1560 首发:显式选择的模型随首条消息与斜杠命令发出(含档位),未显式时两条都不带", async () => {
+  sendScenario = true
+  const { api } = mountHook(60_000)
+  await waitFor(() => expect(api.sdk()).toBeDefined())
+  const chosen = { providerID: "deepseek-byok", id: "deepseek-v4-flash", variant: "高" }
+  // existingSessionID:只验投递那一段(建会话不在本票范围),不触发 session.create / 侧栏刷新。
+  const opts = { existingSessionID: "ses_home", model: chosen }
+
+  expect(await api.startChat("/repos/alpha-code", "你好", undefined, opts)).toBe("ses_home")
+  expect(await api.startChat("/repos/alpha-code", "/review 默认", undefined, opts)).toBe("ses_home")
+  expect(await api.startChat("/repos/alpha-code", "你好", undefined, { ...opts, explicitModel: chosen })).toBe("ses_home")
+  expect(await api.startChat("/repos/alpha-code", "/review 显式", undefined, { ...opts, explicitModel: chosen })).toBe(
+    "ses_home",
+  )
+
+  expect(sendBodies.map((entry) => entry.path)).toEqual([
+    "/session/ses_home/prompt_async",
+    "/session/ses_home/command",
+    "/session/ses_home/prompt_async",
+    "/session/ses_home/command",
+  ])
+  const [defaultPrompt, defaultCommand, explicitPrompt, explicitCommand] = sendBodies.map((entry) => entry.body)
+  // 未显式:建会话用的默认模型不外溢到投递请求 —— agent / 命令推荐照旧作默认。
+  for (const body of [defaultPrompt!, defaultCommand!]) {
+    expect("model" in body).toBe(false)
+    expect("variant" in body).toBe(false)
+  }
+  expect(defaultCommand).toMatchObject({ command: "review", arguments: "默认" })
+  expect(explicitPrompt).toMatchObject({
+    model: { providerID: "deepseek-byok", modelID: "deepseek-v4-flash" },
+    variant: "高",
+    parts: [{ type: "text", text: "你好" }],
+  })
+  expect(explicitCommand).toMatchObject({
+    command: "review",
+    arguments: "显式",
+    model: "deepseek-byok/deepseek-v4-flash",
+    variant: "高",
+  })
 })
 
 test("#858 idle token-only rotation keeps the SDK identity stable, but a failed generation falls back to probing", async () => {

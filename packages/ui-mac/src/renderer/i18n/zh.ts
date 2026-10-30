@@ -1561,6 +1561,7 @@ export const dict = {
   "alpha.timeline.efficiencyLow": "低",
   "alpha.timeline.cacheHit": "缓存命中 {{percent}}%",
   "alpha.timeline.tokens": "{{tokens}} tokens",
+  "alpha.timeline.actualModel": "实际使用 {{model}}",
   "alpha.timeline.turnDiffs": "本回合改动 · {{count}} 个文件",
   "alpha.timeline.slashCommand": "运行命令 ·",
   "alpha.timeline.slashSkill": "运行技能 ·",

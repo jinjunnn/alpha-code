@@ -58,6 +58,12 @@ plugin、MCP、host 或 V2。因而从 alias、标题、URL、图标或 annotati
 - `packages/opencode/src/session/llm.ts`
 - `packages/opencode/src/session/llm/request.ts`
 - `packages/opencode/src/session/prompt.ts`
+  - 订正 · 2026-10-30(`alpha-code#1560`,REQ-236 T24 §2.4,方案 `docs/design/req236-catalog-and-model.md` §2.8):
+    本文件追加登记**命令模型优先级**职责 —— `command()` 里 `taskModel` 的顺序改为
+    `input.model → cmd.model → cmd.agent.model → currentModel`(上游把 `input.model` 排在第三),
+    让用户显式选的模型压过命令 / 其 agent 绑定的推荐模型;客户端只在显式选择时带 `input.model`,
+    不带时与上游逐条相同。具名窄补丁,块首尾有 `alpha:` 标注;同一订正覆盖下方 `prompt.test.ts`
+    新增的对应用例。不新增接管路径,守卫排除表不变。
 - `packages/opencode/test/session/compaction.test.ts`
 - `packages/opencode/test/session/processor-effect.test.ts`
 - `packages/opencode/test/session/prompt.test.ts`

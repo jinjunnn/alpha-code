@@ -89,6 +89,7 @@ const {
   composerModelProjection,
   composerModelSuspended,
   resetComposerAgentScopesForTests,
+  resetComposerExplicitModelsForTests,
   resetComposerModelProjection,
   resetComposerPermScopesForTests,
   setComposerAgent,
@@ -282,6 +283,7 @@ afterEach(() => {
   // #884:只读档的会话登记同理,同样要复位。
   resetComposerAgentScopesForTests()
   resetComposerPermScopesForTests()
+  resetComposerExplicitModelsForTests()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -2039,6 +2041,299 @@ describe("#652 会话发送走 v1 promptAsync(与首页同一条)+ 停止键诚�
     expect(sdk.agentSwitches).toEqual([])
     setComposerAgent(null)
     mounted.dispose()
+  })
+})
+
+// #1560(REQ-236 §2.8 / I9):用户**显式**选的模型才随会话内的普通消息与斜杠命令发出;没显式选时都不带,
+// 让 agent / 命令自带的推荐模型照旧作默认。判据只看引擎收到的真实载荷(promptAsync / session.command 的入参)。
+describe("#1560 会话内发送:显式选择的模型随消息与命令发出,默认选择不带", () => {
+  test("默认模型不带 model;picker + 档位显式选择后普通消息带 {providerID, modelID} + variant、斜杠命令带 provider/model + variant", async () => {
+    installApi()
+    // 夹具取自生产 alpha-models.json:从无档位模型起步,显式换到有档位的模型再选一档。
+    const first = catalog.platformModels.find((model) => !model.variants)!
+    const second = catalog.platformModels.find((model) => model.variants)!
+    const tier = Object.keys(second.variants!).at(-1)!
+    const pid = catalog.platformProvider.id
+    const promptAsyncCalls: Array<Record<string, unknown>> = []
+    const commandCalls: Array<Record<string, unknown>> = []
+    const client = {
+      command: { list: async () => ({ data: [{ name: "review", source: "command" }] }) },
+      session: {
+        promptAsync: async (args: Record<string, unknown>) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+        command: async (args: Record<string, unknown>) => {
+          commandCalls.push(args)
+          return { data: { info: { id: `msg_cmd_${commandCalls.length}` } } }
+        },
+      },
+    }
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: { ...projects, sdk: () => client as never },
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => ({ providerID: pid, id: first.id }),
+          switch: async () => {},
+        },
+        sessionDock: { running: () => false, contextUsage: () => null, approvalPending: () => false },
+      }),
+    )
+    const send = async (value: string) => {
+      const textarea = mounted.host.querySelector("textarea")!
+      textarea.value = value
+      textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+      await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    }
+    await waitFor(() => expect(composerModel()?.id).toBe(first.id))
+
+    // 未显式选择:会话投影出来的模型只是默认,两条入口都不带 model / variant。
+    await send("普通消息")
+    await waitFor(() => expect(promptAsyncCalls).toHaveLength(1))
+    expect("model" in promptAsyncCalls[0]!).toBe(false)
+    expect("variant" in promptAsyncCalls[0]!).toBe(false)
+    await send("/review 默认")
+    await waitFor(() => expect(commandCalls).toHaveLength(1))
+    expect(commandCalls[0]).toMatchObject({ sessionID: "A", command: "review", arguments: "默认" })
+    expect("model" in commandCalls[0]!).toBe(false)
+    expect("variant" in commandCalls[0]!).toBe(false)
+
+    // 显式选择第二个模型:两条入口都带上它(引擎 v1 的两种形状)。
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain(second.name))
+    click(
+      [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
+        row.getAttribute("aria-label")?.startsWith(`${second.name},`),
+      ) ?? null,
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(second.id))
+    click(mounted.host.querySelector('[data-kind="effort"] > button'))
+    let tierItem: HTMLButtonElement | undefined
+    await waitFor(() => {
+      tierItem = [...document.body.querySelectorAll<HTMLButtonElement>(".a-pop-item")].find(
+        (b) => b.textContent?.trim() === tier,
+      )
+      expect(tierItem).toBeDefined()
+    })
+    click(tierItem ?? null)
+    await waitFor(() => expect(composerModel()?.variant).toBe(tier))
+
+    await send("换模型之后")
+    await waitFor(() => expect(promptAsyncCalls).toHaveLength(2))
+    expect(promptAsyncCalls[1]).toMatchObject({
+      sessionID: "A",
+      model: { providerID: pid, modelID: second.id },
+      variant: tier,
+    })
+    await send("/review 显式")
+    await waitFor(() => expect(commandCalls).toHaveLength(2))
+    expect(commandCalls[1]).toMatchObject({
+      sessionID: "A",
+      command: "review",
+      model: `${pid}/${second.id}`,
+      variant: tier,
+    })
+    mounted.dispose()
+  })
+
+  test("首页:只有显式选择才作为 explicitModel 交给 startChat;默认模型只用于建会话", async () => {
+    installApi()
+    const target = catalog.platformModels.find((model) => model.variants)!
+    const pid = catalog.platformProvider.id
+    const calls: Array<Parameters<AlphaProjectsApi["startChat"]>[3]> = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async (_dir, _text, _parts, opts) => {
+            calls.push(opts)
+            return `ses_${calls.length}`
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    const send = async (value: string) => {
+      const textarea = mounted.host.querySelector("textarea")!
+      textarea.value = value
+      textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+      await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    }
+
+    await waitFor(() => expect(composerModel()).not.toBeNull())
+    await send("默认模型")
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]?.model).toBeDefined()
+    expect(calls[0]?.explicitModel).toBeUndefined()
+
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain(target.name))
+    click(
+      [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
+        row.getAttribute("aria-label")?.startsWith(`${target.name},`),
+      ) ?? null,
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(target.id))
+    await send("/review 显式")
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1]?.explicitModel).toEqual({ providerID: pid, id: target.id })
+    mounted.dispose()
+  })
+
+  /* r1(编排器裁定 (c)):显式选择在本次运行内按会话记住 —— 首页的选择带进它新建的会话,离开再回来仍算
+     显式。两臂都用生产宿主同形的卸载→重挂(SessionComposerMount 按身份 keyed),会话模型的服务端真值
+     由 contract 的 current/switch 按会话保存,与 startChat 建会话时写进去的模型同口径。 */
+  const SRV = "srv-1560"
+  function sessionWorld(initial: Record<string, ModelRef>) {
+    const models = { ...initial }
+    const promptAsyncCalls: Array<Record<string, unknown>> = []
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: {
+        promptAsync: async (args: Record<string, unknown>) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+      },
+    }
+    const contract: ModelContract = {
+      list: async () => platformModels,
+      current: async (sessionID: string) => models[sessionID],
+      switch: async (sessionID: string, ref: ModelRef) => {
+        models[sessionID] = ref
+      },
+    }
+    return { models, promptAsyncCalls, client, contract }
+  }
+  async function typeAndSend(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  }
+  async function pickModel(host: HTMLElement, name: string) {
+    click(host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain(name))
+    click(
+      [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
+        row.getAttribute("aria-label")?.startsWith(`${name},`),
+      ) ?? null,
+    )
+  }
+  async function pickTier(host: HTMLElement, tier: string) {
+    click(host.querySelector('[data-kind="effort"] > button'))
+    let item: HTMLButtonElement | undefined
+    await waitFor(() => {
+      item = [...document.body.querySelectorAll<HTMLButtonElement>(".a-pop-item")].find(
+        (b) => b.textContent?.trim() === tier,
+      )
+      expect(item).toBeDefined()
+    })
+    click(item ?? null)
+  }
+  function mountSession(world: ReturnType<typeof sessionWorld>, sessionID: string) {
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: { ...projects, sdk: () => world.client as never },
+        directory: () => "/ws1560",
+        sessionID: () => sessionID,
+        serverKey: () => SRV,
+        command,
+        modelContract: world.contract,
+        sessionDock: { running: () => false, contextUsage: () => null, approvalPending: () => false },
+      }),
+    )
+  }
+
+  test("r1 首页显式选择 → 发出 → 新会话里的第二条消息仍带所选 model 与 variant", async () => {
+    installApi()
+    const start = catalog.platformModels.find((model) => !model.variants)!
+    const target = catalog.platformModels.find((model) => model.variants)!
+    const tier = Object.keys(target.variants!).at(-1)!
+    const pid = catalog.platformProvider.id
+    const world = sessionWorld({})
+    const home = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          // 与生产 startChat 同口径:建会话时把 opts.model 写成该会话的模型。
+          startChat: async (_dir, _text, _parts, opts) => {
+            if (opts?.model) world.models["ses_r1_home"] = opts.model
+            return "ses_r1_home"
+          },
+        },
+        directory: () => "/ws1560",
+        serverKey: () => SRV,
+        command,
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    await waitFor(() => expect(composerModel()).not.toBeNull())
+    if (composerModel()?.id === target.id) await pickModel(home.host, start.name)
+    await pickModel(home.host, target.name)
+    await waitFor(() => expect(composerModel()?.id).toBe(target.id))
+    await pickTier(home.host, tier)
+    await waitFor(() => expect(composerModel()?.variant).toBe(tier))
+    await typeAndSend(home.host, "第一条")
+    await waitFor(() => expect(world.models["ses_r1_home"]).toEqual({ providerID: pid, id: target.id, variant: tier }))
+    home.dispose()
+
+    const session = mountSession(world, "ses_r1_home")
+    await waitFor(() => expect(composerModel()?.id).toBe(target.id))
+    await typeAndSend(session.host, "第二条")
+    await waitFor(() => expect(world.promptAsyncCalls).toHaveLength(1))
+    expect(world.promptAsyncCalls[0]).toMatchObject({
+      sessionID: "ses_r1_home",
+      model: { providerID: pid, modelID: target.id },
+      variant: tier,
+    })
+    session.dispose()
+  })
+
+  test("r1 会话 A 显式选择 → 切到 B(没选过,不带)→ 切回 A,发消息仍带所选 model", async () => {
+    installApi()
+    const first = catalog.platformModels[0]!
+    const second = catalog.platformModels[1]!
+    const pid = catalog.platformProvider.id
+    const base = { providerID: pid, id: first.id }
+    const world = sessionWorld({ ses_r1_a: base, ses_r1_b: base })
+
+    const a = mountSession(world, "ses_r1_a")
+    await waitFor(() => expect(composerModel()?.id).toBe(first.id))
+    await pickModel(a.host, second.name)
+    await waitFor(() => expect(composerModel()?.id).toBe(second.id))
+    a.dispose()
+
+    const b = mountSession(world, "ses_r1_b")
+    await waitFor(() => expect(composerModel()?.id).toBe(first.id))
+    await typeAndSend(b.host, "B 的消息")
+    await waitFor(() => expect(world.promptAsyncCalls).toHaveLength(1))
+    expect(world.promptAsyncCalls[0]).toMatchObject({ sessionID: "ses_r1_b" })
+    expect("model" in world.promptAsyncCalls[0]!).toBe(false)
+    b.dispose()
+
+    const back = mountSession(world, "ses_r1_a")
+    await waitFor(() => expect(composerModel()?.id).toBe(second.id))
+    await typeAndSend(back.host, "回到 A")
+    await waitFor(() => expect(world.promptAsyncCalls).toHaveLength(2))
+    expect(world.promptAsyncCalls[1]).toMatchObject({
+      sessionID: "ses_r1_a",
+      model: { providerID: pid, modelID: second.id },
+    })
+    back.dispose()
   })
 })
 

@@ -1593,6 +1593,7 @@ export const dict = {
   "alpha.timeline.efficiencyLow": "Low",
   "alpha.timeline.cacheHit": "Cache hit {{percent}}%",
   "alpha.timeline.tokens": "{{tokens}} tokens",
+  "alpha.timeline.actualModel": "Actually used {{model}}",
   "alpha.timeline.turnDiffs": "Changes this turn · {{count}} files",
   "alpha.timeline.slashCommand": "Ran command ·",
   "alpha.timeline.slashSkill": "Ran skill ·",
