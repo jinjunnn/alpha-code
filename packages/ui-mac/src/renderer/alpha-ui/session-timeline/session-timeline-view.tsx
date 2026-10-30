@@ -15,6 +15,7 @@ import {
   TurnDiffSummaryRow,
   TurnErrorCard,
 } from "./cards/tool-cards"
+import { CloudImageCard } from "./cards/cloud-image-card"
 import { TimelineIntentsContext, type TimelineIntents, useTimelineIntents } from "./cards/timeline-intents"
 import { createProcessOpenState, ProcessOpenContext, ProcessRow } from "./process-fold"
 import { TimelineMarkdown } from "./timeline-markdown"
@@ -310,6 +311,7 @@ function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDispl
   if (row.kind === "markdown") return <MarkdownRow row={row} />
   if (row.kind === "media") return <TimelineMediaRow media={row.media} />
   if (row.kind === "artifacts") return <TimelineArtifactRows row={row} />
+  if (row.kind === "cloudImage") return <CloudImageCard row={row} />
   if (row.kind === "turnError") return <TurnErrorCard row={row} />
   if (row.kind === "divider") return <DividerRow row={row} />
   if (row.kind === "footnote") return <FootnoteRow row={row} />

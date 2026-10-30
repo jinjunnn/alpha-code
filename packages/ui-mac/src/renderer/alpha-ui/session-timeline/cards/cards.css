@@ -1035,3 +1035,418 @@ button.a-diffsum-row:focus-visible {
   color: var(--a-text);
   font-weight: var(--a-weight-medium);
 }
+
+/* ── REQ-236 issue 1552 生图卡(批准稿 2026-10-30-req236-image-card;稿的 ig- 前缀落地为 a-ig-) ── */
+.a-ig-card {
+  width: 480px;
+  max-width: 100%;
+  align-self: flex-start;
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-xl);
+  box-shadow: var(--a-edge-light);
+  overflow: hidden;
+  font-size: var(--a-text-sm);
+}
+.a-ig-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px 0 14px;
+}
+.a-ig-head-ic {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--a-text-secondary);
+  stroke-width: 1.6;
+}
+.a-ig-title {
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-text);
+  white-space: nowrap;
+}
+.a-ig-state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+  white-space: nowrap;
+}
+.a-ig-tm {
+  font-variant-numeric: tabular-nums;
+  color: var(--a-text-tertiary);
+}
+.a-ig-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.a-ig-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--a-text-tertiary);
+}
+.a-ig-dot[data-tone="hollow"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--a-text-tertiary);
+}
+.a-ig-dot[data-tone="live"] {
+  background: var(--a-accent);
+  animation: a-ig-pulse 1.6s var(--a-ease-out) infinite;
+}
+.a-ig-dot[data-tone="warn"] {
+  background: var(--a-warning);
+}
+.a-ig-dot[data-tone="err"] {
+  background: var(--a-error);
+}
+.a-ig-spin {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  border: 1.5px solid var(--a-border-strong);
+  border-top-color: var(--a-accent);
+  animation: a-ig-rot 0.8s linear infinite;
+}
+.a-ig-media {
+  position: relative;
+  margin: 0 12px;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-subtle);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.a-ig-media[data-variant="dashed"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--a-border);
+}
+.a-ig-media[data-variant="shimmer"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    var(--a-overlay-hover) 45%,
+    var(--a-overlay-active) 50%,
+    var(--a-overlay-hover) 55%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  animation: a-ig-sweep 2.4s linear infinite;
+}
+.a-ig-tray {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 24px;
+  text-align: center;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  line-height: 1.5;
+}
+.a-ig-pic {
+  position: absolute;
+  inset: 0;
+  cursor: zoom-in;
+  display: grid;
+  place-items: center;
+}
+.a-ig-pic:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--a-accent-ring);
+}
+/* 复用产物预览的图片渲染器:画框里只要图本身,名字与尺寸那行由卡片自己的事实行给。 */
+.a-ig-pic .a-wb-image {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+.a-ig-pic .a-wb-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: a-ig-fade var(--a-dur-slow) var(--a-ease-out);
+}
+.a-ig-pic .a-wb-image figcaption {
+  display: none;
+}
+.a-ig-zoom {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--a-radius-full);
+  background: color-mix(in srgb, var(--a-text) 62%, transparent);
+  color: var(--a-bg-canvas);
+  font-size: var(--a-text-xs);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--a-dur-fast) var(--a-ease-out);
+}
+.a-ig-media:hover .a-ig-zoom,
+.a-ig-pic:focus-visible + .a-ig-zoom {
+  opacity: 1;
+}
+.a-ig-prompt {
+  margin: 10px 14px 0;
+  color: var(--a-text-secondary);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.a-ig-prompt[data-open] {
+  display: block;
+  max-height: 180px;
+  overflow: auto;
+  -webkit-line-clamp: unset;
+}
+.a-ig-prompt-more {
+  margin: 2px 14px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-accent);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  border-radius: var(--a-radius-xs);
+}
+.a-ig-facts {
+  margin: 6px 14px 0;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.a-ig-notice {
+  margin: 2px 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--a-error);
+  border-radius: var(--a-radius-md);
+  background: var(--a-error-subtle);
+}
+.a-ig-notice[data-tone="warn"] {
+  border-left-color: var(--a-warning);
+  background: var(--a-warning-subtle);
+}
+.a-ig-notice[data-tone="neutral"] {
+  border-left-color: var(--a-border-strong);
+  background: var(--a-bg-subtle);
+}
+.a-ig-notice b {
+  display: block;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-text);
+  line-height: 1.45;
+}
+.a-ig-notice span {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+  line-height: 1.5;
+}
+.a-ig-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 12px;
+}
+.a-ig-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  white-space: nowrap;
+}
+.a-ig-btn:hover:not(:disabled) {
+  background: var(--a-overlay-hover);
+}
+.a-ig-btn[data-variant="primary"] {
+  background: var(--a-accent-solid);
+  border-color: transparent;
+  color: var(--a-text-on-accent);
+}
+.a-ig-btn[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--a-accent-hover);
+}
+.a-ig-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.a-ig-btn:focus-visible,
+.a-ig-link:focus-visible,
+.a-ig-prompt-more:focus-visible,
+.a-ig-inline:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+.a-ig-link {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: none;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+}
+.a-ig-link:hover {
+  color: var(--a-text);
+  background: var(--a-overlay-hover);
+}
+.a-ig-link svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform var(--a-dur-fast) var(--a-ease-out);
+}
+.a-ig-link[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.a-ig-hint {
+  width: 100%;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.a-ig-result {
+  margin: -4px 14px 12px;
+  font-size: var(--a-text-xs);
+  line-height: 1.5;
+  color: var(--a-text-secondary);
+}
+.a-ig-result[data-tone="bad"] {
+  color: var(--a-error);
+}
+.a-ig-inline {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--a-accent);
+  font: inherit;
+  font-weight: var(--a-weight-medium);
+  border-radius: var(--a-radius-xs);
+}
+.a-ig-details {
+  margin: 0 12px 12px;
+  padding: 4px 12px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+}
+.a-ig-details dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 8px 0;
+  font-size: var(--a-text-xs);
+}
+.a-ig-details dt {
+  color: var(--a-text-tertiary);
+  white-space: nowrap;
+}
+.a-ig-details dd {
+  margin: 0;
+  color: var(--a-text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.a-ig-mono {
+  font-family: var(--a-font-mono);
+  font-size: 11px;
+}
+.a-ig-dev {
+  border-top: 1px solid var(--a-border-faint);
+  padding: 8px 0 6px;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.a-ig-dev summary {
+  cursor: pointer;
+}
+.a-ig-dev pre {
+  margin: 8px 0 2px;
+  padding: 8px 10px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-bg-canvas);
+  font-family: var(--a-font-mono);
+  font-size: 11px;
+  color: var(--a-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@keyframes a-ig-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes a-ig-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes a-ig-sweep {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@keyframes a-ig-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-ig-dot[data-tone="live"],
+  .a-ig-spin,
+  .a-ig-media[data-variant="shimmer"]::after,
+  .a-ig-pic .a-wb-image img {
+    animation: none;
+  }
+  .a-ig-zoom,
+  .a-ig-link svg {
+    transition-duration: 0ms;
+  }
+}

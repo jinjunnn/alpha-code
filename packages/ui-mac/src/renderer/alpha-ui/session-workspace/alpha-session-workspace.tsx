@@ -83,6 +83,15 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
       pushToast({ kind: "error", title: t("alpha.timeline.editResendFailed") })
     },
   })
+  // REQ-236 `#1552` AC4:产物面板「本次对话」的后代判定沿 v1 `session.get` 的 parentID 上溯 —— 冷启动 renderer
+  // 只有根会话,不能拿已加载的会话列表判。查不到(信封带 error / 抛错)= 失败,由面板按「不属于」处理。
+  const sessionParentOf = (sessionID: string) =>
+    serverSDK()
+      .client.session.get({ sessionID })
+      .then((result) => {
+        if (!result.data) throw new Error("session lookup failed")
+        return result.data.parentID ?? null
+      })
   // #554:真引擎 channel(I8 三元身份铸造)。TerminalProvider 随上游 SessionProviders 包住
   // 本叶,适配器可直接消费;引擎或会话身份缺席时为 undefined,面板 fail-closed 空态。
   const terminalChannel = useAlphaTerminalEngineChannel(current)
@@ -142,7 +151,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
           panels={{
             review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,
             files: (rail) => <SessionRailFiles live={live} rail={rail} />,
-            artifacts: (rail) => <SessionRailArtifacts live={live} rail={rail} />,
+            artifacts: (rail) => <SessionRailArtifacts live={live} rail={rail} parentOf={sessionParentOf} />,
           }}
           railMeta={{ reviewCount }}
           terminalChannel={terminalChannel}

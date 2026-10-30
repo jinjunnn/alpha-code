@@ -15,7 +15,7 @@
 // timeline→artifacts linkage mount point consumes `rail.artifactTarget` (focusArtifact),
 // selecting and DOM-focusing the matching card; Esc returns focus to the stored origin.
 import { createEffect, createMemo, createResource, createSignal, onCleanup, Show, untrack } from "solid-js"
-import type { ArtifactReadRef } from "../../../../preload/types"
+import type { ArtifactReadRef, CloudRunState } from "../../../../preload/types"
 import {
   deriveCards,
   downloadBusy,
@@ -32,21 +32,34 @@ import { officeViewerContentOf } from "../../artifact-workbench/renderers/office
 import { cardPreviewable } from "../../artifact-workbench/workbench-core"
 import type { PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
 import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
-import { artifactsIdentityKeyOf, artifactsPhaseOf, findArtifactCard, runRowModelOf } from "./artifacts-core"
+import {
+  artifactsIdentityKeyOf,
+  artifactsPhaseOf,
+  createRunOwnership,
+  findArtifactCard,
+  runDeliveryOf,
+  runRowModelOf,
+  type ArtifactSaveReceipt,
+  type ArtifactsScope,
+  type RunOwner,
+} from "./artifacts-core"
 import { SessionRailArtifactsView } from "./artifacts-panel-view"
 
-export function SessionRailArtifacts(props: { live: AlphaSessionLiveContext; rail: SessionRailApi }) {
+/** REQ-236 `#1552`:会话的父会话(生产 = v1 `session.get` 的 parentID);缺席 = 只认归属会话本身。 */
+export type SessionParentOf = (sessionID: string) => Promise<string | null | undefined>
+
+export function SessionRailArtifacts(props: { live: AlphaSessionLiveContext; rail: SessionRailApi; parentOf?: SessionParentOf }) {
   // Key the whole panel on the session identity triple (I8): switching session/workspace/
   // server remounts with fresh resources, so no artifact data can leak across sessions.
   const identityKey = createMemo(() => artifactsIdentityKeyOf(props.live.current()?.identity))
   return (
     <Show when={identityKey()} keyed>
-      {(_key) => <ArtifactsPanel live={props.live} rail={props.rail} />}
+      {(_key) => <ArtifactsPanel live={props.live} rail={props.rail} parentOf={props.parentOf} />}
     </Show>
   )
 }
 
-function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi }) {
+function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi; parentOf?: SessionParentOf }) {
   // Under the keyed <Show> above the identity is fixed for this component's lifetime.
   const identity = props.live.current()!.identity
   const [tick, setTick] = createSignal(0)
@@ -73,10 +86,30 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
     const usage = usageRes()
     return usage?.ok ? sortRunUsages(usage.usage.runs) : []
   })
+  // REQ-236 #1552 AC4: default scope = this chat (its own runs and its descendants'); the toggle shows the
+  // whole project. Ownership resolves upward from the recorded origin session (createRunOwnership) —
+  // never from the renderer's loaded session list. Runs with no recorded origin appear only in "project".
+  const [scope, setScope] = createSignal<ArtifactsScope>("session")
+  const ownerOf = createRunOwnership(identity.sessionID, props.parentOf ?? (async () => null))
+  const [ownersRes] = createResource(sortedRuns, async (runs) => {
+    const owners: Record<string, RunOwner> = {}
+    await Promise.all(
+      runs.map(async (run) => {
+        owners[run.runId] = await ownerOf(run.sessionID ?? null)
+      }),
+    )
+    return owners
+  })
+  const owners = createMemo(() => ownersRes() ?? {})
+  const visibleRuns = createMemo(() => {
+    if (scope() === "project") return sortedRuns()
+    const resolved = ownersRes()
+    return resolved ? sortedRuns().filter((run) => resolved[run.runId] === "this") : []
+  })
   // #660: the shown run is the user's pick while it still exists; default = the latest.
   const [pickedRunId, setPickedRunId] = createSignal<string | null>(null)
   const runId = createMemo(() => {
-    const runs = sortedRuns()
+    const runs = visibleRuns()
     const picked = pickedRunId()
     if (picked !== null && (props.rail.artifactTarget()?.runId === picked || runs.some((run) => run.runId === picked)))
       return picked
@@ -84,12 +117,60 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   })
   createEffect(() => {
     const target = props.rail.artifactTarget()
-    if (target?.runId) setPickedRunId(target.runId)
+    if (!target?.runId) return
+    setPickedRunId(target.runId)
+    // A timeline image card points at a run outside this chat's scope (e.g. no recorded origin): show it
+    // under the whole project rather than hiding the run the user just asked to see.
+    if (untrack(scope) === "session" && untrack(owners)[target.runId] !== "this") setScope("project")
   })
   const runRows = createMemo(() => {
     const now = new Date()
-    return sortedRuns().map((usage, index) => runRowModelOf(usage, index, now))
+    return visibleRuns().map((usage, index) => runRowModelOf(usage, index, now))
   })
+
+  // REQ-236 #1552 AC5: the host tracker's delivery state per run (cloud-run-state, #1551 frozen surface —
+  // consumed only). A run still queued / generating / saving / undelivered shows that state, not "no files".
+  const [runStates, setRunStates] = createSignal<Record<string, CloudRunState>>({})
+  createEffect(() => {
+    for (const run of sortedRuns()) {
+      if (untrack(runStates)[run.runId]) continue
+      void window.api.cloud.getRunState(identity.directory, run.runId).then((state) => {
+        if (state) setRunStates((prev) => (prev[state.runId] ? prev : { ...prev, [state.runId]: state }))
+      })
+    }
+  })
+  onCleanup(
+    window.api.cloud.onRunState((state) => {
+      if (state.directory !== identity.directory) return
+      const before = untrack(runStates)[state.runId]
+      setRunStates((prev) => ({ ...prev, [state.runId]: state }))
+      // A run the panel has not listed yet (accepted a moment ago) → re-read the project's runs.
+      if (!untrack(sortedRuns).some((run) => run.runId === state.runId)) void refetchUsage()
+      // The shown run just finished delivering (automatic, retried, or manual) → re-read its files.
+      if (state.delivery.status === "saved" && before?.delivery.status !== "saved" && state.runId === untrack(runId)) {
+        void refetchList()
+        void refetchUsage()
+      }
+    }),
+  )
+  const deliveryOf = (run: string) => {
+    const usage = sortedRuns().find((candidate) => candidate.runId === run)
+    // 受理即建空 manifest(#1551):还没有产物时 updatedAt 就是受理时刻,作计时起点。
+    const since = usage && usage.artifactCount === 0 && usage.updatedAt ? Date.parse(usage.updatedAt) : Number.NaN
+    return runDeliveryOf(runStates()[run], Number.isFinite(since) ? since : undefined)
+  }
+  const runDeliveries = createMemo(() => {
+    const out: Record<string, NonNullable<ReturnType<typeof deliveryOf>>> = {}
+    for (const run of sortedRuns()) {
+      const delivery = deliveryOf(run.runId)
+      if (delivery) out[run.runId] = delivery
+    }
+    return out
+  })
+  const retryRun = () => {
+    const run = runId()
+    if (run) void window.api.cloud.retry(identity.directory, run)
+  }
   const quota = createMemo(() => {
     const usage = usageRes()
     if (!usage?.ok) return undefined
@@ -141,8 +222,11 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
 
   const phase = createMemo(() =>
     artifactsPhaseOf({
-      usage: usageRes(),
+      // The session scope is not "loaded" until ownership has resolved (never flash another chat's run).
+      usage: scope() === "session" && usageRes()?.ok && ownersRes() === undefined ? undefined : usageRes(),
       runId: runId(),
+      scopeHidesRuns: scope() === "session" && sortedRuns().length > 0,
+      delivery: runId() ? runDeliveries()[runId()!] : undefined,
       list: runId() ? listRes() : undefined,
       // Major-2: the run-level empty claim also needs the platform's answer — cloud pending
       // keeps the phase at loading, cloud failure renders "platform unavailable", never "empty".
@@ -411,10 +495,41 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
     }
   })
 
+  // REQ-236 #1552 AC3/AC5 action row: save a verified copy (main re-checks sha256 before any dialog) and
+  // open in the default app (main re-resolves and copies) — identity only crosses the boundary.
+  const [saveReceipt, setSaveReceipt] = createSignal<ArtifactSaveReceipt | null>(null)
+  createEffect(() => {
+    selectedKey()
+    runId()
+    setSaveReceipt(null)
+  })
+  const saveSelected = () => {
+    const card = selectedCard()
+    const run = runId()
+    if (!card?.descriptor || !run) return
+    void window.api.runArtifacts.saveCopy(identity.directory, run, card.descriptor.id).then((result) => {
+      if (result.ok) setSaveReceipt(result.canceled ? null : { kind: "ok", folder: result.folder, name: result.name })
+      else setSaveReceipt({ kind: result.code === "verify-failed" ? "mismatch" : "write" })
+    })
+  }
+  const openSelected = () => {
+    const card = selectedCard()
+    const run = runId()
+    if (card?.descriptor && run) void window.api.runArtifacts.openExternal(identity.directory, run, card.descriptor.id)
+  }
+
   return (
     <SessionRailArtifactsView
       phase={phase()}
       errorReason={errorReasonOf(usageRes(), listRes())}
+      scope={scope()}
+      onScope={setScope}
+      owners={owners()}
+      deliveries={runDeliveries()}
+      onRetryDelivery={retryRun}
+      onSave={saveSelected}
+      onOpenExternal={openSelected}
+      saveReceipt={saveReceipt()}
       runs={runRows()}
       selectedRunId={runId()}
       onSelectRun={(run) => setPickedRunId(run)}

@@ -530,6 +530,7 @@ import type {
   ArtifactReadRef,
   ArtifactReadResult,
   ProjectUsageResult,
+  RunArtifactSaveCopyResult,
   RunArtifactsListResult,
   RunUsageResult,
 } from "../main/artifact-service"
@@ -545,6 +546,7 @@ export type {
   LegacyRunFile,
   ProjectArtifactUsage,
   ProjectUsageResult,
+  RunArtifactSaveCopyResult,
   RunArtifactUsage,
   RunArtifactsListResult,
   RunUsageResult,
@@ -1302,6 +1304,8 @@ export type ElectronAPI = {
     openExternal: (directory: string, runId: string, artifactId: string) => Promise<ArtifactExternalOpenResult>
     /** Main-owned macOS Quick Look:one identity object in,manifest containment + OOXML PASS re-check. */
     quickLook: (identity: RunArtifactIdentity) => Promise<ArtifactQuickLookResult>
+    /** REQ-236 #1552「保存到…」:main 先全量 sha256 复核,通过才弹系统保存对话框;不回绝对路径。 */
+    saveCopy: (directory: string, runId: string, artifactId: string) => Promise<RunArtifactSaveCopyResult>
   }
   // REQ-096(#188):隔离 HTML artifact preview 控制通道 —— main-owned 一次性静态 host
   // (html-preview-host.ts:独立 sandboxed 窗口、零 preload、一次性 partition/token)。

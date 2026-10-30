@@ -104,6 +104,10 @@ type FakeOptions = {
   cloudArtifacts?: (run: string) => unknown
   /** #660: cloud.downloadArtifact answer; default fails with a network error. */
   download?: (run: string, artifact: { id?: string }) => Promise<unknown>
+  /** REQ-236 #1552: recorded origin session per run (missing key = "ses_a", the harness's session). */
+  sessionByRun?: Record<string, string | null>
+  /** REQ-236 #1552: tracker snapshot per run (cloud.getRunState); default null. */
+  runState?: (run: string) => unknown
 }
 
 function installFakeRunArtifacts(entriesByRun: Record<string, unknown[]>, options?: FakeOptions) {
@@ -115,6 +119,7 @@ function installFakeRunArtifacts(entriesByRun: Record<string, unknown[]>, option
     cloudList: [] as string[],
     download: [] as string[],
     cancel: [] as string[],
+    retry: [] as string[],
   }
   const runSavedListeners = new Set<(e: { directory: string; runId: string }) => void>()
   const progressListeners = new Set<(p: unknown) => void>()
@@ -127,7 +132,9 @@ function installFakeRunArtifacts(entriesByRun: Record<string, unknown[]>, option
     missingCount: 0,
     readOnly: false,
     updatedAt: options?.updatedAtByRun?.[runId] ?? null,
+    sessionID: options?.sessionByRun && runId in options.sessionByRun ? options.sessionByRun[runId] : "ses_a",
   })
+  const runStateListeners = new Set<(state: unknown) => void>()
   ;(window as never as Record<string, unknown>).api = {
     runArtifacts: {
       projectUsage: async () => {
@@ -181,12 +188,22 @@ function installFakeRunArtifacts(entriesByRun: Record<string, unknown[]>, option
         runSavedListeners.add(cb)
         return () => runSavedListeners.delete(cb)
       },
+      getRunState: async (_dir: string, run: string) => (options?.runState ? options.runState(run) : null),
+      onRunState: (cb: (state: unknown) => void) => {
+        runStateListeners.add(cb)
+        return () => runStateListeners.delete(cb)
+      },
+      retry: async (_dir: string, run: string) => {
+        calls.retry.push(run)
+        return { ok: true }
+      },
     },
   }
   return {
     calls,
     emitRunSaved: (e: { directory: string; runId: string }) => runSavedListeners.forEach((listener) => listener(e)),
     emitProgress: (p: unknown) => progressListeners.forEach((listener) => listener(p)),
+    emitRunState: (state: unknown) => runStateListeners.forEach((listener) => listener(state)),
   }
 }
 
@@ -220,7 +237,8 @@ describe("REQ-125 C4 artifacts view real Solid mount", () => {
     const cards = host.querySelectorAll(".alpha-wb-cardlist .alpha-wb-card")
     expect(cards).toHaveLength(2)
     expect(cards[0]!.hasAttribute("data-active")).toBe(true)
-    expect(cards[0]!.querySelector(".a-wb-chip")!.getAttribute("data-state")).toBe("verified")
+    // REQ-236 #1552 AC5: "verified" is a technical detail (folded) — only states to act on stay on the row.
+    expect(cards[0]!.querySelector(".a-wb-chip")).toBeNull()
     expect(cards[1]!.querySelector(".a-wb-chip")!.getAttribute("data-state")).toBe("unverified")
     expect(cards[0]!.querySelector(".alpha-wb-card-size")!.textContent).toBe("1.2 MiB")
 
@@ -254,29 +272,41 @@ describe("REQ-125 C4 artifacts view real Solid mount", () => {
     expect(host.querySelector("[data-artifacts-empty]")).not.toBeNull()
   })
 
-  test("preview mode tabs switch and reset to preview when the selection changes", async () => {
+  // REQ-236 #1552 AC5 (replaces the Preview/Source/Metadata tab strip): result first — the preview sits
+  // above the file list, the action row under it, and every technical fact is folded until asked for.
+  test("结果优先:预览在文件列表之上,技术详情默认折叠,展开可见,换选择收起", async () => {
     const harness = runtime.createArtifactsViewHarness()
     harness.setCards([
       runtime.fakeCard({ key: "art-1", name: "a.md" }),
       runtime.fakeCard({ key: "art-2", name: "b.md" }),
     ])
     harness.setSelectedKey("art-1")
+    harness.setRuns([runtime.fakeRunRow({ runId: "job_r9d2c0ffee1e77" })])
+    harness.setSelectedRunId("job_r9d2c0ffee1e77")
+    harness.setQuota({ usedBytes: 512, maxBytes: 1024 })
     const host = mount(harness.View)
     await flush()
 
-    const tabs = host.querySelectorAll<HTMLButtonElement>(".alpha-wb-tabs [role='tab']")
-    expect(tabs).toHaveLength(3)
-    expect(tabs[0]!.getAttribute("aria-selected")).toBe("true")
+    expect(host.querySelectorAll(".alpha-wb-tabs [role='tab']")).toHaveLength(0)
+    const preview = host.querySelector("[data-artifacts-preview]")!
+    const list = host.querySelector(".alpha-wb-cardlist")!
+    expect(preview.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Folded by default: no run id anywhere in the bar, no quota, no tech body.
+    const fold = host.querySelector<HTMLButtonElement>("[data-artifacts-tech]")!
+    expect(fold.getAttribute("aria-expanded")).toBe("false")
+    expect(host.querySelector("[data-artifacts-tech-body]")).toBeNull()
+    expect(host.querySelector("[data-artifacts-runbar]")!.textContent).not.toContain("job_r9d2")
+    expect(host.querySelector(".a-rart-runfoot")).toBeNull()
 
-    tabs[1]!.click()
+    fold.click()
     await flush()
-    expect(tabs[1]!.getAttribute("aria-selected")).toBe("true")
+    const body = host.querySelector("[data-artifacts-tech-body]")!
+    expect(body.textContent).toContain("job_r9d2c0ffee1e77")
+    expect(body.querySelector(".a-rart-runfoot")).not.toBeNull()
 
     harness.setSelectedKey("art-2")
     await flush()
-    expect(host.querySelectorAll<HTMLButtonElement>(".alpha-wb-tabs [role='tab']")[0]!.getAttribute("aria-selected")).toBe(
-      "true",
-    )
+    expect(host.querySelector("[data-artifacts-tech-body]")).toBeNull()
   })
 
   test("focus mount point: focusSeq moves DOM focus to the selected card and Esc reports out", async () => {
@@ -986,5 +1016,60 @@ describe("#970 取消是本地事实:平台补一个 cancelled 分类码只改�
     expect(card().querySelector("[data-download-error]")).toBeNull()
     expect(host.querySelector("[data-download-failure]")).toBeNull()
     expect(card().querySelector(".alpha-wb-card-actions .a-wb-btn")!.textContent).toBe(i18n.t("alpha.wb.download"))
+  })
+})
+
+describe("REQ-236 #1552 本次对话 / 项目全部(真容器,真 shell)", () => {
+  test("同项目两会话各看各的;子会话的 run 经 parentOf 归入父会话;无归属只在项目全部且标「来源未记录」", async () => {
+    installFakeRunArtifacts(
+      {
+        job_a: [manifestEntry("art-a", "A 的报告.md")],
+        job_child: [manifestEntry("art-c", "子任务.md")],
+        job_b: [manifestEntry("art-b", "B 的报告.md")],
+        job_none: [manifestEntry("art-n", "定时任务.md")],
+      },
+      {
+        sessionByRun: { job_a: "ses_a", job_child: "ses_a_child", job_b: "ses_b", job_none: null },
+        updatedAtByRun: {
+          job_none: "2026-10-30T10:04:00Z",
+          job_b: "2026-10-30T10:03:00Z",
+          job_child: "2026-10-30T10:02:00Z",
+          job_a: "2026-10-30T10:01:00Z",
+        },
+      },
+    )
+    const parents: Record<string, string | null> = { ses_a: null, ses_a_child: "ses_a", ses_b: null }
+    const shell = runtime.createArtifactsShellHarness({ parentOf: async (id) => parents[id] ?? null })
+    const host = mount(shell.Shell)
+    await openArtifactsTab(host)
+    await flushTimers()
+
+    const runRows = async () => {
+      const head = host.querySelector<HTMLButtonElement>(".a-rart-runhead")
+      if (head?.getAttribute("aria-expanded") === "false") head.click()
+      await flush()
+      return [...host.querySelectorAll<HTMLElement>("[data-run-row]")].map((row) => row.getAttribute("data-run-row"))
+    }
+    // ses_a 的「本次对话」:自己的 + 子会话的;最新的 job_none(无归属)与 job_b(B 的)都不在。
+    expect(host.querySelector("[data-artifacts-scope]")!.getAttribute("data-artifacts-scope")).toBe("session")
+    expect(await runRows()).toEqual(["job_child", "job_a"])
+    expect(host.querySelectorAll("[data-run-owner]")).toHaveLength(0)
+
+    host.querySelector<HTMLButtonElement>("[data-scope='project']")!.click()
+    await flushTimers()
+    expect(await runRows()).toEqual(["job_none", "job_b", "job_child", "job_a"])
+    expect([...host.querySelectorAll("[data-run-owner]")].map((tag) => tag.getAttribute("data-run-owner"))).toEqual([
+      "none",
+      "other",
+      "this",
+      "this",
+    ])
+
+    // ses_b:只有 B 自己的那一次;范围切换回到默认「本次对话」。
+    shell.switchSession("ses_b")
+    await flushTimers()
+    await flushTimers()
+    expect(host.querySelector("[data-artifacts-scope]")!.getAttribute("data-artifacts-scope")).toBe("session")
+    expect(await runRows()).toEqual(["job_b"])
   })
 })
