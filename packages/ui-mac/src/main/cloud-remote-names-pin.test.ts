@@ -1,8 +1,9 @@
 // alpha-code#1568 AC4 —— 桌面远端名表 ⊆ 平台公开工具清单(跨仓钉扎)。
 //
-// 平台那一份是 alpha-platform `docs/contracts/public-cloud-mcp.md` §6:平台侧由 `public-contract-doc-190`
-// 与真 `tools/list` 逐行钉住。本仓经契约消费包按不可变提交 vendor 进来(`alpha-platform-cloud-mcp.lock.json`,
-// `check:vendor` 校验字节),这里读的就是那份字节(`fixtures/cloud-mcp-tools.ts`)—— 不是手抄名单。
+// 平台那一份是云 MCP 真 `tools/list` 载荷(alpha-platform `packages/gateway/test/fixtures/mcp-legacy-tools-list.json`:
+// 从生产 buildMcpServer + Client.listTools() 录下,平台 `mcp-dual-era.test.ts` T1 逐字节钉住,public-cloud-mcp.md §6
+// 与它逐行一致)。本仓经契约消费包按不可变提交 vendor 进来(`alpha-platform-cloud-mcp.lock.json`,`check:vendor`
+// 校验字节),这里读的就是那份字节(`fixtures/cloud-mcp-tools.ts`)—— 不是手抄名单。
 // 桌面任何一张按远端名匹配的表(契约校验、识图、web search 闸、定制中心的云工具判据)出现平台没有的名字
 // ⇒ 当场红:那种名字在真会话里恒不命中,闸门会静默失效(#650 就是这么来的)。
 import { describe, expect, test } from "bun:test"
@@ -51,7 +52,8 @@ describe("#1568 AC4 云 MCP 远端名跨仓钉扎", () => {
     expect(notInPlatform(["cloud_dispatch", "cloud_web_search", "cloud_vision"])).toEqual(["cloud_dispatch", "cloud_web_search", "cloud_vision"])
   })
 
-  test("解析器读不到 §6 工具表就响亮失败,不返回空清单", () => {
-    expect(() => platformCloudMcpTools("# no tool table here\n")).toThrow("§6 tool table not found")
+  test("载荷形状不对就响亮失败,不返回空清单或残缺清单", () => {
+    for (const bad of ["[]", "{}", '[{"name":"dispatch"},{"description":"no name"}]'])
+      expect(() => platformCloudMcpTools(bad)).toThrow("not a non-empty array of named tools")
   })
 })
