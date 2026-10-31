@@ -1253,20 +1253,20 @@ function replayed(part: ToolPart): ToolPart {
 describe("#1578 AC2 — 随包文档工具在时间线显示为「Code Puppy 内置」· 本机", () => {
   // 删掉 categoryOf / toolProvenanceOf 的 codepuppy-bundled 分支 ⇒ 第三方 + 插头标记,当场红。
   test("mcp + codepuppy-bundled authority ⇒ 内置 · 本机,步骤行是我方通用行(无第三方标记);同一调用无 authority ⇒ 第三方", () => {
-    const doc = bundled(mcp("alpha-word", "read_docx"), "mcp:alpha-word")
-    const part = replayed(toolPart({ tool: "alpha-word_read_docx", display: doc, state: completed({ path: "/w/a.docx" }, "body") }))
+    const doc = bundled(mcp("codepuppy-word", "read_docx"), "mcp:codepuppy-word")
+    const part = replayed(toolPart({ tool: "codepuppy-word_read_docx", display: doc, state: completed({ path: "/w/a.docx" }, "body") }))
     expect(toolProvenanceOf(part)).toEqual({ source: "builtin", location: { kind: "local" } })
     const line = toolStepLineOf(part)
     expect(line.source).toBeUndefined()
     expect(line.verbKey ? (zhDict as Record<string, string>)[line.verbKey] : undefined).toBe("Code Puppy 内置")
     expect(line.object).toBe("read_docx")
     const unproven = toolPart({
-      tool: "alpha-word_read_docx",
-      display: { ...mcp("alpha-word", "read_docx"), location: { kind: "local" } },
+      tool: "codepuppy-word_read_docx",
+      display: { ...mcp("codepuppy-word", "read_docx"), location: { kind: "local" } },
       state: completed({ path: "/w/a.docx" }, "body"),
     })
     expect(toolProvenanceOf(unproven).source).toBe("third-party")
-    expect(toolStepLineOf(unproven).source).toEqual({ kind: "mcp", label: "alpha-word" })
+    expect(toolStepLineOf(unproven).source).toEqual({ kind: "mcp", label: "codepuppy-word" })
   })
 
   // 把 codepuppy-bundled 并进 builtin 分类 ⇒ 冒名 todowrite 被时间线吞掉 / 借到专用卡,当场红。

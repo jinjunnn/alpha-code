@@ -636,7 +636,7 @@ async function resolvePreparedPackage(
     )
       return {
         ok: false,
-        reason: "package admission: community excel-mcp-server is retired; use mcp:alpha-excel (REQ-135)",
+        reason: "package admission: community excel-mcp-server is retired; use mcp:codepuppy-excel (REQ-135)",
         package: view,
       }
     // ADR-040(`#825` 第 5 条):带可执行 plugin 组件的包**整包拒绝**,拒在资产下载之前 ——

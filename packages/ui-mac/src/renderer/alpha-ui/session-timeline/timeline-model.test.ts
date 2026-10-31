@@ -1559,8 +1559,8 @@ describe("#1553 附件卡读取结果:只按会话里的真实读取调用与逐
   const staged = (id: string, messageID: string, meta: object) =>
     textPart(id, messageID, "", { synthetic: true, metadata: { "codepuppy.attachment": meta } })
   const readCall = (id: string, messageID: string, path: string, over: { origin?: string; name?: string; state?: object } = {}) =>
-    toolPart(id, messageID, "alpha-word_read_docx", {
-      display: { identity: { source: "mcp", origin: over.origin ?? "alpha-word", name: over.name ?? "read_docx" }, technicalId: "alpha-word_read_docx", authority: { kind: "not-asserted" } },
+    toolPart(id, messageID, "codepuppy-word_read_docx", {
+      display: { identity: { source: "mcp", origin: over.origin ?? "codepuppy-word", name: over.name ?? "read_docx" }, technicalId: "codepuppy-word_read_docx", authority: { kind: "not-asserted" } },
       state: { status: "completed", input: { path }, output: '{"paragraphs":["x"]}', title: "", metadata: {}, time: { start: 0, end: 1 }, ...over.state },
     } as Partial<ToolPart>)
   const absolute = `${DIR}/${PROJECT_HIDDEN_DIR}/attachments/${UUID}/需求说明 v3.docx`
@@ -1576,7 +1576,7 @@ describe("#1553 附件卡读取结果:只按会话里的真实读取调用与逐
       status: opts.status ?? "idle",
       attachments: { directory: DIR, services: opts.services },
     })
-  const connected = { "alpha-word": { status: "connected" }, "alpha-pdf": { status: "connected" } }
+  const connected = { "codepuppy-word": { status: "connected" }, "codepuppy-pdf": { status: "connected" } }
 
   test("「已读取」⇔ 同会话有该读取工具的成功调用且路径经同一规范化后相等;路径不同 / 第三方同名工具 / 别名同名都不算", () => {
     const base = { msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", docMeta)] }
@@ -1584,7 +1584,7 @@ describe("#1553 附件卡读取结果:只按会话里的真实读取调用与逐
     expect(readsOf(run({ ...base, msg_a1: [readCall("prt_t", "msg_a1", absolute.replace("需求说明", "别的"))] }, { services: connected }))).toEqual(["not-read"])
     expect(readsOf(run({ ...base, msg_a1: [readCall("prt_t", "msg_a1", absolute, { origin: "my-word" })] }, { services: connected }))).toEqual(["not-read"])
     expect(readsOf(run({ ...base, msg_a1: [readCall("prt_t", "msg_a1", absolute, { name: "write_docx" })] }, { services: connected }))).toEqual(["not-read"])
-    const alias = toolPart("prt_t", "msg_a1", "alpha-word_read_docx", { state: { status: "completed", input: { path: absolute }, output: "", title: "", metadata: {}, time: { start: 0, end: 1 } } })
+    const alias = toolPart("prt_t", "msg_a1", "codepuppy-word_read_docx", { state: { status: "completed", input: { path: absolute }, output: "", title: "", metadata: {}, time: { start: 0, end: 1 } } })
     expect(readsOf(run({ ...base, msg_a1: [alias] }, { services: connected }))).toEqual(["not-read"])
   })
 
@@ -1606,10 +1606,10 @@ describe("#1553 附件卡读取结果:只按会话里的真实读取调用与逐
     expect(readsOf(run({ ...base, msg_a1: [failed("File is not a zip file")] }, { services: connected }))).toEqual(["failed:unreadable"])
     expect(readsOf(run({ ...base, msg_a1: [failed("MCP error -32001: Request timed out")] }, { services: connected }))).toEqual(["failed:timeout"])
     // 引擎 mcp/index.ts 的原文:调用时服务不在(没启动 / 已失败)⇒ 是读取工具没起来,不是文件打不开。
-    expect(readsOf(run({ ...base, msg_a1: [failed('MCP server "alpha-word" is not available: spawn ENOENT')] }, { services: connected }))).toEqual(["failed:not-running"])
+    expect(readsOf(run({ ...base, msg_a1: [failed('MCP server "codepuppy-word" is not available: spawn ENOENT')] }, { services: connected }))).toEqual(["failed:not-running"])
     const pdfPath = `${DIR}/${PROJECT_HIDDEN_DIR}/attachments/${UUID}/合同.pdf`
     const pdfCall = (output: string) =>
-      readCall("prt_t", "msg_a1", pdfPath, { origin: "alpha-pdf", name: "read_pdf", state: { output } })
+      readCall("prt_t", "msg_a1", pdfPath, { origin: "codepuppy-pdf", name: "read_pdf", state: { output } })
     const pdfBase = { msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", pdfMeta)] }
     expect(readsOf(run({ ...pdfBase, msg_a1: [pdfCall(JSON.stringify({ path: pdfPath, pages: ["", " \n"] }))] }, { services: connected }))).toEqual(["empty"])
     expect(readsOf(run({ ...pdfBase, msg_a1: [pdfCall(JSON.stringify({ path: pdfPath, pages: ["", "第 2 页"] }))] }, { services: connected }))).toEqual(["read"])
@@ -1619,9 +1619,9 @@ describe("#1553 附件卡读取结果:只按会话里的真实读取调用与逐
     const parts = { msg_u1: [textPart("prt_u", "msg_u1", "看看"), staged("prt_s", "msg_u1", docMeta)] }
     const running = [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { time: { created: 10 } })]
     expect(readsOf(run(parts, { services: {} }))).toEqual(["failed:not-running"])
-    expect(readsOf(run(parts, { services: { "alpha-word": { status: "failed", error: "spawn ENOENT" } }, status: "busy", messages: running }))).toEqual(["failed:not-running"])
-    expect(readsOf(run(parts, { services: { "alpha-word": { status: "disabled" } } }))).toEqual(["failed:not-running"])
-    expect(readsOf(run(parts, { services: { "alpha-word": { status: "pending" } }, status: "busy", messages: running }))).toEqual(["waiting"])
+    expect(readsOf(run(parts, { services: { "codepuppy-word": { status: "failed", error: "spawn ENOENT" } }, status: "busy", messages: running }))).toEqual(["failed:not-running"])
+    expect(readsOf(run(parts, { services: { "codepuppy-word": { status: "disabled" } } }))).toEqual(["failed:not-running"])
+    expect(readsOf(run(parts, { services: { "codepuppy-word": { status: "pending" } }, status: "busy", messages: running }))).toEqual(["waiting"])
     expect(readsOf(run(parts, { services: connected, status: "busy", messages: running }))).toEqual(["saved"])
     expect(readsOf(run(parts, { services: connected }))).toEqual(["not-read"])
     // 状态还没取到:不下「失败」的结论。

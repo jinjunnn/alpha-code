@@ -928,7 +928,7 @@ async function classifyBundleChild(
     // 还没有覆盖它。fail-closed(#823)。
     //
     // #823:此前这里还连带排除了「命令含 {workspace} 占位 / isWorkspacePolicyMcp」的 MCP
-    // (mcp:filesystem / mcp:git / mcp:alpha-excel 等),继承自 REQ-100 落地时(2026-07-13)
+    // (mcp:filesystem / mcp:git / mcp:codepuppy-excel 等),继承自 REQ-100 落地时(2026-07-13)
     // deriveMcpConfig 的旧语义——那时 {workspace} 是一个必须由调用方显式提供的 grant,
     // 空 grants 传入必然在 deriveMcpConfig 内部失败。REQ-134(#1011,2026-08-18)把语义改成
     // 「{workspace} 留字面量写盘、由引擎在 spawn 时按当前 instance 目录替换」之后,

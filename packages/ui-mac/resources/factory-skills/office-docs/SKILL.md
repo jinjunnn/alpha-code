@@ -11,8 +11,8 @@ You help the user produce and read real office files. All of it runs locally.
 ## Always local
 
 - **Create, read or edit Word/Excel/PowerPoint/PDF with Alpha's four first-party local stdio MCP
-  connectors below** — `mcp:alpha-word`, `mcp:alpha-excel`, `mcp:alpha-powerpoint` and
-  `mcp:alpha-pdf`. They write the file straight into the project directory (see "Output
+  connectors below** — `mcp:codepuppy-word`, `mcp:codepuppy-excel`, `mcp:codepuppy-powerpoint` and
+  `mcp:codepuppy-pdf`. They write the file straight into the project directory (see "Output
   location"); the file stays on this machine, with no cloud charge.
 - Cloud Word/Excel/PowerPoint generation (`office-report`) is retired. Do not dispatch it and do
   not upload files to obtain formatting — also when the user asks for the cloud: say it is no
@@ -31,14 +31,14 @@ You help the user produce and read real office files. All of it runs locally.
 
 | Job | Primary connector and tools | Notes |
 |---|---|---|
-| **Read/write docx** | `mcp:alpha-word` (`read_docx`, `write_docx`) | `python-docx`; title, body paragraphs, `heading` blocks (levels 1–9), `table` blocks, `page` (A4 default or Letter, orientation, margins in mm), `font` (`eastAsia` defaults to 宋体; `latin`; `size` in pt). Put section titles such as 一、总体情况 in `heading` blocks, never as body text. Undeclared fields are refused, not dropped |
-| **Read/write xlsx** | `mcp:alpha-excel` (`read_xlsx`, `write_xlsx`) | `openpyxl`; sheet/cell data without Microsoft Excel |
-| **Read/write pptx** | `mcp:alpha-powerpoint` (`read_pptx`, `write_pptx`) | `python-pptx`; slide titles and text bodies |
-| **Read/write PDF text pages** | `mcp:alpha-pdf` (`read_pdf`, `write_pdf`) | `pypdf` + `reportlab`; replace/generate or append text pages, not layout design |
+| **Read/write docx** | `mcp:codepuppy-word` (`read_docx`, `write_docx`) | `python-docx`; title, body paragraphs, `heading` blocks (levels 1–9), `table` blocks, `page` (A4 default or Letter, orientation, margins in mm), `font` (`eastAsia` defaults to 宋体; `latin`; `size` in pt). Put section titles such as 一、总体情况 in `heading` blocks, never as body text. Undeclared fields are refused, not dropped |
+| **Read/write xlsx** | `mcp:codepuppy-excel` (`read_xlsx`, `write_xlsx`) | `openpyxl`; sheet/cell data without Microsoft Excel |
+| **Read/write pptx** | `mcp:codepuppy-powerpoint` (`read_pptx`, `write_pptx`) | `python-pptx`; slide titles and text bodies |
+| **Read/write PDF text pages** | `mcp:codepuppy-pdf` (`read_pdf`, `write_pdf`) | `pypdf` + `reportlab`; replace/generate or append text pages, not layout design |
 | **Broad read/conversion** | markitdown (`convert_to_markdown`) | optional secondary path for formats outside the four focused tools |
 
 All four Alpha connectors run on a Python runtime and pinned libraries that ship inside Code Puppy;
-they need no Microsoft Office installation and nothing else to install. Hub Excel means `mcp:alpha-excel` only. Do not install, recommend, or fall back
+they need no Microsoft Office installation and nothing else to install. Hub Excel means `mcp:codepuppy-excel` only. Do not install, recommend, or fall back
 to the retired community `excel-mcp-server`, and never present it as Alpha-authored.
 
 ## If the tool is not available

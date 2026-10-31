@@ -1,5 +1,5 @@
 // REQ-135 #1012: retire the legacy community Excel MCP before the first sidecar fork.
-// The first-party Hub connector is `mcp:alpha-excel`; `excel-mcp-server` is removed, not renamed.
+// The first-party Hub connector is `mcp:codepuppy-excel`; `excel-mcp-server` is removed, not renamed.
 
 import { alphaGlobalRoot } from "./alpha-installs"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"

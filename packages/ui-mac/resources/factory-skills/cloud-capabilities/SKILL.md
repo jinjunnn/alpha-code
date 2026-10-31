@@ -21,7 +21,7 @@ license: MIT (Code Puppy original)
 | 代码审查 | 默认本机 agent；用户要求「联网复核」或「第二意见」时用云。 |
 | 要把本机私有文件传云 | 先问用户，获得上传授权后才发送内容；不能把选用云端当作上传私有文件的授权。 |
 
-云端 Word/Excel/PPT 生成（`office-report`）已停用：不要派发它，用户明确要求云端时也如实说明，改用本机 `mcp:alpha-word`、`mcp:alpha-excel`、`mcp:alpha-powerpoint`、`mcp:alpha-pdf`，按 `office-docs` 技能执行。
+云端 Word/Excel/PPT 生成（`office-report`）已停用：不要派发它，用户明确要求云端时也如实说明，改用本机 `mcp:codepuppy-word`、`mcp:codepuppy-excel`、`mcp:codepuppy-powerpoint`、`mcp:codepuppy-pdf`，按 `office-docs` 技能执行。
 网页 / HTML 由本机直接写文件：不要派发云端 `html-generate`，用户明确要求云端时也如实说明并改为本机生成。
 代码审查一旦要求联网复核或第二意见，选择云端 `code-review`；先加载本技能并检查云端准入，不先改成本机搜索或本机代码审查。
 

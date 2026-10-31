@@ -56,9 +56,9 @@ const ENTRIES = [
   },
   // #1564:alpha-web 签名目录里 Word 文档工具卡片的原样(src/renderer/extensions/alpha-catalog.json):仍写着 uv 命令与 runtimeDep ["uv"]。
   {
-    id: "mcp:alpha-word",
+    id: "mcp:codepuppy-word",
     type: "mcp",
-    name: "alpha-word",
+    name: "codepuppy-word",
     displayName: "Word 文档读写",
     description: "读取 .docx 的正文和结构，也能新建或改写文档。",
     source: "alpha",
@@ -328,10 +328,10 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
 
   test("#1564 AC3:PATH 里没有 uv、随包 Office 运行时在 ⇒ 装 Word 文档工具照常走完,不再因卡片的 uv 依赖拒装", async () => {
     uvOnPath = false
-    installScript = [{ ok: true, kind: "mcp", name: "alpha-word" }]
+    installScript = [{ ok: true, kind: "mcp", name: "codepuppy-word" }]
     mount()
     await flush()
-    runtime.ask(hubRequest("mcp:alpha-word", "req_hub_office_ready"))
+    runtime.ask(hubRequest("mcp:codepuppy-word", "req_hub_office_ready"))
     await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
     // 确认框不再把卡片残留的 runtimeDep(uv)列成「需要先安装的程序」—— 运行环境随应用自带。
     expect(document.body.textContent).not.toContain(zh["alpha.ext.confirmRuntime"])
@@ -339,7 +339,7 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     button(zh["alpha.ext.confirmInstall"])!.click()
     await until(() => replies().length > 0, "the reply")
     expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "install", "reply:once"])
-    expect(intents.map((intent) => intent.catalogId)).toEqual(["mcp:alpha-word"])
+    expect(intents.map((intent) => intent.catalogId)).toEqual(["mcp:codepuppy-word"])
     expect(stages.get("req_hub_office_ready")).toMatchObject({ stage: "committed" })
   })
 
@@ -347,7 +347,7 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     officeRuntimeReady = false
     mount()
     await flush()
-    runtime.ask(hubRequest("mcp:alpha-word", "req_hub_office_missing"))
+    runtime.ask(hubRequest("mcp:codepuppy-word", "req_hub_office_missing"))
     await until(() => !!button(zh["alpha.ext.confirmInstall"]), "the confirm box")
     button(zh["alpha.ext.confirmInstall"])!.click()
     await until(() => !!document.querySelector("[data-hub-agent-failure]"), "the failure shown in the box")

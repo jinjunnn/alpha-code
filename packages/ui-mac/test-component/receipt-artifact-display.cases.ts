@@ -53,9 +53,9 @@ const SHORT = "sha256:ab12ab12ab12…"
 
 /** 真实随包 Excel 卡片的形状(id/name/version/命令都照 `alpha-catalog.json` 里那条)。 */
 const excelEntry = {
-  id: "mcp:alpha-excel",
+  id: "mcp:codepuppy-excel",
   type: "mcp",
-  name: "alpha-excel",
+  name: "codepuppy-excel",
   displayName: "Excel 表格读写",
   description: "读写 .xlsx",
   source: "alpha",
@@ -71,9 +71,9 @@ const excelEntry = {
 
 /** #1564:alpha-web 签名目录里 Word 卡片的原样(`alpha-catalog.json`):仍写着 uv 命令与 runtimeDep ["uv"]。 */
 const wordEntry = {
-  id: "mcp:alpha-word",
+  id: "mcp:codepuppy-word",
   type: "mcp",
-  name: "alpha-word",
+  name: "codepuppy-word",
   displayName: "Word 文档读写",
   description: "读写 .docx",
   source: "alpha",
@@ -147,7 +147,7 @@ const digestNode = (host: HTMLElement): HTMLElement | null => host.querySelector
 describe("REQ-105 #319 — the detail header states what the install actually executes", () => {
   test("an installed Excel receipt shows its recorded version and artifact digest", () => {
     const host = mountDetail(
-      [{ id: "mcp:alpha-excel", name: "alpha-excel", type: "mcp", scope: "global", version: "1.0.0", installedAt: "2026-08-25T00:00:00Z", origin: "catalog", payloadDigest: DIGEST }],
+      [{ id: "mcp:codepuppy-excel", name: "codepuppy-excel", type: "mcp", scope: "global", version: "1.0.0", installedAt: "2026-08-25T00:00:00Z", origin: "catalog", payloadDigest: DIGEST }],
       true,
     )
     const text = host.textContent ?? ""
@@ -165,7 +165,7 @@ describe("REQ-105 #319 — the detail header states what the install actually ex
 
   test("an installed receipt without a recorded digest says 'not recorded' — never blank, never the card version", () => {
     const host = mountDetail(
-      [{ id: "mcp:alpha-excel", name: "alpha-excel", type: "mcp", scope: "global", version: "1.0.0", installedAt: "2026-08-25T00:00:00Z", origin: "catalog" }],
+      [{ id: "mcp:codepuppy-excel", name: "codepuppy-excel", type: "mcp", scope: "global", version: "1.0.0", installedAt: "2026-08-25T00:00:00Z", origin: "catalog" }],
       true,
     )
     const text = host.textContent ?? ""
@@ -177,7 +177,7 @@ describe("REQ-105 #319 — the detail header states what the install actually ex
 
   test("a malformed recorded digest is not presented as an identity", () => {
     const host = mountDetail(
-      [{ id: "mcp:alpha-excel", name: "alpha-excel", type: "mcp", scope: "global", version: "1.0.0", installedAt: "2026-08-25T00:00:00Z", origin: "catalog", payloadDigest: "sha256:deadbeef" }],
+      [{ id: "mcp:codepuppy-excel", name: "codepuppy-excel", type: "mcp", scope: "global", version: "1.0.0", installedAt: "2026-08-25T00:00:00Z", origin: "catalog", payloadDigest: "sha256:deadbeef" }],
       true,
     )
     const text = host.textContent ?? ""

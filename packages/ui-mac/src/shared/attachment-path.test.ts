@@ -98,8 +98,8 @@ describe("stagedAttachmentOf —— 冻结形状,fail-closed", () => {
   const meta = { v: 1, name: "a.docx", mime: "application/x", size: 3, path: `attachments/${UUID}/a.docx`, reader: "word" }
   test("合法形状原样读出;读取工具所在服务来自第一方 Office 登记表", () => {
     expect(stagedAttachmentOf({ [ATTACHMENT_METADATA_KEY]: meta })).toEqual(meta as never)
-    expect(attachmentReaderServer("word")).toBe("alpha-word")
-    expect(attachmentReaderServer("pdf")).toBe("alpha-pdf")
+    expect(attachmentReaderServer("word")).toBe("codepuppy-word")
+    expect(attachmentReaderServer("pdf")).toBe("codepuppy-pdf")
   })
   test("路径逃逸、绝对路径、多段、非 uuid、版本 / reader 不对 ⇒ undefined", () => {
     for (const path of [`attachments/${UUID}/../x.docx`, `/etc/${UUID}/a.docx`, `attachments/${UUID}/a/b.docx`, "attachments/x/a.docx", `../attachments/${UUID}/a.docx`, `attachments/${UUID}/..`])

@@ -31,28 +31,28 @@ const stagedPart = (m: StagedAttachmentMeta, id = "prt_02") => ({
   synthetic: true,
   metadata: { [ATTACHMENT_METADATA_KEY]: m },
 })
-const connected = { "alpha-word": { status: "connected" }, "alpha-pdf": { status: "connected" } }
+const connected = { "codepuppy-word": { status: "connected" }, "codepuppy-pdf": { status: "connected" } }
 
 describe("attachmentInstruction", () => {
   test("读取工具就绪:工具 id = mcpEngineToolId(第一方服务名, 远端工具名),path = attachmentAbsolutePath(实例目录, 记录路径)", () => {
     const text = attachmentInstruction(meta(), DIR, connected)
-    expect(text).toContain(mcpEngineToolId("alpha-word", "read_docx"))
-    expect(text).toContain("alpha-word_read_docx")
+    expect(text).toContain(mcpEngineToolId("codepuppy-word", "read_docx"))
+    expect(text).toContain("codepuppy-word_read_docx")
     expect(text).toContain(attachmentAbsolutePath(DIR, meta().path))
     expect(explainAttachmentBlock(text)).toEqual({ ok: true, id: "attachment.read", kind: "wrapper" })
     const pdf = attachmentInstruction(meta({ reader: "pdf", path: `attachments/${UUID}/a.pdf` }), DIR, connected)
-    expect(pdf).toContain("alpha-pdf_read_pdf")
+    expect(pdf).toContain("codepuppy-pdf_read_pdf")
   })
   test("准备中(pending)与状态读不到:照常叫模型去读,不替读取工具下「不可用」的结论", () => {
-    expect(explainAttachmentBlock(attachmentInstruction(meta(), DIR, { "alpha-word": { status: "pending" } }))).toMatchObject({ id: "attachment.read" })
+    expect(explainAttachmentBlock(attachmentInstruction(meta(), DIR, { "codepuppy-word": { status: "pending" } }))).toMatchObject({ id: "attachment.read" })
     expect(explainAttachmentBlock(attachmentInstruction(meta(), DIR, undefined))).toMatchObject({ id: "attachment.read" })
   })
   test("读取工具不可用:没装 / 停用 ⇒ missing,启动失败 ⇒ failed;都点名文件、不给工具 id 与路径", () => {
     for (const [services, id] of [
       [{}, "attachment.unavailable.missing"],
-      [{ "alpha-word": { status: "disabled" } }, "attachment.unavailable.missing"],
-      [{ "alpha-word": { status: "failed", error: "spawn ENOENT", code: "spawn_failed" } }, "attachment.unavailable.failed"],
-      [{ "alpha-word": { status: "needs_auth" } }, "attachment.unavailable.failed"],
+      [{ "codepuppy-word": { status: "disabled" } }, "attachment.unavailable.missing"],
+      [{ "codepuppy-word": { status: "failed", error: "spawn ENOENT", code: "spawn_failed" } }, "attachment.unavailable.failed"],
+      [{ "codepuppy-word": { status: "needs_auth" } }, "attachment.unavailable.failed"],
     ] as const) {
       const text = attachmentInstruction(meta(), DIR, services)
       expect(explainAttachmentBlock(text), JSON.stringify(services)).toEqual({ ok: true, id, kind: "template" })
@@ -66,7 +66,7 @@ describe("attachmentInstruction", () => {
     expect(attachmentInstruction(meta(), DIR, connected)).toContain(path)
     const call = (input: string) => ({
       type: "tool",
-      display: { identity: { source: "mcp", origin: "alpha-word", name: "read_docx" } },
+      display: { identity: { source: "mcp", origin: "codepuppy-word", name: "read_docx" } },
       state: { status: "completed", input: { path: input }, output: "{}" },
     })
     const read = (input: string) => attachmentReadOf(meta(), { directory: DIR, tools: [call(input) as never], turnActive: false }).kind
@@ -96,7 +96,7 @@ describe("chat.message 钩子", () => {
       ["prt_02-read", "text", true, "msg_1", "ses_1"],
       ["prt_04-read", "text", true, "msg_1", "ses_1"],
     ])
-    expect(String(added[1]!.text)).toContain("alpha-pdf_read_pdf")
+    expect(String(added[1]!.text)).toContain("codepuppy-pdf_read_pdf")
     for (const p of added) expect(explainAttachmentBlock(String(p.text)).ok).toBe(true)
   })
   test("没有暂存附件:不问状态、一个 part 都不加;状态接口抛错也绝不抛出,照常叫模型去读", async () => {

@@ -56,8 +56,8 @@ const cloudSubject = (evidenceDigest: string): ToolPolicySubject => ({
 
 // #1578:随包文档工具 —— authority 由 authorityForMcp 在随包清单核验成立时铸(alpha-tool-identity.test.ts 两臂)。
 const bundledSubject = (bindingDigest?: string): ToolPolicySubject => ({
-  identity: { source: "mcp", origin: "alpha-word", name: "read_docx" },
-  authority: { kind: "codepuppy-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_B },
+  identity: { source: "mcp", origin: "codepuppy-word", name: "read_docx" },
+  authority: { kind: "codepuppy-bundled", bindingId: "mcp:codepuppy-word", evidenceDigest: DIGEST_B },
   bindingDigest,
 })
 
@@ -324,7 +324,7 @@ describe("policy store", () => {
     expect(loaded.status).toBe("ok")
     if (loaded.status !== "ok") return
     const withdrawn: ToolPolicySubject = {
-      identity: { source: "mcp", origin: "alpha-word", name: "read_docx" },
+      identity: { source: "mcp", origin: "codepuppy-word", name: "read_docx" },
       authority: { kind: "not-asserted" },
       bindingDigest: DIGEST_A,
     }

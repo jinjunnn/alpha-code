@@ -311,15 +311,15 @@ describe("stable tool identity", () => {
     try {
       const pack = officeBundle(tmp)
       const notAsserted = { kind: "not-asserted" } as const
-      expect(authorityForMcp("alpha-word", pack.entry("word"), pack.env).kind).toBe("codepuppy-bundled")
-      expect(authorityForMcp("alpha-word", pack.entry("word", ["--extra"]), pack.env)).toEqual(notAsserted)
+      expect(authorityForMcp("codepuppy-word", pack.entry("word"), pack.env).kind).toBe("codepuppy-bundled")
+      expect(authorityForMcp("codepuppy-word", pack.entry("word", ["--extra"]), pack.env)).toEqual(notAsserted)
       const short = pack.entry("word")
-      expect(authorityForMcp("alpha-word", { ...short, command: short.command.slice(0, -1) }, pack.env)).toEqual(
+      expect(authorityForMcp("codepuppy-word", { ...short, command: short.command.slice(0, -1) }, pack.env)).toEqual(
         notAsserted,
       )
-      expect(authorityForMcp("alpha-word", pack.entry("word"), {})).toEqual(notAsserted)
+      expect(authorityForMcp("codepuppy-word", pack.entry("word"), {})).toEqual(notAsserted)
       fs.appendFileSync(pack.server, " ")
-      expect(authorityForMcp("alpha-word", pack.entry("word"), pack.env)).toEqual(notAsserted)
+      expect(authorityForMcp("codepuppy-word", pack.entry("word"), pack.env)).toEqual(notAsserted)
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }

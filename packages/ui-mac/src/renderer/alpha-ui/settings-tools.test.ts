@@ -329,17 +329,17 @@ describe("Alpha Settings 「工具」节", () => {
     const inv = inventory()
     inv.services.push({
       source: "mcp",
-      origin: "alpha-word",
+      origin: "codepuppy-word",
       class: "codepuppy-bundled",
-      authority: { kind: "codepuppy-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_A },
+      authority: { kind: "codepuppy-bundled", bindingId: "mcp:codepuppy-word", evidenceDigest: DIGEST_A },
       bindingDigest: DIGEST_B,
       tools: [
         tool({
-          canonical: "mcp:alpha-word:read_docx",
+          canonical: "mcp:codepuppy-word:read_docx",
           name: "read_docx",
           source: "mcp",
-          origin: "alpha-word",
-          authority: { kind: "codepuppy-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_A },
+          origin: "codepuppy-word",
+          authority: { kind: "codepuppy-bundled", bindingId: "mcp:codepuppy-word", evidenceDigest: DIGEST_A },
           bindingDigest: DIGEST_B,
           effective: { state: "ask", action: "ask", reason: { kind: "default", class: "codepuppy-bundled" } },
         }),
@@ -352,7 +352,7 @@ describe("Alpha Settings 「工具」节", () => {
     expect(group).not.toBeNull()
     expect(text(group.querySelector("h3"))).toBe("Code Puppy 文档工具")
     expect(text(group)).toContain("默认每次询问")
-    expect(text(row("mcp:alpha-word:read_docx"))).toContain(
+    expect(text(row("mcp:codepuppy-word:read_docx"))).toContain(
       zhFill("alpha.settings.toolsEffective", {
         state: zh["alpha.settings.toolsEffectiveAsk"],
         reason: zh["alpha.settings.toolsReasonDefault"],
@@ -368,17 +368,17 @@ describe("Alpha Settings 「工具」节", () => {
       record: { selector: { level: "class", class: "codepuppy-bundled" }, state: "disabled" },
     })
     // 每次写完重读 inventory、整组重渲染:重新取节点。
-    radio(q("[data-tools-class='codepuppy-bundled'] [data-tools-service='mcp:alpha-word']")!, "ask").click()
+    radio(q("[data-tools-class='codepuppy-bundled'] [data-tools-service='mcp:codepuppy-word']")!, "ask").click()
     await flush(8)
     expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
       directory: DIRECTORY,
-      record: { selector: { level: "service", source: "mcp", origin: "alpha-word" }, state: "ask" },
+      record: { selector: { level: "service", source: "mcp", origin: "codepuppy-word" }, state: "ask" },
     })
-    radio(row("mcp:alpha-word:read_docx"), "enabled").click()
+    radio(row("mcp:codepuppy-word:read_docx"), "enabled").click()
     await flush(8)
     expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
       directory: DIRECTORY,
-      record: { selector: { level: "tool", canonical: "mcp:alpha-word:read_docx" }, state: "enabled", bindingDigest: DIGEST_B },
+      record: { selector: { level: "tool", canonical: "mcp:codepuppy-word:read_docx" }, state: "enabled", bindingDigest: DIGEST_B },
     })
   })
 

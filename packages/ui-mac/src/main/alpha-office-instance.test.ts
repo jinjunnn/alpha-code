@@ -251,7 +251,7 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     const { prod, dev } = base()
     seedProdLikeRoot(prod)
     seedEmptyDevRoot(dev)
-    const prodBefore = snapshot(prod, ["installs.json", "alpha.jsonc", "ext-store/mcp--alpha-word/grants.json"])
+    const prodBefore = snapshot(prod, ["installs.json", "alpha.jsonc", "ext-store/mcp--codepuppy-word/grants.json"])
     const before = collectInventory({ catalog: null, globalRoot: dev })
     expect(before.rows).toEqual([])
 
@@ -301,12 +301,12 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
       expect(record.version).toBe("1.0.0")
       expect(record.configKey).toBe(`mcp.${record.name}`)
     }
-    const grant = readCapabilityGrant(dev, "mcp--alpha-word")
-    expect(grant?.txId).toBe("tx-office-adopt-test-alpha-word")
+    const grant = readCapabilityGrant(dev, "mcp--codepuppy-word")
+    expect(grant?.txId).toBe("tx-office-adopt-test-codepuppy-word")
     expect(grant?.grantedAt).toBe("2026-09-06T00:00:00.000Z")
 
     // 兄弟根只读:逐字节不动。
-    expect(snapshot(prod, ["installs.json", "alpha.jsonc", "ext-store/mcp--alpha-word/grants.json"])).toEqual(prodBefore)
+    expect(snapshot(prod, ["installs.json", "alpha.jsonc", "ext-store/mcp--codepuppy-word/grants.json"])).toEqual(prodBefore)
   })
 
   test("a second run is a no-op (idempotent)", () => {
@@ -322,15 +322,15 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
 
   test("a disabled sibling record is adopted as disabled and projected as enabled:false", () => {
     const { prod, dev } = base()
-    seedProdLikeRoot(prod, "prod", STALE_SERVER, { "alpha-word": { desiredState: "disabled" } })
+    seedProdLikeRoot(prod, "prod", STALE_SERVER, { "codepuppy-word": { desiredState: "disabled" } })
     seedEmptyDevRoot(dev)
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
     expect(outcome.adopted).toHaveLength(4)
-    expect(readConfig(dev).mcp!["alpha-word"]!.enabled).toBe(false)
-    expect(readConfig(dev).mcp!["alpha-excel"]!.enabled).toBeUndefined()
+    expect(readConfig(dev).mcp!["codepuppy-word"]!.enabled).toBe(false)
+    expect(readConfig(dev).mcp!["codepuppy-excel"]!.enabled).toBeUndefined()
     const rows = collectInventory({ catalog: null, globalRoot: dev }).rows
-    expect(rows.find((row) => row.name === "alpha-word")?.activation).toBe("disabled")
-    expect(rows.find((row) => row.name === "alpha-excel")?.activation).toBe("enabled")
+    expect(rows.find((row) => row.name === "codepuppy-word")?.activation).toBe("disabled")
+    expect(rows.find((row) => row.name === "codepuppy-excel")?.activation).toBe("enabled")
   })
 
   test("a connector already recorded in the current root is never overwritten by a sibling", () => {
@@ -338,33 +338,33 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     seedProdLikeRoot(prod)
     seedEmptyDevRoot(dev)
     const own = installRecord(dev, ALPHA_OFFICE_CONNECTORS[0], "dev", { txId: "tx-dev-own", desiredState: "disabled" })
-    writeConfig(dev, { "alpha-word": { type: "local", command: officeCommand("word", CURRENT_SERVER), enabled: false } })
+    writeConfig(dev, { "codepuppy-word": { type: "local", command: officeCommand("word", CURRENT_SERVER), enabled: false } })
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
-    expect(outcome.adopted).toEqual(["alpha-excel", "alpha-powerpoint", "alpha-pdf"])
-    const record = readLedgerV2(dev).records.find((entry) => entry.name === "alpha-word")
+    expect(outcome.adopted).toEqual(["codepuppy-excel", "codepuppy-powerpoint", "codepuppy-pdf"])
+    const record = readLedgerV2(dev).records.find((entry) => entry.name === "codepuppy-word")
     expect(record).toEqual(own)
-    expect(readConfig(dev).mcp!["alpha-word"]!.enabled).toBe(false)
+    expect(readConfig(dev).mcp!["codepuppy-word"]!.enabled).toBe(false)
   })
 
   test("a connector absent everywhere (uninstalled) stays absent", () => {
     const { prod, dev } = base()
     seedProdLikeRoot(prod)
     seedEmptyDevRoot(dev)
-    // prod 里没有 alpha-pdf:用户卸载过。
+    // prod 里没有 codepuppy-pdf:用户卸载过。
     const prodLedger = JSON.parse(readFileSync(join(prod, "installs.json"), "utf8")) as { records: Array<{ name: string }>; receipts: Array<{ name: string }> }
-    prodLedger.records = prodLedger.records.filter((record) => record.name !== "alpha-pdf")
-    prodLedger.receipts = prodLedger.receipts.filter((receipt) => receipt.name !== "alpha-pdf")
+    prodLedger.records = prodLedger.records.filter((record) => record.name !== "codepuppy-pdf")
+    prodLedger.receipts = prodLedger.receipts.filter((receipt) => receipt.name !== "codepuppy-pdf")
     writeFileSync(join(prod, "installs.json"), JSON.stringify(prodLedger, null, 2))
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
-    expect(outcome.adopted).toEqual(["alpha-word", "alpha-excel", "alpha-powerpoint"])
-    expect(readConfig(dev).mcp!["alpha-pdf"]).toBeUndefined()
-    expect(readLedgerV2(dev).records.map((record) => record.name)).not.toContain("alpha-pdf")
+    expect(outcome.adopted).toEqual(["codepuppy-word", "codepuppy-excel", "codepuppy-powerpoint"])
+    expect(readConfig(dev).mcp!["codepuppy-pdf"]).toBeUndefined()
+    expect(readLedgerV2(dev).records.map((record) => record.name)).not.toContain("codepuppy-pdf")
   })
 
   test("when two siblings hold the connector, the most recently updated record wins", () => {
     const { prod, beta, dev } = base()
     seedProdLikeRoot(prod, "prod")
-    seedProdLikeRoot(beta, "beta", STALE_SERVER, { "alpha-word": { desiredState: "disabled", updatedAt: "2026-09-01T00:00:00.000Z" } })
+    seedProdLikeRoot(beta, "beta", STALE_SERVER, { "codepuppy-word": { desiredState: "disabled", updatedAt: "2026-09-01T00:00:00.000Z" } })
     seedEmptyDevRoot(dev)
     const { outcome } = run(dev, "dev", [
       { environment: "prod", root: prod },
@@ -372,8 +372,8 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     ])
     expect(outcome.adopted).toHaveLength(4)
     const rows = collectInventory({ catalog: null, globalRoot: dev }).rows
-    expect(rows.find((row) => row.name === "alpha-word")?.activation).toBe("disabled")
-    expect(rows.find((row) => row.name === "alpha-excel")?.activation).toBe("enabled")
+    expect(rows.find((row) => row.name === "codepuppy-word")?.activation).toBe("disabled")
+    expect(rows.find((row) => row.name === "codepuppy-excel")?.activation).toBe("enabled")
   })
 
   test("a sibling leaf with a legacy concrete workspace path is adopted with the {workspace} marker", () => {
@@ -395,27 +395,27 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     const { prod, dev } = base()
     seedProdLikeRoot(prod)
     const config = readConfig(prod)
-    config.mcp!["alpha-word"]!.command = [...config.mcp!["alpha-word"]!.command, "--extra"]
-    config.mcp!["alpha-excel"] = { type: "local", command: ["uv", "run", "--no-project", "--with", "openpyxl==9.9.9", STALE_SERVER, "excel", WORKSPACE_MARKER] }
+    config.mcp!["codepuppy-word"]!.command = [...config.mcp!["codepuppy-word"]!.command, "--extra"]
+    config.mcp!["codepuppy-excel"] = { type: "local", command: ["uv", "run", "--no-project", "--with", "openpyxl==9.9.9", STALE_SERVER, "excel", WORKSPACE_MARKER] }
     writeFileSync(join(prod, "alpha.jsonc"), JSON.stringify(config, null, 2))
     seedEmptyDevRoot(dev)
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
-    expect(outcome.adopted).toEqual(["alpha-powerpoint", "alpha-pdf"])
+    expect(outcome.adopted).toEqual(["codepuppy-powerpoint", "codepuppy-pdf"])
     expect(outcome.warnings).toHaveLength(2)
-    expect(outcome.warnings[0]).toContain("alpha-word")
+    expect(outcome.warnings[0]).toContain("codepuppy-word")
     expect(outcome.warnings[0]).toContain("REQ-133")
-    expect(outcome.warnings[1]).toContain("alpha-excel")
-    expect(readConfig(dev).mcp!["alpha-word"]).toBeUndefined()
-    expect(readConfig(dev).mcp!["alpha-excel"]).toBeUndefined()
-    expect(readLedgerV2(dev).records.map((record) => record.name)).toEqual(["alpha-powerpoint", "alpha-pdf"])
+    expect(outcome.warnings[1]).toContain("codepuppy-excel")
+    expect(readConfig(dev).mcp!["codepuppy-word"]).toBeUndefined()
+    expect(readConfig(dev).mcp!["codepuppy-excel"]).toBeUndefined()
+    expect(readLedgerV2(dev).records.map((record) => record.name)).toEqual(["codepuppy-powerpoint", "codepuppy-pdf"])
   })
 
   test("a sibling record without a config leaf, or a non-committed one, is not adopted", () => {
     const { prod, dev } = base()
     for (const connector of ALPHA_OFFICE_CONNECTORS) installRecord(prod, connector, "prod")
-    writeConfig(prod, { "alpha-word": leaf("word", STALE_SERVER) })
+    writeConfig(prod, { "codepuppy-word": leaf("word", STALE_SERVER) })
     const ledger = JSON.parse(readFileSync(join(prod, "installs.json"), "utf8")) as { records: Array<{ name: string; transaction: { state: string } }> }
-    ledger.records.find((record) => record.name === "alpha-word")!.transaction.state = "pending"
+    ledger.records.find((record) => record.name === "codepuppy-word")!.transaction.state = "pending"
     writeFileSync(join(prod, "installs.json"), JSON.stringify(ledger, null, 2))
     seedEmptyDevRoot(dev)
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
@@ -441,7 +441,7 @@ describe("reconcileAlphaOfficeInstalls — adopt from a sibling channel root", (
     const { prod, beta, dev } = base()
     seedProdLikeRoot(prod)
     writeFileSync(join(beta, "installs.json"), "{ not json")
-    writeConfig(beta, { "alpha-word": leaf("word", STALE_SERVER) })
+    writeConfig(beta, { "codepuppy-word": leaf("word", STALE_SERVER) })
     writeFileSync(join(dev, "installs.json"), "{ not json either")
     writeFileSync(join(dev, "alpha.jsonc"), DEV_CONFIG)
     const devBefore = snapshot(dev)
@@ -488,7 +488,7 @@ describe("reconcileAlphaOfficeInstalls — migrate uv-era entries in the current
 
       const { outcome, logged } = run(prod, "prod", [{ environment: "dev", root: dev }])
       expect(outcome).toEqual({ migrated: ALPHA_OFFICE_CONNECTORS.map((connector) => connector.name), reanchored: [], adopted: [], warnings: [] })
-      expect(logged.some((line) => line.includes("#1564 migrated alpha-word, alpha-excel, alpha-powerpoint, alpha-pdf"))).toBe(true)
+      expect(logged.some((line) => line.includes("#1564 migrated codepuppy-word, codepuppy-excel, codepuppy-powerpoint, codepuppy-pdf"))).toBe(true)
       const after = readConfig(prod)
       for (const connector of ALPHA_OFFICE_CONNECTORS) {
         expect(after.mcp![connector.name]).toEqual({ type: "local", command: officeCommand(connector.format, CURRENT_SERVER) })
@@ -510,11 +510,11 @@ describe("reconcileAlphaOfficeInstalls — migrate uv-era entries in the current
     seedProdLikeRoot(prod)
     const config = readConfig(prod)
     const drifted = { type: "local", command: ["uv", "run", "--no-project", "--with", "openpyxl==9.9.9", STALE_SERVER, "excel", WORKSPACE_MARKER], timeout: 5000 }
-    config.mcp!["alpha-excel"] = drifted as never
+    config.mcp!["codepuppy-excel"] = drifted as never
     writeFileSync(join(prod, "alpha.jsonc"), JSON.stringify(config, null, 2))
     const { outcome } = run(prod, "prod", [{ environment: "dev", root: dev }])
-    expect(outcome.migrated).toEqual(["alpha-word", "alpha-powerpoint", "alpha-pdf"])
-    expect(readConfig(prod).mcp!["alpha-excel"]).toEqual(drifted as never)
+    expect(outcome.migrated).toEqual(["codepuppy-word", "codepuppy-powerpoint", "codepuppy-pdf"])
+    expect(readConfig(prod).mcp!["codepuppy-excel"]).toEqual(drifted as never)
   })
 })
 
@@ -556,7 +556,7 @@ describe("reconcileAlphaOfficeInstalls — re-anchor a stale bundle path in the 
   test("a leaf without a record in the current root is not re-anchored (ownership is the ledger's)", () => {
     const { prod, dev } = base()
     seedEmptyDevRoot(dev)
-    writeConfig(dev, { "alpha-word": leaf("word", STALE_SERVER) })
+    writeConfig(dev, { "codepuppy-word": leaf("word", STALE_SERVER) })
     const before = snapshot(dev)
     const { outcome } = run(dev, "dev", [{ environment: "prod", root: prod }])
     expect(outcome.reanchored).toEqual([])

@@ -53,15 +53,15 @@ describe("installableCatalogEntries(REQ-135 Hub retirement view)", () => {
       mcp("mcp:excel", "legacy-by-id"),
       mcp("mcp:legacy-excel-alias", "excel-mcp-server"),
       mcp("mcp:renamed-excel", "renamed-sheets", "excel-mcp-server"),
-      mcp("mcp:alpha-excel", "alpha-excel"),
+      mcp("mcp:codepuppy-excel", "codepuppy-excel"),
       bundle("bundle:retired-id", "mcp:excel"),
       bundle("bundle:retired-alias", "mcp:legacy-excel-alias"),
       bundle("bundle:retired-command", "mcp:renamed-excel"),
-      bundle("bundle:alpha-office", "mcp:alpha-excel"),
+      bundle("bundle:alpha-office", "mcp:codepuppy-excel"),
     ]
 
     expect(installableCatalogEntries(entries).map((entry) => entry.id)).toEqual([
-      "mcp:alpha-excel",
+      "mcp:codepuppy-excel",
       "bundle:alpha-office",
     ])
     expect(installableCatalogEntries([bundle("bundle:orphan-retired-reference", "mcp:excel")])).toEqual([])
@@ -69,17 +69,17 @@ describe("installableCatalogEntries(REQ-135 Hub retirement view)", () => {
 
   test("preserves unrelated Office identities without mutating the source view", () => {
     const entries = [
-      mcp("mcp:alpha-excel", "alpha-excel"),
+      mcp("mcp:codepuppy-excel", "codepuppy-excel"),
       mcp("mcp:word", "office-word-mcp-server"),
       mcp("mcp:powerpoint", "office-powerpoint-mcp-server"),
-      bundle("bundle:alpha-office", "mcp:alpha-excel"),
+      bundle("bundle:alpha-office", "mcp:codepuppy-excel"),
       bundle("bundle:archived-office", "mcp:word"),
     ]
     const sourceIds = entries.map((entry) => entry.id)
 
     const installable = installableCatalogEntries(entries)
     expect(installable.map((entry) => entry.id)).toEqual([
-      "mcp:alpha-excel",
+      "mcp:codepuppy-excel",
       "mcp:word",
       "mcp:powerpoint",
       "bundle:alpha-office",
@@ -102,7 +102,7 @@ describe("installableCatalogEntries(REQ-135 Hub retirement view)", () => {
           mirrorCommand: ["uvx", "excel-mcp-server@1.0.0"],
         },
       },
-      mcp("mcp:alpha-excel", "alpha-excel"),
+      mcp("mcp:codepuppy-excel", "codepuppy-excel"),
     ]
     const packages = [
       packageView("mcp:excel", "mcp:safe"),
@@ -111,7 +111,7 @@ describe("installableCatalogEntries(REQ-135 Hub retirement view)", () => {
       packageView("package:retired-alias", "mcp:legacy-excel-alias"),
       packageView("package:retired-command", "mcp:renamed-excel"),
       packageView("package:retired-mirror-command", "mcp:renamed-excel-mirror"),
-      packageView("package:alpha-office", "mcp:alpha-excel"),
+      packageView("package:alpha-office", "mcp:codepuppy-excel"),
     ]
 
     const installable = installableCatalogPackages(packages, entries)

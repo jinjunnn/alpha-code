@@ -1027,14 +1027,14 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
     if (!ws.ok) expect(ws.reason).toContain("workspace")
 
     const alphaFiles = [{ path: "x.md", content: "alpha word" }]
-    buildSeed([{ id: "mcp:alpha-word", files: alphaFiles }])
+    buildSeed([{ id: "mcp:codepuppy-word", files: alphaFiles }])
     const alphaWord = await installAuthorized(
-      { source: "seed", assetId: "mcp:alpha-word", scope: { scope: "global" } },
+      { source: "seed", assetId: "mcp:codepuppy-word", scope: { scope: "global" } },
       makeSeedDeps({
         bundledEntries: [
           bundledMcpEntry({
-            id: "mcp:alpha-word",
-            name: "alpha-word",
+            id: "mcp:codepuppy-word",
+            name: "codepuppy-word",
             installSpec: {
               kind: "mcp",
               mcpType: "local",

@@ -134,7 +134,7 @@ describe("REQ-136 catalog install scope", () => {
       catalogInstallTargetFor(
         {
           ...mcpEntry,
-          name: "alpha-excel",
+          name: "codepuppy-excel",
           installSpec: { ...mcpEntry.installSpec, mcpType: "local", command: ["server"] },
         },
         "project",
@@ -225,13 +225,13 @@ describe("mcpRepair(#1564 AC6)", () => {
   }
 
   test("a first-party Office tool whose bundled interpreter is missing ⇒ reinstall Code Puppy", () => {
-    for (const name of ["alpha-word", "alpha-excel", "alpha-powerpoint", "alpha-pdf"]) expect(mcpRepair(name, missingInterpreter)).toBe("reinstall-app")
+    for (const name of ["codepuppy-word", "codepuppy-excel", "codepuppy-powerpoint", "codepuppy-pdf"]) expect(mcpRepair(name, missingInterpreter)).toBe("reinstall-app")
   })
 
   test("other failures, other states, and third-party connectors get no reinstall action", () => {
     expect(mcpRepair("my-tool", missingInterpreter)).toBeUndefined()
-    expect(mcpRepair("alpha-word", { ...missingInterpreter, code: "handshake_timeout" })).toBeUndefined()
-    expect(mcpRepair("alpha-word", { status: "pending", error: missingInterpreter.error })).toBeUndefined()
-    expect(mcpRepair("alpha-word", { status: "connected" })).toBeUndefined()
+    expect(mcpRepair("codepuppy-word", { ...missingInterpreter, code: "handshake_timeout" })).toBeUndefined()
+    expect(mcpRepair("codepuppy-word", { status: "pending", error: missingInterpreter.error })).toBeUndefined()
+    expect(mcpRepair("codepuppy-word", { status: "connected" })).toBeUndefined()
   })
 })

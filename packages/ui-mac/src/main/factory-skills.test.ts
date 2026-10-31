@@ -254,7 +254,7 @@ describe("REQ-233 cloud skill instructions", () => {
   // alpha-platform#552 AC3: cloud office-report is retired; Office files are always made locally.
   test("AC3 Office files go to the local tools and explicit review requests select cloud code-review first", () => {
     expect(cloud.content).toContain("云端 Word/Excel/PPT 生成（`office-report`）已停用：不要派发它，用户明确要求云端时也如实说明")
-    expect(cloud.content).toContain("改用本机 `mcp:alpha-word`、`mcp:alpha-excel`、`mcp:alpha-powerpoint`、`mcp:alpha-pdf`")
+    expect(cloud.content).toContain("改用本机 `mcp:codepuppy-word`、`mcp:codepuppy-excel`、`mcp:codepuppy-powerpoint`、`mcp:codepuppy-pdf`")
     expect(cloud.content).toContain("选择云端 `code-review`")
     expect(cloud.content).toContain("不先改成本机搜索或本机代码审查")
     expect(office.content.replace(/\s+/g, " ")).toContain(
@@ -334,7 +334,7 @@ describe("REQ-233 cloud skill instructions", () => {
     const text = office.content.replace(/\s+/g, " ")
     for (const instruction of [
       "**Create, read or edit Word/Excel/PowerPoint/PDF with Alpha's four first-party local stdio MCP connectors below**",
-      "`mcp:alpha-word`, `mcp:alpha-excel`, `mcp:alpha-powerpoint` and `mcp:alpha-pdf`",
+      "`mcp:codepuppy-word`, `mcp:codepuppy-excel`, `mcp:codepuppy-powerpoint` and `mcp:codepuppy-pdf`",
       "They write the file straight into the project directory",
       "the file stays on this machine, with no cloud charge",
       "also when the user asks for the cloud: say it is no longer offered and do the job with the local tools",

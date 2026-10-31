@@ -790,8 +790,8 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const proj = makeProject("proj-mcp-safety")
     const classifierEntry: CatalogEntry = {
       ...mcpProjectEntry,
-      id: "mcp:alpha-word",
-      name: "alpha-word",
+      id: "mcp:codepuppy-word",
+      name: "codepuppy-word",
       installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "-y", "harmless-looking"] },
     }
     const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, classifierEntry] })
@@ -808,7 +808,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(marker.ok).toBe(false)
     if (!marker.ok) expect(marker.reason).toContain("workspace-policy")
     const classified = await installAuthorized(
-      { catalogId: "mcp:alpha-word", scope: { scope: "project", projectDir: proj } },
+      { catalogId: "mcp:codepuppy-word", scope: { scope: "project", projectDir: proj } },
       deps,
     )
     expect(classified.ok).toBe(false)
@@ -965,7 +965,7 @@ describe("other kinds — derivation & records", () => {
   // 无差别 skip("phase 1"),继承自 REQ-100 落地时 deriveMcpConfig 的旧语义(彼时 {workspace}
   // 是必须显式传 grant 的占位,bundle 无 grant 通道故必然失败)。REQ-134(#1011)把语义改成
   // 「{workspace} 留字面量写盘、引擎 spawn 时按 instance 目录替换」后,这条早退分支不再拦截
-  // 任何 deriveMcpConfig 会失败的东西,只是把随包四条套件(mcp:filesystem/git/alpha-excel)
+  // 任何 deriveMcpConfig 会失败的东西,只是把随包四条套件(mcp:filesystem/git/codepuppy-excel)
   // 的合法安装挡在一句过期文案后面——见 jinjunnn/alpha-code#823。REQ-133 的身份/安全校验从
   // 未依赖这条早退分支,它是 applyMcpWritePolicy(单装同款策略闸)的职责,早退分支移除后依旧
   // 逐字节生效:下面两个 case 分别钉住「合规条目现在装得上」与「classification 不是靠早退分支
@@ -973,8 +973,8 @@ describe("other kinds — derivation & records", () => {
   test("REQ-133/#823: well-formed Alpha Office bundle child installs (workspace marker is not an atomic-bundle blocker)", async () => {
     const alphaWord: CatalogEntry = {
       ...mcpEntry,
-      id: "mcp:alpha-word",
-      name: "alpha-word",
+      id: "mcp:codepuppy-word",
+      name: "codepuppy-word",
       installSpec: {
         kind: "mcp",
         mcpType: "local",
@@ -991,11 +991,11 @@ describe("other kinds — derivation & records", () => {
     const result = await installAuthorized({ catalogId: office.id, scope: { scope: "global" } }, deps)
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.installed).toEqual(["mcp:alpha-word"])
+    expect(result.installed).toEqual(["mcp:codepuppy-word"])
     const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
     // 字面量占位原样写盘(REQ-134),{alphaResources} 被解到真实随包 server.py。
-    expect(cfg.mcp["alpha-word"].command.at(-1)).toBe("{workspace}")
-    expect(cfg.mcp["alpha-word"].command).toContain("word")
+    expect(cfg.mcp["codepuppy-word"].command.at(-1)).toBe("{workspace}")
+    expect(cfg.mcp["codepuppy-word"].command).toContain("word")
   })
 
   // #1564 审计 r1:安装准入也不再拿卡片命令做校验 —— alpha-web 把四张卡片的命令换成新形态(两个 {alphaResources})
@@ -1004,8 +1004,8 @@ describe("other kinds — derivation & records", () => {
     const resources = fs.realpathSync(path.resolve(import.meta.dir, "../../resources"))
     const newShape: CatalogEntry = {
       ...mcpEntry,
-      id: "mcp:alpha-word",
-      name: "alpha-word",
+      id: "mcp:codepuppy-word",
+      name: "codepuppy-word",
       installSpec: {
         kind: "mcp",
         mcpType: "local",
@@ -1013,7 +1013,7 @@ describe("other kinds — derivation & records", () => {
         requiredEnvVars: [],
       },
     }
-    const noCommand: CatalogEntry = { ...mcpEntry, id: "mcp:alpha-pdf", name: "alpha-pdf", installSpec: { kind: "mcp", mcpType: "local", requiredEnvVars: [] } }
+    const noCommand: CatalogEntry = { ...mcpEntry, id: "mcp:codepuppy-pdf", name: "codepuppy-pdf", installSpec: { kind: "mcp", mcpType: "local", requiredEnvVars: [] } }
     const { deps } = makeDeps({ entries: [...ALL_ENTRIES, newShape, noCommand] })
     for (const [entry, format] of [[newShape, "word"], [noCommand, "pdf"]] as const) {
       const result = await installAuthorized({ catalogId: entry.id, scope: { scope: "global" }, grants: { cnMirror: true } }, deps)
@@ -1031,8 +1031,8 @@ describe("other kinds — derivation & records", () => {
   test("REQ-133/#823 + #1564: applyMcpWritePolicy — not classifyBundleChild's early-out — persists main's template over a malformed card workspace argument", async () => {
     const spoofed: CatalogEntry = {
       ...mcpEntry,
-      id: "mcp:alpha-word-spoofed",
-      name: "alpha-word",
+      id: "mcp:codepuppy-word-spoofed",
+      name: "codepuppy-word",
       installSpec: {
         kind: "mcp",
         mcpType: "local",
@@ -1051,10 +1051,10 @@ describe("other kinds — derivation & records", () => {
     expect(result.ok).toBe(true)
     const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
     const resources = fs.realpathSync(path.resolve(import.meta.dir, "../../resources"))
-    expect(cfg.mcp["alpha-word"].command).toEqual([
+    expect(cfg.mcp["codepuppy-word"].command).toEqual([
       path.join(resources, "office-runtime", "bin", "python3"), "-I", "-B", path.join(resources, "office-mcp", "server.py"), "word", "{workspace}",
     ])
-    expect(JSON.stringify(cfg.mcp["alpha-word"])).not.toContain("/tmp/not-a-marker")
+    expect(JSON.stringify(cfg.mcp["codepuppy-word"])).not.toContain("/tmp/not-a-marker")
   })
 
   test("bundle: skill(generation)+ 无密钥 MCP(config)一次原子提交(REQ-100 #311)", async () => {
@@ -1808,7 +1808,7 @@ describe("#315 advisory 激活闸接线", () => {
       expect(retired.reason).toContain("REQ-135")
     }
     expect(installerCallCount(calls)).toBe(0)
-    expect(evaluateAdvisoryGate(null, { catalogId: "mcp:alpha-excel", name: "alpha-excel", provenance: "bundled" })).toEqual({ allowed: true })
+    expect(evaluateAdvisoryGate(null, { catalogId: "mcp:codepuppy-excel", name: "codepuppy-excel", provenance: "bundled" })).toEqual({ allowed: true })
   })
 
   test("REQ-135 stale office bundle cannot report success after its required community Excel child retires", async () => {
@@ -2889,7 +2889,7 @@ describe("ADR-040(`#825`):catalog plugin 条目在事务开始前具名拒绝", 
 // ── #823:随包 catalog 的四条套件必须全部真能装(不是内部函数返回 ok,是端到端 installCatalog)──
 //
 // 勘破(见 jinjunnn/alpha-code#823):四条随包套件此前一条都装不上 —— bundle:office/research/dev
-// 的必需成员(mcp:filesystem/git/alpha-excel)全带 {workspace} 占位,撞在 classifyBundleChild 一条
+// 的必需成员(mcp:filesystem/git/codepuppy-excel)全带 {workspace} 占位,撞在 classifyBundleChild 一条
 // 继承自 REQ-100(2026-07-13)落地时旧语义的早退分支上(见上面 classifyBundleChild 内的 #823 注释)。
 // bundle:design 的必需成员是两个远程技能、不含任何 MCP,从未受这个 bug 影响(它本来就走
 // authorize→confirm 就能装成;这里把它也钉进来只是为了让"随包四条套件全部可装"这句话对全部
@@ -2958,7 +2958,7 @@ describe("#823:随包 catalog 四条套件端到端可装(真实 alpha-catalog.j
 //
 // 现象定位(2026-07-14 逐需求审计 · REQ-105 原文:「receipt 记录条目版 1.0.0 而实际执行 0.1.8 且
 // 无包 digest 字段」):
-//   · `alpha-catalog.json` 的 `mcp:alpha-excel` 卡片版本是 `1.0.0`;
+//   · `alpha-catalog.json` 的 `mcp:codepuppy-excel` 卡片版本是 `1.0.0`;
 //   · 它真正执行的是随包 `resources/office-mcp/server.py` + 钉版依赖 —— 卡片版本一个字都不描述它;
 //   · `synthesizeManifest` 的 `version` 取的就是卡片版本,`artifact` 只在 `remoteAsset.files` 在场时
 //     才有(MCP 条目没有)⇒ 修复前 receipt 上 **零** digest 能指认执行物。
@@ -2975,11 +2975,18 @@ describe("REQ-105 #319:Excel 包版本 + 执行物 digest 落盘并可在重启�
       { path: BUNDLED_OFFICE_SERVER_PATH, sha256: crypto.createHash("sha256").update(fs.readFileSync(bundledServer)).digest("hex") },
     ])
 
+  /** alpha-code#1568:四个 Office 条目的 id / name 改名由 alpha-web#283 重签目录承担,随包快照在 RC 构建前才同步。
+   *  在那之前这里用「只把这四个 id / name(含 bundle 成员引用)换成新名」的快照副本,版本、钉版命令等其余安装事实
+   *  逐字取自真快照;快照同步后这一层替换不再命中任何字节,可以删掉。 */
+  const renamedOfficeSnapshot = JSON.parse(
+    JSON.stringify(bundledCatalogSnapshot).replace(/"(mcp:)?alpha-(word|excel|powerpoint|pdf)"/g, '"$1codepuppy-$2"'),
+  ) as { entries: CatalogEntry[] }
+
   /** 随包 catalog 快照里**真实**的 Excel 条目(不是手搓夹具 —— 卡片版本 1.0.0 与钉版命令都要如实)。 */
   function bundledExcelEntry(): CatalogEntry {
-    const raw = bundledCatalogSnapshot as unknown as { entries: CatalogEntry[] }
-    const entry = raw.entries.find((e) => e.id === "mcp:alpha-excel")
-    if (!entry) throw new Error("bundled catalog no longer ships mcp:alpha-excel")
+    const raw = renamedOfficeSnapshot
+    const entry = raw.entries.find((e) => e.id === "mcp:codepuppy-excel")
+    if (!entry) throw new Error("bundled catalog no longer ships mcp:codepuppy-excel")
     return entry
   }
 
@@ -3000,7 +3007,7 @@ describe("REQ-105 #319:Excel 包版本 + 执行物 digest 落盘并可在重启�
     const result = await installAuthorized({ catalogId: excel.id, scope: { scope: "global" } }, deps)
     expect(result.ok, result.ok ? "" : result.reason).toBe(true)
 
-    const record = findRecordV2(globalRoot, "mcp", "alpha-excel")
+    const record = findRecordV2(globalRoot, "mcp", "codepuppy-excel")
     expect(record?.version).toBe("1.0.0")
     expect(record?.payloadDigest).toBe(expectedArtifactDigest())
     // digest 不是既有字段的别名:manifestDigest 覆盖的是合成 manifest 的 canonical JSON,
@@ -3015,25 +3022,25 @@ describe("REQ-105 #319:Excel 包版本 + 执行物 digest 落盘并可在重启�
     expect(result.ok, result.ok ? "" : result.reason).toBe(true)
 
     const disk = ledgerOnDisk()
-    const onDiskRecord = disk.records.find((r) => r.name === "alpha-excel")
+    const onDiskRecord = disk.records.find((r) => r.name === "codepuppy-excel")
     // renderer 读的是 receipts[](`listInstalls` → `ext-list-installs`)—— digest 只落在
     // records[] 里等于「落了盘但用户永远看不到」,所以两份视图都要判。
-    const onDiskReceipt = disk.receipts.find((r) => r.name === "alpha-excel")
+    const onDiskReceipt = disk.receipts.find((r) => r.name === "codepuppy-excel")
     expect(onDiskRecord?.payloadDigest).toBe(expectedArtifactDigest())
     expect(onDiskReceipt?.payloadDigest).toBe(expectedArtifactDigest())
     expect(onDiskReceipt?.version).toBe("1.0.0")
   })
 
   test("the bundled Office suite records the same artifact digest as a direct install", async () => {
-    const entries = (bundledCatalogSnapshot as unknown as { entries: CatalogEntry[] }).entries
+    const entries = renamedOfficeSnapshot.entries
     const { deps } = makeDeps({ entries })
     const result = await installAuthorized({ catalogId: "bundle:office", scope: { scope: "global" } }, deps)
     expect(result.ok, result.ok ? "" : result.reason).toBe(true)
     // 先证明这一轮真的把 Excel 装进去了 —— 否则下面那条断言在「压根没装」时也会以 undefined
     // 对 undefined 之外的方式静默走偏(本仓教训:断言不能比缺陷粗一格)。
-    if (result.ok && result.kind === "bundle") expect(result.installed).toContain("mcp:alpha-excel")
+    if (result.ok && result.kind === "bundle") expect(result.installed).toContain("mcp:codepuppy-excel")
     else throw new Error("bundle:office did not install as a bundle")
-    const record = findRecordV2(globalRoot, "mcp", "alpha-excel")
+    const record = findRecordV2(globalRoot, "mcp", "codepuppy-excel")
     expect(record?.payloadDigest).toBe(expectedArtifactDigest())
   })
 
