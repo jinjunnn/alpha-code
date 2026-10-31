@@ -141,7 +141,7 @@ export function PermissionDialog(props: {
     approval.kind === "v2" || approval.kind === "project" || (approval.kind === "session" && !!saved?.length)
 
   const remember = () => {
-    if (approval.kind === "project")
+    if (approval.kind === "project" && approval.directory)
       return { what: t("alpha.permission.rememberTool"), scope: t("alpha.permission.projectScope") }
     if (approval.kind === "session" && saved?.length)
       return { what: rememberedText(props.request.action, saved), scope: t("alpha.permission.sessionScope") }

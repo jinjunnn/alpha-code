@@ -826,6 +826,7 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
 
     expect(decision("always").disabled).toBeTrue()
     expect(document.querySelector('[data-permission-note="project-missing"]')?.textContent).toBe("找不到当前项目,不能始终允许")
+    expect(rememberBox()).toBeNull()
     decision("always").click()
     await flush()
     expect(writes).toBe(0)
