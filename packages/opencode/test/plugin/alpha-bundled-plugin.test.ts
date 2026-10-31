@@ -147,7 +147,7 @@ const resolveSnapshots = Effect.gen(function* () {
   return { displays, descriptions }
 })
 
-const NOT_ASSERTED = { kind: "not-asserted" }
+const NOT_ASSERTED = { kind: "not-asserted" } as const
 
 describe("#1578 AC5 first-party extension plugin tools", () => {
   // 删掉 registry 里按清单给 authority(或 plugin/index.ts 里的核验)⇒ alpha_echo / alpha_ping 回到 not-asserted,当场红;

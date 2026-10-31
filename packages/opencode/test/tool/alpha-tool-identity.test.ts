@@ -310,7 +310,7 @@ describe("stable tool identity", () => {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-1578-refuted-")))
     try {
       const pack = officeBundle(tmp)
-      const notAsserted = { kind: "not-asserted" }
+      const notAsserted = { kind: "not-asserted" } as const
       expect(authorityForMcp("alpha-word", pack.entry("word"), pack.env).kind).toBe("alpha-bundled")
       expect(authorityForMcp("alpha-word", pack.entry("word", ["--extra"]), pack.env)).toEqual(notAsserted)
       const short = pack.entry("word")
