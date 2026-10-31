@@ -876,6 +876,18 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     for (const key of keys) expect(typeof (en as Record<string, string>)[key]).toBe("string")
   })
 
+  test("r1-3 身份轴 askedBy=policy 但没有 binding digest:写入必被 schema 拒,只给允许一次", async () => {
+    // MCP 没有生效条目、插件 origin 未知时引擎写不出 bindingDigest(alpha-tool-policy.ts subjectBindingDigest);
+    // 工具级 enabled 必须带它(schema/src/alpha-tool-policy.ts ToolPolicyRecord),给按钮 = 一个永远「没能保存」的按钮。
+    const permissionRequest = v1Identity("policy", { bindingDigest: undefined })
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+    await flush()
+
+    expect(document.querySelector('[data-permission-decision="always"]')).toBeNull()
+    expect(document.querySelector('[data-permission-note="every-time"]')?.textContent).toBe("这个工具每次都要确认")
+    expect(rememberBox()).toBeNull()
+  })
+
   test("AC6 新式请求(带 save):中间按钮仍是「始终允许」,照旧创建项目授权,五项事实与页脚说明都在", async () => {
     const commands: PermissionV2DecisionCommand[] = []
     mount(async (command) => {

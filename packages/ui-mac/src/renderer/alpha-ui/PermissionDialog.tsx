@@ -592,7 +592,7 @@ function exactFactRecord(value: unknown, expectedKeys: string[]) {
   return record
 }
 
-type ProjectApproval = { kind: "project"; directory?: string; canonical: string; bindingDigest?: string }
+type ProjectApproval = { kind: "project"; directory?: string; canonical: string; bindingDigest: string }
 
 /**
  * 这张卡的中间按钮是哪一种(REQ-236 方案 §2.4,判据都是引擎写进请求的事实):
@@ -600,7 +600,8 @@ type ProjectApproval = { kind: "project"; directory?: string; canonical: string;
  *  · `session`    —— v1 能力轴(`metadata.policy` 缺席):「本次会话内允许」= v1 `always`;
  *  · `project`    —— 身份轴且 `askedBy === "policy"`:「在此项目中始终允许」= 写设置里的工具策略;
  *  · `every-time` —— 身份轴且档位或权限规则要求每次确认(`askedBy === "ruleset"`):只能允许一次。
- *    `askedBy` 不是 `"policy"`、或 `canonical` 缺失时也落这一类 —— 拿不准就不给持久放行。
+ *    `askedBy` 不是 `"policy"`、或 `canonical` 缺失时也落这一类 —— 拿不准就不给持久放行;
+ *    没有 `bindingDigest` 同样落这一类:工具级「启用」必须带它(schema `ToolPolicyRecord`),写入必被拒。
  */
 function permissionApprovalOf(
   request: PermissionV2Request,
@@ -608,12 +609,13 @@ function permissionApprovalOf(
   if (!isPermissionV1Fingerprint(request.fingerprint)) return { kind: "v2" }
   const policy = errorRecord(request.metadata?.policy)
   if (!policy) return { kind: "session" }
-  if (policy.askedBy !== "policy" || typeof policy.canonical !== "string") return { kind: "every-time" }
+  if (policy.askedBy !== "policy" || typeof policy.canonical !== "string" || typeof policy.bindingDigest !== "string")
+    return { kind: "every-time" }
   return {
     kind: "project",
     directory: typeof policy.directory === "string" && policy.directory.trim() ? policy.directory : undefined,
     canonical: policy.canonical,
-    bindingDigest: typeof policy.bindingDigest === "string" ? policy.bindingDigest : undefined,
+    bindingDigest: policy.bindingDigest,
   }
 }
 
