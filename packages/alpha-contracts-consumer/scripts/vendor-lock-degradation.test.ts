@@ -43,6 +43,7 @@ const LOCK = "alpha-web-extension-package.lock.json"
 const NO_SOURCES = {
   ALPHA_PLATFORM_CONTRACT_SOURCE: "/nonexistent-769/platform",
   ALPHA_PLATFORM_MODEL_CATALOG_SOURCE: "/nonexistent-769/model-catalog",
+  ALPHA_PLATFORM_CLOUD_MCP_SOURCE: "/nonexistent-769/cloud-mcp",
   ALPHA_WEB_CONTRACT_SOURCE: "/nonexistent-769/web",
   ALPHA_WEB_EXTENSION_PACKAGE_SOURCE: "/nonexistent-769/web-extension-package",
 }
@@ -58,6 +59,7 @@ beforeEach(() => {
   for (const lock of [
     "alpha-platform-contract.lock.json",
     "alpha-platform-model-catalog.lock.json",
+    "alpha-platform-cloud-mcp.lock.json",
     "alpha-web-contract.lock.json",
     LOCK,
   ])

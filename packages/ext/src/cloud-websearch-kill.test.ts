@@ -78,14 +78,17 @@ const engineConfig = (servers: Record<string, unknown> = {}) => ({
 const owned = (env: Record<string, string | undefined>, servers?: Record<string, unknown>): McpOwnership =>
   computeMcpOwnership(engineConfig(servers), env)
 
+/** 治理云 server(本文件的测试 server 名 `cloud`)上平台公开的非搜网兄弟工具(alpha-code#1568:远端名只说动作)。 */
 const siblingCloudTools = [
   "cloud_dispatch",
   "cloud_status",
   "cloud_await",
   "cloud_artifacts",
-  "cloud_schedule_create",
-  "cloud_schedule_list",
-  "cloud_schedule_delete",
+  "cloud_cancel",
+  "cloud_web_fetch",
+  "cloud_vision",
+  "cloud_decide",
+  "cloud_account_status",
 ]
 
 describe("cloud web search kill switch", () => {
@@ -887,10 +890,10 @@ describe("跨实例隔离:治理归属按实例闭包,不串扰(#223 R7 Blocker)
 
     // 第三方 web search 在两侧都关(判据是工具形态,与归属快照无关)。
     for (const hooks of [a, b]) expect(await verdict(hooks, "exa_web_search_exa")).toBe("WebSearchSovereigntyError")
-    // AC4:兄弟云工具在两侧都照常执行(`cloud_dispatch` 除外 —— 同一钩子的下一句是**契约**校验,
-    // 空 args 会被它按 CloudJobRequestV1 拒掉,那与本闸无关)。
+    // AC4:兄弟云工具在两侧都照常执行(`cloud_dispatch` 与 `cloud_vision` 除外 —— 同一钩子后面还有**契约**校验 /
+    // 识图的参数改写,空 args 会被它们拒掉,那与本闸无关)。
     for (const hooks of [a, b])
-      for (const tool of siblingCloudTools.filter((tool) => tool !== "cloud_dispatch"))
+      for (const tool of siblingCloudTools.filter((tool) => tool !== "cloud_dispatch" && tool !== "cloud_vision"))
         expect([tool, await verdict(hooks, tool)]).toEqual([tool, null])
   })
 })

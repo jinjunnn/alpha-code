@@ -681,10 +681,10 @@ export function useExtensions(
   // 自愈,且每次重发都要等一次新的 loadStatus 观察,天然有界。
   //
   // server 名取**引擎报回来的那个**(与 hub 卡片同一把钥匙,extension-hub.tsx 的
-  // `store.mcp["cloud"]`),不在这里再写一遍注入面常量。
+  // `store.mcp["codepuppy"]`),不在这里再写一遍注入面常量。
   let cloudKickInFlight = false
   function kickDeferredCloudMcp(next: Record<string, InstalledState>) {
-    const cloud = next["cloud"]
+    const cloud = next["codepuppy"]
     if (!cloud || cloud.enabled || cloud.connected) return // 非 disabled(含未注入:BYOK/登出)
     if (cloudKickInFlight) return
     cloudKickInFlight = true

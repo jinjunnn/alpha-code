@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test"
 // #650:工具 id 一律从**引擎自己的**拼名规则推导。手喂字面量正是让这道闸空了整整一个需求的原因,
 // 所以这里装的是真的 `McpCatalog` 与真的 `Permission`,不是替身。
 import { McpCatalog } from "../../../opencode/src/mcp/catalog"
+import { CLOUD_MCP_TOOLS } from "./fixtures/cloud-mcp-tools"
 import { Permission } from "../../../opencode/src/permission/index"
 import {
   applyWebSearchDenies,
@@ -40,14 +41,14 @@ describe("web search sovereignty denies", () => {
   test("kill switch removes both web search tools while the cloud server and sibling tools remain live", () => {
     const diagnostics: string[] = []
     const config = {
-      mcp: { cloud: { type: "remote", url: "https://cloud.example/mcp", enabled: true } },
+      mcp: { codepuppy: { type: "remote", url: "https://cloud.example/mcp", enabled: true } },
       permission: { [CLOUD_WEB_SEARCH_TOOL_ID]: "allow", bash: "allow" },
       agent: alphaAgents(),
     }
 
     applyWebSearchDenies(config, { killSwitch: true, platformPays: false }, (message) => diagnostics.push(message))
 
-    expect(config.mcp.cloud.enabled).toBe(true)
+    expect(config.mcp.codepuppy.enabled).toBe(true)
     expect(registeredCloudTools.filter((tool) => config.permission[tool] === "deny")).toEqual([
       CLOUD_WEB_SEARCH_TOOL_ID,
     ])
@@ -153,7 +154,7 @@ describe("web search sovereignty denies", () => {
 
   test("logged-out/BYOK leaves cloud tool registration and existing permissions unchanged", () => {
     const config = {
-      mcp: { cloud: { type: "remote", url: "https://cloud.example/mcp", enabled: true } },
+      mcp: { codepuppy: { type: "remote", url: "https://cloud.example/mcp", enabled: true } },
       permission: { bash: "allow" },
       agent: alphaAgents(),
     }
@@ -162,7 +163,7 @@ describe("web search sovereignty denies", () => {
     applyWebSearchDenies(config, { killSwitch: false, platformPays: false }, (message) => diagnostics.push(message))
 
     expect(config).toEqual({
-      mcp: { cloud: { type: "remote", url: "https://cloud.example/mcp", enabled: true } },
+      mcp: { codepuppy: { type: "remote", url: "https://cloud.example/mcp", enabled: true } },
       permission: { bash: "allow" },
       agent: alphaAgents(),
     })
@@ -175,7 +176,7 @@ describe("web search sovereignty denies", () => {
 //
 // 原因不是逻辑写错,是**数据模型错**:注入面把「远端 server 自己 advertise 的工具名」当成了
 // 「引擎里的工具 id」。引擎按 `McpCatalog.toolName(server, remote)` 拼名,而云 worker 的远端名
-// 本身就叫 `cloud_web_search`,拼上 server 名 `cloud` 之后真实 id 是 `cloud_cloud_web_search`
+// 本身就叫 `cloud_web_search`,拼上 server 名 `cloud` 之后真实 id 是 `codepuppy_web_search`
 // (#643 P2.1 实测 `calledTool`)。写进 config 的 `cloud_web_search` 经 `Wildcard.match` 编成
 // `^cloud_web_search$`,对真实 id 恒不匹配 —— kill-switch 下云工具从来没有从模型工具表里消失过。
 //
@@ -195,7 +196,7 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
   // 远端工具名的**真源**是已部署的 worker,不是这个仓里的任何一处字面量。#643 的真机探针把
   // 「worker advertise 的名字」与「引擎据此算出的 id」都写进了取证产物 —— 拿它当锚,平台改名
   // 而这里没跟上时,下一次取证跑完就红。锚缺失也判红:没有真源 = 这两个常量无人担保。
-  test("远端名与引擎 id 与最近一次真机取证一致(#643)", () => {
+  test("最近一次真机取证(#643,改名前)与引擎拼名规则一致;今天的远端名由钉扎清单担保", () => {
     const evidence = JSON.parse(
       readFileSync(
         join(import.meta.dir, "../../../../docs/verification/2026-07-27-e7-packaged-live/results/latest-logged-in.json"),
@@ -203,8 +204,13 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
       ),
     ) as { schema?: string; phase?: string; remoteWebSearchToolName?: string; derivedEngineToolId?: string }
     expect([evidence.schema, evidence.phase]).toEqual(["alpha-code/e7-packaged-live/v1", "logged-in"])
-    expect(evidence.remoteWebSearchToolName).toBe(CLOUD_WEB_SEARCH_REMOTE_TOOL)
-    expect(evidence.derivedEngineToolId).toBe(CLOUD_WEB_SEARCH_TOOL_ID)
+    // alpha-code#1568:那次取证早于改名(远端名 `cloud_web_search`、服务器键 `cloud`)。引擎拼名规则没变 ——
+    // 取证里的两个名字仍由同一个 McpCatalog.toolName 互推;今天的远端名由 vendored 平台清单担保
+    // (`cloud-remote-names-pin.test.ts`),打包版重新取证归 T23。
+    expect(evidence.remoteWebSearchToolName).toBe("cloud_web_search")
+    expect(evidence.derivedEngineToolId).toBe(McpCatalog.toolName("cloud", evidence.remoteWebSearchToolName!))
+    expect(CLOUD_MCP_TOOLS).toContain(CLOUD_WEB_SEARCH_REMOTE_TOOL)
+    expect(CLOUD_WEB_SEARCH_TOOL_ID).toBe(McpCatalog.toolName("codepuppy", "web_search"))
   })
 
   /**
@@ -279,7 +285,7 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
 
   // 模型看得见的那句话里点名的工具必须真的存在,否则拒绝文案本身就是错误指路。
   //
-  // `#1411`:这条断言以前要求那句话**必须**点名 `cloud_cloud_web_search`(「本地腿被代付关掉 ⇒ 去用
+  // `#1411`:这条断言以前要求那句话**必须**点名 `codepuppy_web_search`(「本地腿被代付关掉 ⇒ 去用
   // 云腿」)。代付不再关本地腿之后,`ALPHA_LOCAL_WEBSEARCH_DENY` 只由 kill-switch 置位 —— 而上面两条
   // kill-switch 断言已经证明那一态**云工具同样不在模型工具表里**。于是那句指路在唯一可达它的状态下
   // 必然是错的。基线 S5:指不出在场的替代就明说没有。

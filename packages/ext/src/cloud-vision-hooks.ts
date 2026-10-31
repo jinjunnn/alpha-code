@@ -9,7 +9,7 @@
 //     图片 part 本身**保留**(UI 里用户的气泡照常显示缩略图;换到能看图的模型时图还在)。追加的 part 随消息持久化,
 //     它的 metadata 里带**原图哈希、编号、云端正文**(`#1447` R1 M1)—— 重启后从这里恢复,同图再贴不再出网。
 //   · experimental.chat.messages.transform —— 每次请求前:①从历史消息重建登记簿(哈希与编号取持久化标记,不对引擎
-//     缩过的字节重算);②回放修正 `cloud_cloud_vision` 的部件(`#1447` R1 B2 / m4):被审核拒绝的调用在引擎里是
+//     缩过的字节重算);②回放修正 `codepuppy_vision` 的部件(`#1447` R1 B2 / m4):被审核拒绝的调用在引擎里是
 //     **抛错**(`mcp/catalog.ts` 对 isError 直接 throw ⇒ 部件 `status:"error"`,`tool.execute.after` 到不了),
 //     所以「这张图片无法识别」只能在这里换进本次请求的副本;`input.image` 若已被原地改写成 base64 本体
 //     (AI SDK 把同一个 input 对象既交给 execute 又放进 tool-call / tool-result 事件,处理器在收到事件那一刻
@@ -18,8 +18,8 @@
 //     副本里剔掉 —— 否则引擎 transform.ts 的 unsupportedParts 会把它们换成 `ERROR: Cannot read …`,与转写块打架。
 //     只改本次请求的副本,不动持久化的消息。
 //   · tool.execute.after —— Read 读到图片:登记(记路径);模型看不了图 ⇒ 转写块接到 output 尾部并在 metadata 打标记
-//     (同样带哈希 / 编号 / 正文);`cloud_cloud_vision` 成功返回 ⇒ 把 `args.image` 换回模型原来传的引用(m4 的另一半)。
-//   · tool.execute.before —— 模型调 `cloud_cloud_vision`:`args.image` 由引用**原地**换成压缩后的 base64、补 `mime`,
+//     (同样带哈希 / 编号 / 正文);`codepuppy_vision` 成功返回 ⇒ 把 `args.image` 换回模型原来传的引用(m4 的另一半)。
+//   · tool.execute.before —— 模型调 `codepuppy_vision`:`args.image` 由引用**原地**换成压缩后的 base64、补 `mime`,
 //     并**写死** `model:"qwen"` / `fallback_on_refusal:false`(整体替换 output.args 不生效,基线 §1b)。这条路走 `/mcp`,
 //     上限是**整包** 262144(`#1447` R1 B1),压缩按 `VISION_MCP_IMAGE_MAX_BYTES`。
 //   · experimental.chat.system.transform —— 只对看不了图的模型追加一句登记过的说明(不提 gemini)。
@@ -272,7 +272,7 @@ export function createCloudVisionHooks(deps: CloudVisionHookDeps) {
       }
     },
 
-    /** 基线 §2-B 第 2 条。命中 `cloud_cloud_vision` 时抛出 = 模型看到的工具错误(与 web search 闸同一机制)。 */
+    /** 基线 §2-B 第 2 条。命中 `codepuppy_vision` 时抛出 = 模型看到的工具错误(与 web search 闸同一机制)。 */
     async toolBefore(input: ToolInput, output: { args: unknown }): Promise<void> {
       const toolId = cloudVisionToolId(env)
       if (!toolId || input.tool !== toolId) return

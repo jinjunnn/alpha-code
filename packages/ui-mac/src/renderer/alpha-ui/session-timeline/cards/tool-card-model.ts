@@ -120,12 +120,12 @@ export interface ToolCardDispatch {
 // 资格 = 基线 §4:source="mcp" + **当次持久化 authority.kind="codepuppy-cloud"** +
 // 本表精确命中 identity.name。判云端的唯一铸币是 authority(F5/T3);server 配置键
 // (origin)与工具名都不是证据,所以本表不比对 origin 字符串 —— origin 冒充
-// "cloud" 而无 authority 的调用仍是第三方 MCP 降级卡。
+// "codepuppy" 而无 authority 的调用仍是第三方 MCP 降级卡。
 // identity.name 是引擎持久化的**远端工具原名**(mcp/index.ts:712 以 def.name 铸造),
-// 自带 `cloud_` 前缀,与引擎别名 `cloud_cloud_*`(server 名再拼一次)是两层,
+// platform#560 起只说动作(`dispatch`),与引擎别名 `codepuppy_*`(server 名再拼一次)是两层,
 // 后者只进开发者详情。远端名的今日权威 = alpha-platform
 // `packages/gateway/src/lib/mcp-tool-registry.ts` 的 **5 个**工具
-// (dispatch/status/await/artifacts/web_search);本表的 cloud_schedule_* 三条
+// (dispatch/status/await/artifacts/web_search);本表的 schedule_* 三条
 // 仅为 2026-07-31 之前持久化的历史行回放保留 —— schedule 已按 owner 裁决剔出
 // MCP 面(同仓 cloud-mcp.ts [#175] 注记,基线 cloud-mcp-resource-surface.md
 // §3.1/§5.8)。旧勘破「2026-07-22 匿名 tools/list 实测 8 个」
@@ -141,21 +141,21 @@ export interface AlphaCloudRule {
 }
 
 const ALPHA_CLOUD_RULES = new Map<string, AlphaCloudRule>([
-  ["cloud_web_search", { titleKey: "alpha.timeline.cloud.webSearch", targetInput: "query", links: true }],
-  ["cloud_dispatch", { titleKey: "alpha.timeline.cloud.dispatch", targetInput: "kind" }],
-  ["cloud_status", { titleKey: "alpha.timeline.cloud.status", targetInput: "job_id" }],
-  ["cloud_await", { titleKey: "alpha.timeline.cloud.await", targetInput: "job_id" }],
-  ["cloud_artifacts", { titleKey: "alpha.timeline.cloud.artifacts", targetInput: "job_id" }],
+  ["web_search", { titleKey: "alpha.timeline.cloud.webSearch", targetInput: "query", links: true }],
+  ["dispatch", { titleKey: "alpha.timeline.cloud.dispatch", targetInput: "kind" }],
+  ["status", { titleKey: "alpha.timeline.cloud.status", targetInput: "job_id" }],
+  ["await", { titleKey: "alpha.timeline.cloud.await", targetInput: "job_id" }],
+  ["artifacts", { titleKey: "alpha.timeline.cloud.artifacts", targetInput: "job_id" }],
   // #1576 AC5:平台注册表快照(`ui-mac/src/main/fixtures/cloud-mcp-tools.ts`)的其余 5 个;覆盖断言在
   // tool-card-provenance-gates.test.ts —— 快照新增名字而本表未补 ⇒ 红。标题定稿归命名迁移。
-  ["cloud_cancel", { titleKey: "alpha.timeline.cloud.cancel", targetInput: "job_id" }],
-  ["cloud_web_fetch", { titleKey: "alpha.timeline.cloud.webFetch" }],
-  ["cloud_vision", { titleKey: "alpha.timeline.cloud.vision" }],
-  ["cloud_decide", { titleKey: "alpha.timeline.cloud.decide" }],
-  ["cloud_account_status", { titleKey: "alpha.timeline.cloud.accountStatus" }],
-  ["cloud_schedule_create", { titleKey: "alpha.timeline.cloud.scheduleCreate", targetInput: "name" }],
-  ["cloud_schedule_list", { titleKey: "alpha.timeline.cloud.scheduleList" }],
-  ["cloud_schedule_delete", { titleKey: "alpha.timeline.cloud.scheduleDelete", targetInput: "schedule_id" }],
+  ["cancel", { titleKey: "alpha.timeline.cloud.cancel", targetInput: "job_id" }],
+  ["web_fetch", { titleKey: "alpha.timeline.cloud.webFetch" }],
+  ["vision", { titleKey: "alpha.timeline.cloud.vision" }],
+  ["decide", { titleKey: "alpha.timeline.cloud.decide" }],
+  ["account_status", { titleKey: "alpha.timeline.cloud.accountStatus" }],
+  ["schedule_create", { titleKey: "alpha.timeline.cloud.scheduleCreate", targetInput: "name" }],
+  ["schedule_list", { titleKey: "alpha.timeline.cloud.scheduleList" }],
+  ["schedule_delete", { titleKey: "alpha.timeline.cloud.scheduleDelete", targetInput: "schedule_id" }],
 ])
 
 // 宿主拥有的精确展示规则表:key = 完整 identity 的 (source∈{builtin,builtin-v2},

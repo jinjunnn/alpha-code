@@ -250,7 +250,7 @@ export function ExtensionHub(props: {
   // ⚠️ fail-close **不等于**复用未登录/BYOK 那套文案:此时用户确实已登录、确实在 platform 模式,
   // 说「切换到平台模式」既是假话,按钮点下去还是 no-op。恢复中因此走自己的一支(见云 tab 门控条)。
   const cloudReady = () => onPlatform() && !cloudRecovering()
-  const cloudLive = () => ext.store.mcp["cloud"]
+  const cloudLive = () => ext.store.mcp["codepuppy"]
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
   // #395(Codex r9 B3):启停唯一处理器 —— 行内开关(row)与详情页开关共用,保证详情页不再绕过

@@ -151,7 +151,7 @@ describe("REQ-125 C6/#879 identity 分派与四态", () => {
 
     const cloud = toolCardDispatchOf(
       part("cloud_web_search", undefined, {
-        identity: { source: "mcp", origin: "alpha-cloud", name: "web_search" },
+        identity: { source: "mcp", origin: "alpha-cloud", name: "cloud_web_search" },
         technicalId: "cloud_web_search",
         authority: { kind: "codepuppy-cloud", bindingId: "mcp:alpha-cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
       }),
@@ -1177,9 +1177,9 @@ describe("#1475 步骤行投影:来源标记只给非我方;行尾规则;答完�
       part("read", { input: { filePath: "/w/a.md" } }),
       part("lsp"),
       part("h", undefined, snap("host", "", "h")),
-      part("cloud_cloud_status", undefined, snap("mcp", "cloud", "cloud_status", {
+      part("codepuppy_status", undefined, snap("mcp", "codepuppy", "status", {
         kind: "codepuppy-cloud",
-        bindingId: "mcp:cloud",
+        bindingId: "mcp:codepuppy",
         evidenceDigest: `sha256:${"d".repeat(64)}`,
       })),
     ])

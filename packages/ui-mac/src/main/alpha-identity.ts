@@ -10,7 +10,7 @@
 export interface AlphaCapabilities {
   /**
    * 这一轮模型的工具表里**至少有一个** web search 工具(本地 keyless `websearch` 或云
-   * `cloud_cloud_web_search`)。两条腿都对**每个** provider 可见,所以提示里那句
+   * `codepuppy_web_search`)。两条腿都对**每个** provider 可见,所以提示里那句
    * "not just the default provider" 对两条腿都成立(`#1414` 勘破 §3.2)。
    */
   websearch?: boolean
@@ -30,7 +30,7 @@ export interface AlphaCapabilities {
 export function buildAlphaCapabilities(input: {
   /** 本地 keyless `websearch` 这一轮在不在模型工具表里。 */
   localWebSearch: boolean
-  /** 云 `cloud_cloud_web_search` 这一轮在不在模型工具表里。 */
+  /** 云 `codepuppy_web_search` 这一轮在不在模型工具表里。 */
   cloudWebSearch: boolean
   /** 云 MCP server(`cloud.*` 工具面)这一轮注册了没有。 */
   cloudDispatch: boolean

@@ -98,6 +98,23 @@ const UPSTREAMS = [
     ],
   },
   {
+    // alpha-code#1568 AC4 / platform#560:云 MCP 的公开工具清单(public-cloud-mcp.md §6,平台侧由
+    // `public-contract-doc-190` 与真 `tools/list` 逐行钉住)。桌面远端名表 ⊆ 这份清单由
+    // ui-mac `cloud-remote-names-pin.test.ts` 断言;读的是本 pin 的字节,不是手抄名单。
+    // 源:alpha-platform PR #567(分支 feat/560-short-tool-names)的 239a7cb —— 平台维护窗口内以 merge commit
+    // 合入,SHA 保持可达;合入后不必重钉,§6 再变才重钉。
+    repo: "jinjunnn/alpha-platform",
+    commit: "239a7cb9f85d618ce3e00bffb70c984960fd306a",
+    lock: "alpha-platform-cloud-mcp.lock.json",
+    vendor: "vendor/alpha-platform-cloud-mcp",
+    sourceEnv: "ALPHA_PLATFORM_CLOUD_MCP_SOURCE",
+    sourceDefault: "../alpha-platform",
+    sourceFallback: "../../../alpha-platform",
+    sourcePrefix: "docs/contracts",
+    commitBound: true,
+    files: ["public-cloud-mcp.md"],
+  },
+  {
     // alpha-web publishes the consumer fixtures for alpha-code's two web-owned surfaces
     // (alpha-web#23 / alpha-work#9 AC3). They are exercised through the shipped decoders in
     // packages/ui-mac/src/main/alpha-web-contract-fixtures.test.ts — an upstream change those

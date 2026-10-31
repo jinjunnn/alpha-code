@@ -1,11 +1,11 @@
 // B3 cloud-run 回流 watcher 的纯解析核(renderer,无 DOM/无 SDK 依赖,可单测)。
 // 输入 = /global/event firehose 信封;命中条件 = message.part.updated 里的**第一方 cloud
-// facade** tool part(#934:准入 = 持久化 identity (mcp, "cloud"),与时间线产物行同一枚
-// 铸币,见 cloud-facade-identity.ts;`cloud_` 别名前缀不再参与 —— 它由第三方完全控制,
+// facade** tool part(#934:准入 = 持久化 identity (mcp, "codepuppy"),与时间线产物行同一枚
+// 铸币,见 cloud-facade-identity.ts;`codepuppy_` 别名前缀不参与 —— 它由第三方完全控制,
 // opencode mcp/catalog.ts:119 / tool/registry.ts:195)到达 completed 帧,且:
-//   · source "dispatch" —— 远端名 `cloud_dispatch`、output 是已受理回执(CloudJobAcceptedV1:queued + job_id)。
+//   · source "dispatch" —— 远端名 `dispatch`、output 是已受理回执(CloudJobAcceptedV1:queued + job_id)。
 //     REQ-236 #1551:受理即交给宿主跟踪,模型之后等不等都一样落盘;这是**唯一**能记下发起会话的来源;
-//   · source "status" —— 任一 facade 调用(cloud_await / cloud_status …)的 output 已是终态。只触发交付,不带归属。
+//   · source "status" —— 任一 facade 调用(await / status …)的 output 已是终态。只触发交付,不带归属。
 
 import { isCloudFacadeToolPart } from "./cloud-facade-identity"
 import type { CloudRunState } from "../../preload/types"
@@ -82,7 +82,7 @@ export function extractCloudRunHit(event: unknown): CloudRunHit | null {
     ...(typeof part.messageID === "string" && part.messageID ? { messageID: part.messageID } : {}),
     ...(typeof part.id === "string" && part.id ? { partID: part.id } : {}),
   }
-  if (part.display?.identity?.name === "cloud_dispatch") {
+  if (part.display?.identity?.name === "dispatch") {
     const runId = parseAcceptedDispatch(part.state.output)
     return runId ? { directory: e.directory, runId, source: "dispatch", ...ids } : null
   }

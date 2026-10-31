@@ -293,7 +293,7 @@ export function extensionError(reason: string | undefined, fallback: Parameters<
   if (/^command (not allowed:|arg not allowed:|args must be strings)/.test(reason)) return t("alpha.ext.error.commandUnsupported")
   if (reason.startsWith("env var not allowed:")) return t("alpha.ext.error.envUnsupported")
   if (reason.startsWith("field not allowed:")) return t("alpha.ext.error.configFieldUnsupported")
-  if (reason.startsWith('server name "cloud" is reserved')) return t("alpha.ext.error.cloudNameReserved")
+  if (reason.startsWith('server name "codepuppy" is reserved')) return t("alpha.ext.error.cloudNameReserved")
   if (/^(非法 frontmatter:)?name 缺失或不合法/.test(reason)) return t("alpha.ext.error.importName")
   if (reason.includes("不能隐藏") || reason.includes("隐藏会使其入口消失")) return t("alpha.ext.error.builtinHidden")
   if (reason.includes("build 是引擎兜底 agent")) return t("alpha.ext.error.builtinConfirmBuild")

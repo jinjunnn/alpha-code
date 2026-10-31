@@ -1012,7 +1012,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       assistantFixture([
         toolPartFixture(
           "prt_c1",
-          "cloud_cloud_web_search",
+          "codepuppy_web_search",
           {
             status: "completed",
             input: { query: "alpha-code e7 部署证据" },
@@ -1022,19 +1022,19 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
             time: { start: 0, end: 1 },
           },
           {
-            identity: { source: "mcp", origin: "cloud", name: "cloud_web_search" },
-            technicalId: "cloud_cloud_web_search",
-            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` },
+            identity: { source: "mcp", origin: "codepuppy", name: "web_search" },
+            technicalId: "codepuppy_web_search",
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"d".repeat(64)}` },
           },
         ),
         toolPartFixture(
           "prt_c2",
-          "cloud_cloud_await",
+          "codepuppy_await",
           { status: "running", input: { job_id: "run_77bd" }, time: { start: 0 } },
           {
-            identity: { source: "mcp", origin: "cloud", name: "cloud_await" },
-            technicalId: "cloud_cloud_await",
-            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"e".repeat(64)}` },
+            identity: { source: "mcp", origin: "codepuppy", name: "await" },
+            technicalId: "codepuppy_await",
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"e".repeat(64)}` },
           },
         ),
       ]),
@@ -1044,7 +1044,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
 
     // 完成态 web search(design ⑧):图标 + 搜索 + "query";来源徽标与「完成」都不再常驻。
     // `#1475`:本机搜索与云端搜索同一个写法;动作名本身不再另挂「云端」。
-    const search = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_web_search']")!
+    const search = host.querySelector("[data-alpha-tool-card][data-tool='codepuppy_web_search']")!
     expect(search.getAttribute("data-kind")).toBe("cloud")
     expect(search.getAttribute("data-category")).toBe("codepuppy-cloud")
     expect(search.querySelector(".a-tl-pf-v")!.textContent).toBe("搜索")
@@ -1055,7 +1055,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(search.querySelector("[data-alpha-dev-details]")).toBeNull()
     // T8:步骤行拿不到任何一层技术 id;它们只活在详情底部默认折叠的开发者详情里。
     const headText = search.querySelector(".a-tl-pf-step")!.textContent!
-    expect(headText).not.toContain("cloud_cloud_web_search")
+    expect(headText).not.toContain("codepuppy_web_search")
     expect(headText).not.toContain("cloud_web_search")
     await openStep(search)
     const detail = search.querySelector("[data-alpha-step-detail]")!
@@ -1063,21 +1063,21 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     const dev = search.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!
     expect(dev.open).toBe(false)
     expect(dev.querySelector("summary")!.textContent).toBe("开发者详情")
-    expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("cloud_cloud_web_search")
-    expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("mcp:cloud:cloud_web_search")
+    expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("codepuppy_web_search")
+    expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("mcp:codepuppy:web_search")
     // 链接体:URL 过 redactor 后可点(matched 云卡有 body)。
     // #586 起链接行 = 富链接形态(字母徽 + 域名),云卡与 builtin websearch 同一管线。
     const links = [...search.querySelectorAll(".a-tc-wr")].map((node) => node.getAttribute("href"))
     expect(links).toEqual(["https://docs.example.org/deploy", "https://blog.example.net/e7"])
 
     // 运行态 await:同一形态的语义标题 + 关键目标 + 运行中;绝不显示拼接 id。
-    const awaiting = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_await']")!
+    const awaiting = host.querySelector("[data-alpha-tool-card][data-tool='codepuppy_await']")!
     expect(awaiting.getAttribute("data-status")).toBe("running")
     expect(awaiting.querySelector(".a-tl-pf-v")!.textContent).toBe("等待云端任务")
     expect(awaiting.querySelector(".a-tl-pf-o")!.textContent).toBe("run_77bd")
     expect(awaiting.querySelector("[data-alpha-source-badge]")).toBeNull()
     expect(awaiting.querySelector(".a-tl-pf-end")!.textContent).toContain("运行中")
-    expect(awaiting.querySelector(".a-tl-pf-step")!.textContent).not.toContain("cloud_cloud_await")
+    expect(awaiting.querySelector(".a-tl-pf-step")!.textContent).not.toContain("codepuppy_await")
   })
 
   test("#587 来源呈现 + 安全通用卡:常驻徽标退场,降级步骤写来源分类、详情陈述确定的隐藏理由,matched 步骤没有安全卡", async () => {
@@ -1197,10 +1197,10 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           authority: { kind: "not-asserted" },
           location: { kind: "local" },
         }),
-        toolPartFixture("prt_l2", "cloud_cloud_dispatch", done({ kind: "research" }), {
-          identity: { source: "mcp", origin: "cloud", name: "cloud_dispatch" },
-          technicalId: "cloud_cloud_dispatch",
-          authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
+        toolPartFixture("prt_l2", "codepuppy_dispatch", done({ kind: "research" }), {
+          identity: { source: "mcp", origin: "codepuppy", name: "dispatch" },
+          technicalId: "codepuppy_dispatch",
+          authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"a".repeat(64)}` },
           location: { kind: "remote", host: "cloud.example" },
         }),
         toolPartFixture("prt_l3", "notion_search_pages", done(), {
@@ -1227,7 +1227,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(endOf(own)).toBeUndefined()
     expect(footOf(own)).toBe("Code Puppy 内置 · 本机")
 
-    const cloud = item("cloud_cloud_dispatch")
+    const cloud = item("codepuppy_dispatch")
     expect(endOf(cloud)).toBe("云端")
     expect(footOf(cloud)).toBe("Code Puppy 云 · 云端")
 
@@ -1244,7 +1244,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
 
     // AC6:开发者详情保留 identity、authority 种类、bindingId、evidenceDigest 与 location(插件另有 origin)。
     const cloudDev = cloud.querySelector("[data-alpha-dev-details] .a-tc-dev-body")!.textContent!
-    for (const needle of ["mcp:cloud:cloud_dispatch", "codepuppy-cloud", "mcp:cloud", `sha256:${"a".repeat(25)}`, "location: remote · cloud.example"])
+    for (const needle of ["mcp:codepuppy:dispatch", "codepuppy-cloud", "mcp:codepuppy", `sha256:${"a".repeat(25)}`, "location: remote · cloud.example"])
       expect({ needle, present: cloudDev.includes(needle) }).toEqual({ needle, present: true })
     const plugDev = plug.querySelector("[data-alpha-dev-details] .a-tc-dev-body")!.textContent!
     expect(plugDev).toContain("location: local")
@@ -1299,18 +1299,18 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     // 用真引擎构造钉住;此处按同形态字面量驱动 DOM 半场)。
     const askTimeoutMessage =
       "审批请求等待 300 秒无人应答,已按 fail-closed 结束:本次操作**没有**被放行。\n" +
-      '请求:permission=mcp:cloud:cloud_web_search patterns=["*"]\n' +
+      '请求:permission=mcp:codepuppy:web_search patterns=["*"]\n' +
       "常见原因:审批对话框所在的会话页没有打开(切到了别的会话/别的页面),或审批面未连上本会话。"
     runtime.setTimelineRows(
       assistantFixture([
         // 审批超时的 mcp 工具:必须能读出可辨识原因(已超时 / 未获批准)。
         toolPartFixture(
           "prt_t1",
-          "cloud_cloud_web_search",
+          "codepuppy_web_search",
           { status: "error", input: { query: "秘密查询词" }, error: askTimeoutMessage, time: { start: 0, end: 1 } },
           {
-            identity: { source: "mcp", origin: "cloud", name: "cloud_web_search" },
-            technicalId: "cloud_cloud_web_search",
+            identity: { source: "mcp", origin: "codepuppy", name: "web_search" },
+            technicalId: "codepuppy_web_search",
             authority: { kind: "not-asserted" },
           },
         ),
@@ -1330,7 +1330,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     await flush()
     await openProcess(host)
 
-    const timeoutCard = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_web_search']")!
+    const timeoutCard = host.querySelector("[data-alpha-tool-card][data-tool='codepuppy_web_search']")!
     expect(timeoutCard.getAttribute("data-status")).toBe("error")
     // 步骤行尾就写「没等到你批准」,不用点开也读得出来;详情里再给完整的人话。
     expect(timeoutCard.querySelector("[data-alpha-step-failure]")!.textContent).toBe("没等到你批准")
@@ -2324,9 +2324,9 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
           // #879 审计 R-final:产物行准入 = 第一方 cloud facade identity(mcp, "cloud"),
           // 不再是 cloud_ 别名前缀 —— 夹具与真实注入的 facade 快照同形状。
           {
-            identity: { source: "mcp", origin: "cloud", name: "await" },
+            identity: { source: "mcp", origin: "codepuppy", name: "await" },
             technicalId: "cloud_await",
-            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"c".repeat(64)}` },
           },
         ),
       ]),
@@ -2378,9 +2378,9 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
             time: { start: 0, end: 1 },
           },
           {
-            identity: { source: "mcp", origin: "cloud", name: "artifacts" },
+            identity: { source: "mcp", origin: "codepuppy", name: "artifacts" },
             technicalId: "cloud_artifacts",
-            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"c".repeat(64)}` },
           },
         ),
       ]),
@@ -4108,7 +4108,7 @@ test.each(["image", "document"])("AC2 #1503: cloud %s click previews the selecte
   }
   const parts = runs.map((run, index) => ({ ...toolPartFixture(`prt_cloud_${index}`, "cloud_artifacts", {
     status: "completed", input: { job_id: run.runId }, output: JSON.stringify(run.response), title: "artifacts", metadata: {}, time: { start: 10 + index, end: 11 + index },
-  }, { identity: { source: "mcp", origin: "cloud", name: "artifacts" }, technicalId: "cloud_artifacts", authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` } }), sessionID: BINDING_SESSION_ID, messageID: "msg_preview" }))
+  }, { identity: { source: "mcp", origin: "codepuppy", name: "artifacts" }, technicalId: "cloud_artifacts", authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"d".repeat(64)}` } }), sessionID: BINDING_SESSION_ID, messageID: "msg_preview" }))
   const host = mountInlinePreview(parts)
   await settlePreview()
   const buttons = [...host.querySelectorAll<HTMLButtonElement>("button.a-artrow")]
@@ -4161,12 +4161,12 @@ describe("REQ-236 #1552 生图卡", () => {
     local: { savedPath: "artifacts/lighthouse.png", downloadedAt: "2026-10-30T00:00:00Z", bytesOnDisk: png.length, state, warnings: [] },
   })
   const facade = (name: string) => ({
-    identity: { source: "mcp", origin: "cloud", name },
+    identity: { source: "mcp", origin: "codepuppy", name },
     technicalId: name,
     authority: { kind: "not-asserted" },
   })
   const dispatchPart = (state: Record<string, unknown>) =>
-    toolPartFixture("prt_img", "cloud_cloud_dispatch", state, facade("cloud_dispatch"))
+    toolPartFixture("prt_img", "codepuppy_dispatch", state, facade("dispatch"))
   const accepted = () =>
     dispatchPart({
       status: "completed",

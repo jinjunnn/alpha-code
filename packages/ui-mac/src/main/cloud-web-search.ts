@@ -1,12 +1,12 @@
 /** 注入面给云 MCP server 起的名字。工具 id 由它与远端工具名拼成(见 `cloudMcpToolId`)。 */
-export const CLOUD_MCP_SERVER_NAME = "cloud"
+export const CLOUD_MCP_SERVER_NAME = "codepuppy"
 
 /**
- * 已部署云 worker **自己** advertise 的远端工具名(#643 P1.3 实测 `remoteToolNames` 含
- * `cloud_web_search`)。**它不是引擎里的工具 id** —— 远端名自带 `cloud_` 前缀纯属命名巧合,
- * 引擎还会再拼一次 server 名。混淆这两层正是 #650 的缺陷。
+ * 已部署云 worker **自己** advertise 的远端工具名(platform#560 起只说动作:`web_search`)。
+ * **它不是引擎里的工具 id** —— 引擎还会再拼一次 server 名(`codepuppy_web_search`)。
+ * 混淆这两层正是 #650 的缺陷。
  */
-export const CLOUD_WEB_SEARCH_REMOTE_TOOL = "cloud_web_search"
+export const CLOUD_WEB_SEARCH_REMOTE_TOOL = "web_search"
 
 /** `McpCatalog.sanitize`(`packages/opencode/src/mcp/catalog.ts:117`)逐字同义。 */
 const sanitizeMcpName = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_")
@@ -20,8 +20,8 @@ export const cloudMcpToolId = (remoteName: string) =>
   `${sanitizeMcpName(CLOUD_MCP_SERVER_NAME)}_${sanitizeMcpName(remoteName)}`
 
 /**
- * 云 web search 在**引擎**里的真实工具 id = `cloud_cloud_web_search`(#643 P2.1 实测
- * `calledTool`)。
+ * 云 web search 在**引擎**里的真实工具 id = `codepuppy_web_search`(服务器键 + 远端名;#643 P2.1
+ * 当时实测为改名前的 `cloud_cloud_web_search`)。
  *
  * **#650**:这里以前写的是远端名 `cloud_web_search`。它经 `Permission.fromConfig` →
  * `Permission.disabled` → `Wildcard.match` 编成 `^cloud_web_search$`,对真实 id 恒不匹配 ——
@@ -39,7 +39,7 @@ export const LOCAL_WEB_SEARCH_TOOL_ID = "websearch"
  */
 export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
 /**
- * 云侧同一条通道(#223 R3)。云 web search(引擎 id `cloud_cloud_web_search`)是**远端 MCP 工具**,没有 alpha 能改的
+ * 云侧同一条通道(#223 R3)。云 web search(引擎 id `codepuppy_web_search`)是**远端 MCP 工具**,没有 alpha 能改的
  * `execute` 首行可放闸,而 `ConfigMCPV1.Remote`(`packages/core/src/v1/config/mcp.ts`)只有
  * 整 server 的 `enabled`,**没有 per-tool 过滤** —— 「注册期就不提供这个工具」在引擎侧不存在。
  * 于是最终闸落在 alpha 自有的 ext 插件的 `tool.execute.before` 钩子
@@ -85,7 +85,7 @@ export const WITHHELD_CLOUD_MCP = {
  * ext 的 `tool.execute.before` 闸现在对**任何** MCP server 上的 web search 形态生效(用户自带的
  * `exa_web_search_exa` 也在内,见 `packages/ext/src/cloud-websearch-kill.ts` 的 R5 段)。唯一的
  * 例外是这个 server:平台代付时它是**权威**通道,只有 kill-switch 才关它。ext 靠本变量识别它,
- * 而不是写死 `"cloud"` 字面量。注入面在每次 fork 注册云 server 时置位、否则删除。
+ * 而不是写死 `"codepuppy"` 字面量。注入面在每次 fork 注册云 server 时置位、否则删除。
  */
 export const CLOUD_MCP_SERVER_ENV = "ALPHA_CLOUD_MCP_SERVER"
 
@@ -150,8 +150,8 @@ export type WebSearchSovereignty = {
 /**
  * 把 ADR-009 的 web search 主权判决落到引擎 permission 层。
  *
- * - **云 web search(`CLOUD_WEB_SEARCH_TOOL_ID` = `cloud_cloud_web_search`)**:仅 kill-switch 时 deny(alpha-code#490)。`ConfigMCPV1.Remote`
- *   只支持整 server 开关,而整 server 关会误伤 `cloud_dispatch` 等兄弟工具。**这层同样只是
+ * - **云 web search(`CLOUD_WEB_SEARCH_TOOL_ID` = `codepuppy_web_search`)**:仅 kill-switch 时 deny(alpha-code#490)。`ConfigMCPV1.Remote`
+ *   只支持整 server 开关,而整 server 关会误伤 `codepuppy_dispatch` 等兄弟工具。**这层同样只是
  *   可用性**(#223 R3):远端 MCP 工具最终走 `ctx.ask`,后置 allow / `approved` 都能顶掉它。
  *   云侧不可覆盖的最终闸在 `packages/ext/src/cloud-websearch-kill.ts` 的 `tool.execute.before`
  *   钩子,判决经 `CLOUD_WEBSEARCH_DENY_ENV` 过河。

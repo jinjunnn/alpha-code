@@ -126,12 +126,12 @@ export const AlphaExt: Plugin = async (input) => {
       // 不是名字前缀(#223 R6),且核验结果取**本实例**的那一份(#223 R7)。理由、产品语义与
       // 边界见 cloud-websearch-kill.ts。
       assertWebSearchToolAllowed(hookInput.tool, process.env, mcpOwnership)
-      validateCloudToolInput(hookInput.tool, output.args)
-      // `#1419`:模型追问 —— `cloud_cloud_vision` 的 args.image 由引用原地换成压缩后的 base64。
+      validateCloudToolInput(hookInput.tool, output.args, process.env, mcpOwnership)
+      // `#1419`:模型追问 —— `codepuppy_vision` 的 args.image 由引用原地换成压缩后的 base64。
       await vision.toolBefore(hookInput, output)
     },
     "tool.execute.after": async (hookInput, output) => {
-      validateCloudToolOutput(hookInput.tool, output)
+      validateCloudToolOutput(hookInput.tool, output, process.env, mcpOwnership)
       // `#1419`:Read 读到的图片走自动转写;cloud_vision 被审核拒绝 ⇒「这张图片无法识别」。
       await vision.toolAfter(hookInput, output)
     },

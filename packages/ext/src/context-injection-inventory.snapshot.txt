@@ -22,7 +22,7 @@ instruction.alpha-identity                          text      instruction       
 instruction.alpha-identity+cloudDispatch            text      instruction              573    1024   56%
 instruction.alpha-identity+websearch                text      instruction              523    1024   51%
 instruction.alpha-identity+websearch+cloudDispatch  text      instruction              729    1024   71%
-tool.codepuppy_access.description                   text      tool-description         205    1024   20%
+tool.codepuppy_access.description                   text      tool-description         246    1024   24%
 tool.codepuppy_echo.args.shout                      text      tool-arg-description      25    1024    2%
 tool.codepuppy_echo.args.text                       text      tool-arg-description      21    1024    2%
 tool.codepuppy_echo.description                     text      tool-description         121    1024   12%
@@ -70,7 +70,7 @@ rebrand.identity-gemini                             rebrand   system            
 rebrand.identity-gpt                                rebrand   system                    61     512   12%
 rebrand.identity-kimi                               rebrand   system                    81     512   16%
 rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
-fragments: 70; injected bytes: 27677; declared limits total: 130048
+fragments: 70; injected bytes: 27718; declared limits total: 130048
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)

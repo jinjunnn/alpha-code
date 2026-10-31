@@ -352,12 +352,12 @@ describe("③b system.transform 咽喉:输出 == 输入 + 登记过的替换,一
     const token = join(root, "mcp-token")
     writeFileSync(token, "tok-throat\n")
     process.env.ALPHA_BASE_URL = "https://gateway.invalid/v1"
-    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+    process.env[CLOUD_MCP_SERVER_ENV] = "codepuppy"
     process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://cloud.invalid/mcp", enabled: true, headers: { Authorization: `Bearer {file:${token}}` }, oauth: false })
     const online = await runSystem(input, BLIND)
     expect(unexplainedSystem(input, online)).toEqual([])
     expect(online.length).toBe(2)
-    expect(online[1]).toContain("cloud_cloud_vision")
+    expect(online[1]).toContain("codepuppy_vision")
     for (const note of [offline[1]!, online[1]!]) expect(/gemini/i.test(note), note).toBe(false)
     // 能力未知(引擎没给 capabilities)按看不了图处理 —— fail-closed,多一次识图不漏识
     const unknown = await runSystem(input, {})
@@ -570,7 +570,7 @@ describe("③g chat.message 咽喉:追加进用户消息的每个 part 都是登
 
 // ── ③h messages.transform 咽喉(`#1419`;`#1447` R1 B2 / m4 扩)────────────────────────
 // 这个钩子只许**剔**(看不了图时把已转写的图片 part / 附件从本次请求里拿掉),外加**恰好两句登记项**可以出现在副本里:
-// `cloud_cloud_vision` 被审核拒绝的部件 error 换成「这张图片无法识别」、已被原地改写成 base64 的 input.image 换成
+// `codepuppy_vision` 被审核拒绝的部件 error 换成「这张图片无法识别」、已被原地改写成 base64 的 input.image 换成
 // 「(图片数据已省略)」(或换回本进程记得的原引用 —— 那是模型自己的字,判官按「hook 之前就存在」放行不了,所以这里
 // 用新实例,原引用不可考)。其它任何新字符串一律点名。
 
@@ -621,8 +621,8 @@ describe("③h messages.transform 咽喉:只剔不加(外加两句登记的替�
     await real({}, { messages: seeing })
     expect(seeing).toEqual(seeingBefore)
   })
-  test("`#1447` B2 / m4:cloud_cloud_vision 出错部件的 error 与被改写成 base64 的 input.image 各换成一句登记项,其余字符串一个不多;已知的坏:替换句改一个字节即点名", async () => {
-    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+  test("`#1447` B2 / m4:codepuppy_vision 出错部件的 error 与被改写成 base64 的 input.image 各换成一句登记项,其余字符串一个不多;已知的坏:替换句改一个字节即点名", async () => {
+    process.env[CLOUD_MCP_SERVER_ENV] = "codepuppy"
     const hooks = await loadHooks()
     const real = hooks["experimental.chat.messages.transform"] as MessagesHook
     const base64 = Buffer.from(PNG_1x1, "base64")
@@ -632,8 +632,8 @@ describe("③h messages.transform 咽喉:只剔不加(外加两句登记的替�
       {
         info: { id: "msg_a", role: "assistant", sessionID: "s-msgs-4" },
         parts: [
-          { id: "prt_v1", type: "tool", tool: "cloud_cloud_vision", callID: "c1", state: { status: "error", input: { image: "1" }, error: JSON.stringify({ error: { code: "content_refused", message: "x" } }), time: { start: 1, end: 2 } } },
-          { id: "prt_v2", type: "tool", tool: "cloud_cloud_vision", callID: "c2", state: { status: "completed", input: { image: fakeBase64, mime: "image/jpeg" }, output: "ok", metadata: {}, time: { start: 1, end: 2 } } },
+          { id: "prt_v1", type: "tool", tool: "codepuppy_vision", callID: "c1", state: { status: "error", input: { image: "1" }, error: JSON.stringify({ error: { code: "content_refused", message: "x" } }), time: { start: 1, end: 2 } } },
+          { id: "prt_v2", type: "tool", tool: "codepuppy_vision", callID: "c2", state: { status: "completed", input: { image: fakeBase64, mime: "image/jpeg" }, output: "ok", metadata: {}, time: { start: 1, end: 2 } } },
         ],
       },
     ]

@@ -12,7 +12,7 @@
 // 核验按种类(全部带 directory,全部可失败;**核不了 = 不标 available**):
 //   mcp(global)  该目录 mcp.status[name] = connected(verifyInstalledMcp)
 //   mcp(project) 既有 D-scoped 判据 = active(信任门 + probeProjectMcpActivation)
-//   cloud        云 MCP 在该目录 connected ∧ tool-policy inventory 里云服务的 cloud_dispatch 在列且 enabled
+//   cloud        云 MCP 在该目录 connected ∧ tool-policy inventory 里云服务的 dispatch 在列且 enabled
 //                (DECIDE `#1524` 结论,基线 §2.5 云行)。没有重载环节:核验不过时**最高 installed**,原因写明缺的是
 //                连接还是工具,不出重载入口、不取在途重载的原因
 //   skill        GET /skill?directory 有同名,且 location 落在 main 为它安装的目录里(generation live 目录,
@@ -58,7 +58,7 @@ import { createToolPolicyClient } from "./tool-policy-client"
 
 /** 云 worker 自己 advertise 的派发工具名。与 packages/ext/src/cloud-contract-hook.ts 的
  *  `CLOUD_DISPATCH_REMOTE_TOOL` 同值;两处相等由 hub-view.test.ts 钉住(不跨包 import:ext 依赖 ui-mac,反之不)。 */
-export const CLOUD_DISPATCH_TOOL = "cloud_dispatch"
+export const CLOUD_DISPATCH_TOOL = "dispatch"
 
 export type HubViewDeps = {
   /** 已验 catalog(remote/cache 验签 → 随包快照),与 governance 只读查询同一个 resolve 面(ext-ipc 的 resolveEffectiveCatalog)。

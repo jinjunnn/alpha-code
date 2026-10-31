@@ -1016,7 +1016,7 @@ describe("#1381 远程 MCP 的记录住在真源:写、读前像、失败补偿�
   test("远程条目带真源不装的键(oauth / timeout / enabled)⇒ 拒,不静默丢;名字 cloud ⇒ 拒(平台云 MCP 的名字)", () => {
     expect(persistMcp("srv", { ...REMOTE, oauth: false })).toEqual({ ok: false, reason: "remote MCP server carries key(s) the truth file does not hold: oauth" })
     expect(persistMcp("srv", { ...REMOTE, timeout: 5000, enabled: true })).toEqual({ ok: false, reason: "remote MCP server carries key(s) the truth file does not hold: timeout, enabled" })
-    expect(persistMcp("cloud", REMOTE)).toEqual({ ok: false, reason: 'server name "cloud" is reserved by the platform cloud MCP' })
+    expect(persistMcp("codepuppy", REMOTE)).toEqual({ ok: false, reason: 'server name "codepuppy" is reserved by the platform cloud MCP' })
     expect(fs.existsSync(mcpTruthFile())).toBe(false)
   })
 

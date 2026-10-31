@@ -46,6 +46,9 @@ import {
   WITHHELD_CLOUD_MCP,
 } from "./cloud-web-search"
 import { PLATFORM_API_KEY_PLACEHOLDER } from "./alpha-models"
+import { McpCatalog } from "../../../opencode/src/mcp/catalog"
+import { canonicalToolIdentity } from "../../../schema/src/tool-identity"
+import { CLOUD_DISPATCH_TOOL } from "./hub-view"
 // #650:云工具 id 从远端工具名**推导**(引擎按 `McpCatalog.toolName(server, remote)` 拼)。
 // 这里以前手写 `cloud_web_search` / `cloud_dispatch` 字面量,与生产代码同错,于是恒绿。
 const CLOUD_DISPATCH_TOOL_ID = cloudMcpToolId("cloud_dispatch")
@@ -475,11 +478,24 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     expect(config.permission?.websearch).toBeUndefined()
     // 云工具是代付态的权威 web search —— 不许被顺手关掉。
     expect(config.permission?.[CLOUD_WEB_SEARCH_TOOL_ID]).toBeUndefined()
-    expect(config.mcp?.cloud).toBeDefined()
+    expect(config.mcp?.codepuppy).toBeDefined()
     // agent 级规则排在全局之后。三个 alpha agent 自己写的就是 `websearch: "allow"`,代付态没有任何
     // deny 被钉到它们后面 —— 这正是「本地腿在场」在 permission 层的样子。
     for (const [name, agent] of Object.entries(config.agent ?? {}))
       expect([name, agent.permission?.websearch]).toEqual([name, "allow"])
+  })
+
+  // alpha-code#1568 AC1:从注入面出发 —— 注入面真的把云 server 注册在 `codepuppy` 键下(配置与 ext 握手 env 同值),
+  // 引擎拿这个键与平台远端名拼出的模型函数名是 `codepuppy_dispatch`,identity 是 `mcp:codepuppy:dispatch`。
+  // 拼名与 identity 都走引擎 / schema 自己的函数(McpCatalog.toolName、canonicalToolIdentity),不写第二份。
+  // 把注入面的键改回 `cloud`(或任何别的值)⇒ 第一行就红;平台远端名回到 `cloud_dispatch` ⇒ 后两行红。
+  test("#1568 AC1:注入面注册的云 server 键是 codepuppy;派发工具的模型函数名 codepuppy_dispatch、identity mcp:codepuppy:dispatch", () => {
+    givenPlatformPaysUnderUmbrella()
+    injectAlphaConfig(userData, undefined, "stable")
+    const server = process.env[CLOUD_MCP_SERVER_ENV]!
+    expect([server, Object.keys(injectedPermissions().mcp ?? {}).includes(server)]).toEqual(["codepuppy", true])
+    expect(McpCatalog.toolName(server, CLOUD_DISPATCH_TOOL)).toBe("codepuppy_dispatch")
+    expect(canonicalToolIdentity({ source: "mcp", origin: server, name: CLOUD_DISPATCH_TOOL })).toBe("mcp:codepuppy:dispatch")
   })
 
   // #223 R4→R5:kill-switch 下云 server 的**完整定义根本不进配置**,只经 ARM/DEF 两个 env 托管给
@@ -508,11 +524,11 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       expect(config.permission?.[CLOUD_DISPATCH_TOOL_ID]).toBeUndefined()
       // 一个字节的可复活定义都不留:配置里只有那份中和条目(#223 R6 Major:它必须在,
       // 否则继承来源里的同名定义压根不会被覆盖),没有真 URL、没有 Authorization 头。
-      expect(config.mcp?.cloud).toEqual({ ...WITHHELD_CLOUD_MCP })
+      expect(config.mcp?.codepuppy).toEqual({ ...WITHHELD_CLOUD_MCP })
       expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("cloud.example")
       expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("Authorization")
       // 定义只在 env 里托管,ext 的 config 钩子跑起来才装。
-      expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
+      expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("codepuppy")
       expect(JSON.parse(process.env[CLOUD_MCP_DEF_ENV]!)).toMatchObject({
         type: "remote",
         url: "https://cloud.example/mcp",
@@ -523,7 +539,7 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("ALPHA_MCP_TOKEN")
       expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("mcp-token-value")
       expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
-      expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+      expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("codepuppy")
       expect(errors.flat().join("\n")).toContain("WITHHELD from the engine config")
     })
 
@@ -537,7 +553,7 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
       mcp: {
-        cloud: {
+        codepuppy: {
           type: "remote",
           url: "https://inherited.example/mcp",
           enabled: true,
@@ -548,7 +564,7 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
 
     injectAlphaConfig(userData, undefined, "stable")
 
-    expect(injectedPermissions().mcp?.cloud).toEqual({ ...WITHHELD_CLOUD_MCP })
+    expect(injectedPermissions().mcp?.codepuppy).toEqual({ ...WITHHELD_CLOUD_MCP })
     expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("inherited.example")
     expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("Bearer inherited")
   })
@@ -558,7 +574,7 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
 
     injectAlphaConfig(userData, undefined, "stable")
 
-    expect(injectedPermissions().mcp?.cloud).toMatchObject({ type: "remote", enabled: true })
+    expect(injectedPermissions().mcp?.codepuppy).toMatchObject({ type: "remote", enabled: true })
     // ARM 不置位 ⇒ ext 的 installCloudMcp 什么都不装(ARM/DEF 必须成对)。
     expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
     // #223 R6 Blocker:治理豁免绑定的是 DEF 里那份定义的端点身份,所以代付两条分支都托管它。
@@ -572,7 +588,7 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("mcp-token-value")
     expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
     // 闸要能把「alpha 治理的云 server」与用户自带的 web-search MCP 区分开(R5 Blocker)。
-    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("codepuppy")
   })
 
   // 握手通道的可信度**不**来自 sidecar-env 白名单(逃生阀 ALPHA_ENV_ALLOWLIST_EXTRA 能放行它,
@@ -588,14 +604,14 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
     expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("attacker.example")
     expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("cloud.example")
-    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("codepuppy")
 
     // ② kill-switch:被覆盖成 alpha 自己的名字与定义,伪造的 URL 一点不剩。
     process.env[CLOUD_MCP_ARM_ENV] = "forged"
     process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://attacker.example/mcp" })
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     injectAlphaConfig(userData, undefined, "stable")
-    expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("codepuppy")
     expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("attacker.example")
 
     // ③ 登出 / BYOK(不代付):三个都被删,伪造的通道彻底失效。

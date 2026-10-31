@@ -32,7 +32,7 @@ describe("#1196 legacy cloud mcp-auth entry sweep", () => {
     }
     const { deps, writes } = memDeps({
       [FILE]: JSON.stringify({
-        cloud: { codeVerifier: "cv", oauthState: "st", serverUrl: "https://cloud.example/mcp" },
+        codepuppy: { codeVerifier: "cv", oauthState: "st", serverUrl: "https://cloud.example/mcp" },
         "third-party": third,
       }),
     })

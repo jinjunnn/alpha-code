@@ -259,7 +259,7 @@ function ownersOf(tool: string, ownership: McpOwnership) {
  * 任何歧义都倒向 fail-closed:候选里出现任何一个非治理 server(`cloud_attacker`、`cloud_web` …),
  * 或者一个候选都没有(运行时新装的 server、config 钩子没跑),豁免都不给。
  */
-function isGovernedCloudTool(tool: string, ownership: McpOwnership): boolean {
+export function isGovernedCloudTool(tool: string, ownership: McpOwnership): boolean {
   const owners = ownersOf(tool, ownership)
   return owners.governed.length > 0 && owners.foreign.length === 0
 }

@@ -722,11 +722,11 @@ function v1Identity(
   )
 }
 
-// Code Puppy 云工具:authority = alpha-cloud(引擎 authorityForMcp 铸的证据),identity.name 是远端原名 cloud_dispatch。
+// Code Puppy 云工具:authority = alpha-cloud(引擎 authorityForMcp 铸的证据),identity.name 是远端原名 dispatch。
 const CLOUD_DISPATCH = {
-  canonical: "mcp:alpha:cloud_dispatch",
-  identity: { source: "mcp", origin: "alpha", name: "cloud_dispatch" },
-  authority: { kind: "codepuppy-cloud", bindingId: "mcp:alpha", evidenceDigest: `sha256:${"d".repeat(64)}` },
+  canonical: "mcp:codepuppy:dispatch",
+  identity: { source: "mcp", origin: "codepuppy", name: "dispatch" },
+  authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"d".repeat(64)}` },
 }
 
 const card = () => document.querySelector<HTMLElement>("[role='dialog']")!
@@ -1004,7 +1004,7 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     [
       "同名云工具但没有云证据",
       v1Identity("policy", {}, "codepuppy-ask", { ...CLOUD_DISPATCH, authority: { kind: "not-asserted" } }),
-      "cloud_dispatch",
+      "dispatch",
       "第三方 · mcp.notion.com",
     ],
   ] as const)("r1-5 身份轴「要做什么」写可读名与来源(与时间线同一套判定),不写 canonical:%s", async (_name, permissionRequest, title, source) => {
@@ -1064,7 +1064,7 @@ describe("REQ-236 #1617 确认卡只写人话", () => {
     ["委派", v1Task, "task", "派出子任务", ["交给助手 general", "调研三家竞品的公开定价"], undefined],
     ["委派(只能一次)", v1TaskOnce, "task", "派出子任务", ["交给助手 reviewer", undefined], undefined],
     ["身份轴 · 第三方", v1Identity("ruleset"), "mcp:notion:search_pages", "使用工具", ["search_pages", "第三方 · mcp.notion.com"], undefined],
-    ["身份轴 · 云", v1Identity("policy", {}, "codepuppy-ask", CLOUD_DISPATCH), "mcp:alpha:cloud_dispatch", "使用工具", ["下发云端任务", "Code Puppy 云"], undefined],
+    ["身份轴 · 云", v1Identity("policy", {}, "codepuppy-ask", CLOUD_DISPATCH), "mcp:codepuppy:dispatch", "使用工具", ["下发云端任务", "Code Puppy 云"], undefined],
     ["稿外动作(打开网页)", v1Webfetch, "webfetch", "打开网页", undefined, ["https://example.com/pricing"]],
     ["认不出的动作", v1Unknown, "frobnicate_widget", "使用工具", undefined, ["x"]],
     ["新式请求", request, "bash", "运行命令", undefined, ["pwd", "src/**"]],

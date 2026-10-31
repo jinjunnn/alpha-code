@@ -249,7 +249,7 @@ export function CloudImageCard(props: { row: CloudImageRow }) {
   const devText = () => {
     const call = image().call
     const lines = [
-      "tool    cloud_dispatch",
+      "tool    codepuppy:dispatch",
       "kind    image-generation",
       `input   ${JSON.stringify({ prompt: image().prompt })}`,
     ]
