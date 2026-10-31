@@ -269,6 +269,18 @@ test("#1575: fork 按登录账户 × 本安装写 ALPHA_POLICY_ACCOUNT(同安装
   }
 })
 
+// #1578 AC5:main 写进 sidecar env 的随包扩展清单键必须就是引擎读的那个常量 —— 任一侧改名,线上 ext 自有工具全部静默回第三方,
+// 而 opencode/test/plugin/alpha-bundled-plugin.test.ts 自己给 env 赋值照样绿。dev 下 ext.path 取决于未入库的 packages/ext/dist
+// (门不保证它在,上面那条生产 spawn 里这个键可能根本不写),所以锚源码:server.ts 写这个键的那一句,键名取引擎常量,
+// 指向 plugin.js 旁边的 bundled-tools.json。任一侧字面量改一个字母 ⇒ 找不到这一句,当场红。
+test("ANCHOR: #1578 server.ts 写进 sidecar env 的随包扩展清单键 = 引擎读的常量", async () => {
+  const { EXT_BUNDLED_MANIFEST_ENV } = await import("../../../opencode/src/plugin/alpha-bundled-plugin")
+  const source = await Bun.file(join(import.meta.dir, "server.ts")).text()
+  const line = source.split("\n").find((text) => text.includes(`sidecarEnv.${EXT_BUNDLED_MANIFEST_ENV} =`))
+  expect(line).toBeDefined()
+  expect(line).toContain(`"bundled-tools.json"`)
+})
+
 // `#1531`:ext 的 parentPort 监听必须在 ready **之前**挂上(main 只在 ready 那一刻重发在途代际)。sidecar.ts 顶层的 registerHooks /
 // getParentPort() 让它不能被 import,接线只能锚源码:ext 预载在引擎 import 之后开始、在 ready 上报之前 await 完;
 // 预载的 URL 形状与引擎解析路径插件的形状逐字相同(上游 plugin/shared.ts 的 resolvePathPluginTarget),否则会装出第二份模块。
