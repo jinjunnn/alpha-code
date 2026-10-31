@@ -1,7 +1,7 @@
 {
   "_note": "Desktop model catalog bootstrap (ADR-014 config-driven). REQ-237 #1556:平台模型的名称 / 品牌 / 能力 / 档位只由网关 GET /v1/models(ModelCatalogV3 的 display)下发,本文件不再有平台模型清单;BYOK 段 `byokCatalog` 与远程 GET /v1/byok-catalog(ByokCatalogV1)同构,只作**首启引导**:远程 catalog_version 更高时远程胜出,App 升级带来更高的随包版本时随包胜出(catalog-refresher.ts adoptByokCatalog)。端点 / Key 名 / 协议适配器不在这里,在 App 内置适配器表 main/byok-adapters.ts。平台代理的计价倍数由网关下发(ADR-039),本文件不得出现任何价格主张。",
   "_variantsNote": "REQ-153 #1237:`variants` 只给 wire 形状**实打过**的 (引擎 provider, model) 声明,形状**逐腿**取自 alpha-platform docs/architecture/openai-wire-reasoning-controls.md(网关 VERIFIED_REASONING_WIRE 的对照物)与本仓 docs/architecture/2026-09-06-model-variant-reachability.md §8;同一模型经直连与经 OpenRouter 形状不同,不得跨腿套用。受理 ≠ 有效:每个档位都要对应一个实打观察到的上游行为。上游 smallOptions() 把档位表**第一项**喂给标题等辅助调用,所以有关闭档的模型一律把「关」放第一位。未实打的模型(qwen/kimi/minimax 直连:本机无凭据)显式保持无档;alpha-models.test.ts 的 #1237 节把已验表与无档清单都钉死 —— 想加一档,先照那份文档的方法实打,再把出处写进那张表。",
-  "_imageInputNote": "REQ-228 #1420:BYOK 模型能不能看图(引擎 capabilities.input.image)取 `byokCatalog` 每个模型的 `image_input`(schema 必填布尔,缺一个 = 整份拒绝)。首版内容逐字承接 2026-09-23 models.dev 快照(https://models.dev/api.json,sha256 219bfd29…)与 2026-09-24 deepseek-flash 实测(取 false),出处见 docs/runbooks/model-catalog-updates.md §B;之后由 alpha-platform 的 BYOK 目录发布维护。平台代理模型一律看不了图(网关聊天入口拒收图片),不读本字段。",
+  "_imageInputNote": "REQ-228 #1420:BYOK 模型能不能看图(引擎 capabilities.input.image)取 `byokCatalog` 每个模型的 `image_input`(schema 必填布尔,缺一个 = 整份拒绝)。首版内容逐字承接 2026-09-23 models.dev 快照(https://models.dev/api.json,sha256 219bfd29…),出处见 docs/runbooks/model-catalog-updates.md §B;之后由 alpha-platform 的 BYOK 目录发布维护。deepseek-flash(直连)2026-10-31 带图实测 200,取 true(alpha-platform#565,catalog_version 2)。平台代理模型一律看不了图(网关聊天入口拒收图片),不读本字段。",
   "defaultModel": null,
   "defaultPlatformModel": "deepseek-v4-flash",
   "platformProvider": {
@@ -11,7 +11,7 @@
   },
   "byokCatalog": {
     "schema_version": 1,
-    "catalog_version": 1,
+    "catalog_version": 2,
     "published_at": "2026-10-30T00:00:00Z",
     "providers": [
       {
@@ -23,7 +23,7 @@
           {
             "id": "deepseek-flash",
             "name": "deepseek-flash",
-            "image_input": false
+            "image_input": true
           },
           {
             "id": "deepseek-v4-pro",
