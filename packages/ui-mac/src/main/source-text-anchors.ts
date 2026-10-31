@@ -100,9 +100,9 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     lines: 1,
   },
   "packages/ui-mac/src/main/alpha-sidecar-wiring.test.ts": {
-    why: "`#1531` 那一条锚 sidecar.ts 里「引擎 import → 进程内交接(publishInProcessEngine)→ ext 预载开始 → await 预载 → ready 上报」的下标先后,外加上游 plugin/shared.ts 解析路径插件的 URL 形状(pathToFileURL(file).href)—— 两边同一个 URL 才是同一个模块记录。两个不会让它变红的变异:①把预载的 import 换成另一个指向同一文件但带查询串的 URL(文本里那一段仍在,模块却装出第二份,监听挂在没人用的那份上);②在 await extPreload 之前加一条早退 return。sidecar.ts 顶层有副作用,import 不得;同文件另两条(真 spawnLocalServer + 假子进程)是行为判据。",
+    why: "`#1531` 那一条锚 sidecar.ts 里「引擎 import → 进程内交接(publishInProcessEngine)→ ext 预载开始 → await 预载 → ready 上报」的下标先后,外加上游 plugin/shared.ts 解析路径插件的 URL 形状(pathToFileURL(file).href)—— 两边同一个 URL 才是同一个模块记录。两个不会让它变红的变异:①把预载的 import 换成另一个指向同一文件但带查询串的 URL(文本里那一段仍在,模块却装出第二份,监听挂在没人用的那份上);②在 await extPreload 之前加一条早退 return。sidecar.ts 顶层有副作用,import 不得;同文件另两条(真 spawnLocalServer + 假子进程)是行为判据。`#1578` 第 3 处读 server.ts:写 sidecar env 随包扩展清单的那一句,键名必须等于引擎 alpha-bundled-plugin.ts 的 EXT_BUNDLED_MANIFEST_ENV、值指向 bundled-tools.json —— 任一侧改名(一个字母)即红,这一半主语是跨包逐字一致。守不住的:①那一句被包进恒假分支或 ext.path 永远为空(键从不写,文本仍在);②main 写对了但 sidecar 之后又把这个键剥掉。行为判据要走 spawnLocalServer 看 fork env,而 dev 下 ext.path 依赖未入库的 packages/ext/dist,门不保证它在。",
     evidence: "#1531",
-    lines: 2,
+    lines: 3,
   },
   "packages/ui-mac/src/main/alpha-contract-health.test.ts": {
     why: "锚的是 renderer 三个文件里「那几个标识符在不在」。它证不了 banner 真的渲染、也证不了 role=alert 真的可达。两个不会让它变红的变异:①把 <ContractFailureBanner /> 挪进一个恒假分支;②把 providers 里的订阅回调改成不更新状态。真判据要走组件测试道(本文件今天没有)。",
