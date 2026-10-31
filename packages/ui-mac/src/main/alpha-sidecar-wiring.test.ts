@@ -187,8 +187,11 @@ test("#1565: fork 注入 ALPHA_OFFICE_MCP_MANIFEST,引擎据它认出写策略�
 
 // REQ-236 `#1575` AC4:生产 spawnLocalServer 在 fork 时按**当刻的登录账户**写 ALPHA_POLICY_ACCOUNT(引擎据它选工具策略
 // 分区),未登录不写(引擎退回 anonymous)。登录态走真 alpha-auth:dev 短路令牌(未打包时 DEV_PLATFORM_TOKEN)的
-// `account.read` 的 sub。期望值从 sub 独立算出,不调被测函数;shell 导出的同名变量选不了分区。
-test("#1575: fork 按登录账户写 ALPHA_POLICY_ACCOUNT(sub 不同值不同、不含明文);未登录不写,导出的同名变量不透传", async () => {
+// `account.read` 的 sub。值里混入本安装的随机持久标识(artifact-service 的安装级 machine id,boot 时初始化):这个变量被
+// 第三方 MCP / LSP / shell 子进程继承,同一账户换一台安装就是另一个值,不能据它跨安装关联。期望值从 sub 与盘上的
+// machine id 文件独立算出,不调被测函数;取不到安装标识与未登录一样不写;shell 导出的同名变量选不了分区。
+test("#1575: fork 按登录账户 × 本安装写 ALPHA_POLICY_ACCOUNT(同安装同账户相同、换安装或换账户不同、不含明文);取不到不写,导出的同名变量不透传", async () => {
+  const { initializeArtifactQuotaEnvironment, ARTIFACT_QUOTA_MACHINE_ID_FILE } = await import("./artifact-service")
   const { createHash } = await import("node:crypto")
   const sha256 = (value: string) => createHash("sha256").update(value).digest("hex")
   const token = (sub: string) =>
@@ -224,21 +227,46 @@ test("#1575: fork 按登录账户写 ALPHA_POLICY_ACCOUNT(sub 不同值不同、
     await result.listener.stop()
     return env
   }
+  const installation = async (dir: string) => {
+    expect((await initializeArtifactQuotaEnvironment(dir)).ok).toBe(true)
+    return readFileSync(join(dir, ARTIFACT_QUOTA_MACHINE_ID_FILE), "utf8").trim()
+  }
+  const expected = (install: string, sub: string) => `acct:${sha256(`${install}:${sha256(sub).slice(0, 32)}`)}`
+  const otherInstall = mkdtempSync(join(tmpdir(), "alpha-sidecar-wiring-install-b-"))
   for (const key of ["DEV_PLATFORM_TOKEN", "ALPHA_POLICY_ACCOUNT"]) saved[key] = process.env[key]
+  try {
+    const installA = await installation(userDataPath)
+    process.env.DEV_PLATFORM_TOKEN = token("tenant-a")
+    const a = (await forkEnv(4394)).ALPHA_POLICY_ACCOUNT
+    expect(a).toBe(expected(installA, "tenant-a"))
+    expect(a).not.toContain("tenant-a")
+    // 同安装同账户再 fork 一次:分区键不变(换号重 fork 回来仍是同一分区)。
+    expect((await forkEnv(4397)).ALPHA_POLICY_ACCOUNT).toBe(a)
 
-  process.env.DEV_PLATFORM_TOKEN = token("tenant-a")
-  const a = (await forkEnv(4394)).ALPHA_POLICY_ACCOUNT
-  expect(a).toBe(`acct:${sha256(sha256("tenant-a").slice(0, 32))}`)
-  expect(a).not.toContain("tenant-a")
+    process.env.DEV_PLATFORM_TOKEN = token("tenant-b")
+    const b = (await forkEnv(4395)).ALPHA_POLICY_ACCOUNT
+    expect(b).toBe(expected(installA, "tenant-b"))
+    expect(b).not.toBe(a)
 
-  process.env.DEV_PLATFORM_TOKEN = token("tenant-b")
-  const b = (await forkEnv(4395)).ALPHA_POLICY_ACCOUNT
-  expect(b).toBe(`acct:${sha256(sha256("tenant-b").slice(0, 32))}`)
-  expect(b).not.toBe(a)
+    // 另一个安装、同一账户:值不同。
+    const installB = await installation(otherInstall)
+    expect(installB).not.toBe(installA)
+    process.env.DEV_PLATFORM_TOKEN = token("tenant-a")
+    const elsewhere = (await forkEnv(4398)).ALPHA_POLICY_ACCOUNT
+    expect(elsewhere).toBe(expected(installB, "tenant-a"))
+    expect(elsewhere).not.toBe(a)
 
-  delete process.env.DEV_PLATFORM_TOKEN
-  process.env.ALPHA_POLICY_ACCOUNT = "acct:exported-by-shell"
-  expect(await forkEnv(4396)).not.toHaveProperty("ALPHA_POLICY_ACCOUNT")
+    // 安装标识取不到(machine id 根不可用):与未登录同样不写。
+    expect((await initializeArtifactQuotaEnvironment(join(otherInstall, "missing"))).ok).toBe(false)
+    expect(await forkEnv(4399)).not.toHaveProperty("ALPHA_POLICY_ACCOUNT")
+
+    await installation(userDataPath)
+    delete process.env.DEV_PLATFORM_TOKEN
+    process.env.ALPHA_POLICY_ACCOUNT = "acct:exported-by-shell"
+    expect(await forkEnv(4396)).not.toHaveProperty("ALPHA_POLICY_ACCOUNT")
+  } finally {
+    rmSync(otherInstall, { recursive: true, force: true })
+  }
 })
 
 // `#1531`:ext 的 parentPort 监听必须在 ready **之前**挂上(main 只在 ready 那一刻重发在途代际)。sidecar.ts 顶层的 registerHooks /

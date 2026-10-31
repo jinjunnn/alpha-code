@@ -161,6 +161,15 @@ export function artifactQuotaReservationsPath(projectDir: string, runId: string)
 }
 
 /**
+ * 本安装的随机持久标识(`<userData>/artifact-quota-machine-id`,平台契约 docs/contracts/platform-integration.md);
+ * 由下面的 initializeArtifactQuotaEnvironment 在 boot 时读出或创建。未初始化或不可用 ⇒ undefined。
+ */
+export function installationMachineId(): string | undefined {
+  const environment = artifactQuotaEnvironment
+  return environment && "machineId" in environment ? environment.machineId : undefined
+}
+
+/**
  * 主进程启动后初始化一次安装级 machine id。artifact 根的部署前置条件见平台契约。
  */
 export async function initializeArtifactQuotaEnvironment(
