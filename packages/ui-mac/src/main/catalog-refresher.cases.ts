@@ -14,6 +14,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test"
 import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import bundledCatalog from "./alpha-models.json"
 
 const userData = mkdtempSync(join(tmpdir(), "catalog-refresher-"))
 let identity: string | undefined = "account-a"
@@ -112,7 +113,7 @@ const okCatalog = (mutate?: (catalog: any) => void) => {
 /** BYOK 文档应答;默认把版本抬到随包首启引导之上,让它真的被采纳。 */
 const okByok = (mutate?: (doc: any) => void) => {
   const doc = byokV1()
-  doc.catalog_version = 2
+  doc.catalog_version = bundledCatalog.byokCatalog.catalog_version + 1
   mutate?.(doc)
   return Response.json(doc)
 }

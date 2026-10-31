@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-08-02
+last_reviewed: 2026-10-31
 review_after: 2027-01-16
 ---
 
@@ -31,15 +31,15 @@ review_after: 2027-01-16
 | 组件 | 锚 | 增量稿 | 设计定稿 | 实现票 | 落地 | 代码入口 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 本地插件包导入预览屏 | `#import-preview` | [`2026-08-02-req128-local-plugin-import/`](../../2026-08-02-req128-local-plugin-import/frame.html) | 2026-08-02 | ac#784 | 2026-08-02 | `renderer/extensions/extension-hub.tsx`(`runImportFolder` 分流 + `localPlugin` 预览弹窗)· 判定与文案真源 `main/claude-plugin-intake.ts` | 已落地 |
-| 已装扩展包区块(含每技能开关 · 整包移除) | `#installed-packs` | [`2026-08-02-req128-local-plugin-import/`](../../2026-08-02-req128-local-plugin-import/frame.html) | 2026-08-02 | ac#784 | 2026-08-02 | `renderer/extensions/extension-hub.tsx`(`InstalledPackagesSection` / `PackageComponentRow` / `InstalledRow` 的拒绝行) | 已落地 |
+| 已装扩展包区块(含每技能开关 · 整包移除) | `#installed-packs` | [`2026-08-02-req128-local-plugin-import/`](../../2026-08-02-req128-local-plugin-import/frame.html) | 2026-08-02 | ac#784 | 2026-08-02 | `renderer/extensions/extension-hub.tsx`(`InstalledPackagesSection` / `PackageComponentRow` / `InstalledRow` 的拒绝行) | 已落地 · 「已安装页」呈现已被 `#hub-tabs` 取代(连接器页「已安装」一行) |
 | 装后启用与生效状态流(含待重载态) | `#enable-flow` | [`2026-08-02-req128-local-plugin-import/`](../../2026-08-02-req128-local-plugin-import/frame.html) | 2026-08-02 | ac#784 | 2026-08-02 | `renderer/extensions/use-extensions.ts`(`localPluginConfirm` / `uninstallPackage` 各接一次 `refreshEngine`) | 已落地 |
-| 推荐页四级货架 | `#featured` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#397 | — | `renderer/extensions/extension-hub.tsx` | 未登记(历史) |
-| 浏览卡分级 chip + 「未分级」尾组 | `#browse` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#397 | — | `renderer/extensions/extension-hub.tsx` | 未登记(历史) |
+| 推荐页四级货架 | `#featured` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#397 | — | `renderer/extensions/extension-hub.tsx` | 未登记(历史)· 列表呈现已被 `#hub-tabs` 取代 |
+| 浏览卡分级 chip + 「未分级」尾组 | `#browse` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#397 | — | `renderer/extensions/extension-hub.tsx` | 未登记(历史)· 列表呈现已被 `#hub-tabs` 取代 |
 | 详情页事实段 + 组件与来源段 | `#detail` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#397 | — | `renderer/extensions/extension-detail.tsx` | 未登记(历史) |
 | 降级与失败态(拉取失败 / 复审过期 / 保守处理) | `#states` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#397 | — | `renderer/extensions/extension-detail.tsx` | 未登记(历史) |
-| 已安装行:启用开关 · 会话开关 · 归档警示 | `#policy` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#395 · ac#408 | — | `renderer/extensions/extension-hub.tsx`(`InstalledRow`) | 未登记(历史) |
+| 已安装行:启用开关 · 会话开关 · 归档警示 | `#policy` | `2026-07-18-req104-four-shelf/` | 2026-07-18 | ac#395 · ac#408 | — | `renderer/extensions/extension-hub.tsx`(`InstalledRow`) | 未登记(历史)· 列表呈现已被 `#hub-tabs` 取代 |
 | 整包事实段 | `#packrel` | `2026-07-17-req104-pack-facts/` | 2026-07-17 | ac#396 | — | `renderer/extensions/extension-detail.tsx` | 未登记(历史) |
-| 页签与列表结构(九页签收成连接器 / 技能 / 助手;单行列表 = 图标 + 名称 + 一行描述 + 一个动作;「添加」下拉取代「导入」;已安装组与「系统」分段) | `#hub-tabs` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票;页签方案待 owner 定) | — | 现状:`renderer/extensions/extension-hub.tsx`(`TABS`、`Filters`、`Card`、`InstalledRow`)、`builtin-controls-panel.tsx` | 设计中 |
+| 页签与列表结构(三页签:连接器 / 技能 / 助手;单行列表 = 图标 + 名称 + 一行描述 + 一个动作;「添加 ▾」取代「导入」;每页顶部「已安装」、技能与助手页「推荐 / 系统」分段;子锚 `#hub-connectors` `#hub-add` `#hub-skills` `#hub-agents`) | `#hub-tabs` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | 2026-10-31 | ac#1594 | 2026-10-31 | `renderer/extensions/extension-hub.tsx`(`TABS`、`InstalledRow`、`EntryRow`、`PackageRow`、`CloudConnectorRow`、`addItems`、`Segments`)、`builtin-controls-panel.tsx`(「系统」分段) | 已落地(与批准稿的 7 处差异按代码画,列在 `design.html#hub-tabs` 末尾) |
 | 云能力 · 云端任务详情(首屏「做什么 / 最长运行 / 发送内容 / 结果 / 费用」,其余收进开发者详情) | `#cloud-task` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`renderer/extensions/extension-detail.tsx`(`cloudSpec` 段);条目文字 `renderer/extensions/alpha-catalog.json` | 设计中 |
 | 云能力 · 云连接器详情(工具先写自然语言名称,技术名进折叠;状态写下一步) | `#cloud-connector` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`renderer/extensions/extension-detail.tsx`(`isCloudConnector` 段)、`extension-hub.tsx`(云能力页卡) | 设计中 |
 | 添加确认框一句话(不写配置文件路径;未完成审核的写默认关闭)与「待生效」状态词 | `#enable-flow` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`renderer/extensions/install-confirm.tsx`、`use-extensions.ts`(生效状态) | 设计中 |

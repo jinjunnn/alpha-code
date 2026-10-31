@@ -2,7 +2,7 @@
   "kind": "schema",
   "contract": "ModelCatalogV3",
   "consumer": "alpha-code",
-  "consumer_version": "0.1.23",
+  "consumer_version": "0.1.24",
   "expect": "valid",
   "value": {
     "schema_version": 3,

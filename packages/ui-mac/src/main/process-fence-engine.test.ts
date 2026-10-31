@@ -362,8 +362,10 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
   //           能看图的模型被当成看不了、原图旁多出一个识图块 —— 修之前的出货形态;
   //   被测臂:出货的进程内交接 ⇒ 三处都读得到 ⇒ Word 指令带 alpha-word_read_docx 与绝对路径(服务在表里),PDF 指令改为如实告知
   //           (alpha-pdf 不在表里)—— 证明读到的就是 GET /mcp 那张按服务名索引、带 status 的表;能看图 ⇒ 不追加识图块。
-  // 口径(如实):进程内交接的是 Server.Default() 那张服务图,TCP 监听另建一张(Server.listen 用新的 memoMap);运行期状态
-  // (connected / failed)各记各的 —— 本臂只证明配置决定的那一半(在不在、停没停用),见交回的「发现」。
+  // 口径(如实):出货形态下进程内交接与 TCP 监听共用同一张服务图 —— prebuild 的 patch-sidecar-shared-routes.ts(#857)把固定的
+  // Electron 监听钉到 Server.Default() 的路由层与 memoMap 上(predev 同样打这个补丁)。只有未打补丁的源码形态(本用例起的就是它)
+  // 是两张:Server.listen 另建路由层、用新的 memoMap,运行期状态(connected / failed)各记各的 —— 所以本臂只证明配置决定的那一半
+  // (在不在、停没停用)。
   const STAGED_DOCX = { v: 1, name: "复盘.docx", mime: "application/x", size: 3, path: "attachments/0b8c7f9e-1d2a-4c3b-9e8f-7a6b5c4d3e2f/复盘.docx", reader: "word" }
   const STAGED_PDF = { v: 1, name: "合同.pdf", mime: "application/pdf", size: 3, path: "attachments/1c9d8a0f-2e3b-4d4c-8f9a-8b7c6d5e4f30/合同.pdf", reader: "pdf" }
   const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="

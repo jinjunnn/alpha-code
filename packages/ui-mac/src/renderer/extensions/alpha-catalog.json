@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-27.2",
+  "version": "2026-10-31.1",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:codepuppy.cn/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -1809,11 +1809,11 @@
       "id": "cloud:code-review",
       "type": "cloud",
       "name": "cloud-code-review",
-      "displayName": "云端代码审查（code-review）",
-      "description": "将 Git 代码改动交给云端检查正确性、安全、性能和风格；必要时会联网查证依赖库行为和已知漏洞（CVE）。只发送代码改动，不上传整个仓库。结果保存到本地 .code-puppy/runs。",
+      "displayName": "云端代码审查",
+      "description": "将 Git 代码改动交给云端检查正确性、安全、性能和风格；必要时会联网查证依赖库行为和已知漏洞（CVE）。只发送代码改动，不上传整个仓库。",
       "source": "alpha",
       "category": "cloud",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "installSpec": {
         "kind": "cloud",
         "pipelineKind": "code-review",
@@ -1834,11 +1834,11 @@
           "max_tokens": 500000,
           "max_wall_clock_sec": 1800
         },
-        "tier": "Tier-1：在云端处理，不使用沙箱",
+        "tier": "云端运行,无沙箱",
         "upstreamData": [
           "要审查的代码改动(git diff 文本,最多 256 KB;超出 1.2 万字的部分云端不会读)",
           "云端会生成改动目的摘要和审查结论，并保存在任务结果中。",
-          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+          "任务设置"
         ]
       }
     },
@@ -1846,11 +1846,11 @@
       "id": "cloud:research",
       "type": "cloud",
       "name": "cloud-research",
-      "displayName": "云端深度调研（research）",
-      "description": "提供调研问题，云端会分解问题、联网检索，并整理带来源的回答。结果保存到本地 .code-puppy/runs。",
+      "displayName": "云端深度调研",
+      "description": "提供调研问题，云端会分解问题、联网检索，并整理带来源的回答。",
       "source": "alpha",
       "category": "cloud",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "installSpec": {
         "kind": "cloud",
         "pipelineKind": "research",
@@ -1871,10 +1871,10 @@
           "max_tokens": 500000,
           "max_wall_clock_sec": 1800
         },
-        "tier": "Tier-1：在云端联网检索，不使用沙箱",
+        "tier": "云端运行,无沙箱",
         "upstreamData": [
           "发送你填写的调研问题（input.question）。",
-          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+          "任务设置"
         ]
       }
     },
@@ -1882,11 +1882,11 @@
       "id": "cloud:docs",
       "type": "cloud",
       "name": "cloud-docs",
-      "displayName": "云端开发文档生成（docs）",
-      "description": "提供代码片段，让云端先拟大纲，再生成 README、API 说明等文档。结果保存到本地 .code-puppy/runs。",
+      "displayName": "云端开发文档生成",
+      "description": "提供代码片段，让云端先拟大纲，再生成 README、API 说明等文档。",
       "source": "alpha",
       "category": "cloud",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "installSpec": {
         "kind": "cloud",
         "pipelineKind": "docs",
@@ -1911,10 +1911,10 @@
           "max_tokens": 500000,
           "max_wall_clock_sec": 1800
         },
-        "tier": "Tier-1：在云端处理，不使用沙箱",
+        "tier": "云端运行,无沙箱",
         "upstreamData": [
           "发送代码片段（input.code），云端最多处理前 12,000 个字符。",
-          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+          "任务设置"
         ]
       }
     },

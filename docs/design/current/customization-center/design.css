@@ -222,3 +222,46 @@ table.matrix{width:100%;min-width:820px;border-collapse:separate;border-spacing:
 .step .h{display:flex;align-items:center;gap:8px;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
 .step p{margin:7px 0 0;font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
 .pad{padding:18px 20px}
+
+/* ── 三页结构(#hub-tabs,2026-10-31 并入)──
+   列表页的组件取自 current/settings/design.css 里定制中心已有的那套(页签栏、搜索框、`.kit` 行、双列网格、分段、下拉),
+   只收在 `.hub3` 下,不改上面九页签时代各帧的样式。值与 settings 那份一致,改一处要同步另一处。 */
+.hub3{background:var(--a-bg-canvas)}
+.hub3 .hub-tabbar{position:relative;display:flex;justify-content:center;align-items:center;gap:0;padding:0 24px;border-bottom:1px solid var(--a-border-faint);background:var(--a-bg-canvas);flex-wrap:nowrap}
+.hub3 .hub-tabs{display:flex;gap:2px;width:100%;max-width:880px}
+.hub3 .hub-tab{padding:13px 11px 11px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text-tertiary);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.hub3 .hub-tab.on{color:var(--a-text);border-bottom-color:var(--a-accent)}
+.hub3 .hub-close{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:26px;height:26px;display:grid;place-items:center;border-radius:var(--a-radius-md);color:var(--a-text-tertiary);font-size:var(--a-text-md)}
+.hub3 .hub-scroll{padding:26px 24px 30px}
+.hub3 .hub-center{max-width:880px;margin:0 auto}
+.hub3 .hub-pagehd{display:flex;align-items:flex-start;gap:10px}
+.hub3 .hub-pagehd .t{flex:1;min-width:0}
+.hub3 .hub-h1{font-size:var(--a-text-2xl);font-weight:var(--a-weight-semibold)}
+.hub3 .hub-sub{color:var(--a-text-secondary);font-size:var(--a-text-md);margin-top:6px}
+.hub3 .hub-search{display:flex;align-items:center;gap:8px;height:34px;width:180px;padding:0 12px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);box-shadow:var(--a-edge-light);color:var(--a-text-tertiary);font-size:var(--a-text-sm)}
+.hub3 .btn-primary{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border:0;border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);box-shadow:var(--a-shadow-xs);white-space:nowrap}
+.hub3 .hub-secrow{display:flex;align-items:center;justify-content:space-between;margin:28px 0 12px}
+.hub3 .hub-secrow .t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.hub3 .hub-secrow .act{font-size:var(--a-text-sm);color:var(--a-accent);font-weight:var(--a-weight-medium)}
+.hub3 .hub-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+.hub3 .kit{display:flex;align-items:center;gap:14px;padding:15px 16px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-edge-light);margin-bottom:10px}
+.hub3 .kit[data-dim]{opacity:.55}
+.hub3 .kit .ico{width:42px;height:42px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:15px;font-weight:700;flex:none;color:#fff;box-shadow:var(--a-shadow-xs)}
+.hub3 .kit .body{min-width:0;flex:1}
+.hub3 .kit .ttl b{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold)}
+.hub3 .kit .desc{font-size:var(--a-text-sm);color:var(--a-text-secondary);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hub3 .add{display:inline-flex;align-items:center;height:28px;padding:0 13px;border-radius:var(--a-radius-md);border:0;background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);box-shadow:var(--a-shadow-xs);margin-left:0;white-space:nowrap}
+.hub3 .add[data-variant="ghost"]{background:var(--a-surface);color:var(--a-text);border:1px solid var(--a-border);box-shadow:none}
+.hub3 .add:disabled{background:var(--a-bg-muted);color:var(--a-text-disabled);box-shadow:none}
+.hub3 .more{display:inline-grid;place-items:center;height:28px;min-width:30px;padding:0 8px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);color:var(--a-text-secondary);font-size:var(--a-text-xs)}
+.hub3 .hub-seg{display:inline-flex;padding:3px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px;margin:26px 0 0}
+.hub3 .hub-seg span{color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);padding:6px 16px;border-radius:6px}
+.hub3 .hub-seg span.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.hub3 .hub-empty{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin:0 0 6px}
+.hub3 .hub-menu{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-lg);overflow:hidden}
+.hub3 .hub-menu div{padding:11px 15px;border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-md);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.hub3 .hub-menu div:last-child{border-bottom:0}
+.hub3 .hub-menu div[data-danger]{color:var(--a-error)}
+.hub3 .hub-menu div[data-disabled]{color:var(--a-text-disabled)}
+.hub3 .hub-govbar{display:flex;align-items:center;gap:10px;margin:14px 0 12px;font-size:var(--a-text-sm)}
+.hub3 .hub-govbar .act{margin-left:auto;color:var(--a-accent);font-weight:var(--a-weight-medium)}
