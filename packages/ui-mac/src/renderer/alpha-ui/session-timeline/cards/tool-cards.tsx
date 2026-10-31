@@ -27,6 +27,7 @@ import {
   toolCardHeadOf,
   toolDevDetailsOf,
   toolProvenanceOf,
+  PROVENANCE_SOURCE_KEYS,
   toolStepSourceOf,
   type ToolCardBody,
   type ToolCardHead,
@@ -164,12 +165,6 @@ export function stepSourceIcon(kind: ToolStepSourceKind): JSX.Element {
       )
   }
 }
-
-const PROVENANCE_SOURCE_KEYS = {
-  builtin: "alpha.timeline.sourceBuiltin",
-  "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
-  "third-party": "alpha.timeline.sourceThirdParty",
-} as const
 
 /** `#1576` 执行位置的人话:本机 / 云端 / 主机名 / 位置未知。 */
 export function provenanceLocationText(location: ToolProvenanceLocation): string {

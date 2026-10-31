@@ -683,23 +683,42 @@ const v1TaskOnce = v1({
   always: [],
   metadata: {},
 })
-// packages/opencode/src/permission/alpha-tool-policy-gate.ts:194-215;形状同引擎测试
-// test/permission/alpha-approval-binding.test.ts:405-410 断言的那一份
-function v1Identity(askedBy: "policy" | "ruleset", policy: Record<string, unknown> = {}, agent = "alpha-ask") {
+// packages/opencode/src/permission/alpha-tool-policy-gate.ts:194-215(confirm 写的 metadata:identity / authority /
+// transport / policy);policy 形状同引擎测试 test/permission/alpha-approval-binding.test.ts:405-410 断言的那一份,
+// identity 是 ToolIdentity(source / origin / name,canonical = `mcp:<origin>:<name>`),第三方 MCP 的 authority 恒 not-asserted。
+function v1Identity(
+  askedBy: "policy" | "ruleset",
+  policy: Record<string, unknown> = {},
+  agent = "alpha-ask",
+  tool: { canonical: string; identity: unknown; authority: unknown } = {
+    canonical: "mcp:notion:search_pages",
+    identity: { source: "mcp", origin: "notion", name: "search_pages" },
+    authority: { kind: "not-asserted" },
+  },
+) {
   const patterns = askedBy === "policy" ? [`${BINDING}@sha256:${"c".repeat(64)}`] : ["call:call_ui_1"]
   return v1(
     {
       id: `per_v1_identity_${askedBy}`,
-      permission: "mcp:notion:search_pages",
+      permission: tool.canonical,
       patterns,
       always: askedBy === "policy" ? patterns : [],
       metadata: {
-        identity: { kind: "mcp", server: "notion", tool: "search_pages" },
-        policy: { directory: "/Users/zian/project", canonical: "mcp:notion:search_pages", bindingDigest: BINDING, askedBy, ...policy },
+        identity: tool.identity,
+        authority: tool.authority,
+        transport: { kind: "mcp-remote", url: "https://mcp.notion.com/mcp" },
+        policy: { directory: "/Users/zian/project", canonical: tool.canonical, bindingDigest: BINDING, askedBy, ...policy },
       },
     },
     agent,
   )
+}
+
+// Code Puppy 云工具:authority = alpha-cloud(引擎 authorityForMcp 铸的证据),identity.name 是远端原名 cloud_dispatch。
+const CLOUD_DISPATCH = {
+  canonical: "mcp:alpha:cloud_dispatch",
+  identity: { source: "mcp", origin: "alpha", name: "cloud_dispatch" },
+  authority: { kind: "alpha-cloud", bindingId: "mcp:alpha", evidenceDigest: `sha256:${"d".repeat(64)}` },
 }
 
 const card = () => document.querySelector<HTMLElement>("[role='dialog']")!
@@ -961,6 +980,25 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest, { signedIn: true })
     await flush()
     expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 当前账户 · 可在设置里撤回")
+  })
+
+  test.each([
+    ["第三方 MCP", v1Identity("ruleset"), "search_pages", "第三方"],
+    ["Code Puppy 云", v1Identity("policy", {}, "alpha-ask", CLOUD_DISPATCH), "下发云端任务", "Code Puppy 云"],
+    [
+      "同名云工具但没有云证据",
+      v1Identity("policy", {}, "alpha-ask", { ...CLOUD_DISPATCH, authority: { kind: "not-asserted" } }),
+      "cloud_dispatch",
+      "第三方",
+    ],
+  ] as const)("r1-5 身份轴「要做什么」写可读名与来源(与时间线同一套判定),不写 canonical:%s", async (_name, permissionRequest, title, source) => {
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+    await flush()
+
+    const action = card().querySelector<HTMLElement>('[data-permission-fact="action"]')!
+    expect(action.querySelector("dd")?.textContent).toBe(title)
+    expect(action.querySelector("small")?.textContent).toBe(source)
+    expect(card().textContent).not.toContain(permissionRequest.action)
   })
 
   test("AC6 新式请求(带 save):中间按钮仍是「始终允许」,照旧创建项目授权,五项事实与页脚说明都在", async () => {

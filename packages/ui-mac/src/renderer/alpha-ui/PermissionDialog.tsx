@@ -11,9 +11,12 @@ import { Portal } from "solid-js/web"
 // 审批卡的测试运行时(实测 vite 解析 `@/index.css` 失败)。与 barrel 导出的是同一个文件、同一份实现。
 import { isPermissionV1Fingerprint } from "../../../../app/src/context/permission-v1-adapter"
 import type { ToolPolicyApi } from "../../shared/tool-policy-wire"
+import { approvalToolOf, PROVENANCE_SOURCE_KEYS } from "./session-timeline/cards/tool-card-model"
 import { Button } from "./Button"
 import { t } from "../i18n"
 import "./permission-dialog.css"
+
+type I18nKey = Parameters<typeof t>[0]
 
 export type PermissionDecisionSubmitError = {
   kind: "conflict" | "failed"
@@ -56,6 +59,15 @@ export function PermissionDialog(props: {
   const facts = permissionRequestFacts(props.request)
   const approval = permissionApprovalOf(props.request)
   const saved = savedResources(props.request)
+  // 身份轴「要做什么」:可读名与来源,与时间线同一套判定(#1576);canonical 是技术原文,不上卡。
+  const tool =
+    approval.kind === "project" || approval.kind === "every-time"
+      ? approvalToolOf({
+          identity: props.request.metadata?.identity,
+          authority: props.request.metadata?.authority,
+          technicalId: props.request.action,
+        })
+      : undefined
   const [state, setState] = createStore<{
     /** 正在提交的那个按钮(「在此项目中始终允许」从写设置起就算在途)。 */
     busy?: PermissionV2Decision
@@ -247,10 +259,22 @@ export function PermissionDialog(props: {
             }
           >
             {(action) => (
-              <>
-                <dd>{action()}</dd>
-                <small>{t("alpha.permission.actionHint")}</small>
-              </>
+              <Show
+                when={tool}
+                fallback={
+                  <>
+                    <dd>{action()}</dd>
+                    <small>{t("alpha.permission.actionHint")}</small>
+                  </>
+                }
+              >
+                {(value) => (
+                  <>
+                    <dd>{value().titleKey ? t(value().titleKey as I18nKey) : value().name}</dd>
+                    <small>{t(PROVENANCE_SOURCE_KEYS[value().source])}</small>
+                  </>
+                )}
+              </Show>
             )}
           </Show>
         </div>
