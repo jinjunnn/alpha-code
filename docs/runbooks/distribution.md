@@ -50,7 +50,8 @@ review_after: 2026-10-14
 #      · packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-1556/model-catalog-v3.json 的 consumer_version
 #        (这两格是 alpha-platform 的 cutover gate 读的「本仓已切到哪一版」)
 #      · bun.lock 里 workspaces["packages/ui-mac"].version —— **不要手改**,在仓根跑一次
-#        `bun install` 让 bun 自己写回;漏掉它,之后每一次 bun install(含 worktree-bootstrap.sh)
+#        `HUSKY=0 bun install` 让 bun 自己写回(HUSKY=0:不让 husky 的 prepare 改写共享 `.git/config`
+#        的 core.hooksPath —— worktree 与主检出共用这一份配置);漏掉它,之后每一次 bun install(含 worktree-bootstrap.sh)
 #        都会把工作树弄脏。注意 `bun install --frozen-lockfile` **不**报这个不一致(实测 exit 0)。
 #    别照这段清单手工核对 —— 跑判据:
 #      bun test --cwd packages/ui-mac src/main/shipped-version-propagation.test.ts
@@ -101,7 +102,7 @@ gh release create v0.1.20 \
   latest-mac.yml \
   alpha-release-manifest.json alpha-release-manifest.json.sig \
   alpha-code-0.1.20-sbom.cdx.json \
-  --repo jinjunnn/alpha-code --target alpha \
+  --repo jinjunnn/alpha-code --target <发版 PR 在 alpha 上的合并提交完整 SHA> \
   --title "Code Puppy 0.1.20" --notes "……"
 
 # ⑤ 确认自动更新 feed 通(electron-updater 就读这个 URL)
@@ -112,7 +113,9 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 **要点**
 - `latest-mac.yml` 里的文件名必须与上传的 asset 名**逐字一致**(electron-builder 自动生成,勿改名)。
 - Release **不能是 draft/prerelease**(否则 `latest` 渠道拉不到)。tag 用 `v<version>`。
-- `--target alpha`:tag 打在自有代码所在分支。
+- `--target`:tag `v<version>` 必须指向**发版 PR 的合并提交**(就是 ②③ 打包时检出的那个提交;v0.1.23 = `cdac75a58`),
+  不写 `--target alpha` —— 合并之后 alpha 可能已经前进,按分支名打会把 tag 打在包里没有的代码上。
+  发布前核对:`git rev-parse HEAD`(打包时的检出)与 `--target` 的 SHA 逐字相同。
 - 只想本机自己用、不分发 → 用 `bun run ship:mac`(= build + package + 装到 `/Applications`);发布用 `package:mac`(只出产物,不动你在用的 app)。
 
 ## 2. Intel 芯片 Mac(x64)包(#1496)
