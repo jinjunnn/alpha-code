@@ -1643,6 +1643,7 @@ export const dict = {
   "alpha.timeline.turnErrorSignIn": "Sign in again",
   "alpha.timeline.turnErrorSettings": "Open settings",
   "alpha.timeline.turnErrorNewChat": "New chat",
+  "alpha.timeline.turnErrorChooseModel": "Switch model",
   "alpha.timeline.turnErrorContinue": "Continue",
   "alpha.timeline.turnErrorEgressBlocked":
     "This computer's own network policy blocked the request — {{authority}} is not on the list of destinations this app is allowed to reach. The model service and your key are not at fault, and sending again will hit the same block.",

@@ -48,6 +48,8 @@ export interface AlphaSessionTimelineProps {
   onReadAttachment?: (attachment: StagedAttachmentMeta) => void
   /** `#1588` AC3:回合错误卡「新对话」—— 侧栏「新对话」同一条命令;缺席 = 不出按钮。 */
   onNewSession?: () => void
+  /** `#1588` AC3:回合错误卡「换模型」—— 输入框模型选择器的打开动作(composer 登记时才有);缺席 = 不出按钮。 */
+  chooseModel?: Accessor<(() => void) | undefined>
   /** `#1588` AC1 读取期限(测试注入用;缺省 READ_DEADLINE_MS)。 */
   readDeadlineMs?: number
 }
@@ -237,6 +239,9 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     openSettings: () => setSettingsOpen(true),
     get newSession() {
       return props.onNewSession
+    },
+    get chooseModel() {
+      return props.chooseModel?.()
     },
     // REQ-236 `#1552`:生图卡跟住的 run 所在目录 = 会话身份的 directory(右栏产物面板同一货币)。
     get cloudDirectory() {

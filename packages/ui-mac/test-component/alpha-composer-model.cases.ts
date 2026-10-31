@@ -4773,3 +4773,79 @@ describe("#1558 输入框模型按钮与添加供应商卡按品牌出图", () =
     mounted.dispose()
   })
 })
+
+// `#1588` AC3 —— 回合错误卡「换模型」= 输入框的模型选择器:真 AlphaComposerRuntime(session 模式)经 workspace 同一个
+// 通道登记打开动作,真 TurnErrorCard 消费它。输入框没登记时按钮不出,不改用别的动作。
+describe("#1588 AC3 回合错误卡「换模型」打开输入框的模型选择器", () => {
+  test("composer 登记后卡上出「换模型」,点它 → 模型选择器打开;卸载 composer → 按钮消失", async () => {
+    installApi()
+    const { createComposerModelPickerChannel } = await import(
+      "../src/renderer/alpha-ui/session-workspace/session-workspace-core"
+    )
+    const { TurnErrorCard } = await import("../src/renderer/alpha-ui/session-timeline/cards/tool-cards")
+    const { TimelineIntentsContext } = await import("../src/renderer/alpha-ui/session-timeline/cards/timeline-intents")
+    const channel = createComposerModelPickerChannel()
+    const row = {
+      kind: "turnError",
+      key: "turn-error:msg_u1",
+      rev: "x",
+      userMessageID: "msg_u1",
+      name: "APIError",
+      message: "预授权拒绝: member-only model 需 active 会员",
+      cause: "billing",
+      statusCode: 402,
+    } as const
+    const card = mount(() =>
+      createComponent(TimelineIntentsContext.Provider, {
+        value: {
+          get chooseModel() {
+            return channel.current()
+          },
+        },
+        get children() {
+          return createComponent(TurnErrorCard, { row })
+        },
+      }),
+    )
+    const chooseModel = () =>
+      [...card.host.querySelectorAll<HTMLButtonElement>("[data-alpha-turn-error-actions] button")].find(
+        (button) => button.textContent === "换模型",
+      )
+    // 输入框还没挂载:没人登记 ⇒ 不出按钮。
+    expect(chooseModel()).toBeUndefined()
+
+    const composer = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/workspace",
+        sessionID: () => "A",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+          switch: async () => {},
+        },
+        sessionDock: {
+          running: () => false,
+          contextUsage: () => null,
+          approvalPending: () => false,
+          registerModelPicker: channel.register,
+        },
+      }),
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    await waitFor(() => expect(chooseModel()).toBeDefined())
+    expect(document.body.querySelectorAll('[data-alpha-picker-owner="alpha.composer-model"]')).toHaveLength(0)
+
+    click(chooseModel()!)
+    await waitFor(() =>
+      expect(document.body.querySelectorAll('[data-alpha-picker-owner="alpha.composer-model"]')).toHaveLength(1),
+    )
+
+    composer.dispose()
+    await flush()
+    expect(chooseModel()).toBeUndefined()
+    card.dispose()
+  })
+})

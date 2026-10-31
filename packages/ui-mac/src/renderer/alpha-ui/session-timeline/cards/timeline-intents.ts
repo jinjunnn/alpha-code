@@ -101,6 +101,8 @@ export interface TimelineIntents {
   signIn?: () => void
   openSettings?: () => void
   newSession?: () => void
+  /** `#1588`:输入框模型选择器的打开动作;composer 没登记时缺席,「换模型」不出。 */
+  chooseModel?: () => void
 }
 
 export const TimelineIntentsContext = createContext<TimelineIntents>({})

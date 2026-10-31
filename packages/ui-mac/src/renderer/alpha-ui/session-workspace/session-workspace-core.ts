@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import type { Route } from "../../../shared/route-manifest"
 import { projectLabel } from "../../sidebar/route"
 import { sessionDisplayTitle } from "../session-title"
@@ -89,5 +90,23 @@ export function createComposerFocusChannel() {
     focus(): void {
       current?.()
     },
+  }
+}
+
+/**
+ * `#1588` AC3:会话页「打开输入框的模型选择器」的通道。与焦点通道同形,但登记状态是反应式的:
+ * 回合错误卡的「换模型」只在有人登记时才出现(输入框没挂载 = 不出按钮,不改用别的动作)。
+ * 注销只撤自己那一份(按身份 keyed 重挂时新实例可能先登记)。
+ */
+export function createComposerModelPickerChannel() {
+  const [current, setCurrent] = createSignal<(() => void) | undefined>(undefined)
+  return {
+    register(open: () => void): () => void {
+      setCurrent(() => open)
+      return () => {
+        if (current() === open) setCurrent(undefined)
+      }
+    },
+    current,
   }
 }

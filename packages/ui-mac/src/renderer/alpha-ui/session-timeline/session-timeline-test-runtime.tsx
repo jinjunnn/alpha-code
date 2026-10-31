@@ -87,6 +87,9 @@ const harnessIntents = {
   get newSession() {
     return intentsEnabled() ? () => void intentLog.turnErrorExits.push("newSession") : undefined
   },
+  get chooseModel() {
+    return intentsEnabled() ? () => void intentLog.turnErrorExits.push("chooseModel") : undefined
+  },
 }
 
 export { render }

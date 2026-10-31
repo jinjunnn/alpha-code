@@ -821,7 +821,7 @@ function turnNetCopy(row: Extract<TimelineRow, { kind: "turnError" }>): string |
 }
 
 // `#1588`(批准稿 frame.html#turn-error):五类认得出的原因 —— 标题说原因、按钮走既有入口,错误名 / 状态码 / 服务原话
-// 只进「开发者详情」。按钮的 intent 缺席即不出(fail-closed)。「换模型」暂无可调用的既有入口,不出。
+// 只进「开发者详情」。按钮的 intent 缺席即不出(fail-closed);「换模型」= 输入框模型选择器,composer 没登记时不出。
 const TURN_ERROR_TITLE: Record<TurnErrorCause, Parameters<typeof t>[0]> = {
   billing: "alpha.timeline.turnErrorBilling",
   auth: "alpha.timeline.turnErrorAuth",
@@ -851,13 +851,21 @@ function TurnErrorActions(props: { cause: TurnErrorCause }) {
     }
   }
   const buttons = createMemo(() => {
-    if (props.cause === "billing") return [action("alpha.timeline.turnErrorRecharge", intents.recharge)]
+    if (props.cause === "billing")
+      return [
+        action("alpha.timeline.turnErrorRecharge", intents.recharge),
+        action("alpha.timeline.turnErrorChooseModel", intents.chooseModel),
+      ]
     if (props.cause === "auth")
       return [
         action("alpha.timeline.turnErrorSignIn", intents.signIn),
         action("alpha.timeline.turnErrorSettings", intents.openSettings),
       ]
-    if (props.cause === "contextOverflow") return [action("alpha.timeline.turnErrorNewChat", intents.newSession)]
+    if (props.cause === "contextOverflow")
+      return [
+        action("alpha.timeline.turnErrorNewChat", intents.newSession),
+        action("alpha.timeline.turnErrorChooseModel", intents.chooseModel),
+      ]
     if (props.cause === "outputLength") return [action("alpha.timeline.turnErrorContinue", resume())]
     return []
   })

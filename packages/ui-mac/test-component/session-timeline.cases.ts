@@ -4501,12 +4501,12 @@ describe("#1588 AC3 回合错误卡:五类按错误名与状态码认,标题与�
   }
 
   const table = [
-    { error: { name: "APIError", data: { message: RAW, statusCode: 402, isRetryable: false } }, title: "余额或会员不足", actions: ["充值"], exits: ["recharge"] },
+    { error: { name: "APIError", data: { message: RAW, statusCode: 402, isRetryable: false } }, title: "余额或会员不足", actions: ["充值", "换模型"], exits: ["recharge", "chooseModel"] },
     { error: { name: "APIError", data: { message: "Unauthorized", statusCode: 401, isRetryable: false } }, title: "登录或 Key 无效", actions: ["重新登录", "去设置"], exits: ["signIn", "openSettings"] },
     { error: { name: "APIError", data: { message: "Forbidden", statusCode: 403, isRetryable: false } }, title: "登录或 Key 无效", actions: ["重新登录", "去设置"], exits: ["signIn", "openSettings"] },
     { error: { name: "ProviderAuthError", data: { providerID: "deepseek", message: "invalid api key" } }, title: "登录或 Key 无效", actions: ["重新登录", "去设置"], exits: ["signIn", "openSettings"] },
     { error: { name: "APIError", data: { message: "rate limited", statusCode: 429, isRetryable: true } }, title: "请求太频繁,稍后再试", actions: [], exits: [] },
-    { error: { name: "ContextOverflowError", data: { message: "prompt is too long" } }, title: "对话太长", actions: ["新对话"], exits: ["newSession"] },
+    { error: { name: "ContextOverflowError", data: { message: "prompt is too long" } }, title: "对话太长", actions: ["新对话", "换模型"], exits: ["newSession", "chooseModel"] },
   ]
 
   test("402 / 401 / 403 / ProviderAuthError / 429 / ContextOverflowError → 固定标题与按钮,按钮触发既有入口;原话只在开发者详情", async () => {

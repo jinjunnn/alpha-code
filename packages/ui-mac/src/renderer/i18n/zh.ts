@@ -1619,6 +1619,7 @@ export const dict = {
   "alpha.timeline.turnErrorSignIn": "重新登录",
   "alpha.timeline.turnErrorSettings": "去设置",
   "alpha.timeline.turnErrorNewChat": "新对话",
+  "alpha.timeline.turnErrorChooseModel": "换模型",
   "alpha.timeline.turnErrorContinue": "继续",
   "alpha.timeline.turnErrorEgressBlocked":
     "这台电脑上的网络策略拦下了这次请求 —— {{authority}} 不在本应用允许访问的地址名单里。不是模型服务的问题,也不是你的 Key 的问题;原样再发一次仍会被同一道策略拦下。",

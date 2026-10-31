@@ -31,7 +31,13 @@ import {
   discardStaleEditRequest,
 } from "./session-edit-user-message"
 import { sessionSlashOriginsFor } from "./session-slash-origin"
-import { createComposerFocusChannel, identityKey, sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
+import {
+  createComposerFocusChannel,
+  createComposerModelPickerChannel,
+  identityKey,
+  sameSessionIdentity,
+  sessionLiveSnapshotOf,
+} from "./session-workspace-core"
 import type { StagedAttachmentMeta } from "../../../shared/attachment-path"
 import { stagedComposerAttachment } from "../composer-attachments-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
@@ -75,6 +81,8 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
   const [turnWait, setTurnWait] = createSignal<TimelineTurnWait | undefined>(undefined)
   // `#1318` AC3:composer 登记「聚焦我的输入框」,时间线空回合行「修改后再试」调用它。
   const composerFocus = createComposerFocusChannel()
+  // `#1588` AC3:composer 登记「打开模型选择器」,回合错误卡「换模型」调用它。
+  const composerModelPicker = createComposerModelPickerChannel()
   // 编辑预填只属于发起时的 I8 身份；一旦离开该会话就销毁，返回时不得再次覆盖草稿。
   createEffect(() => discardStaleEditRequest(editRequest(), current()?.identity, () => setEditRequest(undefined)))
   const canEditUserMessage = createMemo(() => {
@@ -164,6 +172,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
               turnWait={turnWait}
               onFocusPrompt={composerFocus.focus}
               onNewSession={() => command.trigger("session.new")}
+              chooseModel={composerModelPicker.current}
             />
           )}
           composer={() => (
@@ -173,6 +182,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
               editRequest={editRequest}
               publishTurnWait={setTurnWait}
               registerComposerFocus={composerFocus.register}
+              registerComposerModelPicker={composerModelPicker.register}
             />
           )}
           panels={{

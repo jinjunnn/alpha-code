@@ -49,6 +49,8 @@ export function SessionComposerDock(props: {
   publishTurnWait?: (wait: TimelineTurnWait | undefined) => void
   /** `#1318` AC3:workspace 焦点通道的登记口,原样交给 composer;缺席 = 不登记(harness)。 */
   registerComposerFocus?: (focus: () => void) => () => void
+  /** `#1588` AC3:workspace「打开模型选择器」通道的登记口,原样交给 composer;缺席 = 不登记。 */
+  registerComposerModelPicker?: (open: () => void) => () => void
 }) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
@@ -194,6 +196,7 @@ export function SessionComposerDock(props: {
     contextUsage: usage,
     approvalPending,
     registerFocus: (focus) => props.registerComposerFocus?.(focus) ?? (() => {}),
+    registerModelPicker: (open) => props.registerComposerModelPicker?.(open) ?? (() => {}),
     onSlashCommand: (capture: ComposerSlashCapture) => {
       const bound = identity()
       if (!bound || bound.sessionID !== capture.sessionID || bound.directory !== capture.directory) return
