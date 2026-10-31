@@ -577,7 +577,7 @@ describe("#1595 AC3 云连接器详情:人话标题、状态、登录入口与�
   })
 })
 
-describe("#1595 AC4 发送框、结果、生效状态、npm 导入与云端错误的文字按批准稿对照表", () => {
+describe("#1595 AC4 发送框、结果、生效状态与云端错误的文字按批准稿对照表", () => {
   test("zh 文案逐条对照,且不写 .code-puppy/runs 一类目录名", () => {
     const expected: Partial<Record<keyof typeof zh, string>> = {
       "alpha.ext.hubStatePending": "待生效",
@@ -587,7 +587,6 @@ describe("#1595 AC4 发送框、结果、生效状态、npm 导入与云端错�
       "alpha.ext.hubReloadNowHint": "会打断正在输出的回答",
       "alpha.ext.hubReloadNowRefused": "未能生效,请重启应用",
       "alpha.cloud.runSaved": "结果已存到本机",
-      "alpha.ext.importNpmHint": "输入 npm 包名,如 pkg@1.2.3",
       "alpha.ext.cloudConnRecovering": "正在恢复登录",
       "alpha.ext.cloudConnectorTitle": "云连接器",
       "alpha.ext.cloudConnNeedLogin": "未连接 · 需登录",
