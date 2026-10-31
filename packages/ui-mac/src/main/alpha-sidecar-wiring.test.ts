@@ -185,6 +185,62 @@ test("#1565: fork 注入 ALPHA_OFFICE_MCP_MANIFEST,引擎据它认出写策略�
   await result.listener.stop()
 })
 
+// REQ-236 `#1575` AC4:生产 spawnLocalServer 在 fork 时按**当刻的登录账户**写 ALPHA_POLICY_ACCOUNT(引擎据它选工具策略
+// 分区),未登录不写(引擎退回 anonymous)。登录态走真 alpha-auth:dev 短路令牌(未打包时 DEV_PLATFORM_TOKEN)的
+// `account.read` 的 sub。期望值从 sub 独立算出,不调被测函数;shell 导出的同名变量选不了分区。
+test("#1575: fork 按登录账户写 ALPHA_POLICY_ACCOUNT(sub 不同值不同、不含明文);未登录不写,导出的同名变量不透传", async () => {
+  const { createHash } = await import("node:crypto")
+  const sha256 = (value: string) => createHash("sha256").update(value).digest("hex")
+  const token = (sub: string) =>
+    `${Buffer.from("{}").toString("base64url")}.${Buffer.from(
+      JSON.stringify({
+        schema_version: 1,
+        iss: "alpha-web",
+        aud: "alpha-platform-api",
+        sub,
+        token_use: "platform_access",
+        purpose: "account.read",
+        scope: ["account.read"],
+        iat: 1,
+        exp: 2,
+        jti: `jti-${sub}`,
+      }),
+    ).toString("base64url")}.signature`
+  const forkEnv = async (port: number) => {
+    const child = new RecordingChild()
+    let env: Record<string, string> = {}
+    creditDanglingSweepForSpawn()
+    const result = await spawnLocalServer("127.0.0.1", port, "password", {
+      userDataPath,
+      healthCheck: async () => true,
+      fork: ((_: string, __: string[], options: { env: Record<string, string> }) => {
+        env = options.env
+        return child
+      }) as unknown as typeof import("electron").utilityProcess.fork,
+      egressProxy: async () => ({ port: 4433 }),
+      planFence: () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" }),
+    })
+    await result.health.wait
+    await result.listener.stop()
+    return env
+  }
+  for (const key of ["DEV_PLATFORM_TOKEN", "ALPHA_POLICY_ACCOUNT"]) saved[key] = process.env[key]
+
+  process.env.DEV_PLATFORM_TOKEN = token("tenant-a")
+  const a = (await forkEnv(4394)).ALPHA_POLICY_ACCOUNT
+  expect(a).toBe(`acct:${sha256(sha256("tenant-a").slice(0, 32))}`)
+  expect(a).not.toContain("tenant-a")
+
+  process.env.DEV_PLATFORM_TOKEN = token("tenant-b")
+  const b = (await forkEnv(4395)).ALPHA_POLICY_ACCOUNT
+  expect(b).toBe(`acct:${sha256(sha256("tenant-b").slice(0, 32))}`)
+  expect(b).not.toBe(a)
+
+  delete process.env.DEV_PLATFORM_TOKEN
+  process.env.ALPHA_POLICY_ACCOUNT = "acct:exported-by-shell"
+  expect(await forkEnv(4396)).not.toHaveProperty("ALPHA_POLICY_ACCOUNT")
+})
+
 // `#1531`:ext 的 parentPort 监听必须在 ready **之前**挂上(main 只在 ready 那一刻重发在途代际)。sidecar.ts 顶层的 registerHooks /
 // getParentPort() 让它不能被 import,接线只能锚源码:ext 预载在引擎 import 之后开始、在 ready 上报之前 await 完;
 // 预载的 URL 形状与引擎解析路径插件的形状逐字相同(上游 plugin/shared.ts 的 resolvePathPluginTarget),否则会装出第二份模块。

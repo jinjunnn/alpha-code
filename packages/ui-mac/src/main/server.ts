@@ -1,4 +1,5 @@
 import { clearOfficialConnectorRuntime, clearOfficialConnectorRuntimeOnExit, restoreCommittedOfficialConnectors } from "./official-connector-resources"
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -12,6 +13,7 @@ import { fileURLToPath } from "node:url"
 import * as electronNs from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
+import { getAuthIdentityTag } from "./alpha-auth"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
@@ -553,6 +555,11 @@ export async function spawnLocalServer(
   // #1565:引擎在四个文档工具连上之前,用这份随包清单给出它们的声明定义(packages/opencode/src/mcp/alpha-first-party-mcp.ts)。
   // 与写策略(ext-mcp-policy)一样按资源根的 realpath 解析,配置里那四条命令才能逐 token 对上。路径不是秘密。
   sidecarEnv.ALPHA_OFFICE_MCP_MANIFEST = join(realpathSync(resourcesRoot()), "office-mcp", "tools.json")
+  // REQ-236 `#1575`(方案 §2.4 第 4 条):工具策略按登录账户分区。引擎读它选分区,缺席 = anonymous(未登录)。
+  // 值是账户标记的哈希,不是凭据;只由这里按当刻登录态写 —— 不进白名单,shell 导出的同名变量选不了分区。
+  // 登录、登出、换号都会重新 fork(alpha-auth 的 identity-change),所以 fork 时写一次即可。
+  const policyAccount = getAuthIdentityTag()
+  if (policyAccount) sidecarEnv.ALPHA_POLICY_ACCOUNT = `acct:${createHash("sha256").update(policyAccount).digest("hex")}`
   // REQ-137 `#1379`:这一代的 BYOK 放行集合。平台无关(代理只在 darwin 起,但「放行集合 = 这一代的配置」
   // 这条不该长两个样子),排在密钥文件落定之后、fork 之前。
   refreshConfiguredEgressDestinations(options.userDataPath)

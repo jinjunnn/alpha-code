@@ -234,7 +234,11 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Al
 export interface LayerOptions {
   /** 测试注入口(生产零参):策略文档根目录。 */
   readonly baseDir?: string
-  /** 测试注入口:账户 subject。生产默认 anonymous —— 引擎侧今天没有账户权威,#1129/#1130 接线。 */
+  /**
+   * 测试注入口:账户 subject。生产默认读 `ALPHA_POLICY_ACCOUNT`(REQ-236 方案 §2.4 第 4 条:桌面主进程在 fork
+   * 引擎时按当前登录账户写入 `acct:<哈希>`,未登录不写),缺席即 anonymous 分区。登录、登出、换号都会
+   * 重新 fork 引擎,所以一个进程只看到一个账户;anonymous 分区里的旧记录不迁移。
+   */
   readonly account?: Effect.Effect<string>
   /** 测试注入口:managed cap 读取(生产 = `readManagedPolicy()`,系统目录不可被 env 替换)。 */
   readonly managed?: () => Promise<ManagedPolicyResult>
@@ -245,7 +249,7 @@ export const layer = (options?: LayerOptions) =>
     Service,
     Effect.gen(function* () {
       const baseDir = options?.baseDir ?? path.join(Global.Path.data, "alpha-tool-policy")
-      const accountEffect = options?.account ?? Effect.succeed("anonymous")
+      const accountEffect = options?.account ?? Effect.sync(() => process.env.ALPHA_POLICY_ACCOUNT || "anonymous")
       const managedRead = options?.managed ?? (() => readManagedPolicy())
 
       const partition = Effect.gen(function* () {

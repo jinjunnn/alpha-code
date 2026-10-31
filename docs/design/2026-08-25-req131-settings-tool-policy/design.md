@@ -78,7 +78,7 @@ hub-settings 时代的「仅 通用 + 快捷键」两项;现役实现已有第�
 | 「服务已变更」徽标 + 重新启用 | `reason.kind = "binding-changed"`;重新启用 = 以当前 digest 重写 enabled 记录 | 已落地 |
 | 损坏恢复横幅 + 重置 | user layer `quarantined` + `reset()`(返回备份路径) | 已落地 |
 | 逐条保存失败 | `ToolPolicyWriteError`(含 quarantine 拒写) | 已落地 |
-| 「仅当前账户与当前项目」 | `inspect().partition` | 已落地 |
+| 「仅当前账户与当前项目」 | `inspect().partition` | 已落地;账户分区自 alpha-code#1575 接上真实登录账户(桌面主进程 fork 引擎时写 `ALPHA_POLICY_ACCOUNT`,未登录为 `anonymous`;此前生产恒为 `anonymous`,换号后旧账户的「启用」仍生效) |
 | 每类 / 每服务条数、工具清单本身 | live inventory(§5:identity + 可信 authority + 继承 + effective + binding change) | 已落地(#1129 reopen;`AlphaToolInventory.list()`,wire 形状 `packages/schema/src/alpha-tool-inventory.ts`,闸 `test/permission/alpha-tool-inventory.test.ts` I1) |
 | 「新发现」徽标 | 同上(§3:无 broad override 的新动态工具标「新发现」) | 已落地(#1129 reopen;`tools[].newlyDiscovered`,闸 I1) |
 | 「计费:按用量 / 未知」 | `ToolBillingFact { class, evidenceId }`(宿主 / 服务端可信事实;缺失显示「未知」) | schema 已落地;供给随 inventory |
