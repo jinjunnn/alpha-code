@@ -128,6 +128,16 @@
   background: var(--a-accent);
 }
 
+/* alpha-code 1588 AC4:等你批准 / 等你回答 —— 警示色,与时间线工作过程标题的等你面同一读法;在等人,不呼吸。 */
+.a-swk-status--wait {
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+
+.a-swk-status--wait .a-swk-status-dot {
+  background: var(--a-warning);
+}
+
 .a-swk-grow {
   flex: 1;
 }

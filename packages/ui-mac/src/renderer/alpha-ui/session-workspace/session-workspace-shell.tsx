@@ -228,7 +228,11 @@ function WorkspaceTopbar(props: {
       <Show when={status()}>
         {(current) => (
           <span
-            class="a-swk-status a-swk-status--running"
+            class="a-swk-status"
+            classList={{
+              "a-swk-status--running": current().kind === "running" || current().kind === "retry",
+              "a-swk-status--wait": current().kind === "approval" || current().kind === "question",
+            }}
             data-alpha-session-status={current().kind}
             role="status"
             aria-live="polite"

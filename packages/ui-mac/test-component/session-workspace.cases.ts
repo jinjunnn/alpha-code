@@ -175,9 +175,13 @@ describe("REQ-125 session workspace real Solid mount", () => {
     await flush()
     expect({ kind: status()!.dataset.alphaSessionStatus, text: status()!.textContent }).toEqual({ kind: "running", text: "正在生成" })
 
+    expect(status()!.classList.contains("a-swk-status--running")).toBe(true)
+
     runtime.setSessionWorkspaceTurnWait("approval")
     await flush()
     expect({ kind: status()!.dataset.alphaSessionStatus, text: status()!.textContent }).toEqual({ kind: "approval", text: "等你批准" })
+    // 批准稿 #conv-header:「等你」态是警示色(不是生成中的强调色)。
+    expect([...status()!.classList].filter((name) => name.startsWith("a-swk-status--"))).toEqual(["a-swk-status--wait"])
 
     runtime.setSessionWorkspaceTurnWait("question")
     await flush()
