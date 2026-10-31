@@ -4,7 +4,7 @@
 // prebuild/predev 已构建 packages/ext/dist/plugin.js)。装载链:
 //   main(spawnLocalServer)解析出 bundle 绝对路径 → 经 StartCommand 传给 sidecar(不走 env,
 //   免动 A6 白名单)→ injectAlphaConfig 合并进 OPENCODE_CONFIG_CONTENT 的 V1 `plugin`(单数)数组
-//   → opencode 引擎按原生 plugin 机制加载 → alpha_ping/alpha_echo 进工具表,零改上游(ADR-002/005)。
+//   → opencode 引擎按原生 plugin 机制加载 → codepuppy_ping/codepuppy_echo 进工具表,零改上游(ADR-002/005)。
 //
 // 逃生:ALPHA_EXT_DISABLE=1 跳过装载。缺文件 → 返回 reason,调用方 loud warn(anti-B11:
 // 否则表现为「工具静默不在」)。

@@ -62,7 +62,7 @@ import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
 //
 //   4. B6(=G1):@alpha-code/ext 装载 —— main 解析好的自包含 bundle 绝对路径合并进 V1 `plugin`
 //      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
-//      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
+//      (ADR-006 caveat)的运行时证明 = codepuppy_ping 出现在工具表且能执行(真机批核验)。
 
 // #613:注入失败的可上报形态(结构化,可过 IPC)。爆炸半径随抛点而异:最早(identity mkdir)
 // = 整份注入丢失(OPENCODE_CONFIG_CONTENT / OPENCODE_CONFIG_DIR 双双缺席);最晚(v2 桥,

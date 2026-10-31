@@ -48,18 +48,18 @@ describe("factorySkillSources", () => {
   test("#1532 AC5: customization teaches search, confirmation, availability and project trust", () => {
     const text = readFileSync(join(import.meta.dir, "../../resources/factory-skills/customize-code-puppy/SKILL.md"), "utf8")
     for (const sentence of [
-      "Search first with `hub_search`",
+      "Search first with `codepuppy_hub_search`",
       "offers skills, agents, commands, connectors (MCP), bundles, and cloud capabilities",
-      "Explain what to install and why, then call `hub_install`",
+      "Explain what to install and why, then call `codepuppy_hub_install`",
       "app's confirmation box (软件弹出的确认框)",
       "If a key is needed, the user enters it in that box",
       "Never ask for or accept keys in chat; never invent or guess keys for the user",
-      "Check `hub_status` before use",
-      "For `submitted; result pending` or `reload-pending`, check\n   `hub_status` instead of repeating the installation",
+      "Check `codepuppy_hub_status` before use",
+      "For `submitted; result pending` or `reload-pending`, check\n   `codepuppy_hub_status` instead of repeating the installation",
       "do not wait inside\n   the current reply for reload",
       "显示可用以后,下一条消息就能用;不用重启",
       "Only promise use from the next message after the state is `available`",
-      "`alpha_register` tool only for project scope",
+      "`codepuppy_register` tool only for project scope",
       "Executable connectors stay gated until the user trusts the project",
       "(skills + agents + commands + connectors)",
       "Project `.code-puppy/plugins/*.js` files are loaded and executed with the same permissions as\n  the engine after the user trusts the project",
@@ -267,7 +267,7 @@ describe("REQ-233 cloud skill instructions", () => {
 
   test("AC1 checks local login before paid cloud, separates estimates from reserves, and explains refusals without retrying", () => {
     for (const instruction of [
-      "先调用本机工具 `alpha_cloud_access`",
+      "先调用本机工具 `codepuppy_access`",
       "未登录时按返回入口引导登录并停止",
       "调用任何收费云能力之前，先用免费的 `cloud_account_status`",
       "会员额度、钱包可用余额和「额度用完后用余额付」开关",

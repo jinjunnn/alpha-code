@@ -357,7 +357,7 @@ describe("hub-view 三档状态(§2.5)", () => {
   })
 
   // 审计 R1 Major 2:签名包(catalog.packages,main 评估过的 CatalogPackageViewV1)也是「客户端可安装的条目」——
-  // agent 的视图里必须有它(否则 hub_install 对 package:* 答 unknown entry);装上之后按它的组件行定档。
+  // agent 的视图里必须有它(否则 codepuppy_hub_install 对 package:* 答 unknown entry);装上之后按它的组件行定档。
   test("签名包进视图:可安装 ⇒ not-installed 包行(带前置条件名);装上 ⇒ 按组件行定档(全可用 = available,缺加载 = 待重载 + 组件原因)", async () => {
     const pkg: CatalogPackageViewV1 = {
       catalogId: "package:kit",

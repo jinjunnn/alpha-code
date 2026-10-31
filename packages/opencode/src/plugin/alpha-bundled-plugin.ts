@@ -24,6 +24,8 @@ export const EXT_BUNDLED_MANIFEST_ENV = "ALPHA_EXT_BUNDLED_MANIFEST"
 export type BundledPluginTools = {
   readonly authority: Extract<ToolAuthority, { kind: "codepuppy-bundled" }>
   readonly tools: ReadonlySet<string>
+  /** #1568 AC5: listed tool → its display identifier (`codepuppy:<action>`) as declared in the extension's tool table. */
+  readonly readable: ReadonlyMap<string, string>
 }
 
 export function bundledPluginTools(
@@ -37,10 +39,17 @@ export function bundledPluginTools(
     const manifest = JSON.parse(new TextDecoder().decode(readFile(manifestPath))) as {
       moduleSha256?: unknown
       tools?: unknown
+      readable?: unknown
     }
     const tools = manifest.tools
     if (typeof manifest.moduleSha256 !== "string" || !Array.isArray(tools)) return undefined
     if (!tools.every((name): name is string => typeof name === "string" && name.length > 0)) return undefined
+    // #1568 AC5: every listed tool declares exactly one display identifier; anything else is a malformed manifest.
+    const readable = manifest.readable
+    if (typeof readable !== "object" || readable === null || Array.isArray(readable)) return undefined
+    const readableOf = new Map(Object.entries(readable))
+    if (readableOf.size !== tools.length) return undefined
+    if (!tools.every((name) => /^codepuppy:[a-z0-9_]+$/.test(String(readableOf.get(name))))) return undefined
     const entry = load.entry.startsWith("file:") ? fileURLToPath(load.entry) : load.entry
     const digest = createHash("sha256").update(readFile(entry)).digest("hex")
     if (digest !== manifest.moduleSha256) return undefined
@@ -49,12 +58,13 @@ export function bundledPluginTools(
         kind: "codepuppy-bundled",
         bindingId: "plugin:alpha-ext",
         evidenceDigest: canonicalJsonDigest({
-          kind: "alpha-bundled-plugin",
+          kind: "codepuppy-bundled-plugin",
           moduleSha256: digest,
           tools: [...tools].sort(),
         }),
       },
       tools: new Set(tools),
+      readable: readableOf as Map<string, string>,
     }
   } catch {
     // Missing or unreadable manifest / module: nothing is proven; the tools stay third-party.

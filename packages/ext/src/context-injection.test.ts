@@ -267,11 +267,11 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
   })
 })
 
-describe("③a′ `#1531`:hub_install 动词的两条引用", () => {
-  test("全局与每个 agent 末位的 hub_install 解释得通;单段通配只吃恰好一段,不放行同 agent 的别的键、多一段或空段", () => {
-    for (const p of ["/permission/hub_install", "/agent/build/permission/hub_install", "/agent/codepuppy-automation/permission/hub_install"])
+describe("③a′ `#1531`:codepuppy_hub_install 动词的两条引用", () => {
+  test("全局与每个 agent 末位的 codepuppy_hub_install 解释得通;单段通配只吃恰好一段,不放行同 agent 的别的键、多一段或空段", () => {
+    for (const p of ["/permission/codepuppy_hub_install", "/agent/build/permission/codepuppy_hub_install", "/agent/codepuppy-automation/permission/codepuppy_hub_install"])
       expect(explainConfigReference(p).ok, p).toBe(true)
-    for (const p of ["/agent/build/permission/bash", "/agent/build/prompt", "/agent/permission/hub_install", "/agent//permission/hub_install", "/agent/a/b/permission/hub_install", "/permission/hub_installer"])
+    for (const p of ["/agent/build/permission/bash", "/agent/build/prompt", "/agent/permission/codepuppy_hub_install", "/agent//permission/codepuppy_hub_install", "/agent/a/b/permission/codepuppy_hub_install", "/permission/hub_installer"])
       expect(explainConfigReference(p).ok, p).toBe(false)
   })
 })
@@ -409,9 +409,9 @@ describe("③c 工具表咽喉:每个 description 都是登记项,登记项也�
     expect(typeof (await import("./plugin")).default).toBe("function")
     expect(unexplainedTools(tools)).toEqual([])
   })
-  test("REQ-232 AC1 alpha_cloud_access is available without Cloud MCP and returns a login entry", async () => {
+  test("REQ-232 AC1 codepuppy_access is available without Cloud MCP and returns a login entry", async () => {
     const hooks = await loadHooks()
-    const access = (hooks.tool as Record<string, { execute: () => Promise<{ output: string }> }>).alpha_cloud_access
+    const access = (hooks.tool as Record<string, { execute: () => Promise<{ output: string }> }>).codepuppy_access
     expect(access).toBeDefined()
     expect(JSON.parse((await access.execute()).output)).toEqual({
       logged_in: false, state: "logged-out", cloud_tools_enabled: false,
@@ -436,11 +436,11 @@ describe("③c 工具表咽喉:每个 description 都是登记项,登记项也�
     const hooks = await loadHooks()
     const tools = hooks.tool as ToolMap
     expect(unexplainedTools({ ...tools, rogue: { description: "unregistered tool", args: {} } })).toEqual(["tool.rogue.description"])
-    expect(unexplainedTools({ ...tools, alpha_ping: { ...tools.alpha_ping, description: tools.alpha_ping.description + "!" } })).toEqual([
-      "tool.alpha_ping.description",
+    expect(unexplainedTools({ ...tools, codepuppy_ping: { ...tools.codepuppy_ping, description: tools.codepuppy_ping.description + "!" } })).toEqual([
+      "tool.codepuppy_ping.description",
     ])
-    const { alpha_ping: _drop, ...rest } = tools
-    expect(unexplainedTools(rest)).toEqual(["stale registration tool.alpha_ping.description", "stale registration tool.alpha_ping.args.note"])
+    const { codepuppy_ping: _drop, ...rest } = tools
+    expect(unexplainedTools(rest)).toEqual(["stale registration tool.codepuppy_ping.description", "stale registration tool.codepuppy_ping.args.note"])
   })
 })
 

@@ -195,7 +195,7 @@ describe("project/root identity fail-closed", () => {
     }
   })
 
-  test("分类后 `.alpha` 换链 → config 不读、alpha_register 不写、plugin 不 import", () => {
+  test("分类后 `.alpha` 换链 → config 不读、codepuppy_register 不写、plugin 不 import", () => {
     const retired = join(home, ".alpha")
     const admittedRoot = join(project, ".code-puppy")
     const moved = join(project, ".code-puppy-before-race")
@@ -249,7 +249,7 @@ describe("project/root identity fail-closed", () => {
     expect(() => requireAlphaGlobalRoot(alias, home)).toThrow()
   })
 
-  test("`.alpha → retired root` 时 config、consent、fan-out、alpha_register 四路行为均零触达", async () => {
+  test("`.alpha → retired root` 时 config、consent、fan-out、codepuppy_register 四路行为均零触达", async () => {
     const retired = join(home, ".alpha")
     mkdirSync(join(retired, "plugins"), { recursive: true })
     const config = JSON.stringify({ agent: { retired: { prompt: "must not load" } } })
@@ -278,7 +278,7 @@ describe("project/root identity fail-closed", () => {
       expect((cfg.agent as Record<string, unknown>).retired).toBeUndefined()
       expect(exposed.tool.retired_tool).toBeUndefined()
 
-      const registered = await exposed.tool.alpha_register.execute(
+      const registered = await exposed.tool.codepuppy_register.execute(
         { type: "agent", name: "new-agent", entry: JSON.stringify({ prompt: "write" }) },
         { directory: project, sessionID: "s1" },
       )

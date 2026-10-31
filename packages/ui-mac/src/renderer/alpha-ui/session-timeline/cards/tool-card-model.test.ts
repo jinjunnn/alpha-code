@@ -29,6 +29,7 @@ import {
   toolCardDispatchOf,
   toolCardHeadOf,
   toolCardStatusOf,
+  toolDevDetailsOf,
   toolGroupVerbOf,
   toolStepLineOf,
   type ToolCardKind,
@@ -1273,5 +1274,40 @@ describe("#1475 步骤行投影:来源标记只给非我方;行尾规则;答完�
     expect(questionStepInfoOf(spoof)).toBeUndefined()
     expect(toolStepLineOf(spoof).object).toBe("question")
     expect(toolStepLineOf(spoof).end).toBeUndefined()
+  })
+})
+
+// alpha-code#1568 AC5 —— 工具详情的可读标识。MCP 工具取快照 identity 的 `<服务器键>:<远端名>`(不切引擎别名);
+// 第一方插件工具取快照里随包清单声明的 `codepuppy:<动作>`,且只认 codepuppy-bundled authority。
+// 删掉 toolDevDetailsOf 里的 readable 派生 ⇒ 两条正例都拿到 undefined,当场红;改成「按 _ 切别名」⇒ 插件例的
+// 别名 `codepuppy_hub_install` 切不出 `codepuppy:hub_install`,MCP 例在服务器键含 `_` 时同样错。
+describe("#1568 AC5 tool details readable identifier", () => {
+  const DIGEST = `sha256:${"a".repeat(64)}`
+  test("MCP:<服务器键>:<远端名>,与引擎别名无关", () => {
+    const display: ToolDisplaySnapshotV1 = {
+      identity: { source: "mcp", origin: "codepuppy", name: "dispatch" },
+      technicalId: "codepuppy_dispatch",
+      authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: DIGEST },
+    }
+    expect(toolDevDetailsOf(part("codepuppy_dispatch", undefined, display))!.readable).toBe("codepuppy:dispatch")
+    const office: ToolDisplaySnapshotV1 = {
+      identity: { source: "mcp", origin: "codepuppy-word", name: "read_docx" },
+      technicalId: "codepuppy-word_read_docx",
+      authority: { kind: "not-asserted" },
+    }
+    expect(toolDevDetailsOf(part("codepuppy-word_read_docx", undefined, office))!.readable).toBe("codepuppy-word:read_docx")
+  })
+
+  test("第一方插件:随包清单声明的 codepuppy:<动作>;未证明的同名插件工具没有可读标识", () => {
+    const own: ToolDisplaySnapshotV1 = {
+      identity: { source: "plugin", origin: "/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js", name: "codepuppy_hub_install" },
+      technicalId: "codepuppy_hub_install",
+      authority: { kind: "codepuppy-bundled", bindingId: "plugin:alpha-ext", evidenceDigest: DIGEST },
+      readable: "codepuppy:hub_install",
+    }
+    expect(toolDevDetailsOf(part("codepuppy_hub_install", undefined, own))!.readable).toBe("codepuppy:hub_install")
+    // 同一快照去掉 authority(项目插件冒名 / 历史行):声明的 readable 不被采信。
+    const unproven = { ...own, authority: { kind: "not-asserted" } } as ToolDisplaySnapshotV1
+    expect(toolDevDetailsOf(part("codepuppy_hub_install", undefined, unproven))!.readable).toBeUndefined()
   })
 })

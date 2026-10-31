@@ -166,7 +166,7 @@ describe("resolveToolPolicy", () => {
       reason: { kind: "default", class: "codepuppy-bundled" },
     })
     const bundledPlugin: ToolPolicySubject = {
-      identity: { source: "plugin", origin: "/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js", name: "alpha_ping" },
+      identity: { source: "plugin", origin: "/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js", name: "codepuppy_ping" },
       authority: { kind: "codepuppy-bundled", bindingId: "plugin:alpha-ext", evidenceDigest: DIGEST_B },
     }
     expect(classifyTool(bundledPlugin)).toBe("plugin")

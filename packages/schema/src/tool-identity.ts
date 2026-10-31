@@ -50,6 +50,8 @@ export const ToolDisplaySnapshotV1 = Schema.Struct({
   authority: ToolAuthority,
   billing: Schema.optional(ToolBillingFact),
   location: Schema.optional(ToolLocation),
+  // #1568 AC5:第一方插件工具的可读标识(`codepuppy:<动作>`),只由随包清单核验成立的自有工具写;其余缺席。
+  readable: Schema.optional(Schema.String.check(Schema.isPattern(/[\s\S]+/))),
 }).annotate({ identifier: "ToolDisplaySnapshotV1" })
 export type ToolDisplaySnapshotV1 = Types.DeepMutable<Schema.Schema.Type<typeof ToolDisplaySnapshotV1>>
 

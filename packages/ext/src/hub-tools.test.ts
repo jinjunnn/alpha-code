@@ -73,10 +73,10 @@ const view = (rows: HubViewRow[]): HubView => ({ directory: "/work/a", rows, war
 describe("I2:参数只有字符串标识", () => {
   test("三个工具的参数键集合精确相等,且没有任何密钥形状的字段名", () => {
     const tools = createHubTools(bridgeWith({ views: [view([])] }).bridge)
-    expect(Object.keys(tools).sort()).toEqual(["hub_install", "hub_search", "hub_status"])
-    expect(Object.keys(tools.hub_search.args)).toEqual(["query"])
-    expect(Object.keys(tools.hub_install.args)).toEqual(["catalogId"])
-    expect(Object.keys(tools.hub_status.args)).toEqual(["catalogId"])
+    expect(Object.keys(tools).sort()).toEqual(["codepuppy_hub_install", "codepuppy_hub_search", "codepuppy_hub_status"])
+    expect(Object.keys(tools.codepuppy_hub_search.args)).toEqual(["query"])
+    expect(Object.keys(tools.codepuppy_hub_install.args)).toEqual(["catalogId"])
+    expect(Object.keys(tools.codepuppy_hub_status.args)).toEqual(["catalogId"])
     for (const t of Object.values(tools))
       for (const key of Object.keys(t.args)) expect(key).not.toMatch(/secret|token|key|password|dsn|env|grant/i)
   })
@@ -85,20 +85,20 @@ describe("I2:参数只有字符串标识", () => {
 describe("I3:确认框一定会出现(钉子)", () => {
   test("pinHubInstallPermission:全局与每个 agent 末位;用户写的 allow 被移到前面压住;codepuppy-automation* 是 deny", () => {
     const cfg: Record<string, unknown> = {
-      permission: { hub_install: "allow", "*": "allow" },
+      permission: { codepuppy_hub_install: "allow", "*": "allow" },
       agent: { build: { permission: { "*": "allow" } }, "codepuppy-automation": { permission: { "*": "allow" } }, "codepuppy-automation-standard": {}, plan: {} },
     }
     pinHubInstallPermission(cfg)
-    expect(Object.entries(cfg.permission as object).at(-1)).toEqual(["hub_install", "ask"])
-    expect(Object.keys(cfg.permission as object)).toEqual(["*", "hub_install"])
+    expect(Object.entries(cfg.permission as object).at(-1)).toEqual(["codepuppy_hub_install", "ask"])
+    expect(Object.keys(cfg.permission as object)).toEqual(["*", "codepuppy_hub_install"])
     const agents = cfg.agent as Record<string, { permission: Record<string, string> }>
-    expect(Object.entries(agents.build!.permission).at(-1)).toEqual(["hub_install", "ask"])
-    expect(agents.plan!.permission).toEqual({ hub_install: "ask" })
-    expect(agents["codepuppy-automation"]!.permission.hub_install).toBe("deny")
-    expect(agents["codepuppy-automation-standard"]!.permission).toEqual({ hub_install: "deny" })
+    expect(Object.entries(agents.build!.permission).at(-1)).toEqual(["codepuppy_hub_install", "ask"])
+    expect(agents.plan!.permission).toEqual({ codepuppy_hub_install: "ask" })
+    expect(agents["codepuppy-automation"]!.permission.codepuppy_hub_install).toBe("deny")
+    expect(agents["codepuppy-automation-standard"]!.permission).toEqual({ codepuppy_hub_install: "deny" })
     const stringy: Record<string, unknown> = { permission: "allow" }
     pinHubInstallPermission(stringy)
-    expect(stringy.permission).toEqual({ "*": "allow", hub_install: "ask" })
+    expect(stringy.permission).toEqual({ "*": "allow", codepuppy_hub_install: "ask" })
   })
 
   const SANITIZE = ["ALPHA_GLOBAL_DIR", "ALPHA_FACTORY_SKILL_DIRS", "ALPHA_FACTORY_DENY_SKILLS"] as const
@@ -134,28 +134,28 @@ describe("I3:确认框一定会出现(钉子)", () => {
     }
     const cfg: Record<string, unknown> = { permission: { "*": "allow" }, agent: { mine: { permission: { "*": "allow" } } } }
     await hooks.config(cfg)
-    expect(Object.entries(cfg.permission as object).at(-1)).toEqual(["hub_install", "ask"])
+    expect(Object.entries(cfg.permission as object).at(-1)).toEqual(["codepuppy_hub_install", "ask"])
     const agents = cfg.agent as Record<string, { permission: Record<string, string> }>
-    expect(Object.entries(agents.mine!.permission).at(-1)).toEqual(["hub_install", "ask"])
-    for (const name of ["hub_search", "hub_install", "hub_status"]) expect(Object.keys(hooks.tool)).toContain(name)
+    expect(Object.entries(agents.mine!.permission).at(-1)).toEqual(["codepuppy_hub_install", "ask"])
+    for (const name of ["codepuppy_hub_search", "codepuppy_hub_install", "codepuppy_hub_status"]) expect(Object.keys(hooks.tool)).toContain(name)
 
     // 项目配置读不了(alpha.jsonc 是个目录 ⇒ 读失败分支)⇒ try 体后半段整段跳过(提示词接管没跑 = 走的确实是那条分支),钉子照钉
     mkdirSync(join(root, "project", ".code-puppy", "alpha.jsonc"), { recursive: true })
     const broken: Record<string, unknown> = { permission: { "*": "allow" } }
     await hooks.config(broken)
     expect((broken.agent as Record<string, unknown> | undefined)?.general).toBeUndefined()
-    expect(Object.entries(broken.permission as object).at(-1)).toEqual(["hub_install", "ask"])
+    expect(Object.entries(broken.permission as object).at(-1)).toEqual(["codepuppy_hub_install", "ask"])
   })
 
   test("拿掉钉子(规则放行 ⇒ ctx.ask 直接返回)⇒ 查不到记录 ⇒ not installed: no confirmation box ran", async () => {
     const { bridge, calls } = bridgeWith({ views: [view([row({})])], record: null })
     const { ctx, asks } = ctxWith(async () => {})
-    const out = outputOf(await createHubTools(bridge).hub_install.execute({ catalogId: "mcp:github" }, ctx))
+    const out = outputOf(await createHubTools(bridge).codepuppy_hub_install.execute({ catalogId: "mcp:github" }, ctx))
     expect(out.split("\n")[0]).toBe(HUB_INSTALL_OUTCOME.noBox)
     expect(asks).toHaveLength(1)
     // I7 + 运输形状:always 恒空;metadata 只有 alphaHub 的 catalogId 与 requestId;查的正是这一次的 requestId
     expect(asks[0]).toEqual({
-      permission: "hub_install",
+      permission: "codepuppy_hub_install",
       patterns: ["mcp:github"],
       always: [],
       metadata: { alphaHub: { catalogId: "mcp:github", requestId: calls.request[0] } },
@@ -166,7 +166,7 @@ describe("I3:确认框一定会出现(钉子)", () => {
   test("目录里没有的 id ⇒ unknown entry,根本不发审批请求", async () => {
     const { bridge, calls } = bridgeWith({ views: [view([row({})])] })
     const { ctx, asks } = ctxWith(async () => {})
-    const out = outputOf(await createHubTools(bridge).hub_install.execute({ catalogId: "mcp:nope" }, ctx))
+    const out = outputOf(await createHubTools(bridge).codepuppy_hub_install.execute({ catalogId: "mcp:nope" }, ctx))
     expect(out.split("\n")[0]).toBe(HUB_INSTALL_OUTCOME.unknownEntry)
     expect(asks).toHaveLength(0)
     expect(calls.request).toHaveLength(0)
@@ -223,12 +223,12 @@ describe("I9:结局以 main 的阶段记录为准", () => {
     test(c.name, async () => {
       const { bridge } = bridgeWith({ views: [view([row({})]), view(c.after)], record: c.record })
       const { ctx } = ctxWith(c.ask)
-      const out = outputOf(await createHubTools(bridge).hub_install.execute({ catalogId: "mcp:github" }, ctx))
+      const out = outputOf(await createHubTools(bridge).codepuppy_hub_install.execute({ catalogId: "mcp:github" }, ctx))
       expect(out).toBe(`${c.want}\n${HUB_NEXT_MESSAGE_HINT}`)
     })
 })
 
-describe("hub_search / hub_status", () => {
+describe("codepuppy_hub_search / codepuppy_hub_status", () => {
   test("#1533:价格说明逐字输出;缺说明才给末尾缺项句(混合列表与 warnings 同样成立)", async () => {
     const priced = row({ id: "cloud:html", kind: "cloud", priceNote: "预留 US$1.00,按实际用量结算;失败时已产生的费用仍会结算" })
     const missing = row({ id: "cloud:docs", kind: "cloud" })
@@ -236,7 +236,7 @@ describe("hub_search / hub_status", () => {
       const input = { ...view(rows), warnings: ["unreadable ledger"] }
       const tools = createHubTools(bridgeWith({ views: [input] }).bridge)
       const { ctx } = ctxWith(async () => {})
-      const out = outputOf(await tools.hub_search.execute({ query: "" }, ctx))
+      const out = outputOf(await tools.codepuppy_hub_search.execute({ query: "" }, ctx))
       for (const [index, item] of rows.entries()) {
         const parsed = JSON.parse(out.split("\n")[index]!)
         if (item.priceNote !== undefined) expect(parsed.priceNote).toBe(item.priceNote)
@@ -244,7 +244,7 @@ describe("hub_search / hub_status", () => {
       }
       expect(out.includes(HUB_PRICE_NOTE_MISSING)).toBe(rows.includes(missing))
       if (rows.includes(missing)) expect(out.split("\n").at(-1)).toBe("本目录尚未提供价格说明;费用以服务端为准")
-      expect(outputOf(await tools.hub_status.execute({ catalogId: rows[0]!.id }, ctx)).includes(HUB_PRICE_NOTE_MISSING)).toBe(rows[0] === missing)
+      expect(outputOf(await tools.codepuppy_hub_status.execute({ catalogId: rows[0]!.id }, ctx)).includes(HUB_PRICE_NOTE_MISSING)).toBe(rows[0] === missing)
     }
   })
 
@@ -255,7 +255,7 @@ describe("hub_search / hub_status", () => {
     ]
     const { bridge, calls } = bridgeWith({ views: [{ directory: "/work/a", rows, warnings: ["ledger /Users/x/installs.json unreadable"] }] })
     const { ctx } = ctxWith(async () => {})
-    const out = outputOf(await createHubTools(bridge).hub_search.execute({ query: "o" }, ctx))
+    const out = outputOf(await createHubTools(bridge).codepuppy_hub_search.execute({ query: "o" }, ctx))
     expect(calls.view[0]).toEqual({ directory: "/work/a", sessionID: "ses_1", agent: "build", query: "o" })
     const lines = out.split("\n")
     expect(JSON.parse(lines[0]!)).toEqual({
@@ -278,9 +278,9 @@ describe("hub_search / hub_status", () => {
     const rows = [row({ scope: "global", installed: true, enabled: true, state: "available" }), row({ scope: "project", installed: true, enabled: true, state: "available" }), row({ id: "skill:x", kind: "skill" })]
     const { bridge } = bridgeWith({ views: [view(rows)] })
     const { ctx } = ctxWith(async () => {})
-    const out = outputOf(await createHubTools(bridge).hub_status.execute({ catalogId: "mcp:github" }, ctx))
+    const out = outputOf(await createHubTools(bridge).codepuppy_hub_status.execute({ catalogId: "mcp:github" }, ctx))
     expect(out.split("\n").map((line) => JSON.parse(line).scope)).toEqual(["global", "project"])
-    expect(outputOf(await createHubTools(bridge).hub_status.execute({ catalogId: "nope" }, ctx)).split("\n")[0]).toBe(HUB_INSTALL_OUTCOME.unknownEntry)
+    expect(outputOf(await createHubTools(bridge).codepuppy_hub_status.execute({ catalogId: "nope" }, ctx)).split("\n")[0]).toBe(HUB_INSTALL_OUTCOME.unknownEntry)
     const none: HubBridge = { ...bridge, available: false }
     for (const t of Object.values(createHubTools(none)))
       expect(outputOf(await t.execute({ query: "", catalogId: "mcp:github" } as never, ctx))).toBe("The Customization Center is not available in this engine host.")

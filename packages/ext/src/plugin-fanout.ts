@@ -15,7 +15,7 @@ export function mergeHooks(
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...own }
 
-  // tool:map 浅并,own 键优先(项目插件不得覆盖 alpha_reload/echo/ping)
+  // tool:map 浅并,own 键优先(项目插件不得覆盖 codepuppy_reload/echo/ping)
   const toolMap: Record<string, unknown> = { ...((own.tool as Record<string, unknown>) ?? {}) }
   for (const h of others) {
     const t = h.tool as Record<string, unknown> | undefined

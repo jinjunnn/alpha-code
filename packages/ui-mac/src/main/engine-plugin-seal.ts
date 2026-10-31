@@ -40,7 +40,7 @@
 //     **它自己没有任何路径白名单**;今天只写 `skills.paths` 是「它恰好只写这个」,不是被谁挡着。
 //     真正挡住 `plugin` 的闸**在另一个包里**:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig`
 //     只合 `mcp`(信任门)/ `agent` / `command` / `skills.paths`,`plugin` 结构性不合。同族还有
-//     `packages/ext/src/register.ts`(`alpha_register` 工具的纯逻辑,`serialize` 同样整文件序列化,由
+//     `packages/ext/src/register.ts`(`codepuppy_register` 工具的纯逻辑,`serialize` 同样整文件序列化,由
 //     `plugin.ts` 在**引擎进程**侧原子写同一个文件),靠 `RegisterType` 类型白名单(mcp/agent/command/skill)。
 //     实测(`#832`):在 `registerProjectSkillsPath` 里加一行 `cfg.plugin=[…]`,盘上当场多出该条目,
 //     **本文件的全部咽喉用例照样全绿**;而同一份文本喂给 `mergeProjectConfig`,`added` 只有

@@ -73,6 +73,8 @@ export type RegisteredTool<T extends Tool.Def = Tool.Def> = T & {
   readonly identity: ToolIdentity
   /** #1578 AC5: only a plugin tool the bundled manifest proves carries one; everything else is not asserted. */
   readonly authority?: ToolAuthority
+  /** #1568 AC5: the proven tool's display identifier from the same manifest (`codepuppy:<action>`). */
+  readonly readable?: string
 }
 type TaskDef = RegisteredTool<Tool.InferDef<typeof TaskTool>>
 type ReadDef = RegisteredTool<Tool.InferDef<typeof ReadTool>>
@@ -149,6 +151,7 @@ const layer = Layer.effect(
           name: string,
           def: ToolDefinition,
           authority?: ToolAuthority,
+          readable?: string,
         ): RegisteredTool {
           // Plugin tools still expose Zod args publicly; keep that compatibility
           // boxed at the registry boundary and give the LLM the original JSON Schema.
@@ -167,6 +170,7 @@ const layer = Layer.effect(
             id,
             identity,
             ...(authority ? { authority } : {}),
+            ...(readable ? { readable } : {}),
             parameters,
             jsonSchema,
             description: def.description,
@@ -238,7 +242,8 @@ const layer = Layer.effect(
           pluginBindings[p.origin] ??= canonicalJsonDigest({ kind: "plugin-hook", origin: p.origin })
           for (const [id, def] of Object.entries(p.tools)) {
             // #1578 AC5: only the names the verified manifest lists; merged-in project plugin tools stay not asserted.
-            custom.push(fromPlugin(id, p.origin, id, def, p.bundled?.tools.has(id) ? p.bundled.authority : undefined))
+            const proven = p.bundled?.tools.has(id) ? p.bundled : undefined
+            custom.push(fromPlugin(id, p.origin, id, def, proven?.authority, proven?.readable.get(id)))
           }
         }
 
@@ -379,6 +384,7 @@ const layer = Layer.effect(
             id: tool.id,
             identity: tool.identity,
             ...(tool.authority ? { authority: tool.authority } : {}),
+            ...(tool.readable ? { readable: tool.readable } : {}),
             description: [
               output.description,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,

@@ -1,8 +1,8 @@
 // REQ-234 `#1531` I3 / I7 —— 「agent 请求安装 ⇒ 确认框一定会出现」在**引擎层**真的成立(alpha 自有测试;north-star:alpha-owned)。
 //
 // 为什么要这道闸:引擎默认规则是 `"*": "allow"`(agent/agent.ts),alpha 的默认配置也只把 edit / bash 改成 ask。工具里那句
-// `ctx.ask({ permission: "hub_install" })` 在默认配置下**直接放行、不发布任何审批请求** —— renderer 那边就没有框可弹
-// (基线 §2.3 / 审计 R1 第 1 条)。修法是 @alpha-code/ext 的 config 钩子在每次实例重建时把 `hub_install: ask` 钉到全局与每个
+// `ctx.ask({ permission: "codepuppy_hub_install" })` 在默认配置下**直接放行、不发布任何审批请求** —— renderer 那边就没有框可弹
+// (基线 §2.3 / 审计 R1 第 1 条)。修法是 @alpha-code/ext 的 config 钩子在每次实例重建时把 `codepuppy_hub_install: ask` 钉到全局与每个
 // agent 的末位(自动化 agent 钉 deny)。这里证明的是**引擎真的会问**,判据全部走生产:
 //   · 真 `injectAlphaConfig`(ui-mac 主进程写给引擎的那份默认配置,带上 ext 插件路径 —— 与 sidecar fork 时同一调用);
 //   · 引擎真 Plugin 服务装载**真 @alpha-code/ext**(源码入口)并跑它的 config 钩子(与 bootstrap.ts 同序:先 init 插件再读 agent);
@@ -12,9 +12,9 @@
 // 插件初始化等它 —— 那是网络,不是本判据(process-fence-engine.test.ts 的 60 秒假红就是它)。
 //
 // 每条判据先证明手段测得出已知的坏:
-//   对照臂(不装 ext = 拿掉钉子)build + hub_install ⇒ 直接放行(passed-through)—— 这就是钉子要修的缺陷本身;
-//   被测臂(装 ext)build + hub_install ⇒ UnansweredError(真的发布了请求、没人批、fail-closed);
-//   codepuppy-automation + hub_install ⇒ DeniedError(无人值守的 agent 不弹一个没人看的框);
+//   对照臂(不装 ext = 拿掉钉子)build + codepuppy_hub_install ⇒ 直接放行(passed-through)—— 这就是钉子要修的缺陷本身;
+//   被测臂(装 ext)build + codepuppy_hub_install ⇒ UnansweredError(真的发布了请求、没人批、fail-closed);
+//   codepuppy-automation + codepuppy_hub_install ⇒ DeniedError(无人值守的 agent 不弹一个没人看的框);
 //   I7:回复 always 放行了这一次,下一次同一条目照样要问(always: [] ⇒ 不产生抵消后续请求的 grant)。
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -120,7 +120,7 @@ const rulesetOf = (name: string) =>
 
 type Verdict = { kind: "passed-through" } | { kind: "unanswered" } | { kind: "denied" } | { kind: "other"; detail: string }
 
-/** 真 Permission.ask,载荷与 hub_install 工具的 ctx.ask 同形(always 恒空)。 */
+/** 真 Permission.ask,载荷与 codepuppy_hub_install 工具的 ctx.ask 同形(always 恒空)。 */
 const askHubInstall = (agentName: string, catalogId: string, sid: string) =>
   Effect.gen(function* () {
     const ruleset = yield* rulesetOf(agentName)
@@ -128,7 +128,7 @@ const askHubInstall = (agentName: string, catalogId: string, sid: string) =>
     const exit = yield* permission
       .ask({
         sessionID: SessionID.make(sid),
-        permission: "hub_install",
+        permission: "codepuppy_hub_install",
         patterns: [catalogId],
         always: [],
         metadata: { alphaHub: { catalogId, requestId: `req_${sid}` } },
@@ -142,12 +142,12 @@ const askHubInstall = (agentName: string, catalogId: string, sid: string) =>
         : Cause.squash(exit.cause) instanceof PermissionV1.DeniedError
           ? { kind: "denied" }
           : { kind: "other", detail: Cause.pretty(exit.cause).split("\n")[0] ?? "" }
-    console.log(`ASK ${agentName} hub_install ${JSON.stringify(catalogId)} -> ${verdict.kind}`)
+    console.log(`ASK ${agentName} codepuppy_hub_install ${JSON.stringify(catalogId)} -> ${verdict.kind}`)
     return verdict
   })
 
 it.instance(
-  "对照臂(拿掉钉子):不装 ext 的默认配置下,build 的 hub_install 直接放行 —— 不发布请求、没有框",
+  "对照臂(拿掉钉子):不装 ext 的默认配置下,build 的 codepuppy_hub_install 直接放行 —— 不发布请求、没有框",
   () =>
     Effect.gen(function* () {
       yield* injectDefaults(false)
@@ -158,7 +158,7 @@ it.instance(
 )
 
 it.instance(
-  "I3:装上真 ext 的默认配置下,build 的 hub_install 真的进待批(UnansweredError);codepuppy-automation 是 deny",
+  "I3:装上真 ext 的默认配置下,build 的 codepuppy_hub_install 真的进待批(UnansweredError);codepuppy-automation 是 deny",
   () =>
     Effect.gen(function* () {
       yield* injectDefaults(true)
@@ -172,7 +172,7 @@ it.instance(
 )
 
 it.instance(
-  "I7:回复 always 只放行这一次 —— 下一次同一条目的 hub_install 照样要问",
+  "I7:回复 always 只放行这一次 —— 下一次同一条目的 codepuppy_hub_install 照样要问",
   () =>
     Effect.gen(function* () {
       yield* injectDefaults(true)
@@ -181,7 +181,7 @@ it.instance(
       const permission = yield* Permission.Service
       const sessionID = SessionID.make("ses_1531_always")
       const first = yield* permission
-        .ask({ sessionID, permission: "hub_install", patterns: ["mcp:github"], always: [], metadata: { alphaHub: { catalogId: "mcp:github", requestId: "req_always_1" } }, ruleset })
+        .ask({ sessionID, permission: "codepuppy_hub_install", patterns: ["mcp:github"], always: [], metadata: { alphaHub: { catalogId: "mcp:github", requestId: "req_always_1" } }, ruleset })
         .pipe(Effect.forkScoped)
       const pending = yield* Effect.gen(function* () {
         while (true) {
@@ -192,10 +192,10 @@ it.instance(
       }).pipe(
         Effect.timeoutOrElse({
           duration: TEST_TIMEOUT_MS,
-          orElse: () => Effect.fail(new Error("hub_install 没有进入 pending —— 它没有在问")),
+          orElse: () => Effect.fail(new Error("codepuppy_hub_install 没有进入 pending —— 它没有在问")),
         }),
       )
-      expect(pending[0]!.permission).toBe("hub_install")
+      expect(pending[0]!.permission).toBe("codepuppy_hub_install")
       expect(pending[0]!.metadata).toMatchObject({ alphaHub: { catalogId: "mcp:github", requestId: "req_always_1" } })
       yield* permission.reply({ requestID: pending[0]!.id, reply: "always" })
       expect(Exit.isSuccess(yield* Fiber.await(first))).toBe(true)
@@ -204,10 +204,10 @@ it.instance(
   { git: true },
 )
 
-// alpha-code#1568 裁决 4:工具 id 改名时,`hub_install` 权限键随之改名。行为要与改名前**逐档相同** —— 下表是改名前
-// (权限键 / 工具 id 都还是 `hub_install`)在同一套真注入 + 真 ext 下实测出的结论,改名后同一张表必须原样成立:
+// alpha-code#1568 裁决 4:工具 id 改名时,`codepuppy_hub_install` 权限键随之改名。行为要与改名前**逐档相同** —— 下表是改名前
+// (权限键 / 工具 id 都还是 `codepuppy_hub_install`)在同一套真注入 + 真 ext 下实测出的结论,改名后同一张表必须原样成立:
 // 只读档等不弹框的档改成 deny / 放行,或工具在某一档的工具表里消失,都会当场红。
-const HUB_INSTALL_PERMISSION = "hub_install"
+const HUB_INSTALL_PERMISSION = "codepuppy_hub_install"
 const PRE_RENAME_VERDICTS: Record<string, { ask: Verdict["kind"]; hidden: boolean }> = {
   build: { ask: "unanswered", hidden: false },
   "codepuppy-readonly": { ask: "unanswered", hidden: false },
@@ -216,7 +216,7 @@ const PRE_RENAME_VERDICTS: Record<string, { ask: Verdict["kind"]; hidden: boolea
   "codepuppy-automation-standard": { ask: "denied", hidden: true },
 }
 it.instance(
-  "#1568 裁决 4:各档对改名后安装权限键的放行 / 拒绝 / 工具表可见性与改名前 hub_install 逐项相同",
+  "#1568 裁决 4:各档对改名后安装权限键的放行 / 拒绝 / 工具表可见性与改名前 codepuppy_hub_install 逐项相同",
   () =>
     Effect.gen(function* () {
       yield* injectDefaults(true)

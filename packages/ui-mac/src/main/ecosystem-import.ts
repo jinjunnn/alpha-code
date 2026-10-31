@@ -86,7 +86,7 @@ export type ImportOutcome = {
 
 /** skills 转换导入(项目/全局同一管线,只差 target 与 origin)。
  *  项目 scope 成功导入 ≥1 项时,补项目 `alpha.jsonc` 的 skills.paths 注册("./.code-puppy/skills",
- *  与 alpha_register type=skill 同形状)—— 引擎经 ext config hook 按此发现项目技能;漏注册 =
+ *  与 codepuppy_register type=skill 同形状)—— 引擎经 ext config hook 按此发现项目技能;漏注册 =
  *  文件落了但引擎永远看不见(2026-07-08 真机验收当场抓到的缺口)。 */
 /** #390:global 未策展技能安装器 —— 由 electron 侧调用方注入(planner 的 CAS 事务路径),使本
  *  纯 fs 模块不必 import planner(保持 bun test 无 electron 加载不变量,见文件头 §纯 fs)。 */

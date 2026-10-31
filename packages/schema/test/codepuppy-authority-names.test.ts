@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { ToolClass } from "../src/alpha-tool-policy"
-import { ToolAuthority } from "../src/tool-identity"
+import { ToolAuthority, ToolDisplaySnapshotV1 } from "../src/tool-identity"
 
 const DIGEST = `sha256:${"a".repeat(64)}`
 const kindsOf = (union: typeof ToolAuthority) =>
@@ -37,6 +37,15 @@ describe("#1568 AC3 来源证明取值", () => {
   test("两份 SDK 生成类型的 ToolAuthority 与 schema 逐项一致", async () => {
     for (const path of ["../../sdk/js/src/gen/types.gen.ts", "../../sdk/js/src/v2/gen/types.gen.ts"]) {
       expect(await generatedKinds(path)).toEqual(kindsOf(ToolAuthority))
+    }
+  })
+
+  // #1568 AC5:显示快照多一项可选 `readable`(第一方插件工具的 codepuppy:<动作>);两份 SDK 生成类型同样带上。
+  test("显示快照的可选 readable:schema 认,两份 SDK 生成类型都有", async () => {
+    expect(Object.keys(ToolDisplaySnapshotV1.fields)).toContain("readable")
+    for (const path of ["../../sdk/js/src/gen/types.gen.ts", "../../sdk/js/src/v2/gen/types.gen.ts"]) {
+      const text = await Bun.file(new URL(path, import.meta.url)).text()
+      expect(text.match(/export type ToolDisplaySnapshotV1 = \{[\s\S]*?\n\}/)?.[0]).toContain("readable?: string")
     }
   })
 })

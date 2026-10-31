@@ -1284,7 +1284,7 @@ describe("#1578 AC5 — 随包扩展的自有工具 vs 项目插件合并进来�
   // 删掉 categoryOf 的 plugin 随包分支 ⇒「第三方插件」,当场红;安装路径出现在正常界面 ⇒ 负向断言红。
   test("清单证明过 ⇒ 内置 · 本机、正常界面不出现安装路径,路径与 authority 只在开发者详情;未证明 ⇒ 第三方插件", () => {
     const own = replayed(
-      toolPart({ tool: "alpha_cloud_access", display: bundled(plugin(EXT_PATH, "alpha_cloud_access"), "plugin:alpha-ext"), state: completed({}, "{}") }),
+      toolPart({ tool: "codepuppy_access", display: bundled(plugin(EXT_PATH, "codepuppy_access"), "plugin:alpha-ext"), state: completed({}, "{}") }),
     )
     expect(toolProvenanceOf(own)).toEqual({ source: "builtin", location: { kind: "local" } })
     const line = toolStepLineOf(own)

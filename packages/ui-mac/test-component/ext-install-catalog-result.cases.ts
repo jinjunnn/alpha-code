@@ -46,7 +46,7 @@ canaryEntry.id = "mcp:dbhub-canary"
 canaryEntry.name = "dbhub-canary"
 canaryEntry.source = "alpha"
 delete canaryEntry.curation
-// 随包 dbhub 带「待核实」声明 ⇒ 不在可安装视图里(agent 看不见、hub_install 答 unknown entry);金丝雀条目去掉它
+// 随包 dbhub 带「待核实」声明 ⇒ 不在可安装视图里(agent 看不见、codepuppy_hub_install 答 unknown entry);金丝雀条目去掉它
 delete (canaryEntry.installSpec as { _verify?: string })._verify
 
 mock.module("electron", () => ({
@@ -371,7 +371,7 @@ test("#1531:项目作用域安装 ⇒ 发往 ext 的是 { scope:{ directory }, i
   })
 })
 
-// 基线 §2.4 的金丝雀端到端(I2):agent 的 hub_install(**生产** ext 工具)经 parentPort 形状的消息接到**真** main 分发;
+// 基线 §2.4 的金丝雀端到端(I2):agent 的 codepuppy_hub_install(**生产** ext 工具)经 parentPort 形状的消息接到**真** main 分发;
 // 确认框那一环由守望者的出站动作代演(记 confirming / submitted → 带 hubRequestId 与金丝雀密钥两段式安装 → 回 once)。
 // 金丝雀值在工具参数、工具输出与 metadata、审批请求载荷、parentPort 双向全部消息、发往 ext 的重载请求里 **零命中**;
 // 对照组:同一个值在 main 落盘的密钥文件里**必须命中**(证明这把 grep 看得见它)。
@@ -415,7 +415,7 @@ test("#1531 金丝雀:agent 安装的密钥只落在 main 的密钥文件里,工
     },
   }
   const args = { catalogId: canaryEntry.id }
-  const result = (await createHubTools(bridge).hub_install.execute(args, ctx as never)) as { output: string; metadata: unknown }
+  const result = (await createHubTools(bridge).codepuppy_hub_install.execute(args, ctx as never)) as { output: string; metadata: unknown }
   expect(result.output.split("\n")[0]).toBe("installed; available")
   for (const surface of [args, result, asks, wire, toSidecar]) expect(JSON.stringify(surface)).not.toContain(value)
   expect(wire.some((m) => (m as { type?: string }).type === "alpha.hub.request.reply")).toBe(true)

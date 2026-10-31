@@ -515,6 +515,7 @@ export type ToolDisplaySnapshotV1 = {
   authority: ToolAuthority
   billing?: ToolBillingFact
   location?: ToolLocation
+  readable?: string
 }
 
 export type ToolStatePending = {

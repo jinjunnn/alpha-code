@@ -191,7 +191,14 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
 }
 
-type DisplaySnapshot = { identity: ToolIdentity; authority: ToolAuthority; technicalId: string; location?: ToolLocation }
+type DisplaySnapshot = {
+  identity: ToolIdentity
+  authority: ToolAuthority
+  technicalId: string
+  location?: ToolLocation
+  /** #1568 AC5:第一方插件工具的可读标识(引擎只给随包清单核验成立的自有工具写)。 */
+  readable?: string
+}
 
 /** #878 快照的防御校验:结构不完整/形状非法 = 无快照(按未知来源降级)。 */
 function displaySnapshotOf(part: { display?: unknown }): DisplaySnapshot | undefined {
@@ -203,6 +210,7 @@ function displaySnapshotOf(part: { display?: unknown }): DisplaySnapshot | undef
     authority?: unknown
     billing?: unknown
     location?: unknown
+    readable?: unknown
   }
   if (!nonEmptyString(record.technicalId)) return undefined
   const identity = record.identity
@@ -233,11 +241,13 @@ function displaySnapshotOf(part: { display?: unknown }): DisplaySnapshot | undef
     else if (loc.kind === "remote" && nonEmptyString(loc.host)) location = { kind: "remote", host: loc.host }
     else return undefined
   }
+  if (record.readable !== undefined && !nonEmptyString(record.readable)) return undefined
   return {
     identity: { source: id.source as ToolIdentity["source"], origin: id.origin, name: id.name },
     authority: auth as ToolAuthority,
     technicalId: record.technicalId,
     ...(location ? { location } : {}),
+    ...(record.readable !== undefined ? { readable: record.readable } : {}),
   }
 }
 
@@ -1630,6 +1640,9 @@ function passiveSegment(value: string, max = DEV_DETAIL_MAX_CHARS): string {
 }
 
 export interface ToolDevDetails {
+  /** #1568 AC5 可读标识:MCP 工具 = `<服务器键>:<远端名>`(快照 identity 的 origin 与 name,不切别名);
+   *  第一方插件工具 = 快照里随包清单声明的 `codepuppy:<动作>`,且仅当 authority = codepuppy-bundled;其余缺席。 */
+  readable?: string
   /** canonical identity(source:origin:name)—— 排障展示,不参与任何判定(AC4)。 */
   canonical: string
   /** 本次调用模型可见的别名(technical-id;只在此处,绝不进主标题,T8)。 */
@@ -1650,14 +1663,21 @@ export interface ToolDevDetails {
 export function toolDevDetailsOf(part: ToolPart): ToolDevDetails | undefined {
   const snapshot = displaySnapshotOf(part)
   if (!snapshot) return undefined
-  const { identity, authority, technicalId, location } = snapshot
+  const { identity, authority, technicalId, location, readable } = snapshot
   const canonical = `${identity.source}:${passiveSegment(identity.origin)}:${passiveSegment(identity.name)}`
+  const readableId =
+    identity.source === "mcp" && identity.origin.length > 0
+      ? `${passiveSegment(identity.origin)}:${passiveSegment(identity.name)}`
+      : identity.source === "plugin" && authority.kind === "codepuppy-bundled" && readable
+        ? passiveSegment(readable)
+        : undefined
   const authorityText =
     authority.kind === "not-asserted"
       ? "not-asserted"
       : `${authority.kind} · ${passiveSegment(authority.bindingId, 64)} · ${passiveSegment(authority.evidenceDigest, 32)}`
   const locationText = !location ? "—" : location.kind === "local" ? "local" : `remote · ${passiveSegment(location.host)}`
   return {
+    ...(readableId ? { readable: readableId } : {}),
     canonical,
     technicalId: passiveSegment(technicalId),
     authority: authorityText,

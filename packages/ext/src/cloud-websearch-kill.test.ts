@@ -112,7 +112,7 @@ describe("cloud web search kill switch", () => {
     expect(isWebSearchToolId("cloud_web_search_v2")).toBe(true)
     expect(isWebSearchToolId("websearch")).toBe(true)
     for (const tool of siblingCloudTools) expect(isWebSearchToolId(tool)).toBe(false)
-    for (const tool of ["read", "bash", "alpha_ping", "cloud_search_jobs", "webfetch"])
+    for (const tool of ["read", "bash", "codepuppy_ping", "cloud_search_jobs", "webfetch"])
       expect(isWebSearchToolId(tool)).toBe(false)
   })
 

@@ -281,18 +281,22 @@ function uiMacAgentFragments(): TextFragment[] {
   return out
 }
 
-/** 工具表文字(`plugin.ts` 的 `tool()` 从这里取,不再内联字面量)。 */
+/** 工具表文字(`plugin.ts` 的 `tool()` 从这里取,不再内联字面量)。`readable` = 详情里给人看的可读标识(#1568 AC5),
+ *  经构建期清单(scripts/build.ts)交给引擎,只有清单核验成立的自有工具才带进显示快照;它不进模型上下文。 */
 export const TOOL_TEXT = {
-  alpha_cloud_access: {
+  codepuppy_access: {
+    readable: "codepuppy:access",
     description: "调用任何 cloud_* 工具前,或工具表里没有 cloud_* 时先调它。只读查询本机登录状态与云端工具是否可用,并返回登录入口;不读取登录令牌,不查询额度或余额。",
     args: {},
   },
-  alpha_reload: {
+  codepuppy_reload: {
+    readable: "codepuppy:reload",
     description:
       "Schedule a reload of the opencode engine's extension registry (skills / agents / commands / plugins) without restarting the app. Call this after creating or editing a skill or agent on disk. The reload runs once no reply is in progress in this workspace (an immediate reload would cut replies off), so the new skill/agent is available from the NEXT message in this session.",
     args: { reason: "What was created/changed (for the tool log)" },
   },
-  alpha_register: {
+  codepuppy_register: {
+    readable: "codepuppy:register",
     description:
       "Register a project-scoped extension entry into <project>/.code-puppy/alpha.jsonc (the ONLY alpha directory in a project — never create .opencode). " +
       "Use type=agent|command with an entry object (agent: {description,prompt,mode,...}; command: {template,description,...}); " +
@@ -306,17 +310,20 @@ export const TOOL_TEXT = {
       entry: 'The entry as a JSON object string, e.g. {"description":"...","prompt":"..."}; empty for type=skill',
     },
   },
-  alpha_echo: {
+  codepuppy_echo: {
+    readable: "codepuppy:echo",
     description:
       "Echo back the provided text. Proof that a Code Puppy plugin-registered tool is available with zero opencode source edits.",
     args: { text: "The text to echo back", shout: "Uppercase the echoed text" },
   },
-  alpha_ping: {
+  codepuppy_ping: {
+    readable: "codepuppy:ping",
     description: "Health-check tool: returns 'pong' plus the session directory. Proof that the Code Puppy extension is loaded.",
     args: { note: "Optional note echoed back with the pong" },
   },
   // REQ-234 `#1531`:定制中心三工具(hub-tools.ts)。措辞按「主要通路」,不宣称确认框是唯一安装通路(基线 §4 冻结面)。
-  hub_search: {
+  codepuppy_hub_search: {
+    readable: "codepuppy:hub_search",
     description:
       "Search the Code Puppy Customization Center (skills, agents, commands, connectors, cloud capabilities) as seen from this workspace: " +
       "what exists, whether it is installed and enabled, its state (not-installed / installed / reload-pending / available) and what authorization it needs. " +
@@ -324,18 +331,20 @@ export const TOOL_TEXT = {
       "Use it before telling the user a capability is missing. An empty query lists everything.",
     args: { query: "Keywords or purpose matched against id, name and description; empty string lists all entries" },
   },
-  hub_install: {
+  codepuppy_hub_install: {
+    readable: "codepuppy:hub_install",
     description:
-      "Ask the user to install a Customization Center entry (id from hub_search). The app shows its own confirmation box; the user approves there and types any required key there. " +
+      "Ask the user to install a Customization Center entry (id from codepuppy_hub_search). The app shows its own confirmation box; the user approves there and types any required key there. " +
       "Never ask for, accept or invent keys or tokens in chat. Returns at once with the outcome; nothing installed takes effect inside the current reply — " +
-      "once hub_status shows available, it can be used from the next message. If the result is pending, check hub_status instead of installing again.",
-    args: { catalogId: "Entry id exactly as returned by hub_search, e.g. mcp:github" },
+      "once codepuppy_hub_status shows available, it can be used from the next message. If the result is pending, check codepuppy_hub_status instead of installing again.",
+    args: { catalogId: "Entry id exactly as returned by codepuppy_hub_search, e.g. mcp:github" },
   },
-  hub_status: {
+  codepuppy_hub_status: {
+    readable: "codepuppy:hub_status",
     description:
       "Check one Customization Center entry in this workspace: installed or not, enabled, its state (installed / reload-pending / available) " +
       "and, when it is not available yet, why (sessions still busy, last reload failed, not loaded in this directory).",
-    args: { catalogId: "Entry id exactly as returned by hub_search, e.g. mcp:github" },
+    args: { catalogId: "Entry id exactly as returned by codepuppy_hub_search, e.g. mcp:github" },
   },
 } as const
 
@@ -481,10 +490,10 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   // 引擎进程本身,ext 不再写 cfg.shell):
   defineReference({ id: "ref.skills.paths", pointer: "/skills/paths", note: "出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字" }),
   defineReference({ id: "ref.permission.skill", pointer: "/permission/skill", note: "REQ-067 出厂禁项的 \"deny\" 动词(factory-deny.ts)" }),
-  // REQ-234 `#1531` I3:`hub_install` 的 ask / deny 动词钉在全局与每个 agent 的末位(hub-tools.ts pinHubInstallPermission)。
+  // REQ-234 `#1531` I3:`codepuppy_hub_install` 的 ask / deny 动词钉在全局与每个 agent 的末位(hub-tools.ts pinHubInstallPermission)。
   // agent 名是用户 / 出厂配置的键,所以第二条用单段通配 `*`(只匹配恰好一段,见 explainConfigReference)。
-  defineReference({ id: "ref.permission.hub_install", pointer: "/permission/hub_install", note: "REQ-234 #1531 定制中心安装确认框的 \"ask\" 动词" }),
-  defineReference({ id: "ref.agent.permission.hub_install", pointer: "/agent/*/permission/hub_install", note: "REQ-234 #1531 每个 agent 末位的 \"ask\"(无人值守的 codepuppy-automation* 为 \"deny\")" }),
+  defineReference({ id: "ref.permission.codepuppy_hub_install", pointer: "/permission/codepuppy_hub_install", note: "REQ-234 #1531 定制中心安装确认框的 \"ask\" 动词" }),
+  defineReference({ id: "ref.agent.permission.codepuppy_hub_install", pointer: "/agent/*/permission/codepuppy_hub_install", note: "REQ-234 #1531 每个 agent 末位的 \"ask\"(无人值守的 codepuppy-automation* 为 \"deny\")" }),
   // ext 与 ui-mac 主进程都写的一类:
   defineReference({
     id: "ref.mcp",

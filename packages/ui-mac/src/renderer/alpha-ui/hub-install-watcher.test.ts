@@ -236,7 +236,7 @@ function hubRequest(catalogId: string, requestId = "req_hub_watcher_01"): Permis
     sessionID: "ses_hub_1",
     fingerprint: "b".repeat(64),
     subject: { kind: "agent", id: "build" },
-    action: "hub_install",
+    action: "codepuppy_hub_install",
     resources: [catalogId],
     scope: { kind: "session", sessionID: "ses_hub_1" },
     expiresAt: null,
