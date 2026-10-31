@@ -1070,7 +1070,15 @@ const layer = Layer.effect(
       const configured = (cfg.mcp ?? {})[origin]
       const raw = s.config[origin] ?? configured
       const entry = raw !== undefined && isMcpConfigured(raw) ? raw : undefined
-      const authority = (yield* connected(s)).find((item) => item.name === origin)?.connection.authority
+      const server = s.servers[origin]
+      const authority =
+        (yield* connected(s)).find((item) => item.name === origin)?.connection.authority ??
+        // #1578: a document tool offered from its bundled declaration (#1565) is decided before its server connects;
+        // its current authority is the one that offer minted (same condition, same entry, same mint), so a class-level
+        // 「Code Puppy 文档工具」record applies in that window too.
+        (server && !server.refuted && server.status.status === "pending" && server.declaredAt === server.generation
+          ? authorityForMcp(origin, server.entry)
+          : undefined)
       if (entry === undefined && authority === undefined) return undefined
       return { entry, authority: authority ?? ({ kind: "not-asserted" } as const) }
     })
