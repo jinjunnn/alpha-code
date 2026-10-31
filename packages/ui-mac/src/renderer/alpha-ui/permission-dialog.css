@@ -62,6 +62,64 @@
   font-size: var(--a-text-xs);
 }
 
+/* REQ-236:「记住」框与卡内提示行(批准稿 2026-10-30-req236-permission-cards,行样式同能力授权框)。 */
+.a-permission-remember {
+  margin-top: var(--a-space-3);
+  overflow: hidden;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+}
+
+.a-permission-remember-label {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-permission-remember-what {
+  display: grid;
+  gap: 1px;
+  padding: 10px 14px;
+  overflow-wrap: anywhere;
+}
+
+.a-permission-remember-what b {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-permission-remember-what small {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+}
+
+.a-permission-note,
+.a-permission-risk,
+.a-permission-save-failed {
+  margin: var(--a-space-3) 0 0;
+  line-height: var(--a-leading-snug);
+}
+
+.a-permission-note {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+.a-permission-risk {
+  color: var(--a-warning);
+  font-size: var(--a-text-sm);
+}
+
+.a-permission-save-failed {
+  color: var(--a-error);
+  font-size: var(--a-text-sm);
+}
+
 .a-permission-error {
   display: grid;
   gap: var(--a-space-1);

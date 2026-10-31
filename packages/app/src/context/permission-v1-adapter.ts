@@ -84,12 +84,13 @@ export function resolvePermissionV1Agent(messages: PermissionAgentSource, messag
  * - `scope`   ← 请求所属会话;
  * - `expiresAt` = null —— v1 请求本身不带过期,与 v2 引擎给自己请求写的值相同;
  * - `source`  ← v1 `tool`(messageID/callID),形状与 v2 的 `{type:"tool"}` 完全一致;
- * - `subject` ← 上面的 agent 还原。
+ * - `subject` ← 上面的 agent 还原;
+ * - `save`    ← v1 `always`,**只投影能力轴请求**(`metadata.policy` 缺席,REQ-236 方案 §2.4)。
  *
- * **`save` 刻意不投影**,因此对话框的「始终允许」对 v1 请求保持禁用:v1 的 `always` 只是把规则
- * 推进引擎进程内存里的 approved ruleset(重启即失),而「始终允许」在 alpha 的文案里明确承诺的是
- * "为当前项目创建永久授权(grantExpiresAt = null)"。宁可少一个按钮,也不要在授权持久性上说谎。
- * 需要长期放行请写进 permission 规则(config)。
+ * 能力轴的 v1 `always` 是会话放行:引擎按 `(会话, permission, always 的每一项)` 记在进程内存里,
+ * 引擎或应用重启即失。审批卡据此提供「本次会话内允许」,并把 `save` 逐项写成「将记住」的人话。
+ * 身份轴请求(`metadata.policy` 在场,引擎的工具策略闸写的)不投影:它的持久授权写的是设置里的
+ * 工具策略,由审批卡按 `metadata.policy.askedBy` 分流,不走 v1 `always`。
  */
 export function adaptPermissionV1Request(
   request: PermissionV1Request,
@@ -104,6 +105,7 @@ export function adaptPermissionV1Request(
     resources: [...request.patterns],
     scope: { kind: "session", sessionID: request.sessionID },
     expiresAt: null,
+    ...(request.metadata?.policy === undefined ? { save: [...request.always] } : {}),
     ...(request.metadata ? { metadata: request.metadata } : {}),
     ...(request.tool ? { source: { type: "tool" as const, ...request.tool } } : {}),
   }

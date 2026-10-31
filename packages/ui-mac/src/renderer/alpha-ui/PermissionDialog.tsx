@@ -7,6 +7,10 @@ import type {
 import { createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
+// 只取这一个纯函数模块(零运行时依赖),不经 `@opencode-ai/app` barrel:barrel 会把整个 app 拖进
+// 审批卡的测试运行时(实测 vite 解析 `@/index.css` 失败)。与 barrel 导出的是同一个文件、同一份实现。
+import { isPermissionV1Fingerprint } from "../../../../app/src/context/permission-v1-adapter"
+import type { ToolPolicyApi } from "../../shared/tool-policy-wire"
 import { Button } from "./Button"
 import { t } from "../i18n"
 import "./permission-dialog.css"
@@ -44,41 +48,73 @@ export function PermissionDialog(props: {
   projectID?: string
   onSubmit: (command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>
   onResolved?: (receipt: PermissionV2DecisionReceipt) => void
+  /** 「在此项目中始终允许」把工具级「启用」写进设置的那一口(生产 = preload `toolPolicy.setRecord`)。 */
+  saveToolPolicy: ToolPolicyApi["setRecord"]
 }) {
   const facts = permissionRequestFacts(props.request)
+  const approval = permissionApprovalOf(props.request)
+  const saved = savedResources(props.request)
   const [state, setState] = createStore<{
-    submitting?: PermissionV2DecisionCommand
+    /** 正在提交的那个按钮(「在此项目中始终允许」从写设置起就算在途)。 */
+    busy?: PermissionV2Decision
     failed?: { command: PermissionV2DecisionCommand; error: PermissionDecisionSubmitError }
+    saveFailed?: boolean
   }>({})
   let errorSummary: HTMLDivElement | undefined
 
-  const canAlways = () =>
-    facts.verified &&
-    typeof props.projectID === "string" &&
-    !!props.projectID.trim() &&
-    Array.isArray(props.request.save) &&
-    props.request.save.length > 0 &&
-    props.request.save.every((resource) => typeof resource === "string")
+  const canAlways = () => {
+    if (!facts.verified) return false
+    if (approval.kind === "project") return !!approval.directory
+    if (approval.kind === "every-time") return false
+    return typeof props.projectID === "string" && !!props.projectID.trim() && !!saved?.length
+  }
 
-  const decide = (decision: PermissionV2Decision) => {
-    if (state.submitting) return
-    const safeDecision = facts.verified ? decision : "reject"
-    if (safeDecision === "always" && !canAlways()) return
-    const command =
-      state.failed?.command.decision === safeDecision
-        ? state.failed.command
-        : createPermissionDecisionCommand(props.request, safeDecision, props.projectID)
-
-    setState({ submitting: command, failed: undefined })
+  const submit = (busy: PermissionV2Decision, command: PermissionV2DecisionCommand) => {
+    setState({ busy, failed: undefined, saveFailed: false })
     props.onSubmit(command).then(
       (receipt) => {
-        setState("submitting", undefined)
+        setState("busy", undefined)
         props.onResolved?.(receipt)
       },
       (error) => {
-        setState({ submitting: undefined, failed: { command, error: permissionDecisionSubmitError(error) } })
+        setState({ busy: undefined, failed: { command, error: permissionDecisionSubmitError(error) } })
         queueMicrotask(() => errorSummary?.focus())
       },
+    )
+  }
+
+  // 身份轴(方案 §2.4):先把工具级「启用」连同当前 binding 写进设置,写成了才放行这一次;
+  // 写不成就留在原地并说明,这一次不放行。
+  const allowInProject = (policy: ProjectApproval) => {
+    setState({ busy: "always", failed: undefined, saveFailed: false })
+    props
+      .saveToolPolicy({
+        directory: policy.directory!,
+        record: {
+          selector: { level: "tool", canonical: policy.canonical },
+          state: "enabled",
+          bindingDigest: policy.bindingDigest,
+        },
+      })
+      .then(
+        (result) => {
+          if (!result.ok) return setState({ busy: undefined, saveFailed: true })
+          submit("always", createPermissionDecisionCommand(props.request, "once"))
+        },
+        () => setState({ busy: undefined, saveFailed: true }),
+      )
+  }
+
+  const decide = (decision: PermissionV2Decision) => {
+    if (state.busy) return
+    const safeDecision = facts.verified ? decision : "reject"
+    if (safeDecision === "always" && !canAlways()) return
+    if (safeDecision === "always" && approval.kind === "project") return allowInProject(approval)
+    submit(
+      safeDecision,
+      state.failed?.command.decision === safeDecision
+        ? state.failed.command
+        : createPermissionDecisionCommand(props.request, safeDecision, props.projectID),
     )
   }
 
@@ -86,53 +122,79 @@ export function PermissionDialog(props: {
     if (!facts.verified) decide("reject")
   })
 
+  const alwaysLabel = () =>
+    approval.kind === "session"
+      ? t("alpha.permission.allowSession")
+      : approval.kind === "project"
+        ? t("alpha.permission.allowProject")
+        : t("alpha.permission.always")
+
   const actionLabel = (decision: PermissionV2Decision) => {
-    const label = decision === "once" ? t("alpha.permission.once") : decision === "always" ? t("alpha.permission.always") : t("alpha.permission.reject")
-    if (state.submitting?.decision === decision) return t("alpha.permission.submitting")
+    const label = decision === "once" ? t("alpha.permission.once") : decision === "always" ? alwaysLabel() : t("alpha.permission.reject")
+    if (state.busy === decision) return t("alpha.permission.submitting")
+    if (decision === "always" && state.saveFailed) return t("alpha.permission.retryDecision", { label })
     return state.failed?.command.decision === decision ? t("alpha.permission.retryDecision", { label }) : label
+  }
+
+  // 中间按钮:新式请求照旧;能力轴只在有可记住的范围时出现;档位或规则要求每次确认时不出现。
+  const showsAlways = () =>
+    approval.kind === "v2" || approval.kind === "project" || (approval.kind === "session" && !!saved?.length)
+
+  const remember = () => {
+    if (approval.kind === "project")
+      return { what: t("alpha.permission.rememberTool"), scope: t("alpha.permission.projectScope") }
+    if (approval.kind === "session" && saved?.length)
+      return { what: rememberedText(props.request.action, saved), scope: t("alpha.permission.sessionScope") }
+    return undefined
   }
 
   return (
     <PermissionPanel
       title={t("alpha.permission.title")}
       description={<span>{t("alpha.permission.description")}</span>}
-      busy={!!state.submitting}
+      busy={!!state.busy}
       footer={
         <div class="a-permission-footer">
-          <small class="a-permission-grant-note">{t("alpha.permission.alwaysNote")}</small>
+          <Show when={approval.kind === "v2"}>
+            <small class="a-permission-grant-note">{t("alpha.permission.alwaysNote")}</small>
+          </Show>
           <div class="a-permission-actions">
             <Button
               type="button"
               variant="danger"
-              disabled={!!state.submitting}
+              disabled={!!state.busy}
               onClick={() => decide("reject")}
               data-permission-decision="reject"
             >
               {actionLabel("reject")}
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!!state.submitting || !canAlways()}
-              title={
-                !facts.verified
-                  ? t("alpha.permission.unverified")
-                  : !props.projectID?.trim()
-                    ? t("alpha.permission.projectUnverified")
-                    : !Array.isArray(props.request.save) || !props.request.save.length
-                      ? t("alpha.permission.noSavedResources")
-                      : undefined
-              }
-              onClick={() => decide("always")}
-              data-permission-decision="always"
-            >
-              {actionLabel("always")}
-            </Button>
+            <Show when={showsAlways()}>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!!state.busy || !canAlways()}
+                title={
+                  !facts.verified
+                    ? t("alpha.permission.unverified")
+                    : approval.kind !== "v2"
+                      ? undefined
+                      : !props.projectID?.trim()
+                        ? t("alpha.permission.projectUnverified")
+                        : !saved?.length
+                          ? t("alpha.permission.noSavedResources")
+                          : undefined
+                }
+                onClick={() => decide("always")}
+                data-permission-decision="always"
+              >
+                {actionLabel("always")}
+              </Button>
+            </Show>
             <Button
               type="button"
               variant="primary"
               autofocus
-              disabled={!!state.submitting || !facts.verified}
+              disabled={!!state.busy || !facts.verified}
               title={!facts.verified ? t("alpha.permission.unverified") : undefined}
               onClick={() => decide("once")}
               data-permission-decision="once"
@@ -182,6 +244,8 @@ export function PermissionDialog(props: {
             )}
           </Show>
         </div>
+        {/* 身份轴请求的 patterns 是引擎的放行键(`<binding>@<修订号>` / `call:<id>`),不是资源,不上卡。 */}
+        <Show when={approval.kind === "v2" || approval.kind === "session"}>
         <div class="a-permission-fact a-permission-fact--wide" data-permission-fact="resources">
           <dt>{t("alpha.permission.resources")}</dt>
           <Show
@@ -207,6 +271,9 @@ export function PermissionDialog(props: {
             )}
           </Show>
         </div>
+        </Show>
+        {/* v1 请求的 scope / expiresAt 是适配器为过核验补的形状,不是授权的范围与期限;那两样由下面的「记住」框按请求种类如实写。 */}
+        <Show when={approval.kind === "v2"}>
         <div class="a-permission-fact" data-permission-fact="scope">
           <dt>{t("alpha.permission.scope")}</dt>
           <Show
@@ -245,7 +312,40 @@ export function PermissionDialog(props: {
             )}
           </Show>
         </div>
+        </Show>
       </dl>
+
+      <Show when={remember()}>
+        {(value) => (
+          <div class="a-permission-remember" data-permission-remember={approval.kind}>
+            <div class="a-permission-remember-label">{alwaysLabel()}</div>
+            <div class="a-permission-remember-what">
+              <b>{t("alpha.permission.remember", { what: value().what })}</b>
+              <small>{value().scope}</small>
+            </div>
+          </div>
+        )}
+      </Show>
+      <Show when={approval.kind === "every-time"}>
+        <p class="a-permission-note" data-permission-note="every-time">
+          {t("alpha.permission.everyTime")}
+        </p>
+      </Show>
+      <Show when={approval.kind === "project" && !approval.directory}>
+        <p class="a-permission-note" data-permission-note="project-missing">
+          {t("alpha.permission.projectMissing")}
+        </p>
+      </Show>
+      <Show when={approval.kind === "session" && props.request.action === "task"}>
+        <p class="a-permission-risk" data-permission-note="delegation">
+          {t("alpha.permission.delegationNote")}
+        </p>
+      </Show>
+      <Show when={state.saveFailed}>
+        <p class="a-permission-save-failed" data-permission-note="save-failed" role="alert">
+          {t("alpha.permission.saveFailed")}
+        </p>
+      </Show>
 
       <Show when={state.failed}>
         {(failed) => (
@@ -490,6 +590,54 @@ function exactFactRecord(value: unknown, expectedKeys: string[]) {
   const keys = Object.keys(record)
   if (keys.length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(record, key))) return undefined
   return record
+}
+
+type ProjectApproval = { kind: "project"; directory?: string; canonical: string; bindingDigest?: string }
+
+/**
+ * 这张卡的中间按钮是哪一种(REQ-236 方案 §2.4,判据都是引擎写进请求的事实):
+ *  · `v2`         —— 新式请求(带自己的 `save`),「始终允许」照旧;
+ *  · `session`    —— v1 能力轴(`metadata.policy` 缺席):「本次会话内允许」= v1 `always`;
+ *  · `project`    —— 身份轴且 `askedBy === "policy"`:「在此项目中始终允许」= 写设置里的工具策略;
+ *  · `every-time` —— 身份轴且档位或权限规则要求每次确认(`askedBy === "ruleset"`):只能允许一次。
+ *    `askedBy` 不是 `"policy"`、或 `canonical` 缺失时也落这一类 —— 拿不准就不给持久放行。
+ */
+function permissionApprovalOf(
+  request: PermissionV2Request,
+): { kind: "v2" } | { kind: "session" } | { kind: "every-time" } | ProjectApproval {
+  if (!isPermissionV1Fingerprint(request.fingerprint)) return { kind: "v2" }
+  const policy = errorRecord(request.metadata?.policy)
+  if (!policy) return { kind: "session" }
+  if (policy.askedBy !== "policy" || typeof policy.canonical !== "string") return { kind: "every-time" }
+  return {
+    kind: "project",
+    directory: typeof policy.directory === "string" && policy.directory.trim() ? policy.directory : undefined,
+    canonical: policy.canonical,
+    bindingDigest: typeof policy.bindingDigest === "string" ? policy.bindingDigest : undefined,
+  }
+}
+
+function savedResources(request: PermissionV2Request) {
+  const save = request.save
+  return Array.isArray(save) && save.every((resource) => typeof resource === "string") ? save : undefined
+}
+
+/**
+ * 「将记住」:把 v1 `always`(适配器投影成 `save`)逐项写成人话,不把原始规则搬上卡。
+ * `*` = 这一类请求在本会话内全部放行;shell 的 `<前缀> *` 与外部目录的 `<目录>/*` 各自去掉通配写出来。
+ */
+function rememberedText(action: string, saved: readonly string[]) {
+  const list = (items: readonly string[]) => items.join(t("alpha.permission.listSeparator"))
+  if (saved.includes("*")) {
+    if (action === "task") return t("alpha.permission.rememberAllTasks")
+    if (action === "edit") return t("alpha.permission.rememberAllEdits")
+    if (action === "read") return t("alpha.permission.rememberAllReads")
+    return t("alpha.permission.rememberAllOfKind")
+  }
+  if (action === "bash") return t("alpha.permission.rememberCommands", { prefixes: list(saved.map((item) => item.replace(/ \*$/, ""))) })
+  if (action === "external_directory")
+    return t("alpha.permission.rememberFolders", { folders: list(saved.map((item) => item.replace(/[\\/]\*$/, ""))) })
+  return t("alpha.permission.rememberItems", { items: list(saved) })
 }
 
 function scopeLabel(scope: PermissionV2Request["scope"]) {

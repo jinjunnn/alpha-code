@@ -392,7 +392,7 @@ export function PermChip() {
         <Chevron />
       </button>
       <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="left" minWidth={230} role="menu" onEscape={close}>
+        <ChipPopover anchor={btn} align="left" minWidth={300} role="menu" onEscape={close}>
           <div class="a-pop-label" role="presentation">{t("alpha.composer.permissions")}</div>
           <For each={PERM_MODES}>
             {(mode) => (
@@ -408,6 +408,11 @@ export function PermChip() {
               </button>
             )}
           </For>
+          {/* REQ-236:三档共同、任何档都越不过的那几样(批准稿 #tier-menu 底部一句)。 */}
+          <div class="a-pop-sep" role="separator" />
+          <div class="a-pop-note" role="presentation" data-perm-boundary="">
+            {t("alpha.composer.permBoundary")}
+          </div>
         </ChipPopover>
       </Show>
     </div>

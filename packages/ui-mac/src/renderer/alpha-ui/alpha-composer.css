@@ -242,6 +242,21 @@
 .a-pop-item.is-on[data-perm] {
   font-weight: var(--a-weight-semibold);
 }
+/* REQ-236:运行权限菜单每档的边界说明折到第二行,与档名左对齐(批准稿 #tier-menu,菜单宽 300)。 */
+.a-pop:has(> .a-pop-item[data-perm]) {
+  width: 300px;
+}
+.a-pop-item[data-perm] {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 2px;
+}
+.a-pop-item[data-perm] .a-pop-desc {
+  flex-basis: 100%;
+  margin-left: 24px;
+  line-height: 1.5;
+  font-weight: var(--a-weight-normal);
+}
 .a-chip[data-disabled] {
   opacity: 0.55;
   cursor: default;

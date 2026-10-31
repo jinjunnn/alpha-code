@@ -58,6 +58,7 @@ export function PermissionWatcher(props: PermissionSurfaceProps & { server?: Acc
             projectID={raw.scope?.kind === "project" ? raw.scope.projectID : props.projectID}
             onSubmit={(command) => feed.reply(raw.id, command)}
             onResolved={(receipt) => feed.apply({ type: "replied", receipt })}
+            saveToolPolicy={(input) => window.api.toolPolicy.setRecord(input)}
           />
         )
       }}
