@@ -23,7 +23,7 @@
 // `ALPHA_ENDPOINTS.web`,注册表里那一行早就在(它是登录/令牌用的同一个主机)。
 //
 // ── BYOK 照样上报 ───────────────────────────────────────────────────────────────────────────
-// `billing_path` 由服务端从 `provider_id` 派生(`alpha` → platform、`-byok` 后缀 → byok、其余
+// `billing_path` 由服务端从 `provider_id` 派生(`codepuppy` → platform、`-byok` 后缀 → byok、其余
 // → custom),自定义 provider 也上报 —— 它们同样不经平台,所以服务端本来就没有留证。
 
 import { ALPHA_PATHS } from "../shared/alpha-config"

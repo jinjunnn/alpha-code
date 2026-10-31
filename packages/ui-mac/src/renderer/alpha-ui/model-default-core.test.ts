@@ -7,7 +7,7 @@ import {
   type ModelResolveCtx,
 } from "./model-default-core"
 
-const PLATFORM = "alpha"
+const PLATFORM = "codepuppy"
 const CATALOG: ModelResolveCtx["catalog"] = {
   defaultModel: null,
   defaultPlatformModel: "deepseek-v4-flash",

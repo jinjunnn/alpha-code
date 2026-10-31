@@ -14,7 +14,7 @@ const PNG_SHA256 = createHash("sha256").update(PNG).digest("hex")
 
 function userMessage(id: string, text: string, extra: Partial<EngineMessage> = {}): EngineMessage {
   return {
-    info: { id, role: "user", time: { created: 1000 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+    info: { id, role: "user", time: { created: 1000 }, model: { providerID: "codepuppy", modelID: "gpt-5" } },
     parts: [{ type: "text", text }],
     ...extra,
   }
@@ -26,7 +26,7 @@ function assistantMessage(id: string, text: string, completed: number, extra: Re
       id,
       role: "assistant",
       time: { created: 1000, completed },
-      providerID: "alpha",
+      providerID: "codepuppy",
       modelID: "gpt-5",
       finish: "stop",
       tokens: { output: 12 },
@@ -50,14 +50,14 @@ describe("REQ-160 #1324 —— 一轮恰两条消息、user → assistant", () =
       engine_message_id: "msg_a",
       role: "user",
       text: "你好",
-      provider_id: "alpha",
+      provider_id: "codepuppy",
       model_id: "gpt-5",
     })
     expect(turns[0]?.body.messages[1]).toEqual({
       engine_message_id: "msg_b",
       role: "assistant",
       text: "你也好",
-      provider_id: "alpha",
+      provider_id: "codepuppy",
       model_id: "gpt-5",
       finish: "stop",
       tokens_output: 12,
@@ -108,7 +108,7 @@ describe("REQ-160 #1324 —— 一轮恰两条消息、user → assistant", () =
 
   test("compaction 的产出跳过:assistant 带 summary:true,其 user 前驱只挂 compaction part", () => {
     const compactionUser: EngineMessage = {
-      info: { id: "msg_cu", role: "user", time: { created: 1000 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+      info: { id: "msg_cu", role: "user", time: { created: 1000 }, model: { providerID: "codepuppy", modelID: "gpt-5" } },
       parts: [{ type: "compaction" }],
     }
     const bySummary = buildTurns({
@@ -129,7 +129,7 @@ describe("REQ-160 #1324 —— 一轮恰两条消息、user → assistant", () =
 
   test("引擎注入的 synthetic 文本不算用户说的话;剔干净后什么都不剩的轮次整轮跳过", () => {
     const syntheticOnly: EngineMessage = {
-      info: { id: "msg_su", role: "user", time: { created: 1000 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+      info: { id: "msg_su", role: "user", time: { created: 1000 }, model: { providerID: "codepuppy", modelID: "gpt-5" } },
       parts: [{ type: "text", text: "Summarize the task tool output above and continue with your task.", synthetic: true }],
     }
     const { turns, skipped } = buildTurns({
@@ -141,7 +141,7 @@ describe("REQ-160 #1324 —— 一轮恰两条消息、user → assistant", () =
 
     // 用户真打了字的那一轮:synthetic 提醒被剔掉,用户原话原样保留。
     const mixed: EngineMessage = {
-      info: { id: "msg_mu", role: "user", time: { created: 1000 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+      info: { id: "msg_mu", role: "user", time: { created: 1000 }, model: { providerID: "codepuppy", modelID: "gpt-5" } },
       parts: [
         { type: "text", text: "帮我改一下" },
         { type: "text", text: "<system-reminder>plan mode</system-reminder>", synthetic: true },
@@ -154,7 +154,7 @@ describe("REQ-160 #1324 —— 一轮恰两条消息、user → assistant", () =
 
   test("未完成的 assistant(time.completed 缺席)不上报", () => {
     const pending: EngineMessage = {
-      info: { id: "msg_p", role: "assistant", time: { created: 1000 }, providerID: "alpha", modelID: "gpt-5" },
+      info: { id: "msg_p", role: "assistant", time: { created: 1000 }, providerID: "codepuppy", modelID: "gpt-5" },
       parts: [{ type: "text", text: "写到一半" }],
     }
     const { turns } = buildTurns({ ...base, messages: [userMessage("msg_u", "在吗"), pending] })
@@ -192,7 +192,7 @@ describe("REQ-160 #1324 —— 一轮恰两条消息、user → assistant", () =
     const { turns } = buildTurns({ ...base, messages: [byokUser, byokAssistant] })
     expect(turns).toHaveLength(1)
     expect(turns[0]?.body.messages[1]?.provider_id).toBe("anthropic-byok")
-    expect(billingPathFor("alpha")).toBe("platform")
+    expect(billingPathFor("codepuppy")).toBe("platform")
     expect(billingPathFor("anthropic-byok")).toBe("byok")
     expect(billingPathFor("my-own-endpoint")).toBe("custom")
   })
@@ -201,7 +201,7 @@ describe("REQ-160 #1324 —— 一轮恰两条消息、user → assistant", () =
 describe("REQ-160 #1324 —— 附件", () => {
   test("data URL 附件:按位置声明 metadata,哈希由客户端算、字节与元数据同序", () => {
     const withFile: EngineMessage = {
-      info: { id: "msg_fu", role: "user", time: { created: 1 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+      info: { id: "msg_fu", role: "user", time: { created: 1 }, model: { providerID: "codepuppy", modelID: "gpt-5" } },
       parts: [
         { type: "text", text: "看这张图" },
         { type: "file", mime: "image/png", filename: "shot.png", url: PNG_DATA_URL },
@@ -224,7 +224,7 @@ describe("REQ-160 #1324 —— 附件", () => {
 
   test("`@` 引用的项目文件不是附件(url 不是 data URL),白名单外的 mime 丢掉但整轮照发", () => {
     const withRefs: EngineMessage = {
-      info: { id: "msg_ru", role: "user", time: { created: 1 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+      info: { id: "msg_ru", role: "user", time: { created: 1 }, model: { providerID: "codepuppy", modelID: "gpt-5" } },
       parts: [
         { type: "text", text: "看这些" },
         { type: "file", mime: "text/plain", filename: "a.ts", url: "file:///repo/a.ts" },
@@ -248,7 +248,7 @@ describe("REQ-160 #1324 —— 附件", () => {
     const parts = [{ type: "text", text: "一堆图" } as Record<string, unknown>]
     for (let i = 0; i < 10; i++) parts.push({ type: "file", mime: "image/png", filename: `f${i}.png`, url: PNG_DATA_URL })
     const many: EngineMessage = {
-      info: { id: "msg_mu2", role: "user", time: { created: 1 }, model: { providerID: "alpha", modelID: "gpt-5" } },
+      info: { id: "msg_mu2", role: "user", time: { created: 1 }, model: { providerID: "codepuppy", modelID: "gpt-5" } },
       parts,
     }
     const { turns, skipped } = buildTurns({ ...base, messages: [many, assistantMessage("msg_ma2", "好", 2000)] })

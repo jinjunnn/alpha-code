@@ -167,12 +167,12 @@ describe("REQ-228 #1420:真引擎的 capabilities.input.image —— 直连按 m
     expect(run.rc, run.log).toBe(0)
     const verdicts = imageVerdicts(cfg, run.models)
     // 被测对象不是空集:平台 12 行 + 直连 10 行 + 自定义 3 行都真的进了引擎。
-    expect(Object.keys(verdicts).filter((k) => k.startsWith("alpha/")).length).toBeGreaterThanOrEqual(10)
+    expect(Object.keys(verdicts).filter((k) => k.startsWith("codepuppy/")).length).toBeGreaterThanOrEqual(10)
     expect(Object.keys(verdicts).filter((k) => k.includes("-byok/")).length).toBe(10)
     expect(Object.values(verdicts).filter((v) => v === "<missing>")).toEqual([])
     expect(Object.entries(verdicts).filter(([, v]) => v === true).map(([k]) => k).sort()).toEqual(EXPECTED_IMAGE)
     // 平台逐行钉死(上游能看图的 claude-* / gpt-* 也不例外):聊天入口拒收图片,图片只走云端识图。
-    for (const [k, v] of Object.entries(verdicts)) if (k.startsWith("alpha/")) expect({ k, image: v }).toEqual({ k, image: false })
+    for (const [k, v] of Object.entries(verdicts)) if (k.startsWith("codepuppy/")) expect({ k, image: v }).toEqual({ k, image: false })
   }, 120_000)
 
   test("手段自证:同一台引擎、同一份注入只删掉 modalities ⇒ 直连能看图的全部退回 false,而同名 openai 节点从 models.dev 继承到 true", async () => {

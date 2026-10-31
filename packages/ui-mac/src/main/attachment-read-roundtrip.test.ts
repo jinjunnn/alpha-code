@@ -75,7 +75,7 @@ async function roundTrip(format: "word" | "pdf", name: string, sample: Record<st
   const meta = recordPart!.metadata["codepuppy.attachment"] as Parameters<typeof attachmentInstruction>[0]
 
   // 3. 读取指令(ext):工具 id 由推导函数得出,path 由共享路径函数得出。
-  const service = format === "word" ? "alpha-word" : "alpha-pdf"
+  const service = format === "word" ? "codepuppy-word" : "codepuppy-pdf"
   const { toolId, path } = instructed(attachmentInstruction(meta, project, { [service]: { status: "connected" } }))
   expect(toolId).toBe(mcpEngineToolId(service, remote.read))
 

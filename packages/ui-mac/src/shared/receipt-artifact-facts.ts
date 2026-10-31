@@ -1,7 +1,7 @@
 // receipt-artifact-facts — REQ-105(#319)。
 //
 // 一张 receipt 上有两个不同的事实,详情页必须把它们分开说:
-//   · `version` —— catalog **卡片**的版本(`mcp:alpha-excel` 是 `1.0.0`)。它命名连接器,
+//   · `version` —— catalog **卡片**的版本(`mcp:codepuppy-excel` 是 `1.0.0`)。它命名连接器,
 //     **不命名它执行的字节**。2026-07-14 逐需求审计记下的正是这个形态:
 //     「receipt 记录条目版 1.0.0 而实际执行 0.1.8 且无包 digest 字段」。
 //   · `payloadDigest` —— 安装时记录的**执行物内容地址**(`sha256:<64 hex>`)。

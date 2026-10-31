@@ -529,7 +529,7 @@ export async function spawnLocalServer(
   applyWebSearchSovereignty()
 
   // B6(=G1):解析 @alpha-code/ext bundle 路径,经 StartCommand 传 sidecar(不走 env,免动 A6 白名单)。
-  // 缺文件 loud warn(anti-B11:否则表现为「alpha_ping 工具静默不在」);ALPHA_EXT_DISABLE=1 静默跳过。
+  // 缺文件 loud warn(anti-B11:否则表现为「codepuppy_ping 工具静默不在」);ALPHA_EXT_DISABLE=1 静默跳过。
   const ext = resolveExtPluginPath({
     packaged: electronNs.app.isPackaged,
     resourcesPath: process.resourcesPath,

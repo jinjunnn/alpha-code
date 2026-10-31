@@ -97,8 +97,8 @@ async function productionCloudEntry(input: { killSwitch: boolean; token: string;
       dir: input.tmp,
     })
     const cfg = ConfigParse.jsonc(text, "OPENCODE_CONFIG_CONTENT") as { mcp: Record<string, unknown> }
-    if (input.killSwitch) expect(installCloudMcp(cfg, env)).toBe("cloud")
-    const entry = Schema.decodeUnknownSync(ConfigMCPV1.Info)(cfg.mcp.cloud)
+    if (input.killSwitch) expect(installCloudMcp(cfg, env)).toBe("codepuppy")
+    const entry = Schema.decodeUnknownSync(ConfigMCPV1.Info)(cfg.mcp.codepuppy)
     return { entry, env }
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
@@ -157,7 +157,7 @@ describe("stable tool identity", () => {
       ALPHA_CLOUD_MCP_DEF: JSON.stringify({ type: "remote", url: "https://cloud.example/mcp" }),
     }
     expect(authorityForMcp("cloud", { type: "remote", url: "https://cloud.example/mcp" }, verified)).toEqual({
-      kind: "alpha-cloud",
+      kind: "codepuppy-cloud",
       bindingId: "mcp:cloud",
       evidenceDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
@@ -201,11 +201,11 @@ describe("stable tool identity", () => {
       },
       oauthVerified,
     )
-    expect(oauthAuthority.kind).toBe("alpha-cloud")
-    if (oauthAuthority.kind === "alpha-cloud") {
+    expect(oauthAuthority.kind).toBe("codepuppy-cloud")
+    if (oauthAuthority.kind === "codepuppy-cloud") {
       const plain = authorityForMcp("cloud", { type: "remote", url: "https://cloud.example/mcp" }, verified)
-      expect(plain.kind).toBe("alpha-cloud")
-      if (plain.kind === "alpha-cloud") expect(oauthAuthority.evidenceDigest).not.toBe(plain.evidenceDigest)
+      expect(plain.kind).toBe("codepuppy-cloud")
+      if (plain.kind === "codepuppy-cloud") expect(oauthAuthority.evidenceDigest).not.toBe(plain.evidenceDigest)
     }
   })
 
@@ -215,7 +215,7 @@ describe("stable tool identity", () => {
     const env = { ALPHA_CLOUD_MCP_SERVER: "cloud", ALPHA_CLOUD_MCP_DEF: JSON.stringify(def) }
     const loaded = { ...def, headers: { Authorization: "Bearer tok-literal-1" } }
     expect(authorityForMcp("cloud", loaded, env)).toEqual({
-      kind: "alpha-cloud",
+      kind: "codepuppy-cloud",
       bindingId: "mcp:cloud",
       evidenceDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     })
@@ -229,7 +229,7 @@ describe("stable tool identity", () => {
         // 对照:装载后的条目确实带着令牌字面量(否则这条用例测的不是断点)。
         expect(entry.type === "remote" && entry.headers?.Authorization).toBe("Bearer tok-wired-1")
         expect(env.ALPHA_CLOUD_MCP_DEF).toContain("{file:")
-        expect(authorityForMcp("cloud", entry, env).kind).toBe("alpha-cloud")
+        expect(authorityForMcp("codepuppy", entry, env).kind).toBe("codepuppy-cloud")
       }
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
@@ -240,7 +240,7 @@ describe("stable tool identity", () => {
     const def = materializeCloudMcpConfig("https://cloud.example/mcp", "{file:/x/ALPHA_MCP_TOKEN}")
     const env = { ALPHA_CLOUD_MCP_SERVER: "cloud", ALPHA_CLOUD_MCP_DEF: JSON.stringify(def) }
     const loaded = { ...def, headers: { Authorization: "Bearer tok" } }
-    expect(authorityForMcp("cloud", loaded, env).kind).toBe("alpha-cloud")
+    expect(authorityForMcp("cloud", loaded, env).kind).toBe("codepuppy-cloud")
     const notAsserted = { kind: "not-asserted" as const }
     // URL 不同
     expect(authorityForMcp("cloud", { ...loaded, url: "https://attacker.example/mcp" }, env)).toEqual(notAsserted)
@@ -258,7 +258,7 @@ describe("stable tool identity", () => {
     const literalDef = { ...def, headers: { Authorization: "Bearer pinned" } }
     const literalEnv = { ...env, ALPHA_CLOUD_MCP_DEF: JSON.stringify(literalDef) }
     expect(authorityForMcp("cloud", loaded, literalEnv)).toEqual(notAsserted)
-    expect(authorityForMcp("cloud", literalDef, literalEnv).kind).toBe("alpha-cloud")
+    expect(authorityForMcp("cloud", literalDef, literalEnv).kind).toBe("codepuppy-cloud")
   })
 
   test("#1576 AC2: evidence carries no token value; bindingId and evidenceDigest survive token rotation", async () => {
@@ -267,27 +267,27 @@ describe("stable tool identity", () => {
       const before = await productionCloudEntry({ killSwitch: false, token: "tok-before-rotation", tmp })
       const after = await productionCloudEntry({ killSwitch: false, token: "tok-after-rotation", tmp })
       expect(before.entry).not.toEqual(after.entry)
-      const evidence = governedMcpEvidence("cloud", before.entry, before.env)
+      const evidence = governedMcpEvidence("codepuppy", before.entry, before.env)
       expect(evidence).toBeDefined()
       expect(evidence).not.toContain("tok-before-rotation")
-      const a = authorityForMcp("cloud", before.entry, before.env)
-      const b = authorityForMcp("cloud", after.entry, after.env)
-      expect(a.kind).toBe("alpha-cloud")
+      const a = authorityForMcp("codepuppy", before.entry, before.env)
+      const b = authorityForMcp("codepuppy", after.entry, after.env)
+      expect(a.kind).toBe("codepuppy-cloud")
       expect(b).toEqual(a)
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }
   })
 
-  // #1578 AC1 成立臂:删掉 authorityForMcp 的 alpha-bundled 分支 ⇒ 这里是 not-asserted,当场红。
-  test("#1578 AC1: a document-tool entry bound to the bundled manifest (command token-equal, server.py digest) is alpha-bundled", () => {
+  // #1578 AC1 成立臂:删掉 authorityForMcp 的 codepuppy-bundled 分支 ⇒ 这里是 not-asserted,当场红。
+  test("#1578 AC1: a document-tool entry bound to the bundled manifest (command token-equal, server.py digest) is codepuppy-bundled", () => {
     const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-1578-bundled-")))
     try {
       const pack = officeBundle(tmp)
       for (const format of ["word", "excel", "powerpoint", "pdf"] as const) {
         const authority = authorityForMcp(`alpha-${format}`, pack.entry(format), pack.env)
         expect(authority).toEqual({
-          kind: "alpha-bundled",
+          kind: "codepuppy-bundled",
           bindingId: `mcp:alpha-${format}`,
           evidenceDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         })
@@ -311,15 +311,15 @@ describe("stable tool identity", () => {
     try {
       const pack = officeBundle(tmp)
       const notAsserted = { kind: "not-asserted" } as const
-      expect(authorityForMcp("alpha-word", pack.entry("word"), pack.env).kind).toBe("alpha-bundled")
-      expect(authorityForMcp("alpha-word", pack.entry("word", ["--extra"]), pack.env)).toEqual(notAsserted)
+      expect(authorityForMcp("codepuppy-word", pack.entry("word"), pack.env).kind).toBe("codepuppy-bundled")
+      expect(authorityForMcp("codepuppy-word", pack.entry("word", ["--extra"]), pack.env)).toEqual(notAsserted)
       const short = pack.entry("word")
-      expect(authorityForMcp("alpha-word", { ...short, command: short.command.slice(0, -1) }, pack.env)).toEqual(
+      expect(authorityForMcp("codepuppy-word", { ...short, command: short.command.slice(0, -1) }, pack.env)).toEqual(
         notAsserted,
       )
-      expect(authorityForMcp("alpha-word", pack.entry("word"), {})).toEqual(notAsserted)
+      expect(authorityForMcp("codepuppy-word", pack.entry("word"), {})).toEqual(notAsserted)
       fs.appendFileSync(pack.server, " ")
-      expect(authorityForMcp("alpha-word", pack.entry("word"), pack.env)).toEqual(notAsserted)
+      expect(authorityForMcp("codepuppy-word", pack.entry("word"), pack.env)).toEqual(notAsserted)
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }
@@ -341,7 +341,7 @@ describe("stable tool identity", () => {
       decode({
         identity: identity("cloud", "web_search"),
         technicalId: "cloud_web_search",
-        authority: { kind: "alpha-cloud", bindingId: "mcp:cloud" },
+        authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud" },
       }),
     ).toThrow()
   })

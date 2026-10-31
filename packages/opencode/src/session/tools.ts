@@ -213,9 +213,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     register(item.id, value, {
       identity: item.identity,
       technicalId: item.id,
-      // #1578 AC5: a bundled-manifest-proven plugin tool persists its alpha-bundled authority with the snapshot.
+      // #1578 AC5: a bundled-manifest-proven plugin tool persists its codepuppy-bundled authority with the snapshot.
       authority: item.authority ?? { kind: "not-asserted" },
       location: LOCAL,
+      // #1568 AC5: only a manifest-proven own tool carries its declared `codepuppy:<action>` identifier.
+      ...(item.readable ? { readable: item.readable } : {}),
     })
   }
 

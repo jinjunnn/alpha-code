@@ -657,7 +657,7 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
       callID: "call_prt_c1",
       tool: "cloud_artifacts",
       display: {
-        identity: { source: "mcp", origin: "cloud", name: "artifacts" },
+        identity: { source: "mcp", origin: "codepuppy", name: "artifacts" },
         technicalId: "cloud_artifacts",
         authority: { kind: "not-asserted" },
       },

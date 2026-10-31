@@ -46,11 +46,11 @@ describe("validateBuiltinPolicy — 保护名单硬校验(验收③)", () => {
     expect(v.length).toBe(1)
     expect(v[0].reason).toContain("compaction")
   })
-  test("#1507 AC1:保护治理拒绝使用 Code Puppy,alpha-automation 技术名不变", () => {
-    expect(validateBuiltinPolicy(gov({ agents: { hide: ["alpha-automation"], disable: [], allow: [], override: {} } }), false).length).toBe(1)
-    expect(validateBuiltinPolicy(gov({ agents: { hide: [], disable: ["alpha-automation"], allow: [], override: {} } }), false).length).toBe(1)
-    expect(validateBuiltinPolicy(gov({ agents: { hide: [], disable: ["alpha-automation"], allow: [], override: {} } }), false)[0]?.reason).toBe("受保护:alpha-automation 是 Code Puppy 注入的功能载体(自动化等),禁用会使其静默失效,已拒绝")
-    expect(validateBuiltinPolicy(gov({ agents: { hide: ["alpha-automation"], disable: [], allow: [], override: {} } }), false)[0]?.reason).toBe("受保护:alpha-automation 是 Code Puppy 注入的功能载体,隐藏会使其入口消失,已拒绝")
+  test("#1507 AC1:保护治理拒绝使用 Code Puppy,codepuppy-automation 技术名不变", () => {
+    expect(validateBuiltinPolicy(gov({ agents: { hide: ["codepuppy-automation"], disable: [], allow: [], override: {} } }), false).length).toBe(1)
+    expect(validateBuiltinPolicy(gov({ agents: { hide: [], disable: ["codepuppy-automation"], allow: [], override: {} } }), false).length).toBe(1)
+    expect(validateBuiltinPolicy(gov({ agents: { hide: [], disable: ["codepuppy-automation"], allow: [], override: {} } }), false)[0]?.reason).toBe("受保护:codepuppy-automation 是 Code Puppy 注入的功能载体(自动化等),禁用会使其静默失效,已拒绝")
+    expect(validateBuiltinPolicy(gov({ agents: { hide: ["codepuppy-automation"], disable: [], allow: [], override: {} } }), false)[0]?.reason).toBe("受保护:codepuppy-automation 是 Code Puppy 注入的功能载体,隐藏会使其入口消失,已拒绝")
   })
   test("disable build:未确认拒绝,确认后放行", () => {
     const g = gov({ agents: { hide: [], disable: ["build"], allow: [], override: {} } })
@@ -83,11 +83,11 @@ describe("materializeEdits — 物化叶子计算", () => {
   })
   test("allowlist:可见未列名一律 hidden,保护/alpha 注入豁免(验收⑦)", () => {
     const g = gov({ mode: "allowlist", agents: { hide: [], disable: [], allow: ["build"], override: {} } })
-    const paths = materializeEdits(g, ["build", "plan", "general", "alpha-automation", "compaction"]).map((e) => e.path.join("."))
+    const paths = materializeEdits(g, ["build", "plan", "general", "codepuppy-automation", "compaction"]).map((e) => e.path.join("."))
     expect(paths).not.toContain("agent.build.hidden") // 在 allow
     expect(paths).toContain("agent.plan.hidden")
     expect(paths).toContain("agent.general.hidden")
-    expect(paths).not.toContain("agent.alpha-automation.hidden") // 豁免
+    expect(paths).not.toContain("agent.codepuppy-automation.hidden") // 豁免
     expect(paths).not.toContain("agent.compaction.hidden") // 豁免
   })
   test("skill deny → permission.skill.<n>=deny + 同名 command 占位模板(泄漏缓解,验收④)", () => {

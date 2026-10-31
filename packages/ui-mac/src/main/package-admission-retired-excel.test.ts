@@ -151,8 +151,8 @@ describe("package admission retired community Excel guard (REQ-135)", () => {
   test.each([
     {
       label: "first-party Alpha Excel",
-      packageId: "mcp:alpha-excel",
-      componentId: "mcp:alpha-excel",
+      packageId: "mcp:codepuppy-excel",
+      componentId: "mcp:codepuppy-excel",
       command: ["uv", "run", "/Applications/Alpha/office-mcp/server.py", "excel", "/tmp/workspace"],
     },
     {

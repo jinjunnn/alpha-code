@@ -141,7 +141,7 @@ const offered = ({ def, identity, authority, generation, defDigest, timeout }: M
 const CHANGED = /changed after this request was prepared/
 
 // ── AC2 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-// 删掉 tools() 里的声明分支 ⇒ 连接中 alpha-word 一个工具都没有;声明不按 tools/list 的解析走 ⇒ 摘要与连上后不同。
+// 删掉 tools() 里的声明分支 ⇒ 连接中 codepuppy-word 一个工具都没有;声明不按 tools/list 的解析走 ⇒ 摘要与连上后不同。
 const real = bundle("python3")
 it.instance(
   "AC2: a bundled Office server still connecting is offered from its declaration, under the identity it lists once connected",
@@ -151,42 +151,42 @@ it.instance(
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
         const declared = yield* mcp.tools()
-        expect((yield* mcp.status())["alpha-word"]).toEqual({ status: "pending" })
-        expect(keysOf(declared, "alpha-word")).toEqual(["alpha-word_read_docx", "alpha-word_write_docx"])
-        expect(declared["alpha-word_read_docx"]!.client).toBeUndefined()
+        expect((yield* mcp.status())["codepuppy-word"]).toEqual({ status: "pending" })
+        expect(keysOf(declared, "codepuppy-word")).toEqual(["codepuppy-word_read_docx", "codepuppy-word_write_docx"])
+        expect(declared["codepuppy-word_read_docx"]!.client).toBeUndefined()
 
-        yield* waitFor("alpha-word", "connected")
+        yield* waitFor("codepuppy-word", "connected")
         const listed = yield* mcp.tools()
-        expect(keysOf(listed, "alpha-word")).toEqual(keysOf(declared, "alpha-word"))
-        expect(listed["alpha-word_read_docx"]!.client).toBeDefined()
-        for (const key of keysOf(declared, "alpha-word")) expect(offered(declared[key]!)).toEqual(offered(listed[key]!))
+        expect(keysOf(listed, "codepuppy-word")).toEqual(keysOf(declared, "codepuppy-word"))
+        expect(listed["codepuppy-word_read_docx"]!.client).toBeDefined()
+        for (const key of keysOf(declared, "codepuppy-word")) expect(offered(declared[key]!)).toEqual(offered(listed[key]!))
       }),
     ),
-  { config: { mcp: { "alpha-word": office(real, "word") } } },
+  { config: { mcp: { "codepuppy-word": office(real, "word") } } },
 )
 
 // #1578:执行闸按 bindingFacts 的 authority 判类(session/tools.ts currentSubject)。连接中的声明工具在这里若是 not-asserted,
 // 「Code Puppy 文档工具」整组设置在握手完成前不生效。删掉 bindingFacts 的声明分支 ⇒ 这里 not-asserted / third-party-mcp,当场红。
 const connecting = bundle("fixture")
 it.instance(
-  "#1578: while a declared document tool's server is still connecting, bindingFacts carries the offer's alpha-bundled authority",
+  "#1578: while a declared document tool's server is still connecting, bindingFacts carries the offer's codepuppy-bundled authority",
   () =>
     withManifest(
       connecting.manifest,
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
-        const offered = (yield* mcp.tools())["alpha-word_read_docx"]!
-        expect(offered.authority?.kind).toBe("alpha-bundled")
-        expect((yield* mcp.status())["alpha-word"]).toEqual({ status: "pending" })
-        const facts = yield* mcp.bindingFacts!("alpha-word")
+        const offered = (yield* mcp.tools())["codepuppy-word_read_docx"]!
+        expect(offered.authority?.kind).toBe("codepuppy-bundled")
+        expect((yield* mcp.status())["codepuppy-word"]).toEqual({ status: "pending" })
+        const facts = yield* mcp.bindingFacts!("codepuppy-word")
         expect(facts?.authority).toEqual(offered.authority)
-        expect(classifyTool({ identity: offered.identity!, authority: facts!.authority })).toBe("alpha-bundled")
+        expect(classifyTool({ identity: offered.identity!, authority: facts!.authority })).toBe("codepuppy-bundled")
       }),
     ),
-  { config: { mcp: { "alpha-word": office(connecting, "word", HANG) } } },
+  { config: { mcp: { "codepuppy-word": office(connecting, "word", HANG) } } },
 )
 
-// 去掉逐 token 的长度/逐项比较 ⇒ 多一个 token 的 alpha-excel 也拿到声明;去掉摘要比较 ⇒ server.py 被改过之后仍有声明。
+// 去掉逐 token 的长度/逐项比较 ⇒ 多一个 token 的 codepuppy-excel 也拿到声明;去掉摘要比较 ⇒ server.py 被改过之后仍有声明。
 const bound = bundle("fixture")
 it.instance(
   "AC2: only the exact bundled command, next to the server.py the manifest was exported from, gets a declaration",
@@ -196,24 +196,24 @@ it.instance(
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
         const before = yield* mcp.tools()
-        expect(keysOf(before, "alpha-word")).toEqual(["alpha-word_read_docx", "alpha-word_write_docx"])
-        expect(keysOf(before, "alpha-pdf")).toEqual(["alpha-pdf_read_pdf", "alpha-pdf_write_pdf"])
-        expect(keysOf(before, "alpha-excel")).toEqual([])
+        expect(keysOf(before, "codepuppy-word")).toEqual(["codepuppy-word_read_docx", "codepuppy-word_write_docx"])
+        expect(keysOf(before, "codepuppy-pdf")).toEqual(["codepuppy-pdf_read_pdf", "codepuppy-pdf_write_pdf"])
+        expect(keysOf(before, "codepuppy-excel")).toEqual([])
 
         fs.appendFileSync(bound.server, "\n# not the server.py tools.json was exported from\n")
         const after = yield* mcp.tools()
-        expect(keysOf(after, "alpha-word")).toEqual([])
-        expect(keysOf(after, "alpha-pdf")).toEqual([])
+        expect(keysOf(after, "codepuppy-word")).toEqual([])
+        expect(keysOf(after, "codepuppy-pdf")).toEqual([])
         const status = yield* mcp.status()
-        for (const name of ["alpha-word", "alpha-excel", "alpha-pdf"]) expect(status[name]).toEqual({ status: "pending" })
+        for (const name of ["codepuppy-word", "codepuppy-excel", "codepuppy-pdf"]) expect(status[name]).toEqual({ status: "pending" })
       }),
     ),
   {
     config: {
       mcp: {
-        "alpha-word": office(bound, "word", HANG),
-        "alpha-excel": office(bound, "excel", HANG, ["--extra"]),
-        "alpha-pdf": office(bound, "pdf", HANG),
+        "codepuppy-word": office(bound, "word", HANG),
+        "codepuppy-excel": office(bound, "excel", HANG, ["--extra"]),
+        "codepuppy-pdf": office(bound, "pdf", HANG),
       },
     },
   },
@@ -294,10 +294,10 @@ const runCode = (code: string) =>
     return yield* tool.execute({ code }, codeModeContext()).pipe(Effect.exit)
   })
 
-const READ = `return await tools["alpha-word"].read_docx({ path: "/workspace/report.docx" })`
+const READ = `return await tools["codepuppy-word"].read_docx({ path: "/workspace/report.docx" })`
 
 // ── AC3 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-// 改成「声明工具执行前等全部服务」⇒ 卡在 hang 的 30 s 连接超时;不给声明 ⇒ 这次请求里根本没有 alpha-word_read_docx。
+// 改成「声明工具执行前等全部服务」⇒ 卡在 hang 的 30 s 连接超时;不给声明 ⇒ 这次请求里根本没有 codepuppy-word_read_docx。
 const ordinary = bundle("fixture")
 it.instance(
   "AC3: an ordinary call to a declared tool waits only for its own server while another is still connecting",
@@ -306,18 +306,18 @@ it.instance(
       ordinary.manifest,
       Effect.gen(function* () {
         const tools = yield* resolveSessionTools
-        expect(yield* statusOf("alpha-word")).toEqual({ status: "pending" })
-        expect((yield* runTool(tools["alpha-word_read_docx"]!, { path: "/workspace/report.docx" })).output).toBe(
+        expect(yield* statusOf("codepuppy-word")).toEqual({ status: "pending" })
+        expect((yield* runTool(tools["codepuppy-word_read_docx"]!, { path: "/workspace/report.docx" })).output).toBe(
           "read_docx",
         )
-        expect(yield* statusOf("alpha-word")).toEqual({ status: "connected" })
+        expect(yield* statusOf("codepuppy-word")).toEqual({ status: "connected" })
         expect(yield* statusOf("hang")).toEqual({ status: "pending" })
       }).pipe(Effect.provide(sessionRig)),
     ),
-  { config: { mcp: { "alpha-word": office(ordinary, "word", slowStart(800)), hang: thirdParty(HANG) } } },
+  { config: { mcp: { "codepuppy-word": office(ordinary, "word", slowStart(800)), hang: thirdParty(HANG) } } },
 )
 
-// Code Mode 的子目录在 execute 开头固定:那一刻 alpha-word 还在握手,子目录里有它,只因为它有声明定义。
+// Code Mode 的子目录在 execute 开头固定:那一刻 codepuppy-word 还在握手,子目录里有它,只因为它有声明定义。
 const coded = bundle("fixture")
 it.instance(
   "AC3: a Code Mode child call to a declared tool runs while another server is still connecting",
@@ -325,14 +325,14 @@ it.instance(
     withManifest(
       coded.manifest,
       Effect.gen(function* () {
-        expect(yield* statusOf("alpha-word")).toEqual({ status: "pending" })
+        expect(yield* statusOf("codepuppy-word")).toEqual({ status: "pending" })
         const exit = yield* runCode(READ)
         expect(Exit.isSuccess(exit)).toBe(true)
         if (Exit.isSuccess(exit)) expect(exit.value.output).toBe("read_docx")
         expect(yield* statusOf("hang")).toEqual({ status: "pending" })
       }).pipe(Effect.provide(codeModeRig)),
     ),
-  { config: { mcp: { "alpha-word": office(coded, "word", slowStart(800)), hang: thirdParty(HANG) } } },
+  { config: { mcp: { "codepuppy-word": office(coded, "word", slowStart(800)), hang: thirdParty(HANG) } } },
 )
 
 // 去掉 callTool 对声明工具的摘要核对 ⇒ 按声明规划的调用照样跑到改过定义的服务上(不红);去掉 refuted ⇒ 再次连接中又给出声明。
@@ -345,29 +345,29 @@ it.instance(
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
         const planned = yield* resolveSessionTools
-        const exit = yield* runTool(planned["alpha-word_read_docx"]!, { path: "/workspace/report.docx" }).pipe(
+        const exit = yield* runTool(planned["codepuppy-word_read_docx"]!, { path: "/workspace/report.docx" }).pipe(
           Effect.exit,
         )
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toMatch(CHANGED)
 
         // 之后只给实际定义,按它规划的调用照常完成。
-        const actual = (yield* mcp.tools())["alpha-word_read_docx"]!
+        const actual = (yield* mcp.tools())["codepuppy-word_read_docx"]!
         expect(actual.def.description).toEndWith("(drifted)")
         const replanned = yield* resolveSessionTools
-        expect((yield* runTool(replanned["alpha-word_read_docx"]!, { path: "/workspace/report.docx" })).output).toBe(
+        expect((yield* runTool(replanned["codepuppy-word_read_docx"]!, { path: "/workspace/report.docx" })).output).toBe(
           "read_docx",
         )
 
         // 再次连接中(新一代还在握手)也不再给声明。
-        const reconnect = yield* mcp.connect("alpha-word").pipe(Effect.forkScoped)
-        yield* waitFor("alpha-word", "pending")
-        expect(keysOf(yield* mcp.tools(), "alpha-word")).toEqual([])
+        const reconnect = yield* mcp.connect("codepuppy-word").pipe(Effect.forkScoped)
+        yield* waitFor("codepuppy-word", "pending")
+        expect(keysOf(yield* mcp.tools(), "codepuppy-word")).toEqual([])
         yield* Fiber.join(reconnect)
-        expect((yield* mcp.tools())["alpha-word_read_docx"]!.def.description).toEndWith("(drifted)")
+        expect((yield* mcp.tools())["codepuppy-word_read_docx"]!.def.description).toEndWith("(drifted)")
       }).pipe(Effect.provide(sessionRig)),
     ),
-  { config: { mcp: { "alpha-word": office(drifted, "word", slowStart(800, driftedWordTools)) } } },
+  { config: { mcp: { "codepuppy-word": office(drifted, "word", slowStart(800, driftedWordTools)) } } },
 )
 
 const driftedCode = bundle("fixture")
@@ -381,13 +381,13 @@ it.instance(
         const exit = yield* runCode(READ)
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toMatch(CHANGED)
-        expect((yield* mcp.tools())["alpha-word_read_docx"]!.def.description).toEndWith("(drifted)")
+        expect((yield* mcp.tools())["codepuppy-word_read_docx"]!.def.description).toEndWith("(drifted)")
         const again = yield* runCode(READ)
         expect(Exit.isSuccess(again)).toBe(true)
         if (Exit.isSuccess(again)) expect(again.value.output).toBe("read_docx")
       }).pipe(Effect.provide(codeModeRig)),
     ),
-  { config: { mcp: { "alpha-word": office(driftedCode, "word", slowStart(800, driftedWordTools)) } } },
+  { config: { mcp: { "codepuppy-word": office(driftedCode, "word", slowStart(800, driftedWordTools)) } } },
 )
 
 // ── AC4 ──────────────────────────────────────────────────────────────────────────────────────────────────────

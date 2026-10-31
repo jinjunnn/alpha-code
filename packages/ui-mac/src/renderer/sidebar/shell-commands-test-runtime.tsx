@@ -139,7 +139,7 @@ const automationTaskFixture = {
   name: "夜间总结",
   nlText: "每天 21 点总结当天工作",
   schedule: { kind: "cron", expr: "0 21 * * *" },
-  target: { projectDir: FIXTURE_DIRECTORY, agent: "alpha-automation" },
+  target: { projectDir: FIXTURE_DIRECTORY, agent: "codepuppy-automation" },
   prompt: "总结当天工作",
   execution: "local",
   permissionProfile: "readonly",

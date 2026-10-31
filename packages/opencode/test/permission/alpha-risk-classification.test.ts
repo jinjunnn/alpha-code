@@ -206,7 +206,7 @@ describe("#1285 A. 分类法(规则式;期望逐字手写)", () => {
         patterns: ["*"],
         metadata: {
           identity,
-          authority: { kind: "alpha-cloud", bindingId: "b", evidenceDigest: `sha256:${"0".repeat(64)}` },
+          authority: { kind: "codepuppy-cloud", bindingId: "b", evidenceDigest: `sha256:${"0".repeat(64)}` },
           transport: { kind: "mcp-remote", url: "https://cloud.example/mcp" },
           args,
         },

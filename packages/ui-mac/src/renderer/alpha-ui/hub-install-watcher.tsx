@@ -1,7 +1,7 @@
 // HubInstallWatcher — REQ-234 `#1531`(基线 §2.3,不变量 I2 / I3 / I9):agent 请求安装定制中心条目或签名包时,弹的是**定制中心
 // 自己的安装确认框**(extensions/install-confirm.tsx,与定制中心共用同一份控制器),用户在框里点同意、在框里填密钥。
 //
-// 运输:agent 的 hub_install 工具经引擎审批请求(`ctx.ask`,metadata.alphaHub = { catalogId, requestId })到这里;
+// 运输:agent 的 codepuppy_hub_install 工具经引擎审批请求(`ctx.ask`,metadata.alphaHub = { catalogId, requestId })到这里;
 // PermissionWatcher 按 metadata.alphaHub 把这类请求交给本组件,通用审批框不呈现它(同一个请求不会弹两个框)。
 // 应答命令没有自由载荷,结构上不可能把框里填的密钥带回工具;密钥只经 install 意图的 grants 进 main(与定制中心同一路)。
 //

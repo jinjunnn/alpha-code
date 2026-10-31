@@ -1,6 +1,6 @@
-// REQ-060 T2 `alpha_register` 纯逻辑:把一条项目级扩展条目登记进 `<proj>/.code-puppy/alpha.jsonc`。
+// REQ-060 T2 `codepuppy_register` 纯逻辑:把一条项目级扩展条目登记进 `<proj>/.code-puppy/alpha.jsonc`。
 // 模型不手改 config —— 校验(SAFE_NAME + 逐 type 字段白名单)与序列化都在这里,写坏面收敛;
-// 消费方 = plugin.ts 的 alpha_register tool(读现文本 → applyRegister → 原子写 → 登记 reload)。
+// 消费方 = plugin.ts 的 codepuppy_register tool(读现文本 → applyRegister → 原子写 → 登记 reload)。
 //
 // type 语义:
 //   mcp / agent / command → `alpha.jsonc` 对应命名域条目(同名 = 更新,创建流会迭代);

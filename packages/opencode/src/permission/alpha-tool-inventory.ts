@@ -75,7 +75,7 @@ function wireEffective(effective: EffectiveToolPolicy): EffectiveToolPolicyV1 {
   return { state: effective.state, action: effective.action, reason: wireReason(effective.reason) }
 }
 
-const DYNAMIC_CLASSES: ReadonlySet<ToolClass> = new Set(["alpha-cloud", "alpha-bundled", "third-party-mcp", "plugin"])
+const DYNAMIC_CLASSES: ReadonlySet<ToolClass> = new Set(["codepuppy-cloud", "codepuppy-bundled", "third-party-mcp", "plugin"])
 
 export interface Interface {
   readonly list: () => Effect.Effect<ToolPolicyInventoryV1>
@@ -179,10 +179,10 @@ const layer = Layer.effect(
         const effective = AlphaToolPolicyGate.effectiveFromSnapshot(snap, subject, ruleset)
         const toolRecord = recordBySelectorKey.get(selectorKey({ level: "tool", canonical }))
         const hasAnyOverride = records.some((record) => selectorMatches(record.selector, subject))
-        // 写 enabled 记录要携带的 digest:alpha-cloud 用 verified authority 证据(§5),
+        // 写 enabled 记录要携带的 digest:codepuppy-cloud 用 verified authority 证据(§5),
         // 其余用宿主派生的当前 binding —— 与 resolver 的 `subjectBindingDigest` 同一取向。
         const writeDigest =
-          item.authority.kind === "alpha-cloud" ? item.authority.evidenceDigest : item.bindingDigest
+          item.authority.kind === "codepuppy-cloud" ? item.authority.evidenceDigest : item.bindingDigest
         const tool: ToolPolicyInventoryToolV1 = {
           canonical,
           identity: item.identity,

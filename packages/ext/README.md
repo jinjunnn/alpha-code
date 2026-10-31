@@ -1,6 +1,6 @@
 # @alpha-code/ext
 
-alpha-code 的**后端隔离扩展**:零改 opencode 源码的 server plugin + 自定义 tools(`alpha_echo` / `alpha_ping` + event hook)。对应 GOALS#G1。
+alpha-code 的**后端隔离扩展**:零改 opencode 源码的 server plugin + 自定义 tools(`codepuppy_echo` / `codepuppy_ping` + event hook)。对应 GOALS#G1。
 
 ## 为什么必须 bundle(ADR-006)
 
@@ -34,7 +34,7 @@ opencode 的 `plugin[]` 配置吃**本地绝对路径 / `file://`**(见 `package
 ### G1 还需补的两件事(本骨架未做)
 
 - **打包进 app**:`electron-builder.config.ts` 当前只收 `out/**` 与 `resources/**`,没收 `packages/ext/dist`。要在 `.app` 里运行,需把 `dist/plugin.js` 复制进 `resources/`(或 `extraResources`),并让注入的路径指向 app 内的实际位置。
-- **校验 zod 跨实例**:server bundle 自带一份 zod,本插件 schema 是**另一份实例**。接线后必须验证:加载 ext → `alpha_ping` 出现在工具列表**且能 execute**。若 opencode 的工具摄取对 schema 做了 `instanceof` 判定,可能需要换 schema 表达方式。
+- **校验 zod 跨实例**:server bundle 自带一份 zod,本插件 schema 是**另一份实例**。接线后必须验证:加载 ext → `codepuppy_ping` 出现在工具列表**且能 execute**。若 opencode 的工具摄取对 schema 做了 `instanceof` 判定,可能需要换 schema 表达方式。
 
 ## 纪律
 

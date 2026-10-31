@@ -342,7 +342,7 @@ test("`#1563` pending 的 MCP 行不说「已停用」,也不出授权按钮", a
 // ── 云连接器卡:用户看云通道状态的主要位置 ───────────────────────────────────────────────
 test("云连接器卡在 needs_auth 时说「需要重新登录」并给出同一个动作", async () => {
   reset()
-  engineStatus = { cloud: { status: "needs_auth" } }
+  engineStatus = { codepuppy: { status: "needs_auth" } }
   mount()
 
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.mcpNeedsAuth"]))
@@ -352,7 +352,7 @@ test("云连接器卡在 needs_auth 时说「需要重新登录」并给出同�
   expect(buttons.length).toBe(1)
 
   buttons[0]!.click()
-  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "codepuppy" }]))
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnConnected"]))
   expect(authorizeButtons().length).toBe(0)
 })
@@ -416,7 +416,7 @@ async function openCloudEntry(displayName: string) {
 test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", async () => {
   reset()
   recoveringAuth()
-  engineStatus = { cloud: { status: "connected" } }
+  engineStatus = { codepuppy: { status: "connected" } }
   mount()
   await openCloudEntry("云端代码审查")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
@@ -424,7 +424,7 @@ test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", a
 
   // 正向对照:同一条链、同一颗按钮,ready 时必须是可点的。
   reset()
-  engineStatus = { cloud: { status: "connected" } }
+  engineStatus = { codepuppy: { status: "connected" } }
   mount()
   await openCloudEntry("云端代码审查")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
@@ -438,14 +438,14 @@ test("`#624` 恢复中:code-review 详情的云派发按钮禁用(ready 时可�
 
   reset()
   recoveringAuth()
-  engineStatus = { cloud: { status: "connected" } }
+  engineStatus = { codepuppy: { status: "connected" } }
   mount()
   await openCloudEntry("云端代码审查")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
   expect(dispatchButtons().map((b) => b.disabled)).not.toContain(false)
 
   reset()
-  engineStatus = { cloud: { status: "connected" } }
+  engineStatus = { codepuppy: { status: "connected" } }
   mount()
   await openCloudEntry("云端代码审查")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
@@ -456,7 +456,7 @@ test("`#624` 恢复中:code-review 详情的云派发按钮禁用(ready 时可�
 test("`#624` 恢复中的云连接器行不谎称「未登录 / BYOK」,也不给 no-op 按钮", async () => {
   reset()
   recoveringAuth()
-  engineStatus = { cloud: { status: "connected" } }
+  engineStatus = { codepuppy: { status: "connected" } }
   mount()
 
   await waitFor(() =>
@@ -473,7 +473,7 @@ test("`#624` 恢复中的云连接器行不谎称「未登录 / BYOK」,也不�
 test("`#624` 恢复中的连接器卡说「凭证恢复中」,不说「需登录平台模式」", async () => {
   reset()
   recoveringAuth()
-  engineStatus = { cloud: { status: "connected" } }
+  engineStatus = { codepuppy: { status: "connected" } }
   mount()
 
   await waitFor(() =>
@@ -493,24 +493,24 @@ test("`#624` 恢复中的连接器卡说「凭证恢复中」,不说「需登录
 
 test("`#1106` 主线:disabled 云条目 → hub 补发一次 connect → needs_auth → 授权按钮点亮 → 授权成功", async () => {
   reset()
-  engineStatus = { cloud: { status: "disabled" } }
+  engineStatus = { codepuppy: { status: "disabled" } }
   mount()
 
   // kick 恰好一次;引擎如实报回 needs_auth,`#733` 的卡片臂与按钮随之点亮。
-  await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(connectCalls).toEqual([{ name: "codepuppy" }]))
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.mcpNeedsAuth"]))
   await waitFor(() => expect(authorizeButtons().length).toBe(1))
 
   // 其后的授权链与 `#733` 逐字相同 —— kick 不得再多发 connect。
   authorizeButtons()[0]!.click()
-  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "codepuppy" }]))
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnConnected"]))
-  expect(connectCalls).toEqual([{ name: "cloud" }])
+  expect(connectCalls).toEqual([{ name: "codepuppy" }])
 })
 
 test("`#1106` 只认云条目的 disabled:needs_auth 的 cloud 与 disabled 的别家 server 都不触发 connect", async () => {
   reset()
-  engineStatus = { cloud: { status: "needs_auth" }, filesystem: { status: "disabled" } }
+  engineStatus = { codepuppy: { status: "needs_auth" }, filesystem: { status: "disabled" } }
   mount()
 
   // 等到状态真的被读进来(按钮出现 = loadStatus 已完成),再断零 —— 不然是「没跑」冒充「没发」。
@@ -521,10 +521,10 @@ test("`#1106` 只认云条目的 disabled:needs_auth 的 cloud 与 disabled 的�
 test("`#1106` kill-switch 的中和条目:kick 连到 127.0.0.1:1 即刻失败,不出授权按钮", async () => {
   reset()
   connectBehaviour = "econnrefused"
-  engineStatus = { cloud: { status: "disabled" } }
+  engineStatus = { codepuppy: { status: "disabled" } }
   mount()
 
-  await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(connectCalls).toEqual([{ name: "codepuppy" }]))
   // 结局 failed:卡片说「未连接」,没有一颗点了必失败的授权按钮(与今天的 kill-switch 呈现一致)。
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnDisconnected"]))
   expect(authorizeButtons().length).toBe(0)
@@ -533,10 +533,10 @@ test("`#1106` kill-switch 的中和条目:kick 连到 127.0.0.1:1 即刻失败,�
 test("`#1106` 凭证其实已在(别处授权完成):kick 直接把它连上", async () => {
   reset()
   connectBehaviour = "connected"
-  engineStatus = { cloud: { status: "disabled" } }
+  engineStatus = { codepuppy: { status: "disabled" } }
   mount()
 
-  await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(connectCalls).toEqual([{ name: "codepuppy" }]))
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnConnected"]))
   expect(authorizeButtons().length).toBe(0)
 })

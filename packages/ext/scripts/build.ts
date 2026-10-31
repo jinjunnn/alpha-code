@@ -31,7 +31,7 @@ const result = await Bun.build({
   // Known G1 caveat: the opencode server bundle carries its OWN zod/effect copy, so the
   // schemas this plugin builds (via `tool.schema`) live on a DIFFERENT instance than the
   // server's. opencode's tool ingestion must treat plugin schemas structurally. Validate
-  // when wiring G1: load ext → `alpha_ping` appears in the tool list AND executes.
+  // when wiring G1: load ext → `codepuppy_ping` appears in the tool list AND executes.
 })
 
 if (!result.success) {
@@ -41,13 +41,15 @@ if (!result.success) {
 }
 
 // #1578 AC5 (REQ-236 §2.6-7): the trusted bundled manifest, shipped next to plugin.js (electron-builder `alpha-ext/`).
-// The engine gives `alpha-bundled` only to these tool names, and only when the plugin module it loaded hashes to this
+// The engine gives `codepuppy-bundled` only to these tool names, and only when the plugin module it loaded hashes to this
 // digest (packages/opencode/src/plugin/alpha-bundled-plugin.ts). Tool names = TOOL_TEXT's keys, which
 // src/context-injection.test.ts pins to the real AlphaExt's own tool set; project plugins merged in at runtime are
 // never listed.
+// #1568 AC5: `readable` = each listed tool's display identifier (`codepuppy:<action>`), declared in TOOL_TEXT.
 const manifest = {
   moduleSha256: createHash("sha256").update(readFileSync("dist/plugin.js")).digest("hex"),
   tools: Object.keys(TOOL_TEXT).sort(),
+  readable: Object.fromEntries(Object.entries(TOOL_TEXT).map(([name, text]) => [name, text.readable])),
 }
 writeFileSync("dist/bundled-tools.json", `${JSON.stringify(manifest, null, 2)}\n`)
 

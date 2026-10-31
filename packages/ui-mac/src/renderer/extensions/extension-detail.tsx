@@ -44,10 +44,10 @@ export type DetailTarget =
 // #1595 AC3:行首是自然语言名 —— 取对话里工具卡同一份命名(`alpha.timeline.cloud.*`,
 // tool-card-model.ts 的标题表),技术名只进「开发者详情」。
 const CLOUD_TOOLS = [
-  { name: "cloud_dispatch", titleKey: "alpha.timeline.cloud.dispatch", key: "alpha.ext.cloudToolDispatch" },
-  { name: "cloud_status", titleKey: "alpha.timeline.cloud.status", key: "alpha.ext.cloudToolStatus" },
-  { name: "cloud_await", titleKey: "alpha.timeline.cloud.await", key: "alpha.ext.cloudToolAwait" },
-  { name: "cloud_artifacts", titleKey: "alpha.timeline.cloud.artifacts", key: "alpha.ext.cloudToolArtifacts" },
+  { name: "dispatch", titleKey: "alpha.timeline.cloud.dispatch", key: "alpha.ext.cloudToolDispatch" },
+  { name: "status", titleKey: "alpha.timeline.cloud.status", key: "alpha.ext.cloudToolStatus" },
+  { name: "await", titleKey: "alpha.timeline.cloud.await", key: "alpha.ext.cloudToolAwait" },
+  { name: "artifacts", titleKey: "alpha.timeline.cloud.artifacts", key: "alpha.ext.cloudToolArtifacts" },
 ] as const
 
 function mcpSpec(e: CatalogEntry): McpInstallSpec | undefined {
@@ -483,7 +483,7 @@ export function ExtensionDetail(props: {
   const cloudReady = () => props.cloudReady?.() ?? false
   const cloudRecovering = () => props.cloudRecovering?.() ?? false
   // 注入的 mcp.cloud 的 SDK 实时态(platform 模式下 sidecar 注入后才存在)。
-  const cloudLive = () => props.ext.store.mcp["cloud"]
+  const cloudLive = () => props.ext.store.mcp["codepuppy"]
 
   // Receipt truth for the shown entry — receipts ⨝ SDK (mirror of the manage list, ADR-014 v3).
   // Live-but-unreceipted MCP gets a synthetic receipt so uninstall still works.
@@ -668,7 +668,7 @@ export function ExtensionDetail(props: {
       return {
         ic: iconForRow(undefined, "cloud", "云"),
         title: t("alpha.ext.cloudConnectorTitle"),
-        name: "cloud",
+        name: "codepuppy",
         source: "alpha" as const,
         type: "mcp",
         license: undefined,
@@ -1374,7 +1374,7 @@ export function ExtensionDetail(props: {
               <For each={CLOUD_TOOLS}>
                 {(tool) => (
                   <div class="alpha-ext-dtool">
-                    <code>{tool.name}</code>
+                    <code>{`codepuppy:${tool.name}`}</code>
                     <span>{t(tool.titleKey)}</span>
                   </div>
                 )}

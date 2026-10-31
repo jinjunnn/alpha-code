@@ -26,12 +26,12 @@ is the way to refresh after the external directory changes).
 3. **Confirm** — proceed only after the user confirms the list.
 4. **Convert** (per item; on re-import, overwrite the previous snapshot only after telling the user):
    - **Skill**: copy the whole skill directory into `.code-puppy/skills/<name>/` (keep `SKILL.md` at its
-     root). For project scope, then call `alpha_register` with `type=skill` to register the skills
+     root). For project scope, then call `codepuppy_register` with `type=skill` to register the skills
      path. For a name that already exists in `.code-puppy/skills`, ask before replacing.
    - **CLAUDE.md**: if `AGENTS.md` does not exist, create it from the CLAUDE.md content with a first
      line `<!-- imported from CLAUDE.md by Code Puppy (snapshot; re-import to refresh) -->`. If
      `AGENTS.md` exists, do NOT overwrite or append blindly — show both and help the user merge.
-5. **Activate** — call `alpha_reload`; the imported items are available from the NEXT message.
+5. **Activate** — call `codepuppy_reload`; the imported items are available from the NEXT message.
 6. **Report** — list what was imported, what was skipped and why. Be honest about partial results.
 
 ## Boundaries

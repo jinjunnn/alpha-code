@@ -30,11 +30,11 @@ export type ToolPolicyState = typeof ToolPolicyState.Type
 
 /**
  * 产品分类(§2 表)。用户可调用的 host / builtin-v2 归「本地工具」,不能当作不存在。
- * `alpha-bundled`(#1578,REQ-236 §2.6-7):经随包清单核验成立的文档工具 MCP,默认 ask。回退只撤
- * `classifyTool` 的分支与设置组,**保留**这一字面量 —— 已落盘的 `class:"alpha-bundled"` 记录照常 decode、
+ * `codepuppy-bundled`(#1578,REQ-236 §2.6-7):经随包清单核验成立的文档工具 MCP,默认 ask。回退只撤
+ * `classifyTool` 的分支与设置组,**保留**这一字面量 —— 已落盘的 `class:"codepuppy-bundled"` 记录照常 decode、
  * 不匹配任何工具,不触发整份 quarantine。
  */
-export const ToolClass = Schema.Literals(["builtin", "alpha-cloud", "alpha-bundled", "third-party-mcp", "plugin"]).annotate({
+export const ToolClass = Schema.Literals(["builtin", "codepuppy-cloud", "codepuppy-bundled", "third-party-mcp", "plugin"]).annotate({
   identifier: "ToolClass",
 })
 export type ToolClass = typeof ToolClass.Type
@@ -150,10 +150,10 @@ export function classifyTool(subject: {
     case "host":
       return "builtin"
     case "mcp":
-      if (subject.authority.kind === "alpha-cloud") return "alpha-cloud"
-      return subject.authority.kind === "alpha-bundled" ? "alpha-bundled" : "third-party-mcp"
+      if (subject.authority.kind === "codepuppy-cloud") return "codepuppy-cloud"
+      return subject.authority.kind === "codepuppy-bundled" ? "codepuppy-bundled" : "third-party-mcp"
     case "plugin":
-      // #1578 AC5:随包扩展插件的自有工具即使带 alpha-bundled authority,也保留插件来源与插件的权限默认。
+      // #1578 AC5:随包扩展插件的自有工具即使带 codepuppy-bundled authority,也保留插件来源与插件的权限默认。
       return "plugin"
     default:
       return undefined

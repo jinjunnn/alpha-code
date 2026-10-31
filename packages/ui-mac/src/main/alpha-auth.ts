@@ -572,7 +572,7 @@ async function completeAuth(parsed: URL) {
   onAuthChanged()
   log("alpha-auth: login complete", { plan: tokens.plan, mode: stored.mode })
   // Auto-activate the proxy in THIS session: respawn the sidecar in place (NOT a full app relaunch,
-  // ADR-017) so the new fork inherits ALPHA_BASE_URL/ALPHA_API_KEY → provider.alpha appears with no
+  // ADR-017) so the new fork inherits ALPHA_BASE_URL/ALPHA_API_KEY → provider.codepuppy appears with no
   // "启用代理" click and no restart. The composition-root callback coalesces a cold-start callback
   // with the first fork generation; a live sidecar takes the structural path below.
   respawnSidecar("identity-change")
@@ -1001,7 +1001,7 @@ export async function logout(): Promise<void> {
   // Re-fork the running sidecar IN PLACE so the proxy stops immediately. respawnSidecar is NOT
   // app.relaunch() (which closed the window / quit on ad-hoc-signed builds — the reason a full relaunch
   // was ruled out); it re-forks on the same host/port + reloads the renderer, so the new fork inherits
-  // the now-cleared env → provider.alpha goes dark this session, not just on the next launch.
+  // the now-cleared env → provider.codepuppy goes dark this session, not just on the next launch.
   respawnSidecar("identity-change")
 }
 
@@ -1021,7 +1021,7 @@ export async function setAuthMode(mode: AuthMode): Promise<void> {
 
 // One-click "activate the ALPHA proxy in THIS running session". Login already defaults mode → platform
 // and applyAuthEnv() wrote the proxy env, but the sidecar that's currently running forked BEFORE that,
-// so provider.alpha only appears after a fresh fork. Force mode=platform (covers a pre-fix stored
+// so provider.codepuppy only appears after a fresh fork. Force mode=platform (covers a pre-fix stored
 // "byok") and respawn so the new sidecar inherits ALPHA_BASE_URL/ALPHA_API_KEY. Later launches pick it
 // up automatically (initAuthEnv runs before the fork), so this is a one-time step after the first login.
 export function enableProxy() {

@@ -754,7 +754,7 @@ function acceptedJobIdOf(output: unknown): string | undefined {
 /** fail-closed:非第一方 facade / 不是 cloud_dispatch / kind 不精确 → 不出卡。 */
 export function cloudImageOf(part: ToolPart): TimelineCloudImage | undefined {
   if (!isCloudFacadeToolPart(part)) return undefined
-  if ((part.display as { identity?: { name?: unknown } } | undefined)?.identity?.name !== "cloud_dispatch") return undefined
+  if ((part.display as { identity?: { name?: unknown } } | undefined)?.identity?.name !== "dispatch") return undefined
   const input = part.state.input as { kind?: unknown; input?: { prompt?: unknown } } | undefined
   if (input?.kind !== CLOUD_IMAGE_KIND) return undefined
   const rawPrompt = input.input && typeof input.input.prompt === "string" ? input.input.prompt.trim() : ""

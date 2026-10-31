@@ -131,8 +131,8 @@ function inventory(overrides: Partial<ToolPolicyInventoryV1> = {}): ToolPolicyIn
     {
       source: "mcp",
       origin: "alpha-cloud",
-      class: "alpha-cloud",
-      authority: { kind: "alpha-cloud", bindingId: "cloud-1", evidenceDigest: DIGEST_A },
+      class: "codepuppy-cloud",
+      authority: { kind: "codepuppy-cloud", bindingId: "cloud-1", evidenceDigest: DIGEST_A },
       bindingDigest: DIGEST_A,
       tools: [
         tool({
@@ -140,16 +140,16 @@ function inventory(overrides: Partial<ToolPolicyInventoryV1> = {}): ToolPolicyIn
           name: "websearch",
           source: "mcp",
           origin: "alpha-cloud",
-          authority: { kind: "alpha-cloud", bindingId: "cloud-1", evidenceDigest: DIGEST_A },
+          authority: { kind: "codepuppy-cloud", bindingId: "cloud-1", evidenceDigest: DIGEST_A },
           billing: { class: "metered", evidenceId: "ev-1" },
-          effective: { state: "ask", action: "ask", reason: { kind: "default", class: "alpha-cloud" } },
+          effective: { state: "ask", action: "ask", reason: { kind: "default", class: "codepuppy-cloud" } },
         }),
         tool({
           canonical: "mcp:alpha-cloud:docgen",
           name: "docgen",
           source: "mcp",
           origin: "alpha-cloud",
-          authority: { kind: "alpha-cloud", bindingId: "cloud-1", evidenceDigest: DIGEST_A },
+          authority: { kind: "codepuppy-cloud", bindingId: "cloud-1", evidenceDigest: DIGEST_A },
           effective: { state: "disabled", action: "deny", reason: { kind: "cap-entitlement", verdict: "missing" } },
         }),
       ],
@@ -275,7 +275,7 @@ describe("Alpha Settings 「工具」节", () => {
 
     expect(surfaceApi.toolPolicy.inventory).toHaveBeenCalledWith({ directory: DIRECTORY })
     expect(q("[data-tools-state='ready']")).not.toBeNull()
-    for (const cls of ["builtin", "alpha-cloud", "third-party-mcp", "plugin"]) {
+    for (const cls of ["builtin", "codepuppy-cloud", "third-party-mcp", "plugin"]) {
       expect(q(`[data-tools-class='${cls}']`)).not.toBeNull()
     }
     // 本地工具:默认 enabled 的原因文案;用户 tool 层 ask 的行 radiogroup 选中「询问」+ ↺。
@@ -290,7 +290,7 @@ describe("Alpha Settings 「工具」节", () => {
     expect(row("builtin::bash").querySelector("[data-tools-clear]")).not.toBeNull()
     expect(row("builtin::read").querySelector("[data-tools-clear]")).toBeNull()
     // Alpha Cloud:已核验徽标、计费徽标、套餐锁定行不可点。
-    expect(text(q("[data-tools-class='alpha-cloud']"))).toContain(zh["alpha.settings.toolsVerified"])
+    expect(text(q("[data-tools-class='codepuppy-cloud']"))).toContain(zh["alpha.settings.toolsVerified"])
     expect(text(row("mcp:alpha-cloud:websearch"))).toContain(zhFill("alpha.settings.toolsBilling", { value: "metered" }))
     expect(text(row("mcp:alpha-cloud:docgen"))).toContain(zh["alpha.settings.toolsReasonEntitlement"])
     expect(radio(row("mcp:alpha-cloud:docgen"), "disabled").disabled).toBe(true)
@@ -322,37 +322,37 @@ describe("Alpha Settings 「工具」节", () => {
     expect(text(q("[data-tools-class='third-party-mcp']"))).toContain("默认每次询问 · 是否收费由服务方决定")
   })
 
-  // #1578 AC3:引擎把核验成立的随包文档工具分成 class=alpha-bundled(引擎侧判据在 alpha-tool-policy.test.ts / alpha-tool-identity.test.ts)。
+  // #1578 AC3:引擎把核验成立的随包文档工具分成 class=codepuppy-bundled(引擎侧判据在 alpha-tool-policy.test.ts / alpha-tool-identity.test.ts)。
   // 设置页单列「Code Puppy 文档工具」一组,组 / 服务 / 工具三层各写自己的 selector。删掉 CLASS_ORDER 里的这一类 ⇒ 组不存在、
   // 这些工具从设置页消失,当场红。
   test("#1578 AC3 lists a Code Puppy document tools group settable per group, per service and per tool", async () => {
     const inv = inventory()
     inv.services.push({
       source: "mcp",
-      origin: "alpha-word",
-      class: "alpha-bundled",
-      authority: { kind: "alpha-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_A },
+      origin: "codepuppy-word",
+      class: "codepuppy-bundled",
+      authority: { kind: "codepuppy-bundled", bindingId: "mcp:codepuppy-word", evidenceDigest: DIGEST_A },
       bindingDigest: DIGEST_B,
       tools: [
         tool({
-          canonical: "mcp:alpha-word:read_docx",
+          canonical: "mcp:codepuppy-word:read_docx",
           name: "read_docx",
           source: "mcp",
-          origin: "alpha-word",
-          authority: { kind: "alpha-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_A },
+          origin: "codepuppy-word",
+          authority: { kind: "codepuppy-bundled", bindingId: "mcp:codepuppy-word", evidenceDigest: DIGEST_A },
           bindingDigest: DIGEST_B,
-          effective: { state: "ask", action: "ask", reason: { kind: "default", class: "alpha-bundled" } },
+          effective: { state: "ask", action: "ask", reason: { kind: "default", class: "codepuppy-bundled" } },
         }),
       ],
     })
     const surfaceApi = api({}, inv)
     await openTools(surfaceApi)
 
-    const group = q("[data-tools-class='alpha-bundled']")!
+    const group = q("[data-tools-class='codepuppy-bundled']")!
     expect(group).not.toBeNull()
     expect(text(group.querySelector("h3"))).toBe("Code Puppy 文档工具")
     expect(text(group)).toContain("默认每次询问")
-    expect(text(row("mcp:alpha-word:read_docx"))).toContain(
+    expect(text(row("mcp:codepuppy-word:read_docx"))).toContain(
       zhFill("alpha.settings.toolsEffective", {
         state: zh["alpha.settings.toolsEffectiveAsk"],
         reason: zh["alpha.settings.toolsReasonDefault"],
@@ -365,20 +365,20 @@ describe("Alpha Settings 「工具」节", () => {
     await flush(8)
     expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
       directory: DIRECTORY,
-      record: { selector: { level: "class", class: "alpha-bundled" }, state: "disabled" },
+      record: { selector: { level: "class", class: "codepuppy-bundled" }, state: "disabled" },
     })
     // 每次写完重读 inventory、整组重渲染:重新取节点。
-    radio(q("[data-tools-class='alpha-bundled'] [data-tools-service='mcp:alpha-word']")!, "ask").click()
+    radio(q("[data-tools-class='codepuppy-bundled'] [data-tools-service='mcp:codepuppy-word']")!, "ask").click()
     await flush(8)
     expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
       directory: DIRECTORY,
-      record: { selector: { level: "service", source: "mcp", origin: "alpha-word" }, state: "ask" },
+      record: { selector: { level: "service", source: "mcp", origin: "codepuppy-word" }, state: "ask" },
     })
-    radio(row("mcp:alpha-word:read_docx"), "enabled").click()
+    radio(row("mcp:codepuppy-word:read_docx"), "enabled").click()
     await flush(8)
     expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
       directory: DIRECTORY,
-      record: { selector: { level: "tool", canonical: "mcp:alpha-word:read_docx" }, state: "enabled", bindingDigest: DIGEST_B },
+      record: { selector: { level: "tool", canonical: "mcp:codepuppy-word:read_docx" }, state: "enabled", bindingDigest: DIGEST_B },
     })
   })
 

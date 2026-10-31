@@ -1,0 +1,618 @@
+[
+  {
+    "name": "dispatch",
+    "description": "Dispatch a versioned cloud job (CloudJobRequestV1 envelope; HTTP and MCP admit the identical schema).\nautonomy=\"pipeline\" requires kind + input. Available kinds, each followed by the fields it accepts inside \"input\":\nkind \"image-generation\" (input fields below go inside \"input\"):\n  - input.prompt = Required description, 1–4000 characters; OpenAI gpt-image-2.5-flare, medium, one 1024×1024 PNG; actual text/image tokens billed, US$0.30 hold; delivery failure may still incur cost\nkind \"research\" (input fields below go inside \"input\"):\n  - input.question = the question to research (required)\n  - input.search = search backend: \"tavily\" or \"brave\" use the platform web-search vendor; anything else falls back to the model's native web search\nkind \"code-review\" (input fields below go inside \"input\"):\n  - input.diff = unified diff to review (takes precedence over `code`)\n  - input.code = source to review when no diff is given\nkind \"docs\" (input fields below go inside \"input\"):\n  - input.code = source to document\n  - input.type = document type, e.g. \"readme\" (default) or \"api\"\nkind \"data-analysis\" (input fields below go inside \"input\"):\n  - input.csv = CSV text to analyse (alias: `data`)\n  - input.data = alias of `csv`\n  - input.question = what to find out (alias: `task`); defaults to a general summary\n  - input.task = alias of `question`\nkind \"bugfix\" (input fields below go inside \"input\"):\n  - input.files = map of path to file content the fix applies to\n  - input.error = the failure or requirement to fix (alias: `task`)\n  - input.task = alias of `error`\n  - input.testCmd = shell command run in the sandbox after the patch is applied\nkind \"migration\" (input fields below go inside \"input\"):\n  - input.files = map of path to file content to migrate\n  - input.goal = the migration or refactor goal (alias: `task`)\n  - input.task = alias of `goal`\nrefused kinds (retired; answered with code \"pipeline_kind_retired\" and a message to do it locally instead): \"office-report\", \"html-generate\"\nkind must be exactly one of the quoted names above; any other value is rejected before dispatch with an error listing every valid kind. Input fields not listed for the chosen kind are ignored.\nautonomy=\"bounded-agent\" requires objective + capabilities, a free-form string array in which {code_exec, file_mutation} route the job to the sandboxed tier.\nEnvelopes mixing or missing the fields of the chosen autonomy are rejected with code \"envelope_invalid\".",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{8,128}$"
+        },
+        "autonomy": {
+          "type": "string",
+          "enum": [
+            "pipeline",
+            "bounded-agent"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image-generation",
+            "research",
+            "code-review",
+            "docs",
+            "office-report",
+            "html-generate",
+            "data-analysis",
+            "bugfix",
+            "migration"
+          ]
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "additionalProperties": {}
+        },
+        "objective": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "capabilities": {
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "max_iter": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "max_tokens": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 500000
+            },
+            "max_wall_clock_sec": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 1800
+            }
+          },
+          "additionalProperties": false
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "allowed_tools": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "denied_paths": {
+              "maxItems": 256,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              }
+            },
+            "network": {
+              "type": "string",
+              "enum": [
+                "restricted"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "additionalProperties": {}
+        },
+        "artifact_policy": {
+          "type": "object",
+          "properties": {
+            "delivery": {
+              "type": "string",
+              "const": "descriptor_only"
+            }
+          },
+          "required": [
+            "delivery"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "idempotency_key",
+        "autonomy"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "status",
+    "description": "Get a cloud job's public status (tier-neutral). Returns {status, progress, counters?, result?}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "await",
+    "description": "Poll a cloud job until terminal or timeout_sec (bounded ≤25s; call again for long jobs). Returns latest public status.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "timeout_sec": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "artifacts",
+    "description": "List a cloud job's artifact descriptors (stable id, mime, size, sha256, provenance, contentRef). Content bytes are NEVER inlined; download via the authenticated content endpoint (contentRef.url resolved against the cloud API origin).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "cancel",
+    "description": "Cancel a cloud job. Returns {schema_version, job_id, status, accepted}: accepted:true means the job entered (or already was in) cancelling/cancelled; a terminal job answers accepted:false with its real terminal status (results are preserved). Status stays 'cancelling' until the stop protocol gathers positive evidence that execution halted.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "web_search",
+    "description": "Web search via the platform host-tool endpoint (Tavily/Brave keys stay in gateway; billed per call to the calling tenant). Returns {query, provider, results[]} on success (each hit: title/url/snippet?) or an error object with stable code on failure — never a free-form results string.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "max_results": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "web_fetch",
+    "description": "Fetch one public web page or JSON API over HTTP(S) via the platform host-tool endpoint and return its text (HTML tags stripped, truncated; billed per call to the calling tenant). Use it to read a specific URL you already know — use web_search first when you need to find one. Returns {url, status, content_type, content} where `status` is the target site's own HTTP status (a 404 is an answer, not an error), or an error object with a stable code (blocked_host, invalid_url, upstream_timeout, upstream_unreachable, redirect_invalid, too_many_redirects, response_too_large). Private, internal and platform-owned hosts are refused.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "vision",
+    "description": "Describe an image via the platform vision endpoint (billed per call to the calling tenant). Models: \"qwen\" (default): $0.002 per call, retries once on \"gemini\" at its own price when it fails; \"gemini\": $0.01 per call. Upstream faults (timeout/5xx/429/empty) always retry on the fallback model; a content-grounds refusal retries only when fallback_on_refusal is true (default), else answers content_refused. Returns {text, model, fallback_used, usage?} on success — model is the row that actually answered — or an error object with a stable code (unsupported_model | image_invalid | image_mime_mismatch | image_too_large | content_refused | content_blocked | provider_*) on failure. The image is sent to the model vendor via OpenRouter and is not stored by the platform.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The picture's bytes encoded as text (RFC 4648 §4 alphabet, padded; no data: URL prefix). Decoded size must not exceed 262144 bytes."
+        },
+        "mime": {
+          "type": "string",
+          "enum": [
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/gif"
+          ],
+          "description": "Declared image type; must match the picture's file signature."
+        },
+        "question": {
+          "description": "Optional question about the image (≤2000 chars). Omitted ⇒ the server's fixed template: what the image conveys, supporting details, then key text verbatim.",
+          "type": "string",
+          "maxLength": 2000
+        },
+        "model": {
+          "description": "Which vision model answers. Closed set; default \"qwen\".",
+          "type": "string",
+          "enum": [
+            "qwen",
+            "gemini"
+          ]
+        },
+        "fallback_on_refusal": {
+          "description": "When the chosen model refuses the image on content grounds, retry once on its fallback model (default true). Upstream faults always retry on the fallback regardless.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "image",
+        "mime"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "decide",
+    "description": "Answer many yes/no, pick-one or rating questions about one piece of text in a single call via the platform decide endpoint (billed per call to the calling tenant). Models: \"jev\" (default): $0.001 per call, up to 49152 bytes of state plus questions and 64 questions. Use it for batch judgments over text you already have (which search results matter, which log lines are real errors, which files relate to a change); do not use it to generate text, do arithmetic or compare dates. Answers are calibrated probabilities, not facts: noul returns {noul: probability of yes}; choice returns {choice, probabilities, confidence}; score returns {score, legend, probabilities, confidence}. Text only: embedded images or encoded binary are refused with non_text_input before any charge. Returns {model, answers, usage?} on success or an error object with a stable code (request_invalid | unsupported_model | non_text_input | input_too_large | provider_*) on failure. The text is sent to the model vendor (TypeSafe) through Cloudflare Workers AI and is not stored by the platform.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {}
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          ],
+          "description": "The text to judge: a plain string, or a JSON object/array of text (records, chat logs, lists). Text only — no `data:` URIs and no long runs of encoded binary; those are refused before any charge."
+        },
+        "questions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "noul"
+                  },
+                  "instructions": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    ],
+                    "description": "The yes/no question to evaluate against the state."
+                  },
+                  "criteria": {
+                    "description": "Optional clarification of what yes and no mean.",
+                    "type": "object",
+                    "properties": {
+                      "true": {
+                        "description": "What a yes (value near 1) means.",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {}
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ]
+                      },
+                      "false": {
+                        "description": "What a no (value near 0) means.",
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {}
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {}
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "instructions"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "instructions": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    ],
+                    "description": "What to decide; the answer picks exactly one of the criteria keys."
+                  },
+                  "criteria": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {}
+                            },
+                            {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "description": "Options: a map of option key to its description (null when no detail is needed); 1..255 options."
+                  }
+                },
+                "required": [
+                  "type",
+                  "instructions",
+                  "criteria"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "score"
+                  },
+                  "instructions": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {}
+                      },
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    ],
+                    "description": "What to rate; the answer is a probability-weighted position on the levels."
+                  },
+                  "criteria": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        },
+                        {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      ]
+                    },
+                    "description": "Ordered level descriptions, lowest first; 2..10 levels."
+                  }
+                },
+                "required": [
+                  "type",
+                  "instructions",
+                  "criteria"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "Questions keyed by an id you choose; each answer comes back under the same id. type is \"noul\" (yes/no), \"choice\" (pick one of criteria) or \"score\" (rate on ordered criteria levels)."
+        },
+        "model": {
+          "description": "Which decision model answers. Closed set; default \"jev\".",
+          "type": "string",
+          "enum": [
+            "jev"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "questions"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "account_status",
+    "description": "Free, read-only account check (never charged). Returns your membership allowance windows, wallet balance and available amount, and whether wallet overflow (pay from wallet after the allowance runs out) is on. Pass task (one of: image-generation, research, code-review, docs, office-report, html-generate, data-analysis, bugfix, migration, bounded-agent:openai_agents, bounded-agent:claude_code) to also get, for that task's FIRST billed step only: the amount it would reserve, whether it would be admitted right now (with the same refusal code dispatch would return), and a price estimate — or an explicit \"cannot estimate\" when the step is billed on actual usage. It does not promise the whole task is affordable. bounded-agent:claude_code has no reservable first step (its first model call is sized inside the sandbox), so only the account-level admission is reported. format (docx | xlsx | pptx) refines office-report.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "docx",
+            "xlsx",
+            "pptx"
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  }
+]

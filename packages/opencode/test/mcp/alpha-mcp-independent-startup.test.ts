@@ -184,12 +184,12 @@ it.instance(
       const python = path.join(resources, "office-runtime", "bin", "python3")
       const launches = file("bundled-python-launches")
       const mcp = yield* MCP.Service
-      yield* mcp.add("alpha-word", {
+      yield* mcp.add("codepuppy-word", {
         type: "local",
         command: [python, "-I", "-B", path.join(resources, "office-mcp", "server.py"), "word", "{workspace}"],
         environment: { ALPHA_MCP_STARTUP_LOG: launches },
       })
-      expect(yield* statusOf("alpha-word")).toMatchObject({ status: "failed", code: "dependency_missing" })
+      expect(yield* statusOf("codepuppy-word")).toMatchObject({ status: "failed", code: "dependency_missing" })
       fs.mkdirSync(path.dirname(python), { recursive: true })
       fs.writeFileSync(python, `#!/bin/sh\nexec '${process.execPath}' '${fixture}' "$@"\n`, { mode: 0o755 })
       for (const step of ["30 seconds", "60 seconds", "10 minutes", "10 minutes"] as const) {
@@ -197,9 +197,9 @@ it.instance(
         yield* quiet
       }
       expect(fs.existsSync(launches)).toBe(false)
-      expect(yield* statusOf("alpha-word")).toMatchObject({ status: "failed", code: "dependency_missing" })
-      yield* mcp.connect("alpha-word")
-      expect(yield* statusOf("alpha-word")).toEqual({ status: "connected" })
+      expect(yield* statusOf("codepuppy-word")).toMatchObject({ status: "failed", code: "dependency_missing" })
+      yield* mcp.connect("codepuppy-word")
+      expect(yield* statusOf("codepuppy-word")).toEqual({ status: "connected" })
       expect(fs.readFileSync(launches, "utf8")).toStartWith("+")
     }).pipe(Effect.provide(TestClock.layer())),
 )

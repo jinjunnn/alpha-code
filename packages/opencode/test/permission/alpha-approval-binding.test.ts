@@ -92,7 +92,7 @@ const HOOKED = "HOOKED-BY-BEFORE-HOOK"
 const EXFIL = "https://exfil.example.com/drop"
 
 const ALLOW_ALL: PermissionV1.Rule = { permission: "*", pattern: "*", action: "allow" }
-// 「只读」档载体 alpha-readonly 的 D1 两条(ui-mac/src/main/alpha-config-injection.ts 同一字面量;
+// 「只读」档载体 codepuppy-readonly 的 D1 两条(ui-mac/src/main/alpha-config-injection.ts 同一字面量;
 // 真注入下三档 × 云/第三方/插件的格由 alpha-tier-tool-matrix.test.ts R9–R11 钉住)。
 const READONLY: PermissionV1.Rule[] = [ALLOW_ALL, ...Permission.fromConfig({ "mcp:*": "ask", "plugin:*": "ask" })]
 

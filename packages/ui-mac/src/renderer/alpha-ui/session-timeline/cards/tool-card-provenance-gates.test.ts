@@ -168,7 +168,7 @@ describe("#879 T2 — identity 缺失/非法/第三方 generic:严格 metadata-o
       {
         identity: { source: "mcp", origin: "srv", name: "grep" },
         technicalId: "grep",
-        authority: { kind: "alpha-cloud", bindingId: "" },
+        authority: { kind: "codepuppy-cloud", bindingId: "" },
       },
       { identity: "builtin::grep", technicalId: "grep", authority: { kind: "not-asserted" } },
     ]
@@ -222,13 +222,13 @@ describe("#879 T2 — identity 缺失/非法/第三方 generic:严格 metadata-o
     const cloud = toolPart({
       tool: "cloud_web_search",
       display: {
-        identity: { source: "mcp", origin: "alpha-cloud", name: "web_search" },
+        identity: { source: "mcp", origin: "alpha-cloud", name: "cloud_web_search" },
         technicalId: "cloud_web_search",
-        authority: { kind: "alpha-cloud", bindingId: "mcp:alpha-cloud", evidenceDigest: `sha256:${"b".repeat(64)}` },
+        authority: { kind: "codepuppy-cloud", bindingId: "mcp:alpha-cloud", evidenceDigest: `sha256:${"b".repeat(64)}` },
       },
       state: completed({ query: "天气" }, `https://weather.example/x ${leaks.output}`),
     })
-    expect([toolCardHeadOf(cloud).category, toolCardBodyOf(cloud).type]).toEqual(["alpha-cloud", "none"])
+    expect([toolCardHeadOf(cloud).category, toolCardBodyOf(cloud).type]).toEqual(["codepuppy-cloud", "none"])
     expect(projectedSurface(cloud)).not.toContain(leaks.output)
   })
 })
@@ -490,12 +490,12 @@ describe("#879 R-final 2 — 产物链接行只认第一方 cloud facade identit
   test("撞前缀的 plugin / MCP / 无快照历史行:同一份合法产物 payload 也不出链接行", () => {
     // 负向夹具不退化:payload 与真实完成态逐字段同形,只有 identity 来源不同。
     const spoofs: Array<[string, ToolDisplaySnapshotV1 | undefined]> = [
-      // plugin 命名空间 `cloud`,工具 id `cloud_x`(tool/registry.ts `${namespace}_${id}`)。
-      ["cloud_x", plugin("cloud", "x")],
-      // MCP 配置键 `cloud.x` sanitize 成 `cloud_x`,别名 `cloud_x_y`(mcp/catalog.ts toolName)。
-      ["cloud_x_y", mcp("cloud.x", "y")],
+      // plugin 命名空间 `codepuppy`,工具 id `codepuppy_x`(tool/registry.ts `${namespace}_${id}`)。
+      ["codepuppy_x", plugin("codepuppy", "x")],
+      // MCP 配置键 `codepuppy.x` sanitize 成 `codepuppy_x`,别名 `codepuppy_x_y`(mcp/catalog.ts toolName)。
+      ["codepuppy_x_y", mcp("codepuppy.x", "y")],
       // identity 缺失(历史行):裸别名不再是准入。
-      ["cloud_await", undefined],
+      ["codepuppy_await", undefined],
     ]
     for (const [tool, display] of spoofs) {
       const links = artifactLinksOf(toolPart({ tool, display, state: completed({}, spoofOutput) }))
@@ -503,14 +503,14 @@ describe("#879 R-final 2 — 产物链接行只认第一方 cloud facade identit
     }
   })
 
-  test("对照(杀「产物行一律不出」的错误实现):identity=(mcp, cloud) 才出行,且不依赖 authority 铸没铸出来", () => {
-    // 真第一方 facade:origin = 宿主注入的配置键 "cloud"。authority 故意用 not-asserted ——
-    // 审计裁定 category==="alpha-cloud"(依赖 governedMcpEvidence 运行时铸造)会误杀现网
+  test("对照(杀「产物行一律不出」的错误实现):identity=(mcp, codepuppy) 才出行,且不依赖 authority 铸没铸出来", () => {
+    // 真第一方 facade:origin = 宿主注入的配置键 "codepuppy"。authority 故意用 not-asserted ——
+    // 审计裁定 category==="codepuppy-cloud"(依赖 governedMcpEvidence 运行时铸造)会误杀现网
     // 真实云产物行,准入只看 identity。
     const links = artifactLinksOf(
       toolPart({
-        tool: "cloud_await",
-        display: mcp("cloud", "await"),
+        tool: "codepuppy_await",
+        display: mcp("codepuppy", "await"),
         state: completed(
           {},
           JSON.stringify({ job_id: "run_real_3", status: "completed", artifacts: ["对账底稿.xlsx"] }),
@@ -522,11 +522,11 @@ describe("#879 R-final 2 — 产物链接行只认第一方 cloud facade identit
 })
 
 // ── #587 —— Cloud 8/8、安全通用卡隐藏理由、开发者详情(T8 模型半场) ─────────
-function alphaCloud(name: string, technicalId = `cloud_${name}`): ToolDisplaySnapshotV1 {
+function alphaCloud(name: string, technicalId = `codepuppy_${name}`): ToolDisplaySnapshotV1 {
   return {
-    identity: { source: "mcp", origin: "cloud", name },
+    identity: { source: "mcp", origin: "codepuppy", name },
     technicalId,
-    authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+    authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"c".repeat(64)}` },
   }
 }
 
@@ -535,20 +535,20 @@ describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键�
   // 远端名清单 = docs/verification/2026-07-22-e7-deploy-probe.md §3c 匿名 tools/list 实测。
   const matrix: Array<[string, Record<string, unknown>, string, string | undefined]> = [
     // `#1475`:本机搜索与云端搜索同一个写法(design §6「搜索」)。
-    ["cloud_web_search", { query: "alpha-code e7 部署证据" }, "搜索", "alpha-code e7 部署证据"],
-    ["cloud_dispatch", { kind: "research", autonomy: "pipeline" }, "下发云端任务", "research"],
-    ["cloud_status", { job_id: "run_5f0a" }, "查询云端任务", "run_5f0a"],
-    ["cloud_await", { job_id: "run_77bd" }, "等待云端任务", "run_77bd"],
-    ["cloud_artifacts", { job_id: "run_1c9e" }, "列出云端产物", "run_1c9e"],
-    ["cloud_schedule_create", { name: "盘前简报", cron: "0 8 * * 1-5" }, "创建云端定时任务", "盘前简报"],
-    ["cloud_schedule_list", {}, "查看云端定时任务", undefined],
-    ["cloud_schedule_delete", { schedule_id: "sch_42dd" }, "删除云端定时任务", "sch_42dd"],
+    ["web_search", { query: "alpha-code e7 部署证据" }, "搜索", "alpha-code e7 部署证据"],
+    ["dispatch", { kind: "research", autonomy: "pipeline" }, "下发云端任务", "research"],
+    ["status", { job_id: "run_5f0a" }, "查询云端任务", "run_5f0a"],
+    ["await", { job_id: "run_77bd" }, "等待云端任务", "run_77bd"],
+    ["artifacts", { job_id: "run_1c9e" }, "列出云端产物", "run_1c9e"],
+    ["schedule_create", { name: "盘前简报", cron: "0 8 * * 1-5" }, "创建云端定时任务", "盘前简报"],
+    ["schedule_list", {}, "查看云端定时任务", undefined],
+    ["schedule_delete", { schedule_id: "sch_42dd" }, "删除云端定时任务", "sch_42dd"],
   ]
 
   test("8/8 命中专用云卡:kind=cloud、category=alpha-cloud、标题经生产 zh 字典解析为语义中文", () => {
     for (const [name, input, zhTitle, target] of matrix) {
       const part = toolPart({
-        tool: `cloud_${name}`,
+        tool: `codepuppy_${name}`,
         display: alphaCloud(name),
         state: completed(input, ""),
       })
@@ -556,7 +556,7 @@ describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键�
       expect({ name, kind: head.kind, category: head.category, metadataOnly: head.metadataOnly }).toEqual({
         name,
         kind: "cloud",
-        category: "alpha-cloud",
+        category: "codepuppy-cloud",
         metadataOnly: false,
       })
       // 标题必须从生产字典解析出**语义化中文**,不是键名、不是任何一层技术 id。
@@ -569,8 +569,8 @@ describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键�
   test("同一份调用,authority 缺席(not-asserted)⇒ 不是云卡:降级为第三方 MCP,标题/目标全部消失", () => {
     // origin 冒充 "cloud"、名字也在规则表里 —— 只有 authority 才能铸出云端展示(T3)。
     const spoof = toolPart({
-      tool: "cloud_cloud_web_search",
-      display: mcp("cloud", "cloud_web_search"),
+      tool: "codepuppy_web_search",
+      display: mcp("codepuppy", "web_search"),
       state: completed({ query: "内部演进路线" }, "https://leak.example/x"),
     })
     const head = toolCardHeadOf(spoof)
@@ -587,8 +587,8 @@ describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键�
 
   test("云卡链接体只属于 web_search;其余云工具完成态无 body(不同工具各自验证)", () => {
     const search = toolPart({
-      tool: "cloud_cloud_web_search",
-      display: alphaCloud("cloud_web_search"),
+      tool: "codepuppy_web_search",
+      display: alphaCloud("web_search"),
       state: completed(
         { query: "solid-js store" },
         "结果:https://docs.example.org/store?utm=x 与 https://blog.example.net/deep",
@@ -602,8 +602,8 @@ describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键�
     ])
 
     const status = toolPart({
-      tool: "cloud_cloud_status",
-      display: alphaCloud("cloud_status"),
+      tool: "codepuppy_status",
+      display: alphaCloud("status"),
       state: completed({ job_id: "run_9" }, JSON.stringify({ job_id: "run_9", status: "completed" })),
     })
     expect(toolCardBodyOf(status)).toEqual({ type: "none" })
@@ -632,8 +632,8 @@ describe("#587 AC2 — 安全通用卡的隐藏理由是确定分支,不携带�
     expect([matched.metadataOnly, matched.hiddenReason]).toEqual([false, undefined])
     const cloud = toolCardHeadOf(
       toolPart({
-        tool: "cloud_cloud_await",
-        display: alphaCloud("cloud_await"),
+        tool: "codepuppy_await",
+        display: alphaCloud("await"),
         state: completed({ job_id: "run_1" }, ""),
       }),
     )
@@ -709,23 +709,23 @@ describe("#587 R-final — 媒体行受同一条 identity 分派闸:第三方附
 describe("#587 T8(模型半场)— technical-id/canonical 只进开发者详情,主层级字段拿不到", () => {
   test("云卡:标题与目标不含任何一层技术 id;开发者详情含 technical-id、canonical 与 authority", () => {
     const part = toolPart({
-      tool: "cloud_cloud_web_search",
-      display: alphaCloud("cloud_web_search", "cloud_cloud_web_search"),
+      tool: "codepuppy_web_search",
+      display: alphaCloud("web_search", "codepuppy_web_search"),
       state: completed({ query: "REQ-125 工具卡" }, ""),
     })
     const head = toolCardHeadOf(part)
     // 渲染层主标题 = t(titleKey);titleKey 解析结果与 target 都不得含技术 id。
     const zhTitle = (zhDict as Record<string, string>)[head.titleKey ?? ""] ?? ""
-    for (const leaked of ["cloud_cloud_web_search", "cloud_web_search"]) {
+    for (const leaked of ["codepuppy_web_search", "cloud_web_search"]) {
       expect({ leaked, inTitle: zhTitle.includes(leaked) }).toEqual({ leaked, inTitle: false })
       expect({ leaked, inTarget: (head.target ?? "").includes(leaked) }).toEqual({ leaked, inTarget: false })
     }
     const dev = toolDevDetailsOf(part)
     if (!dev) throw new Error("expected dev details for snapshot-bearing part")
-    expect(dev.technicalId).toBe("cloud_cloud_web_search")
-    expect(dev.canonical).toBe("mcp:cloud:cloud_web_search")
-    expect(dev.authority).toContain("alpha-cloud")
-    expect(dev.authority).toContain("mcp:cloud")
+    expect(dev.technicalId).toBe("codepuppy_web_search")
+    expect(dev.canonical).toBe("mcp:codepuppy:web_search")
+    expect(dev.authority).toContain("codepuppy-cloud")
+    expect(dev.authority).toContain("mcp:codepuppy")
   })
 
   test("无快照历史行:没有开发者详情可陈列(别名只作为降级卡的被动净化名称)", () => {
@@ -1072,20 +1072,20 @@ describe("#1214 AC2 — 审批超时分类:真引擎 UnansweredError 驱动,降�
   test("真引擎 UnansweredError 的 message → mcp 降级卡 askTimedOut=true,错误原文零字符进投影", async () => {
     const { Permission } = await import("../../../../../../opencode/src/permission/index")
     const engineError = new Permission.UnansweredError({
-      permission: "mcp:cloud:cloud_web_search",
+      permission: "mcp:codepuppy:web_search",
       patterns: ["*"],
       timeoutMs: 300_000,
     })
     const part = toolPart({
-      tool: "cloud_cloud_web_search",
-      display: mcp("cloud", "cloud_web_search"),
+      tool: "codepuppy_web_search",
+      display: mcp("codepuppy", "web_search"),
       state: errored({ query: "秘密查询词" }, engineError.message),
     })
     const head = toolCardHeadOf(part)
     expect([head.metadataOnly, head.status, head.askTimedOut]).toEqual([true, "error", true])
     // 分类是布尔,不是转述:引擎错误原文与请求内容零字符进入任何投影面。
     const surface = projectedSurface(part)
-    for (const leaked of ["mcp:cloud:cloud_web_search", "常见原因", "秘密查询词", "300"]) {
+    for (const leaked of ["mcp:codepuppy:web_search", "常见原因", "秘密查询词", "300"]) {
       expect({ leaked, present: surface.includes(leaked) }).toEqual({ leaked, present: false })
     }
   })
@@ -1135,7 +1135,7 @@ describe("#1576 AC3 — 来源只有三类,只从 identity + authority 派生", 
     expect(
       sourceOf({ identity: { source: "host", origin: "", name: "h" }, technicalId: "h", authority: { kind: "not-asserted" } }),
     ).toBe("builtin")
-    expect(sourceOf(alphaCloud("cloud_dispatch"))).toBe("alpha-cloud")
+    expect(sourceOf(alphaCloud("dispatch"))).toBe("codepuppy-cloud")
     expect(sourceOf(mcp("notion", "search_pages"))).toBe("third-party")
     expect(sourceOf(plugin("acme", "lint_project"))).toBe("third-party")
     expect(sourceOf(undefined)).toBe("third-party")
@@ -1143,18 +1143,18 @@ describe("#1576 AC3 — 来源只有三类,只从 identity + authority 派生", 
 
   test("origin=cloud 无 authority ⇒ 第三方(名字像我们的,没有证明就是第三方)", () => {
     const spoof = toolPart({
-      tool: "cloud_cloud_dispatch",
-      display: { ...mcp("cloud", "cloud_dispatch"), location: { kind: "remote", host: "cloud.example" } },
+      tool: "codepuppy_dispatch",
+      display: { ...mcp("codepuppy", "dispatch"), location: { kind: "remote", host: "cloud.example" } },
       state: completed({ kind: "research" }, ""),
     })
     expect(toolProvenanceOf(spoof)).toEqual({ source: "third-party", location: { kind: "remote", host: "cloud.example" } })
     // 对照:同一份调用带上持久化 authority ⇒ 云 · 云端。
     const real = toolPart({
-      tool: "cloud_cloud_dispatch",
-      display: { ...alphaCloud("cloud_dispatch"), location: { kind: "remote", host: "cloud.example" } },
+      tool: "codepuppy_dispatch",
+      display: { ...alphaCloud("dispatch"), location: { kind: "remote", host: "cloud.example" } },
       state: completed({ kind: "research" }, ""),
     })
-    expect(toolProvenanceOf(real)).toEqual({ source: "alpha-cloud", location: { kind: "cloud" } })
+    expect(toolProvenanceOf(real)).toEqual({ source: "codepuppy-cloud", location: { kind: "cloud" } })
   })
 })
 
@@ -1199,7 +1199,7 @@ describe("#1576 AC5 — 平台注册表快照里的每个云工具名都有云�
   test("CLOUD_MCP_TOOLS 每个名字 + alpha-cloud authority ⇒ 专用云卡,标题经生产 zh 字典解析", () => {
     expect(CLOUD_MCP_TOOLS.length).toBeGreaterThan(0)
     for (const name of CLOUD_MCP_TOOLS) {
-      const head = toolCardHeadOf(toolPart({ tool: `cloud_${name}`, display: alphaCloud(name), state: completed({}, "") }))
+      const head = toolCardHeadOf(toolPart({ tool: `codepuppy_${name}`, display: alphaCloud(name), state: completed({}, "") }))
       const resolved = head.titleKey ? (zhDict as Record<string, string>)[head.titleKey] : undefined
       expect({ name, kind: head.kind, titled: typeof resolved === "string" && resolved.length > 0 }).toEqual({
         name,
@@ -1214,13 +1214,13 @@ describe("#1576 AC6 — 开发者详情保留 identity、authority、bindingId�
   test("云:四样 + location;插件多一行 origin;历史行 location 写「—」", () => {
     const cloud = toolDevDetailsOf(
       toolPart({
-        tool: "cloud_cloud_dispatch",
-        display: { ...alphaCloud("cloud_dispatch"), location: { kind: "remote", host: "cloud.example" } },
+        tool: "codepuppy_dispatch",
+        display: { ...alphaCloud("dispatch"), location: { kind: "remote", host: "cloud.example" } },
         state: completed({}, ""),
       }),
     )!
-    expect(cloud.canonical).toBe("mcp:cloud:cloud_dispatch")
-    expect(cloud.authority).toBe(`alpha-cloud · mcp:cloud · sha256:${"c".repeat(25)}`)
+    expect(cloud.canonical).toBe("mcp:codepuppy:dispatch")
+    expect(cloud.authority).toBe(`codepuppy-cloud · mcp:codepuppy · sha256:${"c".repeat(25)}`)
     expect(cloud.location).toBe("remote · cloud.example")
     expect(cloud.origin).toBeUndefined()
     const pluginDev = toolDevDetailsOf(
@@ -1236,12 +1236,12 @@ describe("#1576 AC6 — 开发者详情保留 identity、authority、bindingId�
 })
 
 
-// ── #1578 —— 随包臂:持久化 authority = alpha-bundled ⇒「Code Puppy 内置」· 本机,但不借 builtin 特权 ────────
+// ── #1578 —— 随包臂:持久化 authority = codepuppy-bundled ⇒「Code Puppy 内置」· 本机,但不借 builtin 特权 ────────
 /** 期望值:独立字面量(不 import 被测常量)。 */
 const BUNDLED_DIGEST = `sha256:${"b".repeat(64)}`
 const EXT_PATH = "/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js"
 function bundled(display: ToolDisplaySnapshotV1, bindingId: string): ToolDisplaySnapshotV1 {
-  return { ...display, authority: { kind: "alpha-bundled", bindingId, evidenceDigest: BUNDLED_DIGEST }, location: { kind: "local" } }
+  return { ...display, authority: { kind: "codepuppy-bundled", bindingId, evidenceDigest: BUNDLED_DIGEST }, location: { kind: "local" } }
 }
 /** 持久化 = 会话库里存的 JSON;重载 = 读回后再走生产时间线投影。 */
 function replayed(part: ToolPart): ToolPart {
@@ -1251,32 +1251,32 @@ function replayed(part: ToolPart): ToolPart {
 }
 
 describe("#1578 AC2 — 随包文档工具在时间线显示为「Code Puppy 内置」· 本机", () => {
-  // 删掉 categoryOf / toolProvenanceOf 的 alpha-bundled 分支 ⇒ 第三方 + 插头标记,当场红。
-  test("mcp + alpha-bundled authority ⇒ 内置 · 本机,步骤行是我方通用行(无第三方标记);同一调用无 authority ⇒ 第三方", () => {
-    const doc = bundled(mcp("alpha-word", "read_docx"), "mcp:alpha-word")
-    const part = replayed(toolPart({ tool: "alpha-word_read_docx", display: doc, state: completed({ path: "/w/a.docx" }, "body") }))
+  // 删掉 categoryOf / toolProvenanceOf 的 codepuppy-bundled 分支 ⇒ 第三方 + 插头标记,当场红。
+  test("mcp + codepuppy-bundled authority ⇒ 内置 · 本机,步骤行是我方通用行(无第三方标记);同一调用无 authority ⇒ 第三方", () => {
+    const doc = bundled(mcp("codepuppy-word", "read_docx"), "mcp:codepuppy-word")
+    const part = replayed(toolPart({ tool: "codepuppy-word_read_docx", display: doc, state: completed({ path: "/w/a.docx" }, "body") }))
     expect(toolProvenanceOf(part)).toEqual({ source: "builtin", location: { kind: "local" } })
     const line = toolStepLineOf(part)
     expect(line.source).toBeUndefined()
     expect(line.verbKey ? (zhDict as Record<string, string>)[line.verbKey] : undefined).toBe("Code Puppy 内置")
     expect(line.object).toBe("read_docx")
     const unproven = toolPart({
-      tool: "alpha-word_read_docx",
-      display: { ...mcp("alpha-word", "read_docx"), location: { kind: "local" } },
+      tool: "codepuppy-word_read_docx",
+      display: { ...mcp("codepuppy-word", "read_docx"), location: { kind: "local" } },
       state: completed({ path: "/w/a.docx" }, "body"),
     })
     expect(toolProvenanceOf(unproven).source).toBe("third-party")
-    expect(toolStepLineOf(unproven).source).toEqual({ kind: "mcp", label: "alpha-word" })
+    expect(toolStepLineOf(unproven).source).toEqual({ kind: "mcp", label: "codepuppy-word" })
   })
 
-  // 把 alpha-bundled 并进 builtin 分类 ⇒ 冒名 todowrite 被时间线吞掉 / 借到专用卡,当场红。
-  test("alpha-bundled 不是 builtin:同名 todowrite 照常渲染,read 不借专用读文件卡", () => {
+  // 把 codepuppy-bundled 并进 builtin 分类 ⇒ 冒名 todowrite 被时间线吞掉 / 借到专用卡,当场红。
+  test("codepuppy-bundled 不是 builtin:同名 todowrite 照常渲染,read 不借专用读文件卡", () => {
     const todo = bundled(plugin(EXT_PATH, "todowrite"), "plugin:alpha-ext")
     expect(visibleToolPartsOf(timelineRowsOf([toolPart({ tool: "todowrite", display: todo, state: completed({}, "") })]))).toHaveLength(1)
     const read = toolCardDispatchOf(
       toolPart({ tool: "read", display: bundled(plugin(EXT_PATH, "read"), "plugin:alpha-ext"), state: completed({ filePath: "/x" }, "secret") }),
     )
-    expect([read.category, read.metadataOnly]).toEqual(["alpha-bundled", true])
+    expect([read.category, read.metadataOnly]).toEqual(["codepuppy-bundled", true])
   })
 })
 
@@ -1284,7 +1284,7 @@ describe("#1578 AC5 — 随包扩展的自有工具 vs 项目插件合并进来�
   // 删掉 categoryOf 的 plugin 随包分支 ⇒「第三方插件」,当场红;安装路径出现在正常界面 ⇒ 负向断言红。
   test("清单证明过 ⇒ 内置 · 本机、正常界面不出现安装路径,路径与 authority 只在开发者详情;未证明 ⇒ 第三方插件", () => {
     const own = replayed(
-      toolPart({ tool: "alpha_cloud_access", display: bundled(plugin(EXT_PATH, "alpha_cloud_access"), "plugin:alpha-ext"), state: completed({}, "{}") }),
+      toolPart({ tool: "codepuppy_access", display: bundled(plugin(EXT_PATH, "codepuppy_access"), "plugin:alpha-ext"), state: completed({}, "{}") }),
     )
     expect(toolProvenanceOf(own)).toEqual({ source: "builtin", location: { kind: "local" } })
     const line = toolStepLineOf(own)
@@ -1292,7 +1292,7 @@ describe("#1578 AC5 — 随包扩展的自有工具 vs 项目插件合并进来�
     expect(line.verbKey ? (zhDict as Record<string, string>)[line.verbKey] : undefined).toBe("Code Puppy 内置")
     expect(JSON.stringify([line, toolCardHeadOf(own).titleKey, toolProvenanceOf(own)])).not.toContain("Applications")
     const dev = toolDevDetailsOf(own)!
-    expect(dev.authority).toBe(`alpha-bundled · plugin:alpha-ext · sha256:${"b".repeat(25)}`)
+    expect(dev.authority).toBe(`codepuppy-bundled · plugin:alpha-ext · sha256:${"b".repeat(25)}`)
     expect([dev.location, dev.origin]).toEqual(["local", EXT_PATH])
 
     // 同一个扩展下、项目插件合并进来的工具:引擎铸 not-asserted ⇒ 第三方插件(不带名字),路径同样只在开发者详情。

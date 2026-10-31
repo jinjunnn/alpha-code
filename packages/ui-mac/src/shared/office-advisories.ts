@@ -4,7 +4,7 @@
 // 背景：2026-07-10 安全复核，交付记录见 GitHub issue #197。
 //   * REQ-080 上架的 Word/PPT MCP 上游仓库已于 2026-03-03 被作者归档(不再维护 → 供应链风险)。
 //   * REQ-135 retires the separate community Excel MCP. It is denied by exact catalog/name facts;
-//     the supported Hub Excel connector is the distinct first-party `mcp:alpha-excel` entry.
+//     the supported Hub Excel connector is the distinct first-party `mcp:codepuppy-excel` entry.
 //
 // 本模块是 main 与 renderer 共用的纯数据 + 纯函数(无 node/electron 依赖):
 //   * ARCHIVED_OFFICE_ADVISORIES / officeAdvisoryFor —— Hub 的诚实处置面:已安装用户看到
@@ -76,26 +76,26 @@ export const WORKSPACE_MARKER = "{workspace}"
  *  (requirements.in + per-arch hashed locks), and ship inside the app. */
 export const ALPHA_OFFICE_CONNECTORS = [
   {
-    catalogId: "mcp:alpha-word",
-    name: "alpha-word",
+    catalogId: "mcp:codepuppy-word",
+    name: "codepuppy-word",
     format: "word",
     extension: ".docx",
   },
   {
-    catalogId: "mcp:alpha-excel",
-    name: "alpha-excel",
+    catalogId: "mcp:codepuppy-excel",
+    name: "codepuppy-excel",
     format: "excel",
     extension: ".xlsx",
   },
   {
-    catalogId: "mcp:alpha-powerpoint",
-    name: "alpha-powerpoint",
+    catalogId: "mcp:codepuppy-powerpoint",
+    name: "codepuppy-powerpoint",
     format: "powerpoint",
     extension: ".pptx",
   },
   {
-    catalogId: "mcp:alpha-pdf",
-    name: "alpha-pdf",
+    catalogId: "mcp:codepuppy-pdf",
+    name: "codepuppy-pdf",
     format: "pdf",
     extension: ".pdf",
   },
@@ -133,7 +133,7 @@ export function officeAdvisoryFor(ref: { id?: string; name?: string }): OfficeAd
   )
 }
 
-/** Exact legacy identity match. `mcp:alpha-excel` / `alpha-excel` is intentionally distinct. */
+/** Exact legacy identity match. `mcp:codepuppy-excel` / `codepuppy-excel` is intentionally distinct. */
 export function retiredCommunityOfficeFor(
   ref: { id?: string; name?: string },
 ): RetiredCommunityOfficeConnector | undefined {

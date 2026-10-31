@@ -64,7 +64,7 @@ describe("persistMcpWithPolicy — REQ-133 Alpha Office workspace sandbox", () =
       type: "local",
       command: alphaOfficeInstallCommand("word"),
     } as Record<string, unknown>
-    const result = persistMcpWithPolicy("alpha-word", server)
+    const result = persistMcpWithPolicy("codepuppy-word", server)
     expect(result.ok).toBe(true)
     const command = server.command as string[]
     expect(command.at(-1)).toBe(WORKSPACE_MARKER)
@@ -72,21 +72,21 @@ describe("persistMcpWithPolicy — REQ-133 Alpha Office workspace sandbox", () =
   })
 
   test("remote configs fail closed; a concrete or missing workspace argument is replaced by the marker (card tokens are not consumed, #1564)", () => {
-    expect(persistMcpWithPolicy("alpha-word", { type: "remote", url: "http://127.0.0.1/mcp" }).ok).toBe(false)
+    expect(persistMcpWithPolicy("codepuppy-word", { type: "remote", url: "http://127.0.0.1/mcp" }).ok).toBe(false)
     const workspace = path.join(tmp, "project")
     fs.mkdirSync(workspace)
     const concrete = {
       type: "local",
       command: alphaOfficeInstallCommand("word").map((argument) => argument.replace("{workspace}", workspace)),
     } as Record<string, unknown>
-    expect(applyMcpWritePolicy("alpha-word", concrete).ok).toBe(true)
+    expect(applyMcpWritePolicy("codepuppy-word", concrete).ok).toBe(true)
     expect((concrete.command as string[]).at(-1)).toBe(WORKSPACE_MARKER)
     const missing = path.join(tmp, "missing")
     const server = {
       type: "local",
       command: alphaOfficeInstallCommand("pdf").map((argument) => argument.replace("{workspace}", missing)),
     } as Record<string, unknown>
-    expect(applyMcpWritePolicy("alpha-pdf", server).ok).toBe(true)
+    expect(applyMcpWritePolicy("codepuppy-pdf", server).ok).toBe(true)
     expect(JSON.stringify(server.command)).not.toContain(missing)
   })
 
@@ -113,7 +113,7 @@ describe("persistMcpWithPolicy — REQ-133 Alpha Office workspace sandbox", () =
 // ── REQ-105(#319):策略闸口交出的「执行物 digest」──────────────────────────────────────────
 //
 // 审计原文(2026-07-14 逐需求审计 · REQ-105):「receipt 记录条目版 1.0.0 而实际执行 0.1.8 且无包
-// digest 字段」。今天条目已换成随包的 `mcp:alpha-excel`(卡片版本仍是 1.0.0),形态没变:卡片版本
+// digest 字段」。今天条目已换成随包的 `mcp:codepuppy-excel`(卡片版本仍是 1.0.0),形态没变:卡片版本
 // 命名连接器,**不命名它执行的字节**。这一组判据钉的就是「那份字节有没有一个可核对的名字」。
 //
 // 落点选在这里而不是 planner,是因为随包 server.py 的 realpath 本来就只有这道闸口在解 ——
@@ -124,7 +124,7 @@ describe("REQ-105 #319 — bundled Office artifact digest", () => {
 
   test("a passing Alpha Office verdict carries the content address of the bytes it just canonicalized", () => {
     const server = { type: "local", command: alphaOfficeInstallCommand("excel") } as Record<string, unknown>
-    const verdict = applyMcpWritePolicy("alpha-excel", server)
+    const verdict = applyMcpWritePolicy("codepuppy-excel", server)
     expect(verdict.ok).toBe(true)
     if (!verdict.ok) return
     // 期望值的锚点是**文件字节**,独立于被测代码:sha256 由 node:crypto 现算,不 import 生产的

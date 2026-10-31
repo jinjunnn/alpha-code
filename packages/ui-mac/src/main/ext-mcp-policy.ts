@@ -100,7 +100,7 @@ export function officeRuntimeReadiness(alphaResourcesRoot: string = resourcesRoo
 export function applyMcpWritePolicy(name: string, server: Record<string, unknown>): McpWritePolicyResult {
   if (server && typeof server === "object") {
     if (isRetiredOfficeMcp(name, server)) {
-      return { ok: false, reason: "community excel-mcp-server is retired; use mcp:alpha-excel (REQ-135)" }
+      return { ok: false, reason: "community excel-mcp-server is retired; use mcp:codepuppy-excel (REQ-135)" }
     }
     return applyAlphaOfficeWorkspacePolicy(name, server)
   }

@@ -140,7 +140,9 @@ describe("REQ-105/REQ-135 Office retirement guards", () => {
     }
   })
 
-  test("signed snapshot has no community Excel; Hub Excel card is mcp:alpha-excel only", () => {
+  // alpha-code#1568:这条断言描述的是**真签名快照今天的内容**。四个 Office 条目改名由 alpha-web#283 重签承担,
+  // RC 构建前用 sync-catalog-snapshot.mjs 同步;同步后这里的 mcp:alpha-excel 改成 mcp:codepuppy-excel。
+  test("signed snapshot has no community Excel; Hub Excel card is the first-party connector only", () => {
     expect(catalog.entries.some((entry) => entry.id === "mcp:excel")).toBe(false)
     expect(rawText.includes("excel-mcp-server")).toBe(false)
     expect(catalog.entries.some((entry) => entry.id === "mcp:alpha-excel")).toBe(true)

@@ -70,7 +70,7 @@ export const ToolPolicyInventoryServiceV1 = Schema.Struct({
   source: ToolIdentitySource,
   origin: Schema.String,
   class: ToolClass,
-  /** 服务级 authority(alpha-cloud verified ⇒「已核验」徽标)。 */
+  /** 服务级 authority(codepuppy-cloud verified ⇒「已核验」徽标)。 */
   authority: ToolAuthority,
   /** service 层写 enabled 记录必须携带的**当前** binding digest(§5)。 */
   bindingDigest: Schema.optional(BindingDigest),

@@ -24,19 +24,19 @@ the app and never appears in `.code-puppy`.
 
 ## How to make changes
 
-1. **Missing a capability? Search first with `hub_search`.** The Customization Center (定制中心)
+1. **Missing a capability? Search first with `codepuppy_hub_search`.** The Customization Center (定制中心)
    offers skills, agents, commands, connectors (MCP), bundles, and cloud capabilities. Read its
    installed/enabled state, required authorization, and any price explanation before proposing an install.
-2. **Explain what to install and why, then call `hub_install`.** Ask the user to approve in the
+2. **Explain what to install and why, then call `codepuppy_hub_install`.** Ask the user to approve in the
    app's confirmation box (软件弹出的确认框). If a key is needed, the user enters it in that box.
    Never ask for or accept keys in chat; never invent or guess keys for the user.
    This is the primary managed installation path; do not edit global config to install capabilities.
-3. **Check `hub_status` before use.** For `submitted; result pending` or `reload-pending`, check
-   `hub_status` instead of repeating the installation. Tools return immediately; do not wait inside
+3. **Check `codepuppy_hub_status` before use.** For `submitted; result pending` or `reload-pending`, check
+   `codepuppy_hub_status` instead of repeating the installation. Tools return immediately; do not wait inside
    the current reply for reload. Report installed, reload-pending, and available as distinct states.
    Tell the user: 显示可用以后,下一条消息就能用;不用重启。
    Only promise use from the next message after the state is `available`.
-4. **Creating project-scoped extensions** — use the `alpha_register` tool only for project scope:
+4. **Creating project-scoped extensions** — use the `codepuppy_register` tool only for project scope:
    - `type=agent|command` with the entry JSON (`{"description":"...","prompt":"..."}` / `{"template":"..."}`)
    - `type=mcp` with the connector config — executable connectors additionally need the user's
      per-project consent dialog before they load
@@ -55,7 +55,7 @@ the app and never appears in `.code-puppy`.
   dependency preflight (`uv` / `node` checked before install), API keys collected as masked input
   and stored as `{file:}` references — **never write a connector API key in plaintext into
   `alpha.jsonc` yourself**; if a connector needs a key, send the user to the Hub install flow.
-- **Project-scoped secondary path** = `alpha_register type=mcp` (config goes to
+- **Project-scoped secondary path** = `codepuppy_register type=mcp` (config goes to
   `<project>/.code-puppy/alpha.jsonc`): executable connectors only load after the user grants the
   per-project trust dialog — expect that, don't call it a failure.
 - **Runtime note**: catalog connectors run via `uvx`/`npx` pinned versions; first launch downloads
@@ -65,7 +65,7 @@ the app and never appears in `.code-puppy`.
   (skills + agents + commands + connectors), each with its own receipt and uninstall. A bundle is not an engine
   plugin (插件 = JS module with hooks; it cannot contain skills/agents).
 - The Hub's install ledger (receipts) is what makes 「已安装」 accurate — installs done by editing
-  config by hand won't show there; prefer the Hub or `alpha_register` so state stays visible.
+  config by hand won't show there; prefer the Hub or `codepuppy_register` so state stays visible.
 
 ## Governing built-ins
 
@@ -81,5 +81,5 @@ agents) because disabling them breaks the engine or alpha features — the panel
   the engine after the user trusts the project. Trust is granted once for the whole project,
   not per file or per execution. Explain this boundary before asking the user to trust a project.
 - Executable plugins from the catalog are refused (ADR-040).
-- If an install is not available yet, use `hub_status` and report its reason honestly. Use
-  `alpha_reload` for an explicit reload request; it waits for sessions to become idle.
+- If an install is not available yet, use `codepuppy_hub_status` and report its reason honestly. Use
+  `codepuppy_reload` for an explicit reload request; it waits for sessions to become idle.

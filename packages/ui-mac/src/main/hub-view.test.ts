@@ -94,16 +94,16 @@ function engineFetch(engine: Engine, seen: string[]): typeof fetch {
             ? [
                 {
                   source: "mcp",
-                  origin: "cloud",
-                  class: "alpha-cloud",
+                  origin: "codepuppy",
+                  class: "codepuppy-cloud",
                   authority: { kind: "not-asserted" },
                   tools: [
                     {
-                      canonical: "mcp:cloud:cloud_dispatch",
-                      identity: { source: "mcp", origin: "cloud", name: "cloud_dispatch" },
-                      technicalId: "cloud_cloud_dispatch",
+                      canonical: "mcp:codepuppy:dispatch",
+                      identity: { source: "mcp", origin: "codepuppy", name: "dispatch" },
+                      technicalId: "codepuppy_dispatch",
                       authority: { kind: "not-asserted" },
-                      effective: { state: engine.cloudDispatch, action: "allow", reason: { kind: "default", class: "alpha-cloud" } },
+                      effective: { state: engine.cloudDispatch, action: "allow", reason: { kind: "default", class: "codepuppy-cloud" } },
                       newlyDiscovered: false,
                     },
                   ],
@@ -143,7 +143,7 @@ function world(
   record(globalRoot, { id: "cloud:docs", name: "cloud-docs", kind: "cloud" })
 
   const engine: Engine = {
-    mcp: { files: { status: "connected" }, cloud: { status: "connected" } },
+    mcp: { files: { status: "connected" }, codepuppy: { status: "connected" } },
     skills: [
       { name: "writer", location: join(skillDir, "SKILL.md") },
       { name: "twin", location: join(elsewhere, "SKILL.md") },
@@ -242,20 +242,20 @@ describe("hub-view 三档状态(§2.5)", () => {
       installed: true,
       enabled: true,
       state: "installed",
-      stateReason: { code: "not-loaded", detail: "cloud_dispatch is ask by tool policy" },
+      stateReason: { code: "not-loaded", detail: "dispatch is ask by tool policy" },
     })
     w.engine.cloudDispatch = undefined
     expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
       state: "installed",
-      stateReason: { code: "not-loaded", detail: "cloud_dispatch is not in this directory's tool list" },
+      stateReason: { code: "not-loaded", detail: "dispatch is not in this directory's tool list" },
     })
     w.engine.cloudDispatch = "enabled"
-    w.engine.mcp.cloud = { status: "needs_auth" }
+    w.engine.mcp.codepuppy = { status: "needs_auth" }
     expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
       state: "installed",
       stateReason: { code: "not-loaded", detail: "cloud MCP needs_auth" },
     })
-    w.engine.mcp.cloud = { status: "connected" }
+    w.engine.mcp.codepuppy = { status: "connected" }
     expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs").state).toBe("available")
     expect(CLOUD_DISPATCH_TOOL).toBe(CLOUD_DISPATCH_REMOTE_TOOL)
   })
@@ -302,7 +302,7 @@ describe("hub-view 三档状态(§2.5)", () => {
       detail: "MCP pending (last failure: fetch failed: connect ECONNREFUSED 127.0.0.1:443)",
     })
     w.engine.cloudDispatch = "enabled"
-    w.engine.mcp.cloud = { status: "pending" }
+    w.engine.mcp.codepuppy = { status: "pending" }
     expect(row((await w.service.view(w.projectDir)).rows, "cloud:docs")).toMatchObject({
       state: "installed",
       stateReason: { code: "not-loaded", detail: "cloud MCP pending" },
@@ -357,7 +357,7 @@ describe("hub-view 三档状态(§2.5)", () => {
   })
 
   // 审计 R1 Major 2:签名包(catalog.packages,main 评估过的 CatalogPackageViewV1)也是「客户端可安装的条目」——
-  // agent 的视图里必须有它(否则 hub_install 对 package:* 答 unknown entry);装上之后按它的组件行定档。
+  // agent 的视图里必须有它(否则 codepuppy_hub_install 对 package:* 答 unknown entry);装上之后按它的组件行定档。
   test("签名包进视图:可安装 ⇒ not-installed 包行(带前置条件名);装上 ⇒ 按组件行定档(全可用 = available,缺加载 = 待重载 + 组件原因)", async () => {
     const pkg: CatalogPackageViewV1 = {
       catalogId: "package:kit",

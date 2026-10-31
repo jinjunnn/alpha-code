@@ -99,7 +99,7 @@ function taskOf(id: string, overrides: Partial<AutomationTask> = {}): Automation
     name: "Daily research",
     nlText: "daily",
     schedule: { kind: "cron", expr: "0 9 * * *" },
-    target: { projectDir: ROOT, agent: "alpha-automation" },
+    target: { projectDir: ROOT, agent: "codepuppy-automation" },
     prompt: "Research release notes",
     execution: "cloud",
     permissionProfile: "readonly",
@@ -249,7 +249,7 @@ test("[#1001] 本地档保存、本机校验不过 ⇒ automations-save 返回�
 
 test("[#1001] 云端注册成功但本机保存失败 ⇒ 返回本地结构码,补偿删除照发", async () => {
   wire.length = 0
-  const task = taskOf("auto-1001-cloud", { target: { projectDir: join(ROOT, "gone-1001"), agent: "alpha-automation" } })
+  const task = taskOf("auto-1001-cloud", { target: { projectDir: join(ROOT, "gone-1001"), agent: "codepuppy-automation" } })
   responses.push({
     status: 200,
     body: JSON.stringify({

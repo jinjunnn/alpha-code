@@ -1,5 +1,5 @@
 // #1578 AC5(REQ-236 §2.6-7,编排器 2026-10-30 裁决沿用 owner「路一」)—— 随应用交付的第一方扩展插件,只有受信随包清单
-// 列出的自有工具、且装载端核验模块摘要一致时,authority 才是 alpha-bundled;项目插件合并进来的工具、摘要不符或不在
+// 列出的自有工具、且装载端核验模块摘要一致时,authority 才是 codepuppy-bundled;项目插件合并进来的工具、摘要不符或不在
 // 清单里的工具仍是 not-asserted。工具保留插件来源(identity.source = plugin)。
 //
 // 链路全是生产的:真 Plugin layer 按路径插件装载一个文件(spec = 绝对路径,与 main 注入 ext 的形状相同)→ 真
@@ -45,7 +45,7 @@ import { testEffect } from "../lib/effect"
 const FANOUT = path.join(import.meta.dir, "..", "..", "..", "ext", "src", "plugin-fanout.ts")
 const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-1578-plugin-")))
 
-/** 一个「随包扩展」:自有 alpha_echo / alpha_ping,外加经 ext 真 mergeHooks 并进来的项目插件 alpha_echo(同名)与 lint_project。 */
+/** 一个「随包扩展」:自有 codepuppy_echo / codepuppy_ping,外加经 ext 真 mergeHooks 并进来的项目插件 codepuppy_echo(同名)与 lint_project。 */
 function writeExtension() {
   const dir = path.join(scratch, crypto.randomUUID(), "alpha-ext")
   fs.mkdirSync(dir, { recursive: true })
@@ -55,11 +55,11 @@ function writeExtension() {
     [
       `import { mergeHooks } from ${JSON.stringify(pathToFileURL(FANOUT).href)}`,
       "const own = { tool: {",
-      "  alpha_echo: { description: 'own echo', args: {}, execute: async () => 'OWN' },",
-      "  alpha_ping: { description: 'own ping', args: {}, execute: async () => 'pong' },",
+      "  codepuppy_echo: { description: 'own echo', args: {}, execute: async () => 'OWN' },",
+      "  codepuppy_ping: { description: 'own ping', args: {}, execute: async () => 'pong' },",
       "} }",
       "const project = { tool: {",
-      "  alpha_echo: { description: 'project echo', args: {}, execute: async () => 'PROJECT' },",
+      "  codepuppy_echo: { description: 'project echo', args: {}, execute: async () => 'PROJECT' },",
       "  lint_project: { description: 'project lint', args: {}, execute: async () => 'lint' },",
       "} }",
       "export default async () => mergeHooks(own, [project])",
@@ -69,13 +69,18 @@ function writeExtension() {
   return file
 }
 
-/** ext 构建写出的清单形状;`extraByte` = 清单证明的是比装载的模块多一个字节的那份内容。 */
-function writeManifest(plugin: string, tools: string[], options: { extraByte?: boolean; dir?: string } = {}) {
+/** ext 构建写出的清单形状(#1568 起每个工具带可读标识 `readable`);`extraByte` = 清单证明的是比装载的模块多一个字节的那份内容。 */
+function writeManifest(
+  plugin: string,
+  tools: string[],
+  options: { extraByte?: boolean; dir?: string; readable?: Record<string, string> } = {},
+) {
   const dir = options.dir ?? path.join(scratch, crypto.randomUUID())
   fs.mkdirSync(dir, { recursive: true })
   const bytes = Buffer.concat([fs.readFileSync(plugin), Buffer.from(options.extraByte ? " " : "")])
   const file = path.join(dir, "bundled-tools.json")
-  fs.writeFileSync(file, JSON.stringify({ moduleSha256: createHash("sha256").update(bytes).digest("hex"), tools }))
+  const readable = options.readable ?? Object.fromEntries(tools.map((name) => [name, `codepuppy:${name.replace(/^codepuppy_/, "")}`]))
+  fs.writeFileSync(file, JSON.stringify({ moduleSha256: createHash("sha256").update(bytes).digest("hex"), tools, readable }))
   return file
 }
 
@@ -150,29 +155,32 @@ const resolveSnapshots = Effect.gen(function* () {
 const NOT_ASSERTED = { kind: "not-asserted" } as const
 
 describe("#1578 AC5 first-party extension plugin tools", () => {
-  // 删掉 registry 里按清单给 authority(或 plugin/index.ts 里的核验)⇒ alpha_echo / alpha_ping 回到 not-asserted,当场红;
+  // 删掉 registry 里按清单给 authority(或 plugin/index.ts 里的核验)⇒ codepuppy_echo / codepuppy_ping 回到 not-asserted,当场红;
   // 把核验改成「插件名单里有就给」而不看清单 ⇒ lint_project 也被铸,当场红。
-  it.instance("listed own tools of a module whose digest matches get alpha-bundled; the merged-in project tool does not", () =>
+  it.instance("listed own tools of a module whose digest matches get codepuppy-bundled; the merged-in project tool does not", () =>
     Effect.gen(function* () {
       const plugin = writeExtension()
       pluginSpec = plugin
-      process.env[EXT_BUNDLED_MANIFEST_ENV] = writeManifest(plugin, ["alpha_echo", "alpha_ping"])
+      process.env[EXT_BUNDLED_MANIFEST_ENV] = writeManifest(plugin, ["codepuppy_echo", "codepuppy_ping"])
       const { displays, descriptions } = yield* resolveSnapshots
-      for (const name of ["alpha_echo", "alpha_ping"]) {
+      for (const name of ["codepuppy_echo", "codepuppy_ping"]) {
         const display = displays.get(name)!
         expect(display.identity).toEqual({ source: "plugin", origin: plugin, name })
         expect(display.authority).toEqual({
-          kind: "alpha-bundled",
+          kind: "codepuppy-bundled",
           bindingId: "plugin:alpha-ext",
           evidenceDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         })
         expect(display.location).toEqual({ kind: "local" })
+        // #1568 AC5:可读标识随快照持久化,取自清单(= 扩展工具表的声明),不从别名切出来。
+        expect(display.readable).toBe(`codepuppy:${name.replace(/^codepuppy_/, "")}`)
       }
       // 项目插件带进来的新工具:同一个扩展的 hooks 里,但不在清单 ⇒ not-asserted,来源仍是这个插件。
       expect(displays.get("lint_project")!.identity).toEqual({ source: "plugin", origin: plugin, name: "lint_project" })
       expect(displays.get("lint_project")!.authority).toEqual(NOT_ASSERTED)
-      // 项目插件的同名 alpha_echo 进不来:合并时自有键优先,带 alpha-bundled 的那一个是扩展自己的定义。
-      expect(descriptions.get("alpha_echo")).toBe("own echo")
+      expect(displays.get("lint_project")!.readable).toBeUndefined()
+      // 项目插件的同名 codepuppy_echo 进不来:合并时自有键优先,带 codepuppy-bundled 的那一个是扩展自己的定义。
+      expect(descriptions.get("codepuppy_echo")).toBe("own echo")
     }),
   )
 
@@ -181,9 +189,25 @@ describe("#1578 AC5 first-party extension plugin tools", () => {
     Effect.gen(function* () {
       const plugin = writeExtension()
       pluginSpec = plugin
-      process.env[EXT_BUNDLED_MANIFEST_ENV] = writeManifest(plugin, ["alpha_echo", "alpha_ping"], { extraByte: true })
+      process.env[EXT_BUNDLED_MANIFEST_ENV] = writeManifest(plugin, ["codepuppy_echo", "codepuppy_ping"], { extraByte: true })
       const { displays } = yield* resolveSnapshots
-      for (const name of ["alpha_echo", "alpha_ping", "lint_project"]) expect(displays.get(name)!.authority).toEqual(NOT_ASSERTED)
+      for (const name of ["codepuppy_echo", "codepuppy_ping", "lint_project"]) expect(displays.get(name)!.authority).toEqual(NOT_ASSERTED)
+    }),
+  )
+
+  // #1568 AC5:清单里某个自有工具缺可读标识 = 清单形状不对 ⇒ 一个都不证明(fail-closed),不是「别的照给、这个不显示」。
+  it.instance("a manifest missing a listed tool's readable identifier proves nothing", () =>
+    Effect.gen(function* () {
+      const plugin = writeExtension()
+      pluginSpec = plugin
+      process.env[EXT_BUNDLED_MANIFEST_ENV] = writeManifest(plugin, ["codepuppy_echo", "codepuppy_ping"], {
+        readable: { codepuppy_echo: "codepuppy:echo" },
+      })
+      const { displays } = yield* resolveSnapshots
+      for (const name of ["codepuppy_echo", "codepuppy_ping"]) {
+        expect(displays.get(name)!.authority).toEqual(NOT_ASSERTED)
+        expect(displays.get(name)!.readable).toBeUndefined()
+      }
     }),
   )
 
@@ -192,10 +216,10 @@ describe("#1578 AC5 first-party extension plugin tools", () => {
     Effect.gen(function* () {
       const plugin = writeExtension()
       pluginSpec = plugin
-      writeManifest(plugin, ["alpha_echo", "alpha_ping", "lint_project"], { dir: path.dirname(plugin) })
+      writeManifest(plugin, ["codepuppy_echo", "codepuppy_ping", "lint_project"], { dir: path.dirname(plugin) })
       delete process.env[EXT_BUNDLED_MANIFEST_ENV]
       const { displays } = yield* resolveSnapshots
-      for (const name of ["alpha_echo", "alpha_ping", "lint_project"]) expect(displays.get(name)!.authority).toEqual(NOT_ASSERTED)
+      for (const name of ["codepuppy_echo", "codepuppy_ping", "lint_project"]) expect(displays.get(name)!.authority).toEqual(NOT_ASSERTED)
     }),
   )
 })
@@ -205,10 +229,10 @@ describe("#1578 AC5 loader source", () => {
   it.live("an npm-sourced module with matching bytes is not bundled; the same bytes as a file plugin are", () =>
     Effect.sync(() => {
       const plugin = writeExtension()
-      const env = { [EXT_BUNDLED_MANIFEST_ENV]: writeManifest(plugin, ["alpha_ping"]) }
+      const env = { [EXT_BUNDLED_MANIFEST_ENV]: writeManifest(plugin, ["codepuppy_ping"]) }
       expect(bundledPluginTools({ source: "npm", entry: pathToFileURL(plugin).href }, env, fs.readFileSync)).toBeUndefined()
       expect(bundledPluginTools({ source: "file", entry: pathToFileURL(plugin).href }, env, fs.readFileSync)?.tools).toEqual(
-        new Set(["alpha_ping"]),
+        new Set(["codepuppy_ping"]),
       )
     }),
   )

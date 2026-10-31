@@ -3,10 +3,10 @@ import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
 
 describe("mergeHooks — host + project plugin hooks", () => {
   test("tool maps shallow-merged, own keys win", () => {
-    const own = { tool: { alpha_ping: "OWN", shared: "OWN" } }
+    const own = { tool: { codepuppy_ping: "OWN", shared: "OWN" } }
     const other = { tool: { proj_tool: "P", shared: "PROJ" } }
     const m = mergeHooks(own, [other])
-    expect(m.tool).toEqual({ alpha_ping: "OWN", shared: "OWN", proj_tool: "P" }) // shared: own wins
+    expect(m.tool).toEqual({ codepuppy_ping: "OWN", shared: "OWN", proj_tool: "P" }) // shared: own wins
   })
 
   test("function hooks forwarded — own first, then each project plugin", async () => {

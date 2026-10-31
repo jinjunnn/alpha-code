@@ -741,6 +741,7 @@ export function ToolStepDetail(props: { part: ToolPart }) {
           <details class="a-tc-dev" data-alpha-dev-details>
             <summary>{t("alpha.timeline.devDetails")}</summary>
             <div class="a-tc-dev-body">
+              <Show when={info().readable}>{(readable) => <div data-tool-readable>{readable()}</div>}</Show>
               <div>{info().canonical}</div>
               <div>technical-id: {info().technicalId}</div>
               <div>authority: {info().authority}</div>

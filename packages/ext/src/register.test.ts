@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { applyRegister } from "./register"
 
-describe("applyRegister — alpha_register 纯逻辑(REQ-060 T2)", () => {
+describe("applyRegister — codepuppy_register 纯逻辑(REQ-060 T2)", () => {
   test("agent 注册:白名单字段 → 条目落 agent 域", () => {
     const r = applyRegister(null, "agent", "proj-helper", { description: "d", prompt: "p", mode: "subagent" })
     expect(r.ok).toBe(true)

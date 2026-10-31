@@ -121,7 +121,7 @@ describe("#315 新鲜度与来源(绝不退空集)", () => {
     expect(renamed.allowed).toBe(false)
     if (renamed.allowed) throw new Error("unreachable")
     expect(renamed.advisoryId).toBe("office:mcp:excel")
-    expect(evaluateAdvisoryGate(null, { catalogId: "mcp:alpha-excel", name: "alpha-excel", provenance: "seed" })).toEqual({ allowed: true })
+    expect(evaluateAdvisoryGate(null, { catalogId: "mcp:codepuppy-excel", name: "codepuppy-excel", provenance: "seed" })).toEqual({ allowed: true })
 
     for (const office of ARCHIVED_OFFICE_ADVISORIES) {
       const hit = evaluateAdvisoryGate(null, { catalogId: office.catalogId, provenance: "seed" })
@@ -304,6 +304,6 @@ describe("#397 listAdvisoryBlockedFacts(只读呈现事实)", () => {
     for (const office of ARCHIVED_OFFICE_ADVISORIES) expect(r.ids).toContain(office.catalogId)
     for (const office of RETIRED_COMMUNITY_OFFICE_CONNECTORS) expect(r.ids).toContain(office.catalogId)
     expect(r.ids).toContain("mcp:excel")
-    expect(r.ids).not.toContain("mcp:alpha-excel")
+    expect(r.ids).not.toContain("mcp:codepuppy-excel")
   })
 })

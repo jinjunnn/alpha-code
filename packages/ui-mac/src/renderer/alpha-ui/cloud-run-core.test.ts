@@ -9,7 +9,7 @@ import type { CloudRunState } from "../../preload/types"
 
 /** 第一方 cloud facade 的持久化快照(引擎 mcp/index.ts 以 clientName="cloud" 为 origin)。 */
 const facadeDisplay = (name = "cloud_await") => ({
-  identity: { source: "mcp", origin: "cloud", name },
+  identity: { source: "mcp", origin: "codepuppy", name },
   technicalId: `cloud_${name}`,
   authority: { kind: "not-asserted" },
 })
@@ -70,7 +70,7 @@ describe("extractCloudRunHit", () => {
     // plugin 命名空间 `cloud`(工具 id cloud_x → 别名恰为 cloud_x)。
     const pluginSpoof = partEvent({
       tool: "cloud_x",
-      display: { identity: { source: "plugin", origin: "cloud", name: "x" }, technicalId: "cloud_x", authority: { kind: "not-asserted" } },
+      display: { identity: { source: "plugin", origin: "codepuppy", name: "x" }, technicalId: "cloud_x", authority: { kind: "not-asserted" } },
       state: { status: "completed", output: spoofOutput },
     })
     expect(extractCloudRunHit(pluginSpoof)).toBeNull()
@@ -90,8 +90,8 @@ describe("extractCloudRunHit", () => {
   test("#934 对照(杀「一律不命中」的错误实现):facade identity 下别名叫什么都命中", () => {
     const hit = extractCloudRunHit(
       partEvent({
-        tool: "cloud_cloud_status",
-        display: facadeDisplay("cloud_status"),
+        tool: "codepuppy_status",
+        display: facadeDisplay("status"),
         state: { status: "completed", output: JSON.stringify({ job_id: "run_real_87", status: "cancelled" }) },
       }),
     )
@@ -122,8 +122,8 @@ const ACCEPTED = {
 const dispatchEvent = (over: Record<string, unknown> = {}) =>
   partEvent({
     id: "prt_dispatch",
-    tool: "cloud_cloud_dispatch",
-    display: facadeDisplay("cloud_dispatch"),
+    tool: "codepuppy_dispatch",
+    display: facadeDisplay("dispatch"),
     state: { status: "completed", output: JSON.stringify(ACCEPTED) },
     ...over,
   })
@@ -148,13 +148,13 @@ describe("#1551 accepted dispatch hits", () => {
 
   test("冒名 dispatch(非第一方 identity)不命中 —— 归属不能由第三方工具写入", () => {
     const spoof = dispatchEvent({
-      display: { identity: { source: "plugin", origin: "cloud", name: "cloud_dispatch" }, technicalId: "cloud_dispatch", authority: { kind: "not-asserted" } },
+      display: { identity: { source: "plugin", origin: "codepuppy", name: "dispatch" }, technicalId: "cloud_dispatch", authority: { kind: "not-asserted" } },
     })
     expect(extractCloudRunHit(spoof)).toBeNull()
   })
 
   test("终态查询的输出里出现 queued 回执形状也不算 dispatch(只有 cloud_dispatch 能建立归属)", () => {
-    const status = partEvent({ display: facadeDisplay("cloud_status"), state: { status: "completed", output: JSON.stringify(ACCEPTED) } })
+    const status = partEvent({ display: facadeDisplay("status"), state: { status: "completed", output: JSON.stringify(ACCEPTED) } })
     expect(extractCloudRunHit(status)).toBeNull()
   })
 

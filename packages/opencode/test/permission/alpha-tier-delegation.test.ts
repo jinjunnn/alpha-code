@@ -17,7 +17,7 @@
 //   · 拒绝是具名的(`PermissionV1.DeniedError` / 工具错误里点名 `task`)。
 // 「请求审批」档拒绝与超时都要让实现调用次数为 0(超时取 ALPHA_PERMISSION_ASK_TIMEOUT_MS 压短的期限)。
 //
-// 变异实测(交付时实跑):删掉 alpha-config-injection.ts 里 alpha-readonly / alpha-ask 的 `task` 规则 ⇒ E1 两臂红;
+// 变异实测(交付时实跑):删掉 alpha-config-injection.ts 里 codepuppy-readonly / codepuppy-ask 的 `task` 规则 ⇒ E1 两臂红;
 // 把 prompt.ts E2 的求值改回「有 agent part 就跳过」⇒ E2 两臂红;删掉 handleSubtask 的 askDelegation ⇒ E3 两臂红;
 // 删掉 command 里的 askDelegation ⇒ E4 两臂红。
 import * as fs from "node:fs"
@@ -294,7 +294,7 @@ const setup = Effect.fn("alpha1573.setup")(function* () {
 })
 
 /** 三档 → composer 提交时带的 agent(「全部批准」不带,与 composer-state 的 PERM_AGENT 同值)。 */
-const TIER = { allow: undefined, ask: "alpha-ask", readonly: "alpha-readonly" } as const
+const TIER = { allow: undefined, ask: "codepuppy-ask", readonly: "codepuppy-readonly" } as const
 type Tier = keyof typeof TIER
 const agentField = (tier: Tier) => (TIER[tier] ? { agent: TIER[tier] } : {})
 
@@ -542,7 +542,7 @@ it.instance(
       expect(readonly.asked).toEqual([])
       expect(readonly.children).toBe(1)
       expect(Exit.isSuccess(readonly.exit)).toBe(true)
-      expect((yield* sessions.children(chat.id))[0]!.agent).toBe("alpha-readonly")
+      expect((yield* sessions.children(chat.id))[0]!.agent).toBe("codepuppy-readonly")
 
       const other = yield* sessions.create({ title: "REQ-236 /review ask" })
       const ask = yield* drive(other.id, runCommand(other.id, "ask", "review"), "none")

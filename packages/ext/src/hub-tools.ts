@@ -4,14 +4,14 @@
 // (`ctx.ask`)运输到 renderer —— 那边弹定制中心**自己的**安装确认框,用户在框里点同意、在框里填密钥,安装由框发起。
 // 本模块不安装任何东西,也够不着任何写通道。
 //
-//   hub_search(query)    —— 本目录视图(可安装目录 ∪ 已安装),按 query 过滤
-//   hub_install(catalogId)—— ctx.ask 运输确认请求;醒来后按 requestId 向 main 查这一次请求走到哪一步,返回固定结论之一
-//   hub_status(catalogId) —— 单条的档与原因
+//   codepuppy_hub_search(query)    —— 本目录视图(可安装目录 ∪ 已安装),按 query 过滤
+//   codepuppy_hub_install(catalogId)—— ctx.ask 运输确认请求;醒来后按 requestId 向 main 查这一次请求走到哪一步,返回固定结论之一
+//   codepuppy_hub_status(catalogId) —— 单条的档与原因
 //
 // I2:三个工具的参数只有字符串标识(`query` / `catalogId`),没有任何密钥形状的字段;返回值只含视图字段(变量名、状态、原因)。
-// I3:确认框一定会出现 —— pinHubInstallPermission 在每次实例重建时把 `hub_install: ask` 钉到全局与每个 agent 的末位
+// I3:确认框一定会出现 —— pinHubInstallPermission 在每次实例重建时把 `codepuppy_hub_install: ask` 钉到全局与每个 agent 的末位
 //     (默认规则是 `*: allow`,不钉就不弹框);即便被绕过(规则放行),安装也只由确认框发起 ⇒ 查不到记录 ⇒ 如实说没装。
-// I7:`always: []` —— 用户点「始终允许」也不会产生能抵消下一次 hub_install 的 grant。
+// I7:`always: []` —— 用户点「始终允许」也不会产生能抵消下一次 codepuppy_hub_install 的 grant。
 // I9:审批应答只负责唤醒工具;结局以 main 记录的 requestId 阶段为准 —— 用户已确认、主进程还在提交时期限到了,
 //     工具说的是「已提交,结果待定」,不是「用户拒绝」。
 
@@ -21,7 +21,7 @@ import type { HubRequestRecord, HubView, HubViewRow } from "../../ui-mac/src/mai
 import { TOOL_TEXT } from "./context-injection"
 import type { BridgeFailure, HubBridge } from "./hub-bridge"
 
-/** hub_install 的固定结论(逐字;基线 §2.1)。 */
+/** codepuppy_hub_install 的固定结论(逐字;基线 §2.1)。 */
 export const HUB_INSTALL_OUTCOME = {
   declined: "declined",
   reloadPending: "installed; reload pending",
@@ -32,20 +32,20 @@ export const HUB_INSTALL_OUTCOME = {
   unknownEntry: "unknown entry",
 } as const
 
-/** 每次 hub_install 结论之后的固定提示(约束 5:只对「可用」之后的下一条消息承诺)。 */
+/** 每次 codepuppy_hub_install 结论之后的固定提示(约束 5:只对「可用」之后的下一条消息承诺)。 */
 export const HUB_NEXT_MESSAGE_HINT =
   "Once it shows available, it can be used from the next message; it does not take effect within this reply."
 /** 云条目在场而目录没有价格说明字段时的固定一句(如实报告缺项;不算 AC1 的价格部分已满足,见基线 §4 C5)。 */
 export const HUB_PRICE_NOTE_MISSING = "本目录尚未提供价格说明;费用以服务端为准"
 export const HUB_UNAVAILABLE = "The Customization Center is not available in this engine host."
 
-const AGENT_AUTOMATION_PREFIX = "alpha-automation"
+const AGENT_AUTOMATION_PREFIX = "codepuppy-automation"
 
 /**
- * I3:把 `hub_install` 钉成**末位**规则 —— 全局 `cfg.permission` 与每个 `cfg.agent[*].permission`。引擎按对象插入序展开、
- * `findLast` 求值,所以「只改值不动位置」不够:前面写的 `hub_install: ask` 会被同表后面的 `"*": "allow"` 顶掉;删键再写回 = 移到末位
- * (先例 ui-mac cloud-web-search.ts 的 pinDeny)。无人值守的自动化 agent(`alpha-automation*`,「零 ask」硬前提)钉 deny ——
- * 没有人会看到那个框。用户 / 项目配置里写 `hub_install: allow` 也压不过它。
+ * I3:把 `codepuppy_hub_install` 钉成**末位**规则 —— 全局 `cfg.permission` 与每个 `cfg.agent[*].permission`。引擎按对象插入序展开、
+ * `findLast` 求值,所以「只改值不动位置」不够:前面写的 `codepuppy_hub_install: ask` 会被同表后面的 `"*": "allow"` 顶掉;删键再写回 = 移到末位
+ * (先例 ui-mac cloud-web-search.ts 的 pinDeny)。无人值守的自动化 agent(`codepuppy-automation*`,「零 ask」硬前提)钉 deny ——
+ * 没有人会看到那个框。用户 / 项目配置里写 `codepuppy_hub_install: allow` 也压不过它。
  */
 export function pinHubInstallPermission(cfg: Record<string, unknown>) {
   cfg.permission = pinLast(cfg.permission, "ask")
@@ -65,59 +65,59 @@ function pinLast(permission: unknown, action: "ask" | "deny"): Record<string, un
       : permission && typeof permission === "object" && !Array.isArray(permission)
         ? { ...(permission as Record<string, unknown>) }
         : {}
-  delete base.hub_install
-  base.hub_install = action
+  delete base.codepuppy_hub_install
+  base.codepuppy_hub_install = action
   return base
 }
 
 export function createHubTools(bridge: HubBridge) {
   return {
-    hub_search: tool({
-      description: TOOL_TEXT.hub_search.description,
-      args: { query: tool.schema.string().describe(TOOL_TEXT.hub_search.args.query).default("") },
+    codepuppy_hub_search: tool({
+      description: TOOL_TEXT.codepuppy_hub_search.description,
+      args: { query: tool.schema.string().describe(TOOL_TEXT.codepuppy_hub_search.args.query).default("") },
       async execute(args, ctx) {
-        if (!bridge.available) return result("hub_search", HUB_UNAVAILABLE, { ok: false })
+        if (!bridge.available) return result("codepuppy_hub_search", HUB_UNAVAILABLE, { ok: false })
         const answer = await bridge.view({ directory: ctx.directory, sessionID: ctx.sessionID, agent: ctx.agent, query: args.query })
-        if (!answer.ok) return result("hub_search", unreachable(answer), { ok: false })
-        return result("hub_search", renderRows(answer.view, answer.view.rows), { ok: true, count: answer.view.rows.length })
+        if (!answer.ok) return result("codepuppy_hub_search", unreachable(answer), { ok: false })
+        return result("codepuppy_hub_search", renderRows(answer.view, answer.view.rows), { ok: true, count: answer.view.rows.length })
       },
     }),
-    hub_install: tool({
-      description: TOOL_TEXT.hub_install.description,
-      args: { catalogId: tool.schema.string().describe(TOOL_TEXT.hub_install.args.catalogId) },
+    codepuppy_hub_install: tool({
+      description: TOOL_TEXT.codepuppy_hub_install.description,
+      args: { catalogId: tool.schema.string().describe(TOOL_TEXT.codepuppy_hub_install.args.catalogId) },
       async execute(args, ctx) {
-        if (!bridge.available) return result("hub_install", HUB_UNAVAILABLE, { ok: false })
+        if (!bridge.available) return result("codepuppy_hub_install", HUB_UNAVAILABLE, { ok: false })
         const catalogId = args.catalogId.trim()
         const before = await bridge.view({ directory: ctx.directory, sessionID: ctx.sessionID, agent: ctx.agent })
-        if (!before.ok) return result("hub_install", `not installed: ${unreachable(before)}`, { ok: false, catalogId })
+        if (!before.ok) return result("codepuppy_hub_install", `not installed: ${unreachable(before)}`, { ok: false, catalogId })
         if (!before.view.rows.some((row) => row.id === catalogId))
-          return result("hub_install", `${HUB_INSTALL_OUTCOME.unknownEntry}\nUse hub_search to find the exact id.`, { ok: false, catalogId })
+          return result("codepuppy_hub_install", `${HUB_INSTALL_OUTCOME.unknownEntry}\nUse codepuppy_hub_search to find the exact id.`, { ok: false, catalogId })
         const requestId = randomUUID().replaceAll("-", "")
         // 应答只负责唤醒;三种醒法(放行 / RejectedError / UnansweredError)一律接住,结局按 requestId 去 main 查。
         let approved = false
         try {
-          await ctx.ask({ permission: "hub_install", patterns: [catalogId], always: [], metadata: { alphaHub: { catalogId, requestId } } })
+          await ctx.ask({ permission: "codepuppy_hub_install", patterns: [catalogId], always: [], metadata: { alphaHub: { catalogId, requestId } } })
           approved = true
         } catch {
           approved = false
         }
         const stage = await bridge.request(requestId)
-        if (!stage.ok) return result("hub_install", `result unknown: ${unreachable(stage)} — check with hub_status`, { ok: false, catalogId, requestId })
+        if (!stage.ok) return result("codepuppy_hub_install", `result unknown: ${unreachable(stage)} — check with codepuppy_hub_status`, { ok: false, catalogId, requestId })
         const outcome = await settle(stage.record, approved, catalogId, ctx)
-        return result("hub_install", `${outcome}\n${HUB_NEXT_MESSAGE_HINT}`, { ok: true, catalogId, requestId, stage: stage.record?.stage ?? null })
+        return result("codepuppy_hub_install", `${outcome}\n${HUB_NEXT_MESSAGE_HINT}`, { ok: true, catalogId, requestId, stage: stage.record?.stage ?? null })
       },
     }),
-    hub_status: tool({
-      description: TOOL_TEXT.hub_status.description,
-      args: { catalogId: tool.schema.string().describe(TOOL_TEXT.hub_status.args.catalogId) },
+    codepuppy_hub_status: tool({
+      description: TOOL_TEXT.codepuppy_hub_status.description,
+      args: { catalogId: tool.schema.string().describe(TOOL_TEXT.codepuppy_hub_status.args.catalogId) },
       async execute(args, ctx) {
-        if (!bridge.available) return result("hub_status", HUB_UNAVAILABLE, { ok: false })
+        if (!bridge.available) return result("codepuppy_hub_status", HUB_UNAVAILABLE, { ok: false })
         const catalogId = args.catalogId.trim()
         const answer = await bridge.view({ directory: ctx.directory, sessionID: ctx.sessionID, agent: ctx.agent })
-        if (!answer.ok) return result("hub_status", unreachable(answer), { ok: false, catalogId })
+        if (!answer.ok) return result("codepuppy_hub_status", unreachable(answer), { ok: false, catalogId })
         const rows = answer.view.rows.filter((row) => row.id === catalogId)
-        if (rows.length === 0) return result("hub_status", `${HUB_INSTALL_OUTCOME.unknownEntry}\nUse hub_search to find the exact id.`, { ok: false, catalogId })
-        return result("hub_status", renderRows(answer.view, rows), { ok: true, catalogId })
+        if (rows.length === 0) return result("codepuppy_hub_status", `${HUB_INSTALL_OUTCOME.unknownEntry}\nUse codepuppy_hub_search to find the exact id.`, { ok: false, catalogId })
+        return result("codepuppy_hub_status", renderRows(answer.view, rows), { ok: true, catalogId })
       },
     }),
   }
@@ -136,7 +136,7 @@ export function createHubTools(bridge: HubBridge) {
     if (record.stage === "submitted") return HUB_INSTALL_OUTCOME.submitted
     const after = await bridge.view({ directory: ctx.directory, sessionID: ctx.sessionID, agent: ctx.agent })
     const row = after.ok ? after.view.rows.find((item) => item.id === catalogId && item.scope === (record.scope ?? "global")) : undefined
-    if (!row) return `installed; state unknown — check with hub_status`
+    if (!row) return `installed; state unknown — check with codepuppy_hub_status`
     if (row.state === "available") return HUB_INSTALL_OUTCOME.available
     if (row.state === "reload-pending") return `${HUB_INSTALL_OUTCOME.reloadPending} (${reasonText(row)})`
     if (row.stateReason?.code === "disabled") return HUB_INSTALL_OUTCOME.disabledByPolicy
@@ -152,7 +152,7 @@ function unreachable(failure: BridgeFailure): string {
   return `the Customization Center could not answer (${failure.detail})`
 }
 
-/** 给人 / agent 读的原因短句(§2.1 hub_status 行)。 */
+/** 给人 / agent 读的原因短句(§2.1 codepuppy_hub_status 行)。 */
 function reasonText(row: HubViewRow): string {
   const detail = row.stateReason?.detail
   switch (row.stateReason?.code) {

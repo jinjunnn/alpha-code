@@ -16,9 +16,9 @@ const T0 = 1_760_000_000_000
 export const RESEARCH_TURN_MS = 207_000
 
 const cloudSearch = {
-  identity: { source: "mcp", origin: "cloud", name: "cloud_web_search" },
-  technicalId: "cloud_cloud_web_search",
-  authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` },
+  identity: { source: "mcp", origin: "codepuppy", name: "web_search" },
+  technicalId: "codepuppy_web_search",
+  authority: { kind: "codepuppy-cloud", bindingId: "mcp:codepuppy", evidenceDigest: `sha256:${"d".repeat(64)}` },
   // #1576:引擎注册时写的执行位置(远端 MCP = 条目 URL 的主机名)。
   location: { kind: "remote", host: "cloud.example" },
 }
@@ -139,7 +139,7 @@ export function researchTurn(): {
           messageID: id,
           type: "tool",
           callID: `call_${partID}`,
-          tool: "cloud_cloud_web_search",
+          tool: "codepuppy_web_search",
           display: cloudSearch,
           state: {
             status: "completed",

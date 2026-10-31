@@ -1,7 +1,7 @@
 // reload-scheduler — REQ-234 `#1531`(基线 §2.6,不变量 I5):引擎重载的**唯一执行者**。
 //
 // 一个引擎进程一份(插件模块被 import 缓存;plugin.ts 在模块作用域建它)。三类来源都进同一个队列:
-//   ① alpha_reload / alpha_register(进程内,无 generation,不向 main 报告);
+//   ① codepuppy_reload / codepuppy_register(进程内,无 generation,不向 main 报告);
 //   ② main 经 parentPort 发来的 `alpha.reload.request`(定制中心按钮、安装体、信任门 / 外部导入,带 generation);
 //   ③ 用户在定制中心点「现在重载」= ② 带 `force`。
 //

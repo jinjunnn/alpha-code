@@ -1200,7 +1200,7 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
 
      判据落在两处用户可观察的地方,少一处都不够:
      ①会话页渲染出来的 chip —— 用户看得见的那两档;
-     ②会话页**真发出去**的 `session.promptAsync` 载荷 —— 显示只读而线上不带 `alpha-readonly`,
+     ②会话页**真发出去**的 `session.promptAsync` 载荷 —— 显示只读而线上不带 `codepuppy-readonly`,
        用户看到的就是「只读亮着,模型照样改文件」。丢了登记时这里连 `agent` 键都不会出现
        (`buildPromptRequest` 在 perm=allow(默认档,`#1413`)+ agent=null 时不写这个字段),所以键在不在本身就是判据。
      最后再把只读放回「全部批准」(默认档),让**开局档位**(plan)也走一次线 —— 只读会压过手选档位,
@@ -1230,7 +1230,7 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
     expect(planChipOf(session.host)).not.toBeNull()
     expect(permChipOf(session.host)!.getAttribute("data-mode")).toBe("readonly")
 
-    // ④ 线上:第一条后续消息带着 alpha-readonly 真发出去。
+    // ④ 线上:第一条后续消息带着 codepuppy-readonly 真发出去。
     const sendButton = () => session.host.querySelector<HTMLButtonElement>(".a-comp-send")!
     type(textarea(session.host)!, "第二条")
     for (let i = 0; i < 60 && sendButton().disabled; i++) await flush()
@@ -1241,7 +1241,7 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
     expect(promptAsyncCalls[0]).toMatchObject({
       sessionID: "session-1",
       directory: DEFAULT_WORKSPACE,
-      agent: "alpha-readonly",
+      agent: "codepuppy-readonly",
       parts: [{ type: "text", text: "第二条" }],
     })
 

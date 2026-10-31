@@ -118,7 +118,7 @@ describe("isAlphaOwnedConfig", () => {
         $schema: "https://opencode.ai/config.json",
         mcp: { markitdown: { type: "local" }, fetch: { type: "local" } },
         plugin: ["/Users/x/.alpha/plugins/notify.js"],
-        agent: { "alpha-automation": { hidden: true } },
+        agent: { "codepuppy-automation": { hidden: true } },
         permission: { skill: { "customize-opencode": "deny" } },
       },
       receiptMcpNames: mcpNames("markitdown", "fetch"),

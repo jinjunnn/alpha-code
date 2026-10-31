@@ -159,7 +159,7 @@ describe("reload-scheduler(I5 规则)", () => {
     expect(a.state.disposes).toBe(0)
     expect(reports).toEqual([{ generation: 8, scope: { directory: "/not-loaded" }, outcome: "reloaded", directories: [] }])
     a.state.status = { ses_1: { type: "busy" } }
-    s.request({ scope: { directory: "/a" }, reason: "alpha_reload" })
+    s.request({ scope: { directory: "/a" }, reason: "codepuppy_reload" })
     s.request({ generation: 9, scope: "global", reason: "installed" })
     await s.settled()
     a.state.status = {}

@@ -357,11 +357,11 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
   // 云识图的模型能力(GET /provider)与会话历史(GET /session/<id>/message)。驱动 = 真 POST /session/<id>/message(noReply:只建
   // 用户消息、不发模型请求),带一张图 + Word / PDF 两条暂存附件记录;读回持久化的用户消息里 ext 追加的 part,并看 ext 的错误日志。
   // 两臂同一份 config:一个**声明能看图**的本地 provider(隔离引擎没有凭据、不拉目录,`/provider` 否则是空表;只列出来、不发请求),
-  // 外加一个名叫 alpha-word 的 MCP(探针 server);alpha-pdf 不配置。
+  // 外加一个名叫 codepuppy-word 的 MCP(探针 server);codepuppy-pdf 不配置。
   //   对照臂:没有进程内交接 ⇒ 三处都只能走 input.client(TCP)⇒ 围栏拒掉 ⇒ 两条指令都按「状态未知」叫模型去读,日志点名三处都读不到,
   //           能看图的模型被当成看不了、原图旁多出一个识图块 —— 修之前的出货形态;
-  //   被测臂:出货的进程内交接 ⇒ 三处都读得到 ⇒ Word 指令带 alpha-word_read_docx 与绝对路径(服务在表里),PDF 指令改为如实告知
-  //           (alpha-pdf 不在表里)—— 证明读到的就是 GET /mcp 那张按服务名索引、带 status 的表;能看图 ⇒ 不追加识图块。
+  //   被测臂:出货的进程内交接 ⇒ 三处都读得到 ⇒ Word 指令带 codepuppy-word_read_docx 与绝对路径(服务在表里),PDF 指令改为如实告知
+  //           (codepuppy-pdf 不在表里)—— 证明读到的就是 GET /mcp 那张按服务名索引、带 status 的表;能看图 ⇒ 不追加识图块。
   // 口径(如实):出货形态下进程内交接与 TCP 监听共用同一张服务图 —— prebuild 的 patch-sidecar-shared-routes.ts(#857)把固定的
   // Electron 监听钉到 Server.Default() 的路由层与 memoMap 上(predev 同样打这个补丁)。只有未打补丁的源码形态(本用例起的就是它)
   // 是两张:Server.listen 另建路由层、用新的 memoMap,运行期状态(connected / failed)各记各的 —— 所以本臂只证明配置决定的那一半
@@ -379,7 +379,7 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
         models: { see: { name: "see", modalities: { input: ["text", "image"], output: ["text"] } } },
       },
     },
-    mcp: { "alpha-word": { type: "local", command: ["node", join(fixtures, "mcp-probe.mjs"), ws, esc, "word1553"], enabled: true } },
+    mcp: { "codepuppy-word": { type: "local", command: ["node", join(fixtures, "mcp-probe.mjs"), ws, esc, "word1553"], enabled: true } },
   })
 
   async function attachmentProbe(engine: Engine) {
@@ -433,7 +433,7 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
       { ok: true, id: "attachment.read", kind: "wrapper" },
       { ok: true, id: "attachment.unavailable.missing", kind: "template" },
     ])
-    expect(word).toContain("alpha-word_read_docx")
+    expect(word).toContain("codepuppy-word_read_docx")
     // 插件实例目录与引擎实例目录逐字相同:指令里的绝对路径 = attachmentAbsolutePath(工作区, 记录路径)。
     expect(word).toContain(attachmentAbsolutePath(ws, STAGED_DOCX.path))
     expect(pdf).toContain("合同.pdf")

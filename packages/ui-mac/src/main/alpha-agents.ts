@@ -13,7 +13,7 @@
 // 咽喉(跑真 injectAlphaConfig、逐字比对)在 packages/ui-mac/src/main/config-injection-throat.test.ts(`#1305` 起罩整份 config)。
 // 每个 agent 的 permission / mode / hidden 不是字,仍住在 alpha-config-injection.ts。
 //
-// `#1413`:第四个 agent `alpha-ask` **刻意没有 prompt**。它是 composer「请求审批」档的载体,语义 = 引擎默认档
+// `#1413`:第四个 agent `codepuppy-ask` **刻意没有 prompt**。它是 composer「请求审批」档的载体,语义 = 引擎默认档
 // `build` + `edit`/`bash` 改成 ask;一旦给它 prompt,`request.ts:64` 就会拿这段字**整段顶替**底座提示词 ——
 // 那会让「请求审批」比「全部批准」少掉整份底座,而用户只是想多问一句。没有 prompt 的 agent 在引擎里
 // (`agent/agent.ts` 的 config-agent 分支 `item.prompt = value.prompt ?? item.prompt`)与 build 走同一条底座路径。
@@ -21,7 +21,7 @@
 
 export const ALPHA_AGENT_TEXT = {
   //   5. 自动化 readonly agent(REQ-021 A1.5 / ADR-022)。
-  "alpha-automation": {
+  "codepuppy-automation": {
     description: "alpha 自动化定时任务专用只读 agent(无人值守;不能改文件、不能跑命令)",
     prompt:
       "你是 Code Puppy 的自动化任务执行器,在无人值守的定时任务里运行。" +
@@ -30,7 +30,7 @@ export const ALPHA_AGENT_TEXT = {
       "最终答复即任务报告:用 Markdown,先一行结论,再列依据与建议;如实标注做不到的部分。",
   },
   //   2b. REQ-028:交互只读 agent(composer「只读」档的真载体)。
-  "alpha-readonly": {
+  "codepuppy-readonly": {
     description: "只读模式:可读取/检索/联网,不能修改文件、不能执行命令(composer 权限档「只读」)",
     prompt:
       "当前处于用户选择的只读模式:你不能修改文件、不能执行 shell 命令。" +
@@ -38,7 +38,7 @@ export const ALPHA_AGENT_TEXT = {
       "不要尝试绕过限制;做不到的部分如实说明。",
   },
   //   2c. REQ-024(自动化 A2):standard 可写档 agent。
-  "alpha-automation-standard": {
+  "codepuppy-automation-standard": {
     description: "alpha 自动化 standard 档(可写:能改文件、能执行常规命令;破坏类命令仍被拦)",
     prompt:
       "你是 Code Puppy 的自动化任务执行器,在无人值守的定时任务里运行(可写档)。" +
@@ -47,11 +47,11 @@ export const ALPHA_AGENT_TEXT = {
       "最终答复即任务报告:用 Markdown,先一行结论,再列所做变更与依据;如实标注做不到的部分。",
   },
   //   2d. `#1413`:交互「请求审批」agent(composer 权限档「请求审批」的真载体)。无 prompt,见抬头。
-  "alpha-ask": {
+  "codepuppy-ask": {
     description: "请求审批:与默认档相同,但修改文件、执行命令前先逐次征求用户批准(composer 权限档「请求审批」)",
   },
 } as const
 
 export type AlphaAgentName = keyof typeof ALPHA_AGENT_TEXT
-/** 有 prompt 的 agent 才会顶替底座提示词;`alpha-ask` 没有(见抬头)。 */
+/** 有 prompt 的 agent 才会顶替底座提示词;`codepuppy-ask` 没有(见抬头)。 */
 export type AlphaAgentText = { readonly description: string; readonly prompt?: string }

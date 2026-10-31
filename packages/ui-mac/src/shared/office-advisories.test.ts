@@ -46,7 +46,7 @@ describe("REQ-135 retired community Office connector identity", () => {
     ])
     expect(retiredCommunityOfficeFor({ id: "mcp:excel" })?.name).toBe("excel-mcp-server")
     expect(retiredCommunityOfficeFor({ name: "excel-mcp-server" })?.catalogId).toBe("mcp:excel")
-    expect(retiredCommunityOfficeFor({ id: "mcp:alpha-excel", name: "alpha-excel" })).toBeUndefined()
+    expect(retiredCommunityOfficeFor({ id: "mcp:codepuppy-excel", name: "codepuppy-excel" })).toBeUndefined()
   })
 
   test("main write-policy detection also catches renamed commands invoking the retired package", () => {
@@ -73,7 +73,7 @@ describe("REQ-135 retired community Office connector identity", () => {
     ]) {
       expect(isRetiredOfficeMcp("renamed-sheets", { type: "local", command: ["uvx", pkg, "stdio"] })).toBe(true)
     }
-    expect(isRetiredOfficeMcp("alpha-excel", { type: "local", command: alphaOfficeInstallCommand("excel") })).toBe(false)
+    expect(isRetiredOfficeMcp("codepuppy-excel", { type: "local", command: alphaOfficeInstallCommand("excel") })).toBe(false)
     expect(isRetiredOfficeMcp("markitdown", { type: "local", command: ["uvx", "markitdown-mcp@0.0.1a4"] })).toBe(false)
   })
 })
@@ -90,10 +90,10 @@ describe("REQ-133 Alpha Office connector registry and stdio safety", () => {
 
   test("four new ids and exact catalog command arrays are stable", () => {
     expect(ALPHA_OFFICE_CONNECTORS.map((connector) => connector.catalogId)).toEqual([
-      "mcp:alpha-word",
-      "mcp:alpha-excel",
-      "mcp:alpha-powerpoint",
-      "mcp:alpha-pdf",
+      "mcp:codepuppy-word",
+      "mcp:codepuppy-excel",
+      "mcp:codepuppy-powerpoint",
+      "mcp:codepuppy-pdf",
     ])
     // #1564 AC1:随包解释器(isolated、不写字节码)+ 随包 server,没有 uv、没有首次下载;四种格式只差格式名。
     for (const format of ["word", "excel", "powerpoint", "pdf"] as const)

@@ -10,6 +10,8 @@ import { ConfigMarkdown } from "../../../core/src/config/markdown"
 import { Glob } from "../../../core/src/util/glob"
 import { FACTORY_SKILL_IDS, factorySkillIds, factorySkillSources, isAlphaFactoryLink, reconcileFactorySkills } from "./factory-skills"
 import { CLOUD_MCP_TOOLS } from "./fixtures/cloud-mcp-tools"
+import { cloudMcpToolId } from "./cloud-web-search"
+import { TOOL_TEXT } from "../../../ext/src/context-injection"
 import { classifySkill } from "./alpha-skill-placeholder"
 
 let tmp: string
@@ -48,18 +50,18 @@ describe("factorySkillSources", () => {
   test("#1532 AC5: customization teaches search, confirmation, availability and project trust", () => {
     const text = readFileSync(join(import.meta.dir, "../../resources/factory-skills/customize-code-puppy/SKILL.md"), "utf8")
     for (const sentence of [
-      "Search first with `hub_search`",
+      "Search first with `codepuppy_hub_search`",
       "offers skills, agents, commands, connectors (MCP), bundles, and cloud capabilities",
-      "Explain what to install and why, then call `hub_install`",
+      "Explain what to install and why, then call `codepuppy_hub_install`",
       "app's confirmation box (软件弹出的确认框)",
       "If a key is needed, the user enters it in that box",
       "Never ask for or accept keys in chat; never invent or guess keys for the user",
-      "Check `hub_status` before use",
-      "For `submitted; result pending` or `reload-pending`, check\n   `hub_status` instead of repeating the installation",
+      "Check `codepuppy_hub_status` before use",
+      "For `submitted; result pending` or `reload-pending`, check\n   `codepuppy_hub_status` instead of repeating the installation",
       "do not wait inside\n   the current reply for reload",
       "显示可用以后,下一条消息就能用;不用重启",
       "Only promise use from the next message after the state is `available`",
-      "`alpha_register` tool only for project scope",
+      "`codepuppy_register` tool only for project scope",
       "Executable connectors stay gated until the user trusts the project",
       "(skills + agents + commands + connectors)",
       "Project `.code-puppy/plugins/*.js` files are loaded and executed with the same permissions as\n  the engine after the user trusts the project",
@@ -244,7 +246,7 @@ describe("REQ-233 cloud skill instructions", () => {
       /生成、读、改 Word\/Excel\/PPT\/PDF \| 一律用本机 MCP（按 `office-docs` 技能）；文件写进项目目录、不出本机，无云端费用/,
       /生成网页 \/ HTML \| 本机直接写 HTML 文件进项目目录（可自带 CSS 与 JS），在文件面板预览；不派发云端，无云端费用/,
       /生成图片 \| 用云；本机没有图片生成能力/,
-      /查一个事实、读一个网页 \| 先用本机搜索\/读取；本机不可用才用 `cloud_web_search` \/ `cloud_web_fetch`/,
+      /查一个事实、读一个网页 \| 先用本机搜索\/读取；本机不可用才用 `codepuppy_web_search` \/ `codepuppy_web_fetch`/,
       /多来源深度调研 \| 用云端 `research`，做多轮检索与综合/,
       /代码审查 \| 默认本机 agent；用户要求「联网复核」或「第二意见」时用云/,
       /要把本机私有文件传云 \| 先问用户，获得上传授权后才发送内容/,
@@ -254,7 +256,7 @@ describe("REQ-233 cloud skill instructions", () => {
   // alpha-platform#552 AC3: cloud office-report is retired; Office files are always made locally.
   test("AC3 Office files go to the local tools and explicit review requests select cloud code-review first", () => {
     expect(cloud.content).toContain("云端 Word/Excel/PPT 生成（`office-report`）已停用：不要派发它，用户明确要求云端时也如实说明")
-    expect(cloud.content).toContain("改用本机 `mcp:alpha-word`、`mcp:alpha-excel`、`mcp:alpha-powerpoint`、`mcp:alpha-pdf`")
+    expect(cloud.content).toContain("改用本机 `mcp:codepuppy-word`、`mcp:codepuppy-excel`、`mcp:codepuppy-powerpoint`、`mcp:codepuppy-pdf`")
     expect(cloud.content).toContain("选择云端 `code-review`")
     expect(cloud.content).toContain("不先改成本机搜索或本机代码审查")
     expect(office.content.replace(/\s+/g, " ")).toContain(
@@ -267,9 +269,9 @@ describe("REQ-233 cloud skill instructions", () => {
 
   test("AC1 checks local login before paid cloud, separates estimates from reserves, and explains refusals without retrying", () => {
     for (const instruction of [
-      "先调用本机工具 `alpha_cloud_access`",
+      "先调用本机工具 `codepuppy_access`",
       "未登录时按返回入口引导登录并停止",
-      "调用任何收费云能力之前，先用免费的 `cloud_account_status`",
+      "调用任何收费云能力之前，先用免费的 `codepuppy_account_status`",
       "会员额度、钱包可用余额和「额度用完后用余额付」开关",
       "传入目标 `task`",
       "预留额不是报价，也不是费用上限",
@@ -286,26 +288,28 @@ describe("REQ-233 cloud skill instructions", () => {
     ]) expect(cloud.content).toContain(instruction)
   })
 
-  test("AC1 every cloud tool named in shipped instructions exists in the alpha-platform registry snapshot", async () => {
-    // Vendor contracts contain artifact/job schemas but no MCP tool registry. The snapshot carries its source SHA.
+  // alpha-code#1568:技能里写的是模型真正收到的函数名(服务器键 + 平台远端名,`codepuppy_dispatch`),
+  // 由生产拼名函数从 vendored 平台清单推出;第一方插件工具(`codepuppy_access` 等)是另一张表。
+  test("AC1 every cloud tool named in shipped instructions is a model-facing name of a tool in the pinned platform list", async () => {
     const texts = await Promise.all([
       ...await Glob.scan("**/SKILL.md", { cwd: dev["cloud-capabilities"], absolute: true, include: "file", symlink: true }),
       join(dev["office-docs"], "SKILL.md"),
     ].map((file) => Bun.file(file).text()))
-    const names = [...new Set(texts.flatMap((text) => text.match(/\bcloud_[a-z][a-z0-9_]*\b/g) ?? []))]
-    expect(names).toContain("cloud_account_status")
-    expect(names).toContain("cloud_dispatch")
-    expect(CLOUD_MCP_TOOLS).toContain("cloud_account_status")
-    expect(names.filter((name) => !(CLOUD_MCP_TOOLS as readonly string[]).includes(name))).toEqual([])
+    const names = [...new Set(texts.flatMap((text) => text.match(/\b(?:codepuppy|cloud)_[a-z][a-z0-9_]*\b/g) ?? []))]
+    const modelFacing = new Set([...CLOUD_MCP_TOOLS.map(cloudMcpToolId), ...Object.keys(TOOL_TEXT)])
+    expect(names).toContain("codepuppy_account_status")
+    expect(names).toContain("codepuppy_dispatch")
+    expect(CLOUD_MCP_TOOLS).toContain("account_status")
+    expect(names.filter((name) => !modelFacing.has(name))).toEqual([])
     expect(texts.join("\n")).not.toMatch(/schedule_(?:create|list|delete)/)
   })
 
-  // REQ-236 #1551 AC8:kind 与 input 只读 cloud_dispatch 的工具说明(不再手抄表);下载归宿主,模型不报保存。
+  // REQ-236 #1551 AC8:kind 与 input 只读 codepuppy_dispatch 的工具说明(不再手抄表);下载归宿主,模型不报保存。
   test("AC8 cloud dispatch points at the tool description and the host owns the download", () => {
     for (const instruction of [
-      "可用的 `kind` 与每个 kind 的 `input` 字段以 `cloud_dispatch` 的工具说明为准",
-      "`cloud_await` 等待，或用 `cloud_status` 查状态",
-      "`cloud_artifacts` 获取产物描述符",
+      "可用的 `kind` 与每个 kind 的 `input` 字段以 `codepuppy_dispatch` 的工具说明为准",
+      "`codepuppy_await` 等待，或用 `codepuppy_status` 查状态",
+      "`codepuppy_artifacts` 获取产物描述符",
       "产物字节不内联返回；需由宿主通过 `contentRef.url` 鉴权下载",
       "产物由宿主下载到本机并核对",
       "不要自行声称文件已保存或已下载，也不要给出保存路径",
@@ -334,7 +338,7 @@ describe("REQ-233 cloud skill instructions", () => {
     const text = office.content.replace(/\s+/g, " ")
     for (const instruction of [
       "**Create, read or edit Word/Excel/PowerPoint/PDF with Alpha's four first-party local stdio MCP connectors below**",
-      "`mcp:alpha-word`, `mcp:alpha-excel`, `mcp:alpha-powerpoint` and `mcp:alpha-pdf`",
+      "`mcp:codepuppy-word`, `mcp:codepuppy-excel`, `mcp:codepuppy-powerpoint` and `mcp:codepuppy-pdf`",
       "They write the file straight into the project directory",
       "the file stays on this machine, with no cloud charge",
       "also when the user asks for the cloud: say it is no longer offered and do the job with the local tools",

@@ -23,7 +23,7 @@
 // (`request.ts:84-87`),所以 CLI 是引擎侧的忠实代理;桌面自己那一头(chip 列表 / 提交层)在本文件
 // 用生产函数直接判。
 //
-// 手段自证先于矩阵:①假上游先吃一个探针请求证明捕获不是恒空;②`alpha/glm-5-turbo --variant high`
+// 手段自证先于矩阵:①假上游先吃一个探针请求证明捕获不是恒空;②`codepuppy/glm-5-turbo --variant high`
 // (目录未标 reasoning、上游黑名单)必须**不**带参数 —— 判据会红,不是恒真;③`zhipuai-byok/glm-4.5-air`
 // 硬塞一个目录里不存在的档 ⇒ 上游 `transform.options()` 的无条件 `thinking: enabled` 原样出现,把这个请求体
 // 交给「关」档的判据必须红 —— 证明显式关闭档的判据测得出已知的坏(#1267)。
@@ -33,8 +33,8 @@
 // 徽标 + 开/关两档,同一个 byokModelMeta 派生进 picker 行与 sidecar 注入。原先登记它的 KNOWN_UNFIXED 已按其
 // 自带的过期断言删除;本文件不再有任何已知不修的行。
 //
-// #1237(2026-09-06):上游黑名单族里 wire 形状已实打的三个平台模型拿到档位 —— `alpha/glm-5-turbo` 走 zhipu 直连腿的
-// `thinking:{type}` 开/关(直连对 reasoning_effort accepted-and-ignored,网关拒转),`alpha/qwen3.7-max|plus` 走 OR 腿的
+// #1237(2026-09-06):上游黑名单族里 wire 形状已实打的三个平台模型拿到档位 —— `codepuppy/glm-5-turbo` 走 zhipu 直连腿的
+// `thinking:{type}` 开/关(直连对 reasoning_effort accepted-and-ignored,网关拒转),`codepuppy/qwen3.7-max|plus` 走 OR 腿的
 // `reasoning_effort` 关(none,0 reasoning tokens)/ 开(medium)。形状与出处钉在 alpha-models.test.ts 的 #1237 节;本文件
 // 负责两件只有真引擎能证的事:①每一档的主请求体逐字带上那条腿的形状(矩阵原有判据自动覆盖新行);②上游
 // `transform.smallOptions()` 把档位表**第一项**喂给标题等辅助调用(`request.ts:88-89`,基线 §3.8a)—— 有徽标的每一行,
@@ -185,7 +185,7 @@ function configFor(tag: string) {
   const cfg = buildAlphaModelConfig(userData)
   if (!cfg) throw new Error("buildAlphaModelConfig 返回 undefined —— ALPHA_MODELS_DISABLE 漏清?")
   for (const [id, provider] of Object.entries(cfg.provider as Record<string, { options: { baseURL: string } }>)) {
-    provider.options.baseURL = id === "alpha" ? `${upstream}/run/${tag}/v1` : `${upstream}/run/${tag}/byok/${id}/v1`
+    provider.options.baseURL = id === "codepuppy" ? `${upstream}/run/${tag}/v1` : `${upstream}/run/${tag}/byok/${id}/v1`
   }
   return cfg
 }
@@ -408,12 +408,12 @@ describe("REQ-153 #1266/#1267:徽标集合 == 引擎实际带推理参数的集�
 
     // 已知的坏(#1237 方向):把 qwen3.7-max「开」档(reasoning_effort=medium)那次 run 的**主**请求体冒充标题请求体交给
     // judgeAux —— 第一档是「关」(none),判据必须点名 medium ≠ none。证明「标题调用取第一档」的判据测得出错档。
-    const qwen = pickerRows().find((row) => rowKey(row) === "alpha:qwen3.7-max")
+    const qwen = pickerRows().find((row) => rowKey(row) === "codepuppy:qwen3.7-max")
     expect({ found: qwen !== undefined, badge: qwen?.reasoning, chip: qwen?.model.variants }).toEqual({ found: true, badge: true, chip: ["关", "开"] })
-    const on = await engineRun("alpha", "qwen3.7-max", "开")
+    const on = await engineRun("codepuppy", "qwen3.7-max", "开")
     expect({ rc: on.rc, main: on.main !== null, title: on.title !== null, log: on.main ? "" : on.log }).toEqual({ rc: 0, main: true, title: true, log: "" })
     expect(on.main!.reasoning_effort).toBe("medium")
-    expect(judgeAux(qwen!, on.main!)).toEqual(["alpha:qwen3.7-max(标题辅助调用): 第一档 关 声明 reasoningEffort=none,标题请求体 reasoning_effort=medium"])
+    expect(judgeAux(qwen!, on.main!)).toEqual(["codepuppy:qwen3.7-max(标题辅助调用): 第一档 关 声明 reasoningEffort=none,标题请求体 reasoning_effort=medium"])
     // 而真正的标题请求体带的是第一档(关):这一格同时是 #1237 对基线 §3.8a 的实证。
     expect(judgeAux(qwen!, on.title!)).toEqual([])
 

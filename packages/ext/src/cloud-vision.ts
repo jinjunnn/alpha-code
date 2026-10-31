@@ -3,14 +3,14 @@
 // 两条路径,最终落到**同一个**识图接口 `POST <gateway>/v1/tools/vision`(基线 §2-0:能力只在 gateway 那条路由上):
 //   · 自动转写(产品自己的动作):`chat.message` 里对用户贴的图、`tool.execute.after` 里对 Read 读到的图,
 //     **直接打 HTTP**,不经 MCP tool —— 这不是模型发起的工具调用,不该出现在模型的工具轨迹里;
-//   · 模型追问:模型调 `cloud_cloud_vision` 时 `tool.execute.before` 把 `args.image` 原地换成压缩后的 base64。
+//   · 模型追问:模型调 `codepuppy_vision` 时 `tool.execute.before` 把 `args.image` 原地换成压缩后的 base64。
 //
 // ── 凭据从哪来(2026-09-24 勘破)────────────────────────────────────────────────────
 // 引擎访问云端用的是登录铸的 `mcp_access` token:ui-mac 每次 fork 把云 MCP 定义经 `ALPHA_CLOUD_MCP_DEF`
 // 交给本插件(`alpha-config-injection.ts:391`),定义里 `headers.Authorization = "Bearer {file:…ALPHA_MCP_TOKEN}"`
 // (`cloud-sidecar-config.ts`,`#1195`);`installCloudMcp()` 已经在解析这个 `{file:}`。gateway 的 vision 路由
 // 对**这一条封印路径**额外接受 `mcp_access`(alpha-platform `worker.ts` visionHandler:`FORWARDED_MCP_AUTH_OPTS`
-// 与 `actionAllowed(auth, "cloud.dispatch")`),而云 MCP 的 `cloud_vision` 也只是把同一个 Authorization 原样转发
+// 与 `actionAllowed(auth, "cloud.dispatch")`),而云 MCP 的 `vision` 也只是把同一个 Authorization 原样转发
 // 到同一条路由(`cloud-mcp.ts` mount)。所以这里用的**就是**引擎经 MCP 访问云端的那份凭据,不另铸、不回退。
 // 路由的主机:`ALPHA_BASE_URL`(`alpha-auth.ts:301`,= `<platform>/v1`,platform 即 gateway 主机)的 origin。
 // 凭据在每次调用时现读文件(令牌续期会重写文件;比引擎装配置时解析一次更新)。
@@ -23,7 +23,7 @@
 //
 // ── 固定 `model:"qwen"`、`fallback_on_refusal:false`(owner 2026-09-23)──────────────────
 // Code Puppy 只用千问,审核拒绝不换 Gemini:qwen 拒图 ⇒ gateway 回 422 `content_refused`、不扣费,这里显示
-// 「这张图片无法识别」。两个参数**每次调用都由本模块写死**,模型在 `cloud_cloud_vision` 里传的值也被覆盖。
+// 「这张图片无法识别」。两个参数**每次调用都由本模块写死**,模型在 `codepuppy_vision` 里传的值也被覆盖。
 //
 // ── 模型追问时「读路径」的权限判定(基线 §3 最后一行)────────────────────────────────
 // 插件里没有 Read 工具的 `ctx.ask`,而手写一份权限规则求值就是「替别人的文法造替身」。所以这里根本不从路径
@@ -48,8 +48,8 @@ import {
 } from "./context-injection"
 import { compressForVision, sniffImageMime, VISION_IMAGE_MAX_BYTES, VisionImageDecodeError, VisionImageTooLargeError, type CompressedImage } from "./vision-image"
 
-/** 云 worker 自己 advertise 的远端工具名(alpha-platform `cloud-mcp.ts` mount);引擎 id 是 `<server>_cloud_vision`。 */
-export const CLOUD_VISION_REMOTE_TOOL = "cloud_vision"
+/** 云 worker 自己 advertise 的远端工具名(alpha-platform `cloud-mcp.ts` mount);引擎 id 是 `<server>_vision`(`codepuppy_vision`)。 */
+export const CLOUD_VISION_REMOTE_TOOL = "vision"
 /** gateway 上唯一接受图片的路由(alpha-platform `contracts/v1/billing-actions.ts` `CLOUD_MCP_VISION_ROUTE`)。 */
 export const CLOUD_VISION_ROUTE = "/v1/tools/vision"
 /** owner 2026-09-23:Code Puppy 只用千问。封闭枚举的 key,不是上游 id。 */
@@ -187,12 +187,12 @@ export function visionFailureBlock(label: string, kind: VisionFailureKind): stri
   return renderTemplate(visionFailureId(kind), { name: safeDelimiters(label) })
 }
 
-/** 历史里 `cloud_cloud_vision` 因审核被拒(引擎把 isError 抛成部件的 error)时,回放给模型的替换文本。 */
+/** 历史里 `codepuppy_vision` 因审核被拒(引擎把 isError 抛成部件的 error)时,回放给模型的替换文本。 */
 export function visionToolRefusedText(): string {
   return contextText(VISION_TOOL_REFUSED_ID)
 }
 
-/** 历史里 `cloud_cloud_vision` 的 `input.image` 已是 base64 本体、原引用又不可考时,回放给模型的替换文本。 */
+/** 历史里 `codepuppy_vision` 的 `input.image` 已是 base64 本体、原引用又不可考时,回放给模型的替换文本。 */
 export function visionToolInputOmittedText(): string {
   return contextText(VISION_TOOL_INPUT_OMITTED_ID)
 }

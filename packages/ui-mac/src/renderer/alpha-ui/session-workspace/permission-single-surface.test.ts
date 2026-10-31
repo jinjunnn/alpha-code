@@ -425,7 +425,7 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
   })
 })
 
-// REQ-234 `#1531`:审批面的第二个消费者 —— metadata.alphaHub 的请求(agent 的 hub_install)由 HubInstallWatcher 接手,
+// REQ-234 `#1531`:审批面的第二个消费者 —— metadata.alphaHub 的请求(agent 的 codepuppy_hub_install)由 HubInstallWatcher 接手,
 // 弹定制中心自己的安装确认框;通用五栏 Dialog **不**呈现它(同一个请求不弹两个框)。本场景里 main 记不上阶段
 // (hubRequestStage 答 ok:false)⇒ 守望者 fail-closed:不弹任何框,经**同一个** surface client 回 reject;dock 仍只有既定提示增量、
 // 零审批写流量。正向流程(弹框 / 确认 / 失败 / 取消的阶段与回复顺序)在 alpha-ui/hub-install-watcher.test.ts。
@@ -451,7 +451,7 @@ describe("审批单一呈现面:agent 的定制中心安装请求(#1531)", () =>
     const hubRequest: PermissionV2Request = {
       ...request,
       id: "per_single_surface_hub",
-      action: "hub_install",
+      action: "codepuppy_hub_install",
       resources: ["mcp:github"],
       save: [],
       metadata: { alphaHub: { catalogId: "mcp:github", requestId: "req_singlesurface01" } },

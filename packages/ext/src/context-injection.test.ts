@@ -267,11 +267,11 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
   })
 })
 
-describe("③a′ `#1531`:hub_install 动词的两条引用", () => {
-  test("全局与每个 agent 末位的 hub_install 解释得通;单段通配只吃恰好一段,不放行同 agent 的别的键、多一段或空段", () => {
-    for (const p of ["/permission/hub_install", "/agent/build/permission/hub_install", "/agent/alpha-automation/permission/hub_install"])
+describe("③a′ `#1531`:codepuppy_hub_install 动词的两条引用", () => {
+  test("全局与每个 agent 末位的 codepuppy_hub_install 解释得通;单段通配只吃恰好一段,不放行同 agent 的别的键、多一段或空段", () => {
+    for (const p of ["/permission/codepuppy_hub_install", "/agent/build/permission/codepuppy_hub_install", "/agent/codepuppy-automation/permission/codepuppy_hub_install"])
       expect(explainConfigReference(p).ok, p).toBe(true)
-    for (const p of ["/agent/build/permission/bash", "/agent/build/prompt", "/agent/permission/hub_install", "/agent//permission/hub_install", "/agent/a/b/permission/hub_install", "/permission/hub_installer"])
+    for (const p of ["/agent/build/permission/bash", "/agent/build/prompt", "/agent/permission/codepuppy_hub_install", "/agent//permission/codepuppy_hub_install", "/agent/a/b/permission/codepuppy_hub_install", "/permission/hub_installer"])
       expect(explainConfigReference(p).ok, p).toBe(false)
   })
 })
@@ -352,12 +352,12 @@ describe("③b system.transform 咽喉:输出 == 输入 + 登记过的替换,一
     const token = join(root, "mcp-token")
     writeFileSync(token, "tok-throat\n")
     process.env.ALPHA_BASE_URL = "https://gateway.invalid/v1"
-    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+    process.env[CLOUD_MCP_SERVER_ENV] = "codepuppy"
     process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://cloud.invalid/mcp", enabled: true, headers: { Authorization: `Bearer {file:${token}}` }, oauth: false })
     const online = await runSystem(input, BLIND)
     expect(unexplainedSystem(input, online)).toEqual([])
     expect(online.length).toBe(2)
-    expect(online[1]).toContain("cloud_cloud_vision")
+    expect(online[1]).toContain("codepuppy_vision")
     for (const note of [offline[1]!, online[1]!]) expect(/gemini/i.test(note), note).toBe(false)
     // 能力未知(引擎没给 capabilities)按看不了图处理 —— fail-closed,多一次识图不漏识
     const unknown = await runSystem(input, {})
@@ -409,9 +409,9 @@ describe("③c 工具表咽喉:每个 description 都是登记项,登记项也�
     expect(typeof (await import("./plugin")).default).toBe("function")
     expect(unexplainedTools(tools)).toEqual([])
   })
-  test("REQ-232 AC1 alpha_cloud_access is available without Cloud MCP and returns a login entry", async () => {
+  test("REQ-232 AC1 codepuppy_access is available without Cloud MCP and returns a login entry", async () => {
     const hooks = await loadHooks()
-    const access = (hooks.tool as Record<string, { execute: () => Promise<{ output: string }> }>).alpha_cloud_access
+    const access = (hooks.tool as Record<string, { execute: () => Promise<{ output: string }> }>).codepuppy_access
     expect(access).toBeDefined()
     expect(JSON.parse((await access.execute()).output)).toEqual({
       logged_in: false, state: "logged-out", cloud_tools_enabled: false,
@@ -436,11 +436,11 @@ describe("③c 工具表咽喉:每个 description 都是登记项,登记项也�
     const hooks = await loadHooks()
     const tools = hooks.tool as ToolMap
     expect(unexplainedTools({ ...tools, rogue: { description: "unregistered tool", args: {} } })).toEqual(["tool.rogue.description"])
-    expect(unexplainedTools({ ...tools, alpha_ping: { ...tools.alpha_ping, description: tools.alpha_ping.description + "!" } })).toEqual([
-      "tool.alpha_ping.description",
+    expect(unexplainedTools({ ...tools, codepuppy_ping: { ...tools.codepuppy_ping, description: tools.codepuppy_ping.description + "!" } })).toEqual([
+      "tool.codepuppy_ping.description",
     ])
-    const { alpha_ping: _drop, ...rest } = tools
-    expect(unexplainedTools(rest)).toEqual(["stale registration tool.alpha_ping.description", "stale registration tool.alpha_ping.args.note"])
+    const { codepuppy_ping: _drop, ...rest } = tools
+    expect(unexplainedTools(rest)).toEqual(["stale registration tool.codepuppy_ping.description", "stale registration tool.codepuppy_ping.args.note"])
   })
 })
 
@@ -570,7 +570,7 @@ describe("③g chat.message 咽喉:追加进用户消息的每个 part 都是登
 
 // ── ③h messages.transform 咽喉(`#1419`;`#1447` R1 B2 / m4 扩)────────────────────────
 // 这个钩子只许**剔**(看不了图时把已转写的图片 part / 附件从本次请求里拿掉),外加**恰好两句登记项**可以出现在副本里:
-// `cloud_cloud_vision` 被审核拒绝的部件 error 换成「这张图片无法识别」、已被原地改写成 base64 的 input.image 换成
+// `codepuppy_vision` 被审核拒绝的部件 error 换成「这张图片无法识别」、已被原地改写成 base64 的 input.image 换成
 // 「(图片数据已省略)」(或换回本进程记得的原引用 —— 那是模型自己的字,判官按「hook 之前就存在」放行不了,所以这里
 // 用新实例,原引用不可考)。其它任何新字符串一律点名。
 
@@ -621,8 +621,8 @@ describe("③h messages.transform 咽喉:只剔不加(外加两句登记的替�
     await real({}, { messages: seeing })
     expect(seeing).toEqual(seeingBefore)
   })
-  test("`#1447` B2 / m4:cloud_cloud_vision 出错部件的 error 与被改写成 base64 的 input.image 各换成一句登记项,其余字符串一个不多;已知的坏:替换句改一个字节即点名", async () => {
-    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+  test("`#1447` B2 / m4:codepuppy_vision 出错部件的 error 与被改写成 base64 的 input.image 各换成一句登记项,其余字符串一个不多;已知的坏:替换句改一个字节即点名", async () => {
+    process.env[CLOUD_MCP_SERVER_ENV] = "codepuppy"
     const hooks = await loadHooks()
     const real = hooks["experimental.chat.messages.transform"] as MessagesHook
     const base64 = Buffer.from(PNG_1x1, "base64")
@@ -632,8 +632,8 @@ describe("③h messages.transform 咽喉:只剔不加(外加两句登记的替�
       {
         info: { id: "msg_a", role: "assistant", sessionID: "s-msgs-4" },
         parts: [
-          { id: "prt_v1", type: "tool", tool: "cloud_cloud_vision", callID: "c1", state: { status: "error", input: { image: "1" }, error: JSON.stringify({ error: { code: "content_refused", message: "x" } }), time: { start: 1, end: 2 } } },
-          { id: "prt_v2", type: "tool", tool: "cloud_cloud_vision", callID: "c2", state: { status: "completed", input: { image: fakeBase64, mime: "image/jpeg" }, output: "ok", metadata: {}, time: { start: 1, end: 2 } } },
+          { id: "prt_v1", type: "tool", tool: "codepuppy_vision", callID: "c1", state: { status: "error", input: { image: "1" }, error: JSON.stringify({ error: { code: "content_refused", message: "x" } }), time: { start: 1, end: 2 } } },
+          { id: "prt_v2", type: "tool", tool: "codepuppy_vision", callID: "c2", state: { status: "completed", input: { image: fakeBase64, mime: "image/jpeg" }, output: "ok", metadata: {}, time: { start: 1, end: 2 } } },
         ],
       },
     ]
@@ -728,7 +728,7 @@ describe("③f agent 通路:登记形状 + 判官 explainAgentText", () => {
       expect(description.sink).toBe("agent-description")
       expect(description.text).toBe(text.description)
       if (text.prompt === undefined) {
-        // `#1413` alpha-ask:没有 prompt 就不能有 prompt 那格(登记一个永远不会被写出的 id = 咽喉等一段不存在的字)
+        // `#1413` codepuppy-ask:没有 prompt 就不能有 prompt 那格(登记一个永远不会被写出的 id = 咽喉等一段不存在的字)
         expect(prompt, name).toBeUndefined()
         expect(uiMacAgentFragmentIds(name)).toEqual([uiMacAgentFragmentId(name, "description")])
         withoutPrompt += 1

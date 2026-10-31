@@ -62,7 +62,7 @@ import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
 //
 //   4. B6(=G1):@alpha-code/ext 装载 —— main 解析好的自包含 bundle 绝对路径合并进 V1 `plugin`
 //      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
-//      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
+//      (ADR-006 caveat)的运行时证明 = codepuppy_ping 出现在工具表且能执行(真机批核验)。
 
 // #613:注入失败的可上报形态(结构化,可过 IPC)。爆炸半径随抛点而异:最早(identity mkdir)
 // = 整份注入丢失(OPENCODE_CONFIG_CONTENT / OPENCODE_CONFIG_DIR 双双缺席);最晚(v2 桥,
@@ -199,12 +199,12 @@ export function injectAlphaConfig(
     if (!process.env.ALPHA_AUTOMATION_DISABLE) {
       config.agent = {
         ...(config.agent ?? {}),
-        "alpha-automation": {
-          description: ALPHA_AGENT_TEXT["alpha-automation"].description,
+        "codepuppy-automation": {
+          description: ALPHA_AGENT_TEXT["codepuppy-automation"].description,
           // REQ-055:对选择器隐藏(上游 agent.ts 原生 hidden 字段,仅影响可见列表;调度器按名 prompt 不受影响)
           hidden: true,
           mode: "primary",
-          prompt: ALPHA_AGENT_TEXT["alpha-automation"].prompt,
+          prompt: ALPHA_AGENT_TEXT["codepuppy-automation"].prompt,
           permission: {
             read: { "*": "allow", "*.env*": "deny" },
             glob: "allow",
@@ -224,23 +224,23 @@ export function injectAlphaConfig(
       }
     }
 
-    //   2b. REQ-028:交互只读 agent(composer「只读」档的真载体)。与 alpha-automation 的差异:
+    //   2b. REQ-028:交互只读 agent(composer「只读」档的真载体)。与 codepuppy-automation 的差异:
     //       交互场景有人在场 → question 允许;写/执行仍静态 deny —— 「真被 deny」而非 UI 文案。
     //       委派**会**破只读:子会话只继承父**会话**的 deny(上游 agent/subagent-permissions.ts),
     //       不继承本 agent 的规则,`general` 子任务照样能改文件、跑命令(REQ-236 方案 §1.3 F1)。
     //       所以 `task` 只放行同档自身(如以只读档运行的 `/review`),委派给其它助手一律 deny;
     //       点名助手 / 命令换助手 / 直接子任务三条入口在引擎 session/prompt.ts 按同一条规则问或拒。
     //       第三方 MCP 与插件工具每次询问(方案 §2.0 D1):身份轴闸用本规则集求值,设置里启用了也问。
-    //       逃生:ALPHA_READONLY_DISABLE。治理保护名单同 alpha-automation(X2,alpha-governance.ts)。
+    //       逃生:ALPHA_READONLY_DISABLE。治理保护名单同 codepuppy-automation(X2,alpha-governance.ts)。
     if (!process.env.ALPHA_READONLY_DISABLE) {
       config.agent = {
         ...(config.agent ?? {}),
-        "alpha-readonly": {
-          description: ALPHA_AGENT_TEXT["alpha-readonly"].description,
+        "codepuppy-readonly": {
+          description: ALPHA_AGENT_TEXT["codepuppy-readonly"].description,
           // REQ-055:对选择器隐藏;AlphaComposer 只读档改为提交时 agent 参数,不再依赖可见列表轮转
           hidden: true,
           mode: "primary",
-          prompt: ALPHA_AGENT_TEXT["alpha-readonly"].prompt,
+          prompt: ALPHA_AGENT_TEXT["codepuppy-readonly"].prompt,
           permission: {
             read: { "*": "allow", "*.env*": "deny" },
             glob: "allow",
@@ -252,7 +252,7 @@ export function injectAlphaConfig(
             edit: "deny",
             bash: "deny",
             external_directory: "deny",
-            task: { "*": "deny", "alpha-readonly": "allow" },
+            task: { "*": "deny", "codepuppy-readonly": "allow" },
             "mcp:*": "ask",
             "plugin:*": "ask",
           },
@@ -274,13 +274,13 @@ export function injectAlphaConfig(
     //       配置顶层 `permission` 之后,项目配置放宽不了它们(`*.env.example` 照 defaults 仍放行)。
     //       刻意不写 `external_directory`:追加 `{"*":"ask"}` 会压掉 defaults 的临时/技能目录白名单。
     //       没有 prompt(见 alpha-agents.ts 抬头:给了 prompt 就会顶掉整份底座)。
-    //       不设逃生 env:composer 选了这档就发 `agent: "alpha-ask"`,agent 缺席 = 引擎具名报错(fail-closed),
-    //       不是静默回到全放行。治理保护名单同 alpha-readonly(ALPHA_INJECTED_AGENTS)。
+    //       不设逃生 env:composer 选了这档就发 `agent: "codepuppy-ask"`,agent 缺席 = 引擎具名报错(fail-closed),
+    //       不是静默回到全放行。治理保护名单同 codepuppy-readonly(ALPHA_INJECTED_AGENTS)。
     //       常驻闸:packages/opencode/test/permission/alpha-composer-tiers.test.ts(真 Agent + 真 Permission.ask)。
     config.agent = {
       ...(config.agent ?? {}),
-      "alpha-ask": {
-        description: ALPHA_AGENT_TEXT["alpha-ask"].description,
+      "codepuppy-ask": {
+        description: ALPHA_AGENT_TEXT["codepuppy-ask"].description,
         hidden: true,
         mode: "primary",
         permission: {
@@ -291,25 +291,25 @@ export function injectAlphaConfig(
           websearch: "allow",
           edit: "ask",
           bash: "ask",
-          task: { "*": "ask", "alpha-ask": "allow" },
+          task: { "*": "ask", "codepuppy-ask": "allow" },
           doom_loop: "ask",
           read: { "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
         },
       },
     }
 
-    //   2c. REQ-024(自动化 A2):standard 可写档 agent。无人值守语义同 alpha-automation
+    //   2c. REQ-024(自动化 A2):standard 可写档 agent。无人值守语义同 codepuppy-automation
     //       (question/task/doom_loop deny,零 ask 硬前提);差异 = edit allow + bash 受限 allow
     //       (破坏类命令模式 deny —— 模式黑名单**非穷尽**,UI 启用时有显式风险确认,不谎称安全)。
     if (!process.env.ALPHA_AUTOMATION_DISABLE) {
       config.agent = {
         ...(config.agent ?? {}),
-        "alpha-automation-standard": {
-          description: ALPHA_AGENT_TEXT["alpha-automation-standard"].description,
-          // REQ-055:对选择器隐藏(同 alpha-automation)
+        "codepuppy-automation-standard": {
+          description: ALPHA_AGENT_TEXT["codepuppy-automation-standard"].description,
+          // REQ-055:对选择器隐藏(同 codepuppy-automation)
           hidden: true,
           mode: "primary",
-          prompt: ALPHA_AGENT_TEXT["alpha-automation-standard"].prompt,
+          prompt: ALPHA_AGENT_TEXT["codepuppy-automation-standard"].prompt,
           permission: {
             read: { "*": "allow", "*.env*": "deny" },
             glob: "allow",

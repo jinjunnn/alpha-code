@@ -24,10 +24,10 @@ export type ComposerAgent = { name: string; description?: string }
  *
  *  - `allow`「全部批准」:不压 agent,请求走引擎默认档 `build`(规则集基底 `"*": "allow"`)—— 这就是
  *    2026-09-23 之前「请求审批」档**实际**的行为,只是当时它顶着「逐次询问」的副标题。
- *  - `ask`「请求审批」:强制 `alpha-ask`(= build + edit/bash 改 ask,主进程注入)。此前这档不带 agent、
+ *  - `ask`「请求审批」:强制 `codepuppy-ask`(= build + edit/bash 改 ask,主进程注入)。此前这档不带 agent、
  *    落到 build,真 `Permission.ask` 实测 edit/bash 直接放行不弹框 —— 副标题是假的
  *    (docs/architecture/2026-09-23-runtime-permission-tiers.md §3)。
- *  - `readonly`「只读」:强制 `alpha-readonly`(REQ-028,edit/bash 静态 deny)。行为逐字不变。
+ *  - `readonly`「只读」:强制 `codepuppy-readonly`(REQ-028,edit/bash 静态 deny)。行为逐字不变。
  *
  *  历史:REQ-126 AC7(#658)退休过一个第三档 `full`(「全自动」)—— 它是**空承诺**:提交层只对 `readonly`
  *  分支,`full` 与 `ask` 产出逐字节相同的请求;chip 唯一的"生效"路径是发上游根本不存在的两个命令 id。
@@ -36,9 +36,9 @@ export type ComposerAgent = { name: string; description?: string }
 export type PermMode = "allow" | "ask" | "readonly"
 
 /** 只读档的真载体(REQ-028:静态权限档 edit/bash deny 的引擎 agent)。 */
-export const READONLY_AGENT = "alpha-readonly"
+export const READONLY_AGENT = "codepuppy-readonly"
 /** 请求审批档的真载体(`#1413`:build + edit/bash ask 的引擎 agent,主进程 alpha-config-injection.ts 注入)。 */
-export const ASK_AGENT = "alpha-ask"
+export const ASK_AGENT = "codepuppy-ask"
 
 /** 每一档提交时**强制**的 agent;`null` = 不压,透传用户手选的档位(计划 / 第三方主档)或引擎默认。
  *  穷举表而不是分支:见 `PermMode` 抬头。 */
@@ -70,7 +70,7 @@ export const PERM_MODES: readonly PermMode[] = ["allow", "ask", "readonly"]
 
 /** alpha 内部 agent —— 永不出现在任何用户可见选择列表(用户报障 2026-07-07:「为什么会出现这个」)。
  *  它们仍可被程序化 prompt(调度器/只读档/请求审批档),隐藏只影响列表。 */
-export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-standard", READONLY_AGENT, ASK_AGENT])
+export const INTERNAL_AGENTS = new Set(["codepuppy-automation", "codepuppy-automation-standard", READONLY_AGENT, ASK_AGENT])
 
 /* #652:会话档位推送账本(recordPushedAgent / pushedAgentFor / DEFAULT_AGENT)随 v2 durable
  * 发送一起退役。它只为「v2 引擎无 per-prompt agent、档位是会话级属性」而存在:composer 发送前
@@ -213,7 +213,7 @@ export function resetComposerAgentScopesForTests() {
  * ② **只读档这一份没有容量上界**(#896 起档位那份也没有,两份至此逐条同形)。
  *    原先照抄了草稿暂存的 LRU,并在这里写着「丢登记只会多问一次,不会静默放松限制」——
  *    **那句话是错的**:依次在 33 个会话里开只读,第 1 个就被淘汰,回到它时 chip 变回「请求审批」、
- *    请求也不再带 `alpha-readonly`。ask 确实不会未经批准就写盘,但**是系统替用户把只读关掉了**,
+ *    请求也不再带 `codepuppy-readonly`。ask 确实不会未经批准就写盘,但**是系统替用户把只读关掉了**,
  *    而用户从没做过这个动作。登记是「用户显式开过只读」的唯一凭据,不能有损。 */
 const permByScope = new Map<string, PermMode>()
 /** 当前持有只读档信号的会话身份键;null = 首页(新会话入口)、身份未定、或无人持有。 */
@@ -382,7 +382,7 @@ export function v1CommandModelFields(ref: ModelRef | undefined) {
 }
 
 /** 提交参数构造:
- *  - 权限档按 `PERM_AGENT` 穷举表决定 agent:readonly → alpha-readonly、ask → alpha-ask(都压过手选 agent;
+ *  - 权限档按 `PERM_AGENT` 穷举表决定 agent:readonly → codepuppy-readonly、ask → codepuppy-ask(都压过手选 agent;
  *    退回「全部批准」即恢复)、allow → 不压,透传手选 agent(`#1413`);
  *  - variant 只在当前模型确实定义了该档时携带(C28:绝不发引擎不认识的档);
  *  - 未显式选择的维度不传(引擎默认)。 */

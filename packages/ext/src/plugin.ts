@@ -126,12 +126,12 @@ export const AlphaExt: Plugin = async (input) => {
       // 不是名字前缀(#223 R6),且核验结果取**本实例**的那一份(#223 R7)。理由、产品语义与
       // 边界见 cloud-websearch-kill.ts。
       assertWebSearchToolAllowed(hookInput.tool, process.env, mcpOwnership)
-      validateCloudToolInput(hookInput.tool, output.args)
-      // `#1419`:模型追问 —— `cloud_cloud_vision` 的 args.image 由引用原地换成压缩后的 base64。
+      validateCloudToolInput(hookInput.tool, output.args, process.env, mcpOwnership)
+      // `#1419`:模型追问 —— `codepuppy_vision` 的 args.image 由引用原地换成压缩后的 base64。
       await vision.toolBefore(hookInput, output)
     },
     "tool.execute.after": async (hookInput, output) => {
-      validateCloudToolOutput(hookInput.tool, output)
+      validateCloudToolOutput(hookInput.tool, output, process.env, mcpOwnership)
       // `#1419`:Read 读到的图片走自动转写;cloud_vision 被审核拒绝 ⇒「这张图片无法识别」。
       await vision.toolAfter(hookInput, output)
     },
@@ -297,15 +297,15 @@ export const AlphaExt: Plugin = async (input) => {
     },
     // tool map: key === final tool id verbatim (no namespace prefix).
     tool: {
-      alpha_reload: tool({
-        description: TOOL_TEXT.alpha_reload.description,
+      codepuppy_reload: tool({
+        description: TOOL_TEXT.codepuppy_reload.description,
         args: {
-          reason: tool.schema.string().describe(TOOL_TEXT.alpha_reload.args.reason).default(""),
+          reason: tool.schema.string().describe(TOOL_TEXT.codepuppy_reload.args.reason).default(""),
         },
         async execute(args, ctx) {
-          reloads.request({ scope: { directory: input.directory }, reason: args.reason ? `alpha_reload: ${args.reason}` : "alpha_reload" })
+          reloads.request({ scope: { directory: input.directory }, reason: args.reason ? `codepuppy_reload: ${args.reason}` : "codepuppy_reload" })
           return {
-            title: "alpha_reload",
+            title: "codepuppy_reload",
             output:
               "reload scheduled — it runs as soon as no reply is in progress in this workspace (this one included); newly created skills/agents/commands are available from the NEXT message in this session." +
               (args.reason ? `\nreason: ${args.reason}` : ""),
@@ -313,18 +313,18 @@ export const AlphaExt: Plugin = async (input) => {
           }
         },
       }),
-      alpha_register: tool({
-        description: TOOL_TEXT.alpha_register.description,
+      codepuppy_register: tool({
+        description: TOOL_TEXT.codepuppy_register.description,
         args: {
-          type: tool.schema.enum(["mcp", "agent", "command", "skill"]).describe(TOOL_TEXT.alpha_register.args.type),
-          name: tool.schema.string().describe(TOOL_TEXT.alpha_register.args.name).default(""),
-          entry: tool.schema.string().describe(TOOL_TEXT.alpha_register.args.entry).default(""),
+          type: tool.schema.enum(["mcp", "agent", "command", "skill"]).describe(TOOL_TEXT.codepuppy_register.args.type),
+          name: tool.schema.string().describe(TOOL_TEXT.codepuppy_register.args.name).default(""),
+          entry: tool.schema.string().describe(TOOL_TEXT.codepuppy_register.args.entry).default(""),
         },
         async execute(args, ctx) {
           const project = projectRootFor(ctx.directory)
           if (!project)
             return {
-              title: "alpha_register",
+              title: "codepuppy_register",
               output: "refused: the session directory identity cannot be confirmed as a project. Global installs go through the Extension Hub.",
               metadata: { ok: false },
             }
@@ -335,79 +335,79 @@ export const AlphaExt: Plugin = async (input) => {
               if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object")
               entry = parsed as Record<string, unknown>
             } catch {
-              return { title: "alpha_register", output: "refused: entry is not a valid JSON object string", metadata: { ok: false } }
+              return { title: "codepuppy_register", output: "refused: entry is not a valid JSON object string", metadata: { ok: false } }
             }
           }
           const present = withProjectDirectoryIdentity(project, (root) => existsSync(join(root, "alpha.jsonc")))
           if (!present.ok)
-            return { title: "alpha_register", output: `refused: ${present.reason}`, metadata: { ok: false } }
+            return { title: "codepuppy_register", output: `refused: ${present.reason}`, metadata: { ok: false } }
           const currentRead = present.value
             ? withProjectDirectoryIdentity(project, (root) => readFileSync(join(root, "alpha.jsonc"), "utf8"))
             : { ok: true as const, value: null }
           if (!currentRead.ok)
-            return { title: "alpha_register", output: `refused: ${currentRead.reason}`, metadata: { ok: false } }
+            return { title: "codepuppy_register", output: `refused: ${currentRead.reason}`, metadata: { ok: false } }
           const current = currentRead.value
           const r = applyRegister(current, args.type as RegisterType, args.name, entry)
-          if (!r.ok) return { title: "alpha_register", output: `refused: ${r.reason}`, metadata: { ok: false } }
+          if (!r.ok) return { title: "codepuppy_register", output: `refused: ${r.reason}`, metadata: { ok: false } }
           const trusted = args.type === "mcp" ? readProjectExtensionsConsent(project) : true
           if (trusted === null)
-            return { title: "alpha_register", output: "refused: project Code Puppy root identity drifted", metadata: { ok: false } }
+            return { title: "codepuppy_register", output: "refused: project Code Puppy root identity drifted", metadata: { ok: false } }
           try {
             const created = withProjectDirectoryIdentity(project, (root) => mkdirSync(root, { recursive: true }))
             if (!created.ok)
-              return { title: "alpha_register", output: `refused: ${created.reason}`, metadata: { ok: false } }
+              return { title: "codepuppy_register", output: `refused: ${created.reason}`, metadata: { ok: false } }
             const written = withProjectDirectoryIdentity(project, (root) =>
               writeFileSync(join(root, "alpha.jsonc.tmp"), r.next),
             )
             if (!written.ok)
-              return { title: "alpha_register", output: `refused: ${written.reason}`, metadata: { ok: false } }
+              return { title: "codepuppy_register", output: `refused: ${written.reason}`, metadata: { ok: false } }
             const committed = withProjectDirectoryIdentity(project, (root) =>
               renameSync(join(root, "alpha.jsonc.tmp"), join(root, "alpha.jsonc")),
             )
             if (!committed.ok)
-              return { title: "alpha_register", output: `refused: ${committed.reason}`, metadata: { ok: false } }
+              return { title: "codepuppy_register", output: `refused: ${committed.reason}`, metadata: { ok: false } }
           } catch (error) {
             return {
-              title: "alpha_register",
+              title: "codepuppy_register",
               output: `write failed: ${error instanceof Error ? error.message : String(error)}`,
               metadata: { ok: false },
             }
           }
-          reloads.request({ scope: { directory: input.directory }, reason: `alpha_register ${args.type} ${args.name}`.trim() })
+          reloads.request({ scope: { directory: input.directory }, reason: `codepuppy_register ${args.type} ${args.name}`.trim() })
           const consentNote =
             args.type === "mcp" && !trusted
               ? "\nnote: this project has not yet been granted permission to load executable extensions — the connector stays gated until the user confirms the trust dialog (it appears when the project session is opened)."
               : ""
           return {
-            title: "alpha_register",
+            title: "codepuppy_register",
             output: `${r.summary}\nreload scheduled — available from the NEXT message.${consentNote}`,
             metadata: { ok: true, type: args.type, name: args.name, directory: ctx.directory },
           }
         },
       }),
       ...createHubTools(hubBridge),
-      alpha_echo: tool({
-        description: TOOL_TEXT.alpha_echo.description,
+      codepuppy_echo: tool({
+        description: TOOL_TEXT.codepuppy_echo.description,
         args: {
-          text: tool.schema.string().describe(TOOL_TEXT.alpha_echo.args.text),
-          shout: tool.schema.boolean().describe(TOOL_TEXT.alpha_echo.args.shout).default(false),
+          text: tool.schema.string().describe(TOOL_TEXT.codepuppy_echo.args.text),
+          shout: tool.schema.boolean().describe(TOOL_TEXT.codepuppy_echo.args.shout).default(false),
         },
         async execute(args, ctx) {
           const echoed = args.shout ? args.text.toUpperCase() : args.text
           return {
-            title: "alpha_echo",
-            output: `alpha_echo: ${echoed}`,
+            title: "codepuppy_echo",
+            output: `codepuppy_echo: ${echoed}`,
             metadata: { sessionID: ctx.sessionID, directory: ctx.directory, shout: args.shout },
           }
         },
       }),
-      alpha_cloud_access: tool({
-        description: TOOL_TEXT.alpha_cloud_access.description,
+      codepuppy_access: tool({
+        description: TOOL_TEXT.codepuppy_access.description,
         args: {},
         async execute() {
           const access = cloudAccessState()
           return {
-            title: "alpha_cloud_access",
+            title: "codepuppy_access",
             output: JSON.stringify({
               logged_in: access.state === "ready",
               state: access.state,
@@ -418,15 +418,15 @@ export const AlphaExt: Plugin = async (input) => {
           }
         },
       }),
-      alpha_ping: tool({
-        description: TOOL_TEXT.alpha_ping.description,
+      codepuppy_ping: tool({
+        description: TOOL_TEXT.codepuppy_ping.description,
         args: {
-          note: tool.schema.string().describe(TOOL_TEXT.alpha_ping.args.note).default(""),
+          note: tool.schema.string().describe(TOOL_TEXT.codepuppy_ping.args.note).default(""),
         },
         async execute(args, ctx) {
           const suffix = args.note ? ` (${args.note})` : ""
           return {
-            title: "alpha_ping",
+            title: "codepuppy_ping",
             output: `pong${suffix}\ndirectory: ${ctx.directory}\nworktree: ${ctx.worktree}`,
             metadata: { directory: ctx.directory, worktree: ctx.worktree },
           }

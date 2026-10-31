@@ -548,7 +548,7 @@ describe("#1595 AC2 云端任务详情首屏:最长运行 / 发送内容 / 结�
 })
 
 describe("#1595 AC3 云连接器详情:人话标题、状态、登录入口与自动连接;函数名只在开发者详情", () => {
-  test("未登录 ⇒「未连接 · 需登录」+「登录」;工具行首是自然语言名,cloud_* 只出现在开发者详情", async () => {
+  test("未登录 ⇒「未连接 · 需登录」+「登录」;工具行首是自然语言名,可读标识 codepuppy:<动作> 只出现在开发者详情", async () => {
     let logins = 0
     mountDetail({ kind: "cloud-connector" }, { cloudReady: false, onLogin: () => logins++ })
     await flush()
@@ -570,10 +570,12 @@ describe("#1595 AC3 云连接器详情:人话标题、状态、登录入口与�
       zh["alpha.timeline.cloud.await"],
       zh["alpha.timeline.cloud.artifacts"],
     ])
-    expect(tools.textContent).not.toContain("cloud_")
+    expect(tools.textContent).not.toContain("codepuppy")
+    // alpha-code#1568 AC5:开发者详情里是可读标识 `<服务器键>:<远端名>`,不是模型函数名。
     const dev = document.querySelector("details[data-alpha-cloud-tools-dev]")!
-    expect(dev.textContent).toContain("cloud_dispatch")
-    expect(dev.textContent).toContain("cloud_artifacts")
+    expect(dev.textContent).toContain("codepuppy:dispatch")
+    expect(dev.textContent).toContain("codepuppy:artifacts")
+    expect(dev.textContent).not.toContain("cloud_")
   })
 })
 

@@ -428,6 +428,22 @@ R9–R11 的只读格覆盖三种状态:设置为默认询问、设置里已启�
 | 命名迁移(alpha-code#1568 依赖 C4) | 改名接口点:`ToolAuthority.kind` 的 `"alpha-cloud"`/`"alpha-bundled"`、`ToolClass` 同名值、`bindingId` 前缀 `mcp:`、evidence 内 `kind:"alpha-cloud-mcp"`、`ALPHA_CLOUD_MCP_SERVER/DEF/ARM` 与新 `ALPHA_POLICY_ACCOUNT` env、`ALPHA_CLOUD_RULES` 键、`alpha-ask`/`alpha-readonly` 与 `task` 规则里的同名 pattern。改 evidence 内 kind 会改 digest ⇒ 已有云工具「启用」回 ask 一次 | — |
 | 颜色 #1550 | 只改说明与按钮语义,不改颜色 | — |
 
+**实测更正(alpha-code#1568 实现时,2026-10-31)**:上表「命名迁移」行与命名方案(alpha-work
+`docs/design/req236-codepuppy-naming-migration.md` §2.2、§2.3)有三处前提与代码不符,按实测执行:
+
+1. **Office 服务器键由签名目录条目的 `name` 决定,不由桌面常量决定。** 安装时配置键写成 `mcp.${entry.name}`
+   (`packages/ui-mac/src/main/ext-install-planner.ts` 的 MCP 安装分支);桌面 `ALPHA_OFFICE_CONNECTORS` 只负责
+   按名匹配。所以 `codepuppy-word` 等键要等目录四个条目改名重签(alpha-web#283)后新装才生效;随包快照
+   `alpha-catalog.json` 在 RC 构建前同步,不手改。
+2. **供应商 id 有一个网站侧消费者。** 聊天归档服务端按 `provider_id === "alpha"` 判平台计费路径
+   (alpha-web `lib/chat-archive.ts` 的 `billingPathFor`);桌面改成 `codepuppy` 后服务端须同窗改认新 id
+   (并入 alpha-web#283),否则平台调用被记成 custom。
+3. **`hub_install` 同时是权限键。** `ctx.ask({ permission })` 与钉末位的规则都用它;工具 id 改成
+   `codepuppy_hub_install` 时权限键必须一起改,否则只读档的 `"*"` 规则会按新 id 重新求值。改名前后五档的放行 / 拒绝 /
+   工具表可见性逐项相同,判据在 `packages/opencode/test/permission/alpha-hub-install-ask.test.ts`。
+   另:evidence 内 `kind` 一并改为 `codepuppy-cloud-mcp` / `codepuppy-bundled-mcp` / `codepuppy-bundled-plugin`,
+   已启用的云工具与文档工具会重新询问一次。
+
 ### 2.10 被否决的替代
 
 | 替代 | 不采用的理由 |

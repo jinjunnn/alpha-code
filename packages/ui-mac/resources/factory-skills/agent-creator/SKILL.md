@@ -11,7 +11,7 @@ requirement into a precisely-tuned agent specification.
 
 **Golden rule (REQ-060)**: everything you create in a project lives under `<project>/.code-puppy/` —
 **never create `.opencode` anywhere** (no directories, no files, no links). Registration goes
-through the `alpha_register` tool, which validates and writes the project's `.code-puppy/alpha.jsonc`
+through the `codepuppy_register` tool, which validates and writes the project's `.code-puppy/alpha.jsonc`
 for you and schedules the reload — do not hand-edit config files.
 
 ## Workflow
@@ -33,7 +33,7 @@ for you and schedules the reload — do not hand-edit config files.
    - **prompt**: expert persona + clear behavioral boundaries + methodology + edge-case handling +
      output format. Be specific, not aspirational.
    - Optional: `model` (leave unset to inherit), `temperature`, `color`, `hidden`.
-3. **Register it (project agent — the default)**: call the `alpha_register` tool:
+3. **Register it (project agent — the default)**: call the `codepuppy_register` tool:
    - `type`: `"agent"`
    - `name`: the agent name
    - `entry`: a JSON object string with the fields you designed, e.g.
@@ -48,13 +48,13 @@ for you and schedules the reload — do not hand-edit config files.
    import it via **定制中心 → 创建/导入 → 导入 Agent**, which installs it globally (validated,
    receipted, uninstallable). There is no session-side global registration.
 5. **Confirm**: state what was registered (name + one-line description) and one example of how to
-   invoke it (`@<name> …` for subagents / agent switcher for primary). If `alpha_register` is
+   invoke it (`@<name> …` for subagents / agent switcher for primary). If `codepuppy_register` is
    unavailable, say honestly that in-session creation isn't wired in this build and point the user
    to 定制中心.
 
 ## Rules
 
-- Never overwrite an existing agent silently; `alpha_register` reports "updated" vs "registered" —
+- Never overwrite an existing agent silently; `codepuppy_register` reports "updated" vs "registered" —
   if the user didn't ask for an update and you see "updated", flag the name collision.
 - Never invent permission keys; use only: read/edit/bash/glob/grep/list/webfetch/websearch/skill/
   external_directory/doom_loop/question/task (value: allow/deny/ask, or a pattern→action map).
@@ -65,7 +65,7 @@ for you and schedules the reload — do not hand-edit config files.
 skill-creator teaches the generic methodology; these are the alpha-specific rules it doesn't know:
 
 - **Project skill (default)**: write `<project>/.code-puppy/skills/<name>/SKILL.md`, then call
-  `alpha_register` with `type: "skill"` (no name/entry needed — it registers the skills path once).
+  `codepuppy_register` with `type: "skill"` (no name/entry needed — it registers the skills path once).
   Never write into `.opencode`.
 - **Global (only when asked)**: write `$ALPHA_GLOBAL_DIR/skills/<name>/SKILL.md` — the desktop
   process supplies this absolute, canonical current-environment root and the engine discovers the
@@ -73,13 +73,13 @@ skill-creator teaches the generic methodology; these are the alpha-specific rule
   the retired `$HOME/.alpha` root is not a fallback.
 - **Frontmatter**: `name` (lowercase-hyphen, ≤64, must equal the folder name) + `description`
   (write it for the MODEL: concrete "Use when …" triggers decide whether the skill fires).
-- **Take effect**: the engine does NOT watch files — after writing, call the `alpha_reload` tool
+- **Take effect**: the engine does NOT watch files — after writing, call the `codepuppy_reload` tool
   (it schedules a registry reload right after your reply completes; the skill works from the next
-  message). `alpha_register` already schedules this for you.
+  message). `codepuppy_register` already schedules this for you.
 
 ## Creating COMMANDS (project-scoped)
 
-A command is a reusable prompt template (`/name` in the composer). Register with `alpha_register`:
+A command is a reusable prompt template (`/name` in the composer). Register with `codepuppy_register`:
 `type: "command"`, `name`, and `entry` like `{"template":"…the prompt, may use $ARGUMENTS…",
 "description":"…"}`. Allowed fields: template, description, agent, model, subtask. Project-scoped
 only; it takes effect from the next message (auto-reload).

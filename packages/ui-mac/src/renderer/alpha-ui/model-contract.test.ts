@@ -34,9 +34,9 @@ const notReadyByTag = () => ({
 
 const model: ModelV2Info = {
   id: "claude-sonnet-4.6",
-  providerID: "alpha",
+  providerID: "codepuppy",
   name: "Claude Sonnet 4.6",
-  api: { id: "alpha", type: "aisdk", package: "@ai-sdk/openai-compatible" },
+  api: { id: "codepuppy", type: "aisdk", package: "@ai-sdk/openai-compatible" },
   capabilities: { tools: true, input: ["text"], output: ["text"] },
   request: { headers: {}, body: {} },
   variants: [],

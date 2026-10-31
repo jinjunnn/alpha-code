@@ -182,7 +182,7 @@ beforeEach(() => {
   // 空 config dir(`#1392` 起自定义 provider 只来自真源文件,本闸的临时环境根下没有它)—— 隔离本闸关心的平台段。
   configDir = mkdtempSync(join(tmpdir(), "models-catalog-v2-config-"))
   process.env.OPENCODE_CONFIG_DIR = configDir
-  // 平台 provider 注入的两个前置(不设它们 provider.alpha 根本不存在,反分叉断言会空绿)。
+  // 平台 provider 注入的两个前置(不设它们 provider.codepuppy 根本不存在,反分叉断言会空绿)。
   process.env.ALPHA_BASE_URL = "https://gw.example/v1"
   mkdirSync(join(userData, "alpha-secrets"), { recursive: true })
   writeFileSync(join(userData, "alpha-secrets", "ALPHA_API_KEY"), "jwt", { mode: 0o600 })
@@ -213,7 +213,7 @@ const waitFor = async (ready: () => boolean, timeoutMs = 11000) => {
   }
 }
 
-const engineModelIds = () => Object.keys((buildAlphaModelConfig(userData)!.provider.alpha as any).models)
+const engineModelIds = () => Object.keys((buildAlphaModelConfig(userData)!.provider.codepuppy as any).models)
 
 describe("#681 生产 wiring:models-catalog IPC 经真实目录 decoder(`#1556` 起 V3)返回持久化投影", () => {
   test("production IPC refreshes through the V3 fetch decoder and returns the persisted projection", async () => {
@@ -325,7 +325,7 @@ describe("#681 反分叉:sidecar 引擎配置与 IPC 投影是同一份投影", 
   test("引擎配置不携带 pricing(展示投影不进 opencode provider 契约)", async () => {
     stubFetch(catalogV3())
     await refreshThenFork()
-    const models = (buildAlphaModelConfig(userData)!.provider.alpha as any).models
+    const models = (buildAlphaModelConfig(userData)!.provider.codepuppy as any).models
     expect(Object.values(models).every((m: any) => m.pricing === undefined)).toBe(true)
     // 但 variants 仍随投影下发(REQ-029 不能被本次切换弄丢)。
     expect(models["claude-opus-4.8"].variants["高"]).toEqual({ reasoning: { effort: "high" } })

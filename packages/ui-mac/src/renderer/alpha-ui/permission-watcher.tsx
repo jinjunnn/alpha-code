@@ -6,7 +6,7 @@
 // (不保留旧请求呈现,SSE 增量在 not-ready 期只并入本地列表,不单独成为可信来源);
 // 回复绑 request ID,stale/在途期回复在客户端即被拒绝。
 //
-// REQ-234 `#1531`:按 `metadata.alphaHub` 分流 —— agent 经 hub_install 发来的安装请求由 HubInstallWatcher 接手,弹定制中心
+// REQ-234 `#1531`:按 `metadata.alphaHub` 分流 —— agent 经 codepuppy_hub_install 发来的安装请求由 HubInstallWatcher 接手,弹定制中心
 // **自己的**安装确认框(确认之后由那个框发起安装);通用 PermissionDialog 不呈现它,于是同一个请求只有一个框。
 // 两条分支都经**同一个** feed.reply 回审批(提交入口不变,仍只有这一处)。
 

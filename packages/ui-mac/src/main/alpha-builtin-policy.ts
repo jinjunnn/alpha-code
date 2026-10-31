@@ -7,7 +7,7 @@
 //
 // 保护名单(硬校验,loud 拒绝):
 //   - 上游 load-bearing:compaction(禁则自动压缩必崩,compaction.ts:328)/ title / summary → 拒 disable;
-//   - alpha 注入 agent(alpha-automation 等,S18 X2)→ 拒 disable + hide(禁掉 = 自动化静默失效);
+//   - alpha 注入 agent(codepuppy-automation 等,S18 X2)→ 拒 disable + hide(禁掉 = 自动化静默失效);
 //   - build = 引擎兜底 agent → disable 需 confirm(UI 二次确认)。
 //
 // 机制依据(REQ-037 档,2026-07-05 代码确证):agent `disable` 删除/`hidden` UI 过滤/同名字段覆盖;
@@ -59,7 +59,7 @@ export const DEFAULT_BUILTIN_POLICY: BuiltinPolicy = {
 /** 上游 load-bearing agent:disable 直接拒绝(compaction 必崩;title/summary 为引擎内部消费)。 */
 export const HARD_PROTECTED_AGENTS = ["compaction", "title", "summary"] as const
 /** alpha 注入 agent(S18 X2):disable/hide 都拒绝 —— 治理它们 = 自动化/只读/请求审批档静默失效。 */
-export const ALPHA_INJECTED_AGENTS = ["alpha-automation", "alpha-automation-standard", "alpha-readonly", "alpha-ask"] as const
+export const ALPHA_INJECTED_AGENTS = ["codepuppy-automation", "codepuppy-automation-standard", "codepuppy-readonly", "codepuppy-ask"] as const
 /** 引擎兜底 agent:disable 需 confirm(全禁抛错/回退语义见上游 agent.ts:328-340)。 */
 export const CONFIRM_AGENTS = ["build"] as const
 

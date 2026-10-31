@@ -60,8 +60,8 @@ test("main 的重载请求 ⇒ 等本实例会话空闲 ⇒ 恰好一次 dispose
   })
   expect(engine.disposes).toBe(0)
 
-  // alpha_reload 进同一个调度器:会话还忙 ⇒ 不立刻 dispose
-  await hooks.tool.alpha_reload!.execute({ reason: "made a skill" }, { sessionID: "ses_1", directory: join(root, "workspace") })
+  // codepuppy_reload 进同一个调度器:会话还忙 ⇒ 不立刻 dispose
+  await hooks.tool.codepuppy_reload!.execute({ reason: "made a skill" }, { sessionID: "ses_1", directory: join(root, "workspace") })
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(engine.disposes).toBe(0)
 
