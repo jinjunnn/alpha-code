@@ -24,6 +24,13 @@ import { ConfigVariable } from "../../src/config/variable"
 import { ConfigParse } from "../../src/config/parse"
 import { materializeCloudMcpConfig } from "../../../ui-mac/src/main/cloud-sidecar-config"
 import { installCloudMcp } from "../../../ext/src/cloud-websearch-kill"
+import { OFFICE_MCP_MANIFEST_ENV } from "../../src/mcp/alpha-first-party-mcp"
+import {
+  ALPHA_OFFICE_PYTHON_SLOT,
+  ALPHA_OFFICE_SERVER_SLOT,
+  alphaOfficeInstallCommand,
+  type AlphaOfficeFormat,
+} from "../../../ui-mac/src/shared/office-advisories"
 
 const INJECTION_MODULE = path.resolve(import.meta.dir, "..", "..", "..", "ui-mac", "src", "main", "alpha-config-injection.ts")
 const { injectAlphaConfig } = (await import(INJECTION_MODULE)) as {
@@ -31,6 +38,34 @@ const { injectAlphaConfig } = (await import(INJECTION_MODULE)) as {
 }
 
 const identity = (origin: string, name: string): ToolIdentity => ({ source: "mcp", origin, name })
+
+/**
+ * #1578 AC1:一个临时应用包的 Resources —— 入库的 `resources/office-mcp/server.py` 与 `tools.json`(构建期从 server.py
+ * 导出的随包清单)原样拷贝;条目命令由生产的 `alphaOfficeInstallCommand` 产出,两个资源槽换成这个包(main 写策略
+ * 同一种替换,`{workspace}` 原样)。env 只有 main 在 fork 时注入的那一个键。
+ */
+function officeBundle(tmp: string) {
+  const shipped = path.join(import.meta.dir, "..", "..", "..", "ui-mac", "resources", "office-mcp")
+  const resources = path.join(tmp, "Code Puppy.app", "Contents", "Resources")
+  const office = path.join(resources, "office-mcp")
+  fs.mkdirSync(office, { recursive: true })
+  for (const file of ["server.py", "tools.json"]) fs.copyFileSync(path.join(shipped, file), path.join(office, file))
+  const python = path.join(resources, "office-runtime", "bin", "python3")
+  const server = path.join(office, "server.py")
+  return {
+    server,
+    env: { [OFFICE_MCP_MANIFEST_ENV]: path.join(office, "tools.json") },
+    entry: (format: AlphaOfficeFormat, extra: string[] = []) => ({
+      type: "local" as const,
+      command: [
+        ...alphaOfficeInstallCommand(format).map((token) =>
+          token === ALPHA_OFFICE_PYTHON_SLOT ? python : token === ALPHA_OFFICE_SERVER_SLOT ? server : token,
+        ),
+        ...extra,
+      ],
+    }),
+  }
+}
 
 /**
  * #1576 AC1:生产注入形状 —— 真 `injectAlphaConfig` 写出 `OPENCODE_CONFIG_CONTENT` 与同次的
@@ -239,6 +274,52 @@ describe("stable tool identity", () => {
       const b = authorityForMcp("cloud", after.entry, after.env)
       expect(a.kind).toBe("alpha-cloud")
       expect(b).toEqual(a)
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  // #1578 AC1 成立臂:删掉 authorityForMcp 的 alpha-bundled 分支 ⇒ 这里是 not-asserted,当场红。
+  test("#1578 AC1: a document-tool entry bound to the bundled manifest (command token-equal, server.py digest) is alpha-bundled", () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-1578-bundled-")))
+    try {
+      const pack = officeBundle(tmp)
+      for (const format of ["word", "excel", "powerpoint", "pdf"] as const) {
+        const authority = authorityForMcp(`alpha-${format}`, pack.entry(format), pack.env)
+        expect(authority).toEqual({
+          kind: "alpha-bundled",
+          bindingId: `mcp:alpha-${format}`,
+          evidenceDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        })
+        // 快照 schema 接受第三种 authority(随首个 ToolPart 持久化的那一份)。
+        expect(
+          Schema.decodeUnknownSync(ToolDisplaySnapshotV1)({
+            identity: identity(`alpha-${format}`, "read"),
+            technicalId: `alpha-${format}_read`,
+            authority,
+          }).authority,
+        ).toEqual(authority)
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  // #1578 AC1 不成立臂:每一种都只差一处 —— 命令多一个 token / 少一个 token / server.py 多一个字节 / 没有清单 env。
+  test("#1578 AC1: one extra or missing command token, a server.py one byte off, or no manifest is not-asserted", () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-1578-refuted-")))
+    try {
+      const pack = officeBundle(tmp)
+      const notAsserted = { kind: "not-asserted" }
+      expect(authorityForMcp("alpha-word", pack.entry("word"), pack.env).kind).toBe("alpha-bundled")
+      expect(authorityForMcp("alpha-word", pack.entry("word", ["--extra"]), pack.env)).toEqual(notAsserted)
+      const short = pack.entry("word")
+      expect(authorityForMcp("alpha-word", { ...short, command: short.command.slice(0, -1) }, pack.env)).toEqual(
+        notAsserted,
+      )
+      expect(authorityForMcp("alpha-word", pack.entry("word"), {})).toEqual(notAsserted)
+      fs.appendFileSync(pack.server, " ")
+      expect(authorityForMcp("alpha-word", pack.entry("word"), pack.env)).toEqual(notAsserted)
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }

@@ -33,9 +33,12 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { readFileSync } from "node:fs"
+import { bundledPluginTools, type BundledPluginTools } from "./alpha-bundled-plugin"
 
 type State = {
-  hooks: { origin: string; value: Hooks }[]
+  // #1578 AC5: `bundled` = the loader-side proof for this plugin's own tools (absent = nothing proven).
+  hooks: { origin: string; value: Hooks; bundled?: BundledPluginTools }[]
 }
 
 // Hook names that follow the (input, output) => Promise<void> trigger pattern
@@ -54,7 +57,9 @@ export interface Interface {
     output: Output,
   ) => Effect.Effect<Output>
   readonly list: () => Effect.Effect<Hooks[]>
-  readonly tools: () => Effect.Effect<{ origin: string; tools: NonNullable<Hooks["tool"]> }[]>
+  readonly tools: () => Effect.Effect<
+    { origin: string; tools: NonNullable<Hooks["tool"]>; bundled?: BundledPluginTools }[]
+  >
   readonly init: () => Effect.Effect<void>
 }
 
@@ -126,8 +131,10 @@ async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks:
     return
   }
 
+  // #1578 AC5: the structured loader source + the module file it imported, checked against the bundled manifest.
+  const bundled = bundledPluginTools(load, process.env, readFileSync)
   for (const server of getLegacyPlugins(load.mod)) {
-    hooks.push({ origin: load.spec, value: await server(input, load.options) })
+    hooks.push({ origin: load.spec, value: await server(input, load.options), bundled })
   }
 }
 
@@ -310,7 +317,9 @@ const layer = Layer.effect(
 
     const tools = Effect.fn("Plugin.tools")(function* () {
       const s = yield* InstanceState.get(state)
-      return s.hooks.flatMap((item) => (item.value.tool ? [{ origin: item.origin, tools: item.value.tool }] : []))
+      return s.hooks.flatMap((item) =>
+        item.value.tool ? [{ origin: item.origin, tools: item.value.tool, bundled: item.bundled }] : [],
+      )
     })
 
     const init = Effect.fn("Plugin.init")(function* () {

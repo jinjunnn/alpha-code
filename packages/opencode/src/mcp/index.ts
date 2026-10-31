@@ -59,6 +59,7 @@ import {
   isGovernedMcpEntry,
 } from "@opencode-ai/plugin/alpha-cloud-authority"
 import { declaredFirstPartyTools } from "./alpha-first-party-mcp"
+import { canonicalJsonDigest } from "@/permission/alpha-tool-policy-store"
 // #1572: the layered network classifier (REQ-236 network baseline §2.2 N1) and the engine's egress-proxy path judgment
 // live in one module; this file consumes both and keeps no copy of either.
 import { classifyNetFailure, engineNetFailurePath } from "@opencode-ai/schema/alpha-net-failure"
@@ -337,11 +338,20 @@ export function authorityForMcp(
   env: Record<string, string | undefined> = process.env,
 ): ToolAuthority {
   const evidence = governedMcpEvidence(name, entry, env)
-  if (!evidence) return { kind: "not-asserted" }
+  if (evidence)
+    return {
+      kind: "alpha-cloud",
+      bindingId: `mcp:${encodeURIComponent(name)}`,
+      evidenceDigest: `sha256:${createHash("sha256").update(evidence).digest("hex")}`,
+    }
+  // #1578 AC1(REQ-236 §2.6-7 / I1):随包文档工具 —— 判据就是 #1565 的声明定义(命令与随包模板逐 token 相等、
+  // server.py 摘要与清单一致),不另写一份比较。evidence = 被证明的命令与清单给出的定义。
+  const declared = declaredFirstPartyTools(name, entry, env, readFileSync)
+  if (!declared || entry.type !== "local") return { kind: "not-asserted" }
   return {
-    kind: "alpha-cloud",
+    kind: "alpha-bundled",
     bindingId: `mcp:${encodeURIComponent(name)}`,
-    evidenceDigest: `sha256:${createHash("sha256").update(evidence).digest("hex")}`,
+    evidenceDigest: canonicalJsonDigest({ kind: "alpha-bundled-mcp", name, command: entry.command, tools: declared }),
   }
 }
 

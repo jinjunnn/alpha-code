@@ -9,9 +9,11 @@
 //   raw under Node dies with ERR_MODULE_NOT_FOUND (.../tool.js from .../index.ts).
 //   Bundling inlines `@opencode-ai/plugin` (+ the zod it pulls in) into one plain `.js`,
 //   so the server only ever imports already-resolved JS.
-import { rmSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { TOOL_TEXT } from "../src/context-injection"
 
 const pkgDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 process.chdir(pkgDir)
@@ -38,5 +40,16 @@ if (!result.success) {
   process.exit(1)
 }
 
+// #1578 AC5 (REQ-236 §2.6-7): the trusted bundled manifest, shipped next to plugin.js (electron-builder `alpha-ext/`).
+// The engine gives `alpha-bundled` only to these tool names, and only when the plugin module it loaded hashes to this
+// digest (packages/opencode/src/plugin/alpha-bundled-plugin.ts). Tool names = TOOL_TEXT's keys, which
+// src/context-injection.test.ts pins to the real AlphaExt's own tool set; project plugins merged in at runtime are
+// never listed.
+const manifest = {
+  moduleSha256: createHash("sha256").update(readFileSync("dist/plugin.js")).digest("hex"),
+  tools: Object.keys(TOOL_TEXT).sort(),
+}
+writeFileSync("dist/bundled-tools.json", `${JSON.stringify(manifest, null, 2)}\n`)
+
 const outputs = result.outputs.map((o) => path.relative(pkgDir, o.path)).join(", ")
-console.log(`[@alpha-code/ext] bundled → ${outputs}`)
+console.log(`[@alpha-code/ext] bundled → ${outputs}, dist/bundled-tools.json`)

@@ -54,6 +54,13 @@ const cloudSubject = (evidenceDigest: string): ToolPolicySubject => ({
   authority: { kind: "alpha-cloud", bindingId: "mcp:alpha", evidenceDigest },
 })
 
+// #1578:随包文档工具 —— authority 由 authorityForMcp 在随包清单核验成立时铸(alpha-tool-identity.test.ts 两臂)。
+const bundledSubject = (bindingDigest?: string): ToolPolicySubject => ({
+  identity: { source: "mcp", origin: "alpha-word", name: "read_docx" },
+  authority: { kind: "alpha-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_B },
+  bindingDigest,
+})
+
 const NO_CAPS = { managed: { status: "ok", ruleset: [], sources: [] } } as const
 const NO_USER = { status: "absent" } as const
 
@@ -146,6 +153,28 @@ describe("resolveToolPolicy", () => {
         user: NO_USER,
       }).state,
     ).toBe("ask")
+  })
+
+  // #1578 AC2(策略半边):删掉 classifyTool 的 alpha-bundled 分支 ⇒ 分类回到 third-party-mcp,当场红;
+  // 插件即使带同一种 authority 也仍是 plugin(AC5「保留插件来源与原权限默认」)。
+  test("#1578 AC2: an alpha-bundled document tool is class alpha-bundled and asks by default; a bundled plugin tool stays plugin", () => {
+    expect(classifyTool(bundledSubject())).toBe("alpha-bundled")
+    expect(classDefaultState("alpha-bundled")).toBe("ask")
+    expect(resolve({ subject: bundledSubject(DIGEST_A), caps: NO_CAPS, user: NO_USER })).toEqual({
+      state: "ask",
+      action: "ask",
+      reason: { kind: "default", class: "alpha-bundled" },
+    })
+    const bundledPlugin: ToolPolicySubject = {
+      identity: { source: "plugin", origin: "/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js", name: "alpha_ping" },
+      authority: { kind: "alpha-bundled", bindingId: "plugin:alpha-ext", evidenceDigest: DIGEST_B },
+    }
+    expect(classifyTool(bundledPlugin)).toBe("plugin")
+    expect(resolve({ subject: bundledPlugin, caps: NO_CAPS, user: NO_USER }).reason).toEqual({ kind: "default", class: "plugin" })
+    // 用户的「Code Puppy 文档工具」整组设置只作用于这一类。
+    const records: ToolPolicyRecord[] = [{ selector: { level: "class", class: "alpha-bundled" }, state: "disabled" }]
+    expect(resolve({ subject: bundledSubject(), caps: NO_CAPS, user: { status: "ok", records } }).state).toBe("disabled")
+    expect(resolve({ subject: mcpSubject(), caps: NO_CAPS, user: { status: "ok", records } }).state).toBe("ask")
   })
 
   test("R2 同层优先级:exact tool > service > class(§3)", () => {
@@ -271,6 +300,41 @@ describe("policy store", () => {
     expect(loaded.doc.records).toEqual(records)
     // 没有半截 tmp 残留。
     expect(fs.readdirSync(dir).filter((name) => name.includes(".tmp-"))).toEqual([])
+  })
+
+  // #1578 AC4(方案 §2.6-7 数据回退):回退只撤分类、铸造与设置组,schema 的 `alpha-bundled` 字面量保留。一份当时写下
+  // `class:"alpha-bundled"` 记录的文档(按落盘形状手写)照常 `ok`;撤回后同一工具铸成 not-asserted ⇒ 记录不匹配、
+  // 吃第三方默认,不触发整份 quarantine。删掉 ToolClass 里的这个字面量 ⇒ 这里 quarantined,当场红。
+  test("#1578 AC4: with classification withdrawn but the literal kept, a document holding a class alpha-bundled record loads ok", () => {
+    const dir = tmpdir("alpha-policy-1578-")
+    const file = policyFilePath(dir, PARTITION)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        partition: PARTITION,
+        records: [
+          { selector: { level: "class", class: "alpha-bundled" }, state: "enabled" },
+          { selector: { level: "tool", canonical: ID_MCP_PAID }, state: "disabled" },
+        ],
+      }),
+    )
+    const loaded = loadPolicyDocument(dir, PARTITION)
+    expect(loaded.status).toBe("ok")
+    if (loaded.status !== "ok") return
+    const withdrawn: ToolPolicySubject = {
+      identity: { source: "mcp", origin: "alpha-word", name: "read_docx" },
+      authority: { kind: "not-asserted" },
+      bindingDigest: DIGEST_A,
+    }
+    expect(
+      AlphaToolPolicy.resolveToolPolicy({ subject: withdrawn, caps: NO_CAPS, user: { status: "ok", records: loaded.doc.records } }),
+    ).toEqual({ state: "ask", action: "ask", reason: { kind: "default", class: "third-party-mcp" } })
+    // 同一份文档里的其它记录照常生效(不是整份被忽略)。
+    expect(
+      AlphaToolPolicy.resolveToolPolicy({ subject: mcpSubject(), caps: NO_CAPS, user: { status: "ok", records: loaded.doc.records } }).state,
+    ).toBe("disabled")
   })
 
   test("T2 文件不存在 = 首次使用(absent),不是错误", () => {
