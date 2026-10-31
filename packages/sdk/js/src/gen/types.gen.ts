@@ -249,6 +249,11 @@ export type ToolAuthority =
       bindingId: string
       evidenceDigest: string
     }
+  | {
+      kind: "alpha-bundled"
+      bindingId: string
+      evidenceDigest: string
+    }
 
 export type ToolBillingFact = {
   class: string
