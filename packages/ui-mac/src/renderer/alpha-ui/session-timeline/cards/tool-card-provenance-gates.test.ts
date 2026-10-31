@@ -17,6 +17,7 @@ import {
   toolCardHeadOf,
   toolDevDetailsOf,
   toolProvenanceOf,
+  toolStepLineOf,
 } from "./tool-card-model"
 import { artifactLinksOf, projectTimelineRows, type TimelineRow } from "../timeline-model"
 // 生产字典是被验对象(标题必须真的解析成中文);期望值用本文件的独立字面量,
@@ -1234,3 +1235,72 @@ describe("#1576 AC6 — 开发者详情保留 identity、authority、bindingId�
   })
 })
 
+
+// ── #1578 —— 随包臂:持久化 authority = alpha-bundled ⇒「Code Puppy 内置」· 本机,但不借 builtin 特权 ────────
+/** 期望值:独立字面量(不 import 被测常量)。 */
+const BUNDLED_DIGEST = `sha256:${"b".repeat(64)}`
+const EXT_PATH = "/Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js"
+function bundled(display: ToolDisplaySnapshotV1, bindingId: string): ToolDisplaySnapshotV1 {
+  return { ...display, authority: { kind: "alpha-bundled", bindingId, evidenceDigest: BUNDLED_DIGEST }, location: { kind: "local" } }
+}
+/** 持久化 = 会话库里存的 JSON;重载 = 读回后再走生产时间线投影。 */
+function replayed(part: ToolPart): ToolPart {
+  const [out] = visibleToolPartsOf(timelineRowsOf([JSON.parse(JSON.stringify(part)) as ToolPart]))
+  expect(out).toBeDefined()
+  return out!
+}
+
+describe("#1578 AC2 — 随包文档工具在时间线显示为「Code Puppy 内置」· 本机", () => {
+  // 删掉 categoryOf / toolProvenanceOf 的 alpha-bundled 分支 ⇒ 第三方 + 插头标记,当场红。
+  test("mcp + alpha-bundled authority ⇒ 内置 · 本机,步骤行是我方通用行(无第三方标记);同一调用无 authority ⇒ 第三方", () => {
+    const doc = bundled(mcp("alpha-word", "read_docx"), "mcp:alpha-word")
+    const part = replayed(toolPart({ tool: "alpha-word_read_docx", display: doc, state: completed({ path: "/w/a.docx" }, "body") }))
+    expect(toolProvenanceOf(part)).toEqual({ source: "builtin", location: { kind: "local" } })
+    const line = toolStepLineOf(part)
+    expect(line.source).toBeUndefined()
+    expect(line.verbKey ? (zhDict as Record<string, string>)[line.verbKey] : undefined).toBe("Code Puppy 内置")
+    expect(line.object).toBe("read_docx")
+    const unproven = toolPart({
+      tool: "alpha-word_read_docx",
+      display: { ...mcp("alpha-word", "read_docx"), location: { kind: "local" } },
+      state: completed({ path: "/w/a.docx" }, "body"),
+    })
+    expect(toolProvenanceOf(unproven).source).toBe("third-party")
+    expect(toolStepLineOf(unproven).source).toEqual({ kind: "mcp", label: "alpha-word" })
+  })
+
+  // 把 alpha-bundled 并进 builtin 分类 ⇒ 冒名 todowrite 被时间线吞掉 / 借到专用卡,当场红。
+  test("alpha-bundled 不是 builtin:同名 todowrite 照常渲染,read 不借专用读文件卡", () => {
+    const todo = bundled(plugin(EXT_PATH, "todowrite"), "plugin:alpha-ext")
+    expect(visibleToolPartsOf(timelineRowsOf([toolPart({ tool: "todowrite", display: todo, state: completed({}, "") })]))).toHaveLength(1)
+    const read = toolCardDispatchOf(
+      toolPart({ tool: "read", display: bundled(plugin(EXT_PATH, "read"), "plugin:alpha-ext"), state: completed({ filePath: "/x" }, "secret") }),
+    )
+    expect([read.category, read.metadataOnly]).toEqual(["alpha-bundled", true])
+  })
+})
+
+describe("#1578 AC5 — 随包扩展的自有工具 vs 项目插件合并进来的工具(批准稿 #first-party-plugin)", () => {
+  // 删掉 categoryOf 的 plugin 随包分支 ⇒「第三方插件」,当场红;安装路径出现在正常界面 ⇒ 负向断言红。
+  test("清单证明过 ⇒ 内置 · 本机、正常界面不出现安装路径,路径与 authority 只在开发者详情;未证明 ⇒ 第三方插件", () => {
+    const own = replayed(
+      toolPart({ tool: "alpha_cloud_access", display: bundled(plugin(EXT_PATH, "alpha_cloud_access"), "plugin:alpha-ext"), state: completed({}, "{}") }),
+    )
+    expect(toolProvenanceOf(own)).toEqual({ source: "builtin", location: { kind: "local" } })
+    const line = toolStepLineOf(own)
+    expect(line.source).toBeUndefined()
+    expect(line.verbKey ? (zhDict as Record<string, string>)[line.verbKey] : undefined).toBe("Code Puppy 内置")
+    expect(JSON.stringify([line, toolCardHeadOf(own).titleKey, toolProvenanceOf(own)])).not.toContain("Applications")
+    const dev = toolDevDetailsOf(own)!
+    expect(dev.authority).toBe(`alpha-bundled · plugin:alpha-ext · sha256:${"b".repeat(25)}`)
+    expect([dev.location, dev.origin]).toEqual(["local", EXT_PATH])
+
+    // 同一个扩展下、项目插件合并进来的工具:引擎铸 not-asserted ⇒ 第三方插件(不带名字),路径同样只在开发者详情。
+    const merged = replayed(
+      toolPart({ tool: "lint_project", display: { ...plugin(EXT_PATH, "lint_project"), location: { kind: "local" } }, state: completed({}, "") }),
+    )
+    expect(toolProvenanceOf(merged)).toEqual({ source: "third-party", location: { kind: "local" } })
+    expect(toolStepLineOf(merged).source).toEqual({ kind: "plugin" })
+    expect(toolDevDetailsOf(merged)!.authority).toBe("not-asserted")
+  })
+})

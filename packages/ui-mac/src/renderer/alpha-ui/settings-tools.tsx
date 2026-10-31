@@ -31,17 +31,20 @@ import { Button } from "./Button"
 import { rovingKey, rovingTabIndex } from "./roving-focus"
 import { t } from "../i18n"
 
-const CLASS_ORDER: readonly ToolClass[] = ["builtin", "alpha-cloud", "third-party-mcp", "plugin"]
+// #1578 AC3:`alpha-bundled` = 经随包清单核验成立的文档工具(「Code Puppy 文档工具」组)。
+const CLASS_ORDER: readonly ToolClass[] = ["builtin", "alpha-bundled", "alpha-cloud", "third-party-mcp", "plugin"]
 const STATES: readonly ToolPolicyState[] = ["enabled", "ask", "disabled"]
 
 const classLabel = (cls: ToolClass) => {
   if (cls === "builtin") return t("alpha.settings.toolsClassBuiltin")
+  if (cls === "alpha-bundled") return t("alpha.settings.toolsClassBundled")
   if (cls === "alpha-cloud") return t("alpha.settings.toolsClassCloud")
   if (cls === "third-party-mcp") return t("alpha.settings.toolsClassMcp")
   return t("alpha.settings.toolsClassPlugin")
 }
 const classCaption = (cls: ToolClass) => {
   if (cls === "builtin") return t("alpha.settings.toolsCapBuiltin")
+  if (cls === "alpha-bundled") return t("alpha.settings.toolsCapBundled")
   if (cls === "alpha-cloud") return t("alpha.settings.toolsCapCloud")
   if (cls === "third-party-mcp") return t("alpha.settings.toolsCapMcp")
   return t("alpha.settings.toolsCapPlugin")
