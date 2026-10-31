@@ -187,10 +187,10 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
 }
 
+type DisplaySnapshot = { identity: ToolIdentity; authority: ToolAuthority; technicalId: string; location?: ToolLocation }
+
 /** #878 快照的防御校验:结构不完整/形状非法 = 无快照(按未知来源降级)。 */
-function displaySnapshotOf(
-  part: ToolPart,
-): { identity: ToolIdentity; authority: ToolAuthority; technicalId: string; location?: ToolLocation } | undefined {
+function displaySnapshotOf(part: { display?: unknown }): DisplaySnapshot | undefined {
   const display = (part as { display?: unknown }).display
   if (typeof display !== "object" || display === null) return undefined
   const record = display as {
@@ -258,7 +258,29 @@ export interface ToolProvenance {
  * (含其中任何同名 `location` / `host` 字段)都不是输入。
  */
 export function toolProvenanceOf(part: ToolPart): ToolProvenance {
-  const snapshot = displaySnapshotOf(part)
+  return provenanceOfSnapshot(displaySnapshotOf(part))
+}
+
+/** 来源三类的人话 i18n key(时间线详情底部与审批卡共用)。 */
+export const PROVENANCE_SOURCE_KEYS = {
+  builtin: "alpha.timeline.sourceBuiltin",
+  "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
+  "third-party": "alpha.timeline.sourceThirdParty",
+} as const
+
+/**
+ * REQ-236 `#1575`:审批卡上的那一个工具。审批请求没有调用记录,只带引擎写的 identity + authority
+ * (`packages/opencode/src/permission/alpha-tool-policy-gate.ts` confirm 的 metadata)—— 名字与来源走与时间线
+ * 同一条判定(快照校验 → categoryOf → 宿主 / 云规则表),不另判一份。位置不在这里:审批请求不带 #1576 的 location。
+ */
+export function approvalToolOf(facts: { identity: unknown; authority: unknown; technicalId: string }) {
+  const snapshot = displaySnapshotOf({ display: facts })
+  if (!snapshot) return undefined
+  const dispatch = dispatchOfSnapshot(snapshot, () => ({}))
+  return { name: dispatch.name, titleKey: toolTitleKeyOf(dispatch), source: provenanceOfSnapshot(snapshot).source }
+}
+
+function provenanceOfSnapshot(snapshot: DisplaySnapshot | undefined): ToolProvenance {
   if (!snapshot) return { source: "third-party", location: { kind: "unknown" } }
   const category = categoryOf(snapshot.identity, snapshot.authority)
   const source: ToolProvenanceSource =
@@ -302,6 +324,10 @@ export function toolCardDispatchOf(part: ToolPart): ToolCardDispatch {
       hiddenReason: "no-snapshot",
     }
   }
+  return dispatchOfSnapshot(snapshot, () => metadataOf(part))
+}
+
+function dispatchOfSnapshot(snapshot: DisplaySnapshot, metadata: () => Record<string, unknown>): ToolCardDispatch {
   const { identity, authority } = snapshot
   const category = categoryOf(identity, authority)
   if ((identity.source === "builtin" || identity.source === "builtin-v2") && identity.origin === "") {
@@ -315,7 +341,7 @@ export function toolCardDispatchOf(part: ToolPart): ToolCardDispatch {
       // 铸的 metadata,不是远端内容/别名/标题 —— identity 闸(上一行)仍是准入
       // 前提,冒名的第三方工具到不了这条分支;display 缺失或形状非法一律回落
       // read 卡(fail-closed)。
-      const effective = kind === "read" && dirDisplayOf(metadataOf(part)) !== undefined ? "list" : kind
+      const effective = kind === "read" && dirDisplayOf(metadata()) !== undefined ? "list" : kind
       return { kind: effective, category, metadataOnly: false, name: sanitizedName(identity.name) }
     }
   }

@@ -7,6 +7,8 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { build } from "vite"
 import type * as Runtime from "./composer-a11y-test-runtime"
+import { dict as en } from "../i18n/en"
+import { dict as zh } from "../i18n/zh"
 
 type TestRuntime = typeof Runtime
 
@@ -145,6 +147,39 @@ describe("composer accessibility behavior", () => {
     await flush()
     expect(document.querySelector(".a-pop-fixed")).toBeNull()
     expect(trigger.getAttribute("data-mode")).toBe("readonly")
+  })
+
+  // REQ-236 `#1575` AC5:每档显示批准稿(docs/design/2026-10-30-req236-permission-cards/frame.html `#tier-menu`)的边界说明,
+  // 底部一句三档共同、任何档都越不过。文案逐字取自批准稿;英文词典必须有同一组键。
+  test("#1575 AC5 tier menu shows each tier's approved boundary and the one line no tier can bypass", async () => {
+    const approved = {
+      allow: "改文件、运行命令不再询问。项目外文件夹、.env、外部与云端工具仍询问。",
+      ask: "改文件、运行命令、交给其它助手前询问。外部与云端工具按设置执行。",
+      readonly: "不能改文件、运行命令、交给其它助手。项目外文件夹不可访问;外部与云端工具每次询问。",
+    }
+    const boundary = "任何档都越不过:已停用的工具、未获准的网址、项目外写入。"
+    expect(zh["alpha.composer.permAllowHint"]).toBe(approved.allow)
+    expect(zh["alpha.composer.permAskHint"]).toBe(approved.ask)
+    expect(zh["alpha.composer.permReadonlyHint"]).toBe(approved.readonly)
+    expect(zh["alpha.composer.permBoundary"]).toBe(boundary)
+    for (const key of ["alpha.composer.permAllowHint", "alpha.composer.permAskHint", "alpha.composer.permReadonlyHint", "alpha.composer.permBoundary"] as const)
+      expect(typeof en[key]).toBe("string")
+
+    mount(() => runtime.PermChipHarness())
+    document.querySelector<HTMLButtonElement>(".a-chip-perm")!.click()
+    await flush()
+
+    const menu = document.querySelector<HTMLElement>(".a-pop-fixed[role='menu']")!
+    const desc = (mode: string) => menu.querySelector(`.a-pop-item[data-perm='${mode}'] .a-pop-desc`)?.textContent
+    expect(desc("allow")).toBe(approved.allow)
+    expect(desc("ask")).toBe(approved.ask)
+    expect(desc("readonly")).toBe(approved.readonly)
+    const note = menu.querySelector<HTMLElement>("[data-perm-boundary]")!
+    expect(note.textContent).toBe(boundary)
+    // 底部一句在三档之后、隔一条分隔线,不是第四个可选项。
+    expect(note.previousElementSibling?.getAttribute("role")).toBe("separator")
+    expect(menu.lastElementChild).toBe(note)
+    expect(menu.querySelectorAll("[role='menuitemradio']")).toHaveLength(3)
   })
 
   test("#1476 Escape closes the menu and restores trigger focus even when focus is outside it", async () => {

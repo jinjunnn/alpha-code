@@ -1051,6 +1051,7 @@ describe("auth 订阅单点接线", () => {
       "alpha-ui/AlphaOnboarding.tsx",
       "alpha-ui/alpha-composer-model.tsx",
       "alpha-ui/alpha-composer.tsx",
+      "alpha-ui/permission-watcher.tsx",
       "automations/automation-panel.tsx",
       "extensions/extension-hub.tsx",
       "sidebar/alpha-sidebar.tsx",

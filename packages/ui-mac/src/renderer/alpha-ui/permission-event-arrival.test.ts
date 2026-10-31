@@ -69,6 +69,10 @@ function v1Request(id: string) {
     sessionID: SESSION,
     permission: "mcp:cloud:cloud_web_search",
     patterns: ["*"],
+    // 引擎的 v1 Request 恒带 metadata 与 always(packages/opencode/src/permission/index.ts 的唯一构造点);
+    // REQ-236 `#1575` 起适配器读 always 投影 save,缺这两个字段的夹具不再是生产形状。
+    metadata: {},
+    always: ["*"],
     tool: { messageID: "msg_arrival_1", callID: "call_arrival_1" },
   }
 }

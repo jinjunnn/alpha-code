@@ -86,9 +86,29 @@ const v2Request = {
   save: ["pwd"],
 }
 
+// preload 边界的桩(生产 PermissionWatcher 读登录态、身份轴写设置都经 window.api):每条用例前装、后拆,
+// 经 defineProperty(configurable) 注入 —— 裸赋值遇前序文件定义的只读 window.api 会抛(同 permission-single-surface.test.ts)。
+const toolPolicyWrites: unknown[] = []
+let toolPolicyResult: { ok: true } | { ok: false; code: "write-failed" } = { ok: true }
+
 beforeEach(() => {
   runtime.resetDualChannelHarness()
   document.body.replaceChildren()
+  toolPolicyWrites.splice(0)
+  toolPolicyResult = { ok: true }
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    writable: true,
+    value: {
+      auth: { getState: () => new Promise(() => {}), subscribe: () => () => {} },
+      toolPolicy: {
+        setRecord: async (input: unknown) => {
+          toolPolicyWrites.push(input)
+          return toolPolicyResult
+        },
+      },
+    },
+  })
 })
 
 afterEach(async () => {
@@ -97,6 +117,7 @@ afterEach(async () => {
     .reverse()
     .forEach((dispose) => dispose())
   await flush()
+  Reflect.deleteProperty(window, "api")
 })
 
 afterAll(async () => {
@@ -128,7 +149,7 @@ async function mounted() {
 }
 
 describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒绝", () => {
-  test("v1 permission.asked → 审批对话框出现,五条事实来自 v1 请求本身", async () => {
+  test("v1 permission.asked → 审批对话框出现,事实来自 v1 请求本身", async () => {
     await mounted()
     expect(dialog()).toBeNull()
 
@@ -142,7 +163,10 @@ describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒
     expect(fact("action")).toContain("external_directory")
     expect(fact("resources")).toContain("/Users/someone/Downloads/*")
     expect(fact("subject")).toContain(runtime.HARNESS.agent)
-    expect(fact("scope")).toContain(runtime.HARNESS.sessionID)
+    // REQ-236 `#1575`:v1 的 scope / expiresAt 是适配器补的形状,不当授权范围与期限上卡;
+    // 范围与期限由「记住」框按 v1 always 的真实语义写(本次会话 · 重启后失效)。
+    expect(document.querySelector('[data-permission-fact="scope"]')).toBeNull()
+    expect(document.querySelector('[data-permission-remember="session"]')?.textContent).toContain("本次会话 · 重启后失效")
     // ③ 事实核实通过 ⇒ 没有被自动拒绝(自动拒绝会立刻提交一个 reject 并关掉对话框)。
     expect(runtime.permissionTraffic()).not.toContain("permission.reply")
   })
@@ -185,16 +209,81 @@ describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒
     expect(fact("action")).toContain("external_directory")
   })
 
-  test("v1 的「始终允许」保持禁用 —— 不对授权持久性说谎", async () => {
+  test("REQ-236 #1575 AC1:v1 能力轴「本次会话内允许」可用,点了 reply=always 发到 v1 通道", async () => {
     await mounted()
     runtime.emit("permission.asked", v1Request)
     await flush()
 
-    // v1 的 always 只写进引擎进程内存(重启即失),而按钮文案承诺的是"为当前项目创建永久授权"。
-    // 适配器刻意不投影 save ⇒ 这个按钮禁用;「允许一次」「拒绝」照常可用。
-    expect(button("always")!.disabled).toBe(true)
-    expect(button("once")!.disabled).toBe(false)
-    expect(button("reject")!.disabled).toBe(false)
+    // v1 的 always 只写进引擎进程内存(重启即失)—— 按钮如实叫「本次会话内允许」,不再承诺永久授权。
+    expect(button("always")!.textContent).toBe("本次会话内允许")
+    expect(button("always")!.disabled).toBe(false)
+    expect(dialog()!.textContent).not.toContain("永久授权")
+    expect(dialog()!.textContent).not.toContain("不过期")
+
+    button("always")!.click()
+    await flush()
+
+    const reply = runtime.sdkCalls.find((call) => call.path === "permission.reply")
+    expect(reply!.args[0]).toMatchObject({ requestID: v1Request.id, reply: "always" })
+    expect(runtime.permissionTraffic()).not.toContain("v2.session.permission.reply")
+    expect(dialog()).toBeNull()
+  })
+
+  test("REQ-236 #1575 AC2:身份轴「在此项目中始终允许」经生产接线先写设置再回 once;写不成不回", async () => {
+    // 生产 PermissionWatcher 把 preload 的 toolPolicy.setRecord 交给对话框 —— 桩在 beforeEach 里(preload 边界)。
+    toolPolicyResult = { ok: false, code: "write-failed" }
+    const writes = toolPolicyWrites
+    const identity = {
+      ...v1Request,
+      id: "per_v1_identity_1",
+      permission: "mcp:notion:search_pages",
+      patterns: [`sha256:${"b".repeat(64)}@absent`],
+      always: [`sha256:${"b".repeat(64)}@absent`],
+      metadata: {
+        policy: {
+          directory: "/Users/someone/project",
+          canonical: "mcp:notion:search_pages",
+          bindingDigest: `sha256:${"b".repeat(64)}`,
+          askedBy: "policy",
+        },
+      },
+    }
+    await mounted()
+    runtime.emit("permission.asked", identity)
+    await flush()
+
+    button("always")!.click()
+    await flush()
+    await flush()
+    expect(writes).toHaveLength(1)
+    expect(runtime.permissionTraffic()).not.toContain("permission.reply")
+    expect(dialog()).not.toBeNull()
+
+    toolPolicyResult = { ok: true }
+    button("always")!.click()
+    await flush()
+    await flush()
+    expect(writes).toEqual([
+      {
+        directory: "/Users/someone/project",
+        record: {
+          selector: { level: "tool", canonical: "mcp:notion:search_pages" },
+          state: "enabled",
+          bindingDigest: `sha256:${"b".repeat(64)}`,
+        },
+      },
+      {
+        directory: "/Users/someone/project",
+        record: {
+          selector: { level: "tool", canonical: "mcp:notion:search_pages" },
+          state: "enabled",
+          bindingDigest: `sha256:${"b".repeat(64)}`,
+        },
+      },
+    ])
+    const reply = runtime.sdkCalls.find((call) => call.path === "permission.reply")
+    expect(reply!.args[0]).toMatchObject({ requestID: identity.id, reply: "once" })
+    expect(dialog()).toBeNull()
   })
 
   test("v1 提交失败 = 不假定放行:对话框留在原地并显示失败", async () => {

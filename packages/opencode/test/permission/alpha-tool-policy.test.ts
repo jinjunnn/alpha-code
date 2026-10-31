@@ -524,6 +524,53 @@ it.instance(
   { git: true },
 )
 
+// ═══ VI. 生产装配的账户分区(REQ-236 `#1575` AC4)══════════════════════════════
+// 不注入 account / baseDir / managed:就是生产 `AlphaToolPolicy.node`(`layer()` 零参)。桌面主进程按登录账户在
+// fork 引擎时写 `ALPHA_POLICY_ACCOUNT`(未登录不写);这里在同一个进程里切这个变量,等价于换号后重新 fork 的引擎。
+// 删掉默认值对它的读取(退回恒 anonymous)⇒ 账户 B 读到账户 A 的「启用」,本用例红。
+const productionEnv = AppNodeBuilder.build(
+  LayerNode.group([AlphaToolPolicy.node, CrossSpawnSpawner.node, InstanceStore.node]),
+  [[InstanceStore.bootstrapNode, noopBootstrap]],
+)
+const production = testEffect(productionEnv)
+
+production.instance(
+  "VI1 生产 node:按 ALPHA_POLICY_ACCOUNT 分区,换账户后同项目同 binding 的「启用」不生效;未登录用 anonymous,旧记录不迁移",
+  () =>
+    Effect.gen(function* () {
+      const policy = yield* AlphaToolPolicy.Service
+      const saved = process.env.ALPHA_POLICY_ACCOUNT
+      const enable = { selector: { level: "tool", canonical: ID_MCP_PAID }, state: "enabled", bindingDigest: DIGEST_A } as const
+      try {
+        // 未登录:anonymous 分区,照常可写可用。
+        delete process.env.ALPHA_POLICY_ACCOUNT
+        expect((yield* policy.inspect()).partition.account).toBe("anonymous")
+        yield* policy.setRecord(enable)
+        expect((yield* policy.resolve(mcpSubject(DIGEST_A))).state).toBe("enabled")
+
+        // 登录账户 A:anonymous 里那条不迁移,回默认询问;A 自己写的生效。
+        process.env.ALPHA_POLICY_ACCOUNT = "acct:aaaa"
+        expect((yield* policy.inspect()).partition.account).toBe("acct:aaaa")
+        expect((yield* policy.resolve(mcpSubject(DIGEST_A))).state).toBe("ask")
+        yield* policy.setRecord(enable)
+        expect((yield* policy.resolve(mcpSubject(DIGEST_A))).state).toBe("enabled")
+
+        // 登出后登录账户 B:同项目、同 binding,A 的「启用」不生效。
+        process.env.ALPHA_POLICY_ACCOUNT = "acct:bbbb"
+        expect((yield* policy.inspect()).partition.account).toBe("acct:bbbb")
+        expect((yield* policy.resolve(mcpSubject(DIGEST_A))).state).toBe("ask")
+
+        // 回到 A:A 的记录还在。
+        process.env.ALPHA_POLICY_ACCOUNT = "acct:aaaa"
+        expect((yield* policy.resolve(mcpSubject(DIGEST_A))).state).toBe("enabled")
+      } finally {
+        if (saved === undefined) delete process.env.ALPHA_POLICY_ACCOUNT
+        else process.env.ALPHA_POLICY_ACCOUNT = saved
+      }
+    }),
+  { git: true },
+)
+
 // ═══ 锚点核对(方向与生产相反,只证字面量没抄错)═══════════════════════════════
 test("字面量锚点与生产编码一致", () => {
   expect(selectorKey({ level: "tool", canonical: ID_MCP_PAID })).toBe(JSON.stringify(["tool", ID_MCP_PAID]))

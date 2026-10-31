@@ -2,6 +2,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test"
 import appPlugin from "@opencode-ai/app/vite"
 import type {
+  PermissionRequest as PermissionV1Request,
   PermissionV2DecisionCommand,
   PermissionV2DecisionReceipt,
   PermissionV2Request,
@@ -15,7 +16,9 @@ import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
 import type { PermissionWatcher } from "./permission-watcher"
+import { dict as en } from "../i18n/en"
 import { dict as zh } from "../i18n/zh"
+import { adaptPermissionV1Request } from "../../../../app/src/context/permission-v1-adapter"
 
 type TestRuntime = {
   createComponent: typeof createComponent
@@ -23,6 +26,7 @@ type TestRuntime = {
   createPermissionDecisionCommand: typeof createPermissionDecisionCommand
   PermissionDialog: typeof PermissionDialog
   PermissionWatcher: typeof PermissionWatcher
+  resetAuthRecoveryForTests: () => void
 }
 
 type PermissionClient = Parameters<typeof PermissionWatcher>[0]["client"]
@@ -49,8 +53,18 @@ const disposers: Array<() => void> = []
 GlobalRegistrator.register()
 const runtime = (await import(pathToFileURL(join(runtimeDirectory, "permission-test-runtime.js")).href)) as TestRuntime
 
+// 生产 PermissionWatcher 经 subscribeAuthState 读登录态(范围行写「当前账户 / 未登录」),这里只在 preload 边界放桩;
+// 经 defineProperty(configurable) 注入,与 permission-single-surface.test.ts 同法(裸赋值遇只读 window.api 会抛)。
+let authState: Promise<{ status: "logged-in" | "logged-out"; mode: "byok" | "platform" }> = new Promise(() => {})
 beforeEach(() => {
   document.body.replaceChildren()
+  runtime.resetAuthRecoveryForTests()
+  authState = new Promise(() => {})
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    writable: true,
+    value: { auth: { getState: () => authState, subscribe: () => () => {} } },
+  })
 })
 
 afterEach(async () => {
@@ -59,6 +73,7 @@ afterEach(async () => {
     .reverse()
     .forEach((dispose) => dispose())
   await flush()
+  Reflect.deleteProperty(window, "api")
 })
 
 afterAll(async () => {
@@ -102,11 +117,13 @@ function receipt(
   }
 }
 
+type SaveToolPolicy = Parameters<typeof PermissionDialog>[0]["saveToolPolicy"]
+
 function mount(
   onSubmit: (command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>,
   projectID: string | null = "prj_alpha",
   permissionRequest = request,
-  options: { composer?: boolean } = {},
+  options: { composer?: boolean; saveToolPolicy?: SaveToolPolicy; signedIn?: boolean } = {},
 ) {
   const textarea = document.createElement("textarea")
   if (options.composer !== false) {
@@ -124,6 +141,8 @@ function mount(
         request: permissionRequest,
         projectID: projectID ?? undefined,
         onSubmit,
+        saveToolPolicy: options.saveToolPolicy ?? (async () => ({ ok: true as const })),
+        signedIn: () => options.signedIn ?? true,
       }),
     host,
   )
@@ -558,6 +577,27 @@ describe("Alpha Permission watcher reconciliation", () => {
     expect(replies).toEqual(["per_ui_observed:once"])
   })
 
+  test("r1-1 生产 watcher 按登录态写范围行:读到 logged-in 才写当前账户,读不到或登出写未登录", async () => {
+    const identity = v1Identity("policy")
+    const client = (): PermissionClient => ({
+      list: async () => [identity],
+      reply: async (_requestID, command) => receipt(command, identity),
+      subscribe: () => () => {},
+    })
+    mountWatcher(client())
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 未登录")
+    disposers.splice(0).forEach((dispose) => dispose())
+    await flush()
+
+    runtime.resetAuthRecoveryForTests()
+    authState = Promise.resolve({ status: "logged-in", mode: "platform" })
+    mountWatcher(client())
+    await flush()
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 当前账户 · 可在设置里撤回")
+  })
+
   test("reconciles missed asked and replied events after server reconnects", async () => {
     const stale = { ...request, id: "per_ui_stale", action: "bash", resources: ["old/**"] }
     const fresh = { ...request, id: "per_ui_fresh", action: "edit", resources: ["new/**"] }
@@ -589,3 +629,392 @@ describe("Alpha Permission watcher reconciliation", () => {
 
 // dock 审批卡与 claim 抢占机制已随 owner 裁决(2026-07-25)删除:仓内唯一审批呈现面 =
 // PermissionWatcher 的 PermissionDialog;反向闸门见 takeover-adapter-coexistence.test.ts。
+
+// ═══ REQ-236 `#1575`:中间按钮按请求种类,卡上写清记住什么 ═══════════════════════════════
+//
+// 夹具一律经**生产适配器** `adaptPermissionV1Request` 投影 —— 审批卡在生产里看到的 v1 请求就是这样来的,
+// 不手写投影后的形状。原始 v1 请求的形状取自引擎的真实 ask 点(每条注明出处)。
+const BINDING = `sha256:${"b".repeat(64)}`
+
+function v1(raw: Omit<PermissionV1Request, "sessionID" | "tool">, agent = "alpha-ask") {
+  return adaptPermissionV1Request(
+    { ...raw, sessionID: "ses_ui_1", tool: { messageID: "msg_ui_1", callID: "call_ui_1" } },
+    agent,
+  )
+}
+
+// packages/opencode/src/tool/shell.ts:284-290(patterns = 命令原文,always = BashArity 前缀 + " *")
+const v1Bash = v1({
+  id: "per_v1_bash",
+  permission: "bash",
+  patterns: ["bun test src/session", "git status"],
+  always: ["bun test *", "git status *"],
+  metadata: { command: "bun test src/session && git status" },
+})
+// packages/opencode/src/tool/shell.ts:262-279(外部目录:patterns = always = 目录 + "/*")
+const v1Folders = v1({
+  id: "per_v1_dirs",
+  permission: "external_directory",
+  patterns: ["/Users/zian/codepuppy-test/*", "/var/folders/bn/T/opencode/*"],
+  always: ["/Users/zian/codepuppy-test/*", "/var/folders/bn/T/opencode/*"],
+  metadata: { command: "ls /Users/zian/codepuppy-test /var/folders/bn/T/opencode" },
+})
+// packages/opencode/src/tool/edit.ts:102-110
+const v1Edit = v1({
+  id: "per_v1_edit",
+  permission: "edit",
+  patterns: ["src/app.ts"],
+  always: ["*"],
+  metadata: { filepath: "/w/src/app.ts", diff: "" },
+})
+// packages/opencode/src/tool/task.ts:120-128
+const v1Task = v1({
+  id: "per_v1_task",
+  permission: "task",
+  patterns: ["general"],
+  always: ["*"],
+  metadata: { description: "调研三家竞品的公开定价", subagent_type: "general" },
+})
+// packages/opencode/src/session/prompt.ts:272-285(命令换了助手:逐次询问,不产生会话放行)
+const v1TaskOnce = v1({
+  id: "per_v1_task_once",
+  permission: "task",
+  patterns: ["reviewer"],
+  always: [],
+  metadata: {},
+})
+// packages/opencode/src/permission/alpha-tool-policy-gate.ts:194-215(confirm 写的 metadata:identity / authority /
+// transport / policy);policy 形状同引擎测试 test/permission/alpha-approval-binding.test.ts:405-410 断言的那一份,
+// identity 是 ToolIdentity(source / origin / name,canonical = `mcp:<origin>:<name>`),第三方 MCP 的 authority 恒 not-asserted。
+function v1Identity(
+  askedBy: "policy" | "ruleset",
+  policy: Record<string, unknown> = {},
+  agent = "alpha-ask",
+  tool: { canonical: string; identity: unknown; authority: unknown } = {
+    canonical: "mcp:notion:search_pages",
+    identity: { source: "mcp", origin: "notion", name: "search_pages" },
+    authority: { kind: "not-asserted" },
+  },
+) {
+  const patterns = askedBy === "policy" ? [`${BINDING}@sha256:${"c".repeat(64)}`] : ["call:call_ui_1"]
+  return v1(
+    {
+      id: `per_v1_identity_${askedBy}`,
+      permission: tool.canonical,
+      patterns,
+      always: askedBy === "policy" ? patterns : [],
+      metadata: {
+        identity: tool.identity,
+        authority: tool.authority,
+        transport: { kind: "mcp-remote", url: "https://mcp.notion.com/mcp" },
+        policy: { directory: "/Users/zian/project", canonical: tool.canonical, bindingDigest: BINDING, askedBy, ...policy },
+      },
+    },
+    agent,
+  )
+}
+
+// Code Puppy 云工具:authority = alpha-cloud(引擎 authorityForMcp 铸的证据),identity.name 是远端原名 cloud_dispatch。
+const CLOUD_DISPATCH = {
+  canonical: "mcp:alpha:cloud_dispatch",
+  identity: { source: "mcp", origin: "alpha", name: "cloud_dispatch" },
+  authority: { kind: "alpha-cloud", bindingId: "mcp:alpha", evidenceDigest: `sha256:${"d".repeat(64)}` },
+}
+
+const card = () => document.querySelector<HTMLElement>("[role='dialog']")!
+const rememberBox = () => document.querySelector<HTMLElement>("[data-permission-remember]")
+
+describe("REQ-236 #1575 中间按钮按请求种类", () => {
+  test("AC1 适配器把能力轴的 always 投影成 save,身份轴不投影", () => {
+    expect(v1Edit.save).toEqual(["*"])
+    expect(v1Bash.save).toEqual(["bun test *", "git status *"])
+    expect(v1Folders.save).toEqual(["/Users/zian/codepuppy-test/*", "/var/folders/bn/T/opencode/*"])
+    expect(v1TaskOnce.save).toEqual([])
+    expect(v1Identity("policy").save).toBeUndefined()
+    expect(v1Identity("ruleset").save).toBeUndefined()
+  })
+
+  test.each([
+    ["bash 前缀", v1Bash, "以 bun test、git status 开头的命令"],
+    ["外部目录", v1Folders, "/Users/zian/codepuppy-test、/var/folders/bn/T/opencode 及其子文件夹"],
+    ["改文件 *", v1Edit, "本会话内的所有文件修改"],
+    ["委派 *", v1Task, "本会话派出的所有子任务"],
+  ] as const)("AC1 能力轴(%s):「本次会话内允许」,将记住与 always 逐项对应,期限写重启后失效", async (_name, permissionRequest, what) => {
+    const commands: PermissionV2DecisionCommand[] = []
+    mount(async (command) => {
+      commands.push(command)
+      return receipt(command, permissionRequest)
+    }, "prj_alpha", permissionRequest)
+    await flush()
+
+    expect(decision("always").textContent).toBe(zh["alpha.permission.allowSession"])
+    expect(decision("always").disabled).toBeFalse()
+    const box = rememberBox()!
+    expect(box.dataset.permissionRemember).toBe("session")
+    expect(box.textContent).toContain(zh["alpha.permission.allowSession"])
+    expect(box.querySelector("b")?.textContent).toBe(`将记住:${what}`)
+    expect(box.querySelector("small")?.textContent).toBe("本次会话 · 重启后失效")
+    // 原始规则不上卡:记住框里没有通配,整张卡没有「不过期」与「永久授权」。
+    expect(box.textContent).not.toContain("*")
+    expect(card().textContent).not.toContain("不过期")
+    expect(card().textContent).not.toContain("永久授权")
+    expect(card().querySelector('[data-permission-fact="scope"]')).toBeNull()
+    expect(card().querySelector('[data-permission-fact="expiry"]')).toBeNull()
+
+    decision("always").click()
+    await flush()
+    expect(commands.map((command) => command.decision)).toEqual(["always"])
+    expect(commands[0]!.requestFingerprint).toBe(`engine-v1:${permissionRequest.id}`)
+  })
+
+  test("AC1 能力轴请求不带可记住的范围:不出现中间按钮,也没有记住框", async () => {
+    mount(async (command) => receipt(command, v1TaskOnce), "prj_alpha", v1TaskOnce)
+    await flush()
+
+    expect(document.querySelector('[data-permission-decision="always"]')).toBeNull()
+    expect(document.querySelectorAll("[data-permission-decision]")).toHaveLength(2)
+    expect(rememberBox()).toBeNull()
+  })
+
+  test("AC5 委派卡带「子任务里不再逐项询问」;能记住与只能一次两种都带,别的请求不带", async () => {
+    for (const permissionRequest of [v1Task, v1TaskOnce]) {
+      const { dispose } = mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+      await flush()
+      expect(document.querySelector('[data-permission-note="delegation"]')?.textContent).toBe("子任务里不再逐项询问")
+      dispose()
+      disposers.splice(disposers.indexOf(dispose), 1)
+      await flush()
+    }
+    mount(async (command) => receipt(command, v1Bash), "prj_alpha", v1Bash)
+    await flush()
+    expect(document.querySelector('[data-permission-note="delegation"]')).toBeNull()
+  })
+
+  test("AC2 身份轴 askedBy=policy:先写工具级「启用」(带当前 binding),写成才放行这一次", async () => {
+    const order: string[] = []
+    const writes: Parameters<SaveToolPolicy>[0][] = []
+    const commands: PermissionV2DecisionCommand[] = []
+    const permissionRequest = v1Identity("policy")
+    mount(
+      async (command) => {
+        order.push(`reply:${command.decision}`)
+        commands.push(command)
+        return receipt(command, permissionRequest)
+      },
+      "prj_alpha",
+      permissionRequest,
+      {
+        saveToolPolicy: async (input) => {
+          order.push("setRecord")
+          writes.push(input)
+          return { ok: true }
+        },
+      },
+    )
+    await flush()
+
+    expect(decision("always").textContent).toBe("在此项目中始终允许")
+    expect(rememberBox()?.dataset.permissionRemember).toBe("project")
+    expect(rememberBox()?.querySelector("b")?.textContent).toBe("将记住:在此项目使用这个工具")
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 当前账户 · 可在设置里撤回")
+    // 身份轴的 patterns 是放行键,不当资源显示。
+    expect(card().querySelector('[data-permission-fact="resources"]')).toBeNull()
+    expect(card().textContent).not.toContain(BINDING)
+    expect(card().textContent).not.toContain("call:")
+
+    decision("always").click()
+    await flush()
+    expect(order).toEqual(["setRecord", "reply:once"])
+    expect(writes).toEqual([
+      {
+        directory: "/Users/zian/project",
+        record: {
+          selector: { level: "tool", canonical: "mcp:notion:search_pages" },
+          state: "enabled",
+          bindingDigest: BINDING,
+        },
+      },
+    ])
+    expect(commands[0]).not.toHaveProperty("grantScope")
+  })
+
+  test.each([
+    ["写入被拒", async () => ({ ok: false as const, code: "write-failed" as const })],
+    ["写入抛错", async () => Promise.reject(new Error("ipc gone"))],
+  ] as const)("AC2 身份轴写入失败(%s):卡片挂着、显示失败、不放行;重试沿用现有写法", async (_name, failing) => {
+    const commands: PermissionV2DecisionCommand[] = []
+    const permissionRequest = v1Identity("policy")
+    mount(async (command) => {
+      commands.push(command)
+      return receipt(command, permissionRequest)
+    }, "prj_alpha", permissionRequest, { saveToolPolicy: failing })
+    await flush()
+
+    decision("always").click()
+    await flush()
+    await flush()
+    expect(commands).toEqual([])
+    expect(card()).not.toBeNull()
+    expect(document.querySelector('[data-permission-note="save-failed"]')?.textContent).toBe("没能保存,这次未放行")
+    expect(document.querySelector('[data-permission-note="save-failed"]')?.getAttribute("role")).toBe("alert")
+    expect(decision("always").textContent).toBe("重试「在此项目中始终允许」")
+    expect(decision("always").disabled).toBeFalse()
+    expect(decision("once").disabled).toBeFalse()
+  })
+
+  test("AC2 身份轴找不到当前项目:按钮置灰并说明,点了也不写不放行", async () => {
+    let writes = 0
+    const commands: PermissionV2DecisionCommand[] = []
+    const permissionRequest = v1Identity("policy", { directory: undefined })
+    mount(async (command) => {
+      commands.push(command)
+      return receipt(command, permissionRequest)
+    }, "prj_alpha", permissionRequest, {
+      saveToolPolicy: async () => {
+        writes += 1
+        return { ok: true }
+      },
+    })
+    await flush()
+
+    expect(decision("always").disabled).toBeTrue()
+    expect(document.querySelector('[data-permission-note="project-missing"]')?.textContent).toBe("找不到当前项目,不能始终允许")
+    expect(rememberBox()).toBeNull()
+    decision("always").click()
+    await flush()
+    expect(writes).toBe(0)
+    expect(commands).toEqual([])
+  })
+
+  test("AC3 身份轴 askedBy=ruleset:只有「允许一次」与「拒绝」,写明这个工具每次都要确认;不凭执行助手名断言只读档", async () => {
+    // 执行助手名取自工具消息、缺时退取最后一条助手消息(permission-v1-adapter.ts resolvePermissionV1Agent),
+    // 它等于 alpha-readonly 也确证不了「当前档位是只读」—— 所以卡上不写「只读模式」。
+    const commands: PermissionV2DecisionCommand[] = []
+    const permissionRequest = v1Identity("ruleset", {}, "alpha-readonly")
+    mount(async (command) => {
+      commands.push(command)
+      return receipt(command, permissionRequest)
+    }, "prj_alpha", permissionRequest)
+    await flush()
+
+    expect(document.querySelector('[data-permission-decision="always"]')).toBeNull()
+    expect([...document.querySelectorAll<HTMLElement>("[data-permission-decision]")].map((button) => button.dataset.permissionDecision)).toEqual([
+      "reject",
+      "once",
+    ])
+    expect(document.querySelector('[data-permission-note="every-time"]')?.textContent).toBe("这个工具每次都要确认")
+    expect(card().textContent).not.toContain("只读模式")
+    expect(rememberBox()).toBeNull()
+    expect(card().querySelector('[data-permission-fact="resources"]')).toBeNull()
+
+    decision("once").click()
+    await flush()
+    expect(commands.map((command) => command.decision)).toEqual(["once"])
+  })
+
+  test("AC3 askedBy 不是 policy(缺失或未知)时同样只能允许一次 —— 拿不准就不给持久放行", async () => {
+    const permissionRequest = v1Identity("policy", { askedBy: "something-else" })
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+    await flush()
+
+    expect(document.querySelector('[data-permission-decision="always"]')).toBeNull()
+    expect(document.querySelector('[data-permission-note="every-time"]')).not.toBeNull()
+  })
+
+  test("AC5 i18n:审批卡新增的每一句中英文词典都有", () => {
+    const keys = Object.keys(zh).filter((key) =>
+      /^alpha\.permission\.(allow(Session|Project)|remember|listSeparator|sessionScope|projectScope|everyTime|projectMissing|delegationNote|saveFailed)/.test(key),
+    )
+    expect(keys.length).toBe(19)
+    for (const key of keys) expect(typeof (en as Record<string, string>)[key]).toBe("string")
+  })
+
+  test("r1-3 身份轴 askedBy=policy 但没有 binding digest:写入必被 schema 拒,只给允许一次", async () => {
+    // MCP 没有生效条目、插件 origin 未知时引擎写不出 bindingDigest(alpha-tool-policy.ts subjectBindingDigest);
+    // 工具级 enabled 必须带它(schema/src/alpha-tool-policy.ts ToolPolicyRecord),给按钮 = 一个永远「没能保存」的按钮。
+    const permissionRequest = v1Identity("policy", { bindingDigest: undefined })
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+    await flush()
+
+    expect(document.querySelector('[data-permission-decision="always"]')).toBeNull()
+    expect(document.querySelector('[data-permission-note="every-time"]')?.textContent).toBe("这个工具每次都要确认")
+    expect(rememberBox()).toBeNull()
+  })
+
+  test("r1-2 能力轴找不到当前项目:按钮置灰并说明原因,不画记住框;只能一次的卡不说这句", async () => {
+    const commands: PermissionV2DecisionCommand[] = []
+    const { dispose } = mount(async (command) => {
+      commands.push(command)
+      return receipt(command, v1Bash)
+    }, null, v1Bash)
+    await flush()
+
+    expect(decision("always").disabled).toBeTrue()
+    expect(document.querySelector('[data-permission-note="project-missing"]')?.textContent).toBe("找不到当前项目,不能始终允许")
+    expect(rememberBox()).toBeNull()
+    decision("always").click()
+    await flush()
+    expect(commands).toEqual([])
+    dispose()
+    disposers.splice(disposers.indexOf(dispose), 1)
+    await flush()
+
+    // 档位要求每次确认的卡没有中间按钮,也就没有「不能始终允许」可说。
+    const ruleset = v1Identity("ruleset")
+    mount(async (command) => receipt(command, ruleset), null, ruleset)
+    await flush()
+    expect(document.querySelector('[data-permission-note="project-missing"]')).toBeNull()
+  })
+
+  test("r1-1 身份轴「在此项目中始终允许」的范围行:登录写当前账户,未登录写未登录", async () => {
+    const permissionRequest = v1Identity("policy")
+    const { dispose } = mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest, {
+      signedIn: false,
+    })
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 未登录")
+    dispose()
+    disposers.splice(disposers.indexOf(dispose), 1)
+    await flush()
+
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest, { signedIn: true })
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 当前账户 · 可在设置里撤回")
+  })
+
+  test.each([
+    ["第三方 MCP", v1Identity("ruleset"), "search_pages", "第三方"],
+    ["Code Puppy 云", v1Identity("policy", {}, "alpha-ask", CLOUD_DISPATCH), "下发云端任务", "Code Puppy 云"],
+    [
+      "同名云工具但没有云证据",
+      v1Identity("policy", {}, "alpha-ask", { ...CLOUD_DISPATCH, authority: { kind: "not-asserted" } }),
+      "cloud_dispatch",
+      "第三方",
+    ],
+  ] as const)("r1-5 身份轴「要做什么」写可读名与来源(与时间线同一套判定),不写 canonical:%s", async (_name, permissionRequest, title, source) => {
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+    await flush()
+
+    const action = card().querySelector<HTMLElement>('[data-permission-fact="action"]')!
+    expect(action.querySelector("dd")?.textContent).toBe(title)
+    expect(action.querySelector("small")?.textContent).toBe(source)
+    expect(card().textContent).not.toContain(permissionRequest.action)
+  })
+
+  test("AC6 新式请求(带 save):中间按钮仍是「始终允许」,照旧创建项目授权,五项事实与页脚说明都在", async () => {
+    const commands: PermissionV2DecisionCommand[] = []
+    mount(async (command) => {
+      commands.push(command)
+      return receipt(command)
+    })
+    await flush()
+
+    expect(decision("always").textContent).toBe(zh["alpha.permission.always"])
+    expect(rememberBox()).toBeNull()
+    for (const fact of ["subject", "action", "resources", "scope", "expiry"])
+      expect(card().querySelector(`[data-permission-fact="${fact}"]`)).not.toBeNull()
+    decision("always").click()
+    await flush()
+    expect(commands[0]).toMatchObject({ decision: "always", grantScope: { kind: "project", projectID: "prj_alpha" } })
+  })
+})

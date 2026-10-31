@@ -10,13 +10,15 @@
 // **自己的**安装确认框(确认之后由那个框发起安装);通用 PermissionDialog 不呈现它,于是同一个请求只有一个框。
 // 两条分支都经**同一个** feed.reply 回审批(提交入口不变,仍只有这一处)。
 
-import { onCleanup, Show, type Accessor } from "solid-js"
+import { createSignal, onCleanup, Show, type Accessor } from "solid-js"
 import { unwrap } from "solid-js/store"
 import type { PermissionSurfaceProps } from "./providers"
 import { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
 import { alphaHubRequestOf, HubInstallWatcher } from "./hub-install-watcher"
 import { createPermissionV2Feed } from "./session-workspace/session-permission-feed"
 import type { ServerInfo } from "../sidebar/use-projects"
+import type { AuthState } from "../../preload/types"
+import { subscribeAuthState } from "../auth-recovery"
 
 export function PermissionWatcher(props: PermissionSurfaceProps & { server?: Accessor<ServerInfo | undefined> }) {
   const feed = createPermissionV2Feed({
@@ -29,6 +31,9 @@ export function PermissionWatcher(props: PermissionSurfaceProps & { server?: Acc
     connected: () => feed.load(),
   })
   feed.load()
+  // REQ-236 `#1575`:「在此项目中始终允许」存进登录账户的分区、未登录存进匿名分区 —— 卡上的范围行据此写。
+  const [auth, setAuth] = createSignal<AuthState>()
+  onCleanup(subscribeAuthState(setAuth))
   onCleanup(() => {
     unsubscribe()
     feed.dispose()
@@ -58,6 +63,8 @@ export function PermissionWatcher(props: PermissionSurfaceProps & { server?: Acc
             projectID={raw.scope?.kind === "project" ? raw.scope.projectID : props.projectID}
             onSubmit={(command) => feed.reply(raw.id, command)}
             onResolved={(receipt) => feed.apply({ type: "replied", receipt })}
+            saveToolPolicy={(input) => window.api.toolPolicy.setRecord(input)}
+            signedIn={() => auth()?.status === "logged-in"}
           />
         )
       }}
