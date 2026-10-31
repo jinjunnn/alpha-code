@@ -158,11 +158,13 @@ describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒
 
     // ① 真的出现了。这一条就是 #668 的缺陷本身:修复前这里恒为 null,回合无声挂起。
     expect(dialog()).not.toBeNull()
-    // ② 事实来自 v1 请求,不是占位:action = 被请求的能力,resources = 具体 glob,
-    //    subject = 发起这次工具调用的档位(由 tool.messageID 还原)。
-    expect(fact("action")).toContain("external_directory")
-    expect(fact("resources")).toContain("/Users/someone/Downloads/*")
-    expect(fact("subject")).toContain(runtime.HARNESS.agent)
+    // ② 事实来自 v1 请求,不是占位:action = 被请求的能力(#1617 写人话),resources = 具体目录(去掉末尾通配);
+    //    subject(发起这次工具调用的档位,由 tool.messageID 还原)仍参与核验,但 #1617 起不上卡。
+    expect(fact("action")).toBe("访问项目以外的文件夹")
+    expect(fact("resources")).toContain("/Users/someone/Downloads")
+    expect(document.querySelector('[data-permission-fact="subject"]')).toBeNull()
+    expect(dialog()!.textContent).not.toContain("external_directory")
+    expect(dialog()!.textContent).not.toContain(runtime.HARNESS.agent)
     // REQ-236 `#1575`:v1 的 scope / expiresAt 是适配器补的形状,不当授权范围与期限上卡;
     // 范围与期限由「记住」框按 v1 always 的真实语义写(本次会话 · 重启后失效)。
     expect(document.querySelector('[data-permission-fact="scope"]')).toBeNull()
@@ -206,7 +208,7 @@ describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒
     await mounted()
 
     expect(dialog()).not.toBeNull()
-    expect(fact("action")).toContain("external_directory")
+    expect(fact("action")).toBe("访问项目以外的文件夹")
   })
 
   test("REQ-236 #1575 AC1:v1 能力轴「本次会话内允许」可用,点了 reply=always 发到 v1 通道", async () => {
@@ -336,8 +338,8 @@ describe("#668 回归:v2 读写两侧不得被破坏", () => {
     await flush()
 
     expect(dialog()).not.toBeNull()
-    expect(fact("action")).toContain("bash")
-    expect(fact("subject")).toContain("build-reviewer")
+    expect(fact("action")).toBe("运行命令")
+    expect(fact("resources")).toContain("pwd")
 
     button("once")!.click()
     await flush()
@@ -363,7 +365,7 @@ describe("#668 回归:v2 读写两侧不得被破坏", () => {
     await flush()
 
     expect(dialog()).not.toBeNull()
-    expect(fact("subject")).toContain("build-reviewer")
+    expect(fact("resources")).toContain("pwd")
     // 自动拒绝会立刻提交一个 reject 并关掉对话框 —— 这里必须一条审批流量都还没发生。
     expect(runtime.permissionTraffic()).not.toContain("v2.session.permission.reply")
 
@@ -385,10 +387,10 @@ describe("#668 回归:v2 读写两侧不得被破坏", () => {
     await mounted()
 
     // 头条呈现 v2(list 合并顺序 v2→v1);决定掉一条,下一条紧接着呈现 —— 两条都没丢。
-    expect(fact("action")).toContain("bash")
+    expect(fact("action")).toBe("运行命令")
     button("once")!.click()
     await flush()
-    expect(fact("action")).toContain("external_directory")
+    expect(fact("action")).toBe("访问项目以外的文件夹")
   })
 
   test("fail-closed:任一通道快照读不到 ⇒ 零呈现、零放行", async () => {

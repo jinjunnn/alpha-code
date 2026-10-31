@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-09-17
+last_reviewed: 2026-10-31
 review_after: 2027-03-17
 ---
 
@@ -32,6 +32,7 @@ pane 记为 `未登记(历史)`,不参与「台账没有仍开着的行 = 已对
 | 通用 pane(行为 / 界面 / 通知与权限) | `#settings` | `2026-06-26-hub-settings-redesign/` → `2026-07-20-req090-alpha-surfaces/` | — | — | — | `alpha-ui/settings.tsx` | 未登记(历史) |
 | 快捷键 pane | `#settings` | `2026-06-26-hub-settings-redesign/` | — | — | — | `alpha-ui/settings.tsx` | 未登记(历史) |
 | 扩展存储 pane(检查 / 回收) | — | `2026-07-20-req090-alpha-surfaces/` | — | — | — | `alpha-ui/settings.tsx` | 未登记(历史) |
-| 「工具」三态策略节(四来源分组 / 继承与生效原因 / 绑定变更与损坏恢复) | `#set-tools` | [`2026-08-25-req131-settings-tool-policy/`](../../2026-08-25-req131-settings-tool-policy/design.md) | 2026-08-26 | ac#1130 | 2026-09-17 | `alpha-ui/settings-tools.tsx`(接线 `alpha-ui/settings.tsx` 第四项导航;数据经 `main/tool-policy-client.ts` → preload `toolPolicy`)· 视觉证据 [`../../../verification/2026-09-17-1130-settings-tools-visuals/`](../../../verification/2026-09-17-1130-settings-tools-visuals/README.md) | **已实现**。**与稿的已裁差异**(实现方默认值,均可回滚):①工具行显示引擎 `identity.name` 原文,不是帧里的中文专名(专名映射归 REQ-125,本仓无此表);②Alpha Cloud 组按数据模型渲染成服务行 → 展开到工具,帧里是平铺;③「N 项注册身份无法核验」提示放整节末尾(`invalid.entries[]` 映射不回具体服务);④新增帧外状态「先打开一个项目」—— 策略按 (账户, 项目) 分区,首页无项目可分区;⑤组名「Alpha Cloud」落地为「云端工具」—— REQ-139 品牌残留闸禁止文案里出现独立词 Alpha;键盘按帧外说明:方向键只移动焦点(经 `roving-focus.ts` 的 radio 表),空格 / 回车才提交 |
+| 「工具」三态策略节(来源分组,2026-10-31 起五组见下行 / 继承与生效原因 / 绑定变更与损坏恢复) | `#set-tools` | [`2026-08-25-req131-settings-tool-policy/`](../../2026-08-25-req131-settings-tool-policy/design.md) | 2026-08-26 | ac#1130 | 2026-09-17 | `alpha-ui/settings-tools.tsx`(接线 `alpha-ui/settings.tsx` 第四项导航;数据经 `main/tool-policy-client.ts` → preload `toolPolicy`)· 视觉证据 [`../../../verification/2026-09-17-1130-settings-tools-visuals/`](../../../verification/2026-09-17-1130-settings-tools-visuals/README.md) | **已实现**。**与稿的已裁差异**(实现方默认值,均可回滚):①工具行显示引擎 `identity.name` 原文,不是帧里的中文专名(专名映射归 REQ-125,本仓无此表);②Alpha Cloud 组按数据模型渲染成服务行 → 展开到工具,帧里是平铺;③「N 项注册身份无法核验」提示放整节末尾(`invalid.entries[]` 映射不回具体服务);④新增帧外状态「先打开一个项目」—— 策略按 (账户, 项目) 分区,首页无项目可分区;⑤组名「Alpha Cloud」落地为「云端工具」—— REQ-139 品牌残留闸禁止文案里出现独立词 Alpha;键盘按帧外说明:方向键只移动焦点(经 `roving-focus.ts` 的 radio 表),空格 / 回车才提交 |
+| 「工具」节「Code Puppy 文档工具」组(随应用安装、经清单核验的四个文档工具单列一组,排在本地工具之后;组 / 服务 / 工具三层三态) | `#set-tools-bundled` | —(无增量稿;依据是 ac#1578 票面 owner 裁决「路一」,照已出货代码并入) | 2026-10-31 | ac#1578 | 2026-10-31 | `alpha-ui/settings-tools.tsx`(`CLASS_ORDER` 的 `alpha-bundled`、`classLabel` / `classCaption`;文案 `alpha.settings.toolsClassBundled` / `toolsCapBundled`) | 已落地 |
 | 快捷键行(格式说明、占位与按键帽取注册默认值、去掉内部命令名;「打开命令面板」改「搜索会话」) | `#set-shortcuts` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`alpha-ui/settings.tsx`(`SHORTCUTS`);默认值注册处 `sidebar/alpha-sidebar.tsx` | 设计中 |
 | 「工具」节计费与说明文字修订(无计费数据不出行内徽标,计费说法只在组说明;来源标签位留给另稿) | `#set-tools` | [`2026-10-30-req236-ux-config-pages/`](../../2026-10-30-req236-ux-config-pages/frame.html) | — | —(待开票) | — | 现状:`alpha-ui/settings-tools.tsx` | 设计中 |

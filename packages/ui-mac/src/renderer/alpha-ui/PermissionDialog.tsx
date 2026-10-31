@@ -59,15 +59,7 @@ export function PermissionDialog(props: {
   const facts = permissionRequestFacts(props.request)
   const approval = permissionApprovalOf(props.request)
   const saved = savedResources(props.request)
-  // 身份轴「要做什么」:可读名与来源,与时间线同一套判定(#1576);canonical 是技术原文,不上卡。
-  const tool =
-    approval.kind === "project" || approval.kind === "every-time"
-      ? approvalToolOf({
-          identity: props.request.metadata?.identity,
-          authority: props.request.metadata?.authority,
-          technicalId: props.request.action,
-        })
-      : undefined
+  const what = requestWhat(props.request, approval, facts)
   const [state, setState] = createStore<{
     /** 正在提交的那个按钮(「在此项目中始终允许」从写设置起就算在途)。 */
     busy?: PermissionV2Decision
@@ -173,7 +165,6 @@ export function PermissionDialog(props: {
   return (
     <PermissionPanel
       title={t("alpha.permission.title")}
-      description={<span>{t("alpha.permission.description")}</span>}
       busy={!!state.busy}
       footer={
         <div class="a-permission-footer">
@@ -227,127 +218,71 @@ export function PermissionDialog(props: {
         </div>
       }
     >
-      <dl class="a-permission-facts" aria-label={t("alpha.permission.facts") }>
-        <div class="a-permission-fact" data-permission-fact="subject">
-          <dt>{t("alpha.permission.subject")}</dt>
-          <Show
-            when={facts.subject}
-            fallback={
-              <>
-                <dd>{t("alpha.permission.cannotVerify")}</dd>
-                <small>{t("alpha.permission.subjectMissing")}</small>
-              </>
-            }
-          >
-            {(subject) => (
-              <>
-                <dd>{subject().id}</dd>
-                <small>subject.kind = {subject().kind}</small>
-              </>
+      {/* 「要做什么」一行人话 + 必要时一行工具 / 助手(批准稿帧 A–D);原始动作名、主体助手不上卡(#1617)。 */}
+      <div class="a-permission-what" data-permission-fact="action">
+        <Show
+          when={facts.action}
+          fallback={
+            <>
+              <p class="a-permission-verb">{t("alpha.permission.cannotVerify")}</p>
+              <small>{t("alpha.permission.actionMissing")}</small>
+            </>
+          }
+        >
+          <p class="a-permission-verb">{t(what.verb)}</p>
+          <Show when={what.line}>
+            {(line) => (
+              <div class="a-permission-tool">
+                <b>{line().title}</b>
+                <Show when={line().detail}>
+                  <small>{line().detail}</small>
+                </Show>
+              </div>
             )}
           </Show>
-        </div>
-        <div class="a-permission-fact" data-permission-fact="action">
-          <dt>{t("alpha.permission.action")}</dt>
-          <Show
-            when={facts.action}
-            fallback={
-              <>
-                <dd>{t("alpha.permission.cannotVerify")}</dd>
-                <small>{t("alpha.permission.actionMissing")}</small>
-              </>
-            }
-          >
-            {(action) => (
-              <Show
-                when={tool}
-                fallback={
-                  <>
-                    <dd>{action()}</dd>
-                    <small>{t("alpha.permission.actionHint")}</small>
-                  </>
-                }
-              >
-                {(value) => (
-                  <>
-                    <dd>{value().titleKey ? t(value().titleKey as I18nKey) : value().name}</dd>
-                    <small>{t(PROVENANCE_SOURCE_KEYS[value().source])}</small>
-                  </>
-                )}
-              </Show>
-            )}
-          </Show>
-        </div>
-        {/* 身份轴请求的 patterns 是引擎的放行键(`<binding>@<修订号>` / `call:<id>`),不是资源,不上卡。 */}
-        <Show when={approval.kind === "v2" || approval.kind === "session"}>
-        <div class="a-permission-fact a-permission-fact--wide" data-permission-fact="resources">
-          <dt>{t("alpha.permission.resources")}</dt>
+        </Show>
+      </div>
+      {/* 身份轴请求的 patterns 是引擎的放行键(`<binding>@<修订号>` / `call:<id>`),不是资源,不上卡;委派由上面的助手行代替。 */}
+      <Show when={(approval.kind === "v2" || approval.kind === "session") && !what.delegate}>
+        <div class="a-permission-what" data-permission-fact="resources">
           <Show
             when={facts.resources}
             fallback={
               <>
-                <dd>{t("alpha.permission.cannotVerify")}</dd>
+                <p class="a-permission-verb">{t("alpha.permission.cannotVerify")}</p>
                 <small>{t("alpha.permission.resourcesMissing")}</small>
               </>
             }
           >
             {(resources) => (
-              <>
-                <dd>
-                  <Show when={resources().length > 0} fallback={<span>{t("alpha.permission.resourceCount", { count: 0 })}</span>}>
-                    <span class="a-permission-resources">
-                      <For each={resources()}>{(resource) => <code>{resource}</code>}</For>
-                    </span>
-                  </Show>
-                </dd>
-                <small>{t("alpha.permission.resourcesProvided", { count: resources().length })}</small>
-              </>
+              <Show when={resources().length > 0} fallback={<small>{t("alpha.permission.resourceCount", { count: 0 })}</small>}>
+                <span class="a-permission-resources">
+                  <For each={resources()}>{(resource) => <code>{resourceText(props.request.action, resource)}</code>}</For>
+                </span>
+              </Show>
             )}
           </Show>
         </div>
-        </Show>
-        {/* v1 请求的 scope / expiresAt 是适配器为过核验补的形状,不是授权的范围与期限;那两样由下面的「记住」框按请求种类如实写。 */}
-        <Show when={approval.kind === "v2"}>
-        <div class="a-permission-fact" data-permission-fact="scope">
-          <dt>{t("alpha.permission.scope")}</dt>
-          <Show
-            when={facts.scope}
-            fallback={
-              <>
-                <dd>{t("alpha.permission.cannotVerify")}</dd>
-                <small>{t("alpha.permission.scopeMissing")}</small>
-              </>
-            }
-          >
-            {(scope) => (
-              <>
-                <dd>{scopeLabel(scope())}</dd>
-                <small>{scopeIdentity(scope())}</small>
-              </>
-            )}
-          </Show>
-        </div>
-        <div class="a-permission-fact" data-permission-fact="expiry">
-          <dt>{t("alpha.permission.expiry")}</dt>
-          <Show
-            when={facts.expiry}
-            fallback={
-              <>
-                <dd>{t("alpha.permission.cannotVerify")}</dd>
-                <small>{t("alpha.permission.expiryMissing")}</small>
-              </>
-            }
-          >
-            {(expiry) => (
-              <>
-                <dd>{expiryLabel(expiry().value)}</dd>
-                <small>{expiry().value === null ? "expiresAt = null" : String(expiry().value)}</small>
-              </>
-            )}
-          </Show>
-        </div>
-        </Show>
-      </dl>
+      </Show>
+      {/* v1 请求的 scope / expiresAt 是适配器为过核验补的形状,不是授权的范围与期限;那两样由下面的「记住」框按请求种类如实写。 */}
+      <Show when={approval.kind === "v2"}>
+        <dl class="a-permission-facts" aria-label={t("alpha.permission.facts")}>
+          <div class="a-permission-fact" data-permission-fact="scope">
+            <dt>{t("alpha.permission.scope")}</dt>
+            <dd>{facts.scope ? scopeLabel(facts.scope) : t("alpha.permission.cannotVerify")}</dd>
+            <Show when={!facts.scope}>
+              <small>{t("alpha.permission.scopeMissing")}</small>
+            </Show>
+          </div>
+          <div class="a-permission-fact" data-permission-fact="expiry">
+            <dt>{t("alpha.permission.expiry")}</dt>
+            <dd>{facts.expiry ? expiryLabel(facts.expiry.value) : t("alpha.permission.cannotVerify")}</dd>
+            <Show when={!facts.expiry}>
+              <small>{t("alpha.permission.expiryMissing")}</small>
+            </Show>
+          </div>
+        </dl>
+      </Show>
 
       <Show when={remember()}>
         {(value) => (
@@ -680,8 +615,75 @@ function scopeLabel(scope: PermissionV2Request["scope"]) {
   return scope.kind === "session" ? t("alpha.permission.scopeSession") : t("alpha.permission.scopeProject")
 }
 
-function scopeIdentity(scope: PermissionV2Request["scope"]) {
-  return scope.kind === "session" ? scope.sessionID : scope.projectID
+/**
+ * 能力轴「要做什么」的人话(批准稿帧 A–D 的写法;稿里没有的动作用同一风格的短动词)。
+ * 不在表里的动作一律「使用工具」—— 卡上不露原始动作名,原文只在开发者详情。
+ */
+const ACTION_VERB_KEYS: Record<string, I18nKey> = {
+  bash: "alpha.permission.verbBash",
+  edit: "alpha.permission.verbEdit",
+  external_directory: "alpha.permission.verbExternalDirectory",
+  task: "alpha.permission.verbTask",
+  read: "alpha.permission.verbRead",
+  glob: "alpha.permission.verbGlob",
+  grep: "alpha.permission.verbGrep",
+  webfetch: "alpha.permission.verbWebfetch",
+  websearch: "alpha.permission.verbWebsearch",
+  todowrite: "alpha.permission.verbTodowrite",
+  lsp: "alpha.permission.verbLsp",
+  skill: "alpha.permission.verbSkill",
+  doom_loop: "alpha.permission.verbDoomLoop",
+  workflow_tool_approval: "alpha.permission.verbWorkflowTools",
+}
+
+/**
+ * 卡上「要做什么」:一句人话动词,外加至多一行对象 ——
+ *  · 身份轴:「使用工具」+ 工具可读名与来源(与时间线同一套判定,#1576);第三方远端带主机(#1617 AC3,
+ *    主机是引擎写的 `metadata.location`,这里不解析地址);canonical 是技术原文,不上卡;
+ *  · 委派:「派出子任务」+「交给助手 <名字>」(名字 = 请求的 patterns,即 subagent_type)与任务描述;
+ *  · 其余能力轴 / 新式请求:按动作取人话,对象由资源行列出。
+ */
+function requestWhat(
+  request: PermissionV2Request,
+  approval: ReturnType<typeof permissionApprovalOf>,
+  facts: ReturnType<typeof permissionRequestFacts>,
+): { verb: I18nKey; line?: { title: string; detail?: string }; delegate: boolean } {
+  if (approval.kind === "project" || approval.kind === "every-time") {
+    const tool = approvalToolOf({
+      identity: request.metadata?.identity,
+      authority: request.metadata?.authority,
+      location: request.metadata?.location,
+      technicalId: request.action,
+    })
+    const source = tool ? t(PROVENANCE_SOURCE_KEYS[tool.source]) : ""
+    return {
+      verb: "alpha.permission.verbTool",
+      line: tool
+        ? {
+            title: tool.titleKey ? t(tool.titleKey as I18nKey) : tool.name,
+            detail: tool.location.kind === "remote" ? `${source} · ${tool.location.host}` : source,
+          }
+        : undefined,
+      delegate: false,
+    }
+  }
+  const verb = (facts.action && ACTION_VERB_KEYS[facts.action]) || "alpha.permission.verbTool"
+  const agent = facts.action === "task" ? facts.resources?.[0] : undefined
+  if (!agent) return { verb, delegate: false }
+  const description = request.metadata?.description
+  return {
+    verb,
+    line: {
+      title: t("alpha.permission.delegateTo", { name: agent }),
+      detail: typeof description === "string" && description.trim() ? description : undefined,
+    },
+    delegate: true,
+  }
+}
+
+/** 资源行:外部文件夹去掉末尾通配(与「将记住」同一写法),其余原样。 */
+function resourceText(action: string, resource: string) {
+  return action === "external_directory" ? resource.replace(/[\\/]\*$/, "") : resource
 }
 
 function expiryLabel(expiresAt: PermissionV2Request["expiresAt"]) {

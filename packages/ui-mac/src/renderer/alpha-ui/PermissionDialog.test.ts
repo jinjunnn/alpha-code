@@ -183,15 +183,16 @@ function keydown(target: Element, key: string, options: KeyboardEventInit = {}) 
 }
 
 describe("Alpha Permission real Solid render", () => {
-  test("renders the five public request facts without contract placeholders", async () => {
+  test("renders the public request facts in plain words without contract placeholders", async () => {
     mount(async (command) => receipt(command))
     await flush()
 
-    expect(document.querySelector('[data-permission-fact="subject"]')?.textContent).toContain("build-reviewer")
-    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toContain("bash")
+    // #1617:主体助手不上卡;动作写人话,资源原样列出;范围 / 期限写人话,不带会话 ID 等原始值。
+    expect(document.querySelector('[data-permission-fact="subject"]')).toBeNull()
+    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toBe("运行命令")
     expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("pwd")
     expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("src/**")
-    expect(document.querySelector('[data-permission-fact="scope"]')?.textContent).toContain("ses_ui_1")
+    expect(document.querySelector('[data-permission-fact="scope"]')?.textContent).toBe("适用范围本次会话")
     expect(document.querySelector('[data-permission-fact="expiry"]')?.textContent).toContain("2030-01-01 00:00:00 UTC")
     expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("待契约")
     expect(document.querySelector(".a-permission-grant-note")?.textContent).toContain(zh["alpha.permission.alwaysNote"])
@@ -264,9 +265,12 @@ describe("Alpha Permission real Solid render", () => {
     )
     await flush()
 
-    expect(
-      document.querySelector(`[data-permission-fact="${fact === "expiresAt" ? "expiry" : fact}"]`)?.textContent,
-    ).toContain(zh["alpha.permission.cannotVerify"])
+    // #1617:「谁在请求」不再上卡 —— 主体缺失照样核不实、自动拒绝,只是卡上没有那一格。
+    if (fact === "subject") expect(document.querySelector('[data-permission-fact="subject"]')).toBeNull()
+    else
+      expect(
+        document.querySelector(`[data-permission-fact="${fact === "expiresAt" ? "expiry" : fact}"]`)?.textContent,
+      ).toContain(zh["alpha.permission.cannotVerify"])
     expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("undefined")
     expect(decision("once").disabled).toBeTrue()
     expect(decision("always").disabled).toBeTrue()
@@ -389,7 +393,7 @@ describe("Alpha Permission real Solid render", () => {
     expect(escape.defaultPrevented).toBeTrue()
     expect(pageSawEscape).toBeFalse()
     expect(document.querySelector("[data-alpha-permission-panel]")).toBe(panel)
-    for (const fact of ["subject", "action", "resources", "scope", "expiry"]) {
+    for (const fact of ["action", "resources", "scope", "expiry"]) {
       expect(panel.querySelector(`[data-permission-fact="${fact}"]`)).not.toBeNull()
     }
   })
@@ -476,9 +480,11 @@ describe("Alpha Permission watcher reconciliation", () => {
     settleList!([request])
     await flush()
 
-    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toContain("edit")
+    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toBe("改文件")
     expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("src/new.ts")
-    expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("bash")
+    // 已被回复的那条(运行命令 pwd)没有复活。
+    expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("运行命令")
+    expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("pwd")
   })
 
   test("fail-closed fallback: list failure presents nothing and grants nothing, SSE asked stays unpresented", async () => {
@@ -515,7 +521,7 @@ describe("Alpha Permission watcher reconciliation", () => {
     await flush()
     expect(listCalls).toBe(2)
     expect(document.querySelector("[role='dialog']")).not.toBeNull()
-    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toContain("bash")
+    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toBe("运行命令")
   })
 
   test("presents a valid request without auto-denial (unwrap regression, sole-surface path)", async () => {
@@ -568,8 +574,8 @@ describe("Alpha Permission watcher reconciliation", () => {
 
     expect(replies).toEqual([])
     expect(document.querySelector("[role='dialog']")).not.toBeNull()
-    expect(document.querySelector('[data-permission-fact="subject"]')?.textContent).toContain("build-reviewer")
-    expect(document.querySelector('[data-permission-fact="scope"]')?.textContent).toContain("ses_ui_1")
+    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toBe("运行命令")
+    expect(document.querySelector('[data-permission-fact="scope"]')?.textContent).toContain("本次会话")
     expect(decision("once").disabled).toBeFalse()
 
     decision("once").click()
@@ -683,8 +689,8 @@ const v1TaskOnce = v1({
   always: [],
   metadata: {},
 })
-// packages/opencode/src/permission/alpha-tool-policy-gate.ts:194-215(confirm 写的 metadata:identity / authority /
-// transport / policy);policy 形状同引擎测试 test/permission/alpha-approval-binding.test.ts:405-410 断言的那一份,
+// packages/opencode/src/permission/alpha-tool-policy-gate.ts confirm 写的 metadata:identity / authority /
+// transport / location(#1617,= mcpLocation,引擎测试 alpha-approval-binding.test.ts「#1617 AC3」钉住)/ policy;policy 形状同引擎测试 test/permission/alpha-approval-binding.test.ts:405-410 断言的那一份,
 // identity 是 ToolIdentity(source / origin / name,canonical = `mcp:<origin>:<name>`),第三方 MCP 的 authority 恒 not-asserted。
 function v1Identity(
   askedBy: "policy" | "ruleset",
@@ -695,6 +701,7 @@ function v1Identity(
     identity: { source: "mcp", origin: "notion", name: "search_pages" },
     authority: { kind: "not-asserted" },
   },
+  location: { kind: "local" } | { kind: "remote"; host: string } | null = { kind: "remote", host: "mcp.notion.com" },
 ) {
   const patterns = askedBy === "policy" ? [`${BINDING}@sha256:${"c".repeat(64)}`] : ["call:call_ui_1"]
   return v1(
@@ -707,6 +714,7 @@ function v1Identity(
         identity: tool.identity,
         authority: tool.authority,
         transport: { kind: "mcp-remote", url: "https://mcp.notion.com/mcp" },
+        ...(location ? { location } : {}),
         policy: { directory: "/Users/zian/project", canonical: tool.canonical, bindingDigest: BINDING, askedBy, ...policy },
       },
     },
@@ -983,25 +991,34 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
   })
 
   test.each([
-    ["第三方 MCP", v1Identity("ruleset"), "search_pages", "第三方"],
+    ["第三方 MCP(带引擎写的远端位置)", v1Identity("ruleset"), "search_pages", "第三方 · mcp.notion.com"],
+    [
+      "第三方 MCP(本机程序,不写主机)",
+      v1Identity("ruleset", {}, "alpha-ask", undefined, { kind: "local" }),
+      "search_pages",
+      "第三方",
+    ],
+    // 请求没带 location 时不从 transport 的 URL 自己解析主机(AC3:渲染层只读引擎写的字段)。
+    ["第三方 MCP(请求没带位置)", v1Identity("ruleset", {}, "alpha-ask", undefined, null), "search_pages", "第三方"],
     ["Code Puppy 云", v1Identity("policy", {}, "alpha-ask", CLOUD_DISPATCH), "下发云端任务", "Code Puppy 云"],
     [
       "同名云工具但没有云证据",
       v1Identity("policy", {}, "alpha-ask", { ...CLOUD_DISPATCH, authority: { kind: "not-asserted" } }),
       "cloud_dispatch",
-      "第三方",
+      "第三方 · mcp.notion.com",
     ],
   ] as const)("r1-5 身份轴「要做什么」写可读名与来源(与时间线同一套判定),不写 canonical:%s", async (_name, permissionRequest, title, source) => {
     mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
     await flush()
 
     const action = card().querySelector<HTMLElement>('[data-permission-fact="action"]')!
-    expect(action.querySelector("dd")?.textContent).toBe(title)
-    expect(action.querySelector("small")?.textContent).toBe(source)
+    expect(action.querySelector(".a-permission-verb")?.textContent).toBe("使用工具")
+    expect(action.querySelector(".a-permission-tool b")?.textContent).toBe(title)
+    expect(action.querySelector(".a-permission-tool small")?.textContent).toBe(source)
     expect(card().textContent).not.toContain(permissionRequest.action)
   })
 
-  test("AC6 新式请求(带 save):中间按钮仍是「始终允许」,照旧创建项目授权,五项事实与页脚说明都在", async () => {
+  test("AC6 新式请求(带 save):中间按钮仍是「始终允许」,照旧创建项目授权,事实(去掉主体)与页脚说明都在", async () => {
     const commands: PermissionV2DecisionCommand[] = []
     mount(async (command) => {
       commands.push(command)
@@ -1011,10 +1028,92 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
 
     expect(decision("always").textContent).toBe(zh["alpha.permission.always"])
     expect(rememberBox()).toBeNull()
-    for (const fact of ["subject", "action", "resources", "scope", "expiry"])
+    for (const fact of ["action", "resources", "scope", "expiry"])
       expect(card().querySelector(`[data-permission-fact="${fact}"]`)).not.toBeNull()
+    expect(card().querySelector('[data-permission-fact="subject"]')).toBeNull()
+    // #1617 r1:页脚写人话(永久授权、不会自动过期),不露 grantExpiresAt = null 这类原始字段。
+    expect(document.querySelector(".a-permission-grant-note")?.textContent).toBe("「始终允许」会为当前项目创建永久授权,不会自动过期。")
+    expect(card().textContent).not.toContain("grantExpiresAt")
     decision("always").click()
     await flush()
     expect(commands[0]).toMatchObject({ decision: "always", grantScope: { kind: "project", projectID: "prj_alpha" } })
+  })
+})
+
+// ═══ REQ-236 `#1617`:确认卡只写人话 —— 不露英文工程标签、原始动作名与主体助手,第三方来源带主机 ═══════════════
+// 判据取自批准稿 docs/design/2026-10-30-req236-permission-cards/frame.html 帧 A–D 与 notes.md 第 3、9 条。
+// packages/opencode/src/tool/webfetch.ts:40(稿里没有的动作:同一风格的短动词)
+const v1Webfetch = v1({
+  id: "per_v1_webfetch",
+  permission: "webfetch",
+  patterns: ["https://example.com/pricing"],
+  always: ["*"],
+  metadata: { url: "https://example.com/pricing" },
+})
+// 表里没有的动作名:一律「使用工具」,原文不上卡。
+const v1Unknown = v1({ id: "per_v1_unknown", permission: "frobnicate_widget", patterns: ["x"], always: [], metadata: {} })
+
+/** 英文工程标签与开发者用语(AC1 票面逐字列出的那几个,外加同组的 Expiry)。 */
+const ENGINEERING_LABELS = ["Action / Capability", "Action", "Resources", "Scope", "Expiry", "主体 / 执行 Agent", "执行 Agent", "subject.kind"]
+
+describe("REQ-236 #1617 确认卡只写人话", () => {
+  test.each([
+    ["运行命令", v1Bash, "bash", "运行命令", undefined, ["bun test src/session", "git status"]],
+    ["改文件", v1Edit, "edit", "改文件", undefined, ["src/app.ts"]],
+    ["外部文件夹", v1Folders, "external_directory", "访问项目以外的文件夹", undefined, ["/Users/zian/codepuppy-test", "/var/folders/bn/T/opencode"]],
+    ["委派", v1Task, "task", "派出子任务", ["交给助手 general", "调研三家竞品的公开定价"], undefined],
+    ["委派(只能一次)", v1TaskOnce, "task", "派出子任务", ["交给助手 reviewer", undefined], undefined],
+    ["身份轴 · 第三方", v1Identity("ruleset"), "mcp:notion:search_pages", "使用工具", ["search_pages", "第三方 · mcp.notion.com"], undefined],
+    ["身份轴 · 云", v1Identity("policy", {}, "alpha-ask", CLOUD_DISPATCH), "mcp:alpha:cloud_dispatch", "使用工具", ["下发云端任务", "Code Puppy 云"], undefined],
+    ["稿外动作(打开网页)", v1Webfetch, "webfetch", "打开网页", undefined, ["https://example.com/pricing"]],
+    ["认不出的动作", v1Unknown, "frobnicate_widget", "使用工具", undefined, ["x"]],
+    ["新式请求", request, "bash", "运行命令", undefined, ["pwd", "src/**"]],
+  ] as const)("AC1 %s:「要做什么」写人话,卡上没有英文工程标签与原始动作名", async (_name, permissionRequest, raw, verb, line, resources) => {
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+    await flush()
+
+    const text = card().textContent ?? ""
+    for (const label of ENGINEERING_LABELS) expect(text).not.toContain(label)
+    expect(text).not.toContain(raw)
+    const action = card().querySelector<HTMLElement>('[data-permission-fact="action"]')!
+    expect(action.querySelector(".a-permission-verb")?.textContent).toBe(verb)
+    if (line) {
+      expect(action.querySelector(".a-permission-tool b")?.textContent).toBe(line[0])
+      expect(action.querySelector(".a-permission-tool small")?.textContent).toBe(line[1])
+    } else expect(action.querySelector(".a-permission-tool")).toBeNull()
+    const codes = [...card().querySelectorAll('[data-permission-fact="resources"] code')].map((node) => node.textContent)
+    expect(codes).toEqual(resources ? [...resources] : [])
+  })
+
+  test.each([
+    ["能力轴", v1Bash],
+    ["委派", v1Task],
+    ["身份轴", v1Identity("policy")],
+    ["新式请求", request],
+  ] as const)("AC2 %s:没有说明句,也没有「谁在请求」那一行(主体助手名不上卡)", async (_name, permissionRequest) => {
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest)
+    await flush()
+
+    const text = card().textContent ?? ""
+    expect(text).not.toContain("请核对下面的真实请求事实")
+    expect(text).not.toContain("谁在请求")
+    expect(card().querySelector(".a-permission-panel-description")).toBeNull()
+    expect(card().querySelector('[data-permission-fact="subject"]')).toBeNull()
+    expect(text).not.toContain(permissionRequest.subject.id)
+    expect(card().getAttribute("aria-describedby")).toBeNull()
+  })
+
+  test("AC2 i18n:说明句与「主体 / Action / Resources」标签已从中英文词典删除", () => {
+    for (const key of [
+      "alpha.permission.description",
+      "alpha.permission.subject",
+      "alpha.permission.action",
+      "alpha.permission.resources",
+    ]) {
+      expect(zh).not.toHaveProperty(key)
+      expect(en).not.toHaveProperty(key)
+    }
+    for (const key of Object.keys(zh).filter((key) => /^alpha\.permission\.(verb|delegateTo)/.test(key)))
+      expect(typeof (en as Record<string, string>)[key]).toBe("string")
   })
 })

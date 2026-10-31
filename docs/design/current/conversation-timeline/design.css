@@ -741,3 +741,41 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
 .pf-table tbody tr:last-child td{border-bottom:0}
 .pf-table td:first-child{white-space:nowrap;color:var(--a-text);font-weight:var(--a-weight-medium)}
 .pf-grow{flex:1}
+
+/* ── 工具批准面板 · 按现行代码画(alpha-ui/PermissionDialog.tsx + permission-dialog.css;2026-10-31 并入,锚 #approval-states)── */
+.pc-stage{padding:22px;background:var(--a-bg-subtle)}
+.pc-panel{max-width:600px;margin:0 auto;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-md);color:var(--a-text)}
+.pc-hd{display:flex;align-items:center;gap:8px;padding:12px 14px 0;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
+.pc-hd .pf-i{color:var(--a-warning)}
+.pc-body{padding:8px 14px 0}
+.pc-res{display:flex;flex-wrap:wrap;gap:8px}
+/* alpha-code#1617:「要做什么」一行人话 + 至多一行工具 / 助手 / 资源(PermissionDialog .a-permission-what / -verb / -tool)。 */
+.pc-what{display:grid;gap:8px;min-width:0;margin-top:12px}
+.pc-verb{margin:0;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.pc-tool{display:grid;gap:1px;padding:10px 14px;overflow-wrap:anywhere;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface)}
+.pc-tool b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.pc-tool small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.pc-res code{max-width:100%;padding:3px 7px;overflow-wrap:anywhere;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-inset);font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text)}
+.pc-rem{margin-top:12px;overflow:hidden;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface)}
+.pc-rem-l{padding:8px 14px;border-bottom:1px solid var(--a-border-faint);background:var(--a-bg-subtle);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);color:var(--a-text-secondary)}
+.pc-rem-w{display:grid;gap:1px;padding:10px 14px;overflow-wrap:anywhere}
+.pc-rem-w b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.pc-rem-w small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.pc-note,.pc-risk,.pc-fail{margin:12px 0 0;line-height:1.4}
+.pc-note{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.pc-risk{font-size:var(--a-text-sm);color:var(--a-warning)}
+.pc-fail{font-size:var(--a-text-sm);color:var(--a-error)}
+.pc-ft{display:grid;gap:8px;padding:12px 14px 12px}
+.pc-grant{font-size:var(--a-text-xs);color:var(--a-text-tertiary);text-align:right}
+.pc-acts{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.pc-acts .pf-btn.rej{margin-right:auto;background:transparent;color:var(--a-error)}
+.pc-acts .pf-btn:disabled{opacity:.5;cursor:default}
+.pc-one{margin-top:14px}
+.pc-one + .pc-one{margin-top:22px}
+/* 运行权限菜单(与 composer 活稿 #perm 同一份文字;本页 §8.6 ② 统一菜单用) */
+.pf-mi.wrap2{flex-wrap:wrap;align-items:flex-start;row-gap:2px;padding-top:6px;padding-bottom:6px}
+.pf-mi.wrap2 small{flex-basis:100%;margin-left:22px;line-height:1.5}
+/* 设置活稿式的小来源组(§8.5 随包工具对照用) */
+.pc-src-row{display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 14px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface);font-size:var(--a-text-sm)}
+.pc-src-row small{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.note.warn{border-left-color:var(--a-warning)}

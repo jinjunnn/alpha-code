@@ -45,18 +45,6 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
 
 const LOCAL: ToolLocation = { kind: "local" }
 
-/**
- * #1576:MCP 工具在哪里执行 —— 从**生效**条目经 `mcpTransportFact`(执行闸送审批面的同一去秘密口径)派生:
- * 远端取 URL 主机名,本机命令 = local;条目未知或 URL 解析不出主机 ⇒ 不写(显示层说「位置未知」)。
- */
-function mcpLocation(entry: Parameters<typeof AlphaToolPolicyGate.mcpTransportFact>[0]): ToolLocation | undefined {
-  const transport = AlphaToolPolicyGate.mcpTransportFact(entry)
-  if (!transport) return undefined
-  if (transport.kind === "mcp-local") return LOCAL
-  const host = URL.canParse(transport.url) ? new URL(transport.url).hostname : ""
-  return host ? { kind: "remote", host } : undefined
-}
-
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
@@ -102,6 +90,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           bindingDigest: facts?.entry ? mcpBindingDigest(identity.origin, facts.entry) : undefined,
           // #1285:远端 MCP 的目的地就是它的 transport(去秘密),随身份轴那一问一起送到审批面。
           transport: AlphaToolPolicyGate.mcpTransportFact(facts?.entry),
+          // #1617:执行位置与下面注册给时间线的是同一份派生,随身份轴那一问送到审批卡。
+          location: AlphaToolPolicyGate.mcpLocation(facts?.entry),
         }
       }
       if (identity.source === "plugin") {
@@ -609,7 +599,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }),
       )
     const facts = mcp.bindingFacts ? yield* mcp.bindingFacts(origin) : undefined
-    const location = mcpLocation(facts?.entry)
+    const location = AlphaToolPolicyGate.mcpLocation(facts?.entry)
     register(key, item, {
       identity: entry.identity,
       technicalId: key,

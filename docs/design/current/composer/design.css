@@ -350,3 +350,10 @@ body[data-state="out"] .lock-hint,body[data-state="empty"] .lock-hint{display:bl
   background:var(--a-warning-subtle)}
 .composer .notice-blocked .fact{font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
 .composer .notice-blocked .why{font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+
+/* REQ-236 运行权限菜单(2026-10-31 并入,alpha-code#1575 已落地):每档说明折到第二行、与档名左对齐,菜单宽 300,底部一句三档共同的边界 */
+.perm-menu{width:300px}
+.perm-menu .menu-item{flex-wrap:wrap;align-items:flex-start;row-gap:2px}
+.perm-menu .menu-item .desc{flex-basis:100%;margin-left:26px;line-height:1.5;font-weight:var(--a-weight-normal)}
+.perm-menu .menu-sep{height:1px;margin:4px 6px;background:var(--a-border-faint)}
+.perm-menu .menu-note{padding:6px 10px 6px;font-size:var(--a-text-xs);line-height:1.5;color:var(--a-text-tertiary)}

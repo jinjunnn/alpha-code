@@ -359,11 +359,11 @@ describe("HubInstallWatcher:定制中心自己的确认框,先记阶段再回审
     expect(timeline()).toEqual(["stage:confirming", "stage:submitted", "stage:failed(office-runtime-missing)", "reply:reject"])
   })
 
-  test("对照:不带 alphaHub 的请求照旧是通用五栏审批框,不进守望者", async () => {
+  test("对照:不带 alphaHub 的请求照旧是通用审批框(#1617 起四栏,不含主体),不进守望者", async () => {
     mount()
     await flush()
     runtime.ask({ ...hubRequest("skill:writer"), id: "per_plain", action: "bash", resources: ["ls"], metadata: {} } as PermissionV2Request)
-    await until(() => document.querySelectorAll("[data-permission-fact]").length === 5, "the generic dialog")
+    await until(() => document.querySelectorAll("[data-permission-fact]").length === 4, "the generic dialog")
     expect(document.querySelector("[data-hub-agent-request]")).toBeNull()
     expect(timeline()).toEqual([])
   })

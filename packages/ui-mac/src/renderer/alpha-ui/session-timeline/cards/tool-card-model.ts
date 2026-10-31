@@ -273,15 +273,17 @@ export const PROVENANCE_SOURCE_KEYS = {
 } as const
 
 /**
- * REQ-236 `#1575`:审批卡上的那一个工具。审批请求没有调用记录,只带引擎写的 identity + authority
- * (`packages/opencode/src/permission/alpha-tool-policy-gate.ts` confirm 的 metadata)—— 名字与来源走与时间线
- * 同一条判定(快照校验 → categoryOf → 宿主 / 云规则表),不另判一份。位置不在这里:审批请求不带 #1576 的 location。
+ * REQ-236 `#1575`:审批卡上的那一个工具。审批请求没有调用记录,只带引擎写的 identity + authority + location
+ * (`packages/opencode/src/permission/alpha-tool-policy-gate.ts` confirm 的 metadata;location 是 #1617 起与时间线
+ * 同一份 `mcpLocation`)—— 名字、来源、位置走与时间线同一条判定(快照校验 → categoryOf → 宿主 / 云规则表 →
+ * 主机净化),不另判一份。
  */
-export function approvalToolOf(facts: { identity: unknown; authority: unknown; technicalId: string }) {
+export function approvalToolOf(facts: { identity: unknown; authority: unknown; location?: unknown; technicalId: string }) {
   const snapshot = displaySnapshotOf({ display: facts })
   if (!snapshot) return undefined
   const dispatch = dispatchOfSnapshot(snapshot, () => ({}))
-  return { name: dispatch.name, titleKey: toolTitleKeyOf(dispatch), source: provenanceOfSnapshot(snapshot).source }
+  const provenance = provenanceOfSnapshot(snapshot)
+  return { name: dispatch.name, titleKey: toolTitleKeyOf(dispatch), source: provenance.source, location: provenance.location }
 }
 
 function provenanceOfSnapshot(snapshot: DisplaySnapshot | undefined): ToolProvenance {

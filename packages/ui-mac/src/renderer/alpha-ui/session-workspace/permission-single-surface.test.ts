@@ -253,7 +253,8 @@ function dockPermissionTraffic(): Set<string> {
   )
 }
 
-const FACTS = ["subject", "action", "resources", "scope", "expiry"] as const
+// #1617:「谁在请求」(subject)不再上卡,新式请求的卡是四栏。
+const FACTS = ["action", "resources", "scope", "expiry"] as const
 
 /** dock 侧被允许的审批类流量 —— **只读,零写**。
  *  #668 起读面是 v1+v2 合并快照(两条 list 都必须成功,feed 才 ready),所以合法集合从
