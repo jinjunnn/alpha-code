@@ -97,8 +97,8 @@ async function productionCloudEntry(input: { killSwitch: boolean; token: string;
       dir: input.tmp,
     })
     const cfg = ConfigParse.jsonc(text, "OPENCODE_CONFIG_CONTENT") as { mcp: Record<string, unknown> }
-    if (input.killSwitch) expect(installCloudMcp(cfg, env)).toBe("cloud")
-    const entry = Schema.decodeUnknownSync(ConfigMCPV1.Info)(cfg.mcp.cloud)
+    if (input.killSwitch) expect(installCloudMcp(cfg, env)).toBe("codepuppy")
+    const entry = Schema.decodeUnknownSync(ConfigMCPV1.Info)(cfg.mcp.codepuppy)
     return { entry, env }
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
@@ -229,7 +229,7 @@ describe("stable tool identity", () => {
         // 对照:装载后的条目确实带着令牌字面量(否则这条用例测的不是断点)。
         expect(entry.type === "remote" && entry.headers?.Authorization).toBe("Bearer tok-wired-1")
         expect(env.ALPHA_CLOUD_MCP_DEF).toContain("{file:")
-        expect(authorityForMcp("cloud", entry, env).kind).toBe("codepuppy-cloud")
+        expect(authorityForMcp("codepuppy", entry, env).kind).toBe("codepuppy-cloud")
       }
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
@@ -267,11 +267,11 @@ describe("stable tool identity", () => {
       const before = await productionCloudEntry({ killSwitch: false, token: "tok-before-rotation", tmp })
       const after = await productionCloudEntry({ killSwitch: false, token: "tok-after-rotation", tmp })
       expect(before.entry).not.toEqual(after.entry)
-      const evidence = governedMcpEvidence("cloud", before.entry, before.env)
+      const evidence = governedMcpEvidence("codepuppy", before.entry, before.env)
       expect(evidence).toBeDefined()
       expect(evidence).not.toContain("tok-before-rotation")
-      const a = authorityForMcp("cloud", before.entry, before.env)
-      const b = authorityForMcp("cloud", after.entry, after.env)
+      const a = authorityForMcp("codepuppy", before.entry, before.env)
+      const b = authorityForMcp("codepuppy", after.entry, after.env)
       expect(a.kind).toBe("codepuppy-cloud")
       expect(b).toEqual(a)
     } finally {
