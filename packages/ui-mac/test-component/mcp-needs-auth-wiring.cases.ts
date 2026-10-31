@@ -418,7 +418,7 @@ test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", a
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
   mount()
-  await openCloudEntry("云端代码审查（code-review）")
+  await openCloudEntry("云端代码审查")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
   expect(primaryAddButton()!.disabled).toBe(true)
 
@@ -426,7 +426,7 @@ test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", a
   reset()
   engineStatus = { cloud: { status: "connected" } }
   mount()
-  await openCloudEntry("云端代码审查（code-review）")
+  await openCloudEntry("云端代码审查")
   await waitFor(() => expect(primaryAddButton()).toBeDefined())
   expect(primaryAddButton()!.disabled).toBe(false)
 })
@@ -440,14 +440,14 @@ test("`#624` 恢复中:code-review 详情的云派发按钮禁用(ready 时可�
   recoveringAuth()
   engineStatus = { cloud: { status: "connected" } }
   mount()
-  await openCloudEntry("云端代码审查（code-review）")
+  await openCloudEntry("云端代码审查")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
   expect(dispatchButtons().map((b) => b.disabled)).not.toContain(false)
 
   reset()
   engineStatus = { cloud: { status: "connected" } }
   mount()
-  await openCloudEntry("云端代码审查（code-review）")
+  await openCloudEntry("云端代码审查")
   await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
   expect(dispatchButtons().map((b) => b.disabled)).toContain(false)
 })
