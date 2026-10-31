@@ -1062,7 +1062,7 @@ export const dict = {
   "alpha.permission.reject": "Reject",
   "alpha.permission.submitting": "Submitting…",
   "alpha.permission.retryDecision": "Retry “{{label}}”",
-  "alpha.permission.alwaysNote": "“Always allow” creates a permanent grant for this project (grantExpiresAt = null).",
+  "alpha.permission.alwaysNote": "“Always allow” creates a permanent grant for this project; it doesn't expire.",
   "alpha.permission.unverified": "Request facts could not be verified; authorization is unavailable",
   "alpha.permission.projectUnverified": "The current project could not be verified; a permanent grant cannot be created",
   "alpha.permission.noSavedResources": "The request provides no persistable resources; a permanent grant cannot be created",

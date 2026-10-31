@@ -1039,7 +1039,7 @@ export const dict = {
   "alpha.permission.reject": "拒绝",
   "alpha.permission.submitting": "正在提交…",
   "alpha.permission.retryDecision": "重试「{{label}}」",
-  "alpha.permission.alwaysNote": "「始终允许」会为当前项目创建永久授权(grantExpiresAt = null)。",
+  "alpha.permission.alwaysNote": "「始终允许」会为当前项目创建永久授权,不会自动过期。",
   "alpha.permission.unverified": "请求事实无法核实,不能授权",
   "alpha.permission.projectUnverified": "无法核实当前项目,不能创建永久授权",
   "alpha.permission.noSavedResources": "请求未提供可保存资源,不能创建永久授权",

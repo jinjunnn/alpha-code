@@ -1031,7 +1031,9 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     for (const fact of ["action", "resources", "scope", "expiry"])
       expect(card().querySelector(`[data-permission-fact="${fact}"]`)).not.toBeNull()
     expect(card().querySelector('[data-permission-fact="subject"]')).toBeNull()
-    expect(document.querySelector(".a-permission-grant-note")?.textContent).toBe(zh["alpha.permission.alwaysNote"])
+    // #1617 r1:页脚写人话(永久授权、不会自动过期),不露 grantExpiresAt = null 这类原始字段。
+    expect(document.querySelector(".a-permission-grant-note")?.textContent).toBe("「始终允许」会为当前项目创建永久授权,不会自动过期。")
+    expect(card().textContent).not.toContain("grantExpiresAt")
     decision("always").click()
     await flush()
     expect(commands[0]).toMatchObject({ decision: "always", grantScope: { kind: "project", projectID: "prj_alpha" } })
