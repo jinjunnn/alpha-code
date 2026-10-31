@@ -748,14 +748,13 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
 .pc-hd{display:flex;align-items:center;gap:8px;padding:12px 14px 0;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
 .pc-hd .pf-i{color:var(--a-warning)}
 .pc-body{padding:8px 14px 0}
-.pc-desc{font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.55}
-.pc-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0 0}
-.pc-fact{min-width:0;padding:12px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-bg-subtle)}
-.pc-fact.wide{grid-column:1/-1}
-.pc-fact dt{margin-bottom:8px;font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
-.pc-fact dd{margin:0;overflow-wrap:anywhere;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
-.pc-fact small{display:block;margin-top:4px;overflow-wrap:anywhere;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
 .pc-res{display:flex;flex-wrap:wrap;gap:8px}
+/* alpha-code#1617:「要做什么」一行人话 + 至多一行工具 / 助手 / 资源(PermissionDialog .a-permission-what / -verb / -tool)。 */
+.pc-what{display:grid;gap:8px;min-width:0;margin-top:12px}
+.pc-verb{margin:0;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.pc-tool{display:grid;gap:1px;padding:10px 14px;overflow-wrap:anywhere;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface)}
+.pc-tool b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.pc-tool small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
 .pc-res code{max-width:100%;padding:3px 7px;overflow-wrap:anywhere;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-inset);font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text)}
 .pc-rem{margin-top:12px;overflow:hidden;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface)}
 .pc-rem-l{padding:8px 14px;border-bottom:1px solid var(--a-border-faint);background:var(--a-bg-subtle);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);color:var(--a-text-secondary)}

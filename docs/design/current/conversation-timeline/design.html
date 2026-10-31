@@ -1116,19 +1116,14 @@ rendering chunks (12/31)...</div></div>
 <!-- ══════════ 8.6 ③ 的现行形态:确认卡按请求种类分流(2026-10-31 并入)══════════ -->
 <h3 class="pf-h" id="approval-states" style="font-size:var(--a-text-lg)">8.6.1 ③ 批准面板:中间按钮按请求种类变化,写清记住什么</h3>
 <p class="pf-sub">面板外壳、位置与焦点同上面 ③(停在输入框之上、宽度跟输入框、关不掉、焦点落在「允许一次」)。卡内按引擎写进请求的事实分成四种:改文件 / 运行命令 / 外部文件夹 / 子任务 → 「本次会话内允许」;设置要求询问的外部与云端工具 → 「在此项目中始终允许」;档位或权限规则要求每次确认的 → 只能允许一次;自带可保存资源的新式请求 → 「始终允许」照旧。</p>
-<div class="note"><b>与上一稿的关系</b>:取自 owner 2026-10-30 批准的增量稿 <a href="../../2026-10-30-req236-permission-cards/frame.html#approval-states"><code>2026-10-30-req236-permission-cards/</code></a> 的 <code>#approval-states</code>–<code>#state-disabled</code>,<b>照已出货代码画</b>(alpha-code#1575,合并提交 <code>df178b80c</code>):代码仍保留请求事实格子(执行助手、动作、资源)与说明句,行样式是面板自己的,不是能力授权框的。它取代上面 ③ 帧里的「始终允许」与「五项事实全显示」两处文字;③ 的外壳、位置、焦点规则不变。批准按钩子之后的参数生效、批准后再核对设置与服务(alpha-code#1574)是引擎侧行为,不改卡面。稿与代码不一致处列在本节末尾。</div>
+<div class="note"><b>与上一稿的关系</b>:取自 owner 2026-10-30 批准的增量稿 <a href="../../2026-10-30-req236-permission-cards/frame.html#approval-states"><code>2026-10-30-req236-permission-cards/</code></a> 的 <code>#approval-states</code>–<code>#state-disabled</code>,<b>照已出货代码画</b>(alpha-code#1575,合并提交 <code>df178b80c</code>):alpha-code#1617 起卡上不再有说明句与「执行助手 / 动作 / 资源」事实格子,改为一行人话的「要做什么」,下面至多一行工具 / 助手或资源;行样式仍是面板自己的,不是能力授权框的。它取代上面 ③ 帧里的「始终允许」与「五项事实全显示」两处文字;③ 的外壳、位置、焦点规则不变。批准按钩子之后的参数生效、批准后再核对设置与服务(alpha-code#1574)是引擎侧行为,不改卡面。稿与代码不一致处列在本节末尾。</div>
 
 <div class="pc-one" id="state-session">
   <div class="pf-tag">A · 本次会话内允许 · 运行命令</div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
-        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>bun test src/session</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">运行命令</p><span class="pc-res"><code>bun test src/session</code></span></div>
       <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:以 bun test 开头的命令</b><small>本次会话 · 重启后失效</small></div></div>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
@@ -1141,12 +1136,7 @@ rendering chunks (12/31)...</div></div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>external_directory</dd><small>请求执行的能力</small></div>
-        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>/Users/zian/codepuppy-test/*</code><code>/var/folders/bn/…/T/opencode/*</code></span></dd><small>2 项,由请求按原顺序提供</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">访问项目以外的文件夹</p><span class="pc-res"><code>/Users/zian/codepuppy-test</code><code>/var/folders/bn/…/T/opencode</code></span></div>
       <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:/Users/zian/codepuppy-test、/var/folders/bn/…/T/opencode 及其子文件夹</b><small>本次会话 · 重启后失效</small></div></div>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
@@ -1159,16 +1149,12 @@ rendering chunks (12/31)...</div></div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>下发云端任务</dd><small>Code Puppy 云</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">使用工具</p><div class="pc-tool"><b>下发云端任务</b><small>Code Puppy 云</small></div></div>
       <div class="pc-rem"><div class="pc-rem-l">在此项目中始终允许</div><div class="pc-rem-w"><b>将记住:在此项目使用这个工具</b><small>当前项目 · 当前账户 · 可在设置里撤回</small></div></div>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">在此项目中始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
   </div></div></div>
-  <p class="pf-cap">外部与云端工具,由「设置 → 工具」要求询问时。动作格写工具的可读名与来源(Code Puppy 内置 / Code Puppy 云 / 第三方,与时间线同一套判定),不写技术名;这类请求不显示资源格。点了先把这个工具的「启用」存进设置,存成才放行这一次;可在设置里撤回。没登录时范围写「当前项目 · 未登录」。</p>
+  <p class="pf-cap">外部与云端工具,由「设置 → 工具」要求询问时。「要做什么」写「使用工具」,工具行写可读名与来源(Code Puppy 内置 / Code Puppy 云 / 第三方,与时间线同一套判定),不写技术名;这类请求不显示资源行。点了先把这个工具的「启用」存进设置,存成才放行这一次;可在设置里撤回。没登录时范围写「当前项目 · 未登录」。</p>
 </div>
 
 <div class="pc-one" id="state-every-time">
@@ -1176,16 +1162,12 @@ rendering chunks (12/31)...</div></div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>alpha-ask</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>search_pages</dd><small>第三方</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">使用工具</p><div class="pc-tool"><b>search_pages</b><small>第三方 · mcp.notion.com</small></div></div>
       <p class="pc-note">这个工具每次都要确认</p>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
   </div></div></div>
-  <p class="pf-cap">档位或权限规则要求每次确认时,设置里启用过也照样问;请求缺服务配置指纹(没有生效的服务条目、插件来源未知)时也归这一类。卡上不凭执行助手名断言档位。</p>
+  <p class="pf-cap">档位或权限规则要求每次确认时,设置里启用过也照样问;请求缺服务配置指纹(没有生效的服务条目、插件来源未知)时也归这一类。卡上不凭执行助手名断言档位。第三方远端工具的来源后跟主机名,主机取自引擎写进请求的执行位置(与时间线同一份派生),卡面不解析地址;本机程序与缺位置时只写「第三方」。</p>
 </div>
 
 <div class="pc-one" id="delegation">
@@ -1193,18 +1175,13 @@ rendering chunks (12/31)...</div></div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>alpha-ask</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>task</dd><small>请求执行的能力</small></div>
-        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>general</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">派出子任务</p><div class="pc-tool"><b>交给助手 general</b><small>调研三家竞品的公开定价</small></div></div>
       <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:本会话派出的所有子任务</b><small>本次会话 · 重启后失效</small></div></div>
       <p class="pc-risk">子任务里不再逐项询问</p>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
   </div></div></div>
-  <p class="pf-cap">「请求审批」档。请求没带可记住的范围时(例如命令换了助手)不出现中间按钮和记住框,只剩「拒绝」「允许一次」,披露行照旧。「只读」档下直接拒绝,不弹卡。</p>
+  <p class="pf-cap">「请求审批」档。助手名取自请求,下面一行是任务描述(请求不带描述时只写「交给助手 …」)。请求没带可记住的范围时(例如命令换了助手)不出现中间按钮和记住框,只剩「拒绝」「允许一次」,披露行照旧。「只读」档下直接拒绝,不弹卡。</p>
 </div>
 
 <div class="pc-one" id="state-write-failed">
@@ -1212,11 +1189,7 @@ rendering chunks (12/31)...</div></div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>下发云端任务</dd><small>Code Puppy 云</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">使用工具</p><div class="pc-tool"><b>下发云端任务</b><small>Code Puppy 云</small></div></div>
       <div class="pc-rem"><div class="pc-rem-l">在此项目中始终允许</div><div class="pc-rem-w"><b>将记住:在此项目使用这个工具</b><small>当前项目 · 当前账户 · 可在设置里撤回</small></div></div>
       <p class="pc-fail" role="alert">没能保存,这次未放行</p>
     </div>
@@ -1228,31 +1201,22 @@ rendering chunks (12/31)...</div></div>
 <h3 class="pf-h" id="state-disabled" style="font-size:var(--a-text-lg)">F · 仍会置灰的三种情况</h3>
 <p class="pf-sub">「没有可记住的范围」不再置灰,改为不出现中间按钮。下面三种照旧置灰;记住框只在中间按钮真能用时画。</p>
 <div class="pc-one">
-  <div class="pf-tag">请求无法核实 · 自动拒绝</div>
+  <div class="pf-tag">请求无法核实 · 自动拒绝(此例:执行助手核不实)</div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>无法核实</dd><small>请求未提供完整主体事实</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
-        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>bun test src/session</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">运行命令</p><span class="pc-res"><code>bun test src/session</code></span></div>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button" disabled>正在提交…</button><button class="pf-btn" type="button" disabled>本次会话内允许</button><button class="pf-btn pri" type="button" disabled>允许一次</button></div></div>
   </div></div></div>
-  <p class="pf-cap">核不实的那一格写「无法核实」;面板一出现就自动拒绝,拒绝按钮写「正在提交…」。另两颗按钮的悬停提示是「请求事实无法核实,不能授权」,卡上没有状态句。</p>
+  <p class="pf-cap">执行助手不上卡,它核不实时卡面照常写「要做什么」;缺动作或资源时那一行写「无法核实」并说明缺什么。面板一出现就自动拒绝,拒绝按钮写「正在提交…」。另两颗按钮的悬停提示是「请求事实无法核实,不能授权」,卡上没有状态句。</p>
 </div>
 <div class="pc-one">
   <div class="pf-tag">找不到当前项目</div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>下发云端任务</dd><small>Code Puppy 云</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">使用工具</p><div class="pc-tool"><b>下发云端任务</b><small>Code Puppy 云</small></div></div>
       <p class="pc-note">找不到当前项目,不能始终允许</p>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button" disabled>在此项目中始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
@@ -1264,12 +1228,7 @@ rendering chunks (12/31)...</div></div>
   <div class="frame"><div class="pc-stage"><div class="pc-panel">
     <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
     <div class="pc-body">
-      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
-      <dl class="pc-facts">
-        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
-        <div class="pc-fact"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
-        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>bun test src/session</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
-      </dl>
+      <div class="pc-what"><p class="pc-verb">运行命令</p><span class="pc-res"><code>bun test src/session</code></span></div>
       <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:以 bun test 开头的命令</b><small>本次会话 · 重启后失效</small></div></div>
     </div>
     <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button" disabled>拒绝</button><button class="pf-btn" type="button" disabled>本次会话内允许</button><button class="pf-btn pri" type="button" disabled>正在提交…</button></div></div>
@@ -1284,15 +1243,15 @@ rendering chunks (12/31)...</div></div>
     <tr><td>同上,请求不带可记住的范围</td><td>无</td><td>无</td></tr>
     <tr><td>外部与云端工具,设置要求询问</td><td>在此项目中始终允许</td><td>当前项目 · 当前账户 · 可在设置里撤回(未登录:当前项目 · 未登录)</td></tr>
     <tr><td>外部与云端工具,档位或规则要求每次确认;或请求缺服务配置指纹</td><td>无</td><td>无;写「这个工具每次都要确认」</td></tr>
-    <tr><td>自带可保存资源的新式请求</td><td>始终允许(不变)</td><td>无记住框;仍显示范围、期限两格与页脚「「始终允许」会为当前项目创建永久授权(grantExpiresAt = null)。」</td></tr>
+    <tr><td>自带可保存资源的新式请求</td><td>始终允许(不变)</td><td>无记住框;仍显示「适用范围」「期限」两格与页脚「「始终允许」会为当前项目创建永久授权,不会自动过期。」</td></tr>
   </tbody>
 </table>
 
-<div class="note warn" id="approval-diff"><b>与批准稿的差异(按代码画,不回头改代码)</b>:
-  ① 卡上仍有说明句「请核对下面的真实请求事实。作出决定前,工具保持暂停。」和请求事实格子:「主体 / 执行 Agent」(助手名 + <code>subject.kind = agent</code>)、「Action / Capability」、「Resources」;批准稿去掉了说明句与「谁在请求」,只留一行人话的「要做什么」。<br>
-  ② 改文件 / 运行命令 / 外部文件夹 / 子任务这四种,动作格写请求的原始动作名(<code>bash</code>、<code>external_directory</code>、<code>task</code>),资源格写原始资源;批准稿写「运行命令」「访问项目以外的文件夹」「派出子任务」「交给助手 general」。外部与云端工具的动作格已是可读名 + 来源。<br>
+<div class="note warn" id="approval-diff"><b>与批准稿的差异(按代码画,不回头改代码)</b>:①②④ 已由 alpha-code#1617 消除,原文划去留档;③⑤⑥⑦ 仍是现状。<br>
+  ① <b>已消除(alpha-code#1617)</b> <s>卡上仍有说明句「请核对下面的真实请求事实。作出决定前,工具保持暂停。」和请求事实格子:「主体 / 执行 Agent」(助手名 + <code>subject.kind = agent</code>)、「Action / Capability」、「Resources」;批准稿去掉了说明句与「谁在请求」,只留一行人话的「要做什么」。</s><br>
+  ② <b>已消除(alpha-code#1617)</b> <s>改文件 / 运行命令 / 外部文件夹 / 子任务这四种,动作格写请求的原始动作名(<code>bash</code>、<code>external_directory</code>、<code>task</code>),资源格写原始资源;批准稿写「运行命令」「访问项目以外的文件夹」「派出子任务」「交给助手 general」。外部与云端工具的动作格已是可读名 + 来源。</s><br>
   ③ 外部文件夹的「将记住」逐个列出文件夹,写成「{文件夹}、{文件夹} 及其子文件夹」;批准稿写「这两个文件夹及其子文件夹」。<br>
-  ④ 第三方工具的来源只写「第三方」,不跟主机名(批准稿 C 帧是「第三方 · mcp.notion.com」):审批请求不带执行位置,主机名只在时间线上有。移交 alpha-code#1568。<br>
+  ④ <b>已消除(alpha-code#1617:引擎把执行位置写进审批请求)</b> <s>第三方工具的来源只写「第三方」,不跟主机名(批准稿 C 帧是「第三方 · mcp.notion.com」):审批请求不带执行位置,主机名只在时间线上有。移交 alpha-code#1568。</s><br>
   ⑤ 请求无法核实时没有「无法核实这次请求,已拒绝」这句状态,沿用按钮悬停提示 + 自动拒绝。<br>
   ⑥ 标题图标是时钟(批准稿是暂停号);记住框没有书签图标,标题行是按钮名;卡内行样式是面板自己的(<code>.a-permission-remember</code>),不是能力授权框的。拒绝按钮是红字、靠左,与另两颗分开。<br>
   ⑦ 「只能允许一次」还包括请求缺服务配置指纹的情况(没有生效的服务条目、插件来源未知),批准稿只写了档位 / 规则要求。
