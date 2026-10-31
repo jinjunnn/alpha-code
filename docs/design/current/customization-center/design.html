@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>alpha-code · 定制中心 · 活稿(v6 四级货架 + 本地扩展包导入)</title>
+<title>Code Puppy · 定制中心 · 活稿(三页结构 + 详情页 + 本地扩展包导入)</title>
   <link rel="stylesheet" href="design.css">
 </head>
 <body>
@@ -11,11 +11,172 @@
 <div class="topbar">
   <div class="brand"><span class="m">α</span> 定制中心 · 活稿</div>
   <div class="spacer"></div>
-  <nav><a href="#lineage">与上一稿的关系</a><a href="#facts">契约与数据基线</a><a href="#vocab">词汇表</a><a href="#featured">推荐页</a><a href="#browse">浏览标识</a><a href="#detail">详情页</a><a href="#states">降级与失败态</a><a href="#policy">启用策略</a><a href="#localpkg">本地扩展包导入</a><a href="#import-preview">预览屏</a><a href="#installed-packs">已装扩展包</a><a href="#enable-flow">启用与生效</a><a href="#packrel">与整包事实的关系</a><a href="#review">评审点</a></nav>
+  <nav><a href="#hub-tabs">三页结构</a><a href="#lineage">与上一稿的关系</a><a href="#facts">契约与数据基线</a><a href="#vocab">词汇表</a><a href="#featured">推荐页</a><a href="#browse">浏览标识</a><a href="#detail">详情页</a><a href="#states">降级与失败态</a><a href="#policy">启用策略</a><a href="#localpkg">本地扩展包导入</a><a href="#import-preview">预览屏</a><a href="#installed-packs">已装扩展包</a><a href="#enable-flow">启用与生效</a><a href="#packrel">与整包事实的关系</a><a href="#review">评审点</a></nav>
   <div class="seg" id="themeSeg"><button data-t="light" class="on">浅色</button><button data-t="dark">深色</button></div>
 </div>
 
 <div class="wrap">
+
+<!-- ═══ 三页结构(现行列表页)═══ -->
+<section class="sec" id="hub-tabs">
+  <div class="sec-kicker">现行列表页 · 照已出货代码画(alpha-code#1594,合并提交 c28157d32)· 2026-10-31 并入</div>
+  <h2>定制中心 = 连接器、技能、助手三页</h2>
+  <p class="lede">打开定制中心只有三个页签。每页一个标题、一行副标题、本页搜索和「添加 ▾」;最上面是这一页的「已安装」,下面是可添加的内容。列表一行一个:图标、名称、一行描述(放不下就省略)、一个动作,双列排。来源、版本、兼容、运行位置只在详情页(详情页仍按下方<a href="#detail">改动三</a>画)。</p>
+  <div class="note"><b>与上一稿的关系</b>:列表结构取自 owner 2026-10-30 批准的增量稿 <a href="../../2026-10-30-req236-ux-config-pages/frame.html#hub"><code>2026-10-30-req236-ux-config-pages/</code></a> 的 <code>#hub-tabs</code>–<code>#hub-agents</code>,样式取自设置活稿里定制中心已有的那套(页签栏、搜索框、<code>.kit</code> 行、双列网格),收在本页 <code>design.css</code> 的 <code>.hub3</code> 下。<b>它取代</b>下方九页签时代的列表呈现:推荐页四级货架(<a href="#featured">改动一</a>)、浏览卡片的 chip 与「未分级」尾组(<a href="#browse">改动二</a>)、已安装页的开关行(<a href="#policy">改动四</a>)、导入页五张卡与已安装页的扩展包区块(<a href="#localpkg">§9</a>、<a href="#installed-packs">§9.2</a>)。这些节保留作来历,不再是现在的样子;详情页、降级态、导入预览屏仍然有效。<b>稿与代码不一致处一律按代码画</b>,差异列在本节末尾。</div>
+
+  <div class="sec-kicker" style="margin-top:22px">页签</div>
+  <div class="frame"><div class="hub3">
+    <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab on">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">助手</div></div><span class="hub-close">✕</span></div>
+  </div></div>
+  <div class="cap">原九个页签的去向:推荐 → 各页按类别分组;插件 → 连接器页与 MCP 同组(目录今天没有插件条目);套件、云能力 → 连接器页的「套件」「Code Puppy 云」两组;已安装 → 每页顶部一组;导入 → 「添加 ▾」。</div>
+
+  <div class="sec-kicker" id="hub-connectors" style="margin-top:34px">连接器</div>
+  <div class="frame"><div class="hub3">
+    <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab on">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">助手</div></div><span class="hub-close">✕</span></div>
+    <div class="hub-scroll"><div class="hub-center">
+      <div class="hub-pagehd">
+        <div class="t"><div class="hub-h1">连接器</div><div class="hub-sub">让助手使用外部工具和服务</div></div>
+        <div class="hub-search">⌕ 搜索连接器</div>
+        <button class="btn-primary">添加 ▾</button>
+      </div>
+      <div class="hub-secrow"><span class="t">已安装</span><span class="act">全部更新</span></div>
+      <div class="hub-grid">
+        <div class="kit"><div class="ico" style="background:#5c7cbf">云</div><div class="body"><div class="ttl"><b>云连接器</b></div><div class="desc">已连接</div></div><span class="more">…</span></div>
+        <div class="kit"><div class="ico" style="background:#4f46e5">FS</div><div class="body"><div class="ttl"><b>本地文件读写</b></div><div class="desc">让助手读取和修改允许访问的本地文件夹中的文件。</div></div><span class="more">…</span></div>
+        <div class="kit"><div class="ico" style="background:#0f766e">C7</div><div class="body"><div class="ttl"><b>context7</b></div><div class="desc">未开启</div></div><button class="add">开启</button></div>
+        <div class="kit"><div class="ico" style="background:#f97316">G</div><div class="body"><div class="ttl"><b>Git 版本管理</b></div><div class="desc">待生效 · 对话空闲后自动生效</div></div><button class="add">立即生效</button></div>
+        <div class="kit"><div class="ico" style="background:#2563eb">X</div><div class="body"><div class="ttl"><b>Excel 表格读写</b></div><div class="desc">已归档 · 不再维护</div></div><span class="more">…</span></div>
+        <div class="kit"><div class="ico" style="background:#7c3aed">网</div><div class="body"><div class="ttl"><b>网页读取</b></div><div class="desc">抓取网页并转成 Markdown,供研究和检索。</div></div><button class="add">审查更新</button></div>
+      </div>
+      <div class="hub-secrow"><span class="t">研发</span></div>
+      <div class="hub-grid">
+        <div class="kit"><div class="ico" style="background:#0e7490">数</div><div class="body"><div class="ttl"><b>数据库(本机 SQLite)</b></div><div class="desc">让助手查询你电脑上的数据库。</div></div><button class="add">添加</button></div>
+        <div class="kit"><div class="ico" style="background:#dc2626">调</div><div class="body"><div class="ttl"><b>网页性能与调试</b></div><div class="desc">用 Chrome 开发者工具排查网页:性能追踪、控制台报错、网络请求。</div></div><button class="add" data-variant="ghost">添加</button></div>
+      </div>
+      <div class="hub-secrow"><span class="t">办公文档</span></div>
+      <div class="hub-grid">
+        <div class="kit"><div class="ico" style="background:#1d4ed8">W</div><div class="body"><div class="ttl"><b>Word 文档读写</b></div><div class="desc">读取 .docx 的正文和结构,也能新建或改写文档。</div></div><button class="add">添加</button></div>
+        <div class="kit"><div class="ico" style="background:#dc2626">P</div><div class="body"><div class="ttl"><b>PDF 文本读写</b></div><div class="desc">提取 PDF 文字,创建文字型 PDF,替换正文或追加文字页。</div></div><button class="add">添加</button></div>
+      </div>
+      <div class="hub-secrow"><span class="t">扩展包</span></div>
+      <div class="hub-grid">
+        <div class="kit"><div class="ico" style="background:#18181b">GH</div><div class="body"><div class="ttl"><b>GitHub</b></div><div class="desc">需要 GitHub 令牌</div></div><button class="add" data-variant="ghost">设置</button></div>
+        <div class="kit"><div class="ico" style="background:#0e7490">DB</div><div class="body"><div class="ttl"><b>数据库(DBHub)</b></div><div class="desc">需要数据库文件</div></div><button class="add" data-variant="ghost">设置</button></div>
+      </div>
+      <div class="hub-secrow"><span class="t">Code Puppy 云</span></div>
+      <div class="hub-grid">
+        <div class="kit"><div class="ico" style="background:#5c7cbf">审</div><div class="body"><div class="ttl"><b>云端代码审查</b></div><div class="desc">将 Git 代码改动交给云端检查正确性、安全、性能和风格。</div></div><button class="add">启用</button></div>
+        <div class="kit"><div class="ico" style="background:#5c7cbf">研</div><div class="body"><div class="ttl"><b>云端深度调研</b></div><div class="desc">提供调研问题,云端会分解问题、联网检索,并整理带来源的回答。</div></div><button class="add">启用</button></div>
+      </div>
+      <div class="hub-secrow"><span class="t">套件</span></div>
+      <div class="hub-grid">
+        <div class="kit"><div class="ico" style="background:#16a34a">办</div><div class="body"><div class="ttl"><b>办公套件</b></div><div class="desc">组合安装文档读取、本地文件读写和 Code Puppy 的四种文档工具。</div></div><button class="add" data-variant="ghost">添加</button></div>
+        <div class="kit"><div class="ico" style="background:#2563eb">研</div><div class="body"><div class="ttl"><b>研究套件</b></div><div class="desc">组合使用多来源检索、网页读取和本地资料读写,帮助深入研究问题。</div></div><button class="add" data-variant="ghost">添加</button></div>
+      </div>
+    </div></div>
+  </div></div>
+  <div class="cap">分组顺序固定:已安装 →(打开了项目且有本项目连接器时)「本项目 · 项目名」→ 按目录类别(研发 → 办公文档 → 研究 → 中国办公 → 设计 → 其它,空组不出)→ 扩展包 → Code Puppy 云 → 套件。<br>已装行没事时只给「…」(停用 / 移除 / 设置);有事时写一句状态、给一颗按钮,按要紧程度只取一件:需要重新登录 → 去授权;按会话试用 → 开启 / 关闭;待生效 → 立即生效;未开启 → 开启;有更新 → 审查更新。连不上时状态写出错原因。进不了详情页的行照样有「…」,移除入口不少。「全部更新」只在本页有可更新条目时出现,只更新本页的。<br>可添加的行:已审核的条目是主按钮「添加」,未完成审核的是次按钮「添加」(装上默认关闭,行上随后显示「未开启」+「开启」);已归档的条目按钮置灰为「不可安装」。云端条目的动作是「启用」。<br>云连接器:已登录平台时在「已安装」;没登录时排在「Code Puppy 云」第一行,状态「未连接 · 需登录」、按钮「登录平台账户」(已登录但用自带密钥时是「切换到平台模式」),同组云端条目整行变淡,仍可点开看详情。</div>
+
+  <div class="sec-kicker" id="hub-add" style="margin-top:34px">「添加 ▾」</div>
+  <div class="duo">
+    <div class="frame"><div class="hub3"><div class="hub-scroll"><div class="hub-center">
+      <div class="hub-pagehd">
+        <div class="t"><div class="hub-h1">连接器</div><div class="hub-sub">让助手使用外部工具和服务</div></div>
+        <button class="btn-primary">添加 ▾</button>
+      </div>
+      <div class="hub-menu" style="width:200px;margin:8px 0 0 auto">
+        <div>从文件夹导入</div>
+        <div>从 Git 地址导入</div>
+        <div>自定义连接器</div>
+        <div>导入助手</div>
+      </div>
+    </div></div></div></div>
+    <div class="note">三页的「添加 ▾」是同一个下拉、同样四项,每一项打开原来那个导入窗口,窗口本身没改。导入进行中对应项置灰。文件夹与助手文件导入失败时,错误写在页头下方;Git 地址与自定义连接器的失败写在各自窗口里。</div>
+  </div>
+
+  <div class="sec-kicker" id="hub-skills" style="margin-top:34px">技能</div>
+  <div class="duo">
+    <div class="frame"><div class="hub3">
+      <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab">连接器</div><div class="hub-tab on">技能</div><div class="hub-tab">助手</div></div><span class="hub-close">✕</span></div>
+      <div class="hub-scroll"><div class="hub-center">
+        <div class="hub-pagehd">
+          <div class="t"><div class="hub-h1">技能</div><div class="hub-sub">可重复使用的任务流程</div></div>
+          <div class="hub-search">⌕ 搜索技能</div>
+          <button class="btn-primary">添加 ▾</button>
+        </div>
+        <div class="hub-secrow"><span class="t">已安装</span></div>
+        <div class="hub-grid">
+          <div class="kit"><div class="ico" style="background:#7c3aed">提</div><div class="body"><div class="ttl"><b>Git 提交说明助手</b></div><div class="desc">按 Conventional Commits 格式编写提交说明。</div></div><span class="more">…</span></div>
+          <div class="kit"><div class="ico" style="background:#a16207">简</div><div class="body"><div class="ttl"><b>premarket-briefing</b></div><div class="desc">未开启</div></div><button class="add">开启</button></div>
+        </div>
+        <div class="hub-seg"><span class="on">推荐</span><span>系统</span></div>
+        <div class="hub-secrow" style="margin-top:14px"><span class="t">研发</span></div>
+        <div class="hub-grid">
+          <div class="kit"><div class="ico" style="background:#4f46e5">整</div><div class="body"><div class="ttl"><b>保持功能不变的代码整理</b></div><div class="desc">在保持现有功能表现不变的前提下整理代码。</div></div><button class="add">添加</button></div>
+        </div>
+        <div class="hub-secrow"><span class="t">设计</span></div>
+        <div class="hub-grid">
+          <div class="kit"><div class="ico" style="background:#db2777">视</div><div class="body"><div class="ttl"><b>视觉作品与海报设计</b></div><div class="desc">帮助设计并生成 PNG 或 PDF 视觉作品。</div></div><button class="add">添加</button></div>
+          <div class="kit"><div class="ico" style="background:#db2777">色</div><div class="body"><div class="ttl"><b>应用品牌色彩与字体</b></div><div class="desc">将品牌规定的颜色和字体应用到作品中。</div></div><button class="add">添加</button></div>
+        </div>
+      </div></div>
+    </div></div>
+    <div class="frame"><div class="hub3"><div class="hub-scroll"><div class="hub-center">
+      <div class="hub-seg" style="margin-top:0"><span>推荐</span><span class="on">系统</span></div>
+      <div class="hub-grid" style="margin-top:14px">
+        <div class="kit"><div class="ico" style="background:#52525b">创</div><div class="body"><div class="ttl"><b>skill-creator</b></div><div class="desc">出厂内置</div></div></div>
+        <div class="kit"><div class="ico" style="background:#52525b">助</div><div class="body"><div class="ttl"><b>agent-creator</b></div><div class="desc">出厂内置</div></div></div>
+        <div class="kit"><div class="ico" style="background:#52525b">/</div><div class="body"><div class="ttl"><b>/init</b></div><div class="desc">命令</div></div><span class="more">…</span></div>
+        <div class="kit"><div class="ico" style="background:#52525b">/</div><div class="body"><div class="ttl"><b>/review</b></div><div class="desc">已自定义</div></div><span class="more">…</span></div>
+      </div>
+      <div class="hub-menu" style="width:160px;margin:2px 0 0 auto"><div>自定义</div></div>
+    </div></div></div></div>
+  </div>
+  <div class="cap">「系统」= 应用自带的技能与内置命令(原「已安装 → 应用自带的功能」)。出厂技能在目录里有条目时描述取目录原文、「…」里是「设置」(进详情页);没有条目的只写「出厂内置」,不给动作。内置命令的「…」里是「自定义」(已自定义的是「编辑自定义内容」)。还没装任何技能时,「已安装」下面一句「还没有安装技能。也可以在对话里说「帮我创建一个技能」。」</div>
+
+  <div class="sec-kicker" id="hub-agents" style="margin-top:34px">助手</div>
+  <div class="duo">
+    <div class="frame"><div class="hub3">
+      <div class="hub-tabbar"><div class="hub-tabs"><div class="hub-tab">连接器</div><div class="hub-tab">技能</div><div class="hub-tab on">助手</div></div><span class="hub-close">✕</span></div>
+      <div class="hub-scroll"><div class="hub-center">
+        <div class="hub-pagehd">
+          <div class="t"><div class="hub-h1">助手</div><div class="hub-sub">为特定任务设置的角色</div></div>
+          <div class="hub-search">⌕ 搜索助手</div>
+          <button class="btn-primary">添加 ▾</button>
+        </div>
+        <div class="hub-secrow"><span class="t">已安装</span></div>
+        <div class="hub-grid">
+          <div class="kit"><div class="ico" style="background:#b45309">D</div><div class="body"><div class="ttl"><b>docs</b></div><div class="desc">写文档:报告、规范、设计说明、README、分析。</div></div><span class="more">…</span></div>
+        </div>
+        <div class="hub-seg"><span class="on">推荐</span><span>系统</span></div>
+        <div class="hub-grid" style="margin-top:14px">
+          <div class="kit"><div class="ico" style="background:#4f46e5">问</div><div class="body"><div class="ttl"><b>问题排查助手</b></div><div class="desc">根据报错或现象查找可能的问题位置,给出复现步骤和修复建议。</div></div><button class="add">添加</button></div>
+          <div class="kit"><div class="ico" style="background:#4f46e5">代</div><div class="body"><div class="ttl"><b>代码审查助手</b></div><div class="desc">审查代码改动或指定文件,列出问题和修复建议。</div></div><button class="add">添加</button></div>
+        </div>
+      </div></div>
+    </div></div>
+    <div class="frame"><div class="hub3"><div class="hub-scroll"><div class="hub-center">
+      <div class="hub-seg" style="margin-top:0"><span>推荐</span><span class="on">系统</span></div>
+      <div class="hub-govbar"><div class="hub-seg" style="margin:0"><span class="on">只禁用选中的助手</span><span>只允许选中的助手</span></div><span class="act">恢复默认设置</span></div>
+      <div class="hub-grid">
+        <div class="kit"><div class="ico" style="background:#52525b">B</div><div class="body"><div class="ttl"><b>build</b></div><div class="desc">助手</div></div><span class="more">…</span></div>
+        <div class="kit"><div class="ico" style="background:#52525b">P</div><div class="body"><div class="ttl"><b>plan</b></div><div class="desc">已禁用</div></div><span class="more">…</span></div>
+      </div>
+      <div class="hub-menu" style="width:160px;margin:2px 0 0 auto"><div>隐藏</div><div>启用</div><div>自定义</div></div>
+    </div></div></div></div>
+  </div>
+  <div class="cap">自己在对话里建的、没有安装记录的助手也排在「已安装」里,「…」只有「设置」(进详情页);来源说明只在详情页。「系统」= build、plan 等应用自带的助手,顶上是名单模式切换与「恢复默认设置」,每行「…」里是隐藏 / 禁用(已禁用的是「启用」)/ 自定义;只允许模式下多一项「恢复 / 禁用」;受保护的行状态写「受保护 · 原因」。</div>
+
+  <div class="note warn"><b>与批准稿的差异(按代码画,不回头改代码)</b>:
+    ① 「添加 ▾」是四项,没有「从 npm 导入插件」—— 那条写入通道已按 ADR-040 有意封闭,仓里没有可打开的窗口,不放死入口(票面裁决 2026-10-30)。
+    ② 连接器页多一组「扩展包」:目录里的签名扩展包没有类别字段,进不了按类别的分组,统一单列在这一组;批准稿里挂在「已安装」的「需要 GitHub 令牌 / 设置」,实际出现在这一组的未安装行上,已装行的状态仍按上面的取一件规则。
+    ③ 类别名用目录现行的「研发」「办公文档」,顺序研发在前;批准稿写的是「开发」「办公」且办公在前。缺数据库的那句是「需要数据库文件」,批准稿写「需要选择数据库文件」。
+    ④ 归档的已装条目不再有独立警示条,改成行内状态「已归档 · 不再维护」,处置在详情页。
+    ⑤ 云端条目的动作是「启用」,不是「添加」;没登录时云端条目整行变淡。
+    ⑥ 「系统」分段里是「禁用」,批准稿写「停用」;助手的「系统」分段顶上多了名单模式切换与「恢复默认设置」;出厂技能没有隐藏 / 停用 / 自定义,只有有目录条目的才给「设置」。
+    ⑦ 页签栏右侧有关闭按钮,批准稿未画。
+  </div>
+</section>
 
 <!-- ═══ 与上一稿的关系 ═══ -->
 <section class="sec" id="lineage">
@@ -74,6 +235,7 @@
 <section class="sec" id="featured">
   <div class="sec-kicker">改动一 · 推荐 tab · 从手挑列表切到甄选驱动(数据 = F5 线上真实分布)</div>
   <h2>推荐页 = 四级货架</h2>
+  <div class="note warn"><b>已被三页结构取代(列表呈现)</b>:推荐页已不存在:精选条目按类别排在各页「可添加」里,见 <a href="#hub-connectors">三页结构 · 连接器</a>。</div>
   <p class="lede">推荐 tab 的内容从「代码里手挑的 4 个连接器 + 前 3 个套件」切换为按签名目录的甄选分级自动生成:货架顺序固定 核心 → 精选 → 接入 → 实验室,每个货架一行用户语言标题 + 副标题。<b>只有通过校验的已策展条目进货架</b>;未策展条目(含当前全部套件)退出推荐页 —— 它们仍在各类型 tab 与搜索中。空货架整组隐藏:当前目录无核心条目,故帧内只见三个货架,不造数据。归档/不再维护/评审过期条目不进推荐(F4)。</p>
   <div class="frame"><div class="hub">
     <div class="hub-tabbar">
@@ -112,6 +274,7 @@
 <section class="sec" id="browse">
   <div class="sec-kicker">改动二 · 类型 tab(连接器帧为例)· category 分组保留,分级 = chip;未分级 = 尾组</div>
   <h2>浏览卡片:分级 chip + 「未分级」尾组 + 归档禁装</h2>
+  <div class="note warn"><b>已被三页结构取代(列表呈现)</b>:列表行已不挂分级 chip、来源与依赖标签,也没有「未分级」尾组与说明;未完成审核的条目是次按钮「添加」,归档条目仍置灰「不可安装」。见 <a href="#hub-connectors">三页结构 · 连接器</a>。</div>
   <p class="lede">类型 tab 的分组轴不动(连接器仍按用途分组,技能/插件仍平铺)——货架身份以 chip 形式落在每张卡片名称行,四色四货架,与推荐页同一词汇。<b>未策展条目收进各 tab 末尾的「未分级」组</b>,组头一行诚实说明;它们可安装,走默认关闭的保守规则。归档条目如实展示但「添加」按钮置灰并给原因(F4:禁新安装是契约语义,不是视觉建议)。</p>
   <div class="frame"><div class="hub">
     <div class="hub-tabbar">
@@ -238,6 +401,7 @@
 <section class="sec" id="policy">
   <div class="sec-kicker">改动四 · 启用策略真源切换 + 已安装页的实验室行(UI 面;#395 机制零改动)</div>
   <h2>启用策略:从保守规则切到目录逐条声明</h2>
+  <div class="note warn"><b>已被三页结构取代(列表呈现)</b>:启用策略的语义不变;已安装页与行上的开关已拆掉,已装行改成「状态一句 + 一颗按钮」(未开启 → 开启、按会话试用 → 开启 / 关闭),归档行改为行内状态。见 <a href="#hub-connectors">三页结构 · 连接器</a>。</div>
   <p class="lede">#395 已交付「非 alpha 源默认关」的保守规则与全类型开关;本改动把<b>已策展条目</b>的初始 desiredState 真源切到 <code>activationPolicy</code>:自动开启(仅核心,当前无条目)/ 安装后手动开启 / 每次会话单独开启。未策展条目继续走保守规则(兜底面不动)。唯一新视觉 = 已安装页的实验室行:会话开关(琥珀色)+ 状态行讲清会话语义。</p>
   <div class="frame"><div style="padding:20px 24px">
     <div class="man-row"><div class="ico" style="background:#4f46e5">FS</div><div class="body"><div class="nm"><b>文件系统</b><span class="chip" data-shelf="precache">精选</span><span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot muted"></span>安装后默认关闭,打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
@@ -258,6 +422,7 @@
 <section class="sec" id="localpkg">
   <div class="sec-kicker">§9 · 本地扩展包导入 · 基线 = 上线实现 alpha@9996d2c9(打包版真机取证 2026-08-02)</div>
   <h2>本地扩展包导入:三块新内容,IA 一寸不动</h2>
+  <div class="note warn"><b>已被三页结构取代(列表呈现)</b>:「导入」页签与五张卡已收进每页的「添加 ▾」(见 <a href="#hub-add">「添加 ▾」</a>);已装扩展包在连接器页「已安装」里是一行,技能开关在技能页。预览屏与生效状态流仍按本节。</div>
   <p class="lede">从「文件夹」卡选中一个插件目录时,界面多出三样东西:<b>导入前的预览屏</b>、已安装页里的<b>「扩展包」区块</b>(每个技能一个开关 + 整包移除)、以及装完之后的<b>启用与生效状态流</b>。tab、货架、浏览卡、详情页段顺序、已安装页的 scope 分组全部不动;<b>导入页仍然是五张卡</b>,一张不增一张不改。</p>
   <div class="matrix-scroll"><table class="matrix">
     <tr><th>面</th><th>v6 之前</th><th>现在</th></tr>
@@ -402,6 +567,7 @@
 <section class="sec" id="installed-packs">
   <div class="sec-kicker">§9.2 · 已安装页新增「扩展包」区块 —— 看得见整体,也看得见零件</div>
   <h2>已装扩展包:整包一张卡,技能各有开关</h2>
+  <div class="note warn"><b>已被三页结构取代(列表呈现)</b>:已安装页不存在了。已装扩展包在连接器页「已安装」里是一行(全关时写「N 个技能都未开启,到「技能」页开启要用的」),整包移除在这一行的「…」里;包里的技能各自出现在技能页「已安装」。见 <a href="#hub-connectors">三页结构 · 连接器</a>。</div>
   <p class="lede">已安装页此前只有平铺的组件行 —— 装进来的一包技能会散成 10 行,用户看不出它们是一件东西,也没有任何地方能把它整个拿掉。新区块<b>排在「已安装条目」之前</b>:先看到整体,再往下看到零件。区块里每个技能各有自己的开关(装完默认全关),包头挂「移除此扩展包」。</p>
   <div class="frame"><div class="hub">
     <div class="hub-tabbar">
