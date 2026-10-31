@@ -888,6 +888,31 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     expect(rememberBox()).toBeNull()
   })
 
+  test("r1-2 能力轴找不到当前项目:按钮置灰并说明原因,不画记住框;只能一次的卡不说这句", async () => {
+    const commands: PermissionV2DecisionCommand[] = []
+    const { dispose } = mount(async (command) => {
+      commands.push(command)
+      return receipt(command, v1Bash)
+    }, null, v1Bash)
+    await flush()
+
+    expect(decision("always").disabled).toBeTrue()
+    expect(document.querySelector('[data-permission-note="project-missing"]')?.textContent).toBe("找不到当前项目,不能始终允许")
+    expect(rememberBox()).toBeNull()
+    decision("always").click()
+    await flush()
+    expect(commands).toEqual([])
+    dispose()
+    disposers.splice(disposers.indexOf(dispose), 1)
+    await flush()
+
+    // 档位要求每次确认的卡没有中间按钮,也就没有「不能始终允许」可说。
+    const ruleset = v1Identity("ruleset")
+    mount(async (command) => receipt(command, ruleset), null, ruleset)
+    await flush()
+    expect(document.querySelector('[data-permission-note="project-missing"]')).toBeNull()
+  })
+
   test("AC6 新式请求(带 save):中间按钮仍是「始终允许」,照旧创建项目授权,五项事实与页脚说明都在", async () => {
     const commands: PermissionV2DecisionCommand[] = []
     mount(async (command) => {

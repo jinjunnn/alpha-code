@@ -140,13 +140,18 @@ export function PermissionDialog(props: {
   const showsAlways = () =>
     approval.kind === "v2" || approval.kind === "project" || (approval.kind === "session" && !!saved?.length)
 
+  // 记住框只在中间按钮真的能用时画;按钮置灰(缺项目、事实核不实)时卡上只留原因。
   const remember = () => {
-    if (approval.kind === "project" && approval.directory)
+    if (!canAlways()) return undefined
+    if (approval.kind === "project")
       return { what: t("alpha.permission.rememberTool"), scope: t("alpha.permission.projectScope") }
     if (approval.kind === "session" && saved?.length)
       return { what: rememberedText(props.request.action, saved), scope: t("alpha.permission.sessionScope") }
     return undefined
   }
+
+  // 新式请求的置灰原因仍走按钮悬停提示(不变);其余种类有中间按钮却用不了,只可能是找不到当前项目。
+  const projectMissing = () => approval.kind !== "v2" && showsAlways() && facts.verified && !canAlways()
 
   return (
     <PermissionPanel
@@ -331,7 +336,7 @@ export function PermissionDialog(props: {
           {t("alpha.permission.everyTime")}
         </p>
       </Show>
-      <Show when={approval.kind === "project" && !approval.directory}>
+      <Show when={projectMissing()}>
         <p class="a-permission-note" data-permission-note="project-missing">
           {t("alpha.permission.projectMissing")}
         </p>
