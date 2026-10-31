@@ -39,7 +39,7 @@
 <div class="topbar">
   <div class="brand"><span class="mark">α</span> alpha-code · 时间线全面优化(全量)</div>
   <div class="spacer"></div>
-  <nav><a href="#user">用户输入</a><a href="#ai">助手</a><a href="#tools">工具</a><a href="#struct">结构</a><a href="#panel">审查面板</a><a href="#artifacts">产物链接行</a><a href="#process-fold">工作过程</a><a href="#overlays">弹出层</a><a href="#inventory">组件索引</a><a href="#map">接缝表</a></nav>
+  <nav><a href="#user">用户输入</a><a href="#ai">助手</a><a href="#tools">工具</a><a href="#struct">结构</a><a href="#panel">审查面板</a><a href="#artifacts">产物链接行</a><a href="#process-fold">工作过程</a><a href="#overlays">弹出层</a><a href="#source-location">来源与位置</a><a href="#approval-states">批准面板</a><a href="#inventory">组件索引</a><a href="#map">接缝表</a></nav>
   <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
 </div>
 
@@ -47,7 +47,7 @@
   <div class="sec-kicker">P0 · 时间线全量重做</div>
   <h2 class="t">把整条时间线统一成一套克制、信息密度高的 alpha 卡片语言</h2>
   <p class="lede">本稿覆盖经真机 DOM 核对的 <b>全部 ~52 个构件</b>(取代旧稿只覆盖 1/3)。设计取向:开发者工具应当<strong>安静、可扫读、密而不噪</strong> —— 中性灰底 + 单一克制 indigo 强调,工具按类型着色,运动只用在状态变化的高价值瞬间。每块都标注了真机 <span class="mono">data-component/data-slot</span> 钩子 + 接缝 + 现状(<span class="badge-st done" style="margin:0">已优化</span> / <span class="badge-st part" style="margin:0">部分</span> / <span class="badge-st gap" style="margin:0">裸样式</span>),因此它也是落地 spec。</p>
-  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。<br><b>2026-08-09 已批增量</b>:③ 新增全来源来源徽标、安全通用降级与默认折叠开发者详情；未知 / 第三方工具严格 metadata-only。<br><b>2026-08-13 取代记录</b>:③ 节的内联 <span class="mono">.skill-chip</span> 帧(技能执行)被 2026-08-09 增量取代 —— 技能执行保持工具卡形态;帧保留并就地标注,<span class="mono">ac#585</span> 判被取代关票。<br><b>2026-09-22 已批增量</b>:② 新增<a href="#turn-running">整轮运行指示(回合脚行)</a>—— 活跃回合的最后一行,运行面 / 等你面(等你批准、等你回答共用)一槽两面;「正在思考」胶囊并入其运行面,帧保留并就地标注。<br><b>2026-10-10 已批增量</b>:新增 <a href="#process-fold">⑧ 工作过程折叠</a> 与 <a href="#overlays">弹出层统一</a>。② 的思考块与回合脚行、③ 的通用工具卡 / 各类工具卡 / 全来源徽标、④ 的「已探索」分组,其<b>视觉形态</b>被 ⑧ 取代(行为与来源安全规则继承);原帧保留并就地标注。</div>
+  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。<br><b>2026-08-09 已批增量</b>:③ 新增全来源来源徽标、安全通用降级与默认折叠开发者详情；未知 / 第三方工具严格 metadata-only。<br><b>2026-08-13 取代记录</b>:③ 节的内联 <span class="mono">.skill-chip</span> 帧(技能执行)被 2026-08-09 增量取代 —— 技能执行保持工具卡形态;帧保留并就地标注,<span class="mono">ac#585</span> 判被取代关票。<br><b>2026-09-22 已批增量</b>:② 新增<a href="#turn-running">整轮运行指示(回合脚行)</a>—— 活跃回合的最后一行,运行面 / 等你面(等你批准、等你回答共用)一槽两面;「正在思考」胶囊并入其运行面,帧保留并就地标注。<br><b>2026-10-10 已批增量</b>:新增 <a href="#process-fold">⑧ 工作过程折叠</a> 与 <a href="#overlays">弹出层统一</a>。② 的思考块与回合脚行、③ 的通用工具卡 / 各类工具卡 / 全来源徽标、④ 的「已探索」分组,其<b>视觉形态</b>被 ⑧ 取代(行为与来源安全规则继承);原帧保留并就地标注。<br><b>2026-10-31 并入</b>(增量稿 <code>2026-10-30-req236-permission-cards/</code>,照已出货代码画):⑧ 新增 <a href="#source-location">8.5.1 来源 × 位置</a>(来源三类、行尾位置、详情底部「来源 · 位置」、开发者详情加 location / origin)与 <a href="#approval-states">8.6.1 批准面板</a>(中间按钮按请求种类、记住框、委派披露、没存上);8.5 与 8.6 里被取代的文字就地标注。</div>
 
   <!-- ════════════════ USER INPUT ════════════════ -->
   <div class="sec-kicker" id="user" style="margin-top:40px">① 用户输入侧</div>
@@ -847,14 +847,14 @@ rendering chunks (12/31)...</div></div>
 
   <div><div class="pf-step"><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">本机工具</span><span class="pf-o pf-mono">lsp</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
   <div><div class="pf-detail"><div class="pf-detail-txt">这一步的输入和结果不在这里显示。</div><div class="pf-detail-foot"><span>› 开发者详情</span></div></div></div>
-  <div class="pf-note">还没有展示规则的我方工具(代码检查、计划切换、代码模式等)。<s>常驻说明段 · 「本机」徽标与「本机工具」标题重复</s></div>
+  <div class="pf-note">还没有展示规则的我方工具(代码检查、计划切换、代码模式等)。<s>常驻说明段 · 「本机」徽标与「本机工具」标题重复</s> <b>2026-10-31:行名已改为「Code Puppy 内置」,见 <a href="#source-location">8.5.1</a>。</b></div>
 
   <div class="pf-cat-g">不是我们的工具</div>
   <div><div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
        <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">obsidian-tools</span><span class="pf-v">open_note</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
        <div class="pf-step"><svg class="pf-i"><use href="#i-help"/></svg><span class="pf-src">来源不明</span><span class="pf-v">fetch_data</span><span class="pf-end"><svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div></div>
   <div><div class="pf-detail"><div class="pf-detail-txt">这个工具来自第三方(Notion),我们不显示它收到和返回的内容。</div><div class="pf-detail-foot"><span>› 开发者详情</span></div></div></div>
-  <div class="pf-note">插头 = 第三方连接,拼图 = 插件,问号 = 来源不明。我方步骤永远不带服务名和这三种图标,所以第三方起名「读取」也冒充不了。失败只写「没成功」,不显示错误原文(规则不变)。<s>标题「第三方 MCP 工具」+ 徽标「第三方 MCP」重复 · 常驻说明段</s></div>
+  <div class="pf-note">插头 = 第三方连接,拼图 = 插件,问号 = 来源不明。我方步骤永远不带服务名和这三种图标,所以第三方起名「读取」也冒充不了。失败只写「没成功」,不显示错误原文(规则不变)。<s>标题「第三方 MCP 工具」+ 徽标「第三方 MCP」重复 · 常驻说明段</s> <b>2026-10-31:插件一律写「第三方插件」不写插件名;没有来源快照的只留问号图标、不写「来源不明」;行尾写位置。见 <a href="#source-location">8.5.1</a>。</b></div>
 
   <div class="pf-cat-g">任何步骤都可能出现的状态</div>
   <div><div class="pf-step" data-tone="err"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">部署到预发环境</span><span class="pf-end">失败<svg class="pf-sc" style="opacity:1"><use href="#i-chev"/></svg></span></div>
@@ -872,6 +872,161 @@ rendering chunks (12/31)...</div></div>
   <div class="pf-note">思考:小标题只用模型明确给出的。过渡话:灰色正文,无图标。自动重试:进实时标题,不再和「正在生成」两行并存。</div>
 </div>
 <p class="pf-cap"><b>不进工作过程、形态不变的</b>:回合分隔、用户气泡、上下文压缩分隔、回答正文、图片 / 媒体预览行、产物链接行、本回合改动、回合错误卡、中断行、空回合行。待办清单更新今天就不在时间线里,保持不显示。</p>
+
+<!-- ══════════ 8.5 续:来源 × 位置(2026-10-31 并入)══════════ -->
+<h3 class="pf-h" id="source-location" style="font-size:var(--a-text-lg)">8.5.1 来源 × 位置:每一步标出是谁的工具、在哪里跑</h3>
+<p class="pf-sub">来源只分三类:Code Puppy 内置 / Code Puppy 云 / 第三方。「内置」的步骤行尾不标;其余步骤行尾写位置(本机 / 云端 / 服务主机名 / 位置未知)。每一步点开后,详情底部写「来源 · 位置」;完整证据在开发者详情。</p>
+<div class="note"><b>与上一稿的关系</b>:取自 owner 2026-10-30 批准的增量稿 <a href="../../2026-10-30-req236-permission-cards/frame.html#source-location"><code>2026-10-30-req236-permission-cards/</code></a> 的 <code>#source-location</code>、<code>#first-party-plugin</code>、<code>#developer-details</code>,<b>照已出货代码画</b>(alpha-code#1576 合并提交 <code>7d012f054</code>、alpha-code#1578 合并提交 <code>d2ae36d77</code>)。它取代上面步骤目录「其他我方工具」里的「本机工具」行名与「不是我们的工具」里的「来源不明」标签和插件名;步骤行的其余写法不变。稿与代码不一致处列在本节末尾。</div>
+<div class="pf-grid">
+  <div>
+    <div class="pf-tag">第二层 · 每步一行</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open>
+        <button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>运行 1 次</span><span class="pf-dot"></span><span>搜索 1 次</span><span class="pf-dot"></span><span>其他 9 步</span><span class="pf-dot"></span><span class="pf-num">1 分 12 秒</span></button>
+        <div class="pf-list">
+          <div class="pf-step"><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">安装依赖</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">Code Puppy 内置</span><span class="pf-o mono">lsp</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">Code Puppy 内置</span><span class="pf-o mono">read_docx</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">Code Puppy 内置</span><span class="pf-o mono">alpha_cloud_access</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-cloud"/></svg><span class="pf-v">下发云端任务</span><span class="pf-o">生成季度报告</span><span class="pf-end">云端<span class="pf-dot"></span>已等 2:10</span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-web"/></svg><span class="pf-v">搜索</span><span class="pf-o">竞品定价 2026</span><span class="pf-end">云端<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end">mcp.notion.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">filesystem</span><span class="pf-v">read_file</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">第三方插件</span><span class="pf-v">open_note</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">codepuppy</span><span class="pf-v">dispatch</span><span class="pf-end">mcp.example.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-help"/></svg><span class="pf-v">fetch_data</span><span class="pf-end">位置未知<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+  <div>
+    <div class="pf-tag">逐行</div>
+    <table class="pf-table" style="margin-top:0">
+      <thead><tr><th>行</th><th>来源 · 位置</th></tr></thead>
+      <tbody>
+        <tr><td>运行</td><td>内置 · 本机,不标</td></tr>
+        <tr><td>Code Puppy 内置 lsp</td><td>内置 · 本机;还没有展示规则的我方工具,行名就是来源名</td></tr>
+        <tr><td>Code Puppy 内置 read_docx</td><td>内置 · 本机;随应用安装的文档工具,经安装清单核验</td></tr>
+        <tr><td>Code Puppy 内置 alpha_cloud_access</td><td>内置 · 本机;随应用安装的扩展自带的工具,经安装清单核验</td></tr>
+        <tr><td>下发云端任务、搜索</td><td>Code Puppy 云 · 云端</td></tr>
+        <tr><td>Notion</td><td>第三方 · 远端主机(取自服务地址)</td></tr>
+        <tr><td>filesystem</td><td>第三方 · 本机;本机程序型服务</td></tr>
+        <tr><td>第三方插件 open_note</td><td>第三方 · 本机;插件不写包名或路径,只在开发者详情</td></tr>
+        <tr><td>codepuppy dispatch</td><td>第三方 · 远端主机;名字像我们的,没有核验就是第三方</td></tr>
+        <tr><td>fetch_data</td><td>第三方 · 位置未知;记录没有来源快照,只留问号图标、不写来源标签</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="pf-grid" style="margin-top:22px">
+  <div>
+    <div class="pf-tag">第三层 · 详情底部写来源与位置</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open><div class="pf-list">
+        <div class="pf-step" data-open><svg class="pf-i"><use href="#i-term"/></svg><span class="pf-v">运行</span><span class="pf-o">安装依赖</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+        <div class="pf-detail"><pre class="pf-detail-out">$ bun install
+ 1284 packages installed [3.1s]</pre><div class="pf-detail-foot"><span>Code Puppy 内置 · 本机</span><span class="pf-grow"></span><a href="#developer-details">› 开发者详情</a></div></div>
+        <div class="pf-step" data-open><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end">mcp.notion.com<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+        <div class="pf-detail"><div class="pf-detail-txt">这个工具来自第三方(Notion),我们不显示它收到和返回的内容。</div><div class="pf-detail-foot"><span>第三方 · mcp.notion.com</span><span class="pf-grow"></span><a href="#developer-details">› 开发者详情</a></div></div>
+      </div></div>
+    </div></div>
+    <p class="pf-cap">「来源 · 位置」是详情最后一行,开发者详情的开关在同一行右侧;每一步都有,包括内置步骤。</p>
+  </div>
+  <div>
+    <div class="pf-tag">更新之前的旧对话</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open>
+        <button class="pf-sum" type="button"><svg class="pf-chev"><use href="#i-chev"/></svg><span>读取 3 个文件</span><span class="pf-dot"></span><span>其他 2 步</span><span class="pf-dot"></span><span class="pf-num">48 秒</span></button>
+        <div class="pf-list">
+          <div class="pf-step"><svg class="pf-i"><use href="#i-read"/></svg><span class="pf-v">读取 3 个文件</span><span class="pf-o">message.ts 等</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">Notion</span><span class="pf-v">search_pages</span><span class="pf-end">位置未知<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <div class="pf-step"><svg class="pf-i"><use href="#i-plug"/></svg><span class="pf-src">cloud</span><span class="pf-v">cloud_dispatch</span><span class="pf-end">位置未知<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+          <p class="pf-foot" style="margin:4px 0 0">内置步骤位置未知</p>
+        </div>
+      </div>
+    </div></div>
+    <p class="pf-cap">旧记录没有位置,也没有云端核验,不补:同名云工具按第三方显示。内置步骤不逐行标,列表底部一句。</p>
+  </div>
+</div>
+
+<h3 class="pf-h" id="first-party-plugin" style="font-size:var(--a-text-lg)">随应用安装的工具 · 项目插件带进来的工具</h3>
+<p class="pf-sub">随应用安装的文档工具和扩展自带的工具,经安装清单核验后显示「Code Puppy 内置」;项目插件合并进同一个扩展的工具仍是第三方。安装路径只进开发者详情。</p>
+<div class="pf-grid3">
+  <div>
+    <div class="pf-tag">更新前</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open><div class="pf-list">
+        <div class="pf-step"><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src"><s>/Applications/Code Puppy.app/Contents/Resources/…/plugin.js</s></span><span class="pf-v">alpha_cloud_access</span></div>
+      </div></div>
+    </div></div>
+  </div>
+  <div>
+    <div class="pf-tag">清单核验过</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open><div class="pf-list">
+        <div class="pf-step" data-open><svg class="pf-i"><use href="#i-box"/></svg><span class="pf-v">Code Puppy 内置</span><span class="pf-o mono">alpha_cloud_access</span><span class="pf-end"><svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+        <div class="pf-detail"><div class="pf-detail-txt">这一步的输入和结果不在这里显示。</div><div class="pf-detail-foot"><span>Code Puppy 内置 · 本机</span><span class="pf-grow"></span><a href="#dev-bundled">› 开发者详情</a></div></div>
+      </div></div>
+    </div></div>
+    <div class="pc-src-row"><svg class="pf-i" style="width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8"><use href="#i-box"/></svg><b>alpha_cloud_access</b><small>Code Puppy 内置</small></div>
+    <p class="pf-cap">下面一行是它在批准面板动作格里的写法(名字 + 来源)。</p>
+  </div>
+  <div>
+    <div class="pf-tag">项目插件合并进来</div>
+    <div class="frame"><div class="tl">
+      <div class="pf" data-open><div class="pf-list">
+        <div class="pf-step" data-open><svg class="pf-i"><use href="#i-puzzle"/></svg><span class="pf-src">第三方插件</span><span class="pf-v">lint_project</span><span class="pf-end">本机<svg class="pf-sc"><use href="#i-chev"/></svg></span></div>
+        <div class="pf-detail"><div class="pf-detail-txt">这个工具来自第三方插件,我们不显示它收到和返回的内容。</div><div class="pf-detail-foot"><span>第三方 · 本机</span><span class="pf-grow"></span><a href="#dev-project-plugin">› 开发者详情</a></div></div>
+      </div></div>
+    </div></div>
+    <div class="pc-src-row"><svg class="pf-i" style="width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8"><use href="#i-puzzle"/></svg><b>lint_project</b><small>第三方</small></div>
+  </div>
+</div>
+<p class="pf-cap">随应用安装的工具不是引擎内置工具:不借专用卡,也不享内置步骤的隐藏规则。设置里文档工具单列一组,见 <a href="../settings/design.html#set-tools-bundled">设置 → 工具「Code Puppy 文档工具」</a>;扩展自带的工具仍在「插件」组。</p>
+
+<h3 class="pf-h" id="developer-details" style="font-size:var(--a-text-lg)">开发者详情</h3>
+<p class="pf-sub">默认收起。原来的三行照旧(规范名、technical-id、authority),加 location;插件工具再加 origin(包名或安装路径)。</p>
+<div class="pf-grid">
+  <div id="dev-cloud">
+    <div class="pf-tag">Code Puppy 云</div>
+    <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>Code Puppy 云 · 云端</span><span class="pf-grow"></span><a href="#developer-details">⌄ 开发者详情</a></div>
+      <div class="prov-dev" style="padding:0 12px 10px">mcp:cloud:cloud_dispatch<br>technical-id: cloud_cloud_dispatch<br>authority: alpha-cloud · mcp:cloud · sha256:4a9343bc11b3f417a2a254ab32b8d1d6<br>location: remote · mcp.codepuppy.cn</div></div>
+  </div>
+  <div id="dev-third">
+    <div class="pf-tag">第三方 · 远端</div>
+    <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>第三方 · mcp.notion.com</span><span class="pf-grow"></span><a href="#developer-details">⌄ 开发者详情</a></div>
+      <div class="prov-dev" style="padding:0 12px 10px">mcp:notion:search_pages<br>technical-id: notion_search_pages<br>authority: not-asserted<br>location: remote · mcp.notion.com</div></div>
+  </div>
+  <div id="dev-bundled">
+    <div class="pf-tag">Code Puppy 内置 · 扩展自带的工具</div>
+    <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>Code Puppy 内置 · 本机</span><span class="pf-grow"></span><a href="#developer-details">⌄ 开发者详情</a></div>
+      <div class="prov-dev" style="padding:0 12px 10px">plugin:%2FApplications%2FCode Puppy.app%2FContents%2FResources%2Falpha-ext%2Fplugin.js:alpha_cloud_access<br>technical-id: alpha_cloud_access<br>authority: alpha-bundled · plugin:alpha-ext · sha256:5873d53028c643604bc3f4d4c6904d58<br>location: local<br>origin: /Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js</div></div>
+  </div>
+  <div id="dev-bundled-doc">
+    <div class="pf-tag">Code Puppy 内置 · 文档工具</div>
+    <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>Code Puppy 内置 · 本机</span><span class="pf-grow"></span><a href="#developer-details">⌄ 开发者详情</a></div>
+      <div class="prov-dev" style="padding:0 12px 10px">mcp:alpha-word:read_docx<br>technical-id: alpha-word_read_docx<br>authority: alpha-bundled · mcp:alpha-word · sha256:9b0e61c2d4a85f37e1c0b6a9d2f4e813<br>location: local</div></div>
+  </div>
+  <div id="dev-project-plugin">
+    <div class="pf-tag">第三方 · 项目插件</div>
+    <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>第三方 · 本机</span><span class="pf-grow"></span><a href="#developer-details">⌄ 开发者详情</a></div>
+      <div class="prov-dev" style="padding:0 12px 10px">plugin:%2FApplications%2FCode Puppy.app%2FContents%2FResources%2Falpha-ext%2Fplugin.js:lint_project<br>technical-id: lint_project<br>authority: not-asserted<br>location: local<br>origin: /Applications/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js</div></div>
+  </div>
+  <div id="dev-history">
+    <div class="pf-tag">更新之前的记录</div>
+    <div class="pf-detail" style="margin:0"><div class="pf-detail-foot" style="border-top:0"><span>第三方 · 位置未知</span><span class="pf-grow"></span><a href="#developer-details">⌄ 开发者详情</a></div>
+      <div class="prov-dev" style="padding:0 12px 10px">mcp:notion:search_pages<br>technical-id: notion_search_pages<br>authority: not-asserted<br>location: —</div></div>
+  </div>
+</div>
+<p class="pf-cap">数值为示意;authority 一行的格式是「种类 · 绑定 · 摘要」。</p>
+
+<div class="note warn" id="source-location-diff"><b>与批准稿的差异(按代码画,不回头改代码)</b>:
+  ① 随应用安装的工具没有「检查云端登录」这类中文动作名:行上写「Code Puppy 内置」+ 工具原名(如 <code>alpha_cloud_access</code>、<code>read_docx</code>),与还没有展示规则的内置工具同一写法。中文名归命名迁移 alpha-code#1568。<br>
+  ② 开发者详情里的技术名是现行代码的名字(<code>alpha-bundled</code>、<code>plugin:alpha-ext</code>、安装目录 <code>alpha-ext</code>、<code>alpha_cloud_access</code>),不是批准稿按命名规范推出的 <code>codepuppy-*</code> 新名;改名同归 alpha-code#1568。<br>
+  ③ 随应用安装的文档工具(Word / Excel / PDF / PowerPoint)同样显示「Code Puppy 内置」,批准稿只画了扩展自带的工具;本节补了它的步骤行与开发者详情(<code>#dev-bundled-doc</code>)。<br>
+  ④ 「来源 · 位置」是详情的最后一行(在详情内容、报错与诊断之后),开发者详情的开关在同一行右侧;批准稿把它和「复制输出」画在同一行。
+</div>
 
 <!-- ══════════ 8.6 弹出层 ══════════ -->
 <h2 class="pf-h" id="overlays">8.6 弹出层:从十几种样子收成四种</h2>
@@ -903,9 +1058,11 @@ rendering chunks (12/31)...</div></div>
     <div class="frame"><div class="pf-ov-stage">
       <div class="pf-menu">
         <div class="pf-menu-h">运行权限</div>
-        <div class="pf-mi"><span class="ck"></span>全部批准<small>改文件 / 执行命令不再询问</small></div>
-        <div class="pf-mi on"><span class="ck">✓</span>请求审批<small>逐次询问</small></div>
-        <div class="pf-mi"><span class="ck"></span>只读<small>不能改文件 / 执行命令</small></div>
+        <div class="pf-mi wrap2"><span class="ck"></span>全部批准<small>改文件、运行命令不再询问。项目外文件夹、.env、外部与云端工具仍询问。</small></div>
+        <div class="pf-mi wrap2 on"><span class="ck">✓</span>请求审批<small>改文件、运行命令、交给其它助手前询问。外部与云端工具按设置执行。</small></div>
+        <div class="pf-mi wrap2"><span class="ck"></span>只读<small>不能改文件、运行命令、交给其它助手。项目外文件夹不可访问;外部与云端工具每次询问。</small></div>
+        <div class="pf-msep"></div>
+        <div class="pf-mnote">任何档都越不过:已停用的工具、未获准的网址、项目外写入。</div>
       </div>
       <div class="pf-menu">
         <div class="pf-back"><svg class="pf-chev"><use href="#i-chev"/></svg>添加供应商</div>
@@ -927,7 +1084,7 @@ rendering chunks (12/31)...</div></div>
         <div class="pf-btns"><button class="pf-btn" type="button">拒绝</button><button class="pf-btn" type="button">始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div>
       </div>
     </div></div>
-    <p class="pf-cap">工具批准仍是<b>全应用唯一一个批准面板</b>:任何页面都会出现,五项事实全显示,Esc 关不掉 —— 只是不再加遮罩、不冻结页面,停在窗口底部输入框之上,时间线可继续往上翻看;外观与模型提问卡同族。出现时焦点落在「允许一次」;文案与按钮沿用今天批准框的;工作过程标题同时变成琥珀色「等你批准」。联网批准与项目扩展信任仍用系统原生弹窗 —— 它们由应用主进程发起,原生弹窗的内容网页无法伪造,不动。</p>
+    <p class="pf-cap">工具批准仍是<b>全应用唯一一个批准面板</b>:任何页面都会出现,五项事实全显示,Esc 关不掉 —— 只是不再加遮罩、不冻结页面,停在窗口底部输入框之上,时间线可继续往上翻看;外观与模型提问卡同族。出现时焦点落在「允许一次」;<b>卡内的事实格子、中间按钮与「记住」框的现行形态见 <a href="#approval-states">8.6.1</a></b>(本帧的「始终允许」已按请求种类换成「本次会话内允许 / 在此项目中始终允许」或不出现);工作过程标题同时变成琥珀色「等你批准」。联网批准与项目扩展信任仍用系统原生弹窗 —— 它们由应用主进程发起,原生弹窗的内容网页无法伪造,不动。</p>
   </div>
   <div>
     <div class="pf-tag">④ 通知 · 右下角,只有一套</div>
@@ -955,6 +1112,191 @@ rendering chunks (12/31)...</div></div>
     <tr><td>会话搜索(⌘K)· 运行恢复页</td><td>对话框(不变)</td><td>—</td></tr>
   </tbody>
 </table>
+
+<!-- ══════════ 8.6 ③ 的现行形态:确认卡按请求种类分流(2026-10-31 并入)══════════ -->
+<h3 class="pf-h" id="approval-states" style="font-size:var(--a-text-lg)">8.6.1 ③ 批准面板:中间按钮按请求种类变化,写清记住什么</h3>
+<p class="pf-sub">面板外壳、位置与焦点同上面 ③(停在输入框之上、宽度跟输入框、关不掉、焦点落在「允许一次」)。卡内按引擎写进请求的事实分成四种:改文件 / 运行命令 / 外部文件夹 / 子任务 → 「本次会话内允许」;设置要求询问的外部与云端工具 → 「在此项目中始终允许」;档位或权限规则要求每次确认的 → 只能允许一次;自带可保存资源的新式请求 → 「始终允许」照旧。</p>
+<div class="note"><b>与上一稿的关系</b>:取自 owner 2026-10-30 批准的增量稿 <a href="../../2026-10-30-req236-permission-cards/frame.html#approval-states"><code>2026-10-30-req236-permission-cards/</code></a> 的 <code>#approval-states</code>–<code>#state-disabled</code>,<b>照已出货代码画</b>(alpha-code#1575,合并提交 <code>df178b80c</code>):代码仍保留请求事实格子(执行助手、动作、资源)与说明句,行样式是面板自己的,不是能力授权框的。它取代上面 ③ 帧里的「始终允许」与「五项事实全显示」两处文字;③ 的外壳、位置、焦点规则不变。批准按钩子之后的参数生效、批准后再核对设置与服务(alpha-code#1574)是引擎侧行为,不改卡面。稿与代码不一致处列在本节末尾。</div>
+
+<div class="pc-one" id="state-session">
+  <div class="pf-tag">A · 本次会话内允许 · 运行命令</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
+        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>bun test src/session</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
+      </dl>
+      <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:以 bun test 开头的命令</b><small>本次会话 · 重启后失效</small></div></div>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">改文件、运行命令、访问外部文件夹、派子任务。「将记住」逐项写请求带的可记住范围:命令写「以 … 开头的命令」,整类放行写「本会话内的所有文件修改 / 文件读取 / 同类操作」。</p>
+</div>
+
+<div class="pc-one" id="state-session-dir">
+  <div class="pf-tag">A · 同一态 · 访问项目以外的文件夹</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>external_directory</dd><small>请求执行的能力</small></div>
+        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>/Users/zian/codepuppy-test/*</code><code>/var/folders/bn/…/T/opencode/*</code></span></dd><small>2 项,由请求按原顺序提供</small></div>
+      </dl>
+      <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:/Users/zian/codepuppy-test、/var/folders/bn/…/T/opencode 及其子文件夹</b><small>本次会话 · 重启后失效</small></div></div>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">文件夹逐个写出(去掉末尾 <code>/*</code>),不缩成「这两个文件夹」。</p>
+</div>
+
+<div class="pc-one" id="state-project">
+  <div class="pf-tag">B · 在此项目中始终允许 · 云端工具</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>下发云端任务</dd><small>Code Puppy 云</small></div>
+      </dl>
+      <div class="pc-rem"><div class="pc-rem-l">在此项目中始终允许</div><div class="pc-rem-w"><b>将记住:在此项目使用这个工具</b><small>当前项目 · 当前账户 · 可在设置里撤回</small></div></div>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">在此项目中始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">外部与云端工具,由「设置 → 工具」要求询问时。动作格写工具的可读名与来源(Code Puppy 内置 / Code Puppy 云 / 第三方,与时间线同一套判定),不写技术名;这类请求不显示资源格。点了先把这个工具的「启用」存进设置,存成才放行这一次;可在设置里撤回。没登录时范围写「当前项目 · 未登录」。</p>
+</div>
+
+<div class="pc-one" id="state-every-time">
+  <div class="pf-tag">C · 只能允许一次 · 第三方工具</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>alpha-ask</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>search_pages</dd><small>第三方</small></div>
+      </dl>
+      <p class="pc-note">这个工具每次都要确认</p>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">档位或权限规则要求每次确认时,设置里启用过也照样问;请求缺服务配置指纹(没有生效的服务条目、插件来源未知)时也归这一类。卡上不凭执行助手名断言档位。</p>
+</div>
+
+<div class="pc-one" id="delegation">
+  <div class="pf-tag">D · 委派 · 派出子任务</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>alpha-ask</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>task</dd><small>请求执行的能力</small></div>
+        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>general</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
+      </dl>
+      <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:本会话派出的所有子任务</b><small>本次会话 · 重启后失效</small></div></div>
+      <p class="pc-risk">子任务里不再逐项询问</p>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">本次会话内允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">「请求审批」档。请求没带可记住的范围时(例如命令换了助手)不出现中间按钮和记住框,只剩「拒绝」「允许一次」,披露行照旧。「只读」档下直接拒绝,不弹卡。</p>
+</div>
+
+<div class="pc-one" id="state-write-failed">
+  <div class="pf-tag">E · 没存上</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>下发云端任务</dd><small>Code Puppy 云</small></div>
+      </dl>
+      <div class="pc-rem"><div class="pc-rem-l">在此项目中始终允许</div><div class="pc-rem-w"><b>将记住:在此项目使用这个工具</b><small>当前项目 · 当前账户 · 可在设置里撤回</small></div></div>
+      <p class="pc-fail" role="alert">没能保存,这次未放行</p>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button">重试「在此项目中始终允许」</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">接 B。设置没写进去时卡片留在原地,这一次不放行。</p>
+</div>
+
+<h3 class="pf-h" id="state-disabled" style="font-size:var(--a-text-lg)">F · 仍会置灰的三种情况</h3>
+<p class="pf-sub">「没有可记住的范围」不再置灰,改为不出现中间按钮。下面三种照旧置灰;记住框只在中间按钮真能用时画。</p>
+<div class="pc-one">
+  <div class="pf-tag">请求无法核实 · 自动拒绝</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>无法核实</dd><small>请求未提供完整主体事实</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
+        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>bun test src/session</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
+      </dl>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button" disabled>正在提交…</button><button class="pf-btn" type="button" disabled>本次会话内允许</button><button class="pf-btn pri" type="button" disabled>允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">核不实的那一格写「无法核实」;面板一出现就自动拒绝,拒绝按钮写「正在提交…」。另两颗按钮的悬停提示是「请求事实无法核实,不能授权」,卡上没有状态句。</p>
+</div>
+<div class="pc-one">
+  <div class="pf-tag">找不到当前项目</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>下发云端任务</dd><small>Code Puppy 云</small></div>
+      </dl>
+      <p class="pc-note">找不到当前项目,不能始终允许</p>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button">拒绝</button><button class="pf-btn" type="button" disabled>在此项目中始终允许</button><button class="pf-btn pri" type="button">允许一次</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">两种中间按钮(本次会话内 / 在此项目中)都适用;只能允许一次的卡不出这句。</p>
+</div>
+<div class="pc-one">
+  <div class="pf-tag">提交中</div>
+  <div class="frame"><div class="pc-stage"><div class="pc-panel">
+    <div class="pc-hd"><svg class="pf-i"><use href="#i-task"/></svg>允许这次操作吗?</div>
+    <div class="pc-body">
+      <div class="pc-desc">请核对下面的真实请求事实。作出决定前,工具保持暂停。</div>
+      <dl class="pc-facts">
+        <div class="pc-fact"><dt>主体 / 执行 Agent</dt><dd>build</dd><small>subject.kind = agent</small></div>
+        <div class="pc-fact"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
+        <div class="pc-fact wide"><dt>Resources</dt><dd><span class="pc-res"><code>bun test src/session</code></span></dd><small>1 项,由请求按原顺序提供</small></div>
+      </dl>
+      <div class="pc-rem"><div class="pc-rem-l">本次会话内允许</div><div class="pc-rem-w"><b>将记住:以 bun test 开头的命令</b><small>本次会话 · 重启后失效</small></div></div>
+    </div>
+    <div class="pc-ft"><div class="pc-acts"><button class="pf-btn rej" type="button" disabled>拒绝</button><button class="pf-btn" type="button" disabled>本次会话内允许</button><button class="pf-btn pri" type="button" disabled>正在提交…</button></div></div>
+  </div></div></div>
+  <p class="pf-cap">被点的按钮写「正在提交…」,其余不可点。</p>
+</div>
+
+<table class="pf-table">
+  <thead><tr><th>请求</th><th>中间按钮</th><th>记住框 / 卡上一句</th></tr></thead>
+  <tbody>
+    <tr><td>改文件、运行命令、外部文件夹、子任务</td><td>本次会话内允许</td><td>本次会话 · 重启后失效;子任务另加「子任务里不再逐项询问」</td></tr>
+    <tr><td>同上,请求不带可记住的范围</td><td>无</td><td>无</td></tr>
+    <tr><td>外部与云端工具,设置要求询问</td><td>在此项目中始终允许</td><td>当前项目 · 当前账户 · 可在设置里撤回(未登录:当前项目 · 未登录)</td></tr>
+    <tr><td>外部与云端工具,档位或规则要求每次确认;或请求缺服务配置指纹</td><td>无</td><td>无;写「这个工具每次都要确认」</td></tr>
+    <tr><td>自带可保存资源的新式请求</td><td>始终允许(不变)</td><td>无记住框;仍显示范围、期限两格与页脚「「始终允许」会为当前项目创建永久授权(grantExpiresAt = null)。」</td></tr>
+  </tbody>
+</table>
+
+<div class="note warn" id="approval-diff"><b>与批准稿的差异(按代码画,不回头改代码)</b>:
+  ① 卡上仍有说明句「请核对下面的真实请求事实。作出决定前,工具保持暂停。」和请求事实格子:「主体 / 执行 Agent」(助手名 + <code>subject.kind = agent</code>)、「Action / Capability」、「Resources」;批准稿去掉了说明句与「谁在请求」,只留一行人话的「要做什么」。<br>
+  ② 改文件 / 运行命令 / 外部文件夹 / 子任务这四种,动作格写请求的原始动作名(<code>bash</code>、<code>external_directory</code>、<code>task</code>),资源格写原始资源;批准稿写「运行命令」「访问项目以外的文件夹」「派出子任务」「交给助手 general」。外部与云端工具的动作格已是可读名 + 来源。<br>
+  ③ 外部文件夹的「将记住」逐个列出文件夹,写成「{文件夹}、{文件夹} 及其子文件夹」;批准稿写「这两个文件夹及其子文件夹」。<br>
+  ④ 第三方工具的来源只写「第三方」,不跟主机名(批准稿 C 帧是「第三方 · mcp.notion.com」):审批请求不带执行位置,主机名只在时间线上有。移交 alpha-code#1568。<br>
+  ⑤ 请求无法核实时没有「无法核实这次请求,已拒绝」这句状态,沿用按钮悬停提示 + 自动拒绝。<br>
+  ⑥ 标题图标是时钟(批准稿是暂停号);记住框没有书签图标,标题行是按钮名;卡内行样式是面板自己的(<code>.a-permission-remember</code>),不是能力授权框的。拒绝按钮是红字、靠左,与另两颗分开。<br>
+  ⑦ 「只能允许一次」还包括请求缺服务配置指纹的情况(没有生效的服务条目、插件来源未知),批准稿只写了档位 / 规则要求。
+</div>
 
 <!-- ══════════ ⑦ 收纳规则 ══════════ -->
 <h2 class="pf-h" id="pf-rules">8.7 收纳规则一览</h2>

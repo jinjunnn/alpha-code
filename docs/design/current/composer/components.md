@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-09-20
+last_reviewed: 2026-10-31
 review_after: 2027-03-19
 ---
 
@@ -33,4 +33,4 @@ review_after: 2027-03-19
 | 附件条(图片缩略图、文件卡、读取路径标签、卡内拒绝、看大图浮层、溢出横排) | `#attachments` | [`2026-10-30-req236-attachments/`](../../2026-10-30-req236-attachments/frame.html) | — | ac#1553 | — | 现状:`alpha-ui/alpha-composer.tsx`(`.a-comp-atts` / `.a-comp-att`,拒绝走 toast)· `composer-attachments-core.ts` | 设计中 |
 | 模型状态行(提示槽:正在读取 / 满 10 秒说明卡点 + 重试 / 满 30 秒 + 重启引擎)与「平台模型清单暂时取不到」;删除全局清单失败横幅 | `#model-status` | [`2026-10-30-req236-model-status/`](../../2026-10-30-req236-model-status/frame.html) | — | ac#1557 | — | 现状:`alpha-ui/alpha-composer.tsx`(`.a-comp-model-alert`,「正在同步…」只挂在 `recovering`)· 全局横幅 `alpha-ui/Banner.tsx`(`CatalogFailureBanner`)经 `renderer/index.tsx` 挂载 | 设计中 |
 | 模型按钮的品牌图标(取代固定「α」;未选为中性图形) | `#model` | [`2026-10-30-req236-model-picker/`](../../2026-10-30-req236-model-picker/frame.html) | — | ac#1558 | — | 现状:`alpha-ui/alpha-composer.tsx:467-469`(写死「α」)· `composer-reskin.css:91-111`(疑似死样式) | 设计中 |
-| 运行权限菜单每档边界说明与底部「任何档都越不过」一句 | `#perm` | [`2026-10-30-req236-permission-cards/`](../../2026-10-30-req236-permission-cards/frame.html#tier-menu) | — | ac#1575 | — | 现状:`alpha-ui/alpha-composer.tsx` 的 `PERM_TEXT`(一行副标题 `alpha.composer.perm*Hint`) | 设计中 |
+| 运行权限菜单每档边界说明与底部「任何档都越不过」一句 | [`#perm`](design.html#perm) | [`2026-10-30-req236-permission-cards/`](../../2026-10-30-req236-permission-cards/frame.html#tier-menu) | 2026-10-31 | ac#1575 | 2026-10-31 | `alpha-ui/alpha-composer.tsx` 的 `PermChip`(`PERM_TEXT` 的 `alpha.composer.perm*Hint`;底部 `.a-pop-note[data-perm-boundary]` = `alpha.composer.permBoundary`)· `alpha-composer.css`(`.a-pop-item[data-perm]` 折行、菜单宽 300) | 已落地(与批准稿逐字一致) |

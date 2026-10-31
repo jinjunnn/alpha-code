@@ -69,7 +69,7 @@
                 </div>
                 <div class="pop-wrap">
                   <button class="chip perm" data-mode="full" data-pop="permHome"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
-                  <div class="pop up perm-menu" id="permHome" style="min-width:230px"></div>
+                  <div class="pop up perm-menu" id="permHome" style="min-width:300px"></div>
                 </div>
                 <div class="grow"></div>
                 <div class="pop-wrap">
@@ -135,7 +135,7 @@
                 </div>
                 <div class="pop-wrap">
                   <button class="chip perm" data-mode="ask" data-pop="permChat"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
-                  <div class="pop up perm-menu" id="permChat" style="min-width:230px"></div>
+                  <div class="pop up perm-menu" id="permChat" style="min-width:300px"></div>
                 </div>
                 <div class="grow"></div>
                 <button class="chip usage" title="上下文 38% · 点开看用量 / 压缩"><span class="ring"></span>38%</button>
@@ -409,15 +409,18 @@
       <p class="lede">opencode 后端<strong>已有</strong>权限引擎(<span class="mono">"ask" | "allow" | "deny"</span> 三值,配 <span class="mono">permission.asked</span> 事件与 once/always/reject 回应)。工具栏开关 + 审批卡片在这里;<strong>每一档在提交层都必须发出不同的请求</strong> —— 2026-09-23 实测(<span class="mono">docs/architecture/2026-09-23-runtime-permission-tiers.md</span>)当时的「请求审批」提交时不带 agent、落到引擎默认档 <span class="mono">build</span>(<span class="mono">"*": "allow"</span>),改文件 / 跑命令一次都不问;alpha-code#1413 起三档如下。</p>
     </div>
     <div class="row">
-      <div style="width:240px">
-        <div class="pop up static" style="width:240px">
+      <div style="width:300px">
+        <div class="pop up static perm-menu" style="width:300px">
           <div class="menu-label">运行权限</div>
-          <div class="menu-item is-on"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件/执行命令不再询问</span></div>
-          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">逐次询问</span></div>
-          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件/执行命令</span></div>
+          <div class="menu-item is-on"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件、运行命令不再询问。项目外文件夹、.env、外部与云端工具仍询问。</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">改文件、运行命令、交给其它助手前询问。外部与云端工具按设置执行。</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件、运行命令、交给其它助手。项目外文件夹不可访问;外部与云端工具每次询问。</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-note">任何档都越不过:已停用的工具、未获准的网址、项目外写入。</div>
         </div>
       </div>
       <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
+        <div class="note" id="perm-desc"><b>2026-10-31 并入</b>(增量稿 <a href="../../2026-10-30-req236-permission-cards/frame.html#tier-menu"><code>2026-10-30-req236-permission-cards/</code></a> <code>#tier-menu</code>,alpha-code#1575 已落地,与代码逐字一致):每档说明写出边界、折到第二行,菜单宽 300;底部一句三档共同的「任何档都越不过:已停用的工具、未获准的网址、项目外写入。」下面这张审批卡是早期示意,<b>现行批准面板见 <a href="../conversation-timeline/design.html#approval-states">时间线活稿 8.6.1</a></b>。</div>
         <div class="perm-card" style="max-width:none">
           <div class="ph"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-warning)"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批 · 工具执行</div>
           <div class="pb">agent 想运行命令:<code>rm -rf node_modules &amp;&amp; bun install</code></div>
@@ -486,9 +489,11 @@
 </template>
 <template id="tpl-perm">
   <div class="menu-label">运行权限</div>
-  <div class="menu-item is-on" data-pm="全部批准"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件/执行命令不再询问</span></div>
-  <div class="menu-item" data-pm="请求审批"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">逐次询问</span></div>
-  <div class="menu-item" data-pm="只读"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件/执行命令</span></div>
+  <div class="menu-item is-on" data-pm="全部批准"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>全部批准<span class="desc">改文件、运行命令不再询问。项目外文件夹、.env、外部与云端工具仍询问。</span></div>
+  <div class="menu-item" data-pm="请求审批"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">改文件、运行命令、交给其它助手前询问。外部与云端工具按设置执行。</span></div>
+  <div class="menu-item" data-pm="只读"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">不能改文件、运行命令、交给其它助手。项目外文件夹不可访问;外部与云端工具每次询问。</span></div>
+  <div class="menu-sep"></div>
+  <div class="menu-note">任何档都越不过:已停用的工具、未获准的网址、项目外写入。</div>
 </template>
 
 <script>
