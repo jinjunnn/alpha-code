@@ -42,6 +42,16 @@ plugin、MCP、host 或 V2。因而从 alias、标题、URL、图标或 annotati
    `bindingId` 与 `sha256:` evidence digest。域名、标题、图标、annotation 或相似 URL 均只能得到
    `not-asserted`。alpha-code#1576：注入定义里值为 `{file:}` 引用的 header 只核对装载条目有同名字符串
    header、不比值（令牌是凭据不是来源）；其余字段与键集合仍逐字相等，evidence 仍是注入定义原文。
+   **新增 authority kind `alpha-bundled`（alpha-code#1578，2026-10-30）**：按本 ADR 末条另开的 owner 裁决
+   （原话「路一」，[裁决评论](https://github.com/jinjunnn/alpha-code/issues/1578#issuecomment-6517703864)；
+   第一方扩展插件并入同一证明见[编排器评论](https://github.com/jinjunnn/alpha-code/issues/1578#issuecomment-6525371445)）。
+   形状同 `alpha-cloud`（`bindingId` + `sha256:` evidence digest），只在两处、只在随包清单核验成立时铸：
+   `authorityForMcp` 在 #1565 的 `declaredFirstPartyTools` 成立时（文档工具命令与随包模板逐 token 相等、
+   `server.py` 摘要与清单一致）；插件装载端在装载器结构化 `source = "file"`、所装载模块的 sha256 等于 main 经
+   `ALPHA_EXT_BUNDLED_MANIFEST` 指定的随包清单时，只给清单列出的自有工具（`packages/opencode/src/plugin/alpha-bundled-plugin.ts`）。
+   其余一律 `not-asserted`；插件旁边的清单不被读取。策略分类：MCP ⇒ 新类 `alpha-bundled`（默认 ask），插件仍是 `plugin`。
+   回退只撤铸造、分类与设置组，schema 里 `ToolAuthority` 与 `ToolClass` 的 `"alpha-bundled"` 字面量保留，
+   已持久化的快照与 `class:"alpha-bundled"` 策略记录照常可读、不触发整份隔离。
 6. V1、V2 共享上述 schema 与 canonicalizer。V2 不另造兼容表、dual read 或迁移；SDK 只投影同一份
    可选持久化字段。
 

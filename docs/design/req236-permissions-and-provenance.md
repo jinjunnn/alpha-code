@@ -181,7 +181,7 @@ MCP / 云 / 插件 / 子任务不在其中 —— 这就是父票「全部云工
 - 「官方连接器」= `github-official`、`dbhub-readonly`(`ui-mac/src/main/official-connector-recipes.ts:13`):Code Puppy 的封闭安装配方,
   服务本身是第三方厂商的。工具来源上它们是第三方。
 - Office/PDF 四个本机 MCP:Code Puppy 随包的 `resources/office-mcp/server.py`,今天 identity 为 `(mcp, <配置键>)`、authority `not-asserted`,
-  显示成「第三方 MCP 工具」、参数与结果全隐藏。生命周期 lane #4 新增 `plugin/src/alpha-first-party-mcp.ts` 的
+  显示成「第三方 MCP 工具」、参数与结果全隐藏。生命周期 lane #4 新增 `packages/opencode/src/mcp/alpha-first-party-mcp.ts` 的
   `declaredFirstPartyTools`(命令与随包模板逐 token 相等、`server.py` sha256 与清单一致才成立,其基线 §2.3 第 2 步)—— 这正是缺的 binding 证明。
 
 ### 1.8 §2.4:受控字段的真实写入方与覆盖路径
