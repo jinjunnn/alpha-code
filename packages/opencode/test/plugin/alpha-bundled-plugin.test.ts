@@ -1,5 +1,5 @@
 // #1578 AC5(REQ-236 §2.6-7,编排器 2026-10-30 裁决沿用 owner「路一」)—— 随应用交付的第一方扩展插件,只有受信随包清单
-// 列出的自有工具、且装载端核验模块摘要一致时,authority 才是 alpha-bundled;项目插件合并进来的工具、摘要不符或不在
+// 列出的自有工具、且装载端核验模块摘要一致时,authority 才是 codepuppy-bundled;项目插件合并进来的工具、摘要不符或不在
 // 清单里的工具仍是 not-asserted。工具保留插件来源(identity.source = plugin)。
 //
 // 链路全是生产的:真 Plugin layer 按路径插件装载一个文件(spec = 绝对路径,与 main 注入 ext 的形状相同)→ 真
@@ -152,7 +152,7 @@ const NOT_ASSERTED = { kind: "not-asserted" } as const
 describe("#1578 AC5 first-party extension plugin tools", () => {
   // 删掉 registry 里按清单给 authority(或 plugin/index.ts 里的核验)⇒ alpha_echo / alpha_ping 回到 not-asserted,当场红;
   // 把核验改成「插件名单里有就给」而不看清单 ⇒ lint_project 也被铸,当场红。
-  it.instance("listed own tools of a module whose digest matches get alpha-bundled; the merged-in project tool does not", () =>
+  it.instance("listed own tools of a module whose digest matches get codepuppy-bundled; the merged-in project tool does not", () =>
     Effect.gen(function* () {
       const plugin = writeExtension()
       pluginSpec = plugin
@@ -162,7 +162,7 @@ describe("#1578 AC5 first-party extension plugin tools", () => {
         const display = displays.get(name)!
         expect(display.identity).toEqual({ source: "plugin", origin: plugin, name })
         expect(display.authority).toEqual({
-          kind: "alpha-bundled",
+          kind: "codepuppy-bundled",
           bindingId: "plugin:alpha-ext",
           evidenceDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         })
@@ -171,7 +171,7 @@ describe("#1578 AC5 first-party extension plugin tools", () => {
       // 项目插件带进来的新工具:同一个扩展的 hooks 里,但不在清单 ⇒ not-asserted,来源仍是这个插件。
       expect(displays.get("lint_project")!.identity).toEqual({ source: "plugin", origin: plugin, name: "lint_project" })
       expect(displays.get("lint_project")!.authority).toEqual(NOT_ASSERTED)
-      // 项目插件的同名 alpha_echo 进不来:合并时自有键优先,带 alpha-bundled 的那一个是扩展自己的定义。
+      // 项目插件的同名 alpha_echo 进不来:合并时自有键优先,带 codepuppy-bundled 的那一个是扩展自己的定义。
       expect(descriptions.get("alpha_echo")).toBe("own echo")
     }),
   )

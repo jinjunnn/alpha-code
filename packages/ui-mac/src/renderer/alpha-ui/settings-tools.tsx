@@ -31,21 +31,21 @@ import { Button } from "./Button"
 import { rovingKey, rovingTabIndex } from "./roving-focus"
 import { t } from "../i18n"
 
-// #1578 AC3:`alpha-bundled` = 经随包清单核验成立的文档工具(「Code Puppy 文档工具」组)。
-const CLASS_ORDER: readonly ToolClass[] = ["builtin", "alpha-bundled", "alpha-cloud", "third-party-mcp", "plugin"]
+// #1578 AC3:`codepuppy-bundled` = 经随包清单核验成立的文档工具(「Code Puppy 文档工具」组)。
+const CLASS_ORDER: readonly ToolClass[] = ["builtin", "codepuppy-bundled", "codepuppy-cloud", "third-party-mcp", "plugin"]
 const STATES: readonly ToolPolicyState[] = ["enabled", "ask", "disabled"]
 
 const classLabel = (cls: ToolClass) => {
   if (cls === "builtin") return t("alpha.settings.toolsClassBuiltin")
-  if (cls === "alpha-bundled") return t("alpha.settings.toolsClassBundled")
-  if (cls === "alpha-cloud") return t("alpha.settings.toolsClassCloud")
+  if (cls === "codepuppy-bundled") return t("alpha.settings.toolsClassBundled")
+  if (cls === "codepuppy-cloud") return t("alpha.settings.toolsClassCloud")
   if (cls === "third-party-mcp") return t("alpha.settings.toolsClassMcp")
   return t("alpha.settings.toolsClassPlugin")
 }
 const classCaption = (cls: ToolClass) => {
   if (cls === "builtin") return t("alpha.settings.toolsCapBuiltin")
-  if (cls === "alpha-bundled") return t("alpha.settings.toolsCapBundled")
-  if (cls === "alpha-cloud") return t("alpha.settings.toolsCapCloud")
+  if (cls === "codepuppy-bundled") return t("alpha.settings.toolsCapBundled")
+  if (cls === "codepuppy-cloud") return t("alpha.settings.toolsCapCloud")
   if (cls === "third-party-mcp") return t("alpha.settings.toolsCapMcp")
   return t("alpha.settings.toolsCapPlugin")
 }
@@ -237,7 +237,7 @@ export function AlphaSettingsTools(props: {
         services,
         record,
         toolCount: services.reduce((sum, service) => sum + service.tools.length, 0),
-        verified: services.length > 0 && services.every((service) => service.authority.kind === "alpha-cloud"),
+        verified: services.length > 0 && services.every((service) => service.authority.kind === "codepuppy-cloud"),
       }
     })
   })
@@ -541,7 +541,7 @@ export function AlphaSettingsTools(props: {
     }
     // #1593 AC5:只有真有计费数据的工具才挂徽标;不再给每行挂「计费:未知」(计费说法写在组说明里一次)。
     const billing = () =>
-      (tr.cls === "alpha-cloud" || tr.cls === "third-party-mcp") && tr.tool.billing
+      (tr.cls === "codepuppy-cloud" || tr.cls === "third-party-mcp") && tr.tool.billing
         ? t("alpha.settings.toolsBilling", { value: tr.tool.billing.class })
         : undefined
     // 重新启用:以**当前** digest 重写 enabled 记录,层级 = 失效的那条记录所在层(§3)。
@@ -629,7 +629,7 @@ export function AlphaSettingsTools(props: {
     }
     const summary = () => {
       const parts = [t("alpha.settings.toolsServiceSummary", { count: sr.service.tools.length })]
-      if (sr.group.cls === "alpha-cloud" || sr.group.cls === "third-party-mcp") {
+      if (sr.group.cls === "codepuppy-cloud" || sr.group.cls === "third-party-mcp") {
         const billed = sr.service.tools.find((item) => item.billing)?.billing?.class
         if (billed) parts.push(t("alpha.settings.toolsBilling", { value: billed }))
       }
@@ -662,7 +662,7 @@ export function AlphaSettingsTools(props: {
           <div class="alpha-tools-meta">
             <div class="alpha-tools-name">
               <b>{sr.service.origin}</b>
-              <Show when={sr.service.authority.kind === "alpha-cloud"}>
+              <Show when={sr.service.authority.kind === "codepuppy-cloud"}>
                 <span class="alpha-tools-badge cloud">{t("alpha.settings.toolsVerified")}</span>
               </Show>
               <Show when={rebind()}>

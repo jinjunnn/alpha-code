@@ -41,7 +41,7 @@ if (!result.success) {
 }
 
 // #1578 AC5 (REQ-236 §2.6-7): the trusted bundled manifest, shipped next to plugin.js (electron-builder `alpha-ext/`).
-// The engine gives `alpha-bundled` only to these tool names, and only when the plugin module it loaded hashes to this
+// The engine gives `codepuppy-bundled` only to these tool names, and only when the plugin module it loaded hashes to this
 // digest (packages/opencode/src/plugin/alpha-bundled-plugin.ts). Tool names = TOOL_TEXT's keys, which
 // src/context-injection.test.ts pins to the real AlphaExt's own tool set; project plugins merged in at runtime are
 // never listed.

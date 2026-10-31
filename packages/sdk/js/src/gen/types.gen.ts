@@ -245,12 +245,12 @@ export type ToolAuthority =
       kind: "not-asserted"
     }
   | {
-      kind: "alpha-cloud"
+      kind: "codepuppy-cloud"
       bindingId: string
       evidenceDigest: string
     }
   | {
-      kind: "alpha-bundled"
+      kind: "codepuppy-bundled"
       bindingId: string
       evidenceDigest: string
     }

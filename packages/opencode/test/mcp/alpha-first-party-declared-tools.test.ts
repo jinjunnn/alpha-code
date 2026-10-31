@@ -169,18 +169,18 @@ it.instance(
 // 「Code Puppy 文档工具」整组设置在握手完成前不生效。删掉 bindingFacts 的声明分支 ⇒ 这里 not-asserted / third-party-mcp,当场红。
 const connecting = bundle("fixture")
 it.instance(
-  "#1578: while a declared document tool's server is still connecting, bindingFacts carries the offer's alpha-bundled authority",
+  "#1578: while a declared document tool's server is still connecting, bindingFacts carries the offer's codepuppy-bundled authority",
   () =>
     withManifest(
       connecting.manifest,
       Effect.gen(function* () {
         const mcp = yield* MCP.Service
         const offered = (yield* mcp.tools())["alpha-word_read_docx"]!
-        expect(offered.authority?.kind).toBe("alpha-bundled")
+        expect(offered.authority?.kind).toBe("codepuppy-bundled")
         expect((yield* mcp.status())["alpha-word"]).toEqual({ status: "pending" })
         const facts = yield* mcp.bindingFacts!("alpha-word")
         expect(facts?.authority).toEqual(offered.authority)
-        expect(classifyTool({ identity: offered.identity!, authority: facts!.authority })).toBe("alpha-bundled")
+        expect(classifyTool({ identity: offered.identity!, authority: facts!.authority })).toBe("codepuppy-bundled")
       }),
     ),
   { config: { mcp: { "alpha-word": office(connecting, "word", HANG) } } },

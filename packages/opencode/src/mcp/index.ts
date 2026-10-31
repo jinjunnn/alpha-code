@@ -340,7 +340,7 @@ export function authorityForMcp(
   const evidence = governedMcpEvidence(name, entry, env)
   if (evidence)
     return {
-      kind: "alpha-cloud",
+      kind: "codepuppy-cloud",
       bindingId: `mcp:${encodeURIComponent(name)}`,
       evidenceDigest: `sha256:${createHash("sha256").update(evidence).digest("hex")}`,
     }
@@ -349,9 +349,9 @@ export function authorityForMcp(
   const declared = declaredFirstPartyTools(name, entry, env, readFileSync)
   if (!declared || entry.type !== "local") return { kind: "not-asserted" }
   return {
-    kind: "alpha-bundled",
+    kind: "codepuppy-bundled",
     bindingId: `mcp:${encodeURIComponent(name)}`,
-    evidenceDigest: canonicalJsonDigest({ kind: "alpha-bundled-mcp", name, command: entry.command, tools: declared }),
+    evidenceDigest: canonicalJsonDigest({ kind: "codepuppy-bundled-mcp", name, command: entry.command, tools: declared }),
   }
 }
 

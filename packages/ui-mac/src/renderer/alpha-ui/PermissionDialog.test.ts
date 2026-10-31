@@ -726,7 +726,7 @@ function v1Identity(
 const CLOUD_DISPATCH = {
   canonical: "mcp:alpha:cloud_dispatch",
   identity: { source: "mcp", origin: "alpha", name: "cloud_dispatch" },
-  authority: { kind: "alpha-cloud", bindingId: "mcp:alpha", evidenceDigest: `sha256:${"d".repeat(64)}` },
+  authority: { kind: "codepuppy-cloud", bindingId: "mcp:alpha", evidenceDigest: `sha256:${"d".repeat(64)}` },
 }
 
 const card = () => document.querySelector<HTMLElement>("[role='dialog']")!

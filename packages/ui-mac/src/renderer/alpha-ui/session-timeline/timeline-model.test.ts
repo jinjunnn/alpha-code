@@ -649,7 +649,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     const cloudDisplay = {
       identity: { source: "mcp", origin: "cloud", name: "await" },
       technicalId: "cloud_await",
-      authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
+      authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
     } as ToolPart["display"]
     const cloudDone = toolPart("prt_c1", "msg_a1", "cloud_await", {
       display: cloudDisplay,

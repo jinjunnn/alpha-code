@@ -6,7 +6,7 @@
  * `ALPHA_EXT_BUNDLED_MANIFEST` (sidecar env, the same trust channel as the Office manifest); nothing next to a loaded
  * plugin is ever consulted, so a plugin cannot vouch for itself.
  *
- * A loaded plugin's tools get `alpha-bundled` only when the loader resolved it as a file plugin (the structured
+ * A loaded plugin's tools get `codepuppy-bundled` only when the loader resolved it as a file plugin (the structured
  * `source`, never the origin string or install path) and the module file it imported hashes to the manifest's digest;
  * then only the tool names the manifest lists qualify. Project plugins merged into the extension's hooks
  * (`packages/ext/src/plugin-fanout.ts`) add names the manifest does not list, and cannot replace a listed one
@@ -22,7 +22,7 @@ import type { ToolAuthority } from "@opencode-ai/schema/tool-identity"
 export const EXT_BUNDLED_MANIFEST_ENV = "ALPHA_EXT_BUNDLED_MANIFEST"
 
 export type BundledPluginTools = {
-  readonly authority: Extract<ToolAuthority, { kind: "alpha-bundled" }>
+  readonly authority: Extract<ToolAuthority, { kind: "codepuppy-bundled" }>
   readonly tools: ReadonlySet<string>
 }
 
@@ -46,7 +46,7 @@ export function bundledPluginTools(
     if (digest !== manifest.moduleSha256) return undefined
     return {
       authority: {
-        kind: "alpha-bundled",
+        kind: "codepuppy-bundled",
         bindingId: "plugin:alpha-ext",
         evidenceDigest: canonicalJsonDigest({
           kind: "alpha-bundled-plugin",

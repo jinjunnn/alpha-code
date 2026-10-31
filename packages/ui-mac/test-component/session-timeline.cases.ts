@@ -1024,7 +1024,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           {
             identity: { source: "mcp", origin: "cloud", name: "cloud_web_search" },
             technicalId: "cloud_cloud_web_search",
-            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` },
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` },
           },
         ),
         toolPartFixture(
@@ -1034,7 +1034,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           {
             identity: { source: "mcp", origin: "cloud", name: "cloud_await" },
             technicalId: "cloud_cloud_await",
-            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"e".repeat(64)}` },
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"e".repeat(64)}` },
           },
         ),
       ]),
@@ -1046,7 +1046,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     // `#1475`:本机搜索与云端搜索同一个写法;动作名本身不再另挂「云端」。
     const search = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_web_search']")!
     expect(search.getAttribute("data-kind")).toBe("cloud")
-    expect(search.getAttribute("data-category")).toBe("alpha-cloud")
+    expect(search.getAttribute("data-category")).toBe("codepuppy-cloud")
     expect(search.querySelector(".a-tl-pf-v")!.textContent).toBe("搜索")
     expect(search.querySelector("[data-alpha-step-source]")).toBeNull()
     expect(search.querySelector(".a-tl-pf-o")!.textContent).toBe("alpha-code e7 部署证据")
@@ -1200,7 +1200,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
         toolPartFixture("prt_l2", "cloud_cloud_dispatch", done({ kind: "research" }), {
           identity: { source: "mcp", origin: "cloud", name: "cloud_dispatch" },
           technicalId: "cloud_cloud_dispatch",
-          authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
+          authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
           location: { kind: "remote", host: "cloud.example" },
         }),
         toolPartFixture("prt_l3", "notion_search_pages", done(), {
@@ -1244,7 +1244,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
 
     // AC6:开发者详情保留 identity、authority 种类、bindingId、evidenceDigest 与 location(插件另有 origin)。
     const cloudDev = cloud.querySelector("[data-alpha-dev-details] .a-tc-dev-body")!.textContent!
-    for (const needle of ["mcp:cloud:cloud_dispatch", "alpha-cloud", "mcp:cloud", `sha256:${"a".repeat(25)}`, "location: remote · cloud.example"])
+    for (const needle of ["mcp:cloud:cloud_dispatch", "codepuppy-cloud", "mcp:cloud", `sha256:${"a".repeat(25)}`, "location: remote · cloud.example"])
       expect({ needle, present: cloudDev.includes(needle) }).toEqual({ needle, present: true })
     const plugDev = plug.querySelector("[data-alpha-dev-details] .a-tc-dev-body")!.textContent!
     expect(plugDev).toContain("location: local")
@@ -2326,7 +2326,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
           {
             identity: { source: "mcp", origin: "cloud", name: "await" },
             technicalId: "cloud_await",
-            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
           },
         ),
       ]),
@@ -2380,7 +2380,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
           {
             identity: { source: "mcp", origin: "cloud", name: "artifacts" },
             technicalId: "cloud_artifacts",
-            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
           },
         ),
       ]),
@@ -4108,7 +4108,7 @@ test.each(["image", "document"])("AC2 #1503: cloud %s click previews the selecte
   }
   const parts = runs.map((run, index) => ({ ...toolPartFixture(`prt_cloud_${index}`, "cloud_artifacts", {
     status: "completed", input: { job_id: run.runId }, output: JSON.stringify(run.response), title: "artifacts", metadata: {}, time: { start: 10 + index, end: 11 + index },
-  }, { identity: { source: "mcp", origin: "cloud", name: "artifacts" }, technicalId: "cloud_artifacts", authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` } }), sessionID: BINDING_SESSION_ID, messageID: "msg_preview" }))
+  }, { identity: { source: "mcp", origin: "cloud", name: "artifacts" }, technicalId: "cloud_artifacts", authority: { kind: "codepuppy-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` } }), sessionID: BINDING_SESSION_ID, messageID: "msg_preview" }))
   const host = mountInlinePreview(parts)
   await settlePreview()
   const buttons = [...host.querySelectorAll<HTMLButtonElement>("button.a-artrow")]

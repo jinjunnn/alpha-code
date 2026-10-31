@@ -95,7 +95,7 @@ function engineFetch(engine: Engine, seen: string[]): typeof fetch {
                 {
                   source: "mcp",
                   origin: "cloud",
-                  class: "alpha-cloud",
+                  class: "codepuppy-cloud",
                   authority: { kind: "not-asserted" },
                   tools: [
                     {
@@ -103,7 +103,7 @@ function engineFetch(engine: Engine, seen: string[]): typeof fetch {
                       identity: { source: "mcp", origin: "cloud", name: "cloud_dispatch" },
                       technicalId: "cloud_cloud_dispatch",
                       authority: { kind: "not-asserted" },
-                      effective: { state: engine.cloudDispatch, action: "allow", reason: { kind: "default", class: "alpha-cloud" } },
+                      effective: { state: engine.cloudDispatch, action: "allow", reason: { kind: "default", class: "codepuppy-cloud" } },
                       newlyDiscovered: false,
                     },
                   ],

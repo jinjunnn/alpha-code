@@ -68,7 +68,7 @@ export function deriveBindingDigest(evidence: unknown): string {
 
 /** 主体当前 binding:Alpha Cloud 用 authority 证据,其余用调用方派生的 digest。 */
 export function subjectBindingDigest(subject: ToolPolicySubject): string | undefined {
-  if (subject.authority.kind === "alpha-cloud") return subject.authority.evidenceDigest
+  if (subject.authority.kind === "codepuppy-cloud") return subject.authority.evidenceDigest
   return subject.bindingDigest
 }
 

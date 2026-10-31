@@ -547,7 +547,7 @@ function transportOf(value: unknown): ToolTransportFact | undefined {
 }
 
 function isAlphaCloudAuthority(value: unknown): boolean {
-  return typeof value === "object" && value !== null && (value as Record<string, unknown>)["kind"] === "alpha-cloud"
+  return typeof value === "object" && value !== null && (value as Record<string, unknown>)["kind"] === "codepuppy-cloud"
 }
 
 function argString(args: unknown, ...keys: string[]): string | undefined {

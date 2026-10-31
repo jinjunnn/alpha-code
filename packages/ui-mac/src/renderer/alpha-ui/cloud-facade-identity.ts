@@ -7,7 +7,7 @@
 // plugin 命名空间 `cloud`(工具 id `cloud_x`,tool/registry.ts)的 identity 是
 // (plugin, "cloud"),sanitize 撞前缀的 MCP 配置键(`cloud.x` → 别名 `cloud_x_*`,
 // mcp/catalog.ts toolName)的 identity 是 (mcp, "cloud.x")。
-// **不比对 authority**:#879 审计终轮裁定 category==="alpha-cloud"(依赖
+// **不比对 authority**:#879 审计终轮裁定 category==="codepuppy-cloud"(依赖
 // governedMcpEvidence 运行时铸造)会误杀现网真实云产物行,准入只看 identity。
 // 别名(part.tool)不参与判定;快照缺失(历史行)/形状非法 一律 false(fail-closed)。
 export function isCloudFacadeToolPart(part: unknown): boolean {

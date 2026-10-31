@@ -165,7 +165,7 @@ export function governedMcpEvidence(
   try {
     const definition: unknown = JSON.parse(raw)
     if (canonicalJson(withDefinitionFileRefs(entry, definition)) !== canonicalJson(definition)) return undefined
-    return canonicalJson({ kind: "alpha-cloud-mcp", name, definition })
+    return canonicalJson({ kind: "codepuppy-cloud-mcp", name, definition })
   } catch {
     return undefined
   }

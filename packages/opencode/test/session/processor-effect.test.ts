@@ -825,7 +825,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
           identity: { source: "mcp", origin: "weather", name: "current" },
           technicalId: "lookup",
           authority: {
-            kind: "alpha-cloud",
+            kind: "codepuppy-cloud",
             bindingId: "mcp:weather",
             evidenceDigest: `sha256:${"a".repeat(64)}`,
           },
@@ -861,7 +861,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
                 identity: { source: "mcp", origin: "weather", name: "current" },
                 technicalId: "lookup",
                 authority: {
-                  kind: "alpha-cloud",
+                  kind: "codepuppy-cloud",
                   bindingId: "mcp:weather",
                   evidenceDigest: `sha256:${"a".repeat(64)}`,
                 },
@@ -882,7 +882,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
           identity: { source: "mcp", origin: "weather", name: "current" },
           technicalId: "lookup",
           authority: {
-            kind: "alpha-cloud",
+            kind: "codepuppy-cloud",
             bindingId: "mcp:weather",
             evidenceDigest: `sha256:${"a".repeat(64)}`,
           },
@@ -909,7 +909,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
           handle.registerToolDisplay("incomplete", {
             identity: { source: "mcp", origin: "weather", name: "broken" },
             technicalId: "incomplete",
-            authority: { kind: "alpha-cloud", bindingId: "mcp:weather" },
+            authority: { kind: "codepuppy-cloud", bindingId: "mcp:weather" },
           } as never),
         ).toThrow()
 
@@ -918,7 +918,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
             identity: { source: "mcp", origin: "weather", name: "current" },
             technicalId: "lookup",
             authority: {
-              kind: "alpha-cloud",
+              kind: "codepuppy-cloud",
               bindingId: "mcp:weather",
               evidenceDigest: `sha256:${"a".repeat(64)}`,
             },
