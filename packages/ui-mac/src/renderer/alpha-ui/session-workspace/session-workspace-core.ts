@@ -13,6 +13,8 @@ export interface AlphaSessionLiveSnapshot {
   project: string
   title: string
   activity: "idle" | "running"
+  /** `#1588` AC4:运行中的那一种是自动重试(session_status=retry);顶栏据此写「正在重试」。 */
+  retrying?: true
 }
 
 export interface AlphaSessionRecord {
@@ -47,6 +49,7 @@ export function sessionLiveSnapshotOf(input: {
     // #1589 AC1:与侧栏同一份显示规则;会话记录未读到时留空,由界面显示「对话」—— 不显示会话编号。
     title: input.session ? sessionDisplayTitle(input.session.title.trim()) : "",
     activity: input.status?.type && input.status.type !== "idle" ? "running" : "idle",
+    ...(input.status?.type === "retry" ? { retrying: true as const } : {}),
   }
 }
 

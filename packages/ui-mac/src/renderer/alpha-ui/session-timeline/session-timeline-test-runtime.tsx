@@ -25,6 +25,8 @@ const [turnWait, setTurnWait] = createSignal<TimelineTurnWait | undefined>(undef
 
 let loadOlderCalls = 0
 let pendingMode = false
+// `#1588` AC2:true = onLoadOlder 拒绝(往上翻加载失败)。
+let rejectMode = false
 let pendingResolvers: Array<() => void> = []
 const intentLog: {
   focusArtifact: TimelineFocusArtifactIntent[]
@@ -32,12 +34,15 @@ const intentLog: {
   openFile: TimelineOpenFileIntent[]
   continueTurn: number
   editUserMessage: TimelineEditUserMessageIntent[]
+  /** `#1588` AC3:回合错误卡的出路被点了几次(按入口名)。 */
+  turnErrorExits: string[]
 } = {
   focusArtifact: [],
   openSession: [],
   openFile: [],
   continueTurn: 0,
   editUserMessage: [],
+  turnErrorExits: [],
 }
 
 // 稳定对象 + 反应式 getter:开关翻转时,卡片内 <Show when={intents.x}> 立即重估
@@ -70,6 +75,18 @@ const harnessIntents = {
   get cloudDirectory() {
     return intentsEnabled() ? "/tmp/workspace" : undefined
   },
+  get recharge() {
+    return intentsEnabled() ? () => void intentLog.turnErrorExits.push("recharge") : undefined
+  },
+  get signIn() {
+    return intentsEnabled() ? () => void intentLog.turnErrorExits.push("signIn") : undefined
+  },
+  get openSettings() {
+    return intentsEnabled() ? () => void intentLog.turnErrorExits.push("openSettings") : undefined
+  },
+  get newSession() {
+    return intentsEnabled() ? () => void intentLog.turnErrorExits.push("newSession") : undefined
+  },
 }
 
 export { render }
@@ -84,6 +101,7 @@ export function SessionTimelineHarness() {
       history={history()}
       onLoadOlder={() => {
         loadOlderCalls += 1
+        if (rejectMode) return Promise.reject(new Error("load older failed"))
         if (!pendingMode) return Promise.resolve()
         return new Promise<void>((resolve) => pendingResolvers.push(resolve))
       }}
@@ -91,7 +109,8 @@ export function SessionTimelineHarness() {
       turnWait={turnWait()}
       intents={harnessIntents}
       displayNames={{
-        agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
+        // `#1588` AC5:与生产绑定一致 —— 照写原名(第一方模式由视图映射成档名)。
+        agent: (agent) => agent,
         model: (_providerID, modelID) => (modelID === "deepseek-reasoner" ? "DeepSeek Reasoner" : modelID),
       }}
     />
@@ -114,6 +133,11 @@ export function getIntentLog() {
 /** true = onLoadOlder 挂起不 resolve(模拟慢加载),用 resolvePendingLoads 手动放行。 */
 export function setLoadOlderPending(next: boolean) {
   pendingMode = next
+}
+
+/** `#1588` AC2:true = onLoadOlder 拒绝。 */
+export function setLoadOlderRejecting(next: boolean) {
+  rejectMode = next
 }
 
 export function resolvePendingLoads() {
@@ -154,6 +178,8 @@ export function resetTimelineHarness() {
   setTurnWait(undefined)
   loadOlderCalls = 0
   pendingMode = false
+  rejectMode = false
+  intentLog.turnErrorExits.length = 0
   intentLog.focusArtifact.length = 0
   intentLog.openSession.length = 0
   intentLog.openFile.length = 0

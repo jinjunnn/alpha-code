@@ -13,7 +13,7 @@ import {
   rememberRailWidth,
 } from "./rail-width"
 import { sameSessionIdentity, type AlphaSessionIdentity, type AlphaSessionLiveSnapshot } from "./session-workspace-core"
-import type { TimelineMediaSource } from "../session-timeline/timeline-model"
+import type { TimelineMediaSource, TimelineTurnWait } from "../session-timeline/timeline-model"
 
 export interface AlphaSessionLiveContext {
   current: Accessor<AlphaSessionLiveSnapshot | undefined>
@@ -198,15 +198,26 @@ function WorkspaceTopbar(props: {
   /** REQ-159:当前工作区写不进去(引擎明确回报);缺席 = 无标记。 */
   workspaceReadonly?: Accessor<boolean>
   relaunch?: () => void
+  /** `#1588` AC4:时间线同一个等待信号(审批 / 提问);缺席 = 只按运行 / 重试说。 */
+  turnWait?: Accessor<TimelineTurnWait | undefined>
 }) {
   const snapshot = () => props.live.current()
-  const running = () => snapshot()?.activity === "running"
+  // `#1588` AC4(批准稿 #conv-header):与时间线工作过程标题同一优先级 —— 在等你 > 重试 > 生成;空闲不显示。
+  const status = () => {
+    const current = snapshot()
+    if (current?.activity !== "running") return undefined
+    const wait = props.turnWait?.()
+    if (wait === "approval") return { kind: "approval", label: t("alpha.session.statusWaitApproval") }
+    if (wait === "question") return { kind: "question", label: t("alpha.session.statusWaitQuestion") }
+    if (current.retrying) return { kind: "retry", label: t("alpha.session.statusRetrying") }
+    return { kind: "running", label: t("alpha.session.statusRunning") }
+  }
   const railOpen = () => props.panel() !== undefined
   return (
     <header class="a-swk-topbar" data-alpha-session-workspace-topbar>
       <span class="a-swk-project-pill">
         <span class="a-swk-project-avatar" aria-hidden="true">
-          {snapshot()?.project.slice(0, 1).toUpperCase() || "α"}
+          {snapshot()?.project.slice(0, 1).toUpperCase()}
         </span>
         <span class="a-swk-project-label">{snapshot()?.project || t("alpha.session.session")}</span>
       </span>
@@ -214,16 +225,19 @@ function WorkspaceTopbar(props: {
         ›
       </span>
       <span class="a-swk-session-title">{snapshot()?.title || t("alpha.session.session")}</span>
-      <span
-        class="a-swk-status"
-        classList={{ "a-swk-status--running": running() }}
-        data-alpha-session-status={running() ? "running" : "idle"}
-        role="status"
-        aria-live="polite"
-      >
-        <span class="a-swk-status-dot" aria-hidden="true" />
-        {running() ? t("alpha.session.statusRunning") : t("alpha.session.statusIdle")}
-      </span>
+      <Show when={status()}>
+        {(current) => (
+          <span
+            class="a-swk-status a-swk-status--running"
+            data-alpha-session-status={current().kind}
+            role="status"
+            aria-live="polite"
+          >
+            <span class="a-swk-status-dot" aria-hidden="true" />
+            {current().label}
+          </span>
+        )}
+      </Show>
       <WorkspaceReadonlyPill readonly={() => props.workspaceReadonly?.() === true} relaunch={props.relaunch} />
       <span class="a-swk-grow" aria-hidden="true" />
       <button
@@ -279,6 +293,8 @@ export function SessionWorkspaceShell(props: {
   workspaceReadonly?: Accessor<boolean>
   /** 只读弹层唯一的动作:重新启动(main 既有 relaunch);缺席 = 按钮无动作(harness)。 */
   relaunch?: () => void
+  /** `#1588` AC4:回合在等你(审批 / 提问)—— 与时间线同一个信号,顶栏状态据此说;缺席 = 只按运行 / 重试说。 */
+  turnWait?: Accessor<TimelineTurnWait | undefined>
 }) {
   // Panel renderers: injected slot first; terminal falls back to the shell-built-in
   // C550 panel fed by the #554 engine-channel projection (absent = fail-closed empty
@@ -469,6 +485,7 @@ export function SessionWorkspaceShell(props: {
           toggleTerminal={toggleTerminal}
           workspaceReadonly={props.workspaceReadonly}
           relaunch={props.relaunch}
+          turnWait={props.turnWait}
         />
         <section
           class="a-swk-timeline-host"

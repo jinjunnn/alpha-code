@@ -238,6 +238,10 @@ export type TimelineRow =
       netLayer?: NetFailureLayer
       /** `#1572`:模型请求一个 HTTP 应答都没拿到、层又认不出(引擎记 `alphaNetCode: "unattributed"`)。 */
       netUnattributed?: true
+      /** `#1588`:按错误名与状态码认出的五类原因之一;缺席 = 认不出,呈现不变。 */
+      cause?: TurnErrorCause
+      /** `#1588`:服务回的状态码(只进「开发者详情」)。 */
+      statusCode?: number
     }
   | {
       kind: "divider"
@@ -275,6 +279,22 @@ export type TimelineRow =
  * `#1474` 起由工作过程的实时标题消费(原回合脚行并入工作过程)。
  */
 export type TimelineTurnWait = "approval" | "question"
+
+/** `#1588` 回合错误卡认得出的五类原因(批准稿 frame.html#turn-error 的表)。 */
+export type TurnErrorCause = "billing" | "auth" | "rateLimit" | "contextOverflow" | "outputLength"
+
+/**
+ * `#1588`:只看错误名与状态码,不读消息文本。402 余额/会员;401 / 403 / ProviderAuthError 登录凭据;429 频率;
+ * ContextOverflowError 对话超长;MessageOutputLengthError 回答到顶。其余 = undefined(呈现不变)。
+ */
+export function turnErrorCauseOf(name: string, statusCode: number | undefined): TurnErrorCause | undefined {
+  if (name === "ContextOverflowError") return "contextOverflow"
+  if (name === "MessageOutputLengthError") return "outputLength"
+  if (name === "ProviderAuthError" || statusCode === 401 || statusCode === 403) return "auth"
+  if (statusCode === 402) return "billing"
+  if (statusCode === 429) return "rateLimit"
+  return undefined
+}
 
 /** `#1399` 回合脚行计时:m:ss,整秒向下取整,分钟不进位到小时;负值(时钟偏斜)钉 0:00。 */
 export function formatTurnElapsed(elapsedMs: number): string {
@@ -1044,10 +1064,22 @@ export function slashOriginForTurn(
  */
 export function turnErrorOf(
   assistants: readonly AssistantMessage[],
-): { name: string; message: string; egressDenied?: { authority: string }; netLayer?: NetFailureLayer; netUnattributed?: true } | undefined {
+): {
+  name: string
+  message: string
+  egressDenied?: { authority: string }
+  netLayer?: NetFailureLayer
+  netUnattributed?: true
+  cause?: TurnErrorCause
+  statusCode?: number
+} | undefined {
   const failed = assistants.find((message) => message.error && message.error.name !== "MessageAbortedError")
   if (!failed?.error) return undefined
-  const data = (failed.error as { data?: { message?: unknown; responseBody?: unknown; metadata?: Record<string, unknown> } }).data
+  const data = (
+    failed.error as {
+      data?: { message?: unknown; responseBody?: unknown; statusCode?: unknown; metadata?: Record<string, unknown> }
+    }
+  ).data
   const raw = typeof data?.message === "string" ? data.message : ""
   const body = typeof data?.responseBody === "string" ? data.responseBody : ""
   const egressDenied = egressPolicyDenialOf(raw) ?? egressPolicyDenialOf(body)
@@ -1055,12 +1087,18 @@ export function turnErrorOf(
   const layer = data?.metadata?.alphaNetLayer
   const netLayer = isNetFailureLayer(layer) && layer !== "http" ? layer : undefined
   const netUnattributed = layer === undefined && data?.metadata?.alphaNetCode === "unattributed"
+  const statusCode = typeof data?.statusCode === "number" ? data.statusCode : undefined
+  // `#1588`:围栏拒绝(`#1382`)与分层联网失败(`#1572`)先认,保持它们的呈现 —— 围栏拒绝本身就是 403。
+  const cause =
+    egressDenied || netLayer || netUnattributed ? undefined : turnErrorCauseOf(failed.error.name, statusCode)
   return {
     name: failed.error.name,
     message: boundedText(raw, TURN_ERROR_MAX_CHARS).text,
     ...(egressDenied ? { egressDenied } : {}),
     ...(netLayer ? { netLayer } : {}),
     ...(netUnattributed ? { netUnattributed: true as const } : {}),
+    ...(cause ? { cause } : {}),
+    ...(statusCode !== undefined ? { statusCode } : {}),
   }
 }
 
@@ -1419,13 +1457,15 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       rows.push({
         kind: "turnError",
         key: `turn-error:${userMessage.id}`,
-        rev: `${turnError.name}§${turnError.message}§${turnError.egressDenied?.authority ?? ""}§${turnError.netLayer ?? (turnError.netUnattributed ? "unattributed" : "")}`,
+        rev: `${turnError.name}§${turnError.message}§${turnError.egressDenied?.authority ?? ""}§${turnError.netLayer ?? (turnError.netUnattributed ? "unattributed" : "")}§${turnError.cause ?? ""}§${turnError.statusCode ?? ""}`,
         userMessageID: userMessage.id,
         name: turnError.name,
         message: turnError.message,
         ...(turnError.egressDenied ? { egressDenied: turnError.egressDenied } : {}),
         ...(turnError.netLayer ? { netLayer: turnError.netLayer } : {}),
         ...(turnError.netUnattributed ? { netUnattributed: true as const } : {}),
+        ...(turnError.cause ? { cause: turnError.cause } : {}),
+        ...(turnError.statusCode !== undefined ? { statusCode: turnError.statusCode } : {}),
       })
   })
 

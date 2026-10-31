@@ -6,7 +6,9 @@
 // 数据经 props 注入(rows 来自 timeline-model 投影),本文件零上游 session DOM/选择器依赖,
 // CSS 只用 --a-* 令牌;卡片交互经可选 intents(缺席即降级为纯展示,fail-closed)。
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { AUTOMATION_DEFAULTS } from "../../../shared/automation-types"
 import { t } from "../../i18n"
+import { ASK_AGENT, READONLY_AGENT } from "../composer-state"
 import { CopyButton } from "../CopyButton"
 import { Tooltip } from "../Tooltip"
 import {
@@ -65,6 +67,13 @@ export interface SessionTimelineViewProps {
   rows: TimelineRow[]
   /** 消息页是否已加载(false = 首次 sync 进行中,不渲染空态)。 */
   ready: boolean
+  /**
+   * `#1588` AC1:未就绪时的读取状态 —— slow = 超过 0.3 秒仍在读(读取行);failed = 被拒或到期限(失败行 + 重试)。
+   * 缺席 = 什么都不显示(刚发出的读取不闪一下)。
+   */
+  read?: "slow" | "failed"
+  /** `#1588` AC1:失败行「重试」—— 绑定层发出新的读取请求;缺席 = 不出按钮。 */
+  onRetryRead?: () => void
   /** I8:serverKey+directory+sessionID 的合成键;变更即换代,滞后的滚动补偿被丢弃。 */
   epoch: string
   emptyTitle: string
@@ -99,6 +108,8 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
   let columnRef: HTMLDivElement | undefined
   const prepend = createPrependCoordinator()
   const [atBottom, setAtBottom] = createSignal(true)
+  // `#1588` AC2:往上翻加载更早消息失败 —— 那一行说失败并给「重试」;换代复位。
+  const [olderFailed, setOlderFailed] = createSignal(false)
   // `#1473`:工作过程的开合住在视图级(按回合 / 步骤键),行对象换代不重置用户的选择。
   const processOpen = createProcessOpenState()
 
@@ -179,6 +190,7 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     const epoch = props.epoch
     if (!scrollRef || !epoch || prepend.busy(epoch) || !props.history.more || props.history.loading) return
     prepend.begin(epoch)
+    setOlderFailed(false)
     endSettling()
     // settling 的生命周期上限在进入那一刻无条件建立,不依赖任何后续事件
     // (load 挂起/中途换代都不会让 settling 泄漏);用户滚动重锚只换锚,
@@ -187,7 +199,9 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     settling.timer = setTimeout(endSettling, props.settleTimeoutMs ?? SETTLE_TIMEOUT_MS)
     void props
       .onLoadOlder()
-      .catch(() => {})
+      .catch(() => {
+        if (props.epoch === epoch) setOlderFailed(true)
+      })
       .finally(() => {
         prepend.finish(epoch)
         if (!settling || settling.epoch !== epoch) return
@@ -213,7 +227,11 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
       } else endSettling()
     }
     setAtBottom(isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight))
-    if (shouldLoadOlder({ scrollTop: el.scrollTop, more: props.history.more, loading: props.history.loading }))
+    // 失败后不随滚动自动再试:由那一行的「重试」重新发起(不在顶部反复撞同一个失败)。
+    if (
+      !olderFailed() &&
+      shouldLoadOlder({ scrollTop: el.scrollTop, more: props.history.more, loading: props.history.loading })
+    )
       triggerLoadOlder()
   }
 
@@ -224,6 +242,23 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
       () => {
         if (!props.ready) return
         setAtBottom(true)
+        schedule(scrollToEnd)
+      },
+    ),
+  )
+
+  createEffect(on(() => props.epoch, () => setOlderFailed(false)))
+
+  // `#1588` AC6(批准稿 #send-follow):新出现的最后一条用户消息 = 自己刚发出的 —— 不在底部也回到最新。
+  // 助手生成内容只走下面的贴底跟随(不在底部就不动,与之前一致)。换代后第一次观察只记基线。
+  let lastUser: { epoch: string; key: string | undefined } | undefined
+  createEffect(
+    on(
+      () => [props.epoch, lastUserKeyOf(props.rows)] as const,
+      ([epoch, key]) => {
+        const previous = lastUser
+        lastUser = { epoch, key }
+        if (!previous || previous.epoch !== epoch || key === undefined || key === previous.key) return
         schedule(scrollToEnd)
       },
     ),
@@ -264,9 +299,22 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
                   <Show
                     when={props.history.loading}
                     fallback={
-                      <button type="button" class="a-tl-history-button" onClick={triggerLoadOlder}>
-                        {t("alpha.timeline.loadOlder")}
-                      </button>
+                      <Show
+                        when={olderFailed()}
+                        fallback={
+                          <button type="button" class="a-tl-history-button" onClick={triggerLoadOlder}>
+                            {t("alpha.timeline.loadOlder")}
+                          </button>
+                        }
+                      >
+                        <span class="a-tl-history-failed" data-alpha-timeline-history-failed role="alert">
+                          <span>{t("alpha.timeline.loadOlderFailed")}</span>
+                          <span class="a-tl-int-dot" aria-hidden="true" />
+                          <button type="button" class="a-tl-int-continue" onClick={triggerLoadOlder}>
+                            {t("alpha.timeline.retry")}
+                          </button>
+                        </span>
+                      </Show>
                     }
                   >
                     <span class="a-tl-history-loading">
@@ -283,6 +331,25 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
           </div>
         </ProcessOpenContext.Provider>
       </TimelineIntentsContext.Provider>
+      {/* `#1588` AC1(批准稿 #conv-loading):读取中与读取失败复用会话空态的版式。 */}
+      <Show when={!props.ready && props.read === "slow"}>
+        <div class="a-tl-empty" data-alpha-timeline-read="loading" role="status">
+          <p class="a-tl-read-loading">
+            <span class="a-tl-spinner" aria-hidden="true" />
+            {t("alpha.timeline.reading")}
+          </p>
+        </div>
+      </Show>
+      <Show when={!props.ready && props.read === "failed"}>
+        <div class="a-tl-empty" data-alpha-timeline-read="failed" role="alert">
+          <div class="a-tl-empty-name">{t("alpha.timeline.readFailed")}</div>
+          <Show when={props.onRetryRead}>
+            <button type="button" class="a-tl-int-continue a-tl-read-retry" onClick={() => props.onRetryRead?.()}>
+              {t("alpha.timeline.retry")}
+            </button>
+          </Show>
+        </div>
+      </Show>
       <Show when={props.ready && props.rows.length === 0}>
         <div class="a-tl-empty" data-alpha-timeline-empty>
           <div class="a-tl-empty-name">{props.emptyTitle}</div>
@@ -301,6 +368,12 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
       </Show>
     </div>
   )
+}
+
+/** 最后一条用户消息行的 key;没有 = undefined。 */
+function lastUserKeyOf(rows: readonly TimelineRow[]): string | undefined {
+  for (let index = rows.length - 1; index >= 0; index -= 1) if (rows[index]!.kind === "user") return rows[index]!.key
+  return undefined
 }
 
 function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDisplayNames; turnWait?: TimelineTurnWait }) {
@@ -433,13 +506,30 @@ function displayName(read: () => string, fallback: string) {
   }
 }
 
+// `#1588` AC5(批准稿 #user-meta):第一方模式写输入框里的档名 + 色点,不写内部代号;不在表里的(用户自建的助手)照写原名。
+// 档名复用输入框的同一组文案。Map 而不是对象字面量:agent 名是任意字符串(「constructor」不能命中原型)。
+const FIRST_PARTY_MODES = new Map<string, { label: Parameters<typeof t>[0]; tier: string }>([
+  ["build", { label: "alpha.composer.permAllow", tier: "allow" }],
+  [ASK_AGENT, { label: "alpha.composer.permAsk", tier: "ask" }],
+  [READONLY_AGENT, { label: "alpha.composer.permReadonly", tier: "readonly" }],
+  ["plan", { label: "alpha.composer.plan", tier: "plan" }],
+  [AUTOMATION_DEFAULTS.agent, { label: "alpha.timeline.modeAutomation", tier: "automation" }],
+  [AUTOMATION_DEFAULTS.agentStandard, { label: "alpha.timeline.modeAutomation", tier: "automation" }],
+])
+
 function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNames?: TimelineDisplayNames }) {
   const intents = useTimelineIntents()
+  const mode = () => (props.row.message.agent ? FIRST_PARTY_MODES.get(props.row.message.agent) : undefined)
   const meta = () => {
     const message = props.row.message
-    const agent = message.agent
-      ? displayName(() => props.displayNames?.agent(message.agent!) ?? message.agent!, message.agent)
-      : ""
+    const firstParty = mode()
+    const agent = firstParty
+      ? t(firstParty.label)
+      : message.agent
+        ? t("alpha.timeline.sentTo", {
+            agent: displayName(() => props.displayNames?.agent(message.agent!) ?? message.agent!, message.agent),
+          })
+        : ""
     const modelID = message.model?.modelID ?? ""
     const model = message.model
       ? displayName(
@@ -447,7 +537,7 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
           modelID,
         )
       : ""
-    const items = [agent ? t("alpha.timeline.sentTo", { agent }) : "", model, formatTime(message.time.created)]
+    const items = [agent, model, formatTime(message.time.created)]
     return items.filter(Boolean).join(" · ")
   }
   const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard && !!props.row.copyText()
@@ -575,7 +665,12 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
         )}
       </Show>
       <div class="a-tl-user-meta">
-        <span>{meta()}</span>
+        <span>
+          <Show when={mode()}>
+            {(firstParty) => <i class="a-tl-user-mode" data-tier={firstParty().tier} aria-hidden="true" />}
+          </Show>
+          {meta()}
+        </span>
         <Show when={canCopy || (!!intents.editUserMessage && !!props.row.copyText())}>
           <span class="a-tl-user-actions">
             <Show when={canCopy}>

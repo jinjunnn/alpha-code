@@ -804,6 +804,63 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     }
   })
 
+  // `#1588` AC3 —— 回合错误卡只按错误名与状态码认五类(批准稿 frame.html#turn-error);消息文本一个字都不读。
+  // 围栏拒绝(`#1382`,本身就是 403)与分层联网失败(`#1572`)先认,保持它们的呈现。
+  test("回合级错误:402 / 401 / 403 / ProviderAuthError / 429 / ContextOverflowError / MessageOutputLengthError 归入五类,其余不归类", () => {
+    const turnOf = (error: unknown) =>
+      turnErrorOf([assistantMsg("msg_a1", "msg_u1", { error: error as AssistantMessage["error"] })])
+    const table: Array<[unknown, string]> = [
+      [{ name: "APIError", data: { message: "预授权拒绝: member-only model 需 active 会员", statusCode: 402, isRetryable: false } }, "billing"],
+      [{ name: "APIError", data: { message: "Unauthorized", statusCode: 401, isRetryable: false } }, "auth"],
+      [{ name: "APIError", data: { message: "Forbidden", statusCode: 403, isRetryable: false } }, "auth"],
+      [{ name: "ProviderAuthError", data: { providerID: "deepseek", message: "invalid api key" } }, "auth"],
+      [{ name: "APIError", data: { message: "rate limited", statusCode: 429, isRetryable: true } }, "rateLimit"],
+      [{ name: "ContextOverflowError", data: { message: "prompt is too long" } }, "contextOverflow"],
+      [{ name: "MessageOutputLengthError", data: {} }, "outputLength"],
+    ]
+    for (const [error, cause] of table) expect({ error, cause: turnOf(error)?.cause }).toEqual({ error, cause })
+    expect(turnOf(table[0]![0])).toMatchObject({ statusCode: 402, message: "预授权拒绝: member-only model 需 active 会员" })
+
+    // 认不出:无状态码的 APIError(哪怕文字里写着 402)、其它状态码、其它错误名 —— 不归类,原话照旧。
+    for (const error of [
+      { name: "APIError", data: { message: "Cannot connect to API: Request was cancelled.", isRetryable: false } },
+      { name: "APIError", data: { message: "402 Payment Required", isRetryable: false } },
+      { name: "APIError", data: { message: "Internal Server Error", statusCode: 500, isRetryable: true } },
+      { name: "UnknownError", data: { message: "429 rate limit" } },
+    ]) {
+      const turn = turnOf(error)
+      expect({ error, cause: turn?.cause, message: turn?.message }).toEqual({ error, cause: undefined, message: error.data.message })
+    }
+
+    // 围栏拒绝的 403 仍归围栏;引擎认出了网络层的仍归分层 —— 本票不抢它们的呈现。
+    const egress = turnOf({
+      name: "APIError",
+      data: { message: "Forbidden: alpha egress policy: api.deepseek.com:443 denied (reason=unregistered) — x", statusCode: 403, isRetryable: false },
+    })
+    expect({ egressDenied: egress?.egressDenied, cause: egress?.cause }).toEqual({
+      egressDenied: { authority: "api.deepseek.com:443" },
+      cause: undefined,
+    })
+    const layered = turnOf({
+      name: "APIError",
+      data: { message: "x", statusCode: 429, isRetryable: true, metadata: { alphaNetLayer: "dns", alphaNetCode: "x" } },
+    })
+    expect({ netLayer: layered?.netLayer, cause: layered?.cause }).toEqual({ netLayer: "dns", cause: undefined })
+
+    // 投影到行:原因进 rev,同一回合从「认不出」变成「认得出」时行会重建。
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", { error: table[0]![0] as AssistantMessage["error"] }),
+      ],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] },
+    )
+    const last = rows.at(-1)!
+    if (last.kind !== "turnError") throw new Error("expected turnError row")
+    expect({ cause: last.cause, statusCode: last.statusCode }).toEqual({ cause: "billing", statusCode: 402 })
+    expect(last.rev).toContain("billing")
+  })
+
   test("重试:status=retry 且活跃回合 → 工作过程带 retry(attempt + 有界 message),不另挂重试行", () => {
     const rows = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "retry", {
       attempt: 2,

@@ -105,6 +105,9 @@ const bindingData: {
   part: Record<string, unknown[]>
   session_status: Record<string, { type: string }>
 } = { message: {}, part: {}, session_status: {} }
+// `#1588` AC1:生产绑定层读取消息页的那一次 `session.sync` —— 记下每次的参数,行为可替换(拒绝 / 永不落定)。
+const bindingSyncCalls: unknown[][] = []
+let bindingSyncImpl: () => Promise<void> = () => Promise.resolve()
 
 mock.module("@opencode-ai/app", () => ({
   useLayout: () => ({ tabs: () => ({ all: () => [], active: () => undefined }) }),
@@ -135,7 +138,10 @@ mock.module("@opencode-ai/app", () => ({
   useServerSync: () => () => ({
     data: { provider: { all: new Map() } },
     session: {
-      sync: () => Promise.resolve(),
+      sync: (...args: unknown[]) => {
+        bindingSyncCalls.push(args)
+        return bindingSyncImpl()
+      },
       data: bindingData,
       history: { more: () => false, loading: () => false, loadMore: () => Promise.resolve() },
     },
@@ -435,7 +441,9 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
 
     const first = host.querySelector<HTMLElement>("[data-alpha-timeline-row='user']")!
     const meta = first.querySelector<HTMLElement>(".a-tl-user-meta")!
-    expect(meta.textContent).toContain("发往 Build")
+    // `#1588` AC5:第一方模式 build 写档名「全部批准」,不再写内部代号「发往 Build」。
+    expect(meta.textContent).toContain("全部批准")
+    expect(meta.textContent).not.toContain("Build")
     expect(meta.textContent).toContain("DeepSeek Reasoner")
     expect(meta.textContent).not.toContain("deepseek-reasoner")
 
@@ -4349,3 +4357,355 @@ async function settleCard() {
     await flush()
   }
 }
+
+// ── `#1588`:对话页读取与回复失败说清原因并给出路;消息脚注写档名;自己发出后回到最新 ─────────────
+// 期望文案是批准稿 docs/design/2026-10-30-req236-ux-core-pages/frame.html 文案表的**独立字面量**,不从 i18n 读回。
+
+describe("#1588 AC1 对话读取:读取中 / 失败 / 重试发出新请求(生产绑定层挂载,批准稿 #conv-loading)", () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  const readRow = (host: Element, state: "loading" | "failed") =>
+    host.querySelector<HTMLElement>(`[data-alpha-timeline-read='${state}']`)
+
+  function mountUnread(readDeadlineMs?: number) {
+    delete bindingData.message[BINDING_SESSION_ID]
+    bindingSyncCalls.length = 0
+    const host = document.createElement("div")
+    document.body.append(host)
+    disposers.push(solidWeb.render(() => binding.AlphaSessionTimeline({ readDeadlineMs }), host))
+    return host
+  }
+
+  afterEach(() => {
+    bindingSyncImpl = () => Promise.resolve()
+  })
+
+  test("消息未就绪超过 0.3 秒才显示「正在读取对话…」(之前什么都不显示)", async () => {
+    bindingSyncImpl = () => new Promise<void>(() => {})
+    const host = mountUnread()
+    await sleep(50)
+    expect(readRow(host, "loading")).toBeNull()
+    expect(readRow(host, "failed")).toBeNull()
+
+    await sleep(350)
+    const loading = readRow(host, "loading")!
+    expect(loading.getAttribute("role")).toBe("status")
+    expect(loading.textContent).toBe("正在读取对话…")
+    expect(host.querySelector("[data-alpha-timeline-empty]")).toBeNull()
+  })
+
+  test("读取被拒 → 「对话读取失败」+「重试」", async () => {
+    bindingSyncImpl = () => Promise.reject(new Error("load failed"))
+    const host = mountUnread()
+    await sleep(0)
+    await flush()
+    const failed = readRow(host, "failed")!
+    expect(failed.getAttribute("role")).toBe("alert")
+    expect(failed.querySelector(".a-tl-empty-name")!.textContent).toBe("对话读取失败")
+    expect(failed.querySelector("button")!.textContent).toBe("重试")
+    expect(readRow(host, "loading")).toBeNull()
+  })
+
+  test("读取永不落定 → 到读取期限出现失败行", async () => {
+    bindingSyncImpl = () => new Promise<void>(() => {})
+    const host = mountUnread(600)
+    await sleep(400)
+    expect(readRow(host, "failed")).toBeNull()
+    expect(readRow(host, "loading")).not.toBeNull()
+    await sleep(300)
+    expect(readRow(host, "failed")).not.toBeNull()
+    expect(readRow(host, "loading")).toBeNull()
+  })
+
+  test("「重试」发出新的读取请求:第二次请求带 restart,不加入仍挂着的那一个", async () => {
+    bindingSyncImpl = () => new Promise<void>(() => {})
+    const host = mountUnread(40)
+    await sleep(80)
+    expect(bindingSyncCalls).toEqual([[BINDING_SESSION_ID, undefined]])
+
+    readRow(host, "failed")!.querySelector<HTMLButtonElement>("button")!.click()
+    await flush()
+    expect(bindingSyncCalls).toEqual([[BINDING_SESSION_ID, undefined], [BINDING_SESSION_ID, { restart: true }]])
+    // 新的一次重新计时:失败行先退场,到期仍未就绪再回来。
+    expect(readRow(host, "failed")).toBeNull()
+    await sleep(80)
+    expect(readRow(host, "failed")).not.toBeNull()
+  })
+})
+
+describe("#1588 AC2 往上翻加载更早消息失败(批准稿 #conv-loading)", () => {
+  test("onLoadOlder 拒绝 → 那一行写「更早的消息加载失败 · 重试」;「重试」再次发起加载,成功后复原", async () => {
+    runtime.setLoadOlderRejecting(true)
+    const host = mount()
+    runtime.setTimelineRows(conversationRows())
+    runtime.setTimelineHistory({ more: true, loading: false })
+    await flush()
+
+    host.querySelector<HTMLButtonElement>(".a-tl-history-button")!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flush()
+    expect(runtime.getLoadOlderCalls()).toBe(1)
+    const failed = host.querySelector<HTMLElement>("[data-alpha-timeline-history-failed]")!
+    expect(failed.getAttribute("role")).toBe("alert")
+    expect(failed.textContent).toBe("更早的消息加载失败重试")
+    expect(failed.querySelector(".a-tl-int-dot")).not.toBeNull()
+    expect(host.querySelector(".a-tl-history-button")).toBeNull()
+
+    runtime.setLoadOlderRejecting(false)
+    failed.querySelector<HTMLButtonElement>("button")!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flush()
+    expect(runtime.getLoadOlderCalls()).toBe(2)
+    expect(host.querySelector("[data-alpha-timeline-history-failed]")).toBeNull()
+    expect(host.querySelector(".a-tl-history-button")!.textContent).toBe("加载更早的消息")
+  })
+})
+
+describe("#1588 AC3 回合错误卡:五类按错误名与状态码认,标题与按钮照批准稿 #turn-error,原话只在开发者详情", () => {
+  const RAW = "预授权拒绝: member-only model 需 active 会员"
+
+  function causeRows(error: { name: string; data: Record<string, unknown> }) {
+    return model.projectTimelineRows({
+      messages: [
+        { id: "msg_u1", sessionID: "ses_1", role: "user", time: { created: 1000 }, agent: "build", model: { providerID: "deepseek", modelID: "deepseek-chat" } },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: 10 },
+          parentID: "msg_u1",
+          modelID: "deepseek-chat",
+          providerID: "deepseek",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          error,
+        },
+      ] as never,
+      partsOf: (messageID: string) =>
+        (messageID === "msg_u1"
+          ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" }]
+          : []) as never,
+      status: "idle",
+    })
+  }
+
+  const card = (host: Element) => host.querySelector<HTMLElement>("[data-alpha-timeline-row='turn-error']")!
+  const buttons = (host: Element) => [...card(host).querySelectorAll<HTMLButtonElement>("[data-alpha-turn-error-actions] button")]
+  /** 卡上除「开发者详情」之外用户直接看得到的文字。 */
+  const visibleText = (host: Element) => {
+    const clone = card(host).cloneNode(true) as HTMLElement
+    clone.querySelectorAll("details").forEach((details) => details.remove())
+    return clone.textContent ?? ""
+  }
+
+  const table = [
+    { error: { name: "APIError", data: { message: RAW, statusCode: 402, isRetryable: false } }, title: "余额或会员不足", actions: ["充值"], exits: ["recharge"] },
+    { error: { name: "APIError", data: { message: "Unauthorized", statusCode: 401, isRetryable: false } }, title: "登录或 Key 无效", actions: ["重新登录", "去设置"], exits: ["signIn", "openSettings"] },
+    { error: { name: "APIError", data: { message: "Forbidden", statusCode: 403, isRetryable: false } }, title: "登录或 Key 无效", actions: ["重新登录", "去设置"], exits: ["signIn", "openSettings"] },
+    { error: { name: "ProviderAuthError", data: { providerID: "deepseek", message: "invalid api key" } }, title: "登录或 Key 无效", actions: ["重新登录", "去设置"], exits: ["signIn", "openSettings"] },
+    { error: { name: "APIError", data: { message: "rate limited", statusCode: 429, isRetryable: true } }, title: "请求太频繁,稍后再试", actions: [], exits: [] },
+    { error: { name: "ContextOverflowError", data: { message: "prompt is too long" } }, title: "对话太长", actions: ["新对话"], exits: ["newSession"] },
+  ]
+
+  test("402 / 401 / 403 / ProviderAuthError / 429 / ContextOverflowError → 固定标题与按钮,按钮触发既有入口;原话只在开发者详情", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    for (const item of table) {
+      runtime.getIntentLog().turnErrorExits.length = 0
+      runtime.setTimelineRows(causeRows(item.error))
+      await flush()
+      const label = `${item.error.name} ${String(item.error.data.statusCode ?? "")}`
+      expect({ label, title: card(host).querySelector("b")!.textContent }).toEqual({ label, title: item.title })
+      expect({ label, actions: buttons(host).map((button) => button.textContent) }).toEqual({ label, actions: item.actions })
+      buttons(host).forEach((button) => button.click())
+      expect({ label, exits: [...runtime.getIntentLog().turnErrorExits] }).toEqual({ label, exits: item.exits })
+      // 错误名、状态码与服务原话只在卡内「开发者详情」(默认折叠)。
+      const message = String(item.error.data.message)
+      expect({ label, leaked: [item.error.name, message].filter((text) => visibleText(host).includes(text)) }).toEqual({ label, leaked: [] })
+      const details = card(host).querySelector<HTMLDetailsElement>("details[data-alpha-dev-details]")!
+      expect(details.open).toBe(false)
+      expect(details.querySelector("summary")!.textContent).toBe("开发者详情")
+      expect(details.textContent).toContain(item.error.name)
+      expect(details.textContent).toContain(message)
+      // 冻结面:图标、标题位、卡片样式不变。
+      expect(card(host).getAttribute("role")).toBe("alert")
+      expect(card(host).querySelector(":scope > svg")).not.toBeNull()
+    }
+    // 批准稿那一行逐字:APIError 402 · 原话。
+    runtime.setTimelineRows(causeRows(table[0]!.error))
+    await flush()
+    expect(card(host).querySelector("details .a-turn-err-code")!.textContent).toBe(`APIError 402 · ${RAW}`)
+  })
+
+  test("MessageOutputLengthError → 「回答被截断」+「继续」,继续走中断行同一个续写入口", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(causeRows({ name: "MessageOutputLengthError", data: {} }))
+    await flush()
+    expect(card(host).querySelector("b")!.textContent).toBe("回答被截断")
+    expect(buttons(host).map((button) => button.textContent)).toEqual(["继续"])
+    buttons(host)[0]!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(runtime.getIntentLog().continueTurn).toBe(1)
+  })
+
+  test("入口缺席 → 不出按钮(fail-closed);认不出的错误(含无状态码的 APIError)呈现不变", async () => {
+    const host = mount()
+    runtime.setTimelineRows(causeRows(table[0]!.error))
+    await flush()
+    expect(card(host).querySelector("b")!.textContent).toBe("余额或会员不足")
+    expect(card(host).querySelector("[data-alpha-turn-error-actions]")).toBeNull()
+
+    for (const error of [
+      { name: "APIError", data: { message: "Cannot connect to API: Request was cancelled.", isRetryable: false } },
+      { name: "APIError", data: { message: "Internal Server Error", statusCode: 500, isRetryable: true } },
+      { name: "UnknownError", data: { message: "boom" } },
+    ]) {
+      runtime.setTimelineRows(causeRows(error))
+      await flush()
+      const label = `${error.name} ${String(error.data.statusCode ?? "")}`
+      expect({ label, title: card(host).querySelector("b")!.textContent }).toEqual({ label, title: "这轮回复没有完成" })
+      expect({ label, body: card(host).querySelector("p")?.textContent }).toEqual({ label, body: error.data.message })
+      expect({ label, code: card(host).querySelector(":scope .a-turn-err-content > .a-turn-err-code")?.textContent }).toEqual({
+        label,
+        code: error.name,
+      })
+      expect({ label, cause: card(host).hasAttribute("data-cause"), details: !!card(host).querySelector("details") }).toEqual({
+        label,
+        cause: false,
+        details: false,
+      })
+    }
+  })
+})
+
+describe("#1588 AC5 用户消息脚注:第一方模式写档名与色点,自建助手照写原名(批准稿 #user-meta)", () => {
+  function userRowsWithAgents(agents: string[]) {
+    return model.projectTimelineRows({
+      messages: agents.map((agent, index) => ({
+        id: `msg_u${index}`,
+        sessionID: "ses_1",
+        role: "user",
+        time: { created: 1000 + index },
+        agent,
+        model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+      })) as never,
+      partsOf: (messageID: string) =>
+        [{ id: `prt_${messageID}`, sessionID: "ses_1", messageID, type: "text", text: `说一句 ${messageID}` }] as never,
+      status: "idle",
+    })
+  }
+
+  test("build / codepuppy-ask / codepuppy-readonly / plan / codepuppy-automation(-standard) → 档名 + 色点;未知 agent 原样", async () => {
+    const agents = [
+      "build",
+      "codepuppy-ask",
+      "codepuppy-readonly",
+      "plan",
+      "codepuppy-automation",
+      "codepuppy-automation-standard",
+      "my-helper",
+      "constructor",
+    ]
+    const host = mount()
+    runtime.setTimelineRows(userRowsWithAgents(agents))
+    await flush()
+    const metas = [...host.querySelectorAll<HTMLElement>("[data-alpha-timeline-row='user'] .a-tl-user-meta > span:first-child")]
+    const shown = metas.map((meta) => ({
+      head: (meta.textContent ?? "").split(" · ")[0],
+      tier: meta.querySelector(".a-tl-user-mode")?.getAttribute("data-tier") ?? null,
+    }))
+    expect(shown).toEqual([
+      { head: "全部批准", tier: "allow" },
+      { head: "请求审批", tier: "ask" },
+      { head: "只读", tier: "readonly" },
+      { head: "计划", tier: "plan" },
+      { head: "自动化任务", tier: "automation" },
+      { head: "自动化任务", tier: "automation" },
+      { head: "发往 my-helper", tier: null },
+      { head: "发往 constructor", tier: null },
+    ])
+    // 模型名与时间照旧跟在后面。
+    expect(metas[0]!.textContent).toContain("DeepSeek Reasoner")
+    expect(metas.map((meta) => meta.textContent).join("\n")).not.toMatch(/codepuppy-|Build|Codepuppy/)
+  })
+})
+
+describe("#1588 AC6 发送后:不在底部时自己发出的新消息出现 → 回到最新;助手生成内容不跟随(批准稿 #send-follow)", () => {
+  function chatRows(userCount: number, assistantText?: string) {
+    const messages: unknown[] = []
+    const parts: Record<string, unknown[]> = {}
+    for (let index = 0; index < userCount; index += 1) {
+      messages.push({
+        id: `msg_u${index}`,
+        sessionID: "ses_1",
+        role: "user",
+        time: { created: 1000 + index * 10 },
+        agent: "build",
+        model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+      })
+      parts[`msg_u${index}`] = [{ id: `prt_u${index}`, sessionID: "ses_1", messageID: `msg_u${index}`, type: "text", text: `第 ${index} 条` }]
+    }
+    if (assistantText !== undefined) {
+      const parentID = `msg_u${userCount - 1}`
+      messages.push({
+        id: "msg_zz",
+        sessionID: "ses_1",
+        role: "assistant",
+        time: { created: 5000, completed: 5001 },
+        parentID,
+        modelID: "deepseek-reasoner",
+        providerID: "deepseek",
+        mode: "build",
+        agent: "build",
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      parts.msg_zz = [{ id: "prt_zz", sessionID: "ses_1", messageID: "msg_zz", type: "text", text: assistantText }]
+    }
+    return model.projectTimelineRows({
+      messages: messages as never,
+      partsOf: (messageID: string) => (parts[messageID] ?? []) as never,
+      status: "idle",
+    })
+  }
+
+  const frame = () => new Promise((resolve) => setTimeout(resolve, 30))
+
+  async function scrolledUp() {
+    const host = mount()
+    runtime.setTimelineRows(chatRows(2))
+    await flush()
+    await frame()
+    const scrollEl = host.querySelector(".a-tl-scroll") as HTMLElement
+    Object.defineProperty(scrollEl, "scrollHeight", { value: 900, configurable: true })
+    Object.defineProperty(scrollEl, "clientHeight", { value: 200, configurable: true })
+    scrollEl.scrollTop = 300
+    scrollEl.dispatchEvent(new Event("scroll"))
+    await flush()
+    expect(host.querySelector(".a-tl-jump")).not.toBeNull()
+    return { host, scrollEl }
+  }
+
+  test("不在底部时追加自己的用户消息 → 视图回到最新", async () => {
+    const { host, scrollEl } = await scrolledUp()
+    runtime.setTimelineRows(chatRows(3))
+    await flush()
+    await frame()
+    expect(scrollEl.scrollTop).toBe(900)
+    expect(host.querySelector(".a-tl-jump")).toBeNull()
+  })
+
+  test("不在底部时助手追加内容 → 视图不动(与今天一致)", async () => {
+    const { host, scrollEl } = await scrolledUp()
+    runtime.setTimelineRows(chatRows(2, "助手的回答"))
+    await flush()
+    ResizeObserverStub.instances.at(-1)!.trigger()
+    await frame()
+    expect(scrollEl.scrollTop).toBe(300)
+    expect(host.querySelector(".a-tl-jump")).not.toBeNull()
+  })
+})

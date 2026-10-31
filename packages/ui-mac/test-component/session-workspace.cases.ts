@@ -148,28 +148,63 @@ describe("REQ-125 session workspace real Solid mount", () => {
     expect(runtime.terminalChannelCalls).toEqual(["requestFocus:pty_1", "cancelFocus", "requestFocus:pty_1"])
   })
 
-  test("topbar status renders the approved idle and generating states", async () => {
+  // `#1588` AC4(批准稿 #conv-header):状态读时间线同一个等待信号 —— 等你批准 / 等你回答 / 正在重试 / 正在生成;
+  // 空闲不显示。期望文案是批准稿文案表的独立字面量。
+  test("topbar status follows the timeline wait signal; idle renders no status", async () => {
     const host = mount()
     await flush()
-    const status = () => host.querySelector<HTMLElement>("[data-alpha-session-status]")!
+    const status = () => host.querySelector<HTMLElement>("[data-alpha-session-status]")
+    const running = (retrying?: true) =>
+      runtime.setSessionWorkspaceSnapshot({
+        identity: { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_running" },
+        project: "workspace",
+        title: "整理架构说明",
+        activity: "running",
+        ...(retrying ? { retrying } : {}),
+      })
 
-    expect(status().dataset.alphaSessionStatus).toBe("idle")
-    expect(status().textContent).toContain("空闲")
+    expect(status()).toBeNull()
+    expect(host.querySelector("[data-alpha-session-workspace-topbar]")!.textContent).not.toContain("空闲")
+    // 空闲时等待信号残留也不说(与时间线一致:只有活跃回合才「在等你」)。
+    runtime.setSessionWorkspaceTurnWait("approval")
+    await flush()
+    expect(status()).toBeNull()
+
+    running()
+    runtime.setSessionWorkspaceTurnWait(undefined)
+    await flush()
+    expect({ kind: status()!.dataset.alphaSessionStatus, text: status()!.textContent }).toEqual({ kind: "running", text: "正在生成" })
+
+    runtime.setSessionWorkspaceTurnWait("approval")
+    await flush()
+    expect({ kind: status()!.dataset.alphaSessionStatus, text: status()!.textContent }).toEqual({ kind: "approval", text: "等你批准" })
+
+    runtime.setSessionWorkspaceTurnWait("question")
+    await flush()
+    expect({ kind: status()!.dataset.alphaSessionStatus, text: status()!.textContent }).toEqual({ kind: "question", text: "等你回答" })
+
+    runtime.setSessionWorkspaceTurnWait(undefined)
+    running(true)
+    await flush()
+    expect({ kind: status()!.dataset.alphaSessionStatus, text: status()!.textContent }).toEqual({ kind: "retry", text: "正在重试" })
+    expect(status()!.getAttribute("role")).toBe("status")
+  })
+
+  test("project avatar shows the project initial, and no legacy α glyph when the project name is missing", async () => {
+    const host = mount()
+    await flush()
+    const avatar = () => host.querySelector<HTMLElement>(".a-swk-project-avatar")!
+    expect(avatar().textContent).toBe("W")
 
     runtime.setSessionWorkspaceSnapshot({
-      identity: {
-        serverKey: "sidecar",
-        directory: "/tmp/workspace",
-        sessionID: "ses_running",
-      },
-      project: "workspace",
+      identity: { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_idle" },
+      project: "",
       title: "整理架构说明",
-      activity: "running",
+      activity: "idle",
     })
     await flush()
-
-    expect(status().dataset.alphaSessionStatus).toBe("running")
-    expect(status().textContent).toContain("正在生成")
+    expect(avatar().textContent).toBe("")
+    expect(host.querySelector("[data-alpha-session-workspace-topbar]")!.textContent).not.toContain("α")
   })
 
   test("tabs fail closed while a lane has not landed its renderer; terminal has a built-in fallback", async () => {
@@ -563,7 +598,7 @@ describe("REQ-159 #1322 workspace read-only disclosure on the topbar (AC2)", () 
   test("inside the writable set (today's default): no pill, no popover", async () => {
     const host = mount()
     await flush()
-    expect(host.querySelector("[data-alpha-session-status]")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-session-workspace-topbar]")).not.toBeNull()
     expect(pill(host)).toBeNull()
     expect(pop(host)).toBeNull()
   })
@@ -571,6 +606,13 @@ describe("REQ-159 #1322 workspace read-only disclosure on the topbar (AC2)", () 
   test("outside the writable set: a 只读 pill sits right after the status pill (role=status); hover and click open the popover; restart calls the host relaunch; Esc closes; state-driven", async () => {
     const host = mount()
     await flush()
+    // `#1588` AC4:空闲不显示状态胶囊 —— 位置断言放在生成中(状态胶囊在场)时做。
+    runtime.setSessionWorkspaceSnapshot({
+      identity: { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_idle" },
+      project: "workspace",
+      title: "整理架构说明",
+      activity: "running",
+    })
     runtime.setSessionWorkspaceReadonly(true)
     await flush()
 

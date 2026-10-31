@@ -1,4 +1,10 @@
-import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServerSync } from "@opencode-ai/app"
+import {
+  ServerConnection,
+  type MaybePreloadableComponent,
+  useCommand,
+  useServerSDK,
+  useServerSync,
+} from "@opencode-ai/app"
 import { useLocation } from "@solidjs/router"
 import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
@@ -47,6 +53,8 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
   const location = useLocation()
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
+  // `#1588` AC3:回合错误卡「新对话」走侧栏注册的同一条「新对话」命令(唯一入口,REQ-126)。
+  const command = useCommand()
   const current = createMemo(() => {
     const route = parseRoute(location.pathname, location.search)
     const session = route.kind === "session" && route.id ? serverSync().session.data.info[route.id] : undefined
@@ -155,6 +163,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
               onReadAttachment={canEditUserMessage() ? readAttachment : undefined}
               turnWait={turnWait}
               onFocusPrompt={composerFocus.focus}
+              onNewSession={() => command.trigger("session.new")}
             />
           )}
           composer={() => (
@@ -176,6 +185,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
           sandbox={sandboxApplied}
           workspaceReadonly={workspaceReadonly}
           relaunch={() => window.api.relaunch()}
+          turnWait={turnWait}
         />
       </SessionLiveProvider>
     </SurfaceBoundary>
