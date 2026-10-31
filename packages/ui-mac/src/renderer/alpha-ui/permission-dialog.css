@@ -1,5 +1,46 @@
 @import "./base.css";
 
+/* #1617:「要做什么」一行人话 + 至多一行工具 / 助手 / 资源(批准稿 2026-10-30-req236-permission-cards 帧 A–D)。 */
+.a-permission-what {
+  display: grid;
+  gap: var(--a-space-2);
+  min-width: 0;
+  margin-top: var(--a-space-3);
+}
+
+.a-permission-what small {
+  overflow-wrap: anywhere;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+.a-permission-verb {
+  margin: 0;
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+}
+
+.a-permission-tool {
+  display: grid;
+  gap: 1px;
+  padding: 10px 14px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+}
+
+.a-permission-tool b {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-permission-tool small {
+  font-size: var(--a-text-2xs);
+}
+
 .a-permission-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -13,10 +54,6 @@
   border: 1px solid var(--a-border-faint);
   border-radius: var(--a-radius-lg);
   background: var(--a-bg-subtle);
-}
-
-.a-permission-fact--wide {
-  grid-column: 1 / -1;
 }
 
 .a-permission-fact dt {
@@ -168,10 +205,6 @@
 @media (max-width: 560px) {
   .a-permission-facts {
     grid-template-columns: 1fr;
-  }
-
-  .a-permission-fact--wide {
-    grid-column: auto;
   }
 
   .a-permission-actions {
