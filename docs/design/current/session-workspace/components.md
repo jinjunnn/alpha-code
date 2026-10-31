@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-09-10
+last_reviewed: 2026-10-31
 review_after: 2027-01-16
 ---
 
@@ -28,4 +28,4 @@ review_after: 2027-01-16
 | 文件查看器(文件面下钻 + html/pdf 就地预览) | `#files` | [`2026-08-28-req108-rail-file-viewer/`](../../2026-08-28-req108-rail-file-viewer/frame.html) | — | ac#244(子票 ac#245 · ac#246) | — | 现状:`session-rail/files/*` 点击写入无消费者的 tab store(悬空);查看器待实现 | 设计中 |
 | 终端面沙箱告知(脚条第三项 + 空态一行 + 悬停层) | `#term-sandbox` | [`2026-09-10-req159-sandbox-disclosure/`](../../2026-09-10-req159-sandbox-disclosure/frame.html) | 2026-09-10 | ac#1322 | 2026-09-10 | `session-rail/terminal/terminal-rail-panel.tsx`(脚条项 `data-alpha-terminal-foot-sandbox` · 空态行 `data-alpha-terminal-empty-sandbox` · 悬停层)· `alpha-ui/sandbox-state.ts`(围栏信号在 renderer 侧的唯一读取点,引擎自报) | 已实现 |
 | 工作区只读告知(顶栏胶囊;第二宿主 = 首页 / 新对话 chip 尾标) | `#wtop-readonly` | [`2026-09-10-req159-sandbox-disclosure/`](../../2026-09-10-req159-sandbox-disclosure/frame.html) | 2026-09-10 | ac#1322 | 2026-09-10 | `session-workspace/session-workspace-shell.tsx`(顶栏胶囊 `data-alpha-workspace-readonly` + 弹层)· `alpha-ui/workspace-chip.tsx`(chip 尾标 `data-alpha-workspace-chip-readonly`)· `alpha-ui/workspace-writable{,-core}.ts`(四态)· `main/workspace-write-probe.ts`(探针本体,只在被围栏的 sidecar 里执行) | 已实现 |
-| 顶栏标题与状态(与侧栏同一标题显示规则;状态跟随等待信号;空闲不显示) | `#conv-header` | [`2026-10-30-req236-ux-core-pages/`](../../2026-10-30-req236-ux-core-pages/frame.html) | — | 待立(本稿票表 T1 状态 · T2 标题) | — | 现状:`session-workspace/session-workspace-shell.tsx:205-226` · `session-workspace-core.ts:46-47` | 设计中 |
+| 顶栏标题与状态(与侧栏同一标题显示规则;状态跟随等待信号;空闲不显示) | `#conv-header` | [`2026-10-30-req236-ux-core-pages/`](../../2026-10-30-req236-ux-core-pages/frame.html) | 2026-10-31 | ac#1588(状态 · 头像)· ac#1589(标题) | 2026-10-31(ac#1588)· 2026-10-30(ac#1589) | `session-workspace/session-workspace-shell.tsx`(`WorkspaceTopbar` 的 `status`、`.a-swk-status--wait`)· `session-workspace-core.ts`(`retrying`;标题 `sessionDisplayTitle`)· `alpha-session-workspace.tsx`(把等待信号交给顶栏)· `session-workspace.css` | 已落地(差异列在 `design.html#conv-header-diff`) |

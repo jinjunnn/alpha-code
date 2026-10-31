@@ -79,7 +79,7 @@
         <span class="attach2"><span class="fi img"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5L6 20"/></svg></span><span class="nm"><b>界面截图.png</b><small>PNG · 1.2 MB</small></span></span>
       </div>
       <div class="bubble"><span class="conn-chip"><span class="d" style="background:#24292f">GH</span>GitHub</span>对照 <span class="m-file"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>README.md</span> 核对仓库结构,交给 <span class="m-agent"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>@build</span> 写一句话简介。</div>
-      <div class="umeta"><span>发往 Build · DeepSeek Reasoner · 11:19</span><span class="act"><button title="复制"><svg class="ic xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="编辑重发"><svg class="ic xs" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></span></div>
+      <div class="umeta"><span><i class="pdot" data-tier="allow"></i>全部批准 · DeepSeek Reasoner · 11:19</span><span class="act"><button title="复制"><svg class="ic xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="编辑重发"><svg class="ic xs" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></span></div>
     </div>
 
     <div class="label">内联代码评论(用户消息内)</div>
@@ -172,7 +172,7 @@
     <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>这轮回复没有完成</b><p>这台电脑上的网络策略拦下了这次请求 —— api.deepseek.com:443 不在本应用允许访问的地址名单里。不是模型服务的问题,也不是你的 Key 的问题;原样再发一次仍会被同一道策略拦下。</p><span class="code">APIError</span></div></div>
 
   </div></div>
-  <div class="note"><b>新帧 · 回合级错误卡</b>:助手回合末的<b>全宽错误行</b>(限流 / 接口报错 / 上下文超限三类场景),纯文本、无重试与换模型按钮。与 ③ 的「工具级错误卡」是两个组件:回合级 = 行模型的错误行,挂在回合末,只陈述事实与下一步;工具级 = 内嵌在具体工具卡里、带动作按钮。未知错误代码按原样 mono 展示(fail-closed,不猜翻译)。</div>
+  <div class="note"><b>新帧 · 回合级错误卡</b>:助手回合末的<b>全宽错误行</b>(限流 / 接口报错 / 上下文超限三类场景),纯文本、无重试与换模型按钮(<b>2026-10-31 起部分取代</b>:认得出的五类原因 —— 余额或会员不足 / 登录或 Key 无效 / 请求太频繁 / 对话太长 / 回答被截断 —— 改写人话标题 + 出路按钮,原话收进开发者详情,见 <a href="#turn-error">⑨ 回复失败</a>;认不出的仍是本帧)。与 ③ 的「工具级错误卡」是两个组件:回合级 = 行模型的错误行,挂在回合末,只陈述事实与下一步;工具级 = 内嵌在具体工具卡里、带动作按钮。未知错误代码按原样 mono 展示(fail-closed,不猜翻译)。</div>
   <div class="note"><b>回合级错误卡的第四种场景 · 被本机出网策略拦下</b>:桌面端把引擎的出网强制经一道本机策略,不在允许名单里的目的地会被拒。此前这类失败在卡上只留下一串英文工程话(<span class="mono">Forbidden: alpha egress policy: …</span>),用户读不出是<b>自己这台电脑</b>拦的,于是去重试、去查自己的 Key、去怀疑供应商。<b>卡的形态一个像素不变</b> —— 同一个图标、同一个固定标题、同一段正文位、同一枚 mono 错误码、同样无动作按钮;换的只是正文那句话:说明是本机网络策略拦的、点出被拒的目的地、并明说再发一次没有用。目的地在句内以正文呈现(不另起 mono 元素),与本卡「纯文本」的既定形态一致。<b>只在策略真的说「不」时才这么说</b>:同一道策略还会因为「目的地登记了但连不上」而失败,那是真的网络故障,仍走上一帧的通用文案 —— 归因说错比不归因更坏,它会把人引去查放行名单。<b>不提供「临时放行这个地址」的入口</b>:那是把一个安全决定交给一次点击,需要单独裁。</div>
   <div class="note"><b>新帧 · 媒体预览行</b>:工具产出的图片 / 截图以「缩略图 + 文件名 + 尺寸元信息」成行,挂在产出它的助手回合内;点击 → 右栏「产物」面板聚焦该文件 —— 联动契约与产物链接行同一套(见 ⑥ 与 session-workspace 稿),此处只定行形态。</div>
 
@@ -1276,6 +1276,61 @@ rendering chunks (12/31)...</div></div>
   </tbody>
 </table>
 
+  <!-- ════════════════ ⑨ 读取 · 回复失败 · 脚注 · 发送后(增量稿 2026-10-30-req236-ux-core-pages,owner 2026-10-30 批准;2026-10-31 按已出货代码并入)════════════════ -->
+  <div class="sec-kicker" id="core-pages" style="margin-top:40px">⑨ 读取对话 · 回复失败 · 用户消息脚注 · 发送后(2026-10-30 已批增量,按已出货代码并入)</div>
+  <h2 class="t">读不到、答不出时都有一句人话和一个能点的出路</h2>
+  <div class="note"><b>与上一稿的关系</b>:继承 ④ 的会话内空态版式、② 的回合级错误卡外壳(图标、标题位、卡片样式不变)、① 的用户消息脚注位置。改了四处:打开对话时内容未到 / 读不到不再是空白;回合错误卡认得出的五类原因写人话标题并给出路,原话收进开发者详情;脚注写所选权限档而不是内部代号;往上翻着看时自己发出消息,视图回到最新。来源:<a href="../../2026-10-30-req236-ux-core-pages/frame.html#conv-loading">批准稿</a>(冻结,不再编辑)。帧按上线代码画,与批准稿的差异列在本节末。</div>
+
+  <div class="label" id="conv-loading">读取对话 · 读取中 / 读取失败或到期限 / 更早的消息加载失败</div>
+  <div class="frame"><div style="min-height:200px;display:grid;grid-template-columns:1fr 1fr;place-items:center;background:var(--a-bg-canvas)">
+    <div class="sess-empty" role="status"><p><span class="read-sp" aria-hidden="true"></span>正在读取对话…</p></div>
+    <div class="sess-empty" role="alert"><div class="se-name">对话读取失败</div><span class="cont">重试</span></div>
+  </div></div>
+  <div class="frame"><div class="tl"><div class="interrupted" style="justify-content:center"><span>更早的消息加载失败</span><span class="dot" style="width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)"></span><span class="cont">重试</span></div></div></div>
+  <div class="note"><b>什么时候出现</b>:消息还没到时先什么都不显示,超过 0.3 秒才出「正在读取对话…」(快的读取不闪一下);读取被拒,或到读取期限(20 秒)仍未到,换成「对话读取失败」+「重试」。「重试」发出一次新的读取,不去等仍挂着的那一次。内容一到,两行都让位给时间线。往上翻加载更早的消息失败时,同一行写「更早的消息加载失败 · 重试」;失败后不再随滚动自动重试,由「重试」重新发起。</div>
+
+  <div class="label" id="turn-error">回复失败 · 认得出原因时:标题说原因,按钮给出路,原话收进开发者详情</div>
+  <div class="frame"><div class="tl">
+    <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>余额或会员不足</b><span class="acts"><span>充值</span><span>换模型</span></span><details><summary>开发者详情</summary><span class="code">APIError 402 · 预授权拒绝: member-only model 需 active 会员</span></details></div></div>
+    <div class="turn-err measure" role="alert"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>请求太频繁,稍后再试</b><details><summary>开发者详情</summary><span class="code">APIError 429 · rate limited</span></details></div></div>
+  </div></div>
+  <table class="imap">
+    <thead><tr><th>原因(只认错误名与状态码)</th><th>标题</th><th>按钮</th></tr></thead>
+    <tbody>
+      <tr><td>402</td><td>余额或会员不足</td><td>充值 · 换模型</td></tr>
+      <tr><td>401 / 403 · 登录凭据错误</td><td>登录或 Key 无效</td><td>重新登录 · 去设置</td></tr>
+      <tr><td>429</td><td>请求太频繁,稍后再试</td><td>—</td></tr>
+      <tr><td>对话超出模型长度</td><td>对话太长</td><td>新对话 · 换模型</td></tr>
+      <tr><td>回答长度到顶</td><td>回答被截断</td><td>继续</td></tr>
+      <tr><td>其余(含被本机网络策略拒的 403、认出卡在哪一层的联网失败)</td><td colspan="2">保持 ② 的原呈现</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>按钮去哪</b>:充值 = 钱包充值页(与生图卡「充值」同一入口);换模型 = 打开输入框的模型选择器;重新登录 = 既有登录;去设置 = 设置;新对话 = 侧栏「新对话」;继续 = 中断行同一个续写入口。哪个入口此刻不在(例如输入框没挂载),那个按钮就不出,不换成别的动作。开发者详情默认折叠,里面是错误名、状态码与服务原话,卡上别处不出现。</div>
+
+  <div class="label" id="user-meta">用户消息脚注 · 写所选权限档,不写内部代号</div>
+  <div class="frame"><div class="tl">
+    <div class="row-user"><div class="bubble">把这三个文件合成一份</div><div class="umeta" style="opacity:1"><span><i class="pdot" data-tier="allow"></i>全部批准 · DeepSeek V4 Flash · 14:32</span></div></div>
+    <div class="row-user"><div class="bubble">改之前先问我</div><div class="umeta" style="opacity:1"><span><i class="pdot" data-tier="ask"></i>请求审批 · DeepSeek V4 Flash · 14:36</span></div></div>
+    <div class="row-user"><div class="bubble">先别动文件,只看看哪里有问题</div><div class="umeta" style="opacity:1"><span><i class="pdot" data-tier="readonly"></i>只读 · DeepSeek V4 Flash · 14:40</span></div></div>
+    <div class="row-user"><div class="bubble">先列个计划</div><div class="umeta" style="opacity:1"><span><i class="pdot" data-tier="plan"></i>计划 · DeepSeek V4 Flash · 14:44</span></div></div>
+    <div class="row-user"><div class="bubble">每天早上汇总一次昨天的提交</div><div class="umeta" style="opacity:1"><span><i class="pdot" data-tier="automation"></i>自动化任务 · DeepSeek V4 Flash · 08:00</span></div></div>
+    <div class="row-user"><div class="bubble">按我们的周报格式写</div><div class="umeta" style="opacity:1"><span>发往 weekly-writer · DeepSeek V4 Flash · 14:50</span></div></div>
+  </div></div>
+  <div class="note"><b>档名与色点</b>:五个第一方模式写输入框里的档名;全部批准 / 请求审批 / 只读三档的色点与输入框权限入口同色,计划与自动化任务为中性点。用户自建的助手不带点,照写原名「发往 名字」。</div>
+
+  <div class="label" id="send-follow">发送后 · 往上翻着看时自己发出消息,视图回到最新</div>
+  <div class="note"><b>只有行为,无界面元素变化</b>:新出现的最后一条用户消息即自己刚发出的,视图不在底部也回到最新;助手生成内容时不在底部就不跟随(与之前一致)。</div>
+
+  <div class="note warn" id="core-pages-diff"><b>与批准稿的差异(按代码画,不回头改代码)</b>:
+    ① 读取期限定为 20 秒(批准稿未定数值);
+    ② 读取中的转圈沿用时间线既有转圈(顶边强调色),批准稿为中性色;
+    ③「计划」「自动化任务」的色点用中性色(批准稿只画了全部批准与只读两档);
+    ④ 用户自建助手显示「发往 名字」(批准稿只写「照写原名」);
+    ⑤ 更早的消息加载失败后不再随滚动自动重试,只由「重试」重新发起;
+    ⑥ 出路按钮只在对应入口此刻可用时出现(批准稿默认全在);
+    ⑦ 被本机网络策略拒的 403 与认出网络层的联网失败保持原呈现,不归入「登录或 Key 无效」;
+    ⑧ 按钮间距 12px(批准稿 14px)。</div>
+
   <div class="sec-kicker" id="inventory" style="margin-top:40px">⑦ 组件索引与待补(帧外)</div>
   <h2 class="t">每类消息的帧在哪 · 哪些还没有帧</h2>
   <p class="lede">时间线消息类型 → 本稿帧位置的索引。「待补」= 在任何已批稿中都没有帧的组件类型,后续按增量纪律逐个补画,不在本次收编中新造。本节只管<b>帧在不在</b>;每个组件的实现票、落地与代码入口见同目录 <a href="components.md">组件台账</a>。</p>
@@ -1291,7 +1346,8 @@ rendering chunks (12/31)...</div></div>
       <tr><td>全来源徽标 · 安全通用降级 · 折叠开发者详情</td><td>③ 工具卡 · <a href="#tool-provenance">已批增量</a>(2026-08-09)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>工具折叠分组(已探索)· 本回合改动 · 压缩分隔 · 回合分隔</td><td>④ 结构</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>重试(自动重试卡)</td><td>② 助手输出侧</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
-      <tr><td>回合级错误卡(限流 / 接口报错 / 上下文超限)</td><td>② 助手输出侧(2026-07-23 补)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
+      <tr><td>回合级错误卡(限流 / 接口报错 / 上下文超限)</td><td>② 助手输出侧(2026-07-23 补);认得出的五类原因见 <a href="#turn-error">⑨</a>(2026-10-31 并入)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
+      <tr><td>读取中 / 读取失败 · 更早的消息加载失败</td><td><a href="#conv-loading">⑨ 读取对话</a>(2026-10-31 并入)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>右栏审查 / 终端(换肤基线)</td><td>⑤ 审查面板;整页四面板形态另见 session-workspace 稿</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>产物链接行 + 右栏预览联动</td><td>⑥ 产物链接行</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>glob(按模式匹配文件)工具卡</td><td>③ 工具卡(2026-07-23 补)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
