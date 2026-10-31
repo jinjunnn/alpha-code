@@ -611,7 +611,7 @@ test("REQ-126 不变量5:默认目录**查询**桥炸了不得连坐 —— 普�
 // 缺席时引擎以默认助手运行命令,「只读」「请求审批」被整段绕过(方案 §1.3)。会话内那一处的请求体在
 // session-second-send.cases.ts 断言;首页 composer 把档位交给 startChat 也在那里断言。
 // 变异验证:把 use-projects.ts 命令请求里的 `agent` 删掉,本用例「请求审批」「只读」两格转红。
-test("REQ-236 AC3:首页斜杠命令的 session.command 请求体 —— 全部批准不带 agent、请求审批 alpha-ask、只读 alpha-readonly", async () => {
+test("REQ-236 AC3:首页斜杠命令的 session.command 请求体 —— 全部批准不带 agent、请求审批 codepuppy-ask、只读 codepuppy-readonly", async () => {
   healthReachable = true
   commandScenario = true
   const { api } = mountHook(0)
@@ -629,7 +629,7 @@ test("REQ-236 AC3:首页斜杠命令的 session.command 请求体 —— 全部�
     expect(commandBodies[0]!["arguments"]).toBe("HEAD~1")
     seen[perm] = "agent" in commandBodies[0]! ? commandBodies[0]!["agent"] : "<absent>"
   }
-  expect(seen).toEqual({ allow: "<absent>", ask: "alpha-ask", readonly: "alpha-readonly" })
+  expect(seen).toEqual({ allow: "<absent>", ask: "codepuppy-ask", readonly: "codepuppy-readonly" })
 })
 
 test("#692 非 Git 会话冷加载与 SSE 新建都进入真实目录项目,且从不实例化或显示根目录", async () => {

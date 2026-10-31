@@ -1913,11 +1913,11 @@ describe("#652 会话发送走 v1 promptAsync(与首页同一条)+ 停止键诚�
     await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
     expect("agent" in sdk.promptAsyncCalls[1]!).toBe(false)
 
-    // 只读档:真载体是 alpha-readonly agent(静态权限档),同样按条走。
+    // 只读档:真载体是 codepuppy-readonly agent(静态权限档),同样按条走。
     setComposerPerm("readonly")
     pressEnter(await waitReady(mounted.host, "只看不改"))
     await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(3))
-    expect(sdk.promptAsyncCalls[2]).toMatchObject({ agent: "alpha-readonly" })
+    expect(sdk.promptAsyncCalls[2]).toMatchObject({ agent: "codepuppy-readonly" })
     setComposerPerm("allow")
 
     expect(sdk.agentSwitches).toEqual([])
@@ -2626,8 +2626,8 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
 
   /* ── #884 只读档也是「一个会话」的,不是「这个 app」的 ────────────────────────────────
      上面四条只治了档位。只读档不跟上,上面就等于没治:`buildPromptRequest` 里
-     `perm === "readonly"` 会把 agent 强制成 alpha-readonly 并**压过**手选档位,所以「在 A 开只读、
-     切到 B」的后果不只是 B 的权限 chip 亮着只读 —— B 里刚手选的计划档会被 alpha-readonly 顶掉,
+     `perm === "readonly"` 会把 agent 强制成 codepuppy-readonly 并**压过**手选档位,所以「在 A 开只读、
+     切到 B」的后果不只是 B 的权限 chip 亮着只读 —— B 里刚手选的计划档会被 codepuppy-readonly 顶掉,
      用户从没在 B 开过只读,只会看到模型忽然不肯动文件。
 
      判据与上面同源,只认两样:**渲染出来的权限 chip**(`.a-chip-perm` 的 data-mode 与可见文案)
@@ -2662,7 +2662,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       await waitFor(() => expect(permChipOf(host)!.getAttribute("data-mode")).toBe("allow"))
     }
 
-    test("⑤ 在 A 开只读 → 切到 B:B 的 chip 不是只读态,B 手选的档位也不再被 alpha-readonly 顶掉", async () => {
+    test("⑤ 在 A 开只读 → 切到 B:B 的 chip 不是只读态,B 手选的档位也不再被 codepuppy-readonly 顶掉", async () => {
       installApi()
       const sdk = scopedSdk()
       const [identity, setIdentity] = createSignal(identityFor("A"))
@@ -2686,11 +2686,11 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       await sendVia(mounted.host, "B 的第一句")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
       expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "B", agent: "plan" })
-      expect(sdk.promptAsyncCalls[0]!.agent).not.toBe("alpha-readonly")
+      expect(sdk.promptAsyncCalls[0]!.agent).not.toBe("codepuppy-readonly")
       mounted.dispose()
     })
 
-    test("⑥ A→B→回 A:A 自己的只读还在,A 发出的消息仍以 alpha-readonly 落到引擎", async () => {
+    test("⑥ A→B→回 A:A 自己的只读还在,A 发出的消息仍以 codepuppy-readonly 落到引擎", async () => {
       installApi()
       const sdk = scopedSdk()
       const [identity, setIdentity] = createSignal(identityFor("A"))
@@ -2706,11 +2706,11 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
 
       await sendVia(mounted.host, "回到 A 继续只看")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
-      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "codepuppy-readonly" })
       mounted.dispose()
     })
 
-    test("⑦ 首页开着只读发第一条:跳进新会话后 chip 仍是只读,第二条仍以 alpha-readonly 发出", async () => {
+    test("⑦ 首页开着只读发第一条:跳进新会话后 chip 仍是只读,第二条仍以 codepuppy-readonly 发出", async () => {
       installApi()
       startedChats.length = 0
       const sdk = scopedSdk()
@@ -2728,7 +2728,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       await pickReadonly(home.host)
       await sendVia(home.host, "只看不要改")
       await waitFor(() => expect(startedChats).toHaveLength(1))
-      expect(startedChats[0]).toEqual({ agent: "alpha-readonly" }) // 第一条本来就该是只读档
+      expect(startedChats[0]).toEqual({ agent: "codepuppy-readonly" }) // 第一条本来就该是只读档
       home.dispose() // 首页让位给会话页
 
       const mounted = mountSession(sdk, () => identityFor("NEW-RO"))
@@ -2736,7 +2736,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly") // 不该背着用户关掉
       await sendVia(mounted.host, "第二条")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
-      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW-RO", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW-RO", agent: "codepuppy-readonly" })
       mounted.dispose()
     })
 
@@ -2776,7 +2776,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       await pickReadonly(home.host)
       await sendVia(home.host, "只看不要改")
       await waitFor(() => expect(startedChats).toHaveLength(1))
-      expect(startedChats[0]).toEqual({ agent: "alpha-readonly" }) // 第一条**确实**以只读发出去了
+      expect(startedChats[0]).toEqual({ agent: "codepuppy-readonly" }) // 第一条**确实**以只读发出去了
 
       // 请求还在途,用户点侧栏进了会话 B,并在 B 里开计划 —— 模块级 signal 这一刻已经是 B 的。
       home.dispose()
@@ -2795,7 +2795,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(planChip(mounted.host)).toBeNull() // B 的计划档不许被登记到这个新会话名下
       await sendVia(mounted.host, "第二条")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
-      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW-INFLIGHT", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW-INFLIGHT", agent: "codepuppy-readonly" })
       mounted.dispose()
     })
 
@@ -2855,14 +2855,14 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly")
       await sendVia(mounted.host, "A 只看")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
-      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "codepuppy-readonly" })
 
       setIdentity(identityFor("B"))
       await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
       expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly")
       await sendVia(mounted.host, "B 只看")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
-      expect(sdk.promptAsyncCalls[1]).toMatchObject({ sessionID: "B", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ sessionID: "B", agent: "codepuppy-readonly" })
       mounted.dispose()
     })
 
@@ -2875,7 +2875,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       await pickReadonly(mounted.host)
       // 32 是**档位**那份的 LRU 上界(回落到引擎默认 build,是安全方向)。只读档若照抄同一个上界,
       // S1 正好在第 33 个会话的登记落账时被挤掉:回到 S1,chip 变「全部批准」、请求不再带
-      // alpha-readonly。这一条按那个精确的界跨过去,不是取个「很多」的数。
+      // codepuppy-readonly。这一条按那个精确的界跨过去,不是取个「很多」的数。
       for (let n = 2; n <= 33; n++) {
         setIdentity(identityFor(`S${n}`))
         await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("allow"))
@@ -2886,7 +2886,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly")
       await sendVia(mounted.host, "回到第一个会话")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
-      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "S1", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "S1", agent: "codepuppy-readonly" })
       mounted.dispose()
     })
 
@@ -2909,7 +2909,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(permChipOf(back.host)!.getAttribute("data-mode")).toBe("readonly")
       await sendVia(back.host, "回到 A")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
-      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "codepuppy-readonly" })
       back.dispose()
     })
 
@@ -2929,7 +2929,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(permChipOf(back.host)!.getAttribute("data-mode")).toBe("readonly")
       await sendVia(back.host, "回到 A")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
-      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "codepuppy-readonly" })
       back.dispose()
     })
 
@@ -2985,7 +2985,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(planChip(mounted.host)).not.toBeNull()
       await sendVia(mounted.host, "回到原来那个 server")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
-      expect(sdk.promptAsyncCalls[1]).toMatchObject({ sessionID: DUP_SESSION_ID, agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ sessionID: DUP_SESSION_ID, agent: "codepuppy-readonly" })
       mounted.dispose()
     })
 
@@ -3011,7 +3011,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(planChip(mounted.host)).not.toBeNull()
       await sendVia(mounted.host, "回到原来那个目录")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
-      expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/ws", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/ws", agent: "codepuppy-readonly" })
       mounted.dispose()
     })
 
@@ -3053,7 +3053,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(planChip(mounted.host)).not.toBeNull()
       await sendVia(mounted.host, "回到原来那个身份")
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
-      expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/b", agent: "alpha-readonly" })
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/b", agent: "codepuppy-readonly" })
       mounted.dispose()
     })
   })

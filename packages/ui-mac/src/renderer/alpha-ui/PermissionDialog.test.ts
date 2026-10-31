@@ -642,7 +642,7 @@ describe("Alpha Permission watcher reconciliation", () => {
 // 不手写投影后的形状。原始 v1 请求的形状取自引擎的真实 ask 点(每条注明出处)。
 const BINDING = `sha256:${"b".repeat(64)}`
 
-function v1(raw: Omit<PermissionV1Request, "sessionID" | "tool">, agent = "alpha-ask") {
+function v1(raw: Omit<PermissionV1Request, "sessionID" | "tool">, agent = "codepuppy-ask") {
   return adaptPermissionV1Request(
     { ...raw, sessionID: "ses_ui_1", tool: { messageID: "msg_ui_1", callID: "call_ui_1" } },
     agent,
@@ -695,7 +695,7 @@ const v1TaskOnce = v1({
 function v1Identity(
   askedBy: "policy" | "ruleset",
   policy: Record<string, unknown> = {},
-  agent = "alpha-ask",
+  agent = "codepuppy-ask",
   tool: { canonical: string; identity: unknown; authority: unknown } = {
     canonical: "mcp:notion:search_pages",
     identity: { source: "mcp", origin: "notion", name: "search_pages" },
@@ -896,9 +896,9 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
 
   test("AC3 身份轴 askedBy=ruleset:只有「允许一次」与「拒绝」,写明这个工具每次都要确认;不凭执行助手名断言只读档", async () => {
     // 执行助手名取自工具消息、缺时退取最后一条助手消息(permission-v1-adapter.ts resolvePermissionV1Agent),
-    // 它等于 alpha-readonly 也确证不了「当前档位是只读」—— 所以卡上不写「只读模式」。
+    // 它等于 codepuppy-readonly 也确证不了「当前档位是只读」—— 所以卡上不写「只读模式」。
     const commands: PermissionV2DecisionCommand[] = []
-    const permissionRequest = v1Identity("ruleset", {}, "alpha-readonly")
+    const permissionRequest = v1Identity("ruleset", {}, "codepuppy-readonly")
     mount(async (command) => {
       commands.push(command)
       return receipt(command, permissionRequest)
@@ -994,16 +994,16 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     ["第三方 MCP(带引擎写的远端位置)", v1Identity("ruleset"), "search_pages", "第三方 · mcp.notion.com"],
     [
       "第三方 MCP(本机程序,不写主机)",
-      v1Identity("ruleset", {}, "alpha-ask", undefined, { kind: "local" }),
+      v1Identity("ruleset", {}, "codepuppy-ask", undefined, { kind: "local" }),
       "search_pages",
       "第三方",
     ],
     // 请求没带 location 时不从 transport 的 URL 自己解析主机(AC3:渲染层只读引擎写的字段)。
-    ["第三方 MCP(请求没带位置)", v1Identity("ruleset", {}, "alpha-ask", undefined, null), "search_pages", "第三方"],
-    ["Code Puppy 云", v1Identity("policy", {}, "alpha-ask", CLOUD_DISPATCH), "下发云端任务", "Code Puppy 云"],
+    ["第三方 MCP(请求没带位置)", v1Identity("ruleset", {}, "codepuppy-ask", undefined, null), "search_pages", "第三方"],
+    ["Code Puppy 云", v1Identity("policy", {}, "codepuppy-ask", CLOUD_DISPATCH), "下发云端任务", "Code Puppy 云"],
     [
       "同名云工具但没有云证据",
-      v1Identity("policy", {}, "alpha-ask", { ...CLOUD_DISPATCH, authority: { kind: "not-asserted" } }),
+      v1Identity("policy", {}, "codepuppy-ask", { ...CLOUD_DISPATCH, authority: { kind: "not-asserted" } }),
       "cloud_dispatch",
       "第三方 · mcp.notion.com",
     ],
@@ -1064,7 +1064,7 @@ describe("REQ-236 #1617 确认卡只写人话", () => {
     ["委派", v1Task, "task", "派出子任务", ["交给助手 general", "调研三家竞品的公开定价"], undefined],
     ["委派(只能一次)", v1TaskOnce, "task", "派出子任务", ["交给助手 reviewer", undefined], undefined],
     ["身份轴 · 第三方", v1Identity("ruleset"), "mcp:notion:search_pages", "使用工具", ["search_pages", "第三方 · mcp.notion.com"], undefined],
-    ["身份轴 · 云", v1Identity("policy", {}, "alpha-ask", CLOUD_DISPATCH), "mcp:alpha:cloud_dispatch", "使用工具", ["下发云端任务", "Code Puppy 云"], undefined],
+    ["身份轴 · 云", v1Identity("policy", {}, "codepuppy-ask", CLOUD_DISPATCH), "mcp:alpha:cloud_dispatch", "使用工具", ["下发云端任务", "Code Puppy 云"], undefined],
     ["稿外动作(打开网页)", v1Webfetch, "webfetch", "打开网页", undefined, ["https://example.com/pricing"]],
     ["认不出的动作", v1Unknown, "frobnicate_widget", "使用工具", undefined, ["x"]],
     ["新式请求", request, "bash", "运行命令", undefined, ["pwd", "src/**"]],

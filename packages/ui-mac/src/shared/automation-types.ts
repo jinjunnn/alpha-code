@@ -31,7 +31,7 @@ export interface AutomationTask {
   schedule: AutomationSchedule
   target: {
     projectDir: string
-    /** 引擎 agent 名;A1 恒为 "alpha-automation"(readonly 档)。 */
+    /** 引擎 agent 名;A1 恒为 "codepuppy-automation"(readonly 档)。 */
     agent: string
     /** "providerID/modelID" 形式;缺省用引擎默认模型。 */
     model?: string
@@ -102,9 +102,9 @@ export const AUTOMATION_DEFAULTS = {
   historyKeep: 30,
   /** interval 下限(防打点风暴;cap 之外的第二道)。 */
   minIntervalMinutes: 5,
-  agent: "alpha-automation",
+  agent: "codepuppy-automation",
   /** A2:standard(可写)档 agent。 */
-  agentStandard: "alpha-automation-standard",
+  agentStandard: "codepuppy-automation-standard",
   /** A2:连败熔断阈值(连续 failed/timeout 次数)。 */
   failureBreaker: 3,
 } as const

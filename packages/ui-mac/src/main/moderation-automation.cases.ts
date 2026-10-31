@@ -91,7 +91,7 @@ function makeTask(id: string, prompt: string): AutomationTask {
     name: "每日巡检",
     nlText: prompt,
     schedule: { kind: "interval", everyMinutes: 60 },
-    target: { projectDir: PROJECT, agent: "alpha-automation" },
+    target: { projectDir: PROJECT, agent: "codepuppy-automation" },
     prompt,
     execution: "local",
     permissionProfile: "readonly",

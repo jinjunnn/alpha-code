@@ -158,7 +158,7 @@ function assertInjectedFacts(content: string | undefined, userDataPath: string):
   expect(Object.keys(config.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
   // 四个 alpha agent(automation 只读 / composer 只读 / automation 可写 / composer 请求审批 #1413)。
   expect(Object.keys(config.agent ?? {})).toEqual(
-    expect.arrayContaining(["alpha-automation", "alpha-readonly", "alpha-automation-standard", "alpha-ask"]),
+    expect.arrayContaining(["codepuppy-automation", "codepuppy-readonly", "codepuppy-automation-standard", "codepuppy-ask"]),
   )
   // A6:BYOK 密钥以 {file:} ref 进 content,明文永不进(此处是**组合体**层面的锁,
   // alpha-models.test.ts 锁的是单件 buildAlphaModelConfig)。REQ-236 `#1562`:平台 provider 只带非凭据占位值,

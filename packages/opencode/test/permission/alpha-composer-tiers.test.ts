@@ -3,26 +3,26 @@
 // 票面根因(勘破 docs/architecture/2026-09-23-runtime-permission-tiers.md §3):composer「请求审批」档提交时
 // 不带 agent,落到引擎默认 agent `build`,而 build 的规则集基底是 `"*": "allow"` —— 真 `Permission.ask` 对
 // `bash` / `edit` 直接放行不弹框,「逐次询问」这个副标题是假的。修法是主进程多注入一个 hidden agent
-// `alpha-ask`(= build + edit/bash 改 ask),composer 选「请求审批」时强制带上它。
+// `codepuppy-ask`(= build + edit/bash 改 ask),composer 选「请求审批」时强制带上它。
 //
 // 这道闸罩的是**引擎真的会问**,不是 renderer 发了什么字段。那一半的闸是 ui-mac 的 shell-commands.test.ts
 // (已登记:真壳逐档点选,提交层的 agent 三个互不相同);composer-state 的纯核单测另有 AC4 三份请求体的断言,
 // 但那是覆盖,不是闸 —— 删掉它,shell-commands 那条照样红。判据全部走生产:
 //   · 真 `injectAlphaConfig`(ui-mac 主进程写给引擎的那份 config,零 mock,临时盘)→ 真 `Agent.Service`
-//     拿到 `alpha-ask` / `build` / `alpha-readonly` 的规则集;
+//     拿到 `codepuppy-ask` / `build` / `codepuppy-readonly` 的规则集;
 //   · 真 `Permission.Service.ask`(与 `session/tools.ts` 给工具的 `ctx.ask` 同一个服务、同一个方法),
 //     `ALPHA_PERMISSION_ASK_TIMEOUT_MS=300` 让「真的在等人批」在 300 ms 内以具名失败落地,而不是挂住。
 //
 // 每条判据先证明手段测得出已知的坏(正样本 / 反样本),再判未知的好:
-//   AC1  alpha-ask + bash / edit ⇒ `UnansweredError`(instanceof RejectedError:真的问了、没人答、fail-closed);
+//   AC1  codepuppy-ask + bash / edit ⇒ `UnansweredError`(instanceof RejectedError:真的问了、没人答、fail-closed);
 //        对照臂 build + 同样两个动作 ⇒ 直接返回(PASSED-THROUGH,今天「全部批准」的行为);
-//        反样本 alpha-readonly + bash ⇒ `DeniedError`(readonly 是 deny 不是 ask,行为逐字不变 = AC3);
+//        反样本 codepuppy-readonly + bash ⇒ `DeniedError`(readonly 是 deny 不是 ask,行为逐字不变 = AC3);
 //        正样本 build + external_directory ⇒ `UnansweredError`(证明探针连 build 的 ask 也读得出来)。
-//   AC1' 批了就走:alpha-ask + bash,`reply: once` 之后 Exit 成功 —— 「问」不是「拒」。
-//   矩阵 alpha-ask 与 build 对每一把内置权限键的 `evaluate` 结果**只在 edit / bash / task 上不同**(task 是 REQ-236
-//        `#1573` 加的:派给其它助手前也问),工具表(`disabled`)逐字相同;alpha-ask 没有 prompt(有就顶掉底座)。
+//   AC1' 批了就走:codepuppy-ask + bash,`reply: once` 之后 Exit 成功 —— 「问」不是「拒」。
+//   矩阵 codepuppy-ask 与 build 对每一把内置权限键的 `evaluate` 结果**只在 edit / bash / task 上不同**(task 是 REQ-236
+//        `#1573` 加的:派给其它助手前也问),工具表(`disabled`)逐字相同;codepuppy-ask 没有 prompt(有就顶掉底座)。
 //
-// 变异实测(交付时实跑,结论写进 PR):把 alpha-config-injection.ts 里 alpha-ask 的 `bash: "ask"` 改成
+// 变异实测(交付时实跑,结论写进 PR):把 alpha-config-injection.ts 里 codepuppy-ask 的 `bash: "ask"` 改成
 // `"allow"` ⇒ AC1 的 bash 臂与矩阵臂当场红;删掉 `question: "allow"` ⇒ 矩阵臂红(question 从工具表消失)。
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -178,23 +178,23 @@ const tryAsk = (agentName: string, permission: string, pattern: string, sid: str
   })
 
 it.instance(
-  "AC1:选「请求审批」(alpha-ask)时 bash 与 edit 各弹一次审批、不批就不执行;对照臂「全部批准」(build)同样两个动作不弹框",
+  "AC1:选「请求审批」(codepuppy-ask)时 bash 与 edit 各弹一次审批、不批就不执行;对照臂「全部批准」(build)同样两个动作不弹框",
   () =>
     Effect.gen(function* () {
       // 先证明手段测得出已知的坏,再判未知的好。
       // 正样本:build 的 external_directory 出厂就是 ask —— 探针必须读出「真的在问」。
       expect(yield* tryAsk("build", "external_directory", "/Users/nobody/Downloads/x", "ses_1413_pos")).toEqual({ kind: "unanswered" })
-      // 反样本:alpha-readonly 的 bash 是 deny —— 探针必须读出「被拒」,而且不是「在问」(AC3:只读逐字不变)。
-      expect(yield* tryAsk("alpha-readonly", "bash", "ls", "ses_1413_neg_bash")).toEqual({ kind: "denied" })
-      expect(yield* tryAsk("alpha-readonly", "edit", "src/index.ts", "ses_1413_neg_edit")).toEqual({ kind: "denied" })
+      // 反样本:codepuppy-readonly 的 bash 是 deny —— 探针必须读出「被拒」,而且不是「在问」(AC3:只读逐字不变)。
+      expect(yield* tryAsk("codepuppy-readonly", "bash", "ls", "ses_1413_neg_bash")).toEqual({ kind: "denied" })
+      expect(yield* tryAsk("codepuppy-readonly", "edit", "src/index.ts", "ses_1413_neg_edit")).toEqual({ kind: "denied" })
 
       // 对照臂(「全部批准」= 引擎默认 build):两个动作直接放行 —— 这就是此前「请求审批」的真实行为。
       expect(yield* tryAsk("build", "bash", "rm -rf node_modules && bun install", "ses_1413_build_bash")).toEqual({ kind: "passed-through" })
       expect(yield* tryAsk("build", "edit", "src/index.ts", "ses_1413_build_edit")).toEqual({ kind: "passed-through" })
 
-      // 被测臂(「请求审批」= alpha-ask):同样两个动作,真的进了待批队列、没人批就 fail-closed。
-      expect(yield* tryAsk("alpha-ask", "bash", "rm -rf node_modules && bun install", "ses_1413_ask_bash")).toEqual({ kind: "unanswered" })
-      expect(yield* tryAsk("alpha-ask", "edit", "src/index.ts", "ses_1413_ask_edit")).toEqual({ kind: "unanswered" })
+      // 被测臂(「请求审批」= codepuppy-ask):同样两个动作,真的进了待批队列、没人批就 fail-closed。
+      expect(yield* tryAsk("codepuppy-ask", "bash", "rm -rf node_modules && bun install", "ses_1413_ask_bash")).toEqual({ kind: "unanswered" })
+      expect(yield* tryAsk("codepuppy-ask", "edit", "src/index.ts", "ses_1413_ask_edit")).toEqual({ kind: "unanswered" })
 
       // 挂起态不残留(每一次 unanswered 都清了 pending)。
       const permission = yield* Permission.Service
@@ -204,10 +204,10 @@ it.instance(
 )
 
 it.instance(
-  "AC1':「请求审批」是问不是拒 —— alpha-ask 的 bash 请求进 pending,用户 reply once 之后放行",
+  "AC1':「请求审批」是问不是拒 —— codepuppy-ask 的 bash 请求进 pending,用户 reply once 之后放行",
   () =>
     Effect.gen(function* () {
-      const agent = yield* rulesetOf("alpha-ask")
+      const agent = yield* rulesetOf("codepuppy-ask")
       const permission = yield* Permission.Service
       const fiber = yield* permission
         .ask({
@@ -229,7 +229,7 @@ it.instance(
       }).pipe(
         Effect.timeoutOrElse({
           duration: TEST_TIMEOUT_MS,
-          orElse: () => Effect.fail(new Error("alpha-ask 的 bash 请求没有进入 pending —— 它没有在问")),
+          orElse: () => Effect.fail(new Error("codepuppy-ask 的 bash 请求没有进入 pending —— 它没有在问")),
         }),
       )
       expect(pending[0]!.permission).toBe("bash")
@@ -242,12 +242,12 @@ it.instance(
 )
 
 it.instance(
-  "矩阵:alpha-ask 与 build 只在 edit / bash / task 上不同(其余每一把键逐字相同、工具表逐字相同、没有 prompt);alpha-readonly 仍是 deny",
+  "矩阵:codepuppy-ask 与 build 只在 edit / bash / task 上不同(其余每一把键逐字相同、工具表逐字相同、没有 prompt);codepuppy-readonly 仍是 deny",
   () =>
     Effect.gen(function* () {
-      const ask = yield* rulesetOf("alpha-ask")
+      const ask = yield* rulesetOf("codepuppy-ask")
       const build = yield* rulesetOf("build")
-      const readonly = yield* rulesetOf("alpha-readonly")
+      const readonly = yield* rulesetOf("codepuppy-readonly")
 
       const row = (a: Agent.Info) => Object.fromEntries(PERMISSION_KEYS.map((k) => [k, Permission.evaluate(k, "*", a.permission).action]))
       const askRow = row(ask)
@@ -261,7 +261,7 @@ it.instance(
       expect(buildRow.bash).toBe("allow")
       expect(buildRow.edit).toBe("allow")
       expect(buildRow.task).toBe("allow")
-      // 「请求审批」不许比默认档少工具:question 在 build 上是 allow,alpha-ask 也必须是。
+      // 「请求审批」不许比默认档少工具:question 在 build 上是 allow,codepuppy-ask 也必须是。
       expect(askRow.question).toBe("allow")
       // 出厂仍会问的三类不因本票放宽(边界:「全部批准」是给默认行为一个诚实的名字,不是新增权限)。
       for (const a of [ask, build]) {
@@ -279,7 +279,7 @@ it.instance(
       expect(ask.hidden).toBe(true)
       expect(ask.mode).toBe("primary")
 
-      // AC3:alpha-readonly 逐字不变 —— edit/bash deny,且从工具表里消失。
+      // AC3:codepuppy-readonly 逐字不变 —— edit/bash deny,且从工具表里消失。
       expect(Permission.evaluate("edit", "*", readonly.permission).action).toBe("deny")
       expect(Permission.evaluate("bash", "*", readonly.permission).action).toBe("deny")
       expect(hidden(readonly)).toEqual(expect.arrayContaining(["apply_patch", "bash", "edit", "write"]))

@@ -321,7 +321,7 @@ function cloudTask(id: string, cloudScheduleId: string): Runtime.ListedTask {
     name: `云端任务 ${id}`,
     nlText: "",
     schedule: { kind: "cron", expr: "0 9 * * *" },
-    target: { projectDir: runtime.DEFAULT_DIR, agent: "alpha-automation" },
+    target: { projectDir: runtime.DEFAULT_DIR, agent: "codepuppy-automation" },
     prompt: "检查 TODO",
     execution: "cloud",
     cloudScheduleId,

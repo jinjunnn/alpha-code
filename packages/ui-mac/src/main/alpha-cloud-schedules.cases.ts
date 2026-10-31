@@ -73,7 +73,7 @@ const TASK: AutomationTask = {
   name: "Daily research",
   nlText: "daily",
   schedule: { kind: "cron", expr: "0 9 * * *" },
-  target: { projectDir: "/project", agent: "alpha-automation" },
+  target: { projectDir: "/project", agent: "codepuppy-automation" },
   prompt: "Research release notes",
   execution: "cloud",
   permissionProfile: "readonly",

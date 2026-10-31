@@ -269,7 +269,7 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
 
 describe("③a′ `#1531`:hub_install 动词的两条引用", () => {
   test("全局与每个 agent 末位的 hub_install 解释得通;单段通配只吃恰好一段,不放行同 agent 的别的键、多一段或空段", () => {
-    for (const p of ["/permission/hub_install", "/agent/build/permission/hub_install", "/agent/alpha-automation/permission/hub_install"])
+    for (const p of ["/permission/hub_install", "/agent/build/permission/hub_install", "/agent/codepuppy-automation/permission/hub_install"])
       expect(explainConfigReference(p).ok, p).toBe(true)
     for (const p of ["/agent/build/permission/bash", "/agent/build/prompt", "/agent/permission/hub_install", "/agent//permission/hub_install", "/agent/a/b/permission/hub_install", "/permission/hub_installer"])
       expect(explainConfigReference(p).ok, p).toBe(false)
@@ -728,7 +728,7 @@ describe("③f agent 通路:登记形状 + 判官 explainAgentText", () => {
       expect(description.sink).toBe("agent-description")
       expect(description.text).toBe(text.description)
       if (text.prompt === undefined) {
-        // `#1413` alpha-ask:没有 prompt 就不能有 prompt 那格(登记一个永远不会被写出的 id = 咽喉等一段不存在的字)
+        // `#1413` codepuppy-ask:没有 prompt 就不能有 prompt 那格(登记一个永远不会被写出的 id = 咽喉等一段不存在的字)
         expect(prompt, name).toBeUndefined()
         expect(uiMacAgentFragmentIds(name)).toEqual([uiMacAgentFragmentId(name, "description")])
         withoutPrompt += 1

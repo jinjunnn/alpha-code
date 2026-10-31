@@ -42,7 +42,7 @@
 // `buildAlphaIdentity` 各登记一条 —— 域常量按接口键集类型锁死,加一个能力字段而没扩域即 typecheck 红。
 //
 // 第六处也在 ui-mac(`#1299`,REQ-157 的最后一块):主进程经 `cfg.agent.<name>.{prompt,description}` 写进三个
-// alpha agent(`alpha-automation` / `alpha-readonly` / `alpha-automation-standard`)的字 —— 与 ext 自己的
+// alpha agent(`codepuppy-automation` / `codepuppy-readonly` / `codepuppy-automation-standard`)的字 —— 与 ext 自己的
 // `agent.general|explore|docs` 同一格(prompt 在 `request.ts:64` 整段顶替底座,description 进 subagent 清单),
 // 2026-09-08 跑真 `injectAlphaConfig` 实测 1,427 B。同一份登记簿,同一个方向:import ui-mac 的零依赖内容模块
 // `alpha-agents.ts`(一个 `as const` 对象),ui-mac 生产代码只取常量、不 import 本登记簿。
@@ -258,7 +258,7 @@ function identityFragments(): TextFragment[] {
 // alpha agent 的 prompt / description 从 ui-mac 的零依赖内容模块取。id 形状与 ext 自己的 agent 片段
 // 同形(`agent.<name>.prompt|description`);名字集合 = `ALPHA_AGENT_TEXT` 的键集,与生产写出的
 // `cfg.agent` 键集的双向相等由 ui-mac 咽喉(跑真 injectAlphaConfig)钉住,这里不自算。
-// `#1413`:agent 可以**没有 prompt**(`alpha-ask`:给了 prompt 就会在 request.ts:64 顶掉整份底座,
+// `#1413`:agent 可以**没有 prompt**(`codepuppy-ask`:给了 prompt 就会在 request.ts:64 顶掉整份底座,
 // 而它的语义是「默认档 + 多问一句」)。没有的就不登记那一格 —— 登记一个不存在的 id 会让咽喉去等一段
 // 永远不会被写出的字。`uiMacAgentFragmentIds` 是这个「有什么登记什么」的唯一算法,库存与咽喉都消费它。
 export const UI_MAC_AGENT_NAMES = Object.freeze(Object.keys(ALPHA_AGENT_TEXT)) as readonly (keyof typeof ALPHA_AGENT_TEXT)[]
@@ -484,7 +484,7 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   // REQ-234 `#1531` I3:`hub_install` 的 ask / deny 动词钉在全局与每个 agent 的末位(hub-tools.ts pinHubInstallPermission)。
   // agent 名是用户 / 出厂配置的键,所以第二条用单段通配 `*`(只匹配恰好一段,见 explainConfigReference)。
   defineReference({ id: "ref.permission.hub_install", pointer: "/permission/hub_install", note: "REQ-234 #1531 定制中心安装确认框的 \"ask\" 动词" }),
-  defineReference({ id: "ref.agent.permission.hub_install", pointer: "/agent/*/permission/hub_install", note: "REQ-234 #1531 每个 agent 末位的 \"ask\"(无人值守的 alpha-automation* 为 \"deny\")" }),
+  defineReference({ id: "ref.agent.permission.hub_install", pointer: "/agent/*/permission/hub_install", note: "REQ-234 #1531 每个 agent 末位的 \"ask\"(无人值守的 codepuppy-automation* 为 \"deny\")" }),
   // ext 与 ui-mac 主进程都写的一类:
   defineReference({
     id: "ref.mcp",

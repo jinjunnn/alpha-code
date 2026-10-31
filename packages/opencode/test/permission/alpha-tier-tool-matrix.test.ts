@@ -3,7 +3,7 @@
 //
 // 手法与 alpha-composer-tiers.test.ts 相同,全部走生产:
 //   · 真 `injectAlphaConfig`(ui-mac 主进程写给引擎的那份 config,临时盘)→ 真 `Agent.Service` 拿到三档载体
-//     (「全部批准」= 引擎默认 build、「请求审批」= alpha-ask、「只读」= alpha-readonly)的规则集;
+//     (「全部批准」= 引擎默认 build、「请求审批」= codepuppy-ask、「只读」= codepuppy-readonly)的规则集;
 //   · 能力轴:真 `Permission.Service.ask`(工具体内 `ctx.ask` 的同一个服务);
 //   · 身份轴:真 `AlphaToolPolicyGate.decide` + `confirm` + 真 `AlphaToolPolicy`(真 store,生产 `setRecord` 写设置);
 //   · R9/R10 的 subject 由**生产形状**的云 MCP 定义(真 `materializeCloudMcpConfig`,`{file:}` 引用)与装载后 entry
@@ -125,7 +125,7 @@ const it = testEffect(
 )
 
 // 三档的载体(列序 = 方案表的列序)。
-const TIERS = ["build", "alpha-ask", "alpha-readonly"] as const
+const TIERS = ["build", "codepuppy-ask", "codepuppy-readonly"] as const
 type Tier = (typeof TIERS)[number]
 type Verdict = "PASS" | "ASK" | "DENY"
 type Row = readonly [Verdict, Verdict, Verdict]
@@ -273,13 +273,13 @@ it.instance(
         "DENY",
       ] satisfies Row)
       // R4/R5 只读格「且不进工具表」;另两档不藏。
-      expect(yield* tableHides("alpha-readonly", ["apply_patch", "bash", "edit", "write"])).toEqual([
+      expect(yield* tableHides("codepuppy-readonly", ["apply_patch", "bash", "edit", "write"])).toEqual([
         "apply_patch",
         "bash",
         "edit",
         "write",
       ])
-      expect(yield* tableHides("alpha-ask", ["apply_patch", "bash", "edit", "write"])).toEqual([])
+      expect(yield* tableHides("codepuppy-ask", ["apply_patch", "bash", "edit", "write"])).toEqual([])
       expect(yield* tableHides("build", ["apply_patch", "bash", "edit", "write"])).toEqual([])
     }),
   { git: true },
@@ -306,9 +306,9 @@ it.instance(
       // R6c 命令自带其它助手(E4 的目标 = 命令的 agent,例如 build)。
       expect(yield* row("R6c task build", task("build"))).toEqual(["PASS", "ASK", "DENY"] satisfies Row)
       // R6d 直接子任务:目标是本档 ⇒ 放行(以只读档运行的 /review),其它助手同 R6a。
-      expect(yield* call("alpha-readonly", builtin(TaskTool.id), TaskTool.id, "alpha-readonly")).toBe("PASS")
-      expect(yield* call("alpha-ask", builtin(TaskTool.id), TaskTool.id, "alpha-ask")).toBe("PASS")
-      expect(yield* evaluate("alpha-readonly")).toEqual(["allow", "ask", "allow"])
+      expect(yield* call("codepuppy-readonly", builtin(TaskTool.id), TaskTool.id, "codepuppy-readonly")).toBe("PASS")
+      expect(yield* call("codepuppy-ask", builtin(TaskTool.id), TaskTool.id, "codepuppy-ask")).toBe("PASS")
+      expect(yield* evaluate("codepuppy-readonly")).toEqual(["allow", "ask", "allow"])
       // task 工具三档都留在表里(只读档按 pattern 判,不整把移除),否则同档子任务也派不出去。
       for (const t of TIERS) expect(yield* tableHides(t, [TaskTool.id])).toEqual([])
     }),

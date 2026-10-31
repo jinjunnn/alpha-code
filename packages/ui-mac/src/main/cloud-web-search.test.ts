@@ -31,9 +31,9 @@ const registeredCloudTools = [CLOUD_WEB_SEARCH_TOOL_ID, ...siblingCloudTools]
 
 /** alpha 注入的三个 agent 都显式 `websearch: "allow"`(alpha-config-injection.ts)。 */
 const alphaAgents = () => ({
-  "alpha-automation": { permission: { websearch: "allow", bash: "deny" } },
-  "alpha-readonly": { permission: { websearch: "allow", edit: "deny" } },
-  "alpha-automation-standard": { permission: { websearch: "allow", edit: "allow" } },
+  "codepuppy-automation": { permission: { websearch: "allow", bash: "deny" } },
+  "codepuppy-readonly": { permission: { websearch: "allow", edit: "deny" } },
+  "codepuppy-automation-standard": { permission: { websearch: "allow", edit: "allow" } },
 })
 
 describe("web search sovereignty denies", () => {
@@ -103,8 +103,8 @@ describe("web search sovereignty denies", () => {
   test("agent rules unrelated to web search stay untouched", () => {
     const config = { permission: {}, agent: alphaAgents() }
     applyWebSearchDenies(config, { killSwitch: true, platformPays: true }, () => {})
-    expect(config.agent["alpha-automation-standard"].permission.edit).toBe("allow")
-    expect(config.agent["alpha-readonly"].permission.edit).toBe("deny")
+    expect(config.agent["codepuppy-automation-standard"].permission.edit).toBe("allow")
+    expect(config.agent["codepuppy-readonly"].permission.edit).toBe("deny")
   })
 
   // #223 R2 Blocker 1(路径 ①):`applyWebSearchDenies` 以前只改**已有的精确** `websearch` 键 ——
@@ -265,7 +265,7 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
     const hidden = Permission.disabled(registeredTools(), Permission.fromConfig(config.permission as never))
     expect([...hidden]).toEqual([])
     // agent 级规则排在全局之后(`evaluate`/`disabled` 取 findLast)—— 那一层也不许把两条腿藏掉。
-    // 只判这两个 id:`alpha-automation` 自己写着 `bash: "deny"`,那是它该藏的,与本票无关。
+    // 只判这两个 id:`codepuppy-automation` 自己写着 `bash: "deny"`,那是它该藏的,与本票无关。
     const webSearchIds = [cloudWebSearchEngineId(), LOCAL_WEB_SEARCH_TOOL_ID]
     for (const [name, agent] of Object.entries(config.agent)) {
       const ruleset = Permission.merge(

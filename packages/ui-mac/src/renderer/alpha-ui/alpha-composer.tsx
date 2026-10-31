@@ -354,7 +354,7 @@ function AddButton(props: { onOpen: () => void; expanded: boolean }) {
 
 /* ── 权限 chip(`#1413`):三档,每档发出的请求逐字节不同 ──
  * allow「全部批准」= 不压 agent(引擎默认 build,edit/bash 全放行 —— 这就是此前「请求审批」档的真实行为);
- * ask「请求审批」= 提交时强制 alpha-ask(edit/bash 真的弹审批);readonly「只读」= 强制 alpha-readonly(deny)。
+ * ask「请求审批」= 提交时强制 codepuppy-ask(edit/bash 真的弹审批);readonly「只读」= 强制 codepuppy-readonly(deny)。
  * 映射表是 composer-state 的 PERM_AGENT;这里的标签 / 副标题 / 图标同样按 PermMode 穷举 —— 少一档 typecheck 红,
  * 不会有哪一档静默借用别人的标签或图标。
  * REQ-126 AC7(#658)退休过的「全自动」档是反例:提交层只对 readonly 分支,它与「询问」产出完全相同的请求,
@@ -955,7 +955,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
      重挂,但同一实例内 sessionID 换代(模型链已按此换代)也必须换档位 —— 两种都盖住。
 
      #884:只读档(perm)走**同一把钥匙、同一处 adopt/release**。它不跟上就等于上面白改 ——
-     `buildPromptRequest` 里 readonly 强制 alpha-readonly 并压过手选档位,只读档跨会话粘连时
+     `buildPromptRequest` 里 readonly 强制 codepuppy-readonly 并压过手选档位,只读档跨会话粘连时
      B 的档位照样被顶掉。两者的作用域生命周期完全一致,所以共用这一个 effect,不另起一条。
 
      #891:那把钥匙此前是 raw `sessionID`,现在是仓内 canonical 的会话身份键
@@ -1681,7 +1681,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     // #884:档位/只读档在这里**定格**。它们是模块级 signal(所有渲染面共用一份),而 home 的
     // `await startChat(...)` 之后还要把这条消息的档位登记给新会话 —— 中途用户完全可能点侧栏进另一个
     // 会话,那时 signal 已经是**那个会话**的值。续行再读一次 signal,登记的就是别人的档位:
-    // 第一条确实以只读发出去了,进了新会话却显示「请求审批」,第二条也真的不再带 alpha-readonly。
+    // 第一条确实以只读发出去了,进了新会话却显示「请求审批」,第二条也真的不再带 codepuppy-readonly。
     // 一份快照,构造请求与两处 seed 都用它。
     const submittedAgent = composerAgent()
     const submittedPerm = composerPerm()
@@ -1749,7 +1749,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         homePendingSession = undefined
         // #570:这条消息用的档位就是新会话的开局档位 —— 不交给它,跳进会话页的瞬间 chip 熄灭、
         // 第二条消息掉回默认档,而用户明明在首页把计划模式开着发出了第一条。
-        // #884:只读档同理 —— 第一条**已经**是以只读发出去的(req.agent = alpha-readonly),
+        // #884:只读档同理 —— 第一条**已经**是以只读发出去的(req.agent = codepuppy-readonly),
         // 跳进会话页却回到「请求审批」,等于我们背着用户把它关了。
         // 用上面的提交快照,不重读 signal:这一行跑在 await 之后,signal 可能早已易主(见那段注释)。
         // #891:登记用的钥匙必须与会话页 adopt 时算出的**逐字节相同** —— 同一个 `identityKey`,

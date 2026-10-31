@@ -47,14 +47,14 @@ describe("buildPromptRequest", () => {
     const r = buildPromptRequest({ text: "hi", model: sonnet, effort: "极限", perm: "allow", agent: null })
     expect(r.model).toEqual({ providerID: "alpha", id: "claude-sonnet-4.6" })
   })
-  test("只读权限 → agent 强制 alpha-readonly,压过手选 agent", () => {
+  test("只读权限 → agent 强制 codepuppy-readonly,压过手选 agent", () => {
     const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "readonly", agent: "plan" })
     expect(r.agent).toBe(READONLY_AGENT)
   })
-  test("请求审批 → agent 强制 alpha-ask,压过手选 agent(#1413:此前这档不带 agent,落到 build 全放行)", () => {
+  test("请求审批 → agent 强制 codepuppy-ask,压过手选 agent(#1413:此前这档不带 agent,落到 build 全放行)", () => {
     const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "ask", agent: "plan" })
     expect(r.agent).toBe(ASK_AGENT)
-    expect(ASK_AGENT).toBe("alpha-ask")
+    expect(ASK_AGENT).toBe("codepuppy-ask")
     expect(buildPromptRequest({ text: "hi", model: null, effort: null, perm: "ask", agent: null }).agent).toBe(ASK_AGENT)
   })
   test("全部批准 + 手选 agent → 透传", () => {
@@ -68,11 +68,11 @@ describe("buildPromptRequest", () => {
     ) as Record<PermMode, string>
     expect(PERM_MODES).toEqual(["allow", "ask", "readonly"])
     expect(bodies.allow).toBe('{"parts":[{"type":"text","text":"hi"}]}')
-    expect(bodies.ask).toBe('{"parts":[{"type":"text","text":"hi"}],"agent":"alpha-ask"}')
-    expect(bodies.readonly).toBe('{"parts":[{"type":"text","text":"hi"}],"agent":"alpha-readonly"}')
+    expect(bodies.ask).toBe('{"parts":[{"type":"text","text":"hi"}],"agent":"codepuppy-ask"}')
+    expect(bodies.readonly).toBe('{"parts":[{"type":"text","text":"hi"}],"agent":"codepuppy-readonly"}')
     expect(new Set(Object.values(bodies)).size).toBe(PERM_MODES.length)
     // 穷举表本身:每一档都有映射;只有 allow 不压 agent。
-    expect(PERM_AGENT).toEqual({ allow: null, ask: "alpha-ask", readonly: "alpha-readonly" })
+    expect(PERM_AGENT).toEqual({ allow: null, ask: "codepuppy-ask", readonly: "codepuppy-readonly" })
     expect(PERM_MODES.filter(permLocksAgent)).toEqual(["ask", "readonly"])
   })
   test("extraParts(@ 提及)追加在 text part 之后", () => {
@@ -114,9 +114,9 @@ describe("filterAgents — 内部档永不可见(用户报障 2026-07-07)", () =
     { name: "build", mode: "primary" },
     { name: "plan", mode: "primary" },
     { name: "general", mode: "subagent" },
-    { name: "alpha-automation", mode: "primary" },
-    { name: "alpha-automation-standard", mode: "primary" },
-    { name: "alpha-readonly", mode: "primary" },
+    { name: "codepuppy-automation", mode: "primary" },
+    { name: "codepuppy-automation-standard", mode: "primary" },
+    { name: "codepuppy-readonly", mode: "primary" },
     { name: "compaction", mode: "primary", hidden: true },
     { name: "custom-mine", mode: "all", description: "我的" },
   ]

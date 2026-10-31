@@ -260,7 +260,7 @@ describe("空项目态「打开项目」:改走 alpha 自己的目录选择", ()
 })
 
 describe("composer 权限档位:三档各自真的改变提交参数(#1413;REQ-126 曾退休一个点了不算数的「全自动」档)", () => {
-  test("弹层里三档,标签两两不同,逐档真点后提交层的 agent 三个互不相同 —— 全部批准不带、请求审批 alpha-ask、只读 alpha-readonly", async () => {
+  test("弹层里三档,标签两两不同,逐档真点后提交层的 agent 三个互不相同 —— 全部批准不带、请求审批 codepuppy-ask、只读 codepuppy-readonly", async () => {
     await mountShell(() => runtime.PermChipHost())
 
     const chip = document.querySelector<HTMLButtonElement>(".a-chip-perm")!

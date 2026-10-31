@@ -14,7 +14,7 @@
 // 每条判据先证明手段测得出已知的坏:
 //   对照臂(不装 ext = 拿掉钉子)build + hub_install ⇒ 直接放行(passed-through)—— 这就是钉子要修的缺陷本身;
 //   被测臂(装 ext)build + hub_install ⇒ UnansweredError(真的发布了请求、没人批、fail-closed);
-//   alpha-automation + hub_install ⇒ DeniedError(无人值守的 agent 不弹一个没人看的框);
+//   codepuppy-automation + hub_install ⇒ DeniedError(无人值守的 agent 不弹一个没人看的框);
 //   I7:回复 always 放行了这一次,下一次同一条目照样要问(always: [] ⇒ 不产生抵消后续请求的 grant)。
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -158,13 +158,13 @@ it.instance(
 )
 
 it.instance(
-  "I3:装上真 ext 的默认配置下,build 的 hub_install 真的进待批(UnansweredError);alpha-automation 是 deny",
+  "I3:装上真 ext 的默认配置下,build 的 hub_install 真的进待批(UnansweredError);codepuppy-automation 是 deny",
   () =>
     Effect.gen(function* () {
       yield* injectDefaults(true)
       yield* loadPlugins
       expect(yield* askHubInstall("build", "mcp:github", "ses_1531_build")).toEqual({ kind: "unanswered" })
-      expect(yield* askHubInstall("alpha-automation", "mcp:github", "ses_1531_auto")).toEqual({ kind: "denied" })
+      expect(yield* askHubInstall("codepuppy-automation", "mcp:github", "ses_1531_auto")).toEqual({ kind: "denied" })
       const permission = yield* Permission.Service
       expect(yield* permission.list()).toHaveLength(0)
     }),
@@ -200,6 +200,54 @@ it.instance(
       yield* permission.reply({ requestID: pending[0]!.id, reply: "always" })
       expect(Exit.isSuccess(yield* Fiber.await(first))).toBe(true)
       expect(yield* askHubInstall("build", "mcp:github", "ses_1531_always")).toEqual({ kind: "unanswered" })
+    }),
+  { git: true },
+)
+
+// alpha-code#1568 裁决 4:工具 id 改名时,`hub_install` 权限键随之改名。行为要与改名前**逐档相同** —— 下表是改名前
+// (权限键 / 工具 id 都还是 `hub_install`)在同一套真注入 + 真 ext 下实测出的结论,改名后同一张表必须原样成立:
+// 只读档等不弹框的档改成 deny / 放行,或工具在某一档的工具表里消失,都会当场红。
+const HUB_INSTALL_PERMISSION = "hub_install"
+const PRE_RENAME_VERDICTS: Record<string, { ask: Verdict["kind"]; hidden: boolean }> = {
+  build: { ask: "unanswered", hidden: false },
+  "codepuppy-readonly": { ask: "unanswered", hidden: false },
+  "codepuppy-ask": { ask: "unanswered", hidden: false },
+  "codepuppy-automation": { ask: "denied", hidden: true },
+  "codepuppy-automation-standard": { ask: "denied", hidden: true },
+}
+it.instance(
+  "#1568 裁决 4:各档对改名后安装权限键的放行 / 拒绝 / 工具表可见性与改名前 hub_install 逐项相同",
+  () =>
+    Effect.gen(function* () {
+      yield* injectDefaults(true)
+      yield* loadPlugins
+      const observed: Record<string, { ask: Verdict["kind"]; hidden: boolean }> = {}
+      for (const agent of ["build", "codepuppy-readonly", "codepuppy-ask", "codepuppy-automation", "codepuppy-automation-standard"]) {
+        const ruleset = yield* rulesetOf(agent)
+        const permission = yield* Permission.Service
+        const exit = yield* permission
+          .ask({
+            sessionID: SessionID.make(`ses_1568_${agent}`),
+            permission: HUB_INSTALL_PERMISSION,
+            patterns: ["mcp:github"],
+            always: [],
+            metadata: { alphaHub: { catalogId: "mcp:github", requestId: `req_1568_${agent}` } },
+            ruleset,
+          })
+          .pipe(Effect.exit)
+        observed[agent] = {
+          ask: Exit.isSuccess(exit)
+            ? "passed-through"
+            : Cause.squash(exit.cause) instanceof Permission.UnansweredError
+              ? "unanswered"
+              : Cause.squash(exit.cause) instanceof PermissionV1.DeniedError
+                ? "denied"
+                : "other",
+          hidden: Permission.disabled([HUB_INSTALL_PERMISSION], ruleset).has(HUB_INSTALL_PERMISSION),
+        }
+      }
+      console.log(`#1568 ${HUB_INSTALL_PERMISSION} ${JSON.stringify(observed)}`)
+      expect(observed).toEqual(PRE_RENAME_VERDICTS)
     }),
   { git: true },
 )

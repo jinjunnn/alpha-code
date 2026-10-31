@@ -493,7 +493,7 @@ describe("#652 会话内连发三条:每一条都必须渲染出来", () => {
    把档位交给 `startChat`,它的 `session.command` 请求体由 use-projects.cases.ts 驱动真 startChat 断言。
    变异验证:把 alpha-composer.tsx 命令请求里的 `agent` 删掉,本用例「请求审批」「只读」两格转红。 */
 describe("REQ-236 AC3:斜杠命令带档位 agent(与普通发送同一张档位表)", () => {
-  test("会话内 /review:全部批准不带、请求审批 alpha-ask、只读 alpha-readonly;首页 /review 把档位交给 startChat", async () => {
+  test("会话内 /review:全部批准不带、请求审批 codepuppy-ask、只读 codepuppy-readonly;首页 /review 把档位交给 startChat", async () => {
     engine.commands = [{ name: "review", source: "command" }]
     const host = mountSessionSurface(() => false)
     await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
@@ -514,7 +514,7 @@ describe("REQ-236 AC3:斜杠命令带档位 agent(与普通发送同一张档位
       expect(engine.startChatOpts[0]?.["perm"]).toBe(perm)
     }
     // 「全部批准」不带 agent 键(改动前的请求逐字不变),另两档带各自的载体。
-    expect(seen).toEqual({ allow: "<absent>", ask: "alpha-ask", readonly: "alpha-readonly" })
+    expect(seen).toEqual({ allow: "<absent>", ask: "codepuppy-ask", readonly: "codepuppy-readonly" })
   })
 })
 

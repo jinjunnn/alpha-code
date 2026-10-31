@@ -83,10 +83,10 @@ describe("I2:参数只有字符串标识", () => {
 })
 
 describe("I3:确认框一定会出现(钉子)", () => {
-  test("pinHubInstallPermission:全局与每个 agent 末位;用户写的 allow 被移到前面压住;alpha-automation* 是 deny", () => {
+  test("pinHubInstallPermission:全局与每个 agent 末位;用户写的 allow 被移到前面压住;codepuppy-automation* 是 deny", () => {
     const cfg: Record<string, unknown> = {
       permission: { hub_install: "allow", "*": "allow" },
-      agent: { build: { permission: { "*": "allow" } }, "alpha-automation": { permission: { "*": "allow" } }, "alpha-automation-standard": {}, plan: {} },
+      agent: { build: { permission: { "*": "allow" } }, "codepuppy-automation": { permission: { "*": "allow" } }, "codepuppy-automation-standard": {}, plan: {} },
     }
     pinHubInstallPermission(cfg)
     expect(Object.entries(cfg.permission as object).at(-1)).toEqual(["hub_install", "ask"])
@@ -94,8 +94,8 @@ describe("I3:确认框一定会出现(钉子)", () => {
     const agents = cfg.agent as Record<string, { permission: Record<string, string> }>
     expect(Object.entries(agents.build!.permission).at(-1)).toEqual(["hub_install", "ask"])
     expect(agents.plan!.permission).toEqual({ hub_install: "ask" })
-    expect(agents["alpha-automation"]!.permission.hub_install).toBe("deny")
-    expect(agents["alpha-automation-standard"]!.permission).toEqual({ hub_install: "deny" })
+    expect(agents["codepuppy-automation"]!.permission.hub_install).toBe("deny")
+    expect(agents["codepuppy-automation-standard"]!.permission).toEqual({ hub_install: "deny" })
     const stringy: Record<string, unknown> = { permission: "allow" }
     pinHubInstallPermission(stringy)
     expect(stringy.permission).toEqual({ "*": "allow", hub_install: "ask" })

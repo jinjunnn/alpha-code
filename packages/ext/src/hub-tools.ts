@@ -39,12 +39,12 @@ export const HUB_NEXT_MESSAGE_HINT =
 export const HUB_PRICE_NOTE_MISSING = "本目录尚未提供价格说明;费用以服务端为准"
 export const HUB_UNAVAILABLE = "The Customization Center is not available in this engine host."
 
-const AGENT_AUTOMATION_PREFIX = "alpha-automation"
+const AGENT_AUTOMATION_PREFIX = "codepuppy-automation"
 
 /**
  * I3:把 `hub_install` 钉成**末位**规则 —— 全局 `cfg.permission` 与每个 `cfg.agent[*].permission`。引擎按对象插入序展开、
  * `findLast` 求值,所以「只改值不动位置」不够:前面写的 `hub_install: ask` 会被同表后面的 `"*": "allow"` 顶掉;删键再写回 = 移到末位
- * (先例 ui-mac cloud-web-search.ts 的 pinDeny)。无人值守的自动化 agent(`alpha-automation*`,「零 ask」硬前提)钉 deny ——
+ * (先例 ui-mac cloud-web-search.ts 的 pinDeny)。无人值守的自动化 agent(`codepuppy-automation*`,「零 ask」硬前提)钉 deny ——
  * 没有人会看到那个框。用户 / 项目配置里写 `hub_install: allow` 也压不过它。
  */
 export function pinHubInstallPermission(cfg: Record<string, unknown>) {
