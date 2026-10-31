@@ -164,6 +164,8 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
         bindingDigest: facts?.entry ? mcpBindingDigest(identity.origin, facts.entry) : undefined,
         // #1285:子工具全是 MCP —— 目的地(transport)随身份轴那一问供数。
         transport: AlphaToolPolicyGate.mcpTransportFact(facts?.entry),
+        // #1617:执行位置(与时间线同一份派生)随那一问送到审批卡。
+        location: AlphaToolPolicyGate.mcpLocation(facts?.entry),
       }
     }),
     ruleset: input.ruleset,

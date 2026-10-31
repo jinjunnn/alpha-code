@@ -40,7 +40,12 @@ import { Effect } from "effect"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { InstanceRef } from "@/effect/instance-ref"
 import type { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
-import { canonicalToolIdentity, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
+import {
+  canonicalToolIdentity,
+  type ToolAuthority,
+  type ToolIdentity,
+  type ToolLocation,
+} from "@opencode-ai/schema/tool-identity"
 import type { ToolPolicySubject } from "@opencode-ai/schema/alpha-tool-policy"
 import { Permission } from "./index"
 import type { ToolTransportFact } from "./alpha-risk-classification"
@@ -131,6 +136,8 @@ function namedDeny(identity: ToolIdentity, reason: string, detail?: string): Per
  */
 export interface GateSubject extends ToolPolicySubject {
   readonly transport?: ToolTransportFact
+  /** #1617:MCP 的执行位置(`mcpLocation`,与时间线同一份派生);写进身份轴那一问,审批卡据此写「第三方 · 主机」。 */
+  readonly location?: ToolLocation
 }
 
 /** 从**生效的** MCP 配置 entry 派生传输事实(与 `mcpBindingEvidence` 同一去秘密口径)。 */
@@ -138,6 +145,19 @@ export function mcpTransportFact(entry: ConfigMCPV1.Info | undefined): ToolTrans
   if (!entry) return undefined
   if (entry.type === "remote") return { kind: "mcp-remote", url: entry.url }
   return { kind: "mcp-local", command: [...entry.command] }
+}
+
+/**
+ * #1576:MCP 工具在哪里执行 —— 从**生效**条目经 `mcpTransportFact`(执行闸送审批面的同一去秘密口径)派生:
+ * 远端取 URL 主机名,本机命令 = local;条目未知或 URL 解析不出主机 ⇒ 不写(显示层说「位置未知」)。
+ * 时间线(`session/tools.ts` 注册工具显示)与审批请求(#1617,经 `GateSubject.location`)共用这一份。
+ */
+export function mcpLocation(entry: ConfigMCPV1.Info | undefined): ToolLocation | undefined {
+  const transport = mcpTransportFact(entry)
+  if (!transport) return undefined
+  if (transport.kind === "mcp-local") return { kind: "local" }
+  const host = URL.canParse(transport.url) ? new URL(transport.url).hostname : ""
+  return host ? { kind: "remote", host } : undefined
 }
 
 export interface DecideInput<R> {
@@ -207,6 +227,8 @@ export const confirm = <R>(decision: GateDecision, input: GateInput<R>): Effect.
         identity: subject.identity,
         authority: subject.authority,
         ...(subject.transport ? { transport: subject.transport } : {}),
+        // #1617:执行位置(只有 MCP 带;非 MCP 工具不写)—— 审批卡的来源行据此写主机,渲染层不自己解析地址。
+        ...(subject.location ? { location: subject.location } : {}),
         ...(input.args !== undefined ? { args: input.args } : {}),
         policy: { directory: instance?.directory, canonical, bindingDigest, askedBy },
       },

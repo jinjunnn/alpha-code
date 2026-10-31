@@ -924,3 +924,75 @@ describe("#1574 AC2:直接子任务的身份轴询问在钩子之后,问的就�
     30_000,
   )
 })
+
+// ── #1617 AC3:身份轴那一问带执行位置,与时间线同值(`mcpLocation` 一份派生)──────────────────────────────
+// 时间线的位置 = 生产 `SessionTools.resolve()` 经 `processor.registerToolDisplay` 登记的那份快照;这里截下它,
+// 与生产 `Permission.list()` 里挂着的请求 `metadata.location` 逐字比对。期望主机另取自 server URL 手写比对。
+const resolveToolsWithDisplays = Effect.fn("alpha1617.resolveTools")(function* (id?: SessionID) {
+  const agents = yield* Agent.Service
+  const displays = new Map<string, ToolDisplaySnapshotV1>()
+  const processor = {
+    ...testProcessor(),
+    registerToolDisplay: (technicalId: string, display: ToolDisplaySnapshotV1) => {
+      displays.set(technicalId, display)
+    },
+  } as unknown as Processor
+  const tools = yield* SessionTools.resolve({
+    agent: yield* agents.defaultInfo(),
+    model: testModel(),
+    session: testSession([ALLOW_ALL], id),
+    processor,
+    bypassAgentCheck: false,
+    messages: [],
+    promptOps: {} as TaskPromptOps,
+  })
+  return { tools, displays }
+})
+
+describe("#1617 AC3:第三方 MCP 那一问的 metadata.location 与时间线的执行位置同值;非 MCP 不写", () => {
+  it.instance("远端 MCP:location = 服务地址的主机名,与登记给时间线的快照逐字相同", () =>
+    Effect.gen(function* () {
+      const { url } = yield* setup()
+      const { tools, displays } = yield* resolveToolsWithDisplays()
+      const run = launch(tools[ALIAS_UPLOAD]!, "1617-m", { destination: EXFIL, body: "x" })
+      const request = yield* onlyPending(run)
+      expect(request.metadata["location"]).toEqual({ kind: "remote", host: new URL(url).hostname })
+      expect(request.metadata["location"]).toEqual(displays.get(ALIAS_UPLOAD)!.location)
+      yield* reply(request, "reject")
+      yield* finish(run)
+    }),
+  )
+
+  it.instance("非 MCP(宿主资源工具):那一问不带 location", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      yield* (yield* AlphaToolPolicy.Service).setRecord({
+        selector: { level: "tool", canonical: "host::list_mcp_resources" },
+        state: "ask",
+      })
+      const { tools } = yield* resolveToolsWithDisplays()
+      const run = launch(tools["list_mcp_resources"]!, "1617-h", {})
+      const request = yield* onlyPending(run)
+      expect(request.permission).toBe("host::list_mcp_resources")
+      expect(request.metadata).not.toHaveProperty("location")
+      yield* reply(request, "reject")
+      yield* finish(run)
+    }),
+  )
+
+  itCodeMode.instance("code-mode 子工具(MCP):location 同样是服务地址的主机名", () =>
+    Effect.gen(function* () {
+      const { url } = yield* setup()
+      const chat = yield* (yield* Session.Service).create({ title: "#1617 code-mode" })
+      const { tools } = yield* resolveToolsWithDisplays(chat.id)
+      const run = launch(tools["execute"]!, "1617-cm", {
+        code: `return await tools.${SERVER}.upload({ destination: ${JSON.stringify(EXFIL)}, body: "x" })`,
+      })
+      const request = yield* onlyPending(run)
+      expect(request.permission).toBe(ID_UPLOAD)
+      expect(request.metadata["location"]).toEqual({ kind: "remote", host: new URL(url).hostname })
+      yield* reply(request, "reject")
+      yield* finish(run)
+    }),
+  )
+})
