@@ -26,6 +26,7 @@ type TestRuntime = {
   createPermissionDecisionCommand: typeof createPermissionDecisionCommand
   PermissionDialog: typeof PermissionDialog
   PermissionWatcher: typeof PermissionWatcher
+  resetAuthRecoveryForTests: () => void
 }
 
 type PermissionClient = Parameters<typeof PermissionWatcher>[0]["client"]
@@ -52,8 +53,18 @@ const disposers: Array<() => void> = []
 GlobalRegistrator.register()
 const runtime = (await import(pathToFileURL(join(runtimeDirectory, "permission-test-runtime.js")).href)) as TestRuntime
 
+// 生产 PermissionWatcher 经 subscribeAuthState 读登录态(范围行写「当前账户 / 未登录」),这里只在 preload 边界放桩;
+// 经 defineProperty(configurable) 注入,与 permission-single-surface.test.ts 同法(裸赋值遇只读 window.api 会抛)。
+let authState: Promise<{ status: "logged-in" | "logged-out"; mode: "byok" | "platform" }> = new Promise(() => {})
 beforeEach(() => {
   document.body.replaceChildren()
+  runtime.resetAuthRecoveryForTests()
+  authState = new Promise(() => {})
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    writable: true,
+    value: { auth: { getState: () => authState, subscribe: () => () => {} } },
+  })
 })
 
 afterEach(async () => {
@@ -62,6 +73,7 @@ afterEach(async () => {
     .reverse()
     .forEach((dispose) => dispose())
   await flush()
+  Reflect.deleteProperty(window, "api")
 })
 
 afterAll(async () => {
@@ -111,7 +123,7 @@ function mount(
   onSubmit: (command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>,
   projectID: string | null = "prj_alpha",
   permissionRequest = request,
-  options: { composer?: boolean; saveToolPolicy?: SaveToolPolicy } = {},
+  options: { composer?: boolean; saveToolPolicy?: SaveToolPolicy; signedIn?: boolean } = {},
 ) {
   const textarea = document.createElement("textarea")
   if (options.composer !== false) {
@@ -130,6 +142,7 @@ function mount(
         projectID: projectID ?? undefined,
         onSubmit,
         saveToolPolicy: options.saveToolPolicy ?? (async () => ({ ok: true as const })),
+        signedIn: () => options.signedIn ?? true,
       }),
     host,
   )
@@ -564,6 +577,27 @@ describe("Alpha Permission watcher reconciliation", () => {
     expect(replies).toEqual(["per_ui_observed:once"])
   })
 
+  test("r1-1 生产 watcher 按登录态写范围行:读到 logged-in 才写当前账户,读不到或登出写未登录", async () => {
+    const identity = v1Identity("policy")
+    const client = (): PermissionClient => ({
+      list: async () => [identity],
+      reply: async (_requestID, command) => receipt(command, identity),
+      subscribe: () => () => {},
+    })
+    mountWatcher(client())
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 未登录")
+    disposers.splice(0).forEach((dispose) => dispose())
+    await flush()
+
+    runtime.resetAuthRecoveryForTests()
+    authState = Promise.resolve({ status: "logged-in", mode: "platform" })
+    mountWatcher(client())
+    await flush()
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 当前账户 · 可在设置里撤回")
+  })
+
   test("reconciles missed asked and replied events after server reconnects", async () => {
     const stale = { ...request, id: "per_ui_stale", action: "bash", resources: ["old/**"] }
     const fresh = { ...request, id: "per_ui_fresh", action: "edit", resources: ["new/**"] }
@@ -872,7 +906,7 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     const keys = Object.keys(zh).filter((key) =>
       /^alpha\.permission\.(allow(Session|Project)|remember|listSeparator|sessionScope|projectScope|everyTime|projectMissing|delegationNote|saveFailed)/.test(key),
     )
-    expect(keys.length).toBe(18)
+    expect(keys.length).toBe(19)
     for (const key of keys) expect(typeof (en as Record<string, string>)[key]).toBe("string")
   })
 
@@ -911,6 +945,22 @@ describe("REQ-236 #1575 中间按钮按请求种类", () => {
     mount(async (command) => receipt(command, ruleset), null, ruleset)
     await flush()
     expect(document.querySelector('[data-permission-note="project-missing"]')).toBeNull()
+  })
+
+  test("r1-1 身份轴「在此项目中始终允许」的范围行:登录写当前账户,未登录写未登录", async () => {
+    const permissionRequest = v1Identity("policy")
+    const { dispose } = mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest, {
+      signedIn: false,
+    })
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 未登录")
+    dispose()
+    disposers.splice(disposers.indexOf(dispose), 1)
+    await flush()
+
+    mount(async (command) => receipt(command, permissionRequest), "prj_alpha", permissionRequest, { signedIn: true })
+    await flush()
+    expect(rememberBox()?.querySelector("small")?.textContent).toBe("当前项目 · 当前账户 · 可在设置里撤回")
   })
 
   test("AC6 新式请求(带 save):中间按钮仍是「始终允许」,照旧创建项目授权,五项事实与页脚说明都在", async () => {

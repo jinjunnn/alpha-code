@@ -86,9 +86,29 @@ const v2Request = {
   save: ["pwd"],
 }
 
+// preload 边界的桩(生产 PermissionWatcher 读登录态、身份轴写设置都经 window.api):每条用例前装、后拆,
+// 经 defineProperty(configurable) 注入 —— 裸赋值遇前序文件定义的只读 window.api 会抛(同 permission-single-surface.test.ts)。
+const toolPolicyWrites: unknown[] = []
+let toolPolicyResult: { ok: true } | { ok: false; code: "write-failed" } = { ok: true }
+
 beforeEach(() => {
   runtime.resetDualChannelHarness()
   document.body.replaceChildren()
+  toolPolicyWrites.splice(0)
+  toolPolicyResult = { ok: true }
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    writable: true,
+    value: {
+      auth: { getState: () => new Promise(() => {}), subscribe: () => () => {} },
+      toolPolicy: {
+        setRecord: async (input: unknown) => {
+          toolPolicyWrites.push(input)
+          return toolPolicyResult
+        },
+      },
+    },
+  })
 })
 
 afterEach(async () => {
@@ -97,6 +117,7 @@ afterEach(async () => {
     .reverse()
     .forEach((dispose) => dispose())
   await flush()
+  Reflect.deleteProperty(window, "api")
 })
 
 afterAll(async () => {
@@ -209,19 +230,9 @@ describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒
   })
 
   test("REQ-236 #1575 AC2:身份轴「在此项目中始终允许」经生产接线先写设置再回 once;写不成不回", async () => {
-    // 生产 PermissionWatcher 把 preload 的 toolPolicy.setRecord 交给对话框 —— 这里只在 preload 边界放桩。
-    const writes: unknown[] = []
-    let result: { ok: true } | { ok: false; code: "write-failed" } = { ok: false, code: "write-failed" }
-    Object.assign(window, {
-      api: {
-        toolPolicy: {
-          setRecord: async (input: unknown) => {
-            writes.push(input)
-            return result
-          },
-        },
-      },
-    })
+    // 生产 PermissionWatcher 把 preload 的 toolPolicy.setRecord 交给对话框 —— 桩在 beforeEach 里(preload 边界)。
+    toolPolicyResult = { ok: false, code: "write-failed" }
+    const writes = toolPolicyWrites
     const identity = {
       ...v1Request,
       id: "per_v1_identity_1",
@@ -248,7 +259,7 @@ describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒
     expect(runtime.permissionTraffic()).not.toContain("permission.reply")
     expect(dialog()).not.toBeNull()
 
-    result = { ok: true }
+    toolPolicyResult = { ok: true }
     button("always")!.click()
     await flush()
     await flush()
@@ -273,7 +284,6 @@ describe("#668 审批面双通道:v1 请求真的出现、真的能批准/能拒
     const reply = runtime.sdkCalls.find((call) => call.path === "permission.reply")
     expect(reply!.args[0]).toMatchObject({ requestID: identity.id, reply: "once" })
     expect(dialog()).toBeNull()
-    Reflect.deleteProperty(window, "api")
   })
 
   test("v1 提交失败 = 不假定放行:对话框留在原地并显示失败", async () => {

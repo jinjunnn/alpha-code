@@ -1086,6 +1086,7 @@ export const dict = {
   "alpha.permission.rememberTool": "在此项目使用这个工具",
   "alpha.permission.sessionScope": "本次会话 · 重启后失效",
   "alpha.permission.projectScope": "当前项目 · 当前账户 · 可在设置里撤回",
+  "alpha.permission.projectScopeSignedOut": "当前项目 · 未登录",
   "alpha.permission.everyTime": "这个工具每次都要确认",
   "alpha.permission.projectMissing": "找不到当前项目,不能始终允许",
   "alpha.permission.delegationNote": "子任务里不再逐项询问",

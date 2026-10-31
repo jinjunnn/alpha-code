@@ -4,3 +4,4 @@ export { createPermissionDecisionCommand, PermissionDialog } from "./PermissionD
 export { PermissionWatcher } from "./permission-watcher"
 export { createPermissionV2Feed } from "./session-workspace/session-permission-feed"
 export { observeThroughStore } from "./permission-store-observation"
+export { resetAuthRecoveryForTests } from "../auth-recovery"

@@ -1109,6 +1109,7 @@ export const dict = {
   "alpha.permission.rememberTool": "using this tool in this project",
   "alpha.permission.sessionScope": "This session · ends on restart",
   "alpha.permission.projectScope": "This project · this account · undo in Settings",
+  "alpha.permission.projectScopeSignedOut": "This project · not signed in",
   "alpha.permission.everyTime": "This tool asks every time",
   "alpha.permission.projectMissing": "No current project, so this can't be always allowed",
   "alpha.permission.delegationNote": "Subtasks won't ask again step by step",

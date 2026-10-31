@@ -188,7 +188,11 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: new Proxy(
-      { ext: new Proxy(ext, { get: (target, name: string) => target[name] ?? fallback(name) }) },
+      {
+        ext: new Proxy(ext, { get: (target, name: string) => target[name] ?? fallback(name) }),
+        // `#1575`:生产 PermissionWatcher 经 subscribeAuthState 读登录态;subscribe 必须回一个退订函数(兜底代理按名字回 Promise)。
+        auth: { getState: () => neverSettle(), subscribe: () => () => {} },
+      },
       {
         get: (target, name: string) =>
           name in target ? (target as Record<string, unknown>)[name] : new Proxy({}, { get: (_t, n: string) => fallback(n) }),

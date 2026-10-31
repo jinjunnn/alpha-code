@@ -50,6 +50,8 @@ export function PermissionDialog(props: {
   onResolved?: (receipt: PermissionV2DecisionReceipt) => void
   /** 「在此项目中始终允许」把工具级「启用」写进设置的那一口(生产 = preload `toolPolicy.setRecord`)。 */
   saveToolPolicy: ToolPolicyApi["setRecord"]
+  /** 当前是否已登录:身份轴的「启用」存进登录账户的分区,未登录时存进匿名分区,范围行据此写。 */
+  signedIn: () => boolean
 }) {
   const facts = permissionRequestFacts(props.request)
   const approval = permissionApprovalOf(props.request)
@@ -144,7 +146,10 @@ export function PermissionDialog(props: {
   const remember = () => {
     if (!canAlways()) return undefined
     if (approval.kind === "project")
-      return { what: t("alpha.permission.rememberTool"), scope: t("alpha.permission.projectScope") }
+      return {
+        what: t("alpha.permission.rememberTool"),
+        scope: props.signedIn() ? t("alpha.permission.projectScope") : t("alpha.permission.projectScopeSignedOut"),
+      }
     if (approval.kind === "session" && saved?.length)
       return { what: rememberedText(props.request.action, saved), scope: t("alpha.permission.sessionScope") }
     return undefined
