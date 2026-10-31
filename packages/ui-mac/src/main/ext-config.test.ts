@@ -834,7 +834,7 @@ describe("validateProviderInput — #1392: address admission is the egress class
   const alphaJsonc = () => path.join(alphaTmp, "alpha.jsonc")
 
   test("I4: ids reserved by the catalog are refused (display id, `<id>-byok` engine id, platform id); nothing is written anywhere", () => {
-    for (const id of ["deepseek", "deepseek-byok", "alpha"]) {
+    for (const id of ["deepseek", "deepseek-byok", "codepuppy"]) {
       const result = validateProviderInput({ ...input(), id })
       expect(result.ok).toBe(false)
       if (!result.ok) expect(result.reason).toMatch(/reserved/)

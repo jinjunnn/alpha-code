@@ -157,7 +157,7 @@ describe("已应用目录 → picker 两组", () => {
     const failed = rows({ listState: "failed", models: [] })
     const platform = failed.filter((row) => row.group === "platform")
     expect(platform.some((row) => row.availability === "available")).toBe(false)
-    expect(failed.find((row) => row.model.providerID === "alpha")?.reason).toBe(t("alpha.model.listUnavailable"))
+    expect(failed.find((row) => row.model.providerID === "codepuppy")?.reason).toBe(t("alpha.model.listUnavailable"))
     // 未配 KEY 的 BYOK 供应商仍是「点击配置」,不被引擎故障改写成「暂不可用」。
     expect(failed.find((row) => row.model.providerID === "zhipuai")?.availability).toBe("needs-key")
   })
@@ -230,7 +230,7 @@ describe("BYOK 行的推理档位只从 BYOK 目录派生(#1266 / #1267 / `#1556
 
 describe("Model.Ref 统一与 session 真值投影", () => {
   test("上游 session ref 覆盖 UI 旧投影，variant 与 id/providerID 不拆成两份", () => {
-    const upstream = { providerID: "alpha", id: "claude-opus-4.8", variant: "高" }
+    const upstream = { providerID: "codepuppy", id: "claude-opus-4.8", variant: "高" }
     const projected = composerModelFromRef(upstream, catalog)
     expect(projected).toMatchObject({ ...upstream, name: "Claude Opus 4.8", variants: ["低", "中", "高"] })
     expect(modelRefOf(projected)).toEqual(upstream)

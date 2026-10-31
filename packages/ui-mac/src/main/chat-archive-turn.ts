@@ -298,10 +298,10 @@ export function buildTurns(input: BuildTurnsInput): BuildTurnsResult {
   return { turns, skipped }
 }
 
-/** `billing_path` 的派生规则,与服务端 `billingPathFor` 同一句话。桌面端只用它记日志 —— 线上不带
+/** `billing_path` 的派生规则,与服务端 `billingPathFor` 同一句话(服务端随 alpha-web#283 同窗改认 codepuppy)。桌面端只用它记日志 —— 线上不带
  *  这个字段(服务端从 `provider_id` 自己派生;带了会因 unknown key 被 `invalid_turn` 拒)。 */
 export function billingPathFor(providerId: string): "platform" | "byok" | "custom" {
-  if (providerId === "alpha") return "platform"
+  if (providerId === "codepuppy") return "platform"
   if (providerId.endsWith("-byok")) return "byok"
   return "custom"
 }

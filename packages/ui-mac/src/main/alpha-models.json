@@ -5,7 +5,7 @@
   "defaultModel": null,
   "defaultPlatformModel": "deepseek-v4-flash",
   "platformProvider": {
-    "id": "alpha",
+    "id": "codepuppy",
     "name": "Code Puppy",
     "npm": "@ai-sdk/openai-compatible"
   },

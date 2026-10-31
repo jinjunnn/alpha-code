@@ -149,7 +149,7 @@ afterEach(() => {
 describe("getModelCatalog", () => {
   test("exposes the catalog with the expected shape", () => {
     const c = getModelCatalog(userData)
-    expect(c.platformProvider?.id).toBe("alpha")
+    expect(c.platformProvider?.id).toBe("codepuppy")
     expect(Array.isArray(c.byokProviders)).toBe(true)
     expect(c.byokProviders.some((p) => p.id === "deepseek")).toBe(true)
     // `#1556`:还没钉过 ⇒ BYOK 段 = 随包首启引导;preset 卡片由目录的 preset 标志按目录顺序派生。
@@ -163,7 +163,7 @@ describe("getModelCatalog", () => {
     expect(getModelCatalog(userData).platformModels).toEqual([])
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
-    expect((buildAlphaModelConfig(userData)!.provider.alpha as any).models).toEqual({})
+    expect((buildAlphaModelConfig(userData)!.provider.codepuppy as any).models).toEqual({})
 
     seedPlatform()
     const platform = getModelCatalog(userData).platformModels
@@ -179,7 +179,7 @@ describe("getModelCatalog", () => {
         variants: row.display.variants,
       })
     }
-    const injected = (buildAlphaModelConfig(userData)!.provider.alpha as any).models
+    const injected = (buildAlphaModelConfig(userData)!.provider.codepuppy as any).models
     expect(injected["qwen3.7-max"].name).toBe("Qwen3.7 Max")
     expect(injected["claude-opus-4.8"].variants).toEqual(V3_ROWS.find((row) => row.id === "claude-opus-4.8")!.display.variants)
   })
@@ -290,8 +290,8 @@ describe("buildAlphaModelConfig — platform gateway (代发)", () => {
     plantSecret("DEEPSEEK_API_KEY", "sk-deepseek-123") // a BYOK node too, to prove ordering
     seedPlatform()
     const cfg = buildAlphaModelConfig(userData)!
-    expect(cfg.enabled_providers[0]).toBe("alpha") // unshifted to the front
-    const p = cfg.provider.alpha as any
+    expect(cfg.enabled_providers[0]).toBe("codepuppy") // unshifted to the front
+    const p = cfg.provider.codepuppy as any
     expect(p.options.baseURL).toBe("https://gw.example/v1")
     // REQ-236 `#1562`:平台 provider 的注入配置不含任何凭据值 —— apiKey 是固定的非凭据占位值,真凭据由 ext 的
     // chat.headers 每次请求从文件现读(platform-credential-header.ts);既不内联、也不是 {file:} / env 引用。
@@ -303,12 +303,12 @@ describe("buildAlphaModelConfig — platform gateway (代发)", () => {
 
   test("without ALPHA_BASE_URL there is no platform provider", () => {
     plantSecret("ALPHA_API_KEY", "jwt-abc")
-    expect(buildAlphaModelConfig(userData)!.provider.alpha).toBeUndefined()
+    expect(buildAlphaModelConfig(userData)!.provider.codepuppy).toBeUndefined()
   })
 
   test("without the ALPHA_API_KEY file there is no platform provider (no doomed 401 node)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
-    expect(buildAlphaModelConfig(userData)!.provider.alpha).toBeUndefined()
+    expect(buildAlphaModelConfig(userData)!.provider.codepuppy).toBeUndefined()
   })
 })
 
@@ -644,7 +644,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
       ],
     })
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
-    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    const p = buildAlphaModelConfig(userData)!.provider.codepuppy as any
     expect(Object.keys(p.models).sort()).toEqual(["brand-new-model", "deepseek-v4-flash"])
     expect(p.models["deepseek-v4-flash"].name).toBe("DeepSeek V4 Flash")
     expect(p.models["brand-new-model"].name).toBe("Brand New Model")
@@ -654,7 +654,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
     seedPlatform()
-    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    const p = buildAlphaModelConfig(userData)!.provider.codepuppy as any
     const opus = p.models["claude-opus-4.8"]
     expect(opus.variants["高"]).toEqual({ reasoning: { effort: "high" } }) // OR 统一 reasoning 对象
     const mini = p.models["gpt-5.4-mini"]
@@ -672,7 +672,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     plantSecret("ALPHA_API_KEY", "jwt")
     writeCatalogSnapshot(userData, { ...liveBase, models: [] })
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
-    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    const p = buildAlphaModelConfig(userData)!.provider.codepuppy as any
     expect(p.models).toEqual({})
     expect(getModelCatalog(userData).platformModels).toEqual([])
   })
@@ -690,7 +690,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
   test("`#1555` AC4:只读钉住的已应用目录 —— 钉住后 LKG 再变,引擎配置不变;无钉住文件不读 LKG", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
-    const ids = () => Object.keys((buildAlphaModelConfig(userData)!.provider.alpha as any).models).sort()
+    const ids = () => Object.keys((buildAlphaModelConfig(userData)!.provider.codepuppy as any).models).sort()
     writeCatalogSnapshot(userData, { ...liveBase, models: [snapRow("deepseek-v4-flash", pair)] })
     pinAppliedCatalog(userData, 7)
     writeCatalogSnapshot(userData, {
@@ -713,7 +713,7 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     plantSecret("ALPHA_API_KEY", "jwt")
     fs.writeFileSync(path.join(userData, "alpha-live-models.json"), "{corrupt")
     pinAppliedCatalog(userData, 1) // `#1555`:引擎配置只读 fork 前钉住的已应用目录
-    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    const p = buildAlphaModelConfig(userData)!.provider.codepuppy as any
     expect(p.models).toEqual({})
   })
 })
@@ -744,7 +744,7 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
 
   test("平台段:JSON 标 reasoning:true 的每个模型注入后带 reasoning:true;未标的**缺席**(不是 false)", () => {
     keyEverything()
-    const p = buildAlphaModelConfig(userData)!.provider.alpha as { models: Record<string, { reasoning?: boolean }> }
+    const p = buildAlphaModelConfig(userData)!.provider.codepuppy as { models: Record<string, { reasoning?: boolean }> }
     const flagged = getModelCatalog(userData).platformModels.filter((m) => m.reasoning).map((m) => m.id)
     // 空集会让下面的逐项断言空转 —— 先钉住集合非空,且含本票实打确认「默认即思考」的 glm-5.2。
     expect(flagged.length).toBeGreaterThan(0)
@@ -896,9 +896,9 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     expect(badged.length).toBeGreaterThan(0)
     expect(injected).toEqual(badged)
     // 反例钉死方向:快照里未标 reasoning 的 claude-fable-5 两边都不亮;deepseek BYOK 的 flash 也不亮。
-    expect(badged).not.toContain("alpha:claude-fable-5")
+    expect(badged).not.toContain("codepuppy:claude-fable-5")
     expect(badged).not.toContain("deepseek-byok:deepseek-flash")
-    expect(badged).toContain("alpha:glm-5.2")
+    expect(badged).toContain("codepuppy:glm-5.2")
     expect(badged).toContain("zhipuai-byok:glm-5.2")
     // BYOK 目录的元数据也在同一集合里 —— 平台快照收窄不影响它(它根本不从平台派生,`#1556`)。
     expect(badged).toContain("zhipuai-byok:glm-4.5-air")
@@ -932,42 +932,42 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
 
   /** 引擎 `<providerID>:<modelID>` → 该腿实打过的档位表(逐字)与出处。改这张表 = 先照 DOC §3 的方法对真实端点打一轮。 */
   const VERIFIED_TIERS: Record<string, { leg: string; variants: Tiers; evidence: string }> = {
-    "alpha:claude-opus-4.8": {
+    "codepuppy:claude-opus-4.8": {
       leg: "openrouter:anthropic/claude-opus-4.8(anthropic-wire;anthropic 直连腿未验 ⇒ 网关剔除)",
       variants: orEffort(["低", "low"], ["中", "medium"], ["高", "high"]),
       evidence: `${DOC} §3.5:reasoning.effort 写成 output_config.effort,low/medium/high/xhigh/max → 200,none/minimal/bogus → 400;opus 各档 0 个 thinking 块 —— 受理是事实,效果不可观测(#1266 前已声明,本票不动)`,
     },
-    "alpha:gpt-5.4-mini": {
+    "codepuppy:gpt-5.4-mini": {
       leg: "openrouter:openai/gpt-5.4-mini(openai 直连腿本机 TLS 不可达 ⇒ 未验 ⇒ 网关剔除)",
       variants: effort(["低", "low"], ["中", "medium"], ["高", "high"]),
       evidence: `${DOC} §3.4:bogus-value → 400;none=0 / low=36 / medium=51 / high=78 reasoning_tokens(单样本,效果可观测)`,
     },
-    "alpha:gpt-5.4-nano": {
+    "codepuppy:gpt-5.4-nano": {
       leg: "openrouter:openai/gpt-5.4-nano(同上)",
       variants: effort(["低", "low"], ["中", "medium"], ["高", "high"]),
       evidence: `${DOC} §3.4:bogus-value → 400;none…high 均 0,xhigh=80 / max=90 —— 受理是事实,低档效果不可观测(#1266 已声明,本票不动)`,
     },
-    "alpha:deepseek-v4-pro": {
+    "codepuppy:deepseek-v4-pro": {
       leg: "deepseek:deepseek-v4-pro + openrouter:deepseek/deepseek-v4-pro(两腿都受理 reasoning_effort 七值)",
       variants: effort(["低", "low"], ["中", "medium"], ["高", "high"], ["最高", "max"]),
       evidence: `${DOC} §3.3 直连:bogus-value → 400,none → completion=3 无 reasoning 桶(真关);§3.4 OR:bogus → 400,none=0;其余六值单样本无单调差别(#1266 已声明,本票不动)`,
     },
-    "alpha:glm-5.2": {
+    "codepuppy:glm-5.2": {
       leg: "zhipu:glm-5.2 + openrouter:z-ai/glm-5.2(两腿都受理 reasoning_effort 七值)",
       variants: effort(["高", "high"], ["最高", "max"]),
       evidence: `${DOC} §3.1 直连:bogus-value → 400 code 1210(七值校验),但 none 仍 171 reasoning_tokens、max=307 非单调 —— 受理是事实、效果未证;§3.4 OR:none=0(#1266 已声明,本票不动)`,
     },
-    "alpha:glm-5-turbo": {
+    "codepuppy:glm-5-turbo": {
       leg: "zhipu:glm-5-turbo(models.config.json 首腿;OR 腿不认 thinking 形状 ⇒ 声明档位时被网关剔除,不换路)",
       variants: thinking(["关", "disabled"], ["开", "enabled"]),
       evidence: `${DOC} §3.2:thinking.type=disabled → reasoning_tokens 0(非流式 completion=4;流式 4 帧无 reasoning delta),enabled → 182;reasoning_effort 在此腿 accepted-and-ignored(bogus-value → 200,none 仍 224)⇒ 网关拒转 ⇒ 桌面不用它(v1 的形状)`,
     },
-    "alpha:qwen3.7-max": {
+    "codepuppy:qwen3.7-max": {
       leg: "openrouter:qwen/qwen3.7-max(唯一腿)",
       variants: effort(["关", "none"], ["开", "medium"]),
       evidence: `${DOC} §3.4 + ${REACH} §8(本票 2026-09-06 复打 N=3,max_tokens 2048,与引擎同发 top_p:1):bogus-value → 400;none → reasoning_tokens 0(3/3);low/medium/high/max 248–308 与 baseline 252–288 无差别 ⇒ 只声明开/关,开取 OR 校验域内的 medium`,
     },
-    "alpha:qwen3.7-plus": {
+    "codepuppy:qwen3.7-plus": {
       leg: "openrouter:qwen/qwen3.7-plus(唯一腿)",
       variants: effort(["关", "none"], ["开", "medium"]),
       evidence: `${DOC} §3.4 + ${REACH} §8(同上):bogus-value → 400;none → 0(3/3);low/medium/high/max 268–347 与 baseline 315–340 无差别 ⇒ 只声明开/关`,
@@ -975,7 +975,7 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
     "deepseek-byok:deepseek-v4-pro": {
       leg: "deepseek 直连(BYOK 目录自带,byokModelMeta)",
       variants: effort(["低", "low"], ["中", "medium"], ["高", "high"], ["最高", "max"]),
-      evidence: `${DOC} §3.3:直连 bogus-value → 400、none 真关(与 alpha:deepseek-v4-pro 的直连腿同一格读数)`,
+      evidence: `${DOC} §3.3:直连 bogus-value → 400、none 真关(与 codepuppy:deepseek-v4-pro 的直连腿同一格读数)`,
     },
     "zhipuai-byok:glm-5.2": {
       leg: "zhipu 直连(BYOK 目录自带,byokModelMeta)",
@@ -1042,7 +1042,7 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
     expect(judgeTierProvenance(cfg)).toEqual([])
     // 空表会让上面的判据空转:实打表至少覆盖本票三个模型 + #1266/#1267 已声明的那些。
     expect(Object.keys(VERIFIED_TIERS).length).toBeGreaterThanOrEqual(11)
-    const alpha = cfg.provider.alpha!.models
+    const alpha = cfg.provider.codepuppy!.models
     expect(alpha["glm-5-turbo"]).toEqual({ name: "GLM-5 Turbo", reasoning: true, variants: { 关: { thinking: { type: "disabled" } }, 开: { thinking: { type: "enabled" } } }, modalities: { input: ["text"] } })
     expect(alpha["qwen3.7-max"]).toEqual({ name: "Qwen3.7 Max", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } }, modalities: { input: ["text"] } })
     expect(alpha["qwen3.7-plus"]).toEqual({ name: "Qwen3.7 Plus", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } }, modalities: { input: ["text"] } })
@@ -1074,8 +1074,8 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
     expect(judgeTierProvenance(base)).toEqual([])
 
     const v1 = clone(base) // v1 票面的形状:按 reasoningEffort 给 GLM turbo 声明档位 —— 直连腿 accepted-and-ignored
-    v1.provider.alpha!.models["glm-5-turbo"]!.variants = { 高: { reasoningEffort: "high" }, 最高: { reasoningEffort: "max" } }
-    expect(judgeTierProvenance(v1).map((line) => line.split(":").slice(0, 2).join(":"))).toEqual(["alpha:glm-5-turbo"])
+    v1.provider.codepuppy!.models["glm-5-turbo"]!.variants = { 高: { reasoningEffort: "high" }, 最高: { reasoningEffort: "max" } }
+    expect(judgeTierProvenance(v1).map((line) => line.split(":").slice(0, 2).join(":"))).toEqual(["codepuppy:glm-5-turbo"])
     expect(judgeTierProvenance(v1)[0]).toContain("≠ 实打表")
 
     const guessed = clone(base) // 照 models.dev 文案给 MiniMax 直连补档
@@ -1086,18 +1086,18 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
     expect(guessedFailures.some((line) => line.includes("本机未实打"))).toBe(true)
 
     const typo = clone(base) // 关档值写错:OR 的校验域里没有 "off"(bogus → 400),实打表逐字比对当场红
-    typo.provider.alpha!.models["qwen3.7-max"]!.variants = { 关: { reasoningEffort: "off" }, 开: { reasoningEffort: "medium" } }
-    expect(judgeTierProvenance(typo).map((line) => line.split(":").slice(0, 2).join(":"))).toEqual(["alpha:qwen3.7-max"])
+    typo.provider.codepuppy!.models["qwen3.7-max"]!.variants = { 关: { reasoningEffort: "off" }, 开: { reasoningEffort: "medium" } }
+    expect(judgeTierProvenance(typo).map((line) => line.split(":").slice(0, 2).join(":"))).toEqual(["codepuppy:qwen3.7-max"])
 
     const reordered = clone(base) // 开排第一 ⇒ 标题辅助调用会带 thinking:enabled
-    reordered.provider.alpha!.models["glm-5-turbo"]!.variants = { 开: { thinking: { type: "enabled" } }, 关: { thinking: { type: "disabled" } } }
+    reordered.provider.codepuppy!.models["glm-5-turbo"]!.variants = { 开: { thinking: { type: "enabled" } }, 关: { thinking: { type: "disabled" } } }
     const reorderedFailures = judgeTierProvenance(reordered)
     expect(reorderedFailures.length).toBe(2) // 逐字不等(顺序也是表的一部分)+ 关档不在第一位
     expect(reorderedFailures.some((line) => line.includes("smallOptions"))).toBe(true)
 
     const dropped = clone(base) // 实打表登记了档位,注入却没有 —— 目录被人退回无档
-    delete dropped.provider.alpha!.models["qwen3.7-plus"]!.variants
-    expect(judgeTierProvenance(dropped)).toEqual([`alpha:qwen3.7-plus: 实打表登记了档位 ${JSON.stringify(VERIFIED_TIERS["alpha:qwen3.7-plus"]!.variants)},注入配置里却没有 variants`])
+    delete dropped.provider.codepuppy!.models["qwen3.7-plus"]!.variants
+    expect(judgeTierProvenance(dropped)).toEqual([`codepuppy:qwen3.7-plus: 实打表登记了档位 ${JSON.stringify(VERIFIED_TIERS["codepuppy:qwen3.7-plus"]!.variants)},注入配置里却没有 variants`])
   })
 })
 
@@ -1132,7 +1132,7 @@ describe("REQ-228 #1420:直连 / 平台 / 自定义三段的图片输入能力",
         total++
         expect({ providerID, id, explicit: Array.isArray(model.modalities?.input) }).toEqual({ providerID, id, explicit: true })
         if (model.modalities!.input.includes("image")) image.push(`${providerID}/${id}`)
-        if (providerID === "alpha") expect({ id, input: model.modalities!.input }).toEqual({ id, input: ["text"] })
+        if (providerID === "codepuppy") expect({ id, input: model.modalities!.input }).toEqual({ id, input: ["text"] })
       }
     }
     expect(total).toBeGreaterThanOrEqual(20)
@@ -1144,7 +1144,7 @@ describe("REQ-228 #1420:直连 / 平台 / 自定义三段的图片输入能力",
       "moonshot-byok/kimi-k2.6",
       "moonshot-byok/kimi-k3",
     ])
-    expect(Object.keys((cfg.provider.alpha as { models: Models }).models)).toContain("claude-sonnet-5")
+    expect(Object.keys((cfg.provider.codepuppy as { models: Models }).models)).toContain("claude-sonnet-5")
   })
 
   test("注入逐字取已应用 BYOK 目录的 image_input(不回落平台同名条目、不回落 models.dev)", () => {

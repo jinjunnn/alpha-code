@@ -153,9 +153,9 @@ function assertInjectedFacts(content: string | undefined, userDataPath: string):
   // model:picker 的默认模型(main 经 sidecar-env 转发 ALPHA_DEFAULT_MODEL)。
   expect(config.model).toBe(DEFAULT_MODEL)
   // enabled_providers:引擎对该键是 REPLACE 而非 union —— 表空/缺项 = 模型全灰。
-  expect(config.enabled_providers).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+  expect(config.enabled_providers).toEqual(expect.arrayContaining(["codepuppy", "deepseek-byok"]))
   // provider:白名单里的每个 id 必须真有节点定义,否则白名单是空头支票。
-  expect(Object.keys(config.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+  expect(Object.keys(config.provider ?? {})).toEqual(expect.arrayContaining(["codepuppy", "deepseek-byok"]))
   // 四个 alpha agent(automation 只读 / composer 只读 / automation 可写 / composer 请求审批 #1413)。
   expect(Object.keys(config.agent ?? {})).toEqual(
     expect.arrayContaining(["codepuppy-automation", "codepuppy-readonly", "codepuppy-automation-standard", "codepuppy-ask"]),
@@ -163,7 +163,7 @@ function assertInjectedFacts(content: string | undefined, userDataPath: string):
   // A6:BYOK 密钥以 {file:} ref 进 content,明文永不进(此处是**组合体**层面的锁,
   // alpha-models.test.ts 锁的是单件 buildAlphaModelConfig)。REQ-236 `#1562`:平台 provider 只带非凭据占位值,
   // 凭据由 ext 的 chat.headers 每次请求现读。
-  expect(config.provider!.alpha.options!.apiKey).toBe(PLATFORM_API_KEY_PLACEHOLDER)
+  expect(config.provider!.codepuppy.options!.apiKey).toBe(PLATFORM_API_KEY_PLACEHOLDER)
   expect(config.provider!["deepseek-byok"].options!.apiKey).toBe(
     `{file:${secretFilePath(userDataPath, "DEEPSEEK_API_KEY")}}`,
   )
@@ -194,7 +194,7 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     const v2 = JSON.parse(fs.readFileSync(v2Path, "utf8"))
     expect(typeof v2.model).toBe("string")
     expect(v2.model.length).toBeGreaterThan(0)
-    expect(Object.keys(v2.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+    expect(Object.keys(v2.provider ?? {})).toEqual(expect.arrayContaining(["codepuppy", "deepseek-byok"]))
     // #857:internal V2-only marker is committed by ConfigProvider in the same local batch as the
     // governed catalog. Empty env + zero models keeps it unavailable and invisible to model.list.
     expect(v2.provider[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toEqual({
@@ -220,7 +220,7 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     const modelsBaseRaw = fs.readFileSync(process.env.OPENCODE_MODELS_PATH!, "utf8")
     const modelsBase = JSON.parse(modelsBaseRaw) as Record<string, any>
     expect(Object.keys(modelsBase).sort()).toEqual(
-      ["alpha", "deepseek-byok", ALPHA_V2_CATALOG_READY_PROVIDER_ID].sort(),
+      ["codepuppy", "deepseek-byok", ALPHA_V2_CATALOG_READY_PROVIDER_ID].sort(),
     )
     expect(modelsBase[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toEqual({
       id: ALPHA_V2_CATALOG_READY_PROVIDER_ID,
@@ -228,7 +228,7 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
       env: [],
       models: {},
     })
-    for (const id of ["alpha", "deepseek-byok"]) {
+    for (const id of ["codepuppy", "deepseek-byok"]) {
       expect(Object.keys(modelsBase[id].models).sort()).toEqual(Object.keys(v2.provider[id].models).sort())
       for (const [modelID, early] of Object.entries(modelsBase[id].models) as Array<[string, any]>) {
         // These providers are custom config projections, so before #857 their settled catalog rows

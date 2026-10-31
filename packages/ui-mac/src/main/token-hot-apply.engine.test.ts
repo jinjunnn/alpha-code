@@ -117,7 +117,7 @@ async function startEngine(tag: string, withExt: boolean): Promise<Engine> {
   for (const sub of ["home", "xdg-config", "xdg-data", "xdg-cache", "xdg-state", "proj"])
     fs.mkdirSync(path.join(dir, sub), { recursive: true })
   const cfg = buildAlphaModelConfig(userData)
-  if (!cfg?.provider.alpha) throw new Error("生产 buildAlphaModelConfig 没给出平台 provider —— 凭据文件或 ALPHA_BASE_URL 缺席?")
+  if (!cfg?.provider.codepuppy) throw new Error("生产 buildAlphaModelConfig 没给出平台 provider —— 凭据文件或 ALPHA_BASE_URL 缺席?")
   const configPath = path.join(dir, "config.json")
   fs.writeFileSync(configPath, JSON.stringify({ ...cfg, ...(withExt ? { plugin: [pathToFileURL(extEntry).href] } : {}) }))
   const port = 4600 + Math.floor(Math.random() * 3000)
@@ -170,7 +170,7 @@ async function startEngine(tag: string, withExt: boolean): Promise<Engine> {
   return {
     url: `http://127.0.0.1:${port}`,
     directory: path.join(dir, "proj"),
-    model: Object.keys(cfg.provider.alpha.models)[0]!,
+    model: Object.keys(cfg.provider.codepuppy.models)[0]!,
     output: () => `${stdout}\n${stderr}`,
     stop: () => proc.kill(),
   }
@@ -192,7 +192,7 @@ async function call(engine: Engine, route: string, body: unknown) {
 async function prompt(engine: Engine, sessionID: string) {
   const before = seen.length
   const result = await call(engine, `/session/${sessionID}/message`, {
-    model: { providerID: "alpha", modelID: engine.model },
+    model: { providerID: "codepuppy", modelID: engine.model },
     parts: [{ type: "text", text: "hi" }],
   })
   const info = result.info as { error?: { name?: string } }

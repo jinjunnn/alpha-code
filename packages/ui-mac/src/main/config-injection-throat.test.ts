@@ -332,8 +332,8 @@ describe("ui-mac 整份 config 咽喉:injectAlphaConfig 写进 OPENCODE_CONFIG_C
     // 生产真的写了这些东西(证明「零点名」不是空跑):bundle 路径、平台 + BYOK provider、默认模型、代付态云 MCP 定义(带 {file:} 引用)
     expect(r.after.plugin).toEqual([EXT_BUNDLE])
     expect(r.after.model).toBe(DEFAULT_MODEL)
-    expect(r.after.enabled_providers).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
-    expect(Object.keys(r.after.provider as Cfg)).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+    expect(r.after.enabled_providers).toEqual(expect.arrayContaining(["codepuppy", "deepseek-byok"]))
+    expect(Object.keys(r.after.provider as Cfg)).toEqual(expect.arrayContaining(["codepuppy", "deepseek-byok"]))
     expect(((r.after.mcp as Cfg)[CLOUD_MCP_SERVER_NAME] as Cfg).headers).toEqual({ Authorization: `Bearer {file:${secretFilePath(userData, "ALPHA_MCP_TOKEN")}}` })
     // `#1411`:代付**不再**产生任何 web search deny —— 顶层 permission 整个不写(两条腿都留在模型
     // 工具表里)。以前这里是 `expect(...[LOCAL_WEB_SEARCH_TOOL_ID]).toBe("deny")`。

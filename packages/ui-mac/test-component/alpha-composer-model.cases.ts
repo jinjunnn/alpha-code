@@ -1089,10 +1089,10 @@ describe("ModelPickPop production component", () => {
     expect(rows.map((row) => row.querySelector("[data-brand-icon]")?.getAttribute("data-brand-icon"))).toEqual(
       catalog.platformModels.map((model) => brandIconId(model.brand)),
     )
-    expect(catalog.platformProvider.id).toBe("alpha")
+    expect(catalog.platformProvider.id).toBe("codepuppy")
     click(rows[0] ?? null)
     await waitFor(() => expect(picks).toHaveLength(1))
-    expect(picks[0]?.providerID).toBe("alpha")
+    expect(picks[0]?.providerID).toBe("codepuppy")
     expect(picks[0]?.id).toBe(catalog.platformModels[0]!.id) // 第一行 = 已应用目录(网关顺序)的第一个模型
     mounted.dispose()
   })
