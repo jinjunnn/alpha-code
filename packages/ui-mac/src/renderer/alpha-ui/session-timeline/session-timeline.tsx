@@ -12,9 +12,10 @@
 // session.promptAsync),不另建通道;写入面因此需要 typed SDK 客户端(useServerSDK)。
 import { useServerSDK, useServerSync } from "@opencode-ai/app"
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, on, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
+import { setSettingsOpen } from "../settings-state"
 import { useAlphaSessionLiveContext } from "../session-workspace/alpha-session-workspace"
 import type { SessionRailApi } from "../session-workspace/session-workspace-shell"
 import type { StagedAttachmentMeta } from "../../../shared/attachment-path"
@@ -45,7 +46,18 @@ export interface AlphaSessionTimelineProps {
   onFocusPrompt?: () => void
   /** REQ-236 `#1553` AC4:附件卡「重新读取」—— 在输入框里以同一个暂存附件预填读取请求;缺席 = 不出按钮。 */
   onReadAttachment?: (attachment: StagedAttachmentMeta) => void
+  /** `#1588` AC3:回合错误卡「新对话」—— 侧栏「新对话」同一条命令;缺席 = 不出按钮。 */
+  onNewSession?: () => void
+  /** `#1588` AC3:回合错误卡「换模型」—— 输入框模型选择器的打开动作(composer 登记时才有);缺席 = 不出按钮。 */
+  chooseModel?: Accessor<(() => void) | undefined>
+  /** `#1588` AC1 读取期限(测试注入用;缺省 READ_DEADLINE_MS)。 */
+  readDeadlineMs?: number
 }
+
+/** `#1588` AC1:消息页未就绪超过这么久才显示「正在读取对话…」(快的读取不闪一下)。 */
+const READ_SLOW_MS = 300
+/** `#1588` AC1:读取期限。读取请求本身没有期限(Q2:会一直挂着),到期仍未就绪即判失败。 */
+const READ_DEADLINE_MS = 20_000
 
 export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
   const live = useAlphaSessionLiveContext()
@@ -59,23 +71,56 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
   })
   const sessionID = () => live.current()?.identity.sessionID
 
-  // 进入/切换会话:拉起该会话的消息页(store 幂等;retry 由通道内部承担)。
-  createEffect(
-    on(epoch, () => {
-      const id = sessionID()
-      if (!id) return
-      void serverSync()
-        .session.sync(id)
-        .catch(() => {})
-    }),
-  )
-
   const session = () => serverSync().session
   const ready = createMemo(() => {
     const id = sessionID()
     if (!id) return false
     return session().data.message[id] !== undefined
   })
+
+  // `#1588` AC1:读取的三态 —— 刚发出(什么都不显示)/ 超过 READ_SLOW_MS 仍未就绪(读取行)/ 被拒或到期限仍未就绪(失败行)。
+  // 「重试」带 restart:同一会话的读取在 store 里按 sessionID 复用挂着的 promise,不带它重试就只是再等那一个。
+  const [read, setRead] = createSignal<"pending" | "slow" | "failed">("pending")
+  let readAttempt = 0
+  let readTimers: ReturnType<typeof setTimeout>[] = []
+  const clearReadTimers = () => {
+    readTimers.forEach(clearTimeout)
+    readTimers = []
+  }
+  const startRead = (restart: boolean) => {
+    clearReadTimers()
+    setRead("pending")
+    const id = sessionID()
+    if (!id) return
+    const attempt = ++readAttempt
+    const current = () => attempt === readAttempt
+    const fail = () => {
+      if (current() && !ready()) setRead("failed")
+    }
+    readTimers = [
+      setTimeout(() => current() && !ready() && setRead((phase) => (phase === "pending" ? "slow" : phase)), READ_SLOW_MS),
+      setTimeout(fail, props.readDeadlineMs ?? READ_DEADLINE_MS),
+    ]
+    void serverSync()
+      .session.sync(id, restart ? { restart: true } : undefined)
+      .then(() => current() && clearReadTimers(), fail)
+  }
+
+  const readShown = () => {
+    const phase = read()
+    return phase === "pending" ? undefined : phase
+  }
+
+  // 进入/切换会话:拉起该会话的消息页(store 幂等;retry 由通道内部承担)。换代即作废上一代的计时与结果。
+  createEffect(
+    on(epoch, () => {
+      startRead(false)
+      onCleanup(() => {
+        readAttempt += 1
+        clearReadTimers()
+      })
+    }),
+  )
   // 斜杠命令来源(C7 可选供给):供给方异常不拖垮时间线(fail-closed → 无 chip)。
   const slashOrigins = createMemo(() => {
     const provider = props.slashOriginsFor
@@ -135,8 +180,8 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
 
   const navigate = useNavigate()
   const displayNames: TimelineDisplayNames = {
-    // 与上游会话消息脚注一致:agent 没有独立目录显示名,只把首字母转为可读形式。
-    agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
+    // `#1588` AC5:第一方模式由视图映射成档名;其余(用户自建的助手)照写原名。
+    agent: (agent) => agent,
     model: (providerID, modelID) => serverSync().data.provider.all.get(providerID)?.models?.[modelID]?.name ?? modelID,
   }
   const intents: TimelineIntents = {
@@ -188,6 +233,16 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     get readAttachment() {
       return props.onReadAttachment
     },
+    // `#1588` AC3:回合错误卡的出路,各接一个既有入口(生图卡同一个充值页 / 登录 / 设置 / 侧栏新对话命令)。
+    recharge: () => void window.api.cloud.openBillingPage("recharge"),
+    signIn: () => void window.api.auth.start(),
+    openSettings: () => setSettingsOpen(true),
+    get newSession() {
+      return props.onNewSession
+    },
+    get chooseModel() {
+      return props.chooseModel?.()
+    },
     // REQ-236 `#1552`:生图卡跟住的 run 所在目录 = 会话身份的 directory(右栏产物面板同一货币)。
     get cloudDirectory() {
       return live.current()?.identity.directory
@@ -229,6 +284,8 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     <SessionTimelineView
       rows={rows()}
       ready={ready()}
+      read={readShown()}
+      onRetryRead={() => startRead(true)}
       epoch={epoch()}
       emptyTitle={live.current()?.title || t("alpha.session.session")}
       history={history()}

@@ -158,6 +158,7 @@ fi
 REGISTERED_COUNTS="
 src/components/prompt-input/submit.test.ts 9
 src/context/permission-auto-respond.test.ts 12
+src/context/server-session-restart.test.ts 2
 src/context/terminal-command.test.ts 1
 src/pages/layout/helpers.test.ts 24
 src/utils/session-route.test.ts 10

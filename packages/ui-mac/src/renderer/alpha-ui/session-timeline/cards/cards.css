@@ -682,6 +682,61 @@
   font-size: var(--a-text-2xs);
 }
 
+/* alpha-code 1588:认得出原因时 —— 标题下一排出路按钮;错误名 / 状态码 / 服务原话收进默认折叠的「开发者详情」。 */
+.a-turn-err-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.a-turn-err-act {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a-accent);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+
+.a-turn-err-act:hover {
+  text-decoration: underline;
+}
+
+.a-turn-err-act:focus-visible {
+  outline: none;
+  border-radius: var(--a-radius-xs);
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-turn-err-dev {
+  margin-top: 6px;
+}
+
+.a-turn-err-dev summary {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.a-turn-err-dev summary::-webkit-details-marker {
+  display: none;
+}
+
+.a-turn-err-dev summary::before {
+  content: "› ";
+}
+
+.a-turn-err-dev .a-turn-err-code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 /* ── 助手侧媒体预览行 ────────────────────────────────────────────────────── */
 .a-media {
   display: flex;

@@ -461,9 +461,20 @@ function ModelChip(props: {
   hasWorkspace: () => boolean
   /** alpha-code#1558:当前所选模型的品牌;缺省 = 中性图形(未选 / 自定义节点 / 目录未到)。 */
   brand: () => string | undefined
+  /** `#1588` AC3:把「打开模型选择器」登记给会话页(回合错误卡「换模型」);缺席 = 不登记。 */
+  registerOpen?: (open: () => void) => () => void
 }) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
+  // 打开推到下一个宏任务:触发它的那次点击还要冒泡到 document,useChip 的外部点击监听会把同一拍打开的浮层关掉。
+  onMount(() => {
+    const unregister = props.registerOpen?.(() =>
+      setTimeout(() => {
+        if (!isOpen() && props.hasWorkspace()) toggle()
+      }, 0),
+    )
+    if (unregister) onCleanup(unregister)
+  })
   const label = () => {
     const projection = composerModelProjection()
     if (projection.status === "loading") return t("alpha.composer.modelReading")
@@ -649,6 +660,8 @@ export type ComposerSessionDockApi = {
   onSlashCommand?: (capture: ComposerSlashCapture) => void
   /** `#1318` AC3:登记「聚焦我的输入框」,返回注销函数。挂载登记、卸载注销;缺席 = 不登记。 */
   registerFocus?: (focus: () => void) => () => void
+  /** `#1588` AC3:登记「打开模型选择器」,返回注销函数;缺席 = 不登记(回合错误卡不出「换模型」)。 */
+  registerModelPicker?: (open: () => void) => () => void
 }
 
 /** #894:home 首发建成会话那一刻的落点快照 —— 会话就是 `startChat` 在 `serverKey` 这个 server
@@ -2058,6 +2071,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           onNeedWorkspace={props.onNeedWorkspace}
           hasWorkspace={hasWorkspace}
           brand={() => modelBrandOf(composerModel(), modelCatalog())}
+          registerOpen={props.mode === "session" ? props.sessionDock?.registerModelPicker : undefined}
         />
         <EffortChip
           contract={modelContract}

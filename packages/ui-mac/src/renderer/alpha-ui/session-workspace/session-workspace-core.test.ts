@@ -64,6 +64,9 @@ describe("REQ-125 C1a typed live session context", () => {
     expect(
       sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session, status: { type: "busy" } })?.activity,
     ).toBe("running")
+    // `#1588` AC4:运行中的那一种是自动重试 —— 顶栏据此写「正在重试」;生成中不带这一格。
+    expect(sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session, status: { type: "retry" } })?.retrying).toBe(true)
+    expect(sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session, status: { type: "busy" } })?.retrying).toBeUndefined()
   })
 })
 

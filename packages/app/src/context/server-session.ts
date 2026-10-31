@@ -833,8 +833,18 @@ export function createServerSession(
     }
   }
 
-  const sync = (sessionID: string, options?: { force?: boolean; messageLimit?: number }) => {
+  // alpha #1588: `restart` abandons a pending load that never settled (requests carry no deadline)
+  // and issues a new one instead of joining it. The new generation makes the abandoned request inert
+  // if it ever lands; `loading` is cleared so loadMessages does not refuse the new request.
+  const sync = (sessionID: string, options?: { force?: boolean; messageLimit?: number; restart?: boolean }) => {
     touch(sessionID)
+    if (options?.restart) {
+      inflight.delete(sessionID)
+      requests.delete(sessionID)
+      messageLoads.delete(sessionID)
+      generations.delete(sessionID)
+      setMeta("loading", sessionID, false)
+    }
     return runInflight(inflight, sessionID, async () => {
       const cached = data.message[sessionID] !== undefined && meta.limit[sessionID] !== undefined
       if (cached && data.info[sessionID] && !options?.force) return

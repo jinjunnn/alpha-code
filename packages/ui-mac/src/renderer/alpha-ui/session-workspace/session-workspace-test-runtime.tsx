@@ -2,6 +2,7 @@ import type { QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import type { AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
+import type { TimelineTurnWait } from "../session-timeline/timeline-model"
 import { SessionQuestionCard } from "./session-question-card"
 import { sameSessionIdentity, type AlphaSessionLiveSnapshot } from "./session-workspace-core"
 import {
@@ -26,6 +27,8 @@ const [reviewCount, setReviewCount] = createSignal<number | undefined>(undefined
 const [terminalRunning, setTerminalRunning] = createSignal(false)
 // `#1322`:只读状态(生产由 workspace-writable 投影:只有被围栏的引擎明确回报 denied 才为 true)。
 const [workspaceReadonly, setWorkspaceReadonly] = createSignal(false)
+// `#1588` AC4:时间线同一个等待信号(生产由 dock 发布、workspace 持信号)。
+const [turnWait, setTurnWait] = createSignal<TimelineTurnWait | undefined>(undefined)
 /** `#1322`:只读弹层「重新启动」按钮真的调了宿主给的 relaunch 几次。 */
 export const relaunchCalls: number[] = []
 
@@ -74,6 +77,7 @@ export function SessionWorkspaceHarness() {
       terminalChannel={() => terminalChannel}
       workspaceReadonly={workspaceReadonly}
       relaunch={() => void relaunchCalls.push(1)}
+      turnWait={turnWait}
     />
   )
 }
@@ -123,8 +127,13 @@ export function setSessionWorkspaceReadonly(next: boolean) {
   setWorkspaceReadonly(next)
 }
 
+export function setSessionWorkspaceTurnWait(next: TimelineTurnWait | undefined) {
+  setTurnWait(next)
+}
+
 export function resetSessionWorkspaceSnapshot() {
   setSnapshot(initial)
+  setTurnWait(undefined)
   setReviewCount(undefined)
   setTerminalRunning(false)
   setWorkspaceReadonly(false)

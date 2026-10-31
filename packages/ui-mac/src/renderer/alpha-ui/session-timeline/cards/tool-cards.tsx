@@ -12,7 +12,7 @@ import { t } from "../../../i18n"
 import { netFailureCopy } from "../../net-failure-copy"
 import { routeArtifact } from "../../artifact-workbench/renderers/registry"
 import { CopyButton } from "../../CopyButton"
-import type { TimelineMediaSource, TimelineRow } from "../timeline-model"
+import type { TimelineMediaSource, TimelineRow, TurnErrorCause } from "../timeline-model"
 import {
   basenameOf,
   bashDescriptionOf,
@@ -820,41 +820,136 @@ function turnNetCopy(row: Extract<TimelineRow, { kind: "turnError" }>): string |
   return undefined
 }
 
+// `#1588`(批准稿 frame.html#turn-error):五类认得出的原因 —— 标题说原因、按钮走既有入口,错误名 / 状态码 / 服务原话
+// 只进「开发者详情」。按钮的 intent 缺席即不出(fail-closed);「换模型」= 输入框模型选择器,composer 没登记时不出。
+const TURN_ERROR_TITLE: Record<TurnErrorCause, Parameters<typeof t>[0]> = {
+  billing: "alpha.timeline.turnErrorBilling",
+  auth: "alpha.timeline.turnErrorAuth",
+  rateLimit: "alpha.timeline.turnErrorRateLimit",
+  contextOverflow: "alpha.timeline.turnErrorContextOverflow",
+  outputLength: "alpha.timeline.turnErrorOutputLength",
+}
+
+function TurnErrorActions(props: { cause: TurnErrorCause }) {
+  const intents = useTimelineIntents()
+  const [continueFailed, setContinueFailed] = createSignal(false)
+  const action = (label: Parameters<typeof t>[0], run: (() => void) | undefined) =>
+    run && (
+      <button type="button" class="a-turn-err-act" onClick={() => run()}>
+        {t(label)}
+      </button>
+    )
+  // 「继续」走中断行同一个续写入口:发送被拒同样就地说失败,不静默吞掉。
+  const resume = () => {
+    const handler = intents.continueTurn
+    if (!handler) return undefined
+    return () => {
+      setContinueFailed(false)
+      void Promise.resolve()
+        .then(handler)
+        .catch(() => setContinueFailed(true))
+    }
+  }
+  const buttons = createMemo(() => {
+    if (props.cause === "billing")
+      return [
+        action("alpha.timeline.turnErrorRecharge", intents.recharge),
+        action("alpha.timeline.turnErrorChooseModel", intents.chooseModel),
+      ]
+    if (props.cause === "auth")
+      return [
+        action("alpha.timeline.turnErrorSignIn", intents.signIn),
+        action("alpha.timeline.turnErrorSettings", intents.openSettings),
+      ]
+    if (props.cause === "contextOverflow")
+      return [
+        action("alpha.timeline.turnErrorNewChat", intents.newSession),
+        action("alpha.timeline.turnErrorChooseModel", intents.chooseModel),
+      ]
+    if (props.cause === "outputLength") return [action("alpha.timeline.turnErrorContinue", resume())]
+    return []
+  })
+  return (
+    <Show when={buttons().some(Boolean)}>
+      <span class="a-turn-err-acts" data-alpha-turn-error-actions>
+        {buttons()}
+        <Show when={continueFailed()}>
+          <span class="a-tl-int-failed" role="status">
+            {t("alpha.timeline.continueFailed")}
+          </span>
+        </Show>
+      </span>
+    </Show>
+  )
+}
+
+function TurnErrorCauseBody(props: { row: Extract<TimelineRow, { kind: "turnError" }>; cause: TurnErrorCause }) {
+  const detail = () =>
+    [props.row.name, props.row.statusCode].filter((item) => item !== undefined).join(" ") +
+    (props.row.message ? ` · ${props.row.message}` : "")
+  return (
+    <>
+      <b>{t(TURN_ERROR_TITLE[props.cause])}</b>
+      <TurnErrorActions cause={props.cause} />
+      <details class="a-turn-err-dev" data-alpha-dev-details>
+        <summary>{t("alpha.timeline.devDetails")}</summary>
+        <span class="a-turn-err-code">{detail()}</span>
+      </details>
+    </>
+  )
+}
+
 export function TurnErrorCard(props: { row: Extract<TimelineRow, { kind: "turnError" }> }) {
   return (
-    <div class="a-tl-row a-turn-err" data-alpha-timeline-row="turn-error" role="alert">
+    <div
+      class="a-tl-row a-turn-err"
+      data-alpha-timeline-row="turn-error"
+      data-cause={props.row.cause}
+      role="alert"
+    >
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="9" />
         <path d="M12 8v5M12 16h.01" />
       </svg>
       <div class="a-turn-err-content">
-        <b>{t("alpha.timeline.turnErrorTitle")}</b>
-        {/* `#1382`:围栏拒绝时换的是**这一句**,卡的形态不变(已批帧 2026-07-23:图标 + 固定
-            标题 + 一段正文 + mono 错误码)。换掉而不是追加,是因为被换掉的那段正文正是
-            `Forbidden: alpha egress policy: …` 这串英文工程话 —— 它今天就在这里,而用户读不出
-            「是自己这台电脑拦的」。归因只在认出 reason=unregistered 时给;认不出一律走原文案。 */}
-        {/* `#1572`:不是策略拒绝、但引擎认出了卡在哪一层(或明确没拿到任何应答)⇒ 同一位置换成分层那一句;
-            认不出一律走原文案。 */}
-        <Show
-          when={props.row.egressDenied}
-          fallback={
-            <Show
-              when={turnNetCopy(props.row)}
-              fallback={
-                <Show when={props.row.message}>
-                  <p>{props.row.message}</p>
-                </Show>
-              }
-            >
-              {(copy) => <p data-alpha-net-layer={props.row.netLayer ?? "unattributed"}>{copy()}</p>}
-            </Show>
-          }
-        >
-          {(denied) => <p>{t("alpha.timeline.turnErrorEgressBlocked", { authority: denied().authority })}</p>}
+        <Show when={props.row.cause} fallback={<TurnErrorDefaultBody row={props.row} />}>
+          {(cause) => <TurnErrorCauseBody row={props.row} cause={cause()} />}
         </Show>
-        <span class="a-turn-err-code">{props.row.name}</span>
       </div>
     </div>
+  )
+}
+
+/** 认不出原因的回合错误:`#1588` 之前的呈现,逐字不变。 */
+function TurnErrorDefaultBody(props: { row: Extract<TimelineRow, { kind: "turnError" }> }) {
+  return (
+    <>
+      <b>{t("alpha.timeline.turnErrorTitle")}</b>
+      {/* `#1382`:围栏拒绝时换的是**这一句**,卡的形态不变(已批帧 2026-07-23:图标 + 固定
+          标题 + 一段正文 + mono 错误码)。换掉而不是追加,是因为被换掉的那段正文正是
+          `Forbidden: alpha egress policy: …` 这串英文工程话 —— 它今天就在这里,而用户读不出
+          「是自己这台电脑拦的」。归因只在认出 reason=unregistered 时给;认不出一律走原文案。 */}
+      {/* `#1572`:不是策略拒绝、但引擎认出了卡在哪一层(或明确没拿到任何应答)⇒ 同一位置换成分层那一句;
+          认不出一律走原文案。 */}
+      <Show
+        when={props.row.egressDenied}
+        fallback={
+          <Show
+            when={turnNetCopy(props.row)}
+            fallback={
+              <Show when={props.row.message}>
+                <p>{props.row.message}</p>
+              </Show>
+            }
+          >
+            {(copy) => <p data-alpha-net-layer={props.row.netLayer ?? "unattributed"}>{copy()}</p>}
+          </Show>
+        }
+      >
+        {(denied) => <p>{t("alpha.timeline.turnErrorEgressBlocked", { authority: denied().authority })}</p>}
+      </Show>
+      <span class="a-turn-err-code">{props.row.name}</span>
+    </>
   )
 }
 

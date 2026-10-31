@@ -1550,6 +1550,124 @@ index 7dd2a6e59..ca30c3729 100644
  
    return {
      scope: serverSDK.scope,
+diff --git a/packages/app/src/context/server-session-restart.test.ts b/packages/app/src/context/server-session-restart.test.ts
+new file mode 100644
+index 000000000..547a08167
+--- /dev/null
++++ b/packages/app/src/context/server-session-restart.test.ts
+@@ -0,0 +1,88 @@
++// alpha #1588 — `sync(id, { restart: true })`: a pending message load has no deadline, so a hung
++// request would otherwise be joined forever. Restart must issue a new request, and the abandoned one
++// must not write into the store if it ever lands.
++import { describe, expect, test } from "bun:test"
++import type { Message, OpencodeClient, Part, Session } from "@opencode-ai/sdk/v2/client"
++import { createServerSession } from "./server-session"
++
++type MessageResponse = {
++  data: { info: Message; parts: Part[] }[]
++  response: { headers: Headers }
++}
++
++const info: Session = {
++  id: "child",
++  slug: "child",
++  projectID: "project",
++  directory: "/repo",
++  title: "child",
++  version: "1",
++  time: { created: 1, updated: 1 },
++}
++
++const user = (id: string): Message => ({
++  id,
++  sessionID: "child",
++  role: "user",
++  time: { created: 1 },
++  agent: "build",
++  model: { providerID: "provider", modelID: "model" },
++})
++
++const response = (messages: Message[]): MessageResponse => ({
++  data: messages.map((message) => ({ info: message, parts: [] })),
++  response: { headers: new Headers() },
++})
++
++function client(...responses: Promise<MessageResponse>[]) {
++  const requests: unknown[] = []
++  const value = {
++    session: {
++      get: async () => ({ data: info }),
++      messages: (input: unknown) => {
++        requests.push(input)
++        return responses[requests.length - 1]
++      },
++    },
++  } as unknown as OpencodeClient
++  return Object.assign(value, { requests })
++}
++
++const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
++
++describe("server session restart (alpha #1588)", () => {
++  test("restart sends a new message request instead of joining the pending one that never settles", async () => {
++    const api = client(new Promise<MessageResponse>(() => {}), Promise.resolve(response([user("message-1")])))
++    const store = createServerSession(api)
++
++    void store.sync("child")
++    await settle()
++    expect(api.requests).toHaveLength(1)
++
++    // Without restart the second call joins the hung request: no new request goes out.
++    void store.sync("child")
++    await settle()
++    expect(api.requests).toHaveLength(1)
++
++    await store.sync("child", { restart: true })
++    expect(api.requests).toHaveLength(2)
++    expect(store.data.message.child?.map((message) => message.id)).toEqual(["message-1"])
++    expect(store.history.loading("child")).toBe(false)
++  })
++
++  test("the abandoned request does not overwrite the store when it lands after the restart", async () => {
++    const late = Promise.withResolvers<MessageResponse>()
++    const api = client(late.promise, Promise.resolve(response([user("message-new")])))
++    const store = createServerSession(api)
++
++    void store.sync("child")
++    await settle()
++    await store.sync("child", { restart: true })
++    expect(store.data.message.child?.map((message) => message.id)).toEqual(["message-new"])
++
++    late.resolve(response([user("message-stale")]))
++    await settle()
++    await settle()
++    expect(store.data.message.child?.map((message) => message.id)).toEqual(["message-new"])
++  })
++})
+diff --git a/packages/app/src/context/server-session.ts b/packages/app/src/context/server-session.ts
+index c5d98682f..03003f739 100644
+--- a/packages/app/src/context/server-session.ts
++++ b/packages/app/src/context/server-session.ts
+@@ -833,8 +833,18 @@ export function createServerSession(
+     }
+   }
+ 
+-  const sync = (sessionID: string, options?: { force?: boolean; messageLimit?: number }) => {
++  // alpha #1588: `restart` abandons a pending load that never settled (requests carry no deadline)
++  // and issues a new one instead of joining it. The new generation makes the abandoned request inert
++  // if it ever lands; `loading` is cleared so loadMessages does not refuse the new request.
++  const sync = (sessionID: string, options?: { force?: boolean; messageLimit?: number; restart?: boolean }) => {
+     touch(sessionID)
++    if (options?.restart) {
++      inflight.delete(sessionID)
++      requests.delete(sessionID)
++      messageLoads.delete(sessionID)
++      generations.delete(sessionID)
++      setMeta("loading", sessionID, false)
++    }
+     return runInflight(inflight, sessionID, async () => {
+       const cached = data.message[sessionID] !== undefined && meta.limit[sessionID] !== undefined
+       if (cached && data.info[sessionID] && !options?.force) return
 diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
 index 1a118b654..fbf45a7ca 100644
 --- a/packages/app/src/context/settings.tsx

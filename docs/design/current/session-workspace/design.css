@@ -188,6 +188,11 @@ table.spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a
 .wstate .d{width:6px;height:6px;border-radius:50%;background:var(--a-text-disabled);flex:none}
 .wstate.run{color:var(--a-accent);background:var(--a-accent-subtle)}
 .wstate.run .d{background:var(--a-accent);animation:statepulse 1.4s ease-in-out infinite}
+/* 等你批准 / 等你回答:警示色,不呼吸(2026-10-30 已批增量 #conv-header) */
+.wstate.wait{color:var(--a-warning);background:var(--a-warning-subtle)}
+.wstate.wait .d{background:var(--a-warning)}
+/* 拿不到项目名时项目头像为空白圆角块 */
+.wtop .crumb-proj .pav.blank{background:var(--a-accent)}
 @keyframes statepulse{0%,100%{opacity:1}50%{opacity:.35}}
 .wtop .grow{flex:1}
 .wbtn{width:30px;height:30px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center;flex:none}

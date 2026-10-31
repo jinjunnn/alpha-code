@@ -779,3 +779,23 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
 .pc-src-row{display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 14px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface);font-size:var(--a-text-sm)}
 .pc-src-row small{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
 .note.warn{border-left-color:var(--a-warning)}
+
+/* ── ⑨ 读取 · 回复失败 · 脚注(2026-10-30 已批增量,按已出货代码并入)── */
+/* 用户消息脚注的档位色点:值同 packages/ui-mac/src/renderer/alpha-ui/tokens.css 的 --a-perm-* */
+:root{--a-perm-allow:#4f46e5;--a-perm-ask:#18181b;--a-perm-readonly:#166534}
+html[data-theme="dark"]{--a-perm-allow:#818cf8;--a-perm-ask:#fafafa;--a-perm-readonly:#4ade80}
+.umeta .pdot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--a-text-tertiary)}
+.umeta .pdot[data-tier="allow"]{background:var(--a-perm-allow)}
+.umeta .pdot[data-tier="ask"]{background:var(--a-perm-ask)}
+.umeta .pdot[data-tier="readonly"]{background:var(--a-perm-readonly)}
+/* 回合错误卡:认得出原因时的出路按钮与默认折叠的开发者详情 */
+.turn-err .acts{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px}
+.turn-err .acts span{color:var(--a-accent);font-weight:var(--a-weight-medium);cursor:pointer}
+.turn-err details{margin-top:6px}
+.turn-err summary{cursor:pointer;list-style:none;font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.turn-err summary::-webkit-details-marker{display:none}
+.turn-err summary::before{content:"› "}
+.turn-err details .code{overflow-wrap:anywhere;white-space:pre-wrap}
+/* 读取中:时间线既有转圈(顶边强调色) */
+.read-sp{display:inline-block;width:12px;height:12px;border:1.5px solid var(--a-border-strong);border-top-color:var(--a-accent);border-radius:50%;vertical-align:-2px;margin-right:8px}
+.sess-empty .cont{color:var(--a-accent);font-weight:var(--a-weight-medium);font-size:var(--a-text-sm);cursor:pointer}

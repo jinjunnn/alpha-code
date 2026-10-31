@@ -93,6 +93,16 @@ export interface TimelineIntents {
    * (用户看得到、自己发出),不在后台悄悄重读。缺席即不出按钮。
    */
   readAttachment?: (attachment: StagedAttachmentMeta) => void
+  /**
+   * `#1588` 回合错误卡的出路,每个都接一个既有入口;缺席即不出那个按钮。
+   * recharge = 钱包充值页(生图卡「充值」同一入口);signIn = 既有登录;openSettings = 设置;newSession = 侧栏「新对话」命令。
+   */
+  recharge?: () => void
+  signIn?: () => void
+  openSettings?: () => void
+  newSession?: () => void
+  /** `#1588`:输入框模型选择器的打开动作;composer 没登记时缺席,「换模型」不出。 */
+  chooseModel?: () => void
 }
 
 export const TimelineIntentsContext = createContext<TimelineIntents>({})

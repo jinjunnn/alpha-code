@@ -46,7 +46,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // `#1576`:来源 × 位置(行尾 / 详情底部 / 开发者详情)+ 旧记录内置步骤底部一句(83 → 85)。
     // REQ-236 #1552: image card — snapshot+subscribe on mount, local-first after reload, broadcast → image, refusal + save receipt (85 → 89).
     // `#1572`:回合错误卡与工具卡的分层联网失败文案 + 认不出时逐字不变(89 → 91)。
-    expect(output).toContain("91 pass")
+    // `#1588`:对话读取四态(生产绑定层)/ 更早消息失败 / 回合错误五类三条 / 脚注档名 / 发送后回到最新两臂(91 → 102)。
+    expect(output).toContain("102 pass")
     expect(output).toContain("0 fail")
   })
 })

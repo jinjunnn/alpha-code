@@ -92,6 +92,15 @@
   font-size: var(--a-text-xs);
 }
 
+/* alpha-code 1588 AC2:更早的消息加载失败 —— 同一行说失败 + 「重试」(批准稿 conv-loading 帧)。 */
+.a-tl-history-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
 .a-tl-spinner {
   width: 12px;
   height: 12px;
@@ -467,6 +476,29 @@
 .a-tl-user:hover .a-tl-user-meta,
 .a-tl-user:focus-within .a-tl-user-meta {
   opacity: 1;
+}
+
+/* alpha-code 1588 AC5:第一方模式的色点 —— 三档运行权限与输入框同一组 --a-perm-* token;计划 / 自动化任务为中性点。 */
+.a-tl-user-mode {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-text-tertiary);
+  vertical-align: 1px;
+}
+
+.a-tl-user-mode[data-tier="allow"] {
+  background: var(--a-perm-allow);
+}
+
+.a-tl-user-mode[data-tier="ask"] {
+  background: var(--a-perm-ask);
+}
+
+.a-tl-user-mode[data-tier="readonly"] {
+  background: var(--a-perm-readonly);
 }
 
 /* ── 斜杠命令 chip(design ① .cmd-chip 帧;C7 数据源缺席即零渲染) ────── */
@@ -1183,6 +1215,19 @@ button.a-tl-cmd-chip:focus-visible {
   max-width: 38ch;
   font-size: var(--a-text-sm);
   line-height: var(--a-leading-normal);
+}
+
+/* alpha-code 1588 AC1:读取中 / 读取失败复用空态版式;空态整体不接指针,「重试」单独接回。 */
+.a-tl-read-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--a-text-sm);
+}
+
+.a-tl-read-retry {
+  pointer-events: auto;
 }
 
 .a-tl-empty-arrow {
