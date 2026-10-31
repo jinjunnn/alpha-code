@@ -350,7 +350,7 @@ R9–R11 的只读格覆盖三种状态:设置为默认询问、设置里已启�
 2. **adapter 投影**:`permission-v1-adapter.ts:94-110` 对能力轴请求增加 `save: [...request.always]`;身份轴请求不投影 `save`;`:89-93` 注释改成新语义。`packages/app` 内文件,走前端补丁 round-trip。
 3. **卡片**:`PermissionDialog.tsx` 的 `canAlways` / `createPermissionDecisionCommand` 按上表分流;v1 指纹的 always 命令不再带 `grantScope:project`(`replyPermissionV1` 只读 `decision`,
    `permission-v1-adapter.ts:217-229`);页脚 `alwaysNote` 随种类变化;v1 请求的 Expiry 行显示「本次会话」而非「不过期」。身份轴写入走现有 preload `toolPolicy.setRecord`。
-4. **「当前账户」接上生产**(Codex F3):main 在 fork 时写 `ALPHA_POLICY_ACCOUNT = "acct:" + sha256(getAuthIdentityTag())`(未登录或取不到 ⇒ 不写),加入 `sidecar-env.ts` 白名单;
+4. **「当前账户」接上生产**(Codex F3):main 在 fork 时直接写进 sidecar env `ALPHA_POLICY_ACCOUNT = "acct:" + sha256(<安装级 machine id> + ":" + getAuthIdentityTag())`(安装级 machine id = `<userData>/artifact-quota-machine-id`;账户或安装标识取不到 ⇒ 不写),**不进** `sidecar-env.ts` 白名单 —— shell 导出的同名变量在建 env 时即被丢弃,选不了分区;混入安装标识是因为这个变量会被第三方 MCP / LSP / shell 子进程继承,同一账户换一台安装就是另一个值(`#1575` 落地,`packages/ui-mac/src/main/server.ts`);
    `alpha-tool-policy.ts:238` 默认改为 `Effect.sync(() => process.env.ALPHA_POLICY_ACCOUNT || "anonymous")`。登录/登出/切账户本就是 structural 换代(生命周期 #1562 的恢复范围表保留),
    新进程读新值;热续期不改账户。匿名分区里已有的记录**不迁移**(无法判断是哪个账户写的;回到默认询问是安全方向),仍供未登录时使用。
 5. **撤回不残留**(Codex F5,替换原「清 grants」做法):身份轴的 session grant 绑定**策略修订号** —— `AlphaToolPolicy.snapshot()` 增加 `revision`
