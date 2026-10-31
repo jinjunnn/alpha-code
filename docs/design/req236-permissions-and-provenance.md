@@ -181,7 +181,7 @@ MCP / 云 / 插件 / 子任务不在其中 —— 这就是父票「全部云工
 - 「官方连接器」= `github-official`、`dbhub-readonly`(`ui-mac/src/main/official-connector-recipes.ts:13`):Code Puppy 的封闭安装配方,
   服务本身是第三方厂商的。工具来源上它们是第三方。
 - Office/PDF 四个本机 MCP:Code Puppy 随包的 `resources/office-mcp/server.py`,今天 identity 为 `(mcp, <配置键>)`、authority `not-asserted`,
-  显示成「第三方 MCP 工具」、参数与结果全隐藏。生命周期 lane #4 新增 `plugin/src/alpha-first-party-mcp.ts` 的
+  显示成「第三方 MCP 工具」、参数与结果全隐藏。生命周期 lane #4 新增 `packages/opencode/src/mcp/alpha-first-party-mcp.ts` 的
   `declaredFirstPartyTools`(命令与随包模板逐 token 相等、`server.py` sha256 与清单一致才成立,其基线 §2.3 第 2 步)—— 这正是缺的 binding 证明。
 
 ### 1.8 §2.4:受控字段的真实写入方与覆盖路径
@@ -454,7 +454,7 @@ R9–R11 的只读格覆盖三种状态:设置为默认询问、设置里已启�
 
 | # | 不变量(实现必须守住) | 咽喉点 | 先红的测试 |
 | --- | --- | --- | --- |
-| I1 | `alpha-cloud` / `alpha-bundled` 只由 `authorityForMcp` 铸;输入只有 sidecar env 的 DEF/清单与装载 entry;URL、命令、键集任一不等即 `not-asserted` | `plugin/src/alpha-cloud-authority.ts`、`mcp/index.ts:191-203` | `alpha-tool-identity.test.ts` 生产形状四臂 |
+| I1 | `alpha-cloud` 只由 `authorityForMcp` 铸;`alpha-bundled` 两处铸造:`authorityForMcp`(随包文档工具)与 `bundledPluginTools`(第一方扩展插件自有工具,alpha-code#1578,与 ADR-041 决策 5 对齐);输入只有 sidecar env 的 DEF/清单与装载 entry(插件另有装载器结构化 `source` 与所装载模块);URL、命令、键集、模块摘要任一不等即 `not-asserted` | `plugin/src/alpha-cloud-authority.ts`、`mcp/index.ts:191-203`、`opencode/src/plugin/alpha-bundled-plugin.ts` | `alpha-tool-identity.test.ts` 生产形状四臂与随包两臂;`test/plugin/alpha-bundled-plugin.test.ts` |
 | I2 | 正常界面的来源与位置只从持久化快照(`authority`、`identity.source`、`location`)派生,不读名字、URL、标题、工具返回 | `tool-card-model.ts` | `tool-card-provenance-gates.test.ts` 增「origin=cloud 无 authority ⇒ 第三方」「无需审批的远端第三方调用 ⇒ 持久化 ⇒ 重载回放显示远端主机」「缺 location ⇒ 位置未知」 |
 | I3 | 文档轴 deny 先于任何钩子与副作用;档位、session grant、「始终允许」都撬不开 deny | `decide` | 矩阵 R12 |
 | I4 | 人批准的是钩子之后、实现之前的参数;批准返回后、调用前再复核 deny 与 binding,任一变化即拒绝 | `confirm` 全部落点 | `alpha-approval-binding.test.ts`:钩子改参 ⇒ `metadata.args` 为改后值;挂起期间停用 / 重绑 ⇒ 回复 once 后实现调用计数为 0 |

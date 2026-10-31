@@ -135,9 +135,11 @@ const getBase = (appId: string): Configuration => ({
       // `#1419`(REQ-228):bundle 旁边多一份 photon 的 wasm(`*.wasm`,Bun.build 按 `with { type: "file" }`
       // 复制到 dist/ 并带哈希名)—— plugin.js 用 `import.meta.url` 相对解析它,所以两者必须落在同一目录。
       // 漏了它不会红在打包,会红在第一次识图(装 photon 时 ENOENT ⇒ 图片一律按「本机无法解码」处理)。
+      // `#1578`(REQ-236 §2.6-7):bundled-tools.json = ext 构建写出的随包清单(plugin.js 的 sha256 + 自有工具名),
+      // main 经 ALPHA_EXT_BUNDLED_MANIFEST 指给引擎;漏了它不会红在打包,而是自有工具全部按第三方插件显示。
       from: "../ext/dist/",
       to: "alpha-ext/",
-      filter: ["plugin.js", "*.wasm"],
+      filter: ["plugin.js", "*.wasm", "bundled-tools.json"],
     },
     {
       // S17 T3(C17):构建期生成的 DB 迁移支持面清单(scripts/gen-db-expected.ts,prebuild 保证新鲜)。

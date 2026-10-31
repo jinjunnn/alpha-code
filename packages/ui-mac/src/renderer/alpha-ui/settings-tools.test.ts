@@ -322,6 +322,66 @@ describe("Alpha Settings 「工具」节", () => {
     expect(text(q("[data-tools-class='third-party-mcp']"))).toContain("默认每次询问 · 是否收费由服务方决定")
   })
 
+  // #1578 AC3:引擎把核验成立的随包文档工具分成 class=alpha-bundled(引擎侧判据在 alpha-tool-policy.test.ts / alpha-tool-identity.test.ts)。
+  // 设置页单列「Code Puppy 文档工具」一组,组 / 服务 / 工具三层各写自己的 selector。删掉 CLASS_ORDER 里的这一类 ⇒ 组不存在、
+  // 这些工具从设置页消失,当场红。
+  test("#1578 AC3 lists a Code Puppy document tools group settable per group, per service and per tool", async () => {
+    const inv = inventory()
+    inv.services.push({
+      source: "mcp",
+      origin: "alpha-word",
+      class: "alpha-bundled",
+      authority: { kind: "alpha-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_A },
+      bindingDigest: DIGEST_B,
+      tools: [
+        tool({
+          canonical: "mcp:alpha-word:read_docx",
+          name: "read_docx",
+          source: "mcp",
+          origin: "alpha-word",
+          authority: { kind: "alpha-bundled", bindingId: "mcp:alpha-word", evidenceDigest: DIGEST_A },
+          bindingDigest: DIGEST_B,
+          effective: { state: "ask", action: "ask", reason: { kind: "default", class: "alpha-bundled" } },
+        }),
+      ],
+    })
+    const surfaceApi = api({}, inv)
+    await openTools(surfaceApi)
+
+    const group = q("[data-tools-class='alpha-bundled']")!
+    expect(group).not.toBeNull()
+    expect(text(group.querySelector("h3"))).toBe("Code Puppy 文档工具")
+    expect(text(group)).toContain("默认每次询问")
+    expect(text(row("mcp:alpha-word:read_docx"))).toContain(
+      zhFill("alpha.settings.toolsEffective", {
+        state: zh["alpha.settings.toolsEffectiveAsk"],
+        reason: zh["alpha.settings.toolsReasonDefault"],
+      }),
+    )
+    // 文档工具不是云端:不挂「已核验」云徽标。
+    expect(text(group)).not.toContain(zh["alpha.settings.toolsVerified"])
+
+    group.querySelector<HTMLButtonElement>("[data-tools-class-radio='disabled']")!.click()
+    await flush(8)
+    expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
+      directory: DIRECTORY,
+      record: { selector: { level: "class", class: "alpha-bundled" }, state: "disabled" },
+    })
+    // 每次写完重读 inventory、整组重渲染:重新取节点。
+    radio(q("[data-tools-class='alpha-bundled'] [data-tools-service='mcp:alpha-word']")!, "ask").click()
+    await flush(8)
+    expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
+      directory: DIRECTORY,
+      record: { selector: { level: "service", source: "mcp", origin: "alpha-word" }, state: "ask" },
+    })
+    radio(row("mcp:alpha-word:read_docx"), "enabled").click()
+    await flush(8)
+    expect(surfaceApi.toolPolicy.setRecord).toHaveBeenLastCalledWith({
+      directory: DIRECTORY,
+      record: { selector: { level: "tool", canonical: "mcp:alpha-word:read_docx" }, state: "enabled", bindingDigest: DIGEST_B },
+    })
+  })
+
   test("T2 tightening writes immediately without a digest, then re-reads the inventory", async () => {
     const calls: ToolPolicyRecord[] = []
     let current = inventory()

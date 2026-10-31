@@ -54,7 +54,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
-import { ToolAliasLedger, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
+import { ToolAliasLedger, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 import { readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { canonicalJsonDigest } from "@/permission/alpha-tool-policy-store"
@@ -69,7 +69,11 @@ export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false
   )
 }
 
-export type RegisteredTool<T extends Tool.Def = Tool.Def> = T & { readonly identity: ToolIdentity }
+export type RegisteredTool<T extends Tool.Def = Tool.Def> = T & {
+  readonly identity: ToolIdentity
+  /** #1578 AC5: only a plugin tool the bundled manifest proves carries one; everything else is not asserted. */
+  readonly authority?: ToolAuthority
+}
 type TaskDef = RegisteredTool<Tool.InferDef<typeof TaskTool>>
 type ReadDef = RegisteredTool<Tool.InferDef<typeof ReadTool>>
 
@@ -139,7 +143,13 @@ const layer = Layer.effect(
         const custom: RegisteredTool[] = []
         const aliases = new ToolAliasLedger()
 
-        function fromPlugin(id: string, origin: string, name: string, def: ToolDefinition): RegisteredTool {
+        function fromPlugin(
+          id: string,
+          origin: string,
+          name: string,
+          def: ToolDefinition,
+          authority?: ToolAuthority,
+        ): RegisteredTool {
           // Plugin tools still expose Zod args publicly; keep that compatibility
           // boxed at the registry boundary and give the LLM the original JSON Schema.
           // Normalize missing args to `{}` once — pre-1.14.49 the code was
@@ -156,6 +166,7 @@ const layer = Layer.effect(
           return {
             id,
             identity,
+            ...(authority ? { authority } : {}),
             parameters,
             jsonSchema,
             description: def.description,
@@ -226,7 +237,8 @@ const layer = Layer.effect(
         for (const p of plugins) {
           pluginBindings[p.origin] ??= canonicalJsonDigest({ kind: "plugin-hook", origin: p.origin })
           for (const [id, def] of Object.entries(p.tools)) {
-            custom.push(fromPlugin(id, p.origin, id, def))
+            // #1578 AC5: only the names the verified manifest lists; merged-in project plugin tools stay not asserted.
+            custom.push(fromPlugin(id, p.origin, id, def, p.bundled?.tools.has(id) ? p.bundled.authority : undefined))
           }
         }
 
@@ -366,6 +378,7 @@ const layer = Layer.effect(
           return {
             id: tool.id,
             identity: tool.identity,
+            ...(tool.authority ? { authority: tool.authority } : {}),
             description: [
               output.description,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,

@@ -20,6 +20,13 @@ export const ToolAuthority = Schema.Union([
     bindingId: Schema.String.check(Schema.isPattern(/[\s\S]+/)),
     evidenceDigest: Schema.String.check(Schema.isPattern(/^sha256:[0-9a-f]{64}$/)),
   }),
+  // #1578(owner「路一」,REQ-236 §2.6-7):随应用交付、经随包清单核验成立的工具(文档工具 MCP、第一方扩展插件的自有工具)。
+  // 回退只撤铸造与显示,这一字面量保留 —— 已持久化的快照照常可读。
+  Schema.Struct({
+    kind: Schema.Literal("alpha-bundled"),
+    bindingId: Schema.String.check(Schema.isPattern(/[\s\S]+/)),
+    evidenceDigest: Schema.String.check(Schema.isPattern(/^sha256:[0-9a-f]{64}$/)),
+  }),
 ]).annotate({ discriminator: "kind", identifier: "ToolAuthority" })
 export type ToolAuthority = Types.DeepMutable<Schema.Schema.Type<typeof ToolAuthority>>
 

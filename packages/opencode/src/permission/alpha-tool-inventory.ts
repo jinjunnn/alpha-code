@@ -75,7 +75,7 @@ function wireEffective(effective: EffectiveToolPolicy): EffectiveToolPolicyV1 {
   return { state: effective.state, action: effective.action, reason: wireReason(effective.reason) }
 }
 
-const DYNAMIC_CLASSES: ReadonlySet<ToolClass> = new Set(["alpha-cloud", "third-party-mcp", "plugin"])
+const DYNAMIC_CLASSES: ReadonlySet<ToolClass> = new Set(["alpha-cloud", "alpha-bundled", "third-party-mcp", "plugin"])
 
 export interface Interface {
   readonly list: () => Effect.Effect<ToolPolicyInventoryV1>

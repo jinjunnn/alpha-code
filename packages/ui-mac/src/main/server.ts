@@ -564,6 +564,9 @@ export async function spawnLocalServer(
   const installation = installationMachineId()
   if (policyAccount && installation)
     sidecarEnv.ALPHA_POLICY_ACCOUNT = `acct:${createHash("sha256").update(`${installation}:${policyAccount}`).digest("hex")}`
+  // #1578 AC5:随包扩展插件的清单(ext 构建写在 plugin.js 旁边:模块 sha256 + 自有工具名)。引擎只信这条 env 指的那份,
+  // 不看被装载插件旁边有什么(packages/opencode/src/plugin/alpha-bundled-plugin.ts)。路径不是秘密。
+  if (ext.path) sidecarEnv.ALPHA_EXT_BUNDLED_MANIFEST = join(dirname(ext.path), "bundled-tools.json")
   // REQ-137 `#1379`:这一代的 BYOK 放行集合。平台无关(代理只在 darwin 起,但「放行集合 = 这一代的配置」
   // 这条不该长两个样子),排在密钥文件落定之后、fork 之前。
   refreshConfiguredEgressDestinations(options.userDataPath)

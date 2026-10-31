@@ -404,6 +404,9 @@ describe("③c 工具表咽喉:每个 description 都是登记项,登记项也�
     const hooks = await loadHooks()
     const tools = hooks.tool as ToolMap
     expect(Object.keys(tools).sort()).toEqual(Object.keys(TOOL_TEXT).sort())
+    // #1578 AC5:引擎只在旧式(默认导出一个函数)装载路径上挂随包清单证明(packages/opencode/src/plugin/index.ts
+    // applyPlugin);改成 V1 `{ server }` 导出 ⇒ 自有工具静默降级为第三方。构建期清单的工具名 = 上一行的 TOOL_TEXT 键。
+    expect(typeof (await import("./plugin")).default).toBe("function")
     expect(unexplainedTools(tools)).toEqual([])
   })
   test("REQ-232 AC1 alpha_cloud_access is available without Cloud MCP and returns a login entry", async () => {

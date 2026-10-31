@@ -90,8 +90,12 @@ export type ToolCardKind =
   | "cloud"
   | "unknown"
 
-/** 展示层的可信来源分类(只从持久化 identity + authority 导出,禁止从别名猜)。 */
-export type ToolSourceCategory = "builtin" | "host" | "alpha-cloud" | "mcp" | "plugin" | "unknown"
+/**
+ * 展示层的可信来源分类(只从持久化 identity + authority 导出,禁止从别名猜)。
+ * `alpha-bundled`(#1578):当次持久化 authority = alpha-bundled 的 mcp / plugin 工具 —— 显示「Code Puppy 内置」,
+ * 但不是 `builtin`:不借专用卡、不享时间线隐藏等只属于引擎 builtin identity 的待遇。
+ */
+export type ToolSourceCategory = "builtin" | "host" | "alpha-cloud" | "alpha-bundled" | "mcp" | "plugin" | "unknown"
 
 /** #587 metadata-only 降级卡的确定隐藏理由(安全通用卡文案分支,AC2)。 */
 export type ToolHiddenReason = "no-snapshot" | "no-rule"
@@ -210,7 +214,7 @@ function displaySnapshotOf(part: { display?: unknown }): DisplaySnapshot | undef
   const authority = record.authority
   if (typeof authority !== "object" || authority === null) return undefined
   const auth = authority as { kind?: unknown; bindingId?: unknown; evidenceDigest?: unknown }
-  if (auth.kind === "alpha-cloud") {
+  if (auth.kind === "alpha-cloud" || auth.kind === "alpha-bundled") {
     if (!nonEmptyString(auth.bindingId) || !nonEmptyString(auth.evidenceDigest)) return undefined
   } else if (auth.kind !== "not-asserted") {
     return undefined
@@ -238,7 +242,7 @@ function displaySnapshotOf(part: { display?: unknown }): DisplaySnapshot | undef
 }
 
 // ── #1576 来源三类 × 执行位置(只从持久化快照派生) ─────────────────────────
-/** 用户层来源三类:内置(builtin / host)、云(当次持久化 authority = alpha-cloud)、其余一律第三方(含无快照)。 */
+/** 用户层来源三类:内置(builtin / host / 当次持久化 authority = alpha-bundled)、云(alpha-cloud)、其余一律第三方(含无快照)。 */
 export type ToolProvenanceSource = "builtin" | "alpha-cloud" | "third-party"
 
 /** 执行位置:本机 / 云端(alpha-cloud 的远端)/ 远端主机(净化有界)/ 位置未知(快照或 location 缺席)。 */
@@ -284,7 +288,11 @@ function provenanceOfSnapshot(snapshot: DisplaySnapshot | undefined): ToolProven
   if (!snapshot) return { source: "third-party", location: { kind: "unknown" } }
   const category = categoryOf(snapshot.identity, snapshot.authority)
   const source: ToolProvenanceSource =
-    category === "builtin" || category === "host" ? "builtin" : category === "alpha-cloud" ? "alpha-cloud" : "third-party"
+    category === "builtin" || category === "host" || category === "alpha-bundled"
+      ? "builtin"
+      : category === "alpha-cloud"
+        ? "alpha-cloud"
+        : "third-party"
   const location = snapshot.location
   if (!location) return { source, location: { kind: "unknown" } }
   if (location.kind === "local") return { source, location: { kind: "local" } }
@@ -300,9 +308,10 @@ function categoryOf(identity: ToolIdentity, authority: ToolAuthority): ToolSourc
     case "host":
       return "host"
     case "mcp":
-      return authority.kind === "alpha-cloud" ? "alpha-cloud" : "mcp"
+      if (authority.kind === "alpha-cloud") return "alpha-cloud"
+      return authority.kind === "alpha-bundled" ? "alpha-bundled" : "mcp"
     case "plugin":
-      return "plugin"
+      return authority.kind === "alpha-bundled" ? "alpha-bundled" : "plugin"
     default:
       return "unknown"
   }
@@ -1405,6 +1414,7 @@ export interface ToolStepLine {
 const OWN_GENERIC_KEYS: Partial<Record<ToolSourceCategory, string>> = {
   builtin: "alpha.timeline.sourceBuiltin",
   host: "alpha.timeline.sourceBuiltin",
+  "alpha-bundled": "alpha.timeline.sourceBuiltin",
   "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
 }
 
@@ -1641,9 +1651,9 @@ export function toolDevDetailsOf(part: ToolPart): ToolDevDetails | undefined {
   const { identity, authority, technicalId, location } = snapshot
   const canonical = `${identity.source}:${passiveSegment(identity.origin)}:${passiveSegment(identity.name)}`
   const authorityText =
-    authority.kind === "alpha-cloud"
-      ? `alpha-cloud · ${passiveSegment(authority.bindingId, 64)} · ${passiveSegment(authority.evidenceDigest, 32)}`
-      : "not-asserted"
+    authority.kind === "not-asserted"
+      ? "not-asserted"
+      : `${authority.kind} · ${passiveSegment(authority.bindingId, 64)} · ${passiveSegment(authority.evidenceDigest, 32)}`
   const locationText = !location ? "—" : location.kind === "local" ? "local" : `remote · ${passiveSegment(location.host)}`
   return {
     canonical,

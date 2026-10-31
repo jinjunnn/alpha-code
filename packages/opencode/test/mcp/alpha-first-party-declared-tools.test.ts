@@ -20,6 +20,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import { OFFICE_MCP_MANIFEST_ENV } from "../../src/mcp/alpha-first-party-mcp"
+import { classifyTool } from "@opencode-ai/schema/alpha-tool-policy"
 import {
   ALPHA_OFFICE_PYTHON_SLOT,
   ALPHA_OFFICE_SERVER_SLOT,
@@ -162,6 +163,27 @@ it.instance(
       }),
     ),
   { config: { mcp: { "alpha-word": office(real, "word") } } },
+)
+
+// #1578:执行闸按 bindingFacts 的 authority 判类(session/tools.ts currentSubject)。连接中的声明工具在这里若是 not-asserted,
+// 「Code Puppy 文档工具」整组设置在握手完成前不生效。删掉 bindingFacts 的声明分支 ⇒ 这里 not-asserted / third-party-mcp,当场红。
+const connecting = bundle("fixture")
+it.instance(
+  "#1578: while a declared document tool's server is still connecting, bindingFacts carries the offer's alpha-bundled authority",
+  () =>
+    withManifest(
+      connecting.manifest,
+      Effect.gen(function* () {
+        const mcp = yield* MCP.Service
+        const offered = (yield* mcp.tools())["alpha-word_read_docx"]!
+        expect(offered.authority?.kind).toBe("alpha-bundled")
+        expect((yield* mcp.status())["alpha-word"]).toEqual({ status: "pending" })
+        const facts = yield* mcp.bindingFacts!("alpha-word")
+        expect(facts?.authority).toEqual(offered.authority)
+        expect(classifyTool({ identity: offered.identity!, authority: facts!.authority })).toBe("alpha-bundled")
+      }),
+    ),
+  { config: { mcp: { "alpha-word": office(connecting, "word", HANG) } } },
 )
 
 // 去掉逐 token 的长度/逐项比较 ⇒ 多一个 token 的 alpha-excel 也拿到声明;去掉摘要比较 ⇒ server.py 被改过之后仍有声明。
