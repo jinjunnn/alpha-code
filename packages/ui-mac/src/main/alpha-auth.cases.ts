@@ -9,6 +9,8 @@ import { deepLinkFor } from "../shared/route-manifest"
 const logger = { log: () => {}, warn: () => {}, error: () => {} }
 // R1 Major4:DEV_PLATFORM_TOKEN 只该在非 packaged 构建生效;测试要能翻这个开关。
 let packagedBuild = false
+// alpha-web#283 AC3:startAuth 交给浏览器的授权地址(断言 client_id / redirect_uri 用)。
+const openedUrls: string[] = []
 
 mock.module("electron", () => ({
   app: {
@@ -42,7 +44,9 @@ mock.module("electron", () => ({
     decryptString: (value: Buffer) => value.toString("utf8"),
   },
   shell: {
-    openExternal: async () => {},
+    openExternal: async (url: string) => {
+      openedUrls.push(url)
+    },
     showItemInFolder: () => {},
   },
   utilityProcess: {
@@ -70,6 +74,7 @@ const {
   getAccessToken,
   getArchiveAccessToken,
   getAuthIdentityTag,
+  getAuthRenewalTiming,
   getAuthState,
   getTokenGeneration,
   handleAuthDeepLink,
@@ -132,6 +137,8 @@ function tokenBundle(generation = "old", sub = "tenant-a") {
   }
 }
 
+/** 落一份凭据再像冷启动一样恢复。缺省 `clientId: "codepuppy"` = 已经用当前客户端 id 刷新过(迁移完成后的
+ *  常态);`clientId: null` = 0.1.24 及更早写下、没有这个字段的凭据(alpha-web#283 AC4 的起点)。 */
 function storeAuth(value: {
   platformAccessTokens?: Partial<Record<RoutePurpose, string>>
   mcpAccessToken?: string
@@ -141,10 +148,15 @@ function storeAuth(value: {
   expiresAt?: number
   lifetimeMs?: number
   mode?: "byok" | "platform"
+  clientId?: string | null
 }) {
+  const { clientId = "codepuppy", ...rest } = value
   writeFileSync(
     join(dataPath, "alpha-auth.json"),
-    JSON.stringify({ v: 1, plain: JSON.stringify({ mode: "platform", ...value }) }),
+    JSON.stringify({
+      v: 1,
+      plain: JSON.stringify({ mode: "platform", ...rest, ...(clientId === null ? {} : { clientId }) }),
+    }),
   )
   initAuthEnv(dataPath)
 }
@@ -451,6 +463,7 @@ describe("refresh bundle rotation", () => {
     expect(renewedGenerations).toHaveLength(1)
     expect(requestBody).toMatchObject({
       grant_type: "refresh_token",
+      client_id: "codepuppy",
       refresh_token: "refresh-old",
     })
     // #79 Breaking v1: the issuer rejects any refresh request carrying `sid`
@@ -465,6 +478,7 @@ describe("refresh bundle rotation", () => {
       refreshToken: "refresh-new",
       sessionId: "session-new",
       lifetimeMs: 3_600_000,
+      clientId: "codepuppy",
     })
   })
 
@@ -821,6 +835,146 @@ describe("refresh bundle rotation", () => {
     expect(requests).toBe(0)
     expect(structuralRespawns).toBe(0)
     expect(renewedGenerations).toEqual([])
+  })
+})
+
+// alpha-web#283(REQ-236)AC3 / AC4:登录客户端改为 `codepuppy`、回调 `codepuppy://auth/callback`;
+// 0.1.24 及更早写下的凭据(没有 clientId 标记)在任何平台调用之前先用新 id 强制刷新一次。
+// 「任何平台调用」在本模块里的咽喉只有三处:applyAuthEnv 写给引擎的 env、getAccessToken、getArchiveAccessToken
+// —— 下面逐个断言它们在刷新前拿不到旧令牌。
+describe("alpha-web#283 client id cut-over", () => {
+  function servePlatformRefresh(bundle: Record<RoutePurpose, string>, bodies: Record<string, unknown>[]) {
+    globalThis.fetch = (async (_input, init) => {
+      if (typeof init?.body !== "string") throw new Error("expected JSON refresh request")
+      const body: unknown = JSON.parse(init.body)
+      if (!isRecord(body)) throw new Error("expected JSON refresh object")
+      bodies.push(body)
+      return jsonResponse({
+        platform_access_tokens: bundle,
+        mcp_access_token: "mcp-new",
+        archive_access_token: "archive-new",
+        refresh_token: "refresh-new",
+        expires_in: 900,
+        session_id: "session-new",
+      })
+    }) as typeof fetch
+  }
+
+  function storeLegacyCredentials() {
+    storeAuth({
+      platformAccessTokens: tokenBundle("old"),
+      mcpAccessToken: "mcp-old",
+      archiveAccessToken: "archive-old",
+      refreshToken: "refresh-old",
+      // 旧 access token 还远没到续期窗口 —— 只按到期时间判断的启动续期会跳过它。
+      expiresAt: Date.now() + 14 * 60_000,
+      lifetimeMs: 15 * 60_000,
+      clientId: null,
+    })
+  }
+
+  test("login asks for client codepuppy with the codepuppy:// callback and records the client marker", async () => {
+    initAuthEnv(dataPath)
+    openedUrls.length = 0
+    const exchanges: Record<string, unknown>[] = []
+    servePlatformRefresh(tokenBundle("login"), exchanges)
+    await startAuth()
+    const authorize = new URL(openedUrls.at(-1)!)
+    expect(authorize.searchParams.get("client_id")).toBe("codepuppy")
+    expect(authorize.searchParams.get("redirect_uri")).toBe("codepuppy://auth/callback")
+    const pkce: unknown = JSON.parse(readFileSync(join(dataPath, "alpha-pkce.json"), "utf8"))
+    if (!isRecord(pkce) || typeof pkce.state !== "string") throw new Error("expected a persisted pkce state")
+    const callback = new URL("codepuppy://auth/callback")
+    callback.searchParams.set("code", "code-1")
+    callback.searchParams.set("state", pkce.state)
+    expect(handleAuthDeepLink(callback.toString())).toBe(true)
+    for (let tick = 0; tick < 500 && getAuthState().status !== "logged-in"; tick++)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(exchanges).toEqual([
+      expect.objectContaining({
+        grant_type: "authorization_code",
+        client_id: "codepuppy",
+        redirect_uri: "codepuppy://auth/callback",
+      }),
+    ])
+    expect(readStoredAuth()).toMatchObject({ clientId: "codepuppy" })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "ready" })
+    // 旧回调 scheme 不再属于登录:不吞、不换 token。
+    expect(handleAuthDeepLink("code-puppy://auth/callback?code=old&state=old")).toBe(false)
+  })
+
+  test("credentials from the previous client are withheld from every platform seam until the forced refresh", async () => {
+    storeLegacyCredentials()
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
+    expect(isStoredTokenExpired()).toBe(true)
+    expect(process.env.ALPHA_API_KEY).toBeUndefined()
+    expect(process.env.ALPHA_CLOUD_TOKEN).toBeUndefined()
+    expect(process.env.ALPHA_MCP_TOKEN).toBeUndefined()
+    PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBeUndefined())
+    expect(getArchiveAccessToken()).toBeUndefined()
+    // 调度器视之为立即到期:开机那次刷新若失败,按地板节奏重试,而不是等旧令牌走到续期窗口。
+    expect(getAuthRenewalTiming()).toMatchObject({ active: true, expiresAt: undefined })
+  })
+
+  test("the first ensureFreshToken refreshes with the new client id even though the old token is not due", async () => {
+    storeLegacyCredentials()
+    const fresh = tokenBundle("new")
+    const bodies: Record<string, unknown>[] = []
+    servePlatformRefresh(fresh, bodies)
+
+    expect(await ensureFreshToken()).toMatchObject({ outcome: "refreshed" })
+    expect(bodies).toEqual([{ grant_type: "refresh_token", client_id: "codepuppy", refresh_token: "refresh-old" }])
+    expect(process.env.ALPHA_API_KEY).toBe(fresh["model.invoke"])
+    expect(process.env.ALPHA_CLOUD_TOKEN).toBe(fresh["cloud.dispatch"])
+    expect(process.env.ALPHA_MCP_TOKEN).toBe("mcp-new")
+    PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBe(fresh[purpose]))
+    expect(getArchiveAccessToken()).toBe("archive-new")
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "ready" })
+    expect(readStoredAuth()).toMatchObject({ clientId: "codepuppy", refreshToken: "refresh-new" })
+
+    // 一次性:标记已落盘,同一进程与冷启动后都按到期时间正常续期,不再强制。
+    expect(await ensureFreshToken()).toMatchObject({ outcome: "still-valid" })
+    initAuthEnv(dataPath)
+    expect(isStoredTokenExpired()).toBe(false)
+    expect(await ensureFreshToken()).toMatchObject({ outcome: "still-valid" })
+    expect(bodies).toHaveLength(1)
+  })
+
+  test("a rejected forced refresh takes the existing login-failure path instead of keeping the old tokens", async () => {
+    storeLegacyCredentials()
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })) as typeof fetch
+
+    expect(await ensureFreshToken()).toMatchObject({ outcome: "invalid-grant" })
+    expect(getAuthState()).toMatchObject({ status: "logged-out" })
+    expect(process.env.ALPHA_API_KEY).toBeUndefined()
+    PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBeUndefined())
+  })
+
+  test("a transient or contract-incompatible forced refresh keeps the platform recovering on no token at all", async () => {
+    storeLegacyCredentials()
+    globalThis.fetch = (async () => {
+      throw new TypeError("fetch failed")
+    }) as typeof fetch
+    expect(await ensureFreshToken()).toMatchObject({ outcome: "transient-failure" })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
+    expect(process.env.ALPHA_API_KEY).toBeUndefined()
+    expect(getAccessToken("account.read")).toBeUndefined()
+
+    // 签发端若还在发旧 iss 的令牌(网站没切过去),decoder 拒收,旧凭据照样不放出来。
+    const previousIssuer = Object.fromEntries(
+      PURPOSES.map((purpose) => {
+        const [header, payload, signature] = jwt(purpose, "stale-issuer").split(".")
+        const claims = JSON.parse(Buffer.from(payload!, "base64url").toString("utf8"))
+        const legacy = Buffer.from(JSON.stringify({ ...claims, iss: "alpha-web", aud: "alpha-platform-api" }))
+        return [purpose, `${header}.${legacy.toString("base64url")}.${signature}`]
+      }),
+    ) as Record<RoutePurpose, string>
+    servePlatformRefresh(previousIssuer, [])
+    expect(await ensureFreshToken()).toMatchObject({ outcome: "transient-failure" })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
+    expect(process.env.ALPHA_API_KEY).toBeUndefined()
+    expect(getAccessToken("account.read")).toBeUndefined()
+    expect(readStoredAuth()).not.toHaveProperty("clientId")
   })
 })
 

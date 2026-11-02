@@ -15,6 +15,8 @@ describe("installer protocol registration comes from the route manifest", () => 
     const protocols = getConfig(channel).protocols
     expect(protocols).toBeDefined()
     expect((protocols as { schemes: string[] }).schemes).toEqual(DEEP_LINK_SCHEMES)
+    // alpha-web#283(REQ-236 AC3):安装包向系统登记的登录回调协议是 `codepuppy`,不再是 `code-puppy`。
+    expect((protocols as { schemes: string[] }).schemes).toEqual(["opencode", "codepuppy"])
     expect((protocols as { name: string }).name).toMatch(/^Code Puppy(?: Beta)?$/)
   })
 

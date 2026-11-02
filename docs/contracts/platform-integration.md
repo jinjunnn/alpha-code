@@ -110,9 +110,12 @@ inactive-plan payloads.
 ## Authentication flow
 
 1. The main process creates PKCE S256 verifier/challenge and state, then opens
-   `GET <web>/auth/authorize` with client `alpha-code`, redirect
-   `code-puppy://auth/callback`, and OAuth grant metadata scope
-   `openid profile platform`.
+   `GET <web>/auth/authorize` with client `codepuppy`, redirect
+   `codepuppy://auth/callback`, and OAuth grant metadata scope
+   `openid profile platform`. The callback scheme comes from the route
+   manifest, which is also what the installer registers with the OS; the
+   previous client `alpha-code` and scheme `code-puppy` are not accepted
+   (alpha-web#283).
 2. Alpha Web authenticates the user and returns a one-time authorization code.
 3. The desktop validates state and exchanges the code and verifier at
    `POST <web>/auth/token`.
@@ -145,6 +148,16 @@ inactive-plan payloads.
    local/BYOK availability while a slow refresh continues. A successful late
    result is hot-applied like any other refresh (item 9); it never restarts
    the running sidecar. Transient or invalid-grant results change nothing.
+   Credentials last issued or refreshed under a different OAuth client id
+   (every login stored by 0.1.24 or earlier, which carries no client marker)
+   count as expired here regardless of `expiresAt`: they are not written to
+   the engine environment, not returned to any main-process caller, and the
+   cold-start path forces one refresh with the current client id before any
+   platform call. A successful refresh records the client id beside the
+   tokens in the same write, so the forced refresh happens once; a rejected
+   one takes the logged-out path above, and a transient or
+   contract-incompatible one keeps the platform `recovering` on no token
+   (alpha-web#283, AC4).
 9. A same-identity refresh does not restart the engine (REQ-236, `#1562`).
    Main atomically rewrites the model and cloud-connector credential files
    (same-directory temp file, fsync, rename), and the engine reads them at each

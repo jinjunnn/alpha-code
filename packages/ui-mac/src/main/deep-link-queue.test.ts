@@ -100,7 +100,7 @@ function harness(overrides: Partial<DeepLinkQueueDeps> = {}) {
   let now = 0
   const queue = createDeepLinkQueue({
     consumeAuth: (url) => {
-      if (!url.startsWith("code-puppy://auth/")) return false
+      if (!url.startsWith("codepuppy://auth/")) return false
       auth.push(url)
       return true
     },
@@ -728,7 +728,7 @@ describe("deep-link queue ingests every OS entry point", () => {
   test("auth transport is consumed, never queued and never navigated", () => {
     const h = harness()
     const win = h.open(BOOT)
-    h.queue.ingest(["code-puppy://auth/callback?code=abc&state=xyz"])
+    h.queue.ingest(["codepuppy://auth/callback?code=abc&state=xyz"])
 
     expect(h.auth).toHaveLength(1)
     win.drain(h.queue)
