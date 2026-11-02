@@ -11,7 +11,7 @@ const sha256Hex = (b: Uint8Array): string => createHash("sha256").update(b).dige
 
 const SBOM_OK = { bomFormat: "CycloneDX", specVersion: "1.6", components: [] }
 const PROV_OK = {
-  schema: "alpha.intake-provenance.v1",
+  schema: "codepuppy.intake-provenance.v1",
   catalogId: "mcp:blobber",
   version: "1.0.0",
   source: { kind: "npm", locator: "npm:blobber", requestedRef: "1.0.0", resolved: `sha512:${"A".repeat(86)}==` },
@@ -41,7 +41,7 @@ function makeEntry(
     version,
     installSpec: { kind: "mcp", mcpType: "local", command: ["x"] },
     curation: {
-      schema: "alpha.catalog.curation.v1",
+      schema: "codepuppy.catalog.curation.v1",
       tier: "precache",
       activationPolicy: "default-disabled",
       deliveryMode: "installable",
@@ -71,7 +71,7 @@ function makeEntry(
           sha256: provSha,
           bytes: over.provLen ?? provBytes.length,
           url: curationBlobUrl(id, version, "intakeProvenance", provSha),
-          format: "alpha.intake-provenance.v1+json",
+          format: "codepuppy.intake-provenance.v1+json",
         },
       },
     },

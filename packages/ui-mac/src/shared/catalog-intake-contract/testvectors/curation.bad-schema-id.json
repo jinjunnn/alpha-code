@@ -4,7 +4,7 @@
   "entryType": "mcp",
   "hasPayloadAssets": true,
   "curation": {
-    "schema": "alpha.catalog.curation.v2",
+    "schema": "codepuppy.catalog.curation.v2",
     "tier": "core",
     "activationPolicy": "default-enabled",
     "deliveryMode": "installable",
@@ -54,7 +54,7 @@
         "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
         "bytes": 1024,
         "url": "https://codepuppy.cn/catalog/assets/mcp.github/1.0.0/alpha-curation/intake-provenance/2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b.json",
-        "format": "alpha.intake-provenance.v1+json"
+        "format": "codepuppy.intake-provenance.v1+json"
       }
     }
   }

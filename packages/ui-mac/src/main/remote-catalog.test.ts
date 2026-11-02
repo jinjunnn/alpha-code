@@ -52,7 +52,7 @@ function serve(map: Record<string, string | ((headers: Record<string, string>) =
 function trustBody(signer: TestKey, over: Record<string, unknown> = {}): string {
   return JSON.stringify(
     {
-      schema: "alpha.catalog.trust.v1",
+      schema: "codepuppy.catalog.trust.v1",
       sequence: 1,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -70,7 +70,7 @@ function channelBody(signer: TestKey, payloadBody: string, over: Record<string, 
   const version = (JSON.parse(payloadBody) as { version: string }).version
   return JSON.stringify(
     {
-      schema: "alpha.catalog.channel-metadata.v1",
+      schema: "codepuppy.catalog.channel-metadata.v1",
       channel: "stable",
       sequence: 5,
       publishedAt: "2026-07-13T00:00:00.000Z",
@@ -94,7 +94,7 @@ let advSeq = 200
 function advisoriesBody(signer: TestKey, records: Record<string, unknown>[] = [], over: Record<string, unknown> = {}): string {
   return JSON.stringify(
     {
-      schema: "alpha.catalog.advisories.v1",
+      schema: "codepuppy.catalog.advisories.v1",
       sequence: ++advSeq,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -115,7 +115,7 @@ function snapshotBody(signer: TestKey, members: Record<string, string>, over: Re
   }
   return JSON.stringify(
     {
-      schema: "alpha.catalog.snapshot.v1",
+      schema: "codepuppy.catalog.snapshot.v1",
       sequence: ++snapSeq,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-08-12T00:00:00.000Z",

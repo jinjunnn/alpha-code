@@ -2,7 +2,7 @@
   "catalogId": "mcp:markitdown",
   "version": "0.1.2",
   "provenance": {
-    "schema": "alpha.intake-provenance.v1",
+    "schema": "codepuppy.intake-provenance.v1",
     "catalogId": "mcp:markitdown",
     "version": "0.1.2",
     "source": {

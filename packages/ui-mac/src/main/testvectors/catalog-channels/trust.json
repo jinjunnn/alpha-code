@@ -1,13 +1,13 @@
 {
-  "schema": "alpha.catalog.trust.v1",
+  "schema": "codepuppy.catalog.trust.v1",
   "sequence": 3,
   "publishedAt": "2026-07-13T00:00:00.000Z",
   "expires": "2036-01-01T00:00:00.000Z",
-  "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
+  "keyId": "a469ae7c511a98b3fa97fd453c5bb72a3a2017d362b4d067c3d9ce4b495e8a2e",
   "keys": [
     {
-      "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
-      "publicKey": "MCowBQYDK2VwAyEAIOXw2YvrBHd03wQw0RQrzkLZbwkf1zKnmn9EqE7n4n0=",
+      "keyId": "a469ae7c511a98b3fa97fd453c5bb72a3a2017d362b4d067c3d9ce4b495e8a2e",
+      "publicKey": "MCowBQYDK2VwAyEA+7OFs3tlEXPOcnPwwzZEa3yCvYDwIuMy9JBafKICxCA=",
       "status": "active",
       "notBefore": "2026-07-13T00:00:00.000Z"
     },

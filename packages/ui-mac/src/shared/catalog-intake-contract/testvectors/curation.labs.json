@@ -4,7 +4,7 @@
   "entryType": "skill",
   "hasPayloadAssets": true,
   "curation": {
-    "schema": "alpha.catalog.curation.v1",
+    "schema": "codepuppy.catalog.curation.v1",
     "tier": "labs",
     "activationPolicy": "session-grant",
     "deliveryMode": "installable",
@@ -41,7 +41,7 @@
         "sha256": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
         "bytes": 1024,
         "url": "https://codepuppy.cn/catalog/assets/skill.experimental-viz/0.3.1/alpha-curation/intake-provenance/4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d.json",
-        "format": "alpha.intake-provenance.v1+json"
+        "format": "codepuppy.intake-provenance.v1+json"
       }
     }
   }

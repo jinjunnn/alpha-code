@@ -1,11 +1,11 @@
 {
-  "$id": "alpha.catalog.curation.v1",
+  "$id": "codepuppy.catalog.curation.v1",
   "title": "Per-entry curation object published inside the signed catalog payload (REQ-104). Structural face only — cross-field invariants live in scripts/lib/catalog-intake-core.mjs assertCurationCoherent (contract §3).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "tier", "activationPolicy", "deliveryMode", "review", "applicability", "summaries", "refs"],
   "properties": {
-    "schema": { "const": "alpha.catalog.curation.v1" },
+    "schema": { "const": "codepuppy.catalog.curation.v1" },
     "tier": { "enum": ["core", "precache", "connector", "labs"] },
     "activationPolicy": { "enum": ["default-enabled", "default-disabled", "session-grant"] },
     "deliveryMode": { "enum": ["installable", "connection-only", "aggregate"] },
@@ -97,7 +97,7 @@
             "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
             "bytes": { "type": "integer", "minimum": 1 },
             "url": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^https://" },
-            "format": { "const": "alpha.intake-provenance.v1+json" }
+            "format": { "const": "codepuppy.intake-provenance.v1+json" }
           }
         }
       }

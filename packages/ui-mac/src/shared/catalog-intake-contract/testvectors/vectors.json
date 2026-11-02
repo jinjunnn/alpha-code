@@ -1,5 +1,5 @@
 {
-  "schema": "alpha.catalog-intake.testvectors.v1",
+  "schema": "codepuppy.catalog-intake.testvectors.v1",
   "curation": {
     "valid": [
       "curation.core.json",

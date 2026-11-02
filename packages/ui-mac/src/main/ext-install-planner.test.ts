@@ -2530,7 +2530,7 @@ const makeCuration = (
   version: string,
   over: Partial<{ tier: string; activationPolicy: string; upstreamStatus: string; reviewedAt: string; reviewBefore: string }> = {},
 ) => ({
-  schema: "alpha.catalog.curation.v1",
+  schema: "codepuppy.catalog.curation.v1",
   tier: over.tier ?? "precache",
   activationPolicy: over.activationPolicy ?? "default-disabled",
   deliveryMode: "installable",
@@ -2555,7 +2555,7 @@ const makeCuration = (
       sha256: SHA_B,
       bytes: 512,
       url: curationBlobUrl(catalogId, version, "intakeProvenance", SHA_B),
-      format: "alpha.intake-provenance.v1+json",
+      format: "codepuppy.intake-provenance.v1+json",
     },
   },
 })

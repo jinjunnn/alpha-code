@@ -2,7 +2,7 @@
   "catalogId": "skill:experimental-viz",
   "version": "0.3.1",
   "provenance": {
-    "schema": "alpha.intake-provenance.v1",
+    "schema": "codepuppy.intake-provenance.v1",
     "catalogId": "skill:experimental-viz",
     "version": "0.3.1",
     "source": {

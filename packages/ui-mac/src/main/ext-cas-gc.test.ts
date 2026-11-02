@@ -70,7 +70,7 @@ function writeSeedLock(file: string, contents: string[]): void {
   fs.writeFileSync(
     file,
     JSON.stringify({
-      schema: "alpha.extension-seed.lock.v1",
+      schema: "codepuppy.extension-seed.lock.v1",
       channel: "stable",
       catalogVersion: "2026-07-13.1",
       catalog: { sha256: sha("payload"), bytes: 1, url: "https://a.example/c.json", sigUrl: "https://a.example/c.json.sig" },
@@ -217,7 +217,7 @@ describe("collectCasGarbage — fail closed", () => {
     fs.rmSync(path.join(dir, "tx-bad-00000001.json"))
 
     const badSeed = path.join(base, "seed.lock.json")
-    fs.writeFileSync(badSeed, JSON.stringify({ schema: "alpha.extension-seed.lock.v2" }))
+    fs.writeFileSync(badSeed, JSON.stringify({ schema: "codepuppy.extension-seed.lock.v2" }))
     const r2 = collectCasGarbage(base, { envRoots: [envRoot], seedLockPaths: [badSeed] })
     expect(!r2.ok && r2.reason!.includes("fail closed")).toBeTrue()
     expect(hasCasBlob(base, garbage)).toBeTrue()

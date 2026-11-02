@@ -93,7 +93,7 @@ const keyEntry = (k: TestKey, over: Record<string, unknown> = {}) => ({
 function trustDoc(signer: TestKey, over: Record<string, unknown> = {}) {
   const body = JSON.stringify(
     {
-      schema: "alpha.catalog.trust.v1",
+      schema: "codepuppy.catalog.trust.v1",
       sequence: 1,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -120,7 +120,7 @@ function channelDoc(
   const version = (JSON.parse(payloadBody) as { version: string }).version
   const body = JSON.stringify(
     {
-      schema: "alpha.catalog.channel-metadata.v1",
+      schema: "codepuppy.catalog.channel-metadata.v1",
       channel: "stable",
       sequence: 5,
       publishedAt: "2026-07-13T00:00:00.000Z",
@@ -147,7 +147,7 @@ let advSeq = 200
 function advisoriesDoc(signer: TestKey, records: Record<string, unknown>[] = [], over: Record<string, unknown> = {}) {
   const body = JSON.stringify(
     {
-      schema: "alpha.catalog.advisories.v1",
+      schema: "codepuppy.catalog.advisories.v1",
       sequence: ++advSeq,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -170,7 +170,7 @@ function snapshotDoc(signer: TestKey, members: Record<string, { body: string }>,
   }
   const body = JSON.stringify(
     {
-      schema: "alpha.catalog.snapshot.v1",
+      schema: "codepuppy.catalog.snapshot.v1",
       sequence: ++snapSeq,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-08-12T00:00:00.000Z",
@@ -728,7 +728,7 @@ describe("拒绝矩阵(合成 ed25519 宇宙)", () => {
     const k1 = genKey()
     const { trust } = await seedLkg(k1)
     const st = JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8"))
-    st.trust.body = st.trust.body.replace("alpha.catalog.trust.v1", "alpha.catalog.trust.v1 ")
+    st.trust.body = st.trust.body.replace("codepuppy.catalog.trust.v1", "codepuppy.catalog.trust.v1 ")
     st.trustAnchor = st.trust
     st.channels.stable.payload.body = st.channels.stable.payload.body.replace("skill:m", "skill:x")
     fs.writeFileSync(channelStatePath(dir), JSON.stringify(st))
@@ -877,7 +877,7 @@ describe("#314 review 回归:三态 grandfather / 等序空白字节 replacement
     let st = JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8"))
     expect(st.stateVersion).toBe(2)
     const goodSnapshot = st.channels.stable.snapshot
-    st.channels.stable.snapshot = { body: goodSnapshot.body.replace("alpha.catalog.snapshot.v1", "alpha.catalog.snapshot.vX"), sig: goodSnapshot.sig }
+    st.channels.stable.snapshot = { body: goodSnapshot.body.replace("codepuppy.catalog.snapshot.v1", "alpha.catalog.snapshot.vX"), sig: goodSnapshot.sig }
     fs.writeFileSync(channelStatePath(dir), JSON.stringify(st))
     expect(readChannelLastKnownGood(dir, "stable", trustDocParsed, NOW)).toBeNull()
     // absent + 高水位:删除 snapshot 位伪装 legacy → 拒

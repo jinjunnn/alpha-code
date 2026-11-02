@@ -1,13 +1,13 @@
 {
-  "schema": "alpha.catalog.snapshot.v1",
+  "schema": "codepuppy.catalog.snapshot.v1",
   "sequence": 6,
   "publishedAt": "2026-07-13T00:00:00.000Z",
   "expires": "2036-01-01T00:00:00.000Z",
-  "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
+  "keyId": "a469ae7c511a98b3fa97fd453c5bb72a3a2017d362b4d067c3d9ce4b495e8a2e",
   "entries": {
     "trust": {
       "sequence": 3,
-      "sha256": "7e6abf9bf6817c2bc691db57ef3928fd88977f4900b0e4d31540b6ba1cb67033"
+      "sha256": "82e153c62ec7bbc49f2194578b2b6fa58dd9ae8f6a2a2e367221aeef17d11058"
     },
     "stable": {
       "sequence": 7,
@@ -15,7 +15,7 @@
     },
     "advisories": {
       "sequence": 2,
-      "sha256": "bfa9bd75debc2f25420360758921e5d7620973a2ee7587a25eecab2f94ad27c5"
+      "sha256": "9122814ab7a22fdbb513046217031b39945317e9b2641c1eb633fd37b709e612"
     }
   }
 }

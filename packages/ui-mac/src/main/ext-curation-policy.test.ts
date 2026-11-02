@@ -9,7 +9,7 @@ import { readSessionGrantIdsSync, sessionGrantIdsFromEntries } from "./ext-curat
 const SHA_A = "a".repeat(64)
 const SHA_B = "b".repeat(64)
 const curation = (catalogId: string, version: string, over: Partial<{ tier: string; activationPolicy: string }> = {}) => ({
-  schema: "alpha.catalog.curation.v1",
+  schema: "codepuppy.catalog.curation.v1",
   tier: over.tier ?? "labs",
   activationPolicy: over.activationPolicy ?? "session-grant",
   deliveryMode: "installable",
@@ -28,7 +28,7 @@ const curation = (catalogId: string, version: string, over: Partial<{ tier: stri
       sha256: SHA_B,
       bytes: 512,
       url: curationBlobUrl(catalogId, version, "intakeProvenance", SHA_B),
-      format: "alpha.intake-provenance.v1+json",
+      format: "codepuppy.intake-provenance.v1+json",
     },
   },
 })

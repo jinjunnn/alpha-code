@@ -1,10 +1,10 @@
 {
-  "schema": "alpha.catalog.channel-metadata.v1",
+  "schema": "codepuppy.catalog.channel-metadata.v1",
   "channel": "stable",
   "sequence": 8,
   "publishedAt": "2026-07-13T00:00:00.000Z",
   "expires": "2020-01-01T00:00:00.000Z",
-  "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
+  "keyId": "a469ae7c511a98b3fa97fd453c5bb72a3a2017d362b4d067c3d9ce4b495e8a2e",
   "target": {
     "catalogVersion": "9.9.9",
     "sha256": "a2588c51381553b3769c4f85e9aead550bae25250d5c8c47159c340603d0064c",

@@ -103,7 +103,7 @@ test("verified signed snapshot and Envelope secret prerequisite reach the restri
     packages: [envelope],
   })
   const trustBody = JSON.stringify({
-    schema: "alpha.catalog.trust.v1",
+    schema: "codepuppy.catalog.trust.v1",
     sequence: 1,
     publishedAt: "2026-07-31T00:00:00.000Z",
     expires: "2026-12-31T00:00:00.000Z",
@@ -119,7 +119,7 @@ test("verified signed snapshot and Envelope secret prerequisite reach the restri
     revokedTargets: [],
   })
   const channelBody = JSON.stringify({
-    schema: "alpha.catalog.channel-metadata.v1",
+    schema: "codepuppy.catalog.channel-metadata.v1",
     channel: "dev",
     sequence: 1,
     publishedAt: "2026-07-31T00:00:00.000Z",
@@ -134,7 +134,7 @@ test("verified signed snapshot and Envelope secret prerequisite reach the restri
     },
   })
   const advisoriesBody = JSON.stringify({
-    schema: "alpha.catalog.advisories.v1",
+    schema: "codepuppy.catalog.advisories.v1",
     sequence: 1,
     publishedAt: "2026-07-31T00:00:00.000Z",
     expires: "2026-12-31T00:00:00.000Z",
@@ -142,7 +142,7 @@ test("verified signed snapshot and Envelope secret prerequisite reach the restri
     records: [],
   })
   const snapshotBody = JSON.stringify({
-    schema: "alpha.catalog.snapshot.v1",
+    schema: "codepuppy.catalog.snapshot.v1",
     sequence: 1,
     publishedAt: "2026-07-31T00:00:00.000Z",
     expires: "2026-08-31T00:00:00.000Z",

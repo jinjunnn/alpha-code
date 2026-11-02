@@ -2,7 +2,7 @@
   "catalogId": "skill:fonts",
   "version": "1.0.0",
   "provenance": {
-    "schema": "alpha.intake-provenance.v1",
+    "schema": "codepuppy.intake-provenance.v1",
     "catalogId": "skill:fonts",
     "version": "1.0.0",
     "source": {
