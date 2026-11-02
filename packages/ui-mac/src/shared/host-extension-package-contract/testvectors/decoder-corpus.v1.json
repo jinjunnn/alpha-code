@@ -16,7 +16,7 @@
               ],
               "targetDir": "alpha-skills"
             },
-            "schema": "alpha.host-extension-package.payload.skill.v1"
+            "schema": "codepuppy.host-extension-package.payload.skill.v1"
           }
         }
       ],
@@ -28,9 +28,9 @@
             "dependencies": [],
             "id": "skill:skill-v1",
             "payloadRef": {
-              "bytes": 353,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "5994ae82b68a8ae487d4cb6434bea3d3063c2dac048ff6e95ef416453e48269f",
+              "bytes": 357,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "478628579361ac453b033f271e9bb976ff2637e44052083cd13aacfe5554719d",
               "url": "https://example.invalid/packages/skill/skill-v1.json"
             },
             "profileId": "skill",
@@ -47,7 +47,7 @@
           "displayName": "skill-v1"
         },
         "root": "skill:skill-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "skill-v1",
@@ -81,7 +81,7 @@
               ],
               "targetDir": "alpha-skills"
             },
-            "schema": "alpha.host-extension-package.payload.skill.v1"
+            "schema": "codepuppy.host-extension-package.payload.skill.v1"
           }
         }
       ],
@@ -93,9 +93,9 @@
             "dependencies": [],
             "id": "skill:skill-multifile-v1",
             "payloadRef": {
-              "bytes": 845,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "e1b27cdad2eda3060a9bd476dd0e8239c6bf0d008b18c80beeaa6e52bf877ee5",
+              "bytes": 849,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "10424794d3ad543790154338d55826e0dc01312ddeb1ecee7607a5856c089042",
               "url": "https://example.invalid/packages/skill/skill-multifile-v1.json"
             },
             "profileId": "skill",
@@ -112,7 +112,7 @@
           "displayName": "skill-multifile-v1"
         },
         "root": "skill:skill-multifile-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "skill-multifile-v1",
@@ -132,7 +132,7 @@
               },
               "targetDir": "alpha-agents"
             },
-            "schema": "alpha.host-extension-package.payload.agent.v1"
+            "schema": "codepuppy.host-extension-package.payload.agent.v1"
           }
         }
       ],
@@ -144,9 +144,9 @@
             "dependencies": [],
             "id": "agent:agent-v1",
             "payloadRef": {
-              "bytes": 333,
-              "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
-              "sha256": "c11476758739f16a6d8dd061635241ed4a6c102343f235e46cfd7a7b0faa0f73",
+              "bytes": 337,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.agent.v1+json",
+              "sha256": "c5ee4e0cab2dd8a19ed68699ed0ea00e7854845ca9cd4a39e77d84ef9784f6ea",
               "url": "https://example.invalid/packages/agent/agent-v1.json"
             },
             "profileId": "agent",
@@ -163,7 +163,7 @@
           "displayName": "agent-v1"
         },
         "root": "agent:agent-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "agent-v1",
@@ -186,7 +186,7 @@
                 "url": "https://example.invalid/assets/command/template.md"
               }
             },
-            "schema": "alpha.host-extension-package.payload.command.v1"
+            "schema": "codepuppy.host-extension-package.payload.command.v1"
           }
         }
       ],
@@ -198,9 +198,9 @@
             "dependencies": [],
             "id": "command:command-v1",
             "payloadRef": {
-              "bytes": 441,
-              "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
-              "sha256": "e9cea9431403c76aa46d4d8c0e627a86cb5a4b3dacfc3a4a80cf92cedeec381d",
+              "bytes": 445,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.command.v1+json",
+              "sha256": "473e0059aa0fc5d582f18b2929badb4d12e58f149ba5ec3638f5c2a86e6f80fc",
               "url": "https://example.invalid/packages/command/command-v1.json"
             },
             "profileId": "command",
@@ -217,7 +217,7 @@
           "displayName": "command-v1"
         },
         "root": "command:command-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "command-v1",
@@ -276,7 +276,7 @@
                 "Sends the request, title and style you enter."
               ]
             },
-            "schema": "alpha.host-extension-package.payload.cloud.v1"
+            "schema": "codepuppy.host-extension-package.payload.cloud.v1"
           }
         }
       ],
@@ -288,9 +288,9 @@
             "dependencies": [],
             "id": "cloud:cloud-v1",
             "payloadRef": {
-              "bytes": 1041,
-              "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
-              "sha256": "f3fe8e0dbb9ffddfea427697f4a3e5b7003d8111daa3650b6d05747aacf9998f",
+              "bytes": 1045,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.cloud.v1+json",
+              "sha256": "ad7b961e186680340a948433f9f736fe76ec4c821b36a1158eda5de689db716f",
               "url": "https://example.invalid/packages/cloud/cloud-v1.json"
             },
             "profileId": "cloud",
@@ -307,7 +307,7 @@
           "displayName": "cloud-v1"
         },
         "root": "cloud:cloud-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "cloud-v1",
@@ -329,7 +329,7 @@
               ],
               "targetDir": "alpha-skills"
             },
-            "schema": "alpha.host-extension-package.payload.skill.v1"
+            "schema": "codepuppy.host-extension-package.payload.skill.v1"
           }
         },
         {
@@ -347,7 +347,7 @@
                 "url": "https://example.invalid/assets/bundle-command-leaf/template.md"
               }
             },
-            "schema": "alpha.host-extension-package.payload.command.v1"
+            "schema": "codepuppy.host-extension-package.payload.command.v1"
           }
         }
       ],
@@ -361,9 +361,9 @@
             ],
             "id": "skill:bundle-command-root",
             "payloadRef": {
-              "bytes": 367,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "2d96c385568ccf544d23d561853821f596ea26940242eb17099cc52f56dd4099",
+              "bytes": 371,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "97a1397d89af847fde77256d7152c6fbd59eba03ecfba557be931ec40e7a2787",
               "url": "https://example.invalid/packages/skill/bundle-command-root.json"
             },
             "profileId": "skill",
@@ -375,9 +375,9 @@
             "dependencies": [],
             "id": "command:bundle-command-leaf",
             "payloadRef": {
-              "bytes": 453,
-              "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
-              "sha256": "97ef5196773b058d0065f27885d22bb46047d7a58d8fd920b831b2c90f6285f5",
+              "bytes": 457,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.command.v1+json",
+              "sha256": "151699a933ea372ade8d33240b987ae3c1cff781930731a0a11d2db05710ecd0",
               "url": "https://example.invalid/packages/command/bundle-command-leaf.json"
             },
             "profileId": "command",
@@ -394,7 +394,7 @@
           "displayName": "bundle-skill-with-command"
         },
         "root": "skill:bundle-command-root",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "bundle-skill-with-command",
@@ -415,25 +415,25 @@
                 "API_KEY"
               ]
             },
-            "schema": "alpha.host-extension-package.payload.mcp-local.v1"
+            "schema": "codepuppy.host-extension-package.payload.mcp-local.v1"
           }
         }
       ],
       "envelope": {
         "capabilities": [
-          "alpha.secret-prerequisite.v1"
+          "codepuppy.secret-prerequisite.v1"
         ],
         "components": [
           {
             "capabilities": [
-              "alpha.secret-prerequisite.v1"
+              "codepuppy.secret-prerequisite.v1"
             ],
             "dependencies": [],
             "id": "mcp-local:mcp-local-v1",
             "payloadRef": {
-              "bytes": 217,
-              "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
-              "sha256": "b730d0942cb431283ccd50a0541acb0724242efca764111938a87adf9c55d14c",
+              "bytes": 221,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-local.v1+json",
+              "sha256": "c417d65e7696dd0f58f4db2070f7141811b9e13127ffad1afac4d5b4dc816bde",
               "url": "https://example.invalid/packages/mcp-local/mcp-local-v1.json"
             },
             "profileId": "mcp-local",
@@ -450,7 +450,7 @@
           "displayName": "mcp-local-v1"
         },
         "root": "mcp-local:mcp-local-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "mcp-local-v1",
@@ -467,7 +467,7 @@
               "requiredSecrets": [],
               "url": "https://mcp.example.invalid/service"
             },
-            "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+            "schema": "codepuppy.host-extension-package.payload.mcp-remote.v1"
           }
         }
       ],
@@ -479,9 +479,9 @@
             "dependencies": [],
             "id": "mcp-remote:mcp-remote-v1",
             "payloadRef": {
-              "bytes": 213,
-              "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-              "sha256": "765cc8b1de58b6dfe528fab55742f59dce1daf82457bd5cbdcff87679da90b96",
+              "bytes": 217,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+              "sha256": "4ee513362e9d06ea9346f27d682eddd392935e9314cedf34d4f502f57872bd77",
               "url": "https://example.invalid/packages/mcp-remote/mcp-remote-v1.json"
             },
             "profileId": "mcp-remote",
@@ -498,7 +498,7 @@
           "displayName": "mcp-remote-v1"
         },
         "root": "mcp-remote:mcp-remote-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "mcp-remote-v1",
@@ -523,27 +523,27 @@
               ],
               "url": "https://mcp.example.invalid/service"
             },
-            "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+            "schema": "codepuppy.host-extension-package.payload.mcp-remote.v1"
           }
         }
       ],
       "envelope": {
         "capabilities": [
-          "alpha.mcp-oauth.v1",
-          "alpha.secret-prerequisite.v1"
+          "codepuppy.mcp-oauth.v1",
+          "codepuppy.secret-prerequisite.v1"
         ],
         "components": [
           {
             "capabilities": [
-              "alpha.mcp-oauth.v1",
-              "alpha.secret-prerequisite.v1"
+              "codepuppy.mcp-oauth.v1",
+              "codepuppy.secret-prerequisite.v1"
             ],
             "dependencies": [],
             "id": "mcp-remote:mcp-remote-oauth-v1",
             "payloadRef": {
-              "bytes": 365,
-              "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-              "sha256": "b85ce4562d9a9b985a2fe870c705bc56a70af3434abd9a3c267a4c665b8f7390",
+              "bytes": 369,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+              "sha256": "d1ad432eae2e2a25055ebf1a095d03348fa24b783ee2e9df230da0daa2ded4ec",
               "url": "https://example.invalid/packages/mcp-remote/mcp-remote-oauth-v1.json"
             },
             "profileId": "mcp-remote",
@@ -560,7 +560,7 @@
           "displayName": "mcp-remote-oauth-v1"
         },
         "root": "mcp-remote:mcp-remote-oauth-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "mcp-remote-oauth-v1",
@@ -583,25 +583,25 @@
               "requiredSecrets": [],
               "url": "https://mcp.example.invalid/service"
             },
-            "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+            "schema": "codepuppy.host-extension-package.payload.mcp-remote.v1"
           }
         }
       ],
       "envelope": {
         "capabilities": [
-          "alpha.connection.v1"
+          "codepuppy.connection.v1"
         ],
         "components": [
           {
             "capabilities": [
-              "alpha.connection.v1"
+              "codepuppy.connection.v1"
             ],
             "dependencies": [],
             "id": "mcp-remote:mcp-remote-connection-v1",
             "payloadRef": {
-              "bytes": 406,
-              "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-              "sha256": "91313dea25562d991d63ca58ec5e3d23a2779629fd2c4bd63b89de8783772a6e",
+              "bytes": 410,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+              "sha256": "469045c6ecdcc4dbfcd464d45dce9e0bb4cb33b4514c82aaf753daa9adfbd1d8",
               "url": "https://example.invalid/packages/mcp-remote/mcp-remote-connection-v1.json"
             },
             "profileId": "mcp-remote",
@@ -618,7 +618,7 @@
           "displayName": "mcp-remote-connection-v1"
         },
         "root": "mcp-remote:mcp-remote-connection-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "mcp-remote-connection-v1",
@@ -640,7 +640,7 @@
               ],
               "targetDir": "alpha-skills"
             },
-            "schema": "alpha.host-extension-package.payload.skill.v1"
+            "schema": "codepuppy.host-extension-package.payload.skill.v1"
           }
         }
       ],
@@ -652,9 +652,9 @@
             "dependencies": [],
             "id": "skill:listing-full-v1",
             "payloadRef": {
-              "bytes": 363,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "4c47b9f1d55f955ab218678c2b1d85be83fd63715907e762f03c07f0ac581944",
+              "bytes": 367,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "ca1051bad7cbe542a0d14b1929d832467f5e3b986a3663f472f2ce7491acbc44",
               "url": "https://example.invalid/packages/skill/listing-full-v1.json"
             },
             "profileId": "skill",
@@ -690,7 +690,7 @@
           "displayName": "listing-full-v1"
         },
         "root": "skill:listing-full-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "listing-full-v1",
@@ -712,7 +712,7 @@
             "id": "skill:unknown-profile",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.future.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.future.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/skill/unknown-profile.json"
             },
@@ -730,7 +730,7 @@
           "displayName": "unknown-profile-required"
         },
         "root": "skill:unknown-profile",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "unknown-profile-required",
@@ -745,18 +745,18 @@
       ],
       "envelope": {
         "capabilities": [
-          "alpha.future.v1"
+          "codepuppy.future.v1"
         ],
         "components": [
           {
             "capabilities": [
-              "alpha.future.v1"
+              "codepuppy.future.v1"
             ],
             "dependencies": [],
             "id": "skill:unknown-capability",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/skill/unknown-capability.json"
             },
@@ -774,7 +774,7 @@
           "displayName": "unknown-capability-required"
         },
         "root": "skill:unknown-capability",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "unknown-capability-required",
@@ -795,9 +795,9 @@
             "dependencies": [],
             "id": "skill:skill-v1",
             "payloadRef": {
-              "bytes": 353,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "5994ae82b68a8ae487d4cb6434bea3d3063c2dac048ff6e95ef416453e48269f",
+              "bytes": 357,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "478628579361ac453b033f271e9bb976ff2637e44052083cd13aacfe5554719d",
               "url": "https://example.invalid/packages/skill/skill-v1.json"
             },
             "profileVersion": 1,
@@ -813,7 +813,7 @@
           "displayName": "skill-v1"
         },
         "root": "skill:skill-v1",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "missing-profile-required",
@@ -835,7 +835,7 @@
             "id": "skill:non-required-root",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/skill/non-required-root.json"
             },
@@ -853,7 +853,7 @@
           "displayName": "non-required-root"
         },
         "root": "skill:non-required-root",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "non-required-root",
@@ -874,7 +874,7 @@
                 "API_KEY"
               ]
             },
-            "schema": "alpha.host-extension-package.payload.mcp-local.v1"
+            "schema": "codepuppy.host-extension-package.payload.mcp-local.v1"
           }
         },
         {
@@ -891,7 +891,7 @@
               ],
               "targetDir": "alpha-skills"
             },
-            "schema": "alpha.host-extension-package.payload.skill.v1"
+            "schema": "codepuppy.host-extension-package.payload.skill.v1"
           }
         },
         {
@@ -901,13 +901,13 @@
       ],
       "envelope": {
         "capabilities": [
-          "alpha.future.v1",
-          "alpha.secret-prerequisite.v1"
+          "codepuppy.future.v1",
+          "codepuppy.secret-prerequisite.v1"
         ],
         "components": [
           {
             "capabilities": [
-              "alpha.secret-prerequisite.v1"
+              "codepuppy.secret-prerequisite.v1"
             ],
             "dependencies": [
               "skill:bundle-supported-leaf",
@@ -915,9 +915,9 @@
             ],
             "id": "mcp-local:bundle-root",
             "payloadRef": {
-              "bytes": 217,
-              "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
-              "sha256": "b730d0942cb431283ccd50a0541acb0724242efca764111938a87adf9c55d14c",
+              "bytes": 221,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-local.v1+json",
+              "sha256": "c417d65e7696dd0f58f4db2070f7141811b9e13127ffad1afac4d5b4dc816bde",
               "url": "https://example.invalid/packages/mcp-local/bundle-root.json"
             },
             "profileId": "mcp-local",
@@ -929,9 +929,9 @@
             "dependencies": [],
             "id": "skill:bundle-supported-leaf",
             "payloadRef": {
-              "bytes": 369,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "5af713db57c26afc89892d5c4b41fcc066dca6194147dbacdccf39664f7d41a9",
+              "bytes": 373,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "442b13d8d136e3eaafbaeba2781dde86dc43414f9771a0bcaa7ef1a2cc9d82dd",
               "url": "https://example.invalid/packages/skill/bundle-supported-leaf.json"
             },
             "profileId": "skill",
@@ -940,13 +940,13 @@
           },
           {
             "capabilities": [
-              "alpha.future.v1"
+              "codepuppy.future.v1"
             ],
             "dependencies": [],
             "id": "agent:bundle-unsupported-leaf",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.future.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.future.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/agent/bundle-unsupported-leaf.json"
             },
@@ -964,7 +964,7 @@
           "displayName": "bundle-optional-unsupported-profile"
         },
         "root": "mcp-local:bundle-root",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "bundle-optional-unsupported-profile",
@@ -988,7 +988,7 @@
               ],
               "targetDir": "alpha-skills"
             },
-            "schema": "alpha.host-extension-package.payload.skill.v1"
+            "schema": "codepuppy.host-extension-package.payload.skill.v1"
           }
         },
         {
@@ -998,7 +998,7 @@
       ],
       "envelope": {
         "capabilities": [
-          "alpha.future.v1"
+          "codepuppy.future.v1"
         ],
         "components": [
           {
@@ -1008,9 +1008,9 @@
             ],
             "id": "skill:bundle-capability-root",
             "payloadRef": {
-              "bytes": 370,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "65cb5a5a7a1801c13c5f7932c0cf7c98ff241f9cb48c0a3759be26ab8b8e26a8",
+              "bytes": 374,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "a36f0ef3856ec279a14dac5022fc29c569096b8cd38e392683ed28a15aabfce3",
               "url": "https://example.invalid/packages/skill/bundle-capability-root.json"
             },
             "profileId": "skill",
@@ -1019,13 +1019,13 @@
           },
           {
             "capabilities": [
-              "alpha.future.v1"
+              "codepuppy.future.v1"
             ],
             "dependencies": [],
             "id": "agent:bundle-capability-leaf",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.agent.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/agent/bundle-capability-leaf.json"
             },
@@ -1043,7 +1043,7 @@
           "displayName": "bundle-optional-unsupported-capability"
         },
         "root": "skill:bundle-capability-root",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "bundle-optional-unsupported-capability",
@@ -1067,7 +1067,7 @@
               ],
               "targetDir": "alpha-skills"
             },
-            "schema": "alpha.host-extension-package.payload.skill.v1"
+            "schema": "codepuppy.host-extension-package.payload.skill.v1"
           }
         },
         {
@@ -1085,9 +1085,9 @@
             ],
             "id": "skill:bundle-media-root",
             "payloadRef": {
-              "bytes": 365,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "04ac880d26d4503575dc670cc7edb0603e31deb77471a38c6395fe647aba34f7",
+              "bytes": 369,
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+              "sha256": "4a1c4e3ada49ef85c3e4ddde018d358fb950c4e2049c5d2c7d0bf01b55731f5d",
               "url": "https://example.invalid/packages/skill/bundle-media-root.json"
             },
             "profileId": "skill",
@@ -1100,7 +1100,7 @@
             "id": "agent:bundle-media-leaf",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/agent/bundle-media-leaf.json"
             },
@@ -1118,7 +1118,7 @@
           "displayName": "bundle-optional-media-type-mismatch"
         },
         "root": "skill:bundle-media-root",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "bundle-optional-media-type-mismatch",
@@ -1148,7 +1148,7 @@
             "id": "skill:bundle-required-root",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/skill/bundle-required-root.json"
             },
@@ -1162,7 +1162,7 @@
             "id": "agent:bundle-required-leaf",
             "payloadRef": {
               "bytes": 3,
-              "mediaType": "application/vnd.alpha.host-extension-package.future.v1+json",
+              "mediaType": "application/vnd.codepuppy.host-extension-package.future.v1+json",
               "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
               "url": "https://example.invalid/packages/agent/bundle-required-leaf.json"
             },
@@ -1180,12 +1180,12 @@
           "displayName": "bundle-required-unsupported-child"
         },
         "root": "skill:bundle-required-root",
-        "schema": "alpha.host-extension-package.v1"
+        "schema": "codepuppy.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "bundle-required-unsupported-child",
       "skipped": []
     }
   ],
-  "schema": "alpha.host-extension-package.decoder-corpus.v1"
+  "schema": "codepuppy.host-extension-package.decoder-corpus.v1"
 }

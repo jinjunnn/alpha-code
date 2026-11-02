@@ -60,7 +60,7 @@ const vendoredProducerPackage = async (file: string) => {
  */
 const producerPackage = async () => {
   const payload = {
-    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
     behavior: {
       url: "https://mcp.example.com/",
       headersTemplate: {
@@ -73,7 +73,7 @@ const producerPackage = async () => {
   } as unknown as PackageProfilePayloadV1
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
     presentation: {
       displayName: "Generic Remote MCP",
@@ -87,16 +87,16 @@ const producerPackage = async () => {
         dependencies: [],
         profileId: "mcp-remote",
         profileVersion: 1,
-        capabilities: ["alpha.secret-prerequisite.v1"],
+        capabilities: ["codepuppy.secret-prerequisite.v1"],
         payloadRef: {
           sha256: createHash("sha256").update(bytes).digest("hex"),
           bytes: bytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
           url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
         },
       },
     ],
-    capabilities: ["alpha.secret-prerequisite.v1"],
+    capabilities: ["codepuppy.secret-prerequisite.v1"],
   } as unknown as AlphaPackageEnvelopeV1
   return { envelope, bytes }
 }
@@ -478,7 +478,7 @@ describe("package installability production wiring", () => {
     expect(optional.length, "语料需要至少一个 optional leaf").toBeGreaterThan(0)
     const target = optional.at(-1)!
     expect(envelope.components.at(-1)!.id, "违规项必须不是第一个元素").toBe(target.id)
-    ;(target as { capabilities: string[] }).capabilities = ["alpha.future-unsupported.v1"]
+    ;(target as { capabilities: string[] }).capabilities = ["codepuppy.future-unsupported.v1"]
     ;(envelope as { capabilities: string[] }).capabilities = [
       ...new Set(envelope.components.flatMap((component) => component.capabilities)),
     ].sort()

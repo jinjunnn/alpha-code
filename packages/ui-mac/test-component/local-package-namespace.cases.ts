@@ -28,7 +28,7 @@ const tmp = mkdtempSync(join(tmpdir(), "local-package-namespace-"))
 const userData = join(tmp, "user-data")
 
 const payload = {
-  schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
   behavior: { url: "https://mcp.example.com/", headersTemplate: {}, requiredSecrets: [], auth: "none" },
 } as unknown as PackageProfilePayloadV1
 const payloadBytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
@@ -36,7 +36,7 @@ const payloadBytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2
 /** 同一份信封,只有 packageId 不同 —— 唯一变量就是命名空间。 */
 function envelopeWith(packageId: string): AlphaPackageEnvelopeV1 {
   return {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId, version: "1.0.0" },
     presentation: { displayName: "Namespace Fixture", description: "REQ-128 namespace gate fixture." },
     root: "mcp:namespace-fixture",
@@ -51,7 +51,7 @@ function envelopeWith(packageId: string): AlphaPackageEnvelopeV1 {
         payloadRef: {
           sha256: createHash("sha256").update(payloadBytes).digest("hex"),
           bytes: payloadBytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
           url: "https://alphacodeone.com/catalog/assets/mcp.namespace-fixture/1.0.0/alpha-package/payload.json",
         },
       },

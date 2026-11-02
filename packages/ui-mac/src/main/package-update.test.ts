@@ -108,7 +108,7 @@ function generation(base: Corpus, options: { agentBody: string; keepMcp: boolean
     const asset = utf8(body)
     assetByDigest.set(sha(asset), asset)
     const behavior = (payload as { behavior: Record<string, unknown> }).behavior
-    const isSkill = payload.schema === "alpha.host-extension-package.payload.skill.v1"
+    const isSkill = payload.schema === "codepuppy.host-extension-package.payload.skill.v1"
     const next = isSkill
       ? { ...behavior, asset: undefined, files: [{ path: "SKILL.md", bytes: asset.byteLength, sha256: sha(asset), url }] }
       : { ...behavior, files: undefined, asset: { bytes: asset.byteLength, mediaType: "text/markdown", sha256: sha(asset), url } }
@@ -139,7 +139,7 @@ function generation(base: Corpus, options: { agentBody: string; keepMcp: boolean
     return {
       sha256: sha(bytes),
       bytes: bytes.byteLength,
-      mediaType: `application/vnd.alpha.host-extension-package.${mediaProfile}.v1+json`,
+      mediaType: `application/vnd.codepuppy.host-extension-package.${mediaProfile}.v1+json`,
       url: `https://alphacodeone.com/catalog/assets/${id.replace(":", ".")}/1.0.0/alpha-package/payload.json`,
     }
   }

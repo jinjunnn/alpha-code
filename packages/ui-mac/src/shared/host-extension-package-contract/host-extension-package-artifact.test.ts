@@ -77,10 +77,10 @@ describe("HostExtensionPackageV1 artifact", () => {
       "skill",
     ])
     expect(CAPABILITY_REGISTRY_V1.map((capability) => capability.token)).toEqual([
-      "alpha.connection.v1",
-      "alpha.mcp-oauth.v1",
-      "alpha.official-connectors.v1",
-      "alpha.secret-prerequisite.v1",
+      "codepuppy.connection.v1",
+      "codepuppy.mcp-oauth.v1",
+      "codepuppy.official-connectors.v1",
+      "codepuppy.secret-prerequisite.v1",
     ])
     // 界也是合同。#737 的 5 MiB 残留就是「界只活在某个源文件里的字面量」造成的,
     // 所以每一条界都必须在 registry 里,而不是散落在 decoder / main 的常量上。
@@ -119,7 +119,7 @@ describe("HostExtensionPackageV1 artifact", () => {
       artifactSha256: string
       files: Array<{ path: string; bytes: number; sha256: string }>
     }
-    expect(manifest.schema).toBe("alpha.host-extension-package.artifact.v1")
+    expect(manifest.schema).toBe("codepuppy.host-extension-package.artifact.v1")
     expect(manifest.artifactPath).toBe(HOST_EXTENSION_PACKAGE_ARTIFACT_PATH)
     expect(manifest.artifactSha256).toBe(
       createHash("sha256")
@@ -186,12 +186,12 @@ describe("HostExtensionPackageV1 artifact", () => {
           `${profile.profileId}@${profile.profileVersion} ${profile.mediaType} ${profile.schemaPath}`,
       ),
     ).toEqual([
-      "agent@1 application/vnd.alpha.host-extension-package.agent.v1+json profiles/agent.v1.schema.json",
-      "cloud@1 application/vnd.alpha.host-extension-package.cloud.v1+json profiles/cloud.v1.schema.json",
-      "command@1 application/vnd.alpha.host-extension-package.command.v1+json profiles/command.v1.schema.json",
-      "mcp-local@1 application/vnd.alpha.host-extension-package.mcp-local.v1+json profiles/mcp-local.v1.schema.json",
-      "mcp-remote@1 application/vnd.alpha.host-extension-package.mcp-remote.v1+json profiles/mcp-remote.v1.schema.json",
-      "skill@1 application/vnd.alpha.host-extension-package.skill.v1+json profiles/skill.v1.schema.json",
+      "agent@1 application/vnd.codepuppy.host-extension-package.agent.v1+json profiles/agent.v1.schema.json",
+      "cloud@1 application/vnd.codepuppy.host-extension-package.cloud.v1+json profiles/cloud.v1.schema.json",
+      "command@1 application/vnd.codepuppy.host-extension-package.command.v1+json profiles/command.v1.schema.json",
+      "mcp-local@1 application/vnd.codepuppy.host-extension-package.mcp-local.v1+json profiles/mcp-local.v1.schema.json",
+      "mcp-remote@1 application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json profiles/mcp-remote.v1.schema.json",
+      "skill@1 application/vnd.codepuppy.host-extension-package.skill.v1+json profiles/skill.v1.schema.json",
     ])
     // ADR-040(`#830`):这条曾在 Phase 4 被**翻成正向**以容纳 `opencode-plugin`。owner 否决了
     // 那个 profile,所以它翻回反向 —— 上面那条 exact-set 只在有人**改了它自己**时红,而这一条
@@ -246,9 +246,9 @@ describe("HostExtensionPackageV1 artifact", () => {
 
     const publishedRe = new RegExp(published!)
     const probes: Array<[string, boolean]> = [
-      ["alpha.connection.v1", true],
-      ["alpha.mcp-oauth.v1", true],
-      ["alpha.secret-prerequisite.v1", true],
+      ["codepuppy.connection.v1", true],
+      ["codepuppy.mcp-oauth.v1", true],
+      ["codepuppy.secret-prerequisite.v1", true],
       ["a", true],
       ["a-b.c", true],
       // ADR-040 撤回的两个 token 与 `#807` R1/F1 的三个畸形值:回滚后文法里没有冒号,五个全假。

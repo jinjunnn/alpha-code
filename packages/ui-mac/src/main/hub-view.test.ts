@@ -337,7 +337,7 @@ describe("hub-view 三档状态(§2.5)", () => {
     // docs/verification/2026-10-15-req235-cloud-package-evidence/results/html-preview.json → payloads["cloud:html"]。
     const decoded = decodePackageProfilePayloadV1("cloud", new Uint8Array(await Bun.file(join(import.meta.dir, "fixtures/hub-cloud-payload.json")).arrayBuffer()), [])
     expect(decoded.ok).toBe(true)
-    if (!decoded.ok || decoded.payload.schema !== "alpha.host-extension-package.payload.cloud.v1") throw new Error("cloud fixture invalid")
+    if (!decoded.ok || decoded.payload.schema !== "codepuppy.host-extension-package.payload.cloud.v1") throw new Error("cloud fixture invalid")
     const pkg: CatalogPackageViewV1 = {
       catalogId: "package:cloud-html",
       verdict: "compatible",

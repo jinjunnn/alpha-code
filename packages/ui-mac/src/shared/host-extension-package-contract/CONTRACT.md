@@ -131,9 +131,9 @@ sideloaded legacy extension, but they are not host package capabilities.
 
 The capability vocabulary contains exactly:
 
-- `alpha.connection.v1`
-- `alpha.mcp-oauth.v1`
-- `alpha.secret-prerequisite.v1`
+- `codepuppy.connection.v1`
+- `codepuppy.mcp-oauth.v1`
+- `codepuppy.secret-prerequisite.v1`
 
 A capability token is honoured because it appears in this registry, never
 because of how it is spelled: there is no namespace rule, and the decoder's
@@ -276,8 +276,8 @@ kind.
 | `auth` | required fields | optional | derived capability |
 | --- | --- | --- | --- |
 | `"none"` | — | — | — |
-| `{kind: "mcp-oauth"}` | `prerequisiteId`, `required` | `label` | `alpha.mcp-oauth.v1` |
-| `{kind: "alpha-connection"}` | `prerequisiteId`, `required`, `connectionHandlerId` | `label` | `alpha.connection.v1` |
+| `{kind: "mcp-oauth"}` | `prerequisiteId`, `required` | `label` | `codepuppy.mcp-oauth.v1` |
+| `{kind: "alpha-connection"}` | `prerequisiteId`, `required`, `connectionHandlerId` | `label` | `codepuppy.connection.v1` |
 
 `prerequisiteId` and `connectionHandlerId` both match `^[a-z][a-z0-9-]{0,63}$`.
 
@@ -367,7 +367,7 @@ is code the engine evaluates in its own process (ADR-040).
 
 ## Closed official connector recipes
 
-`alpha.official-connectors.v1` is required whenever `behavior.officialRecipe`
+`codepuppy.official-connectors.v1` is required whenever `behavior.officialRecipe`
 is present. `mcp-remote` accepts only `github-remote-v1`, with exactly the URL
 `https://api.githubcopilot.com/mcp/`, `auth: "none"`, one required secret
 `GITHUB_PERSONAL_ACCESS_TOKEN`, and headers `Authorization: Bearer

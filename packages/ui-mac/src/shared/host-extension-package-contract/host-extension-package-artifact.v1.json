@@ -1,77 +1,77 @@
 {
   "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-  "artifactSha256": "485f1de9f56b866431f87ce4b7956b73fb65d650c3b8abddd7dd4279c91326ab",
+  "artifactSha256": "6aabd15c98de1f6111dc7b2079b693b5921f5b8df90437317835b6db000eb8ea",
   "files": [
     {
-      "bytes": 20411,
+      "bytes": 20435,
       "path": "CONTRACT.md",
-      "sha256": "92b50f573259a4557d03af5deddeb7f425711ad069338fca721c5b6343c30acb"
+      "sha256": "f9b9d978bf0938146ed7693f8cafc99f7f3c570ddb6d7b9fd8ab3b7cd15d61f0"
     },
     {
-      "bytes": 5710,
+      "bytes": 5714,
       "path": "alpha-package-envelope-v1.schema.json",
-      "sha256": "6a4dd390df49ad3fcc991a33d41d4383c9836d6fa3106b99df592164f68400d5"
+      "sha256": "b60e1014fe442f4c1ad420fee2c3bb34122c1634925de8dcbdd3ac51bbb5eeea"
     },
     {
-      "bytes": 71385,
+      "bytes": 71489,
       "path": "decoder.ts",
-      "sha256": "566f60965ca2dac8810375b594a4ba1902b4aaf958095959e73b08d8123cdbcc"
+      "sha256": "437ec350058c4a24384fe9e2305e5e4507318afcc73944afe4a870dce861636e"
     },
     {
-      "bytes": 20326,
+      "bytes": 20410,
       "path": "generate-artifact.ts",
-      "sha256": "b97d21373c861fa0819e3e9d09b9d3e6b298b3acbb8c032ce7b3c4259194a6ce"
+      "sha256": "91320364b98d811614b6d6cff7895a1416706732079c00c2fe74c1d0e257634e"
     },
     {
-      "bytes": 2461,
+      "bytes": 2505,
       "path": "host-extension-package.registry.v1.json",
-      "sha256": "0f8d8676de490f8a1860d41b372b4725f5af4fa779bf8b366f267e6dd562ca9a"
+      "sha256": "d17f4cbbf0bae0fd7acd71e2f792c0b05a25b01f472d63d963ac5cb903493005"
     },
     {
-      "bytes": 1369,
+      "bytes": 1373,
       "path": "profiles/agent.v1.schema.json",
-      "sha256": "5d3c42e55b14875a7f8ff9954bdacdc4ef4fe27e50b04e47ff54a4a548c0bdd5"
+      "sha256": "7de342050c3a2a4648ebeb28eb00d34be2d5aa89b620b00028161864d17434e6"
     },
     {
-      "bytes": 4233,
+      "bytes": 4237,
       "path": "profiles/cloud.v1.schema.json",
-      "sha256": "046a20fb81c639d5e1272cfd68a9e8e8af825f0259e0fc71ba44c385f2e78dfa"
+      "sha256": "0d8eb62d8603930dc74ac3e3dcd07b64472a5792a8b9d0c70224bf301d9b5a75"
     },
     {
-      "bytes": 1644,
+      "bytes": 1648,
       "path": "profiles/command.v1.schema.json",
-      "sha256": "f7188e292dc6b2365a9888e2c07f3172d747943ac3a9a9a14aa17368ba6bd42e"
+      "sha256": "3f8acd5f1b4807b7b6d146c151e0a4d040c1997777a62e63e0b77dfcf658cd11"
     },
     {
-      "bytes": 1433,
+      "bytes": 1437,
       "path": "profiles/mcp-local.v1.schema.json",
-      "sha256": "9f5d2b1a591d6bfdfb48718ba90049583885d1788684d6f58236e6ba2aa1a2a4"
+      "sha256": "161c4be64020bff0b9d2a5c55ae1320d30d1320f436553d5f26eef1351571d32"
     },
     {
-      "bytes": 3253,
+      "bytes": 3257,
       "path": "profiles/mcp-remote.v1.schema.json",
-      "sha256": "857ca8e56f1f119bdfdbd34a32d0b97e8be7cdadf71e34d3cfbc1da91cb5181d"
+      "sha256": "306c79db18576e3df7271a6321999bf854d496e62591fec880996e1ea7a11f16"
     },
     {
-      "bytes": 1542,
+      "bytes": 1546,
       "path": "profiles/skill.v1.schema.json",
-      "sha256": "4b2a59b129724b11a365cf23dc4af25f0f5664f3345d4f4d34f3a3494158878e"
+      "sha256": "150b075d847a5f8fa2506f823dca066a567c4ea244828e6bbdc38131a752b55c"
     },
     {
-      "bytes": 5425,
+      "bytes": 5461,
       "path": "registry.ts",
-      "sha256": "cefa07e8e138f8ea1983f239d171ad8738b01db8c2c0e1653c23b8a6db3047b9"
+      "sha256": "2329726b063a39d1d0a310f68fc72179114f46b09101f5eaa48c0e1ec2a8dc9a"
     },
     {
-      "bytes": 5105,
+      "bytes": 5109,
       "path": "synthetic-decoder.ts",
-      "sha256": "5467137d1225b1b550b0165f523d7dabd833dc49137365f3b4020b7da260b662"
+      "sha256": "0b285fa5bd765d59a6a58f60b5c6b9c71024ff251309bb719d56fb3920fd3fc0"
     },
     {
-      "bytes": 39009,
+      "bytes": 39317,
       "path": "testvectors/decoder-corpus.v1.json",
-      "sha256": "915f40bbfde29bd0ace3535f02df2148125d12ada5212a5d8a27919c1eb79bbc"
+      "sha256": "d87c2d05951b4da1e9e493bbdbb65c88efbaf3ed300912c65d8ad15ac2e63e7d"
     }
   ],
-  "schema": "alpha.host-extension-package.artifact.v1"
+  "schema": "codepuppy.host-extension-package.artifact.v1"
 }

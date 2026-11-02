@@ -52,7 +52,7 @@ function serve(map: Record<string, string | ((headers: Record<string, string>) =
 function trustBody(signer: TestKey, over: Record<string, unknown> = {}): string {
   return JSON.stringify(
     {
-      schema: "alpha.catalog.trust.v1",
+      schema: "codepuppy.catalog.trust.v1",
       sequence: 1,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -70,7 +70,7 @@ function channelBody(signer: TestKey, payloadBody: string, over: Record<string, 
   const version = (JSON.parse(payloadBody) as { version: string }).version
   return JSON.stringify(
     {
-      schema: "alpha.catalog.channel-metadata.v1",
+      schema: "codepuppy.catalog.channel-metadata.v1",
       channel: "stable",
       sequence: 5,
       publishedAt: "2026-07-13T00:00:00.000Z",
@@ -94,7 +94,7 @@ let advSeq = 200
 function advisoriesBody(signer: TestKey, records: Record<string, unknown>[] = [], over: Record<string, unknown> = {}): string {
   return JSON.stringify(
     {
-      schema: "alpha.catalog.advisories.v1",
+      schema: "codepuppy.catalog.advisories.v1",
       sequence: ++advSeq,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -115,7 +115,7 @@ function snapshotBody(signer: TestKey, members: Record<string, string>, over: Re
   }
   return JSON.stringify(
     {
-      schema: "alpha.catalog.snapshot.v1",
+      schema: "codepuppy.catalog.snapshot.v1",
       sequence: ++snapSeq,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-08-12T00:00:00.000Z",
@@ -462,7 +462,7 @@ describe("#302 环境通道路由", () => {
     // 在 v2 合同下应当被拒 —— 那道过渡闸在 package-installability{,.wiring}.test.ts。
     // 本用例要测的是「生产链有没有真的评估」,所以夹具本身必须是合法的。
     const payload: Record<string, any> = {
-      schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+      schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
       behavior: {
         url: "https://mcp.example.com/",
         headersTemplate: { Authorization: "Bearer {A_KEY}", "X-Token": "{B_TOKEN}" },
@@ -472,7 +472,7 @@ describe("#302 环境通道路由", () => {
     }
     const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
     const envelope: Record<string, any> = {
-      schema: "alpha.host-extension-package.v1",
+      schema: "codepuppy.host-extension-package.v1",
       prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
       presentation: {
         displayName: "Generic Remote MCP",
@@ -486,16 +486,16 @@ describe("#302 环境通道路由", () => {
           dependencies: [],
           profileId: "mcp-remote",
           profileVersion: 1,
-          capabilities: ["alpha.secret-prerequisite.v1"],
+          capabilities: ["codepuppy.secret-prerequisite.v1"],
           payloadRef: {
             sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
             bytes: bytes.byteLength,
-            mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+            mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
             url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
           },
         },
       ],
-      capabilities: ["alpha.secret-prerequisite.v1"],
+      capabilities: ["codepuppy.secret-prerequisite.v1"],
     }
 
     const k = genKey()

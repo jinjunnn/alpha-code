@@ -465,7 +465,7 @@ const MV_PKG = "package:multi-ver"
 const MV_COMPONENT = "mcp:multi-ver-remote"
 /** 一份最小、decoder-stable 的合法 envelope(单 mcp-remote 组件;字段与宿主合同逐键canonical)。 */
 const mvEnvelope = (version: string) => ({
-  schema: "alpha.host-extension-package.v1",
+  schema: "codepuppy.host-extension-package.v1",
   prelude: { packageId: MV_PKG, version },
   presentation: { displayName: "Multi Ver", description: "double-key selection corpus" },
   root: MV_COMPONENT,
@@ -480,7 +480,7 @@ const mvEnvelope = (version: string) => ({
       payloadRef: {
         sha256: hex(`payload:multi-ver:${version}`),
         bytes: 64,
-        mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+        mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
         url: `https://alphacodeone.com/catalog/assets/mcp.multi-ver-remote/${version}/alpha-package/payload.json`,
       },
     },
@@ -553,7 +553,7 @@ describe("setInstallStateByKey(#817 双键精确选择,真 resolveVerifiedPackag
 })
 
 // ── `ac#1136`:随包快照携带真实 package 后的 bundled 通道离线启停行为钉 ────────────────────────
-// 2026-08-25.2 快照第一次携带 raw `alpha.host-extension-package.v1` envelope,ext-ipc `#817`
+// 2026-08-25.2 快照第一次携带 raw `codepuppy.host-extension-package.v1` envelope,ext-ipc `#817`
 // 注释「bundled 不带 packages 键 ⇒ 离线解析诚实落 missing」的前提翻转:availability 类离线
 // (security 类在 ext-ipc resolvePackage 里先行拒绝)+ 无 LKG 时,解析从 bundled 落 **found**。
 // 本 describe 钉三件事:①快照确实携带该包(前提再翻转必须显式过这里,不许再静默);②found 的

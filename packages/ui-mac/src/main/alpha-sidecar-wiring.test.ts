@@ -198,8 +198,8 @@ test("#1575: fork 按登录账户 × 本安装写 ALPHA_POLICY_ACCOUNT(同安装
     `${Buffer.from("{}").toString("base64url")}.${Buffer.from(
       JSON.stringify({
         schema_version: 1,
-        iss: "alpha-web",
-        aud: "alpha-platform-api",
+        iss: "codepuppy-web",
+        aud: "codepuppy-platform-api",
         sub,
         token_use: "platform_access",
         purpose: "account.read",

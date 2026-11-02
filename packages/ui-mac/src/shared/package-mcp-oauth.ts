@@ -31,7 +31,7 @@ import type {
  *    envelope that now points at another. Readiness is therefore *asked of the engine* each time,
  *    never cached in a main-owned record.
  */
-export const PACKAGE_MCP_OAUTH_PREREQUISITE_PROFILE_V1 = "alpha.mcp-oauth.v1" as const
+export const PACKAGE_MCP_OAUTH_PREREQUISITE_PROFILE_V1 = "codepuppy.mcp-oauth.v1" as const
 
 /**
  * Every terminal answer this subsystem can give. Exhaustive on purpose: a caller that cannot name
@@ -123,7 +123,7 @@ export function decodePackageMcpOauthPrerequisiteProfileV1(
   payload: PackageProfilePayloadV1,
 ): PackageMcpOauthPrerequisiteProfileV1 {
   if (
-    payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1" ||
+    payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1" ||
     payload.behavior.auth === "none" ||
     payload.behavior.auth.kind !== "mcp-oauth"
   )

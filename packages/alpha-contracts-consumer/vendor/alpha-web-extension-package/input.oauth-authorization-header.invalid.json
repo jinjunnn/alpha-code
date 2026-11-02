@@ -28,7 +28,7 @@
       "version": "1.0.0"
     }
   },
-  "schema": "alpha.package-declaration.v1",
+  "schema": "codepuppy.package-declaration.v1",
   "source": {
     "kind": "alpha-native",
     "publisher": "official",

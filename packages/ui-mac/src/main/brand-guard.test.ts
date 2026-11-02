@@ -5,6 +5,8 @@
 //    决定钥匙串项名 "alpha-code Safe Storage"(动 = 存量登录 + BYOK 密钥永久解不开);
 //    bundle id 动 = TCC/公证身份重置;更新 feed 动 = 存量客户端断更新;
 //    URL scheme + CLIENT_ID 是 OAuth wire 标识(动 = 登录回调断,且须 alpha-web 同刀)。
+//    alpha-web#283(REQ-236,owner 裁决 D4)就是那一刀:auth scheme `code-puppy` → `codepuppy`、
+//    CLIENT_ID `alpha-code` → `codepuppy`,与 alpha-web 同窗切换;下面两条冻结值随之改成新值。
 // ② AC1/AC3 展示面坐标:逐点断言显示 "Code Puppy" / "CODE PUPPY",漏一格红一格。
 //
 // 变异自证(2026-08-29,见 PR):把 index.ts 的 APP_IDS.prod 改一个字符 → 本文件当场红;还原后绿。
@@ -43,13 +45,13 @@ describe("AC5 身份面冻结 — 五组字面量逐字未变", () => {
     expect(src).toContain('if (env === "prod") return "latest"')
     expect(src).toContain('if (env === "beta") return "beta"')
   })
-  test("URL schemes(opencode 深链 + code-puppy auth)", () => {
+  test("URL schemes(opencode 深链 + codepuppy auth)", () => {
     const src = read("packages/ui-mac/src/shared/route-manifest.ts")
     expect(src).toContain('{ id: "application", value: "opencode" }')
-    expect(src).toContain('{ id: "auth", value: "code-puppy" }')
+    expect(src).toContain('{ id: "auth", value: "codepuppy" }')
   })
   test("OAuth CLIENT_ID(wire 标识,非展示名)", () => {
-    expect(read("packages/ui-mac/src/main/alpha-auth.ts")).toContain('const CLIENT_ID = "alpha-code"')
+    expect(read("packages/ui-mac/src/main/alpha-auth.ts")).toContain('const CLIENT_ID = "codepuppy"')
   })
 })
 

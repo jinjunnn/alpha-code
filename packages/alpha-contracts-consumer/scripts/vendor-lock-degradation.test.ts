@@ -93,7 +93,17 @@ describe("#769 · check:vendor degrades without a producer checkout instead of b
     // Naming the pin is the point: "provenance unverified" without saying *which* commit went
     // unproven is not a usable statement.
     expect(clean.stdout).toContain("PROVENANCE NOT VERIFIED this run")
-    expect(clean.stdout).toContain("no staged checkout of jinjunnn/alpha-web@b87abdfe5fdbf3d925e05610283dbe63464b0f03")
+    // alpha-web#283:两份 alpha-web pin 今天恰好钉同一个 commit,所以按 lock 名把这一行认出来,
+    // 免得「另一份 pin 的降级行」顶替了 extension-package 这一份。
+    expect(
+      clean.stdout
+        .split("\n")
+        .some(
+          (line) =>
+            line.includes(`against ${LOCK}`) &&
+            line.includes("no staged checkout of jinjunnn/alpha-web@40520efbcd4871695f7749a792f839eb7882c0b9"),
+        ),
+    ).toBe(true)
     expect(clean.stdout).not.toContain("verified 36 contract artifacts from")
   })
 

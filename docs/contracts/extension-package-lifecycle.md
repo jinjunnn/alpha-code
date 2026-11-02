@@ -238,7 +238,7 @@ per-child mechanism and are not a package rollback channel.
 
 Only `package:github-official` / `mcp:github-official` and
 `package:dbhub-readonly` / `mcp:dbhub-readonly` may use
-`alpha.official-connectors.v1`. These single-component packages use the closed
+`codepuppy.official-connectors.v1`. These single-component packages use the closed
 `officialRecipe` payloads in the [host contract](../../packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md).
 Unknown capabilities are refused before secret input. GitHub uses the official
 hosted endpoint with a read-only fine-grained PAT (read access is determined by

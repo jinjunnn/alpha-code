@@ -2,7 +2,7 @@
 // 合同 = alpha-web contracts/catalog-intake/CONTRACT.md §3/§4/§5/§7(规范性)。本模块是
 // alpha-web scripts/lib/catalog-intake-core.mjs(执行器)+ catalog-channels-core.mjs
 // validateSchemaLite(结构面)的 TS 等价移植:错误文案逐字对齐,由 vendored testvectors
-// (src/shared/catalog-intake-contract/,45 文件,alpha-web@5c9a29c)钉死防漂移。
+// (src/shared/catalog-intake-contract/,45 文件,alpha-web@6154104 —— alpha-web#283 契约 ID 改为 codepuppy.*)钉死防漂移。
 //
 // 消费端裁决面(§7.1,唯一入口 = decodeEntryCuration,禁止旁路直读 entry.curation):
 //   · 无 `curation` 键 → uncurated(未策展,不是错误;走 #395 保守规则)
@@ -15,8 +15,8 @@
 import curationSchemaJson from "./catalog-intake-contract/curation.v1.schema.json"
 import provenanceSchemaJson from "./catalog-intake-contract/intake-provenance.v1.schema.json"
 
-export const CURATION_SCHEMA_ID = "alpha.catalog.curation.v1"
-export const INTAKE_PROVENANCE_SCHEMA_ID = "alpha.intake-provenance.v1"
+export const CURATION_SCHEMA_ID = "codepuppy.catalog.curation.v1"
+export const INTAKE_PROVENANCE_SCHEMA_ID = "codepuppy.intake-provenance.v1"
 
 /** 保留命名空间(合同 §2):策展 blob 专用;不进 remoteAsset/seed。 */
 export const CURATION_ASSET_NAMESPACE = "alpha-curation"

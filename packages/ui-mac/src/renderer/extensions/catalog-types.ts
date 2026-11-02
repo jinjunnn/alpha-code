@@ -128,7 +128,7 @@ export interface CatalogEntry {
    *  REQ-102 #359 起 mcp/plugin 的 seed 条目也必须声明(双真源交叉验证输入):plugin = 离线
    *  运行载荷(plugin.js 等),mcp = 离线携带字节(安装语义仍派生自 installSpec,非运行载荷)。 */
   remoteAsset?: { version: string; files: Array<{ path: string; sha256: string; bytes: number; url: string }> }
-  /** REQ-104 #397:策展对象(合同 alpha.catalog.curation.v1)。**刻意 unknown** —— 唯一采信
+  /** REQ-104 #397:策展对象(合同 codepuppy.catalog.curation.v1)。**刻意 unknown** —— 唯一采信
    *  入口 = shared/catalog-curation.ts decodeEntryCuration(fail-closed),禁止旁路直读。 */
   curation?: unknown
 }
@@ -141,7 +141,7 @@ export interface Catalog {
 }
 
 /** ac#1136(REQ-128):随包 `alpha-catalog.json` 的**诚实 wire 形状** —— 已签名 release 的逐字
- *  镜像。`packages` 存在时是 raw `alpha.host-extension-package.v1` envelope(payloadRef 含 URL),
+ *  镜像。`packages` 存在时是 raw `codepuppy.host-extension-package.v1` envelope(payloadRef 含 URL),
  *  **不是** `CatalogPackageViewV1`,故声明为 `unknown[]`:唯一采信入口 = main 侧
  *  package-installability 的解码器(resolveVerifiedPackageV1 / evaluateCatalogPackagesForHost)。
  *  把这个值铸成 `Catalog`(把 raw 说成 view)正是 ac#1136 崩溃能瞒过 typecheck 的原因;任何要把

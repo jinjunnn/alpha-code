@@ -20,5 +20,5 @@
       "主进程补入 schema_version、artifact_policy 与幂等键。"
     ]
   },
-  "schema": "alpha.host-extension-package.payload.cloud.v1"
+  "schema": "codepuppy.host-extension-package.payload.cloud.v1"
 }

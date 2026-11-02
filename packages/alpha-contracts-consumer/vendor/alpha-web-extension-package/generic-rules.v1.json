@@ -7,13 +7,12 @@
     "urls": "compiler emits new URL(value).href after HTTPS/hostname/no-userinfo validation"
   },
   "capabilities": [
-    "alpha.connection.v1",
-    "alpha.mcp-oauth.v1",
-    "alpha.official-connectors.v1",
-    "alpha.secret-prerequisite.v1"
+    "codepuppy.connection.v1",
+    "codepuppy.mcp-oauth.v1",
+    "codepuppy.official-connectors.v1",
+    "codepuppy.secret-prerequisite.v1"
   ],
   "excluded": [
-    "cloud",
     "legacy-projection",
     "managed-plugin",
     "nested-bundle",
@@ -29,8 +28,8 @@
   },
   "hostContract": {
     "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-    "artifactSha256": "485f1de9f56b866431f87ce4b7956b73fb65d650c3b8abddd7dd4279c91326ab",
-    "commit": "1167048b84a79c3deb7957cd65ec4a5fa3050835",
+    "artifactSha256": "6aabd15c98de1f6111dc7b2079b693b5921f5b8df90437317835b6db000eb8ea",
+    "commit": "59d64b18522770d081294c784d22d3970f1ac358",
     "repo": "jinjunnn/alpha-code"
   },
   "limits": {
@@ -49,5 +48,5 @@
     "mcp-oauth",
     "alpha-connection"
   ],
-  "schema": "alpha.extension-package.generic-rules.v1"
+  "schema": "codepuppy.extension-package.generic-rules.v1"
 }

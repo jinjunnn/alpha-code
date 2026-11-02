@@ -1,33 +1,35 @@
 {
-  "packageId": "package:generic-remote-mcp",
+  "packageId": "package:cloud-html",
   "presentation": {
-    "description": "Generic compiler corpus input.",
-    "displayName": "Generic Remote MCP"
+    "description": "…",
+    "displayName": "云端网页生成"
   },
   "root": {
     "component": {
       "behavior": {
-        "auth": "none",
-        "headersTemplate": {
-          "Authorization": "Bearer {A_KEY}",
-          "X-Remote-Token": "{B_TOKEN}"
+        "fields": {
+          "prompt": {
+            "control": "textarea",
+            "help": "…",
+            "label": "页面要求"
+          }
         },
-        "requiredSecrets": [
-          "B_TOKEN",
-          "A_KEY",
-          "B_TOKEN"
-        ],
-        "url": "https://MCP.EXAMPLE.COM"
+        "fixed": {},
+        "pipelineKind": "unknown-pipeline",
+        "upstreamData": [
+          "发送你填写的页面要求(prompt)。",
+          "派发信封元数据:autonomy、kind;constraints.network 为 restricted;不带 budget"
+        ]
       },
-      "id": "mcp:generic-remote",
+      "id": "cloud:html",
       "kind": "cloud",
       "version": "1.0.0"
     }
   },
-  "schema": "alpha.package-declaration.v1",
+  "schema": "codepuppy.package-declaration.v1",
   "source": {
     "kind": "alpha-native",
-    "publisher": "official",
+    "publisher": "alpha",
     "redistributable": true
   },
   "version": "1.0.0"

@@ -27,7 +27,7 @@
     },
     {
       "assets": [],
-      "errorCode": "E_PROFILE_UNSUPPORTED",
+      "errorCode": "E_CLOUD_PIPELINE_KIND",
       "input": "input.cloud-profile.invalid.json"
     },
     {
@@ -181,7 +181,7 @@
       "verdict": "blocked"
     }
   ],
-  "schema": "alpha.extension-package.testvectors.v1",
+  "schema": "codepuppy.extension-package.testvectors.v1",
   "valid": [
     {
       "assets": [],
@@ -219,6 +219,11 @@
       ],
       "expected": "expected.bundle.compiled.json",
       "input": "input.bundle.valid.json"
+    },
+    {
+      "assets": [],
+      "expected": "expected.cloud.compiled.json",
+      "input": "input.cloud.valid.json"
     }
   ]
 }

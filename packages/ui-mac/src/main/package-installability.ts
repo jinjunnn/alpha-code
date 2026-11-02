@@ -535,7 +535,7 @@ function compatibleView(
     // `#1287`:逐字转发 decoder 已经判过的那一段。这里**不**补默认值、不拼接、不改写 ——
     // 它是发布者签名过的事实,宿主只负责不让它决定 verdict/action。
     ...(envelope.listing ? { listing: envelope.listing } : {}),
-    ...(root?.schema === "alpha.host-extension-package.payload.cloud.v1" ? { cloud: root.behavior } : {}),
+    ...(root?.schema === "codepuppy.host-extension-package.payload.cloud.v1" ? { cloud: root.behavior } : {}),
   }
 }
 
@@ -593,7 +593,7 @@ function decodeSafePrelude(envelope: unknown): { ok: true; prelude: PackagePrelu
         payloadRef: {
           sha256: "0".repeat(64),
           bytes: 1,
-          mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.skill.v1+json",
           url: "https://example.invalid/prelude-probe.json",
         },
       },

@@ -60,7 +60,7 @@ export const ROUTE_MANIFEST = {
   deepLinks: {
     schemes: [
       { id: "application", value: "opencode" },
-      { id: "auth", value: "code-puppy" },
+      { id: "auth", value: "codepuppy" },
     ],
     routes: [
       {

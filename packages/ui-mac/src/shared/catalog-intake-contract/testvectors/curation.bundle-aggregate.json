@@ -4,7 +4,7 @@
   "entryType": "bundle",
   "hasPayloadAssets": false,
   "curation": {
-    "schema": "alpha.catalog.curation.v1",
+    "schema": "codepuppy.catalog.curation.v1",
     "tier": "precache",
     "activationPolicy": "default-disabled",
     "deliveryMode": "aggregate",
@@ -46,7 +46,7 @@
         "sha256": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
         "bytes": 1024,
         "url": "https://codepuppy.cn/catalog/assets/bundle.office-suite/2026.07.1/alpha-curation/intake-provenance/0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d.json",
-        "format": "alpha.intake-provenance.v1+json"
+        "format": "codepuppy.intake-provenance.v1+json"
       }
     }
   }

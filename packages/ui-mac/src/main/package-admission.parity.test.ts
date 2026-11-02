@@ -54,7 +54,7 @@ function envelopeFor(kind: "skill" | "agent" | "mcp") {
   const payload =
     kind === "mcp"
       ? {
-          schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+          schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
           behavior: {
             url: "https://mcp.example.invalid/service",
             headersTemplate: { Authorization: "Bearer {A_KEY}" },
@@ -67,7 +67,7 @@ function envelopeFor(kind: "skill" | "agent" | "mcp") {
             // `#828`:skill 载荷是文件清单。这里仍是**一条** SKILL.md —— 本文件冻结的是
             // 「单装与 Bundle 走同一个 builder」的 parity,不是多文件本身(那条判据在
             // package-mixed-bundle.wiring.cases.ts,走真事务、真盘面)。
-            schema: "alpha.host-extension-package.payload.skill.v1",
+            schema: "codepuppy.host-extension-package.payload.skill.v1",
             behavior: {
               targetDir: "alpha-skills",
               files: [
@@ -81,7 +81,7 @@ function envelopeFor(kind: "skill" | "agent" | "mcp") {
             },
           }
         : {
-            schema: "alpha.host-extension-package.payload.agent.v1",
+            schema: "codepuppy.host-extension-package.payload.agent.v1",
             behavior: {
               targetDir: "alpha-agents",
               asset: {
@@ -93,12 +93,12 @@ function envelopeFor(kind: "skill" | "agent" | "mcp") {
             },
           }
   const payloadBytes = canonicalBytes(payload)
-  const capabilities = kind === "mcp" ? ["alpha.secret-prerequisite.v1"] : []
+  const capabilities = kind === "mcp" ? ["codepuppy.secret-prerequisite.v1"] : []
   return {
     assetBytes,
     payloadBytes,
     envelope: {
-      schema: "alpha.host-extension-package.v1",
+      schema: "codepuppy.host-extension-package.v1",
       prelude: { packageId: `package:parity-${profileId}`, version: "1.0.0" },
       // #749 合同 v2:信封新增必填 `root`。本夹具是单组件,root 即该组件自身。
       root: `${kind}:demo`,
@@ -114,7 +114,7 @@ function envelopeFor(kind: "skill" | "agent" | "mcp") {
           payloadRef: {
             sha256: sha(payloadBytes),
             bytes: payloadBytes.byteLength,
-            mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+            mediaType: `application/vnd.codepuppy.host-extension-package.${profileId}.v1+json`,
             url: "https://example.invalid/payload.json",
           },
         },
@@ -313,7 +313,7 @@ describe("REQ-128 #705 single-install builder parity", () => {
     const item = plan.items[0]!
     expect(item.key).toBe("mcp--demo")
     expect(item.action).toBe("config")
-    expect(item.capabilities).toEqual(["alpha.secret-prerequisite.v1"])
+    expect(item.capabilities).toEqual(["codepuppy.secret-prerequisite.v1"])
     const secretFile = join(userData, "alpha-mcp-secrets", "demo", SECRET_VERSION, "A_KEY")
     expect(item.config).toEqual({
       target: join(root, "alpha.jsonc"),

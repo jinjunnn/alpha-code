@@ -103,7 +103,7 @@ export async function runSyntheticPackageDecoderV1<Plan>(
     if (!payload.ok)
       return { ok: false, status: "blocked", stage: "payload", errors: payload.errors }
 
-    if (component.capabilities.includes("alpha.secret-prerequisite.v1")) await effects.resolveSecrets()
+    if (component.capabilities.includes("codepuppy.secret-prerequisite.v1")) await effects.resolveSecrets()
     results.push({
       componentId: component.id,
       role: entry.role,

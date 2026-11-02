@@ -48,7 +48,7 @@ type StoredAuth = {
   /** access token 的签发寿命(ms)——B2 刷新提前量按它算(见 alpha-auth-clock.ts);旧凭证可缺。 */
   lifetimeMs?: number
   /** `#1195`(REQ-144 T2):登录铸的云 MCP 凭证(`token_use=mcp_access`,aud = …/mcp)。
-   *  不透明保存 —— 不经 `decodeTokenClaims`(那个 decoder 钉死 platform_access/alpha-platform-api,
+   *  不透明保存 —— 不经 `decodeTokenClaims`(那个 decoder 钉死 platform_access/codepuppy-platform-api,
    *  对本 token 结构性不适用);随每次信封轮换整体覆盖,信封缺席 ⇒ 清除(I6 fail-closed)。 */
   mcpAccessToken?: string
   /** REQ-160(`#1324`):对话存档上报面的凭证(alpha-web 令牌端点的**顶层兄弟字段**,不进
@@ -56,6 +56,11 @@ type StoredAuth = {
    *  随每次信封轮换整体覆盖,信封缺席 ⇒ 清除(缺席无回退)。 */
   archiveAccessToken?: string
   account?: { email?: string; plan?: string }
+  /** alpha-web#283 AC4:这份凭据是用哪个 OAuth 客户端 id 签出 / 最近一次刷新的。登录与续期提交时写成
+   *  `CLIENT_ID`;0.1.24 及更早写下的凭据没有这个字段。≠ `CLIENT_ID` ⇒ 在任何平台调用之前先用当前 id
+   *  强制刷新一次,刷新成功前这份凭据不进 env、不交给任何调用方(见 `issuedToCurrentClient`)。
+   *  与令牌同一次 `persist()` 落盘,所以「换了令牌却没记下标记」不可能出现;登出整份清掉。 */
+  clientId?: string
 }
 
 export type TokenResponse = {
@@ -122,7 +127,9 @@ const AUTH_ENV_PURPOSES = [
   ["cloud.dispatch", "ALPHA_CLOUD_TOKEN"],
 ] as const satisfies ReadonlyArray<readonly [RoutePurpose, "ALPHA_API_KEY" | "ALPHA_CLOUD_TOKEN"]>
 
-const CLIENT_ID = "alpha-code"
+// alpha-web#283(REQ-236 AC3):与 alpha-web `lib/oauth.ts` 的 OAUTH_CLIENTS 注册逐字相同;旧 id `alpha-code`
+// 不并认。回调地址由路由清单派生(`codepuppy://auth/callback`),打包协议声明取同一份清单。
+const CLIENT_ID = "codepuppy"
 const REDIRECT_URI = deepLinkFor.authCallback()
 const AUTH_FILE = "alpha-auth.json"
 
@@ -243,8 +250,10 @@ function deriveState(): AuthState {
   // devPlatformToken() 只在非 packaged 构建返回值(见该函数),是没有续期手段的静态短路,
   // 按 fail-closed 会永久停在 recovering(违反 ③′2「fail-closed 必须有有界自证路径」),
   // 故 dev 短路报 ready;生产一律按 expiresAt + 换血结果判定。
+  // alpha-web#283 AC4:旧客户端 id 签出的凭据在强制刷新成功前同样是 recovering(不可用,不是登出)。
   const platformReady =
-    devToken || (!isTokenExpired(stored.expiresAt, Date.now()) && unappliedRenewalGeneration === null)
+    devToken ||
+    (issuedToCurrentClient() && !isTokenExpired(stored.expiresAt, Date.now()) && unappliedRenewalGeneration === null)
   return {
     status: loggedIn ? "logged-in" : "logged-out",
     mode: stored.mode ?? "byok",
@@ -306,7 +315,11 @@ function publishAuthError(code: AuthErrorCode) {
 // (see logout). DEV_PLATFORM_TOKEN acts as a static platform login.
 export function applyAuthEnv() {
   const devToken = devPlatformToken()
-  const loggedInPlatform = deriveState().status === "logged-in" && (stored.mode === "platform" || Boolean(devToken))
+  // alpha-web#283 AC4:旧客户端 id 签出的凭据在强制刷新成功前一律不物化(连同下面的 MCP 凭证)——
+  // 引擎拿不到它,就不会带着它去调平台。
+  const loggedInPlatform =
+    deriveState().status === "logged-in" &&
+    (Boolean(devToken) || (stored.mode === "platform" && issuedToCurrentClient()))
   const ep = resolveEndpoints()
   const base = ep.platform
   delete process.env.ALPHA_API_KEY
@@ -336,7 +349,7 @@ export function applyAuthEnv() {
   // 不经 requireTokenPurpose(它是 platform_access 的形状闸);**不**让 DEV_PLATFORM_TOKEN
   // 顶进来 —— 那是 platform_access 形状的静态短路,受众错了,静默挪用正是 I4 要禁止的。
   // 缺席 ⇒ 上面已 delete ⇒ 密钥文件被 syncSecretFiles 收走 ⇒ 注入面 fail-closed(I6)。
-  if (stored.mcpAccessToken) process.env.ALPHA_MCP_TOKEN = stored.mcpAccessToken
+  if (stored.mcpAccessToken && issuedToCurrentClient()) process.env.ALPHA_MCP_TOKEN = stored.mcpAccessToken
 }
 
 // Called once at startup, AFTER preferAppEnv() and BEFORE the sidecar forks (index.ts), so the
@@ -384,7 +397,9 @@ export function getAuthRenewalTiming() {
     active: hasRequiredPlatformAccessTokens(stored.platformAccessTokens) && Boolean(stored.refreshToken),
     // 凭证身份:调度器的降级/尝试记账按它判定,不用 expiresAt 代理(R3 Minor1)。
     generation: tokenGeneration,
-    expiresAt: stored.expiresAt,
+    // alpha-web#283 AC4:旧客户端 id 的凭据「立即到期」—— 开机那次强制刷新若暂时失败,调度器按地板节奏
+    // 重试,而不是等旧 access token 自己走到续期窗口(其间平台面一直不可用)。
+    expiresAt: issuedToCurrentClient() ? stored.expiresAt : undefined,
     lifetimeMs: stored.lifetimeMs,
   }
 }
@@ -393,7 +408,9 @@ export function getAuthRenewalTiming() {
 // the dev short-circuit wins, else the stored platform access token. MAIN-ONLY: never expose this
 // to the renderer; its only callers are main-process clients (alpha-account.ts).
 export function getAccessToken(purpose: RoutePurpose): string | undefined {
-  const token = devPlatformToken() ?? stored.platformAccessTokens?.[purpose]
+  // alpha-web#283 AC4:旧客户端 id 签出的令牌 = 这个 purpose 暂无可用凭据(与缺席同义,不报契约故障)。
+  const token =
+    devPlatformToken() ?? (issuedToCurrentClient() ? stored.platformAccessTokens?.[purpose] : undefined)
   if (!token) return undefined
   try {
     requireTokenPurpose(token, purpose)
@@ -405,7 +422,7 @@ export function getAccessToken(purpose: RoutePurpose): string | undefined {
 }
 
 /** REQ-160(`#1324`)对话存档上报面的 bearer。MAIN-ONLY,与 `getAccessToken` 同样绝不给 renderer。
- *  它不经 `decodeTokenClaims` —— 那个 decoder 钉死 platform_access/alpha-platform-api,对本 token
+ *  它不经 `decodeTokenClaims` —— 那个 decoder 钉死 platform_access/codepuppy-platform-api,对本 token
  *  结构性不适用(与 `mcp_access_token` 同法)。缺席 = 不上报,不是报错。
  *
  *  R1 审计 BLOCKER:**已过期也当缺席**。信封整体轮换(TTL 15 分钟、约 10 分钟刷一轮),睡眠唤醒
@@ -560,6 +577,7 @@ async function completeAuth(parsed: URL) {
     expiresAt: loginExpiresAt,
     lifetimeMs: loginExpiresAt === undefined ? undefined : loginExpiresAt - loginNow,
     account: { email: tokens.email, plan: tokens.plan },
+    clientId: CLIENT_ID,
   }
   tokenGeneration++
   authIdentityEpoch++
@@ -909,6 +927,8 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     sessionId: tokens.session_id ?? stored.sessionId,
     expiresAt: refreshedExpiresAt,
     lifetimeMs: refreshedExpiresAt - refreshedNow,
+    // alpha-web#283 AC4:用当前客户端 id 刷新成功 = 一次性迁移完成,此后按到期时间正常续期。
+    clientId: CLIENT_ID,
   }
   tokenGeneration++
   persist()
@@ -941,7 +961,9 @@ export async function ensureFreshToken(): Promise<RenewalResult> {
       ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),
     }
   }
-  if (!shouldRefreshToken(stored.expiresAt, stored.lifetimeMs, Date.now())) {
+  // alpha-web#283 AC4:启动续期受到期时间控制,旧 iss 的 access token 未到期时会被这里跳过 ——
+  // 旧客户端 id 签出的凭据不看到期时间,强制刷新一次。
+  if (issuedToCurrentClient() && !shouldRefreshToken(stored.expiresAt, stored.lifetimeMs, Date.now())) {
     markStartupTimeline("main.auth.ensure.end", {
       durationMs: performance.now() - started,
       outcome: "skipped:not-due",
@@ -970,9 +992,19 @@ export async function ensureFreshToken(): Promise<RenewalResult> {
   }
 }
 
-/** 存储的 access token 已过期(启动路径据此进入有界续期宽限，而非无界阻塞 fork)。 */
+/** 存储的 access token 在续期之前不可用:已过期,或(alpha-web#283 AC4)是旧客户端 id 签出的。
+ *  启动路径据此进入有界续期宽限(而非无界阻塞 fork);目录刷新与存档凭证据此等续期完成。 */
 export function isStoredTokenExpired(): boolean {
-  return hasRequiredPlatformAccessTokens(stored.platformAccessTokens) && isTokenExpired(stored.expiresAt, Date.now())
+  return (
+    hasRequiredPlatformAccessTokens(stored.platformAccessTokens) &&
+    (!issuedToCurrentClient() || isTokenExpired(stored.expiresAt, Date.now()))
+  )
+}
+
+/** alpha-web#283 AC4:当前凭据是否由本构建的 `CLIENT_ID` 签出 / 刷新过。一次性标记就是 `stored.clientId`,
+ *  不比较版本号 —— 判据是「本地还没有用新客户端 id 刷新过」,与装的是哪个版本无关。 */
+function issuedToCurrentClient(): boolean {
+  return stored.clientId === CLIENT_ID
 }
 
 export async function logout(): Promise<void> {

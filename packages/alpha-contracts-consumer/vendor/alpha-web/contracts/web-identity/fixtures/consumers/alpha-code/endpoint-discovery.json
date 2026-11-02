@@ -1,12 +1,12 @@
 {
   "kind": "schema",
-  "contract": "alpha.web-identity.endpoint-discovery.v1",
+  "contract": "codepuppy.web-identity.endpoint-discovery.v1",
   "expect": "valid",
   "value": {
     "schema_version": 1,
-    "web": "https://alphacodeone.com",
+    "web": "https://codepuppy.cn",
     "platform": "https://alpha-gateway.tidelabs.click",
-    "account": "https://account.alphacodeone.com",
+    "account": "https://account.codepuppy.cn",
     "cloud": "https://alpha-cloud.tidelabs.click",
     "mcp": "https://alpha-cloud.tidelabs.click/mcp"
   }

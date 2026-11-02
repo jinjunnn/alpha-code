@@ -149,11 +149,13 @@ function violationsFor(file: SourceFile) {
 
   if (/\.test\.[cm]?[jt]sx?$/.test(file.path)) return violations
 
+  // alpha-web#283:auth scheme 改成 `codepuppy` 后,新旧两个拼法都必须只住在清单里 —— 只认旧拼法的
+  // 检测器会对新 scheme 的字面量全盲(恒绿)。
   if (
     file.path !== routeManifestPath &&
-    (/["'`](?:opencode|alpha-code|code-puppy):\/\//.test(source) ||
-      /["'`](?:opencode|alpha-code|code-puppy):["'`]/.test(source) ||
-      /\bsetAsDefaultProtocolClient\s*\(\s*["'`](?:opencode|alpha-code|code-puppy)["'`]/.test(source))
+    (/["'`](?:opencode|alpha-code|code-puppy|codepuppy):\/\//.test(source) ||
+      /["'`](?:opencode|alpha-code|code-puppy|codepuppy):["'`]/.test(source) ||
+      /\bsetAsDefaultProtocolClient\s*\(\s*["'`](?:opencode|alpha-code|code-puppy|codepuppy)["'`]/.test(source))
   ) {
     violations.push({ path, rule: "deep-link scheme literal outside the manifest" })
   }
@@ -181,7 +183,7 @@ async function sourcesUnder(root: string) {
 }
 
 const DEEP_LINK_CODEC_RULES = [
-  { rule: "deep-link scheme literal outside the manifest", pattern: /["'`](?:opencode|alpha-code|code-puppy):\/\// },
+  { rule: "deep-link scheme literal outside the manifest", pattern: /["'`](?:opencode|alpha-code|code-puppy|codepuppy):\/\// },
   { rule: "deep-link URL codec outside the manifest", pattern: /\bnew URL\s*\(|\.hostname\b|\bsearchParams\b/ },
 ] as const
 
@@ -615,6 +617,18 @@ describe("Alpha route authority ratchet", () => {
       "deep-link scheme literal outside the manifest",
       "new URL plus hostname deep-link dispatch outside the manifest",
     ])
+  })
+
+  // alpha-web#283:auth scheme 改名后,新拼法与旧拼法的字面量都必须被认出来(自我变异)。
+  test("the detector bites on both the current and the previous auth scheme literal", () => {
+    for (const scheme of ["codepuppy", "code-puppy"])
+      expect(
+        violationsFor({
+          path: join(sourceRoot, "main", "fixture.ts"),
+          source: `const callback = "${scheme}://auth/callback"`,
+        }).map((entry) => entry.rule),
+        scheme,
+      ).toEqual(["deep-link scheme literal outside the manifest"])
   })
 
   test("Alpha sources do not reintroduce a parallel route or deep-link codec", async () => {

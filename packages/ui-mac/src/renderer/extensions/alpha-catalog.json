@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-31.1",
+  "version": "2026-11-01.1",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:codepuppy.cn/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -45,7 +45,7 @@
     {
       "id": "mcp:alpha-word",
       "type": "mcp",
-      "name": "alpha-word",
+      "name": "codepuppy-word",
       "displayName": "Word 文档读写",
       "description": "读取 .docx 的正文和结构，也能新建或改写文档。由 Code Puppy 提供，在本机运行，无需安装 Microsoft Office。只能读写你已授权的项目目录；请提供完整文件路径。",
       "source": "alpha",
@@ -84,7 +84,7 @@
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。与 2026-03-03 归档的社区 Word 连接器无关(其 id 与包名仍在禁列)。",
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "connector",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -120,10 +120,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "ecb50d32547e9772e007b83b536039d7d77cc402ff39c0a9ba37ffb92625e713",
-            "bytes": 488,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-word/1.0.0/alpha-curation/intake-provenance/ecb50d32547e9772e007b83b536039d7d77cc402ff39c0a9ba37ffb92625e713.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "773288ee7bbeb64752cf1208b1a1bc588084e2f255c37ab17f12b4aa969e3c9c",
+            "bytes": 492,
+            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-word/1.0.0/alpha-curation/intake-provenance/773288ee7bbeb64752cf1208b1a1bc588084e2f255c37ab17f12b4aa969e3c9c.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -131,7 +131,7 @@
     {
       "id": "mcp:alpha-excel",
       "type": "mcp",
-      "name": "alpha-excel",
+      "name": "codepuppy-excel",
       "displayName": "Excel 表格读写",
       "description": "读取 .xlsx 工作表，写入单元格或新建工作簿。由 Code Puppy 提供，在本机运行，无需安装 Microsoft Office。只能读写你已授权的项目目录；请提供完整文件路径。定制中心的本地 Excel 连接器使用此项。",
       "source": "alpha",
@@ -171,7 +171,7 @@
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。REQ-135(2026-08-18,alpha-work#65;alpha-web#155):Hub Excel owner lock 仅保留本 Alpha 条目;社区实现从推荐面退役,不改标、不保留 legacy 卡。REQ-105(2026-08-25,alpha-work#7 AC2;alpha-web#164):artifactDigest = 本条目执行物(A 侧随包 office-mcp/server.py)的内容地址,与 A 侧 receipt 同域同算法 —— alpha-code packages/ui-mac/src/main/ext-mcp-policy.ts bundledOfficeServerDigest,即 aggregateFilesDigest 域:对 path+NUL字节+file-sha256 的行排序 join(LF) 再 sha256,带 sha256: 前缀;path 恒为 office-mcp/server.py,file-sha256 = 本仓 intake record(catalog-src/intake/records/mcp.alpha-excel/<version>/intake.json,source alpha-code@e3d2eec)files[server.py].sha256。server.py 换字节 = 重新 intake,并同步改本字段与 tests/catalog-guard.test.mjs 的独立锚点,缺一即测试红。",
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "connector",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -207,10 +207,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "93ccef93fc7455f918fb8e7d910c207bc9793e6d09b6168396ff1cf4f524abc3",
-            "bytes": 489,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-excel/1.0.0/alpha-curation/intake-provenance/93ccef93fc7455f918fb8e7d910c207bc9793e6d09b6168396ff1cf4f524abc3.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "5895cfdec2adde1705d5114650aeb0a21e2568d3127c489fe74a6364947ea3e4",
+            "bytes": 493,
+            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-excel/1.0.0/alpha-curation/intake-provenance/5895cfdec2adde1705d5114650aeb0a21e2568d3127c489fe74a6364947ea3e4.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -218,7 +218,7 @@
     {
       "id": "mcp:alpha-powerpoint",
       "type": "mcp",
-      "name": "alpha-powerpoint",
+      "name": "codepuppy-powerpoint",
       "displayName": "PowerPoint 幻灯片读写",
       "description": "读取 .pptx 的幻灯片文字和结构，也能新建或改写演示文稿。由 Code Puppy 提供，在本机运行，无需安装 Microsoft Office。只能读写你已授权的项目目录；请提供完整文件路径。",
       "source": "alpha",
@@ -257,7 +257,7 @@
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。与 2026-03-03 归档的社区 PowerPoint 连接器无关(其 id 与包名仍在禁列)。",
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "connector",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -293,10 +293,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "dafd6bb7b2772b81fcc64abc1531cf0d2ff870143489fae23be52f05588a3a50",
-            "bytes": 494,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-powerpoint/1.0.0/alpha-curation/intake-provenance/dafd6bb7b2772b81fcc64abc1531cf0d2ff870143489fae23be52f05588a3a50.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "5ee3d5dac3afc933005749d50b574d50ce64d86978dd06dd48cceea590539ffa",
+            "bytes": 498,
+            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-powerpoint/1.0.0/alpha-curation/intake-provenance/5ee3d5dac3afc933005749d50b574d50ce64d86978dd06dd48cceea590539ffa.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -304,7 +304,7 @@
     {
       "id": "mcp:alpha-pdf",
       "type": "mcp",
-      "name": "alpha-pdf",
+      "name": "codepuppy-pdf",
       "displayName": "PDF 文本读写",
       "description": "提取 PDF 文字，创建文字型 PDF，替换正文或追加文字页。由 Code Puppy 提供，在本机运行；只能读写已授权的项目目录，请提供完整文件路径。不支持版式设计、保持印刷效果的编辑、Office 格式转换、数字签名或任意修改 PDF 对象。",
       "source": "alpha",
@@ -345,7 +345,7 @@
       ],
       "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。写入面的边界(仅文本型文档)是已批基线的安全不变量,不得在文案或工具面外扩。",
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "connector",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -381,10 +381,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "4dd1861808a98bf0592e4b0f69a00d76490b000f5f19967ad6c48b4b92cf70e1",
-            "bytes": 487,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-pdf/1.0.0/alpha-curation/intake-provenance/4dd1861808a98bf0592e4b0f69a00d76490b000f5f19967ad6c48b4b92cf70e1.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "0aac4c561e3f2127815de6f16080e43e45d9f9d1bbd9e82173eb21db5ac56739",
+            "bytes": 491,
+            "url": "https://codepuppy.cn/catalog/assets/mcp.alpha-pdf/1.0.0/alpha-curation/intake-provenance/0aac4c561e3f2127815de6f16080e43e45d9f9d1bbd9e82173eb21db5ac56739.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -438,7 +438,7 @@
         }
       ],
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "precache",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -484,10 +484,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "3d882c868067dcf43bf5b898b871026ad3da94f81d76948572e1d5b03498e1a4",
-            "bytes": 514,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.filesystem/1.0.0/alpha-curation/intake-provenance/3d882c868067dcf43bf5b898b871026ad3da94f81d76948572e1d5b03498e1a4.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "4426b32695d613007ff53bf34de22bba8d7bfb6bf8774d30a6d4909444a4f072",
+            "bytes": 518,
+            "url": "https://codepuppy.cn/catalog/assets/mcp.filesystem/1.0.0/alpha-curation/intake-provenance/4426b32695d613007ff53bf34de22bba8d7bfb6bf8774d30a6d4909444a4f072.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -574,7 +574,7 @@
         }
       ],
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "precache",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -634,10 +634,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "f76c0de46dbe623eba0822936e96082c5f53217535e54384c44693db1c141a30",
-            "bytes": 610,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.playwright/1.0.0/alpha-curation/intake-provenance/f76c0de46dbe623eba0822936e96082c5f53217535e54384c44693db1c141a30.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "1155d5771637aee4871e42facc70f04f831d1617f4c4cf420fbef835756ae70b",
+            "bytes": 614,
+            "url": "https://codepuppy.cn/catalog/assets/mcp.playwright/1.0.0/alpha-curation/intake-provenance/1155d5771637aee4871e42facc70f04f831d1617f4c4cf420fbef835756ae70b.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -742,7 +742,7 @@
         }
       ],
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "labs",
         "activationPolicy": "session-grant",
         "deliveryMode": "installable",
@@ -845,10 +845,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "f3ade0db437f121aafc49a2159ce35b2960d045209e9157e3ec060a0ec704fb8",
-            "bytes": 619,
-            "url": "https://codepuppy.cn/catalog/assets/mcp.chrome-devtools/1.0.0/alpha-curation/intake-provenance/f3ade0db437f121aafc49a2159ce35b2960d045209e9157e3ec060a0ec704fb8.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "2ab4d2880eb9aa85666ec95e267b540130eb1bddcdf550555e1942078be924f1",
+            "bytes": 623,
+            "url": "https://codepuppy.cn/catalog/assets/mcp.chrome-devtools/1.0.0/alpha-curation/intake-provenance/2ab4d2880eb9aa85666ec95e267b540130eb1bddcdf550555e1942078be924f1.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -1521,7 +1521,7 @@
         ]
       },
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "precache",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -1560,10 +1560,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "ba8a727ed80960c81f8369284a72c73c874cd39c8b501b31d7d93ea85b8db0a8",
-            "bytes": 4531,
-            "url": "https://codepuppy.cn/catalog/assets/skill.canvas-design/1.0.0/alpha-curation/intake-provenance/ba8a727ed80960c81f8369284a72c73c874cd39c8b501b31d7d93ea85b8db0a8.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "e73021f7927a8675abf2acde72f1b83f2f33b010e0cbb39e27cb50aa8f9599ce",
+            "bytes": 4535,
+            "url": "https://codepuppy.cn/catalog/assets/skill.canvas-design/1.0.0/alpha-curation/intake-provenance/e73021f7927a8675abf2acde72f1b83f2f33b010e0cbb39e27cb50aa8f9599ce.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -1608,7 +1608,7 @@
         ]
       },
       "curation": {
-        "schema": "alpha.catalog.curation.v1",
+        "schema": "codepuppy.catalog.curation.v1",
         "tier": "precache",
         "activationPolicy": "default-disabled",
         "deliveryMode": "installable",
@@ -1644,10 +1644,10 @@
             "format": "cyclonedx-1.6+json"
           },
           "intakeProvenance": {
-            "sha256": "5f782d0c67d77f1af3d79e1eeb361e760e0e6f44a423bcc803218850cd78d887",
-            "bytes": 621,
-            "url": "https://codepuppy.cn/catalog/assets/skill.brand-guidelines/1.0.0/alpha-curation/intake-provenance/5f782d0c67d77f1af3d79e1eeb361e760e0e6f44a423bcc803218850cd78d887.json",
-            "format": "alpha.intake-provenance.v1+json"
+            "sha256": "be59f10b05d1f697669aef415d79457716eef7497a7f27842329999afcb95e4f",
+            "bytes": 625,
+            "url": "https://codepuppy.cn/catalog/assets/skill.brand-guidelines/1.0.0/alpha-curation/intake-provenance/be59f10b05d1f697669aef415d79457716eef7497a7f27842329999afcb95e4f.json",
+            "format": "codepuppy.intake-provenance.v1+json"
           }
         }
       }
@@ -1948,7 +1948,7 @@
   ],
   "packages": [
     {
-      "schema": "alpha.host-extension-package.v1",
+      "schema": "codepuppy.host-extension-package.v1",
       "prelude": {
         "packageId": "package:alpha-first",
         "version": "1.0.0"
@@ -1967,17 +1967,17 @@
           "profileVersion": 1,
           "capabilities": [],
           "payloadRef": {
-            "sha256": "495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc",
-            "bytes": 624,
-            "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-            "url": "https://codepuppy.cn/catalog/assets/skill.alpha-first/1.0.0/alpha-package/495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc.json"
+            "sha256": "d5d1969d47f398b42dca29c02c7f815f954368e3c5f6f5590841add0e5be04bb",
+            "bytes": 628,
+            "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/skill.alpha-first/1.0.0/alpha-package/d5d1969d47f398b42dca29c02c7f815f954368e3c5f6f5590841add0e5be04bb.json"
           }
         }
       ],
       "capabilities": []
     },
     {
-      "schema": "alpha.host-extension-package.v1",
+      "schema": "codepuppy.host-extension-package.v1",
       "prelude": {
         "packageId": "package:cloud-image",
         "version": "1.0.0"
@@ -1996,17 +1996,17 @@
           "profileVersion": 1,
           "capabilities": [],
           "payloadRef": {
-            "sha256": "622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143",
-            "bytes": 695,
-            "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
-            "url": "https://codepuppy.cn/catalog/assets/cloud.image/1.0.0/alpha-package/622e0c902a349ce2cc9066d1d19026354bde8b51fbca615cd61606f360041143.json"
+            "sha256": "66b13419d0459a8186c88508913deea78ddacd66dc9d871839139349c63671b4",
+            "bytes": 699,
+            "mediaType": "application/vnd.codepuppy.host-extension-package.cloud.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/cloud.image/1.0.0/alpha-package/66b13419d0459a8186c88508913deea78ddacd66dc9d871839139349c63671b4.json"
           }
         }
       ],
       "capabilities": []
     },
     {
-      "schema": "alpha.host-extension-package.v1",
+      "schema": "codepuppy.host-extension-package.v1",
       "prelude": {
         "packageId": "package:dbhub-readonly",
         "version": "1.0.0"
@@ -2024,24 +2024,24 @@
           "profileId": "mcp-local",
           "profileVersion": 1,
           "capabilities": [
-            "alpha.official-connectors.v1",
-            "alpha.secret-prerequisite.v1"
+            "codepuppy.official-connectors.v1",
+            "codepuppy.secret-prerequisite.v1"
           ],
           "payloadRef": {
-            "sha256": "349bdddf84b69691cc8a18198e8279022eb26242f6820037a66c53305af464ac",
-            "bytes": 313,
-            "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
-            "url": "https://codepuppy.cn/catalog/assets/mcp.dbhub-readonly/1.0.0/alpha-package/349bdddf84b69691cc8a18198e8279022eb26242f6820037a66c53305af464ac.json"
+            "sha256": "10ad6f34ca4d8d9684134847dac47ebb9bba8f9e52cf415a8fd5382e699fd32d",
+            "bytes": 317,
+            "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-local.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/mcp.dbhub-readonly/1.0.0/alpha-package/10ad6f34ca4d8d9684134847dac47ebb9bba8f9e52cf415a8fd5382e699fd32d.json"
           }
         }
       ],
       "capabilities": [
-        "alpha.official-connectors.v1",
-        "alpha.secret-prerequisite.v1"
+        "codepuppy.official-connectors.v1",
+        "codepuppy.secret-prerequisite.v1"
       ]
     },
     {
-      "schema": "alpha.host-extension-package.v1",
+      "schema": "codepuppy.host-extension-package.v1",
       "prelude": {
         "packageId": "package:github-official",
         "version": "1.0.0"
@@ -2059,20 +2059,20 @@
           "profileId": "mcp-remote",
           "profileVersion": 1,
           "capabilities": [
-            "alpha.official-connectors.v1",
-            "alpha.secret-prerequisite.v1"
+            "codepuppy.official-connectors.v1",
+            "codepuppy.secret-prerequisite.v1"
           ],
           "payloadRef": {
-            "sha256": "1fc0f27012ab19a53eace30fe4cfe05c8ae65c02f46809745509a5cc544d7582",
-            "bytes": 429,
-            "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-            "url": "https://codepuppy.cn/catalog/assets/mcp.github-official/1.0.0/alpha-package/1fc0f27012ab19a53eace30fe4cfe05c8ae65c02f46809745509a5cc544d7582.json"
+            "sha256": "0a91f683ab6ccafba2b9480a14c5557b5990937c176a27203f434d02a0883222",
+            "bytes": 433,
+            "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+            "url": "https://codepuppy.cn/catalog/assets/mcp.github-official/1.0.0/alpha-package/0a91f683ab6ccafba2b9480a14c5557b5990937c176a27203f434d02a0883222.json"
           }
         }
       ],
       "capabilities": [
-        "alpha.official-connectors.v1",
-        "alpha.secret-prerequisite.v1"
+        "codepuppy.official-connectors.v1",
+        "codepuppy.secret-prerequisite.v1"
       ]
     }
   ]

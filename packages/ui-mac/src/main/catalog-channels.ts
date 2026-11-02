@@ -47,7 +47,7 @@ export type TrustKey = {
 }
 export type RevokedTarget = { sha256: string; reason: string; revokedAt: string }
 export type TrustDoc = {
-  schema: "alpha.catalog.trust.v1"
+  schema: "codepuppy.catalog.trust.v1"
   sequence: number
   publishedAt: string
   expires: string
@@ -57,7 +57,7 @@ export type TrustDoc = {
 }
 export type ChannelTarget = { catalogVersion: string; sha256: string; bytes: number; url: string; sigUrl: string }
 export type ChannelDoc = {
-  schema: "alpha.catalog.channel-metadata.v1"
+  schema: "codepuppy.catalog.channel-metadata.v1"
   channel: ChannelName
   sequence: number
   publishedAt: string
@@ -68,7 +68,7 @@ export type ChannelDoc = {
 /** #314(R13):集合一致性快照 —— 钉住 trust/channel 文档的精确文件字节 + sequence。 */
 export type SnapshotEntry = { sequence: number; sha256: string }
 export type SnapshotDoc = {
-  schema: "alpha.catalog.snapshot.v1"
+  schema: "codepuppy.catalog.snapshot.v1"
   sequence: number
   publishedAt: string
   expires: string
@@ -91,7 +91,7 @@ export type AdvisoryRecord = {
   supersededBy?: string
 }
 export type AdvisoriesDoc = {
-  schema: "alpha.catalog.advisories.v1"
+  schema: "codepuppy.catalog.advisories.v1"
   sequence: number
   publishedAt: string
   expires: string
@@ -184,7 +184,7 @@ export function validateTrustDoc(v: unknown): { ok: true; doc: TrustDoc } | { ok
   if (!isObj(v)) return bad("not an object")
   const extra = onlyKeys(v, ["schema", "sequence", "publishedAt", "expires", "keyId", "keys", "revokedTargets"])
   if (extra) return bad(extra)
-  if (v.schema !== "alpha.catalog.trust.v1") return bad(`schema=${String(v.schema)}`)
+  if (v.schema !== "codepuppy.catalog.trust.v1") return bad(`schema=${String(v.schema)}`)
   if (typeof v.sequence !== "number" || !Number.isInteger(v.sequence) || v.sequence < 1) return bad("sequence")
   if (!isDateTime(v.publishedAt)) return bad("publishedAt")
   if (!isDateTime(v.expires)) return bad("expires")
@@ -218,7 +218,7 @@ export function validateChannelDoc(v: unknown): { ok: true; doc: ChannelDoc } | 
   if (!isObj(v)) return bad("not an object")
   const extra = onlyKeys(v, ["schema", "channel", "sequence", "publishedAt", "expires", "keyId", "target"])
   if (extra) return bad(extra)
-  if (v.schema !== "alpha.catalog.channel-metadata.v1") return bad(`schema=${String(v.schema)}`)
+  if (v.schema !== "codepuppy.catalog.channel-metadata.v1") return bad(`schema=${String(v.schema)}`)
   if (!CHANNELS.includes(v.channel as ChannelName)) return bad("channel")
   if (typeof v.sequence !== "number" || !Number.isInteger(v.sequence) || v.sequence < 1) return bad("sequence")
   if (!isDateTime(v.publishedAt)) return bad("publishedAt")
@@ -241,7 +241,7 @@ export function validateSnapshotDoc(v: unknown): { ok: true; doc: SnapshotDoc } 
   if (!isObj(v)) return bad("not an object")
   const extra = onlyKeys(v, ["schema", "sequence", "publishedAt", "expires", "keyId", "entries"])
   if (extra) return bad(extra)
-  if (v.schema !== "alpha.catalog.snapshot.v1") return bad(`schema=${String(v.schema)}`)
+  if (v.schema !== "codepuppy.catalog.snapshot.v1") return bad(`schema=${String(v.schema)}`)
   if (typeof v.sequence !== "number" || !Number.isInteger(v.sequence) || v.sequence < 1) return bad("sequence")
   if (!isDateTime(v.publishedAt)) return bad("publishedAt")
   if (!isDateTime(v.expires)) return bad("expires")
@@ -403,7 +403,7 @@ export function validateAdvisoriesDoc(v: unknown): { ok: true; doc: AdvisoriesDo
   if (!isObj(v)) return bad("not an object")
   const extra = onlyKeys(v, ["schema", "sequence", "publishedAt", "expires", "keyId", "records"])
   if (extra) return bad(extra)
-  if (v.schema !== "alpha.catalog.advisories.v1") return bad(`schema=${String(v.schema)}`)
+  if (v.schema !== "codepuppy.catalog.advisories.v1") return bad(`schema=${String(v.schema)}`)
   if (typeof v.sequence !== "number" || !Number.isInteger(v.sequence) || v.sequence < 1) return bad("sequence")
   if (!isDateTime(v.publishedAt)) return bad("publishedAt")
   if (!isDateTime(v.expires)) return bad("expires")

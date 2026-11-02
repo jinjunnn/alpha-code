@@ -147,7 +147,7 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
     const k = genKey()
     const doc = (o: Record<string, unknown>) => JSON.stringify(o, null, 2)
     const trust = doc({
-      schema: "alpha.catalog.trust.v1",
+      schema: "codepuppy.catalog.trust.v1",
       sequence: 1,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -156,7 +156,7 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
       revokedTargets: [],
     })
     const advisories = doc({
-      schema: "alpha.catalog.advisories.v1",
+      schema: "codepuppy.catalog.advisories.v1",
       sequence: 1,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-12-31T00:00:00.000Z",
@@ -167,7 +167,7 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
     })
     const payload = doc({ version: "2.0.0", entries: [{ id: "skill:demo" }] })
     const stable = doc({
-      schema: "alpha.catalog.channel-metadata.v1",
+      schema: "codepuppy.catalog.channel-metadata.v1",
       channel: "stable",
       sequence: 1,
       publishedAt: "2026-07-13T00:00:00.000Z",
@@ -183,7 +183,7 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
     })
     const entryOf = (b: string) => ({ sequence: (JSON.parse(b) as { sequence: number }).sequence, sha256: sha256Hex(b) })
     const snapshot = doc({
-      schema: "alpha.catalog.snapshot.v1",
+      schema: "codepuppy.catalog.snapshot.v1",
       sequence: 1,
       publishedAt: "2026-07-13T00:00:00.000Z",
       expires: "2026-08-12T00:00:00.000Z",
@@ -256,12 +256,12 @@ describe("#315 review B1:懒冻结顺序(刷新后首次取用;冻结后不再�
     const BASE = "https://lazy.test/catalog/v1"
     const sha = (b: string | Buffer) => crypto.createHash("sha256").update(b).digest("hex")
     const doc = (o: Record<string, unknown>) => JSON.stringify(o, null, 2)
-    const trust = doc({ schema: "alpha.catalog.trust.v1", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-12-31T00:00:00.000Z", keyId: k.keyId, keys: [{ keyId: k.keyId, publicKey: k.publicKeyB64, status: "active", notBefore: "2026-01-01T00:00:00.000Z" }], revokedTargets: [] })
-    const advisories = doc({ schema: "alpha.catalog.advisories.v1", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-12-31T00:00:00.000Z", keyId: k.keyId, records: [{ advisoryId: "adv-lazy-1", catalogId: "skill:lazy", reason: "x", publishedAt: "2026-07-13T00:00:00.000Z", status: "active" }] })
+    const trust = doc({ schema: "codepuppy.catalog.trust.v1", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-12-31T00:00:00.000Z", keyId: k.keyId, keys: [{ keyId: k.keyId, publicKey: k.publicKeyB64, status: "active", notBefore: "2026-01-01T00:00:00.000Z" }], revokedTargets: [] })
+    const advisories = doc({ schema: "codepuppy.catalog.advisories.v1", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-12-31T00:00:00.000Z", keyId: k.keyId, records: [{ advisoryId: "adv-lazy-1", catalogId: "skill:lazy", reason: "x", publishedAt: "2026-07-13T00:00:00.000Z", status: "active" }] })
     const payload = doc({ version: "1.0.0", entries: [{ id: "skill:lazy" }] })
-    const stable = doc({ schema: "alpha.catalog.channel-metadata.v1", channel: "stable", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-08-12T00:00:00.000Z", keyId: k.keyId, target: { catalogVersion: "1.0.0", sha256: sha(payload), bytes: Buffer.byteLength(payload), url: `${BASE}/releases/1.0.0/catalog.json`, sigUrl: `${BASE}/releases/1.0.0/catalog.json.sig` } })
+    const stable = doc({ schema: "codepuppy.catalog.channel-metadata.v1", channel: "stable", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-08-12T00:00:00.000Z", keyId: k.keyId, target: { catalogVersion: "1.0.0", sha256: sha(payload), bytes: Buffer.byteLength(payload), url: `${BASE}/releases/1.0.0/catalog.json`, sigUrl: `${BASE}/releases/1.0.0/catalog.json.sig` } })
     const entryOf = (b: string) => ({ sequence: (JSON.parse(b) as { sequence: number }).sequence, sha256: sha(b) })
-    const snapshot = doc({ schema: "alpha.catalog.snapshot.v1", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-08-12T00:00:00.000Z", keyId: k.keyId, entries: { trust: entryOf(trust), stable: entryOf(stable), advisories: entryOf(advisories) } })
+    const snapshot = doc({ schema: "codepuppy.catalog.snapshot.v1", sequence: 1, publishedAt: "2026-07-13T00:00:00.000Z", expires: "2026-08-12T00:00:00.000Z", keyId: k.keyId, entries: { trust: entryOf(trust), stable: entryOf(stable), advisories: entryOf(advisories) } })
     const routes: Record<string, string> = {
       [`${BASE}/channels/trust.json`]: trust, [`${BASE}/channels/trust.json.sig`]: signB64(trust),
       [`${BASE}/channels/advisories.json`]: advisories, [`${BASE}/channels/advisories.json.sig`]: signB64(advisories),

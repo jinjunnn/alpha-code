@@ -38,16 +38,16 @@ function mcpPackage(input: McpPackageInput) {
   const payload =
     profileId === "mcp-local"
       ? {
-          schema: "alpha.host-extension-package.payload.mcp-local.v1",
+          schema: "codepuppy.host-extension-package.payload.mcp-local.v1",
           behavior: { command: input.command ?? ["uvx", "unrelated-mcp"], environment: {}, requiredSecrets: [] },
         }
       : {
-          schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+          schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
           behavior: { url: "https://mcp.example.com/", headersTemplate: {}, requiredSecrets: [], auth: "none" },
         }
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: input.packageId, version: "1.0.0" },
     presentation: { displayName: "MCP", description: "Synthetic MCP admission case" },
     root: input.componentId,
@@ -62,7 +62,7 @@ function mcpPackage(input: McpPackageInput) {
         payloadRef: {
           sha256: createHash("sha256").update(bytes).digest("hex"),
           bytes: bytes.byteLength,
-          mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+          mediaType: `application/vnd.codepuppy.host-extension-package.${profileId}.v1+json`,
           url: "https://alphacodeone.com/catalog/assets/local-mcp/1.0.0/alpha-package/payload.json",
         },
       },

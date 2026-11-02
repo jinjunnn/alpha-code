@@ -120,7 +120,7 @@ export function decodeJsonContract<Name extends ContractName>(
 export function decodeTokenClaims(token: string): TokenClaimsV1 {
   try {
     const claims = decodeContract("TokenClaimsV1", decodeJwtPayload(token), "identity")
-    if (claims.token_use !== "platform_access" || claims.iss !== "alpha-web" || claims.aud !== "alpha-platform-api") {
+    if (claims.token_use !== "platform_access" || claims.iss !== "codepuppy-web" || claims.aud !== "codepuppy-platform-api") {
       throw new ContractIncompatibleError({
         surface: "identity",
         received_version: claims.schema_version,
@@ -139,8 +139,8 @@ export function decodeUploadConsentClaims(token: string): UploadConsentClaimsV1 
     const claims = decodeContract("TokenClaimsV1", decodeJwtPayload(token), "identity") as unknown as UploadConsentClaimsV1
     if (
       claims.token_use !== "upload_consent" ||
-      claims.iss !== "alpha-web" ||
-      claims.aud !== "alpha-platform-upload" ||
+      claims.iss !== "codepuppy-web" ||
+      claims.aud !== "codepuppy-platform-upload" ||
       claims.purpose !== "artifact.upload" ||
       !claims.scope.includes("artifact.upload")
     ) {

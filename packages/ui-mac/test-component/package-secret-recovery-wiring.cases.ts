@@ -29,7 +29,7 @@ const liveSecret = "REQ128_712_LIVE_SECRET_c31f8a"
 const orphanSecret = "REQ128_712_ORPHAN_SECRET_7e02d4"
 
 const mcpPayload = {
-  schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
   behavior: {
     url: "https://mcp.example.invalid/service",
     headersTemplate: { Authorization: "Bearer {A_KEY}" },
@@ -39,7 +39,7 @@ const mcpPayload = {
 }
 const mcpPayloadBytes = canonicalBytes(mcpPayload)
 const mcpEnvelope = {
-  schema: "alpha.host-extension-package.v1",
+  schema: "codepuppy.host-extension-package.v1",
   prelude: { packageId: "package:recovery-mcp", version: "1.0.0" },
   // #749 合同 v2:信封新增必填 `root`。本夹具是单组件,root 即该组件自身。
   root: "mcp:recovery-mcp",
@@ -51,16 +51,16 @@ const mcpEnvelope = {
       dependencies: [],
       profileId: "mcp-remote",
       profileVersion: 1,
-      capabilities: ["alpha.secret-prerequisite.v1"],
+      capabilities: ["codepuppy.secret-prerequisite.v1"],
       payloadRef: {
         sha256: sha(mcpPayloadBytes),
         bytes: mcpPayloadBytes.byteLength,
-        mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+        mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
         url: "https://assets.test/req128-712/mcp-payload.json",
       },
     },
   ],
-  capabilities: ["alpha.secret-prerequisite.v1"],
+  capabilities: ["codepuppy.secret-prerequisite.v1"],
 }
 const snapshotDigest = "6".repeat(64)
 

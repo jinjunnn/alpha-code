@@ -84,8 +84,8 @@ function jwt(purpose: RoutePurpose, generation: string) {
   return `${Buffer.from("{}").toString("base64url")}.${Buffer.from(
     JSON.stringify({
       schema_version: 1,
-      iss: "alpha-web",
-      aud: "alpha-platform-api",
+      iss: "codepuppy-web",
+      aud: "codepuppy-platform-api",
       sub: "tenant-a",
       token_use: "platform_access",
       purpose,
@@ -118,6 +118,8 @@ function loginAndFork(withMcp: boolean) {
         refreshToken: "refresh-boot",
         expiresAt: Date.now() + 5 * 60_000,
         lifetimeMs: 15 * 60_000,
+        // alpha-web#283 AC4:已用当前客户端 id 刷新过的登录(否则凭据在强制刷新前不会物化)。
+        clientId: "codepuppy",
       }),
     }),
   )

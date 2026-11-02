@@ -1,5 +1,5 @@
 // catalog-curation 消费端契约测试(REQ-104 #397)。真源 = vendored 契约向量
-// (src/shared/catalog-intake-contract/testvectors/,45 文件,alpha-web@9b1ea4b,由
+// (src/shared/catalog-intake-contract/testvectors/,45 文件,alpha-web@6154104,由
 // alpha-web scripts/gen-intake-testvectors.mjs 确定性再生)——TS 移植与 mjs 执行器的
 // 任何语义/文案漂移在此逐向量暴露。执行方式与供给侧 tests/catalog-intake-contract.test.mjs
 // 同构:curation 向量走 checkCurationContract(+ 消费端 decode 面),provenance/SBOM 向量
@@ -51,7 +51,7 @@ const entryOf = (w: CurationWrapper) => ({
 describe("契约向量:curation(结构面 + 跨字段不变量,与供给侧执行器同判)", () => {
   test("向量索引完整(45 文件:44 数据 fixture + vectors.json)", () => {
     expect(fs.readdirSync(VECTORS_DIR).length).toBe(45)
-    expect(index.schema).toBe("alpha.catalog-intake.testvectors.v1")
+    expect(index.schema).toBe("codepuppy.catalog-intake.testvectors.v1")
     expect(index.curation.valid.length + index.curation.invalid.length).toBe(23)
     expect(index.provenance.valid.length + index.provenance.invalid.length).toBe(11)
     expect(index.sbom.valid.length + index.sbom.invalid.length).toBe(10)

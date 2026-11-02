@@ -65,8 +65,8 @@
   "groundTruth": "https://code.claude.com/docs/en/plugins-reference",
   "hostContract": {
     "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-    "artifactSha256": "485f1de9f56b866431f87ce4b7956b73fb65d650c3b8abddd7dd4279c91326ab",
-    "commit": "1167048b84a79c3deb7957cd65ec4a5fa3050835",
+    "artifactSha256": "6aabd15c98de1f6111dc7b2079b693b5921f5b8df90437317835b6db000eb8ea",
+    "commit": "59d64b18522770d081294c784d22d3970f1ac358",
     "repo": "jinjunnn/alpha-code"
   },
   "identity": {
@@ -132,6 +132,6 @@
     "init",
     "review"
   ],
-  "schema": "alpha.provider-adapter.claude-code.rules.v1",
+  "schema": "codepuppy.provider-adapter.claude-code.rules.v1",
   "templateBytes": "the parsed markdown BODY only — frontmatter is provider configuration, never prompt text, so it is stripped before the template asset is bound; a command file whose frontmatter cannot be parsed by the pinned subset fails closed (blocked, component not emitted), and an empty body after stripping fails closed the same way. skill/agent assets stay verbatim: their frontmatter is what the host's own parsers read at install"
 }

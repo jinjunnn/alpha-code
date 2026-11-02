@@ -26,8 +26,8 @@ compares it against
 rather than trusting it.
 
 The v1 host profiles are `agent`, `cloud`, `command`, `mcp-local`, `mcp-remote`, and `skill`; the
-capability vocabulary is `alpha.connection.v1`, `alpha.mcp-oauth.v1`,
-`alpha.official-connectors.v1`, and `alpha.secret-prerequisite.v1`. `cloud@1`
+capability vocabulary is `codepuppy.connection.v1`, `codepuppy.mcp-oauth.v1`,
+`codepuppy.official-connectors.v1`, and `codepuppy.secret-prerequisite.v1`. `cloud@1`
 (REQ-235) describes one cloud capability as a closed form; its shape and the
 host-only invariants are in `CONTRACT.md` § Cloud payloads. `#807` briefly registered a fifth profile
 (`opencode-plugin`) with two more capabilities (`engine:config`,

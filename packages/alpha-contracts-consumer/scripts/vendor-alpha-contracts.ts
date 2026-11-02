@@ -37,8 +37,14 @@ const UPSTREAMS = [
     // as cancelled. Five fixtures join the vendor set: the cancel-result and cancelling-status
     // producers, and the three invalid idempotency-key fixtures (missing / charset / trailing
     // newline) that keep the desktop's own guard aligned with upstream's rejection set.
+    //
+    // alpha-web#283(REQ-236):令牌签发方 / 受众一次切到 `codepuppy-web` / `codepuppy-platform-*`,只认新值。
+    // 本 pin 前移到 alpha-platform 分支 feat/283-codepuppy-identity 的 3f2f0dd(维护窗口内以 merge commit
+    // 合入,SHA 保持可达)。字节上会动的只有 wire schema(TokenClaimsV1 各分支的 iss/aud const,外加
+    // 9cf67bd 之后平台自己新增的 $defs —— 桌面不解码它们)、artifact-descriptor schema、以及
+    // alpha-web-22 的令牌夹具;桌面 decoder 在同一提交里改成只认新值。
     repo: "jinjunnn/alpha-platform",
-    commit: "9cf67bd994e4a44aad3af3fdd150df207f1a234f",
+    commit: "3f2f0dda43066b42eac584d27e75844d42635369",
     lock: "alpha-platform-contract.lock.json",
     vendor: "vendor/alpha-platform",
     sourceEnv: "ALPHA_PLATFORM_CONTRACT_SOURCE",
@@ -119,8 +125,13 @@ const UPSTREAMS = [
     // (alpha-web#23 / alpha-work#9 AC3). They are exercised through the shipped decoders in
     // packages/ui-mac/src/main/alpha-web-contract-fixtures.test.ts — an upstream change those
     // decoders reject turns this repository's merge gate red as soon as the pin is bumped.
+    //
+    // alpha-web#283(REQ-236):两份消费夹具与账户 schema 的契约 ID 改为 `codepuppy.*`;源为 alpha-web 分支
+    // feat/283-codepuppy-identity 的 6154104(维护窗口内以 merge commit 合入,SHA 保持可达)。顺带吞下
+    // b597f0d 之后从未 re-vendor 的端点发现品牌域名切换(web/account → codepuppy.cn)。
+    // 随后与扩展包一起前移到同一分支的 40520ef(这三份文件在 6154104..40520ef 之间字节不变)。
     repo: "jinjunnn/alpha-web",
-    commit: "b597f0d548db9ffafc6d6301e548dbd323c810ad",
+    commit: "40520efbcd4871695f7749a792f839eb7882c0b9",
     lock: "alpha-web-contract.lock.json",
     vendor: "vendor/alpha-web",
     sourceEnv: "ALPHA_WEB_CONTRACT_SOURCE",
@@ -140,7 +151,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "b87abdfe5fdbf3d925e05610283dbe63464b0f03",
+    commit: "40520efbcd4871695f7749a792f839eb7882c0b9",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -148,7 +159,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "95da7a8b872bc59615f6b80a0327643371159cef803b96532178e10329308e2c",
+    artifactSha256: "862d5c7b766884fe0f0c6d744ff40ad015d482acd99f7bbcc05294897e65184b",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
@@ -189,6 +200,16 @@ const UPSTREAMS = [
     // 从未被 re-vendor 的 declaration schema 变更(两条 `officialRecipe` const)。alpha-web 那一侧 squash
     // 合并后,这里的 commit(连同 lock 与 artifact.test.ts 里的同一个 sha)要换成 squash 提交 ——
     // 字节与 artifactSha256 不变(producer 不嵌入自己的 commit)。
+    //
+    // alpha-web#283(REQ-236):发布端自有的契约 ID 改为 `codepuppy.*`,源为 alpha-web 分支
+    // feat/283-codepuppy-identity 的 6154104(merge commit 合入,SHA 保持可达),语料 40 → 42:新增
+    // alpha-web#270 编译器半场的 `input.cloud.valid.json` / `expected.cloud.compiled.json`(cloud 不再在
+    // excluded 里),没有撤文件。**这一份仍按旧宿主合同(alpha.host-extension-package.*,宿主 aggregate
+    // 485f1de9…)编译** —— 本仓同一分支把宿主合同改名之后,发布端要再钉一次本仓的宿主 artifact 并重生
+    // 语料,然后这里再 re-vendor 一次;在那之前,读这份语料的消费侧用例按设计是红的。
+    // 发布端已重钉:同一分支的 40520ef 把 host pin 钉到本仓 59d64b185(宿主 aggregate 6aabd15c…)并按
+    // `codepuppy.host-extension-package.*` 重生语料,producer aggregate 862d5c7b…,语料 42 → 42
+    // (18 份改写,不增不撤)。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",
@@ -197,6 +218,7 @@ const UPSTREAMS = [
       "asset.generic-bundle-skill.md",
       "claude-code.rules.v1.json",
       "expected.bundle.compiled.json",
+      "expected.cloud.compiled.json",
       "expected.mcp-remote.compiled.json",
       "expected.remote-connection.compiled.json",
       "expected.remote-oauth.compiled.json",
@@ -215,6 +237,7 @@ const UPSTREAMS = [
       "input.bundle-root-leaf-collision.invalid.json",
       "input.bundle.valid.json",
       "input.cloud-profile.invalid.json",
+      "input.cloud.valid.json",
       "input.command-reserved-name.invalid.json",
       "input.command-variant.invalid.json",
       "input.mcp-remote.valid.json",

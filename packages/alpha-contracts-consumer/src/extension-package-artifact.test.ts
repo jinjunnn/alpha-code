@@ -45,9 +45,9 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "b87abdfe5fdbf3d925e05610283dbe63464b0f03",
+      commit: "40520efbcd4871695f7749a792f839eb7882c0b9",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "95da7a8b872bc59615f6b80a0327643371159cef803b96532178e10329308e2c",
+      artifactSha256: "862d5c7b766884fe0f0c6d744ff40ad015d482acd99f7bbcc05294897e65184b",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
@@ -57,7 +57,9 @@ describe("alpha-web extension package producer artifact pin", () => {
     // `#853` / alpha-web#98:36 → 40,增补的是 command 资产、Claude 发布端规则与两份负例。
     // `#1287` / alpha-web#194:40 → 40,只换 hostContract 自述与 republish 的宿主副本,不增不撤。
     // `#1527` / alpha-web#270:40 → 40,同上(宿主 registry 多了 cloud@1,producer 语料不增不撤)。
-    expect(lock.files.length).toBe(40)
+    // alpha-web#283(6154104):40 → 42,带进 alpha-web#270 编译器半场的 cloud 正向语料与期望产物;
+    // 40520ef 按改名后的宿主合同重生语料,42 → 42。
+    expect(lock.files.length).toBe(42)
     expect(lock.files.map((file) => file.path).sort()).toEqual(
       [...manifest.files.map((file) => file.path), "extension-package-producer-artifact.v1.json"].sort(),
     )
@@ -127,7 +129,7 @@ describe("alpha-web extension package producer artifact pin", () => {
       artifactSha256: string
       schema: string
     }
-    expect(pin.schema).toBe("alpha.host-extension-package.pin.v1")
+    expect(pin.schema).toBe("codepuppy.host-extension-package.pin.v1")
     expect(pin.repo).toBe("jinjunnn/alpha-code")
     expect(pin.artifactPath).toBe(liveManifest.artifactPath)
     expect(pin.artifactSha256).toBe(liveManifest.artifactSha256)
@@ -154,9 +156,10 @@ describe("alpha-web extension package producer artifact pin", () => {
     const registry = await json("host-extension-package.registry.v1.json")
     const profiles = await json("generic-profiles.v1.json")
     const rules = await json("generic-rules.v1.json")
-    // 宿主 registry 是本仓自己的合同(`#1527` 起含 cloud@1),发布端只是逐字节 republish;
-    // 「still excludes cloud」说的是**发布端**:下面的 mappings 仍是五个、cloud 仍在 excluded 里,
-    // 直到 alpha-web#270 的编译器半场把它转正。
+    // 宿主 registry 是本仓自己的合同(`#1527` 起含 cloud@1),发布端只是逐字节 republish。
+    // 标题里的「still excludes cloud」是冻结的 evidence key(见上),**事实已经变了**:alpha-web#270 的
+    // 编译器半场(随 alpha-web#283 的 6154104 进来)把 cloud 转正 —— mappings 六个、excluded 里没有 cloud。
+    // capability 词表断言的是 alpha-web#283 之后的 `codepuppy.*`(发布端 40520ef 已重钉本仓改名后的宿主合同)。
     expect(registry.profiles.map((profile: { profileId: string }) => profile.profileId).sort()).toEqual([
       "agent",
       "cloud",
@@ -169,12 +172,13 @@ describe("alpha-web extension package producer artifact pin", () => {
     // `engine:plugin`,ADR-040 否决后由 `#830` / alpha-web#138 撤回；alpha-web#256 新增
     // official-connectors，现为四个。exact-set，不是 arrayContaining：未经宿主登记的 token 同样要红。
     expect(registry.capabilities.map((capability: { token: string }) => capability.token)).toEqual([
-      "alpha.connection.v1",
-      "alpha.mcp-oauth.v1",
-      "alpha.official-connectors.v1",
-      "alpha.secret-prerequisite.v1",
+      "codepuppy.connection.v1",
+      "codepuppy.mcp-oauth.v1",
+      "codepuppy.official-connectors.v1",
+      "codepuppy.secret-prerequisite.v1",
     ])
     expect(profiles.mappings.map((mapping: { host: { profileId: string } }) => mapping.host.profileId)).toEqual([
+      "cloud",
       "agent",
       "command",
       "mcp-local",
@@ -193,7 +197,6 @@ describe("alpha-web extension package producer artifact pin", () => {
     // exact-set 而不是 arrayContaining:后者只挡「悄悄少一个」,挡不住「悄悄多一个」——
     // 而把某一档重新塞回/挪出排除表,正是让 profile 集合静默漂移的两个方向。
     expect(rules.excluded).toEqual([
-      "cloud",
       "legacy-projection",
       "managed-plugin",
       "nested-bundle",
@@ -216,8 +219,10 @@ describe("alpha-web extension package producer artifact pin", () => {
     // 这一档是**声明 schema 自己**就能拒的负向。语料里其余负向(URL、占位符冲突、id 重复)
     // 归编译器语义层,由下面两条用例按 `vectors.v1.json` 的错误码轴各自断言 —— 混在一起会让
     // 「schema 松了」和「编译器松了」互相掩护。
+    // alpha-web#270 编译器半场之后,cloud 档在声明 schema 里合法;`input.cloud-profile.invalid.json`
+    // 只剩一个未知 `pipelineKind`,归编译器语义层(`E_CLOUD_PIPELINE_KIND`,见下一条错误码表),
+    // 所以它从这张 schema 负向表里挪出去,并在下面显式钉住「schema 放行、编译器拒」这一分工。
     for (const path of [
-      "input.cloud-profile.invalid.json",
       "input.remote-auth-unknown.invalid.json",
       "input.author-capabilities.invalid.json",
       "input.author-dependencies.invalid.json",
@@ -226,15 +231,20 @@ describe("alpha-web extension package producer artifact pin", () => {
       "input.command-variant.invalid.json",
     ])
       expect(validate(await json(path)), path).toBe(false)
+    const unknownPipeline = await json("input.cloud-profile.invalid.json")
+    expect(unknownPipeline.root.component.kind).toBe("cloud")
+    expect(validate(unknownPipeline)).toBe(true)
 
-    // 四份正向语料**全部**要过 schema:只验一份的话,OAuth / Connection / Bundle
-    // 任一档被 schema 悄悄关掉都不会红。(`#830` 撤掉了第五份 `input.plugin.valid.json`。)
+    // 五份正向语料**全部**要过 schema:只验一份的话,OAuth / Connection / Bundle / Cloud
+    // 任一档被 schema 悄悄关掉都不会红。(`#830` 撤掉了 `input.plugin.valid.json`;alpha-web#270 加了
+    // `input.cloud.valid.json`。)
     const vectors = (await json("vectors.v1.json")) as { valid: Array<{ input: string }> }
     expect(vectors.valid.map((vector) => vector.input)).toEqual([
       "input.mcp-remote.valid.json",
       "input.remote-oauth.valid.json",
       "input.remote-connection.valid.json",
       "input.bundle.valid.json",
+      "input.cloud.valid.json",
     ])
     for (const vector of vectors.valid) expect(validate(await json(vector.input)), vector.input).toBe(true)
   })
@@ -263,7 +273,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     const oauthComponent = oauth.envelope.components[0]
     const oauthBehavior = oauth.payloads[oauthComponent.id].behavior
     expect(oauthBehavior.auth.kind).toBe("mcp-oauth")
-    expect(oauthComponent.capabilities).toContain("alpha.mcp-oauth.v1")
+    expect(oauthComponent.capabilities).toContain("codepuppy.mcp-oauth.v1")
     expect(Object.keys(oauthBehavior.headersTemplate).map((key) => key.toLowerCase())).not.toContain(
       "authorization",
     )
@@ -273,7 +283,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     const connectionBehavior = connection.payloads[connectionComponent.id].behavior
     expect(connectionBehavior.auth.kind).toBe("alpha-connection")
     expect(connectionBehavior.auth.connectionHandlerId).toMatch(/^[a-z][a-z0-9-]{0,63}$/)
-    expect(connectionComponent.capabilities).toContain("alpha.connection.v1")
+    expect(connectionComponent.capabilities).toContain("codepuppy.connection.v1")
 
     // flat Bundle:root 在表内、root.dependencies 恰好是全部 non-root id、每个 leaf 的
     // dependencies 为空。这三条就是宿主 §4.1 的图文法,在**发布端产物**上直接成立。
@@ -310,7 +320,7 @@ describe("alpha-web extension package producer artifact pin", () => {
       "input.remote-auth-unknown.invalid.json": "E_AUTH_UNSUPPORTED",
       "input.oauth-authorization-header.invalid.json": "E_AUTH_HEADER_CONFLICT",
       "input.oauth-prerequisite-collision.invalid.json": "E_PREREQUISITE_COLLISION",
-      "input.cloud-profile.invalid.json": "E_PROFILE_UNSUPPORTED",
+      "input.cloud-profile.invalid.json": "E_CLOUD_PIPELINE_KIND",
       "input.command-reserved-name.invalid.json": "E_COMMAND_NAME_RESERVED",
       "input.command-variant.invalid.json": "E_UNKNOWN_FIELD",
       "input.author-capabilities.invalid.json": "E_AUTHOR_DERIVED_FIELD",

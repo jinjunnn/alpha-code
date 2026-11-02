@@ -2,10 +2,20 @@
   "mappings": [
     {
       "declaration": {
+        "kind": "cloud"
+      },
+      "host": {
+        "mediaType": "application/vnd.codepuppy.host-extension-package.cloud.v1+json",
+        "profileId": "cloud",
+        "profileVersion": 1
+      }
+    },
+    {
+      "declaration": {
         "kind": "agent"
       },
       "host": {
-        "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
+        "mediaType": "application/vnd.codepuppy.host-extension-package.agent.v1+json",
         "profileId": "agent",
         "profileVersion": 1
       }
@@ -15,7 +25,7 @@
         "kind": "command"
       },
       "host": {
-        "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
+        "mediaType": "application/vnd.codepuppy.host-extension-package.command.v1+json",
         "profileId": "command",
         "profileVersion": 1
       }
@@ -26,7 +36,7 @@
         "transport": "local"
       },
       "host": {
-        "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
+        "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-local.v1+json",
         "profileId": "mcp-local",
         "profileVersion": 1
       }
@@ -37,7 +47,7 @@
         "transport": "remote"
       },
       "host": {
-        "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+        "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
         "profileId": "mcp-remote",
         "profileVersion": 1
       }
@@ -47,11 +57,11 @@
         "kind": "skill"
       },
       "host": {
-        "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+        "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
         "profileId": "skill",
         "profileVersion": 1
       }
     }
   ],
-  "schema": "alpha.extension-package.generic-profiles.v1"
+  "schema": "codepuppy.extension-package.generic-profiles.v1"
 }

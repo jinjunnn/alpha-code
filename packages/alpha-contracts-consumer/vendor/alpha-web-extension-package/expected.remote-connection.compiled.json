@@ -1,22 +1,22 @@
 {
   "envelope": {
     "capabilities": [
-      "alpha.connection.v1",
-      "alpha.secret-prerequisite.v1"
+      "codepuppy.connection.v1",
+      "codepuppy.secret-prerequisite.v1"
     ],
     "components": [
       {
         "capabilities": [
-          "alpha.connection.v1",
-          "alpha.secret-prerequisite.v1"
+          "codepuppy.connection.v1",
+          "codepuppy.secret-prerequisite.v1"
         ],
         "dependencies": [],
         "id": "mcp:generic-remote-connection",
         "payloadRef": {
-          "bytes": 425,
-          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-          "sha256": "5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c",
-          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-remote-connection/1.0.0/alpha-package/5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c.json"
+          "bytes": 429,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+          "sha256": "80d4c56f9a830ab23e7b755ffa1b3ebf41994f24b4f8b027577a77a9b6210e94",
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-remote-connection/1.0.0/alpha-package/80d4c56f9a830ab23e7b755ffa1b3ebf41994f24b4f8b027577a77a9b6210e94.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -32,7 +32,7 @@
       "displayName": "Generic Remote MCP (Alpha Connection)"
     },
     "root": "mcp:generic-remote-connection",
-    "schema": "alpha.host-extension-package.v1"
+    "schema": "codepuppy.host-extension-package.v1"
   },
   "normalizedRecord": {
     "components": [
@@ -40,16 +40,16 @@
         "assetDirectory": "catalog-src/assets/mcp.generic-remote-connection/1.0.0",
         "assetManifestSha256": null,
         "capabilities": [
-          "alpha.connection.v1",
-          "alpha.secret-prerequisite.v1"
+          "codepuppy.connection.v1",
+          "codepuppy.secret-prerequisite.v1"
         ],
         "dependencies": [],
         "id": "mcp:generic-remote-connection",
         "payloadRef": {
-          "bytes": 425,
-          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-          "sha256": "5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c",
-          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-remote-connection/1.0.0/alpha-package/5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c.json"
+          "bytes": 429,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+          "sha256": "80d4c56f9a830ab23e7b755ffa1b3ebf41994f24b4f8b027577a77a9b6210e94",
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-remote-connection/1.0.0/alpha-package/80d4c56f9a830ab23e7b755ffa1b3ebf41994f24b4f8b027577a77a9b6210e94.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -59,11 +59,11 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "38a0b75d30c24256605e86f8111aa62d02088fc5ec3534896319ffe2525ea460",
+        "reportSha256": "c7b1916b56ff8876dfb8f35202f7f8cd2b02c88fe05af5e547472b949f29930d",
         "verdict": "compatible"
       },
       "componentId": "mcp:generic-remote-connection",
-      "declarationSha256": "b4e243935100eb50e687c1f2aed347924eccd6e13827f8df7c27fd72a6340184",
+      "declarationSha256": "36ce49578d7888d0ee7f3cbc3b24b58a41fc520fa481ecb588dce12acba314aa",
       "packageId": "package:generic-remote-connection",
       "presentation": {
         "description": "Generic compiler corpus input with a host-owned Alpha Connection.",
@@ -76,7 +76,7 @@
       },
       "version": "1.0.0"
     },
-    "schema": "alpha.normalized-package-build-record.v1"
+    "schema": "codepuppy.normalized-package-build-record.v1"
   },
   "payloads": {
     "mcp:generic-remote-connection": {
@@ -95,8 +95,8 @@
         ],
         "url": "https://connection.example.com/mcp"
       },
-      "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+      "schema": "codepuppy.host-extension-package.payload.mcp-remote.v1"
     }
   },
-  "schema": "alpha.extension-package.compiled-vector.v1"
+  "schema": "codepuppy.extension-package.compiled-vector.v1"
 }

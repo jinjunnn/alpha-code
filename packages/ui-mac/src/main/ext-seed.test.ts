@@ -76,7 +76,7 @@ function buildLock(assets: AssetFixture[], opts: { writeBlobs?: boolean; budget?
     }
   })
   return {
-    schema: "alpha.extension-seed.lock.v1",
+    schema: "codepuppy.extension-seed.lock.v1",
     channel: "stable",
     catalogVersion: "2026-07-13.1",
     catalog: {
@@ -124,7 +124,7 @@ describe("decodeSeedLock — strict schema", () => {
     expect(!r.ok && r.error.includes("unknown keys")).toBeTrue()
   })
   test("unknown schema / non-stable channel reject", () => {
-    expect(mutate((l) => (l.schema = "alpha.extension-seed.lock.v2")).ok).toBeFalse()
+    expect(mutate((l) => (l.schema = "codepuppy.extension-seed.lock.v2")).ok).toBeFalse()
     expect(mutate((l) => (l.channel = "preview")).ok).toBeFalse()
   })
   test("unknown asset key rejects", () => {

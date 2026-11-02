@@ -57,7 +57,7 @@ function fixture(
 ) {
   const componentId = options.componentId ?? COMPONENT_ID
   const payload = {
-    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
     behavior: {
       url: options.url ?? SIGNED_URL,
       headersTemplate: {},
@@ -72,7 +72,7 @@ function fixture(
   } as unknown as PackageProfilePayloadV1
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: options.catalogId ?? CATALOG_ID, version: "1.0.0" },
     presentation: { displayName: "OAuth Remote MCP", description: "Engine-OAuth-authorised remote MCP." },
     root: componentId,
@@ -83,16 +83,16 @@ function fixture(
         dependencies: [],
         profileId: "mcp-remote",
         profileVersion: 1,
-        capabilities: ["alpha.mcp-oauth.v1"],
+        capabilities: ["codepuppy.mcp-oauth.v1"],
         payloadRef: {
           sha256: createHash("sha256").update(bytes).digest("hex"),
           bytes: bytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
           url: "https://alphacodeone.com/catalog/assets/mcp.oauth-remote/1.0.0/alpha-package/payload.json",
         },
       },
     ],
-    capabilities: ["alpha.mcp-oauth.v1"],
+    capabilities: ["codepuppy.mcp-oauth.v1"],
   } as unknown as AlphaPackageEnvelopeV1
   return { envelope, bytes }
 }

@@ -1,0 +1,36 @@
+{
+  "packageId": "package:cloud-html",
+  "presentation": {
+    "description": "…",
+    "displayName": "云端网页生成"
+  },
+  "root": {
+    "component": {
+      "behavior": {
+        "fields": {
+          "prompt": {
+            "control": "textarea",
+            "help": "…",
+            "label": "页面要求"
+          }
+        },
+        "fixed": {},
+        "pipelineKind": "image-generation",
+        "upstreamData": [
+          "发送你填写的页面要求(prompt)。",
+          "派发信封元数据:autonomy、kind;constraints.network 为 restricted;不带 budget"
+        ]
+      },
+      "id": "cloud:html",
+      "kind": "cloud",
+      "version": "1.0.0"
+    }
+  },
+  "schema": "codepuppy.package-declaration.v1",
+  "source": {
+    "kind": "alpha-native",
+    "publisher": "alpha",
+    "redistributable": true
+  },
+  "version": "1.0.0"
+}

@@ -1,5 +1,5 @@
 // REQ-102 A(issue #194)—— packaged extension seed 消费端(B→A 契约:alpha-web
-// contracts/extension-seed/CONTRACT.md @ 2a4c4f7,schema alpha.extension-seed.lock.v1)。
+// contracts/extension-seed/CONTRACT.md @ 2a4c4f7,schema codepuppy.extension-seed.lock.v1)。
 //
 // 信任面(合同 §2/§8):seed lock **无独立签名**。打包面完整性由 App 包签名承载 —— 打包前的
 // §2 交叉复核(lock ↔ 已验签 stable target/remoteAsset 清单)由 scripts/sync-extension-seed.mjs
@@ -26,7 +26,7 @@ import { isSafeRelPath, sha256FileSync } from "./ext-atomic-fs"
 import { putCasBlobFromFile, CAS_SHA256_RE } from "./ext-cas"
 import type { TxFileSpec } from "./ext-transaction"
 
-export const SEED_LOCK_SCHEMA = "alpha.extension-seed.lock.v1"
+export const SEED_LOCK_SCHEMA = "codepuppy.extension-seed.lock.v1"
 export const SEED_LOCK_FILENAME = "seed.lock.json"
 export const SEED_NOTICE_FILENAME = "NOTICE.md"
 export const SEED_BLOBS_DIR = "blobs"

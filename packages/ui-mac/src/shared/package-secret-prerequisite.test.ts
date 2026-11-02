@@ -44,7 +44,7 @@ function decodedPackage(
   const payload =
     profileId === "mcp-local"
       ? {
-          schema: "alpha.host-extension-package.payload.mcp-local.v1",
+          schema: "codepuppy.host-extension-package.payload.mcp-local.v1",
           behavior: {
             command: ["demo-mcp"],
             environment: { LOG_LEVEL: "info" },
@@ -52,7 +52,7 @@ function decodedPackage(
           },
         }
       : {
-          schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+          schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
           behavior: {
             url: "https://mcp.example.invalid/service",
             headersTemplate: requiredSecrets.length ? { Authorization: `Bearer {${requiredSecrets[0]}}` } : {},
@@ -61,9 +61,9 @@ function decodedPackage(
           },
         }
   const bytes = jsonBytes(payload)
-  const capabilities = requiredSecrets.length ? ["alpha.secret-prerequisite.v1"] : []
+  const capabilities = requiredSecrets.length ? ["codepuppy.secret-prerequisite.v1"] : []
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: `${profileId}:demo`, version: "1.0.0" },
     presentation: { displayName: "Demo", description: "Demo MCP" },
     root: `${profileId}:demo`,
@@ -78,7 +78,7 @@ function decodedPackage(
         payloadRef: {
           sha256: createHash("sha256").update(bytes).digest("hex"),
           bytes: bytes.byteLength,
-          mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+          mediaType: `application/vnd.codepuppy.host-extension-package.${profileId}.v1+json`,
           url: "https://example.invalid/payload.json",
         },
       },
@@ -108,7 +108,7 @@ function profileOf(profileId: "mcp-local" | "mcp-remote" = "mcp-local"): Package
 describe("package secret prerequisite", () => {
   test("strictly derives local secret identity and target from the signed host profile", () => {
     expect(profileOf()).toEqual({
-      profile: "alpha.secret-prerequisite.v1",
+      profile: "codepuppy.secret-prerequisite.v1",
       componentId: "mcp-local:demo",
       server: "demo",
       items: [
@@ -136,7 +136,7 @@ describe("package secret prerequisite", () => {
     })
     const decoded = decodedPackage("mcp-remote")
     const payload = structuredClone(decoded.payload)
-    if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1") throw new Error("wrong fixture")
+    if (payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1") throw new Error("wrong fixture")
     payload.behavior.headersTemplate = { "X-Unrelated": "static" }
     const result = decodePackageSecretPrerequisiteProfileV1(decoded.component, payload)
     expect(result.ok).toBe(false)

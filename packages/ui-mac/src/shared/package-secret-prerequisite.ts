@@ -4,7 +4,7 @@ import type {
 } from "./host-extension-package-contract/decoder"
 import { isExtensionName } from "./extension-name"
 
-export const PACKAGE_SECRET_PREREQUISITE_PROFILE_V1 = "alpha.secret-prerequisite.v1" as const
+export const PACKAGE_SECRET_PREREQUISITE_PROFILE_V1 = "codepuppy.secret-prerequisite.v1" as const
 
 export type PackageSecretPrerequisiteStateV1 = "ready" | "required-action" | "blocked"
 export type PackageSecretPrerequisiteReasonCodeV1 =
@@ -98,7 +98,7 @@ export function decodePackageSecretPrerequisiteProfileV1(
   const errors: string[] = []
   const suffix = component.id.slice(component.id.indexOf(":") + 1)
 
-  if (payload.schema === "alpha.host-extension-package.payload.mcp-local.v1") {
+  if (payload.schema === "codepuppy.host-extension-package.payload.mcp-local.v1") {
     if (!isExtensionName(suffix))
       errors.push("secret prerequisite component id cannot be represented by the existing MCP secret store")
     if (errors.length) return invalidProfile(errors)
@@ -119,7 +119,7 @@ export function decodePackageSecretPrerequisiteProfileV1(
     }
   }
 
-  if (payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1") {
+  if (payload.schema === "codepuppy.host-extension-package.payload.mcp-remote.v1") {
     if (!isExtensionName(suffix))
       errors.push("secret prerequisite component id cannot be represented by the existing MCP secret store")
     // 「headersTemplate 里的每个 {VAR} 都必须在 requiredSecrets 里声明」是 CONTRACT.md 不变量 4,

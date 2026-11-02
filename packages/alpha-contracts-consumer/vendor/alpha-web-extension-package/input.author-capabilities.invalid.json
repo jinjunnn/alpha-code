@@ -20,7 +20,7 @@
         "url": "https://MCP.EXAMPLE.COM"
       },
       "capabilities": [
-        "alpha.secret-prerequisite.v1"
+        "codepuppy.secret-prerequisite.v1"
       ],
       "id": "mcp:generic-remote",
       "kind": "mcp",
@@ -28,7 +28,7 @@
       "version": "1.0.0"
     }
   },
-  "schema": "alpha.package-declaration.v1",
+  "schema": "codepuppy.package-declaration.v1",
   "source": {
     "kind": "alpha-native",
     "publisher": "official",

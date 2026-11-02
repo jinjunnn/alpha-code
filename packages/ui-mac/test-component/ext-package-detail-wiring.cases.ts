@@ -156,7 +156,7 @@ const canonicalBytes = (value: unknown) =>
  */
 const producerCorpus = async () => ({
   envelope: {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
     presentation: {
       displayName: "Generic Remote MCP",
@@ -170,19 +170,19 @@ const producerCorpus = async () => ({
         dependencies: [],
         profileId: "mcp-remote",
         profileVersion: 1,
-        capabilities: ["alpha.secret-prerequisite.v1"],
+        capabilities: ["codepuppy.secret-prerequisite.v1"],
         payloadRef: {
           sha256: "0".repeat(64),
           bytes: 1,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
           url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
         },
       },
     ],
-    capabilities: ["alpha.secret-prerequisite.v1"],
+    capabilities: ["codepuppy.secret-prerequisite.v1"],
   } as unknown as AlphaPackageEnvelopeV1,
   payload: {
-    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
     behavior: {
       url: "https://mcp.example.com/",
       headersTemplate: { Authorization: "Bearer {A_KEY}", "X-Remote-Token": "{B_TOKEN}" },
@@ -214,7 +214,7 @@ const cloudCorpusCase = async () => {
 const packageFixture = async (options?: { withCloud?: boolean }) => {
   const ready = await producerCorpus()
   ready.envelope.prelude.packageId = "package:renderer-ready"
-  if (ready.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+  if (ready.payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
     throw new Error("producer corpus profile drifted")
   ready.payload.behavior.requiredSecrets = []
   // 与 requiredSecrets 一起清:宿主规则双向,留着 {NAME} 占位而不声明它 = 自相矛盾的夹具。
@@ -224,7 +224,7 @@ const packageFixture = async (options?: { withCloud?: boolean }) => {
 
   const prerequisite = await producerCorpus()
   prerequisite.envelope.prelude.packageId = "package:renderer-prerequisite"
-  if (prerequisite.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+  if (prerequisite.payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
     throw new Error("producer corpus profile drifted")
   prerequisite.payload.behavior.requiredSecrets = ["A_KEY"]
   prerequisite.payload.behavior.headersTemplate = {
@@ -380,7 +380,7 @@ async function mountHarness(options?: {
     writeCapabilityGrantSync(globalRoot, {
       v: 1,
       key: "mcp--generic-remote",
-      capabilities: ["alpha.secret-prerequisite.v1"],
+      capabilities: ["codepuppy.secret-prerequisite.v1"],
       txId: "preauthorized",
       grantedAt: "2026-07-31T00:00:00.000Z",
     })
@@ -1343,7 +1343,7 @@ describe("package detail production renderer path", () => {
       click(card.querySelector("button"))
       await waitForPackageAuthorization("package:renderer-prerequisite")
       expectDialogContract(packageAuthorizationDialog(), {
-        capabilities: ["alpha.secret-prerequisite.v1"],
+        capabilities: ["codepuppy.secret-prerequisite.v1"],
         prerequisite: "A_KEY",
       })
       const submittedSecret = ` ${secretCanary} `
@@ -1403,7 +1403,7 @@ describe("package detail production renderer path", () => {
       authorization: { confirmed: Record<string, string[]> }
     }
     expect(submitted.authorization.confirmed).toEqual({
-      "mcp--generic-remote": ["alpha.secret-prerequisite.v1"],
+      "mcp--generic-remote": ["codepuppy.secret-prerequisite.v1"],
     })
   })
 

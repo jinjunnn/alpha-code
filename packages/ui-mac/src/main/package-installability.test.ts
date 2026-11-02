@@ -53,7 +53,7 @@ const vendoredProducerPackage = async (file: string) => {
  */
 const corpus = async () => {
   const payload = {
-    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
     behavior: {
       url: "https://mcp.example.com/",
       headersTemplate: {
@@ -66,7 +66,7 @@ const corpus = async () => {
   } as unknown as PackageProfilePayloadV1
   const bytes = canonicalBytes(payload)
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
     presentation: {
       displayName: "Generic Remote MCP",
@@ -80,16 +80,16 @@ const corpus = async () => {
         dependencies: [],
         profileId: "mcp-remote",
         profileVersion: 1,
-        capabilities: ["alpha.secret-prerequisite.v1"],
+        capabilities: ["codepuppy.secret-prerequisite.v1"],
         payloadRef: {
           sha256: createHash("sha256").update(bytes).digest("hex"),
           bytes: bytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
           url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
         },
       },
     ],
-    capabilities: ["alpha.secret-prerequisite.v1"],
+    capabilities: ["codepuppy.secret-prerequisite.v1"],
   } as unknown as AlphaPackageEnvelopeV1
   return { envelope, payload }
 }
@@ -110,7 +110,7 @@ const packageWithComponentName = (
     // `#828`:skill 与 agent 的载荷形状分家了 —— skill 是文件清单,agent 仍是单个资产。
     profileId === "skill"
       ? {
-          schema: "alpha.host-extension-package.payload.skill.v1",
+          schema: "codepuppy.host-extension-package.payload.skill.v1",
           behavior: {
             targetDir: "alpha-skills",
             files: [
@@ -125,7 +125,7 @@ const packageWithComponentName = (
         }
       : profileId === "agent"
         ? {
-            schema: "alpha.host-extension-package.payload.agent.v1",
+            schema: "codepuppy.host-extension-package.payload.agent.v1",
             behavior: {
               targetDir: "alpha-agents",
               asset: {
@@ -138,11 +138,11 @@ const packageWithComponentName = (
           }
       : profileId === "mcp-local"
         ? {
-            schema: "alpha.host-extension-package.payload.mcp-local.v1",
+            schema: "codepuppy.host-extension-package.payload.mcp-local.v1",
             behavior: { command: ["demo"], environment: {}, requiredSecrets },
           }
         : {
-            schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+            schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
             behavior: {
               url: "https://mcp.example.invalid/service",
               headersTemplate: Object.fromEntries(
@@ -153,10 +153,10 @@ const packageWithComponentName = (
             },
           }
   const bytes = canonicalBytes(payload)
-  const capabilities = requiredSecrets.length ? ["alpha.secret-prerequisite.v1"] : []
+  const capabilities = requiredSecrets.length ? ["codepuppy.secret-prerequisite.v1"] : []
   return {
     envelope: {
-      schema: "alpha.host-extension-package.v1",
+      schema: "codepuppy.host-extension-package.v1",
       prelude: { packageId: `package:${profileId}-name-boundary`, version: "1.0.0" },
       presentation: { displayName: profileId, description: "Host name boundary case" },
       root: `${profileId}:${name}`,
@@ -171,7 +171,7 @@ const packageWithComponentName = (
           payloadRef: {
             sha256: createHash("sha256").update(bytes).digest("hex"),
             bytes: bytes.byteLength,
-            mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+            mediaType: `application/vnd.codepuppy.host-extension-package.${profileId}.v1+json`,
             url: "https://example.invalid/payload.json",
           },
         },
@@ -187,7 +187,7 @@ describe("package installability authority", () => {
     "the contract-accepted package ID %s is not narrowed by the host",
     async (packageId) => {
       const { envelope, payload } = await corpus()
-      if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+      if (payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
         throw new Error("producer corpus profile drifted")
       envelope.prelude = { packageId, version: "v".repeat(64) }
       payload.behavior.requiredSecrets = []
@@ -320,7 +320,7 @@ describe("package installability authority", () => {
 
   test("projects required secret summaries without exposing their signed injection targets", async () => {
     const { envelope, payload } = await corpus()
-    if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    if (payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     payload.behavior.headersTemplate = {
       Authorization: "Bearer {A_KEY}",
@@ -398,7 +398,7 @@ describe("package installability authority", () => {
     }
 
     const bare = await corpus()
-    if (bare.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    if (bare.payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     bare.payload.behavior.requiredSecrets = []
     bare.payload.behavior.headersTemplate = {}
@@ -411,7 +411,7 @@ describe("package installability authority", () => {
     expect("listing" in without).toBe(false)
 
     const rich = await corpus()
-    if (rich.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    if (rich.payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     rich.payload.behavior.requiredSecrets = []
     rich.payload.behavior.headersTemplate = {}
@@ -446,7 +446,7 @@ describe("package installability authority", () => {
 
   test("compatible package without prerequisites exposes the install action", async () => {
     const { envelope, payload } = await corpus()
-    if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    if (payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     payload.behavior.requiredSecrets = []
     // headersTemplate 必须一起清:宿主的规则是双向的(每个 {NAME} 占位必须被声明),
@@ -528,7 +528,7 @@ describe("package installability authority", () => {
     [
       "unknown capability",
       (envelope: AlphaPackageEnvelopeV1) => {
-        const capabilities = ["alpha.secret-prerequisite.v1", "future.required.v1"]
+        const capabilities = ["codepuppy.secret-prerequisite.v1", "future.required.v1"]
         ;(envelope as { capabilities: string[] }).capabilities = capabilities
         ;(envelope.components[0] as { capabilities: string[] }).capabilities = capabilities
       },
@@ -545,7 +545,7 @@ describe("package installability authority", () => {
       "profile mediaType mismatch",
       (envelope: AlphaPackageEnvelopeV1) => {
         envelope.components[0].payloadRef.mediaType =
-          "application/vnd.alpha.host-extension-package.skill.v1+json"
+          "application/vnd.codepuppy.host-extension-package.skill.v1+json"
       },
       "package-host-update-required",
     ],
@@ -616,7 +616,7 @@ describe("package installability authority", () => {
 
   test("strict payload decoder rejects producer-forbidden remote OAuth", async () => {
     const { envelope, payload } = await corpus()
-    if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    if (payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     ;(payload.behavior as { auth: string }).auth = "oauth"
     const bytes = bindPayload(envelope, payload)
@@ -923,7 +923,7 @@ describe("package installability authority", () => {
 
   const bundle = (leaf: { supported: boolean }) => {
     const rootPayload = {
-      schema: "alpha.host-extension-package.payload.skill.v1",
+      schema: "codepuppy.host-extension-package.payload.skill.v1",
       behavior: {
         targetDir: "alpha-skills",
         files: [
@@ -932,7 +932,7 @@ describe("package installability authority", () => {
       },
     }
     const leafPayload = {
-      schema: "alpha.host-extension-package.payload.agent.v1",
+      schema: "codepuppy.host-extension-package.payload.agent.v1",
       behavior: {
         targetDir: "alpha-agents",
         asset: {
@@ -945,7 +945,7 @@ describe("package installability authority", () => {
     }
     const rootBytes = canonicalBytes(rootPayload)
     const leafBytes = canonicalBytes(leafPayload)
-    const leafCapabilities = leaf.supported ? [] : ["alpha.future.v1"]
+    const leafCapabilities = leaf.supported ? [] : ["codepuppy.future.v1"]
     const componentOf = (
       id: string,
       profileId: string,
@@ -964,7 +964,7 @@ describe("package installability authority", () => {
       payloadRef: {
         sha256: createHash("sha256").update(bytes).digest("hex"),
         bytes: bytes.byteLength,
-        mediaType: `application/vnd.alpha.host-extension-package.${mediaProfile}.v1+json`,
+        mediaType: `application/vnd.codepuppy.host-extension-package.${mediaProfile}.v1+json`,
         url: "https://example.invalid/payload.json",
       },
     })
@@ -972,7 +972,7 @@ describe("package installability authority", () => {
       rootBytes,
       leafBytes,
       envelope: {
-        schema: "alpha.host-extension-package.v1",
+        schema: "codepuppy.host-extension-package.v1",
         prelude: { packageId: "package:bundle-case", version: "1.0.0" },
         presentation: { displayName: "Bundle", description: "Two-component bundle" },
         root: "skill:bundle-root",
@@ -1041,7 +1041,7 @@ describe("package installability authority", () => {
 
     // ② 被跳过的组件**一个字节都不取**:它不会安装,就不该产生网络请求或收 prerequisite。
     expect(fetched).toEqual([
-      "application/vnd.alpha.host-extension-package.skill.v1+json",
+      "application/vnd.codepuppy.host-extension-package.skill.v1+json",
     ])
     expect(view.prerequisites.items).toEqual([])
 
@@ -1057,6 +1057,6 @@ describe("package installability authority", () => {
       decodedSkip?.status === "skipped" ? decodedSkip.reasonCode : "MISMATCH",
     )
     // 签名并集仍然含着该 child 的 capability —— 它是发布方的签名事实。
-    expect(decoded.envelope.capabilities).toEqual(["alpha.future.v1"])
+    expect(decoded.envelope.capabilities).toEqual(["codepuppy.future.v1"])
   })
 })

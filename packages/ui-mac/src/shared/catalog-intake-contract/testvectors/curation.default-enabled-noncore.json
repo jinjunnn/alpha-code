@@ -4,7 +4,7 @@
   "entryType": "cloud",
   "hasPayloadAssets": false,
   "curation": {
-    "schema": "alpha.catalog.curation.v1",
+    "schema": "codepuppy.catalog.curation.v1",
     "tier": "connector",
     "activationPolicy": "default-enabled",
     "deliveryMode": "installable",
@@ -50,7 +50,7 @@
         "sha256": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
         "bytes": 1024,
         "url": "https://codepuppy.cn/catalog/assets/cloud.figma/2026.07.0/alpha-curation/intake-provenance/6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f.json",
-        "format": "alpha.intake-provenance.v1+json"
+        "format": "codepuppy.intake-provenance.v1+json"
       }
     }
   }

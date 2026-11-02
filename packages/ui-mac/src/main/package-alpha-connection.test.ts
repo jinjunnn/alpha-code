@@ -70,7 +70,7 @@ afterEach(() => {
 /** A host-owned v2 package whose remote MCP authorises through a registered Alpha Connection. */
 function fixture(options: { required?: boolean; handlerId?: string } = {}) {
   const payload = {
-    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
     behavior: {
       url: "https://mcp.example.com/",
       headersTemplate: {},
@@ -86,7 +86,7 @@ function fixture(options: { required?: boolean; handlerId?: string } = {}) {
   } as unknown as PackageProfilePayloadV1
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: CATALOG_ID, version: "1.0.0" },
     presentation: { displayName: "Connected Remote MCP", description: "Connection-authorised remote MCP." },
     root: COMPONENT_ID,
@@ -97,16 +97,16 @@ function fixture(options: { required?: boolean; handlerId?: string } = {}) {
         dependencies: [],
         profileId: "mcp-remote",
         profileVersion: 1,
-        capabilities: ["alpha.connection.v1"],
+        capabilities: ["codepuppy.connection.v1"],
         payloadRef: {
           sha256: createHash("sha256").update(bytes).digest("hex"),
           bytes: bytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
           url: "https://alphacodeone.com/catalog/assets/mcp.connected-remote/1.0.0/alpha-package/payload.json",
         },
       },
     ],
-    capabilities: ["alpha.connection.v1"],
+    capabilities: ["codepuppy.connection.v1"],
   } as unknown as AlphaPackageEnvelopeV1
   return { envelope, bytes }
 }

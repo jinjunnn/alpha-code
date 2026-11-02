@@ -117,7 +117,7 @@ function buildSeed(
     }
   })
   const lock: SeedLock = {
-    schema: "alpha.extension-seed.lock.v1",
+    schema: "codepuppy.extension-seed.lock.v1",
     channel: "stable",
     catalogVersion: opts.catalogVersion ?? CATALOG_VERSION,
     catalog: {
@@ -1282,7 +1282,7 @@ const seedCurationOf = (
   const shaA = "a".repeat(64)
   const shaB = "b".repeat(64)
   return {
-    schema: "alpha.catalog.curation.v1",
+    schema: "codepuppy.catalog.curation.v1",
     tier: over.tier ?? "labs",
     activationPolicy: over.activationPolicy ?? "session-grant",
     deliveryMode: "installable",
@@ -1307,7 +1307,7 @@ const seedCurationOf = (
         sha256: shaB,
         bytes: 512,
         url: curationBlobUrl(catalogId, "1.0.0", "intakeProvenance", shaB),
-        format: "alpha.intake-provenance.v1+json",
+        format: "codepuppy.intake-provenance.v1+json",
       },
     },
   }

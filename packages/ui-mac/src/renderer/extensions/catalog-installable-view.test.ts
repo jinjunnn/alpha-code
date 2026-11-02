@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createMemo } from "solid-js"
 import { toV1Receipt, type InstallRecordV2 } from "../../main/ext-receipt-v2"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
-import { decodeEntryCuration } from "../../shared/catalog-curation"
+import { CURATION_SCHEMA_ID, decodeEntryCuration, INTAKE_PROVENANCE_SCHEMA_ID } from "../../shared/catalog-curation"
 import type { Catalog, CatalogEntry } from "./catalog-types"
 import { installableCatalogEntries, installableCatalogPackages } from "./catalog-installable-view"
 import { nameOnlyLiveMcpIsUnambiguousGlobal, sdkMcpStatusForReceipt } from "./use-extensions"
@@ -125,7 +125,18 @@ describe("installableCatalogEntries(REQ-135 Hub retirement view)", () => {
 // 400e27a11d06e21ac1719e48fc1a8919955148b2f4117cd1ecabec20d7cb2562).
 // Package view: catalog-evaluation.json; installed record: skill-active-result.json.
 // Counterexamples below mutate those captured shapes; they are not invented wire fixtures.
-const old = oldCatalog as unknown as Catalog
+//
+// alpha-web#283:样本早于契约 ID 改名,五条策展记录写的是 `alpha.catalog.curation.v1` 与
+// `alpha.intake-provenance.v1+json`,消费端如今只认 `codepuppy.*`(旧 ID = invalid,见下面 AC1 那条用例)。
+// 这里研究的是条目形状与 Hub 视图,不是 ID,所以加载时只把这两个 ID 换成现行值,其余逐字取自样本;
+// 样本文件本身不动。
+const captured = oldCatalog as unknown as Catalog
+const PREVIOUS_CURATION_SCHEMA_ID = "alpha.catalog.curation.v1"
+const old = JSON.parse(
+  JSON.stringify(captured)
+    .replaceAll(`"${PREVIOUS_CURATION_SCHEMA_ID}"`, `"${CURATION_SCHEMA_ID}"`)
+    .replaceAll('"alpha.intake-provenance.v1+json"', `"${INTAKE_PROVENANCE_SCHEMA_ID}+json"`),
+) as Catalog
 const safePackage = oldPackageView as CatalogPackageViewV1
 const git = old.entries.find((entry) => entry.id === "mcp:git")!
 const github = old.entries.find((entry) => entry.id === "mcp:github")!
@@ -216,6 +227,13 @@ const counterexamples = [
 ]
 
 describe("alpha-web#255 old-cache installable view", () => {
+  test("alpha-web#283 AC1: the captured curation record under the previous-brand schema ID is refused", () => {
+    const capturedGit = captured.entries.find((entry) => entry.id === "mcp:git")!
+    expect((capturedGit.curation as { schema?: unknown }).schema).toBe(PREVIOUS_CURATION_SCHEMA_ID)
+    expect(decodeEntryCuration(capturedGit).kind).toBe("invalid")
+    expect(decodeEntryCuration(git).kind).toBe("curated")
+  })
+
   test("AC3 hides D5 GitHub, DBHub, unresolved notes and the dev bundle without changing signed data", () => {
     const before = JSON.stringify(old)
     expect(installableCatalogEntries(old.entries).map((entry) => entry.id)).toEqual(["mcp:git", "skill:mcp-builder"])

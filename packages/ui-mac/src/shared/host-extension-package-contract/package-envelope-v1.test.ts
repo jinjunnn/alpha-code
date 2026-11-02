@@ -224,7 +224,7 @@ const graphCases: GraphCase[] = [
     mutate: (envelope) => {
       // 把被跳过子件的 capability 从并集里摘掉。§4.3 面 1:签名并集与宿主支持与否无关。
       envelope.capabilities = (envelope.capabilities as string[]).filter(
-        (token) => token !== "alpha.future.v1",
+        (token) => token !== "codepuppy.future.v1",
       )
     },
   },
@@ -358,8 +358,8 @@ const negativeCases: NegativeCase[] = [
     error: "must be unique and byte-order sorted",
     mutateEnvelope: (envelope) => {
       const capabilities = [
-        "alpha.secret-prerequisite.v1",
-        "alpha.secret-prerequisite.v1",
+        "codepuppy.secret-prerequisite.v1",
+        "codepuppy.secret-prerequisite.v1",
       ]
       rootOf(envelope).capabilities = capabilities
       envelope.capabilities = capabilities
@@ -442,19 +442,19 @@ const negativeCases: NegativeCase[] = [
     name: "payloadRef mediaType is profile-bound",
     source: "skill-v1",
     mode: "header",
-    error: 'expected "application/vnd.alpha.host-extension-package.skill.v1+json"',
+    error: 'expected "application/vnd.codepuppy.host-extension-package.skill.v1+json"',
     mutateEnvelope: (envelope) => {
       payloadRefOf(envelope).mediaType =
-        "application/vnd.alpha.host-extension-package.mcp-local.v1+json"
+        "application/vnd.codepuppy.host-extension-package.mcp-local.v1+json"
     },
   },
   {
     name: "payload schema matches profile",
     source: "skill-v1",
     mode: "package",
-    error: 'payload.schema: expected "alpha.host-extension-package.payload.skill.v1"',
+    error: 'payload.schema: expected "codepuppy.host-extension-package.payload.skill.v1"',
     mutatePayload: (payload) => {
-      payload.schema = "alpha.host-extension-package.payload.agent.v1"
+      payload.schema = "codepuppy.host-extension-package.payload.agent.v1"
     },
   },
   {
@@ -742,7 +742,7 @@ const negativeCases: NegativeCase[] = [
 
 describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
   test("every accepted corpus package decodes, plans, and resolves secrets exactly once per component", async () => {
-    expect(corpus.schema).toBe("alpha.host-extension-package.decoder-corpus.v1")
+    expect(corpus.schema).toBe("codepuppy.host-extension-package.decoder-corpus.v1")
     const cases = corpus.cases.filter((item) => item.expect === "accepted")
     expect(cases.map((item) => item.name)).toEqual([
       "skill-v1",
@@ -776,10 +776,10 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       expect(calls.decoder, item.name).toBe(expectedComponents.length)
       expect(calls.planner, item.name).toBe(expectedComponents.length)
       // CONTRACT.md 把 secret 前置作为固定顺序公开承诺,而它只应在组件真的派生出
-      // alpha.secret-prerequisite.v1 时触发。少了这条断言,整个 secret 阶段可以被删掉而全绿。
+      // codepuppy.secret-prerequisite.v1 时触发。少了这条断言,整个 secret 阶段可以被删掉而全绿。
       expect(calls.secret, item.name).toBe(
         expectedComponents.filter((component) =>
-          component.capabilities.includes("alpha.secret-prerequisite.v1"),
+          component.capabilities.includes("codepuppy.secret-prerequisite.v1"),
         ).length,
       )
       expect(result.components[0]!.role, item.name).toBe("root")
@@ -817,11 +817,11 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
   test("a curated but unsupported optional child is skipped without reaching any effect", async () => {
     const item = caseNamed("bundle-optional-unsupported-profile")
     const skippedId = item.skipped[0]!
-    expect(item.envelope.capabilities).toContain("alpha.future.v1")
+    expect(item.envelope.capabilities).toContain("codepuppy.future.v1")
     const skippedComponent = componentsOf(item.envelope).find(
       (component) => component.id === skippedId,
     )!
-    expect(skippedComponent.capabilities).toEqual(["alpha.future.v1"])
+    expect(skippedComponent.capabilities).toEqual(["codepuppy.future.v1"])
 
     const fetched: string[] = []
     const calls = noCalls()
@@ -854,7 +854,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       { componentId: skippedId, reasonCode: "component-profile-unsupported" },
     ])
     // 并集是发布方的签名事实,与宿主支持与否无关:被跳过的子件仍然留在里面。
-    expect(result.envelope.capabilities).toContain("alpha.future.v1")
+    expect(result.envelope.capabilities).toContain("codepuppy.future.v1")
     expect(result.envelope.components.map((component) => component.id)).toContain(skippedId)
   })
 
@@ -1102,7 +1102,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
   describe("skill payload file list", () => {
     /** 直接跑**生产解码器**;返回它的错误串(或空串)。不自建等价链。 */
     const decodeSkill = (files: unknown): string => {
-      const payload = { schema: "alpha.host-extension-package.payload.skill.v1", behavior: { targetDir: "alpha-skills", files } }
+      const payload = { schema: "codepuppy.host-extension-package.payload.skill.v1", behavior: { targetDir: "alpha-skills", files } }
       const result = decodePackageProfilePayloadV1("skill", jsonBytes(payload), [])
       return result.ok ? "" : result.errors.join("\n")
     }
@@ -1138,7 +1138,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       expect(decodeSkill([{ ...fileAt("SKILL.md"), bytes: 1.5 }])).toContain("bytes: required integer in 0..")
       // agent 那一侧**没有**跟着放开:它仍是单份 markdown,空 = 畸形。
       const agentPayload = {
-        schema: "alpha.host-extension-package.payload.agent.v1",
+        schema: "codepuppy.host-extension-package.payload.agent.v1",
         behavior: {
           targetDir: "alpha-agents",
           asset: { sha256: "1".repeat(64), bytes: 0, mediaType: "text/markdown", url: "https://example.invalid/a.md" },
@@ -1203,7 +1203,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       expect(decodePackageProfilePayloadV1("agent", jsonBytes(drifted), []).ok).toBe(false)
       // 反向同理:skill 载荷里出现 agent 的 asset ⇒ 拒。
       const skillWithAsset = {
-        schema: "alpha.host-extension-package.payload.skill.v1",
+        schema: "codepuppy.host-extension-package.payload.skill.v1",
         behavior: { targetDir: "alpha-skills", asset: { sha256: "1".repeat(64), bytes: 12, mediaType: "text/markdown", url: "https://example.invalid/a.md" } },
       }
       expect(decodePackageProfilePayloadV1("skill", jsonBytes(skillWithAsset), []).ok).toBe(false)
@@ -1240,7 +1240,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
 
   test("unknown envelope version, inline payload, and bad package union fail closed", () => {
     const unknownEnvelope = caseNamed("skill-v1").envelope
-    unknownEnvelope.schema = "alpha.host-extension-package.v2"
+    unknownEnvelope.schema = "codepuppy.host-extension-package.v2"
     expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(unknownEnvelope)))).toContain(
       "unsupported version",
     )
@@ -1258,8 +1258,34 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(inline)))).toContain('unknown key "inline"')
 
     const union = caseNamed("skill-v1").envelope
-    union.capabilities = ["alpha.future.v1"]
+    union.capabilities = ["codepuppy.future.v1"]
     expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(union)))).toContain("sorted union")
+  })
+
+  // REQ-236 / alpha-web#283(AC1):契约 ID、媒体类型与 capability 词表一次切到 `codepuppy.`,
+  // 旧名不并认。四个轴各改回一处旧名,其余逐字是合法语料 —— 任一轴放回旧名白名单,这条就红。
+  test("previous-brand envelope, payload, media type and capability identifiers fail closed", () => {
+    const envelope = caseNamed("skill-v1").envelope
+    envelope.schema = "alpha.host-extension-package.v1"
+    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(envelope)))).toContain("unsupported version")
+
+    const mediaType = caseNamed("skill-v1").envelope
+    ;(rootOf(mediaType).payloadRef as Record<string, unknown>).mediaType =
+      "application/vnd.alpha.host-extension-package.skill.v1+json"
+    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(mediaType)))).toContain("payloadRef.mediaType")
+
+    const payload = caseNamed("skill-v1").components[0]!.payload!
+    expect(decodePackageProfilePayloadV1("skill", jsonBytes(payload), []).ok).toBe(true)
+    expect(
+      decodePackageProfilePayloadV1("skill", jsonBytes({ ...payload, schema: "alpha.host-extension-package.payload.skill.v1" }), [])
+        .ok,
+    ).toBe(false)
+
+    const capability = caseNamed("mcp-local-v1").envelope
+    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(capability)))).toBe("")
+    rootOf(capability).capabilities = ["alpha.secret-prerequisite.v1"]
+    capability.capabilities = ["alpha.secret-prerequisite.v1"]
+    expect(decodePackageEnvelopeHeaderV1(jsonBytes(capability)).ok).toBe(false)
   })
 
   test("oauth and connection payloads derive exactly one capability each", () => {
@@ -1270,10 +1296,10 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     // rev3 不变量 5:auth 不豁免 requiredSecrets。语料里的 OAuth 组件刻意同时带着一条
     // secret,所以它必须派生**两个** token —— 写成二选一的实现会在这里红。
     expect(derivePayloadCapabilitiesV1(oauth)).toEqual([
-      "alpha.mcp-oauth.v1",
-      "alpha.secret-prerequisite.v1",
+      "codepuppy.mcp-oauth.v1",
+      "codepuppy.secret-prerequisite.v1",
     ])
-    expect(derivePayloadCapabilitiesV1(connection)).toEqual(["alpha.connection.v1"])
+    expect(derivePayloadCapabilitiesV1(connection)).toEqual(["codepuppy.connection.v1"])
     expect(derivePayloadCapabilitiesV1(none)).toEqual([])
 
     // 去掉那条 secret 之后只剩授权 token,证明上面那条并集不是把 secret 恒加进去的假象。
@@ -1281,7 +1307,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     oauthOnly.behavior.requiredSecrets = []
     oauthOnly.behavior.headersTemplate = {}
     expect(derivePayloadCapabilitiesV1(oauthOnly as unknown as PackageProfilePayloadV1)).toEqual([
-      "alpha.mcp-oauth.v1",
+      "codepuppy.mcp-oauth.v1",
     ])
 
     // Connection 侧同理:加一条 secret 就该并出两个。
@@ -1289,7 +1315,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     connectionBoth.behavior.requiredSecrets = ["A_KEY"]
     expect(
       derivePayloadCapabilitiesV1(connectionBoth as unknown as PackageProfilePayloadV1),
-    ).toEqual(["alpha.connection.v1", "alpha.secret-prerequisite.v1"])
+    ).toEqual(["codepuppy.connection.v1", "codepuppy.secret-prerequisite.v1"])
   })
 
 })

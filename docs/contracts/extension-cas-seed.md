@@ -11,7 +11,7 @@ review_after: 2026-10-13
 # Extension CAS, packaged seed and GC(REQ-102 A 侧消费契约)
 
 本文钉住 alpha-code(A)对 alpha-web(B)`contracts/extension-seed/CONTRACT.md`
-(landed @ alpha-web `2a4c4f7`,schema `alpha.extension-seed.lock.v1`)的消费端实现边界,
+(landed @ alpha-web `2a4c4f7`,schema `codepuppy.extension-seed.lock.v1`)的消费端实现边界,
 以及 main-owned CAS 与 mark/sweep GC 的布局/生命周期承诺。B 侧合同本体归 alpha-web 仓;
 本文只拥有 A 侧落点。上游决策脉络:ADR-028(schema/planner/receipts)、REQ-100
 (事务引擎)、REQ-101(signed channel 链)。

@@ -34,7 +34,7 @@ const curation = (
     download: { bytes: number | null; basis: string }
   }> = {},
 ) => ({
-  schema: "alpha.catalog.curation.v1",
+  schema: "codepuppy.catalog.curation.v1",
   tier: over.tier ?? "precache",
   activationPolicy: over.activationPolicy ?? "default-disabled",
   deliveryMode: "installable",
@@ -59,7 +59,7 @@ const curation = (
       sha256: SHA_B,
       bytes: 512,
       url: curationBlobUrl(catalogId, "1.0.0", "intakeProvenance", SHA_B),
-      format: "alpha.intake-provenance.v1+json",
+      format: "codepuppy.intake-provenance.v1+json",
     },
   },
 })

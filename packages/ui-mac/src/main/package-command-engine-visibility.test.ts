@@ -53,7 +53,7 @@ function commandFixture(
   template = utf8(TEMPLATE_MD),
 ) {
   const payload = {
-    schema: "alpha.host-extension-package.payload.command.v1",
+    schema: "codepuppy.host-extension-package.payload.command.v1",
     behavior: {
       template: {
         sha256: sha(template),
@@ -67,7 +67,7 @@ function commandFixture(
   }
   const payloadBytes = canonicalBytes(payload)
   const envelope: AlphaPackageEnvelopeV1 = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId, version: "1.0.0" },
     presentation: { displayName: "command probe", description: "req840 engine visibility fixture" },
     root: componentId,
@@ -82,7 +82,7 @@ function commandFixture(
         payloadRef: {
           sha256: sha(payloadBytes),
           bytes: payloadBytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.command.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.command.v1+json",
           url: `https://example.invalid/packages/${name}/payload.json`,
         },
       },

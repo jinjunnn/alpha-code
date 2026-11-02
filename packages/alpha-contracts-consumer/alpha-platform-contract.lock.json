@@ -1,14 +1,14 @@
 {
   "repo": "jinjunnn/alpha-platform",
-  "commit": "9cf67bd994e4a44aad3af3fdd150df207f1a234f",
+  "commit": "3f2f0dda43066b42eac584d27e75844d42635369",
   "files": [
     {
       "path": "contracts/v1/alpha-wire-contracts.schema.json",
-      "sha256": "9327cf05ec97be9d3714650478af54154b4c0c4f18da45bd226b0d91aa3369aa"
+      "sha256": "1a6097134f3130a0324ec0bc6c83447a908f287443a220a4af7f51c2506ca091"
     },
     {
       "path": "contracts/v1/artifact-descriptor.schema.json",
-      "sha256": "587a440c5fe5fff624327f1b91c028f4785bdb72336e891bfa5764f0b1d4612f"
+      "sha256": "4eba1cc5ba812d8f088f129e8419b667a51ed62d5d0c7f2229c54f341b38d086"
     },
     {
       "path": "contracts/v1/limits.json",
@@ -48,7 +48,7 @@
     },
     {
       "path": "contracts/v1/fixtures/consumers/alpha-web-22/platform-access-claims.json",
-      "sha256": "0c5a4e37653509d02250e6670484ee148cb0a35cd82d0252d65785277d1bb3a3"
+      "sha256": "ef7bf08f663a3a7ed85837c75524198f2b8657186368911af067519f7ea50649"
     },
     {
       "path": "contracts/v1/fixtures/invalid/artifact-inline-content.json",

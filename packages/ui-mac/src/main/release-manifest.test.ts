@@ -125,7 +125,7 @@ describe("buildReleaseManifest 正向", () => {
     expect(r.ok).toBe(true)
     if (!r.ok) throw new Error("unreachable")
     const m = r.manifest
-    expect(m.schema).toBe("alpha.release.manifest.v1")
+    expect(m.schema).toBe("codepuppy.release.manifest.v1")
     expect(m.channel).toBe("prod")
     expect(m.version).toBe("0.1.4")
     expect(m.artifacts.length).toBe(5)
@@ -503,7 +503,7 @@ function makeKeypair() {
 }
 
 function trustWith(keys: ReleaseTrustDoc["keys"], revoked: ReleaseTrustDoc["revokedManifests"] = []): ReleaseTrustDoc {
-  return { schema: "alpha.release-manifest.trust.v1", sequence: 1, publishedAt: "2026-08-19T00:00:00Z", keys, revokedManifests: revoked }
+  return { schema: "codepuppy.release-manifest.trust.v1", sequence: 1, publishedAt: "2026-08-19T00:00:00Z", keys, revokedManifests: revoked }
 }
 
 function signedManifestBytes(keyId: string, pem: string) {
@@ -600,11 +600,24 @@ describe("manifest 签名与信任链", () => {
   test("未知 manifest schema 版本拒(fail closed,AC6)", () => {
     const k = makeKeypair()
     const { bytes } = signedManifestBytes(k.keyId, k.pem)
-    const v2 = Buffer.from(bytes.toString("utf8").replace("alpha.release.manifest.v1", "alpha.release.manifest.v2"), "utf8")
+    const v2 = Buffer.from(bytes.toString("utf8").replace("codepuppy.release.manifest.v1", "codepuppy.release.manifest.v2"), "utf8")
     const sig = signEd25519(v2, k.pem)
     const r = verifyReleaseManifestBytes(v2, sig, trustWith([{ keyId: k.keyId, publicKey: k.spkiB64, status: "active", notBefore: "2026-01-01T00:00:00Z" }]))
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain("unknown manifest schema (fail closed)")
+  })
+  // REQ-236 / alpha-web#283(AC1):manifest 与信任根的 schema ID 改为 codepuppy.*,旧名不并认。
+  // 签名对旧名字节同样有效 —— 拒绝必须来自 schema 判据,不是来自签名失败。
+  test("旧品牌 manifest / 信任根 schema ID 拒(只认 codepuppy.*)", () => {
+    const k = makeKeypair()
+    const { bytes } = signedManifestBytes(k.keyId, k.pem)
+    const old = Buffer.from(bytes.toString("utf8").replace("codepuppy.release.manifest.v1", "alpha.release.manifest.v1"), "utf8")
+    const trust = trustWith([{ keyId: k.keyId, publicKey: k.spkiB64, status: "active", notBefore: "2026-01-01T00:00:00Z" }])
+    expect(verifyReleaseManifestBytes(bytes, signEd25519(bytes, k.pem), trust).ok).toBe(true)
+    const r = verifyReleaseManifestBytes(old, signEd25519(old, k.pem), trust)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("unknown manifest schema (fail closed)")
+    expect(validateTrustDoc({ ...trust, schema: "alpha.release-manifest.trust.v1" }).ok).toBe(false)
   })
 })
 
