@@ -20,8 +20,8 @@ import { createHash, createPublicKey, createPrivateKey, sign as edSign, verify a
 
 // ── 常量与策略锚(独立于任何被测对象;测试用独立字面量交叉钉) ─────────────────────────
 
-export const RELEASE_MANIFEST_SCHEMA = "alpha.release.manifest.v1"
-export const RELEASE_TRUST_SCHEMA = "alpha.release-manifest.trust.v1"
+export const RELEASE_MANIFEST_SCHEMA = "codepuppy.release.manifest.v1"
+export const RELEASE_TRUST_SCHEMA = "codepuppy.release-manifest.trust.v1"
 export const WINDOWS_SIGNING_FACTS_SCHEMA = "alpha.release.windows-signing-facts.v1"
 
 /** Apple Developer ID team(Beijing yuanyuji;docs/runbooks/distribution.md §0)。 */

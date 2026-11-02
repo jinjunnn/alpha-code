@@ -26,7 +26,7 @@ updater 事实。必需事实缺失或不一致时 producer **拒绝产出 manif
 
 | 文件 | 内容 |
 | --- | --- |
-| `alpha-release-manifest.json` | manifest 本体(schema `alpha.release.manifest.v1`),随 GitHub Release 上传 |
+| `alpha-release-manifest.json` | manifest 本体(schema `codepuppy.release.manifest.v1`),随 GitHub Release 上传 |
 | `alpha-release-manifest.json.sig` | 对 manifest **精确字节**的 ed25519 签名,base64 |
 | `alpha-code-<version>-sbom.cdx.json` | CycloneDX 1.6 SBOM,从**打包产物的 app.asar** 枚举 |
 | `desktop-release-manifest.trust.json`(本目录) | 信任根:签名公钥集 + 已撤销 manifest 列表,消费方 vendor 它 |
@@ -41,7 +41,7 @@ updater 事实。必需事实缺失或不一致时 producer **拒绝产出 manif
 
 ## 3. 信任与轮换(AC6)
 
-`desktop-release-manifest.trust.json`(schema `alpha.release-manifest.trust.v1`):
+`desktop-release-manifest.trust.json`(schema `codepuppy.release-manifest.trust.v1`):
 
 - `keys[]`:`{keyId, publicKey, status: active|retiring|revoked, notBefore, notAfter?}`。
   轮换 = 新钥 `active` + 旧钥 `retiring`(带 `notAfter` 窗口)同存;窗口过后旧钥置
