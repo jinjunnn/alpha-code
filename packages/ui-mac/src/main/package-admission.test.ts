@@ -61,7 +61,7 @@ async function fixture() {
   const rootComponent = envelope.components.find((component) => component.id === envelope.root)
   if (!rootComponent) throw new Error("producer corpus has no component matching its own root")
   const payload = structuredClone(compiled.payloads[rootComponent.id])
-  if (payload?.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+  if (payload?.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
     throw new Error("producer corpus profile drifted")
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
   if (
@@ -361,7 +361,7 @@ describe("package admission", () => {
     const { envelope, bytes } = await fixture()
     const changedEnvelope = structuredClone(envelope)
     const changedPayload = JSON.parse(new TextDecoder().decode(bytes)) as PackageProfilePayloadV1
-    if (changedPayload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    if (changedPayload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     changedPayload.behavior.url = `${changedPayload.behavior.url}?revision=2`
     const changedBytes = new TextEncoder().encode(`${JSON.stringify(changedPayload, null, 2)}\n`)
@@ -775,7 +775,7 @@ describe("package admission", () => {
     const { envelope, bytes } = await fixture()
     const other = structuredClone(envelope)
     const otherPayload = JSON.parse(new TextDecoder().decode(bytes)) as PackageProfilePayloadV1
-    if (otherPayload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    if (otherPayload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     otherPayload.behavior.url = `${otherPayload.behavior.url}other/`
     const otherBytes = new TextEncoder().encode(`${JSON.stringify(otherPayload, null, 2)}\n`)
@@ -829,7 +829,7 @@ describe("package admission", () => {
   test("an optional-unsupported Bundle reaches the preview, installs the effective graph, and names the skip", async () => {
     const { envelope, bytes } = await fixture()
     const leafPayload = {
-      schema: "alpha.host-extension-package.payload.agent.v1",
+      schema: "codepuppy.host-extension-package.payload.agent.v1",
       behavior: {
         targetDir: "alpha-agents",
         asset: {
@@ -850,15 +850,15 @@ describe("package admission", () => {
       profileId: "agent",
       profileVersion: 1,
       // 未知 capability ⇒ optional leaf 被 skip ⇒ 有效图长度回到 1。
-      capabilities: ["alpha.future.v1"],
+      capabilities: ["codepuppy.future.v1"],
       payloadRef: {
         sha256: createHash("sha256").update(leafBytes).digest("hex"),
         bytes: leafBytes.byteLength,
-        mediaType: "application/vnd.alpha.host-extension-package.agent.v1+json",
+        mediaType: "application/vnd.codepuppy.host-extension-package.agent.v1+json",
         url: "https://example.invalid/leaf-payload.json",
       },
     } as unknown as (typeof bundle.components)[number])
-    bundle.capabilities = ["alpha.future.v1", "alpha.secret-prerequisite.v1"]
+    bundle.capabilities = ["codepuppy.future.v1", "codepuppy.secret-prerequisite.v1"]
 
     let fetches = 0
     let transactionCalls = 0
@@ -954,14 +954,14 @@ describe("package admission distinguishes a failed asset fetch from an empty one
       { path: EMPTY_PATH, sha256: sha(EMPTY), bytes: 0, url: "https://example.invalid/s/empty.txt" },
     ]
     const payload = {
-      schema: "alpha.host-extension-package.payload.skill.v1",
+      schema: "codepuppy.host-extension-package.payload.skill.v1",
       behavior: { targetDir: "alpha-skills", files },
     }
     const payloadBytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
     return {
       payloadBytes,
       envelope: {
-        schema: "alpha.host-extension-package.v1",
+        schema: "codepuppy.host-extension-package.v1",
         prelude: { packageId: "package:zero-byte-skill", version: "1.0.0" },
         root: "skill:zero-byte",
         presentation: { displayName: "zero-byte", description: "#827 audit fixture" },
@@ -976,7 +976,7 @@ describe("package admission distinguishes a failed asset fetch from an empty one
             payloadRef: {
               sha256: sha(payloadBytes),
               bytes: payloadBytes.byteLength,
-              mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+              mediaType: "application/vnd.codepuppy.host-extension-package.skill.v1+json",
               url: "https://example.invalid/payload.json",
             },
           },

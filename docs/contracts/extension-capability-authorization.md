@@ -203,7 +203,7 @@ snapshot 两条入口执行 package preview、四组 binding、main 重取重验
   既有 transaction 授权终闸先执行；随后 prepared populate 才把值写入
   `<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`，probe 通过后才切 config 与落账。
   持久/结果形状不记录值或值 digest；cancel、undeclared、tamper、stale、replay 均在
-  transaction 或 secret 写入前 fail closed。`alpha.secret-prerequisite.v1` 因而已在
+  transaction 或 secret 写入前 fail closed。`codepuppy.secret-prerequisite.v1` 因而已在
   Phase 1 main/IPC 入口兑现；renderer 的 attempt/preview/密钥采集入口由
   [`alpha-code#732`](https://github.com/jinjunnn/alpha-code/issues/732) 交付，当前不宣称已全链兑现。
 - 残余窗口(如实记录):密钥文件写入发生在事务外(userData 与事务根不同卷/不同圈禁域,

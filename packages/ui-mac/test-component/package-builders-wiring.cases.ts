@@ -31,7 +31,7 @@ const agentAssetBytes = new TextEncoder().encode(AGENT_MD)
 const secretCanary = "REQ128_705_WIRING_SECRET_4a71c9"
 
 const agentPayload = {
-  schema: "alpha.host-extension-package.payload.agent.v1",
+  schema: "codepuppy.host-extension-package.payload.agent.v1",
   behavior: {
     targetDir: "alpha-agents",
     asset: {
@@ -43,7 +43,7 @@ const agentPayload = {
   },
 }
 const mcpPayload = {
-  schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
   behavior: {
     url: "https://mcp.example.invalid/service",
     headersTemplate: { Authorization: "Bearer {A_KEY}" },
@@ -63,7 +63,7 @@ const envelope = (
   capabilities: string[],
   payloadUrl: string,
 ) => ({
-  schema: "alpha.host-extension-package.v1",
+  schema: "codepuppy.host-extension-package.v1",
   prelude: { packageId, version: "1.0.0" },
   // #749 合同 v2:信封新增必填 `root`。本夹具是单组件,root 即该组件自身。
   root: componentId,
@@ -79,7 +79,7 @@ const envelope = (
       payloadRef: {
         sha256: sha(payloadBytes),
         bytes: payloadBytes.byteLength,
-        mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+        mediaType: `application/vnd.codepuppy.host-extension-package.${profileId}.v1+json`,
         url: payloadUrl,
       },
     },
@@ -100,7 +100,7 @@ const mcpEnvelope = envelope(
   "mcp:wired-mcp",
   "mcp-remote",
   mcpPayloadBytes,
-  ["alpha.secret-prerequisite.v1"],
+  ["codepuppy.secret-prerequisite.v1"],
   "https://assets.test/req128-705/mcp-payload.json",
 )
 const snapshotDigest = "4".repeat(64)

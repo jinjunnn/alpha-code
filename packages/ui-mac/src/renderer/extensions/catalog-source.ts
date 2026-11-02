@@ -8,7 +8,7 @@ import { extIpc } from "./ext-ipc"
 
 // REQ-128 不变量(catalog-types.ts):`Catalog.packages` 是 main 评估后的 CatalogPackageViewV1[],
 // raw package envelope / payloadRef **绝不进 renderer**。随包快照逐字镜像已签名 release,它的
-// `packages` 是 raw `alpha.host-extension-package.v1` envelope(2026-08-25.2 起第一次真的非空,
+// `packages` 是 raw `codepuppy.host-extension-package.v1` envelope(2026-08-25.2 起第一次真的非空,
 // ac#1132)—— renderer 没有任何诚实的办法把它当 view 渲染:verdict/action 依赖 main 侧宿主评估,
 // 原样喂给 Hub 则挂载即崩(`componentId` 全是 undefined,ac#1136)。所以 builtin 与 IPC 投影
 // (projectRemoteCatalogForRenderer)同款显式投影:只带 entries;package 卡片只在 main 评估过的

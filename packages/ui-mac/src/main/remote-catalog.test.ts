@@ -462,7 +462,7 @@ describe("#302 环境通道路由", () => {
     // 在 v2 合同下应当被拒 —— 那道过渡闸在 package-installability{,.wiring}.test.ts。
     // 本用例要测的是「生产链有没有真的评估」,所以夹具本身必须是合法的。
     const payload: Record<string, any> = {
-      schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+      schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
       behavior: {
         url: "https://mcp.example.com/",
         headersTemplate: { Authorization: "Bearer {A_KEY}", "X-Token": "{B_TOKEN}" },
@@ -472,7 +472,7 @@ describe("#302 环境通道路由", () => {
     }
     const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
     const envelope: Record<string, any> = {
-      schema: "alpha.host-extension-package.v1",
+      schema: "codepuppy.host-extension-package.v1",
       prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
       presentation: {
         displayName: "Generic Remote MCP",
@@ -486,16 +486,16 @@ describe("#302 环境通道路由", () => {
           dependencies: [],
           profileId: "mcp-remote",
           profileVersion: 1,
-          capabilities: ["alpha.secret-prerequisite.v1"],
+          capabilities: ["codepuppy.secret-prerequisite.v1"],
           payloadRef: {
             sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
             bytes: bytes.byteLength,
-            mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+            mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
             url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
           },
         },
       ],
-      capabilities: ["alpha.secret-prerequisite.v1"],
+      capabilities: ["codepuppy.secret-prerequisite.v1"],
     }
 
     const k = genKey()

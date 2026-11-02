@@ -41,7 +41,7 @@ export const LEAF_COMMAND_ID = "command:generic-bundle-command"
 /** 已策展、但本 build 不支持的 optional leaf(第五格)。 */
 export const LEAF_UNSUPPORTED_ID = "agent:generic-bundle-future"
 export const MCP_SECRET_PREREQUISITE_ID = `${LEAF_MCP_ID}#C_TOKEN`
-export const UNSUPPORTED_CAPABILITY = "alpha.future.v1"
+export const UNSUPPORTED_CAPABILITY = "codepuppy.future.v1"
 /** decoder 对「capability 本 build 不认识」给出的 token —— 三个面都必须逐字用它。 */
 export const EXPECTED_SKIP_REASON = "component-capability-unsupported"
 
@@ -103,7 +103,7 @@ echo "deterministic corpus helper"
 export const SKILL_FILE_PATHS = ["SKILL.md", "reference/guide.md", "scripts/run.sh"] as const
 
 const agentPayloadFor = (targetDir: string, asset: Uint8Array, url: string) => ({
-  schema: "alpha.host-extension-package.payload.agent.v1",
+  schema: "codepuppy.host-extension-package.payload.agent.v1",
   behavior: {
     targetDir,
     asset: { sha256: sha(asset), bytes: asset.byteLength, mediaType: "text/markdown", url },
@@ -119,7 +119,7 @@ const agentPayloadFor = (targetDir: string, asset: Uint8Array, url: string) => (
 type SkillFixtureFile = { path: string; data: Uint8Array; urlPath?: string }
 
 const skillPayloadFor = (files: SkillFixtureFile[], base: string) => ({
-  schema: "alpha.host-extension-package.payload.skill.v1",
+  schema: "codepuppy.host-extension-package.payload.skill.v1",
   behavior: {
     targetDir: "alpha-skills",
     files: files.map((file) => ({
@@ -132,7 +132,7 @@ const skillPayloadFor = (files: SkillFixtureFile[], base: string) => ({
 })
 
 const MCP_PAYLOAD = {
-  schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
   behavior: {
     auth: "none",
     headersTemplate: { "X-Bundle-Token": "{C_TOKEN}" },
@@ -152,7 +152,7 @@ const commandPayloadFor = (template: Uint8Array) => ({
       url: "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/COMMAND.md",
     },
   },
-  schema: "alpha.host-extension-package.payload.command.v1",
+  schema: "codepuppy.host-extension-package.payload.command.v1",
 })
 
 const componentOf = (
@@ -173,7 +173,7 @@ const componentOf = (
   payloadRef: {
     sha256: sha(bytes),
     bytes: bytes.byteLength,
-    mediaType: `application/vnd.alpha.host-extension-package.${mediaProfile}.v1+json`,
+    mediaType: `application/vnd.codepuppy.host-extension-package.${mediaProfile}.v1+json`,
     url: `https://alphacodeone.com/catalog/assets/${id.replace(":", ".")}/1.0.0/alpha-package/payload.json`,
   },
 })
@@ -266,7 +266,7 @@ export function mixedBundleFixture(options?: {
   const components = [
     componentOf(ROOT_AGENT_ID, "agent", true, [], agentBytes, "agent", dependencies),
     componentOf(LEAF_SKILL_ID, "skill", true, [], skillBytes, "skill"),
-    componentOf(LEAF_MCP_ID, "mcp-remote", false, ["alpha.secret-prerequisite.v1"], mcpBytes, "mcp-remote"),
+    componentOf(LEAF_MCP_ID, "mcp-remote", false, ["codepuppy.secret-prerequisite.v1"], mcpBytes, "mcp-remote"),
     componentOf(LEAF_COMMAND_ID, "command", false, [], commandBytes, "command"),
     // 违规/异常项放**最后**:只看第一个元素的实现要能被抓住。
     ...(withUnsupported
@@ -275,7 +275,7 @@ export function mixedBundleFixture(options?: {
   ]
 
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: MIXED_BUNDLE_PACKAGE_ID, version: MIXED_BUNDLE_VERSION },
     presentation: {
       description: "Generic flat Bundle corpus input: one agent root and four leaves.",

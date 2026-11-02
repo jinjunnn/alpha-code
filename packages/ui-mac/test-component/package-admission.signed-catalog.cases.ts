@@ -58,7 +58,7 @@ function fetchFrom(routes: Record<string, string>) {
 
 test("verified signed snapshot and Envelope secret prerequisite reach the restricted version directory", async () => {
   const payload = {
-    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
     behavior: {
       url: "https://mcp.example.com/",
       headersTemplate: { Authorization: "Bearer {A_KEY}" },
@@ -70,7 +70,7 @@ test("verified signed snapshot and Envelope secret prerequisite reach the restri
   // 宿主自持的 v2 信封,沿用 producer 语料的身份。vendored producer 产物本身没有 `root`,
   // 在 v2 合同下应当被拒 —— 那道过渡闸在 package-installability{,.wiring}.test.ts,不在这里重述。
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
     presentation: {
       displayName: "Generic Remote MCP",
@@ -84,16 +84,16 @@ test("verified signed snapshot and Envelope secret prerequisite reach the restri
         dependencies: [],
         profileId: "mcp-remote",
         profileVersion: 1,
-        capabilities: ["alpha.secret-prerequisite.v1"],
+        capabilities: ["codepuppy.secret-prerequisite.v1"],
         payloadRef: {
           sha256: createHash("sha256").update(payloadBytes).digest("hex"),
           bytes: payloadBytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
           url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
         },
       },
     ],
-    capabilities: ["alpha.secret-prerequisite.v1"],
+    capabilities: ["codepuppy.secret-prerequisite.v1"],
   } as unknown as AlphaPackageEnvelopeV1
 
   const key = signingKey()
@@ -216,9 +216,9 @@ test("verified signed snapshot and Envelope secret prerequisite reach the restri
   expect(preview.authorization).toEqual([
     {
       key: "mcp--generic-remote",
-      requested: ["alpha.secret-prerequisite.v1"],
+      requested: ["codepuppy.secret-prerequisite.v1"],
       previous: null,
-      added: ["alpha.secret-prerequisite.v1"],
+      added: ["codepuppy.secret-prerequisite.v1"],
       removed: [],
       requiresConfirmation: true,
     },

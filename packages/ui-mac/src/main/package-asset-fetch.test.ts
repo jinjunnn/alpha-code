@@ -100,7 +100,7 @@ function fixtureOf(): Fixture {
   const payloadOf = (profileId: "agent" | "skill", url: string) =>
     profileId === "agent"
       ? {
-          schema: "alpha.host-extension-package.payload.agent.v1",
+          schema: "codepuppy.host-extension-package.payload.agent.v1",
           behavior: {
             targetDir: "alpha-agents",
             asset: {
@@ -112,7 +112,7 @@ function fixtureOf(): Fixture {
           },
         }
       : {
-          schema: "alpha.host-extension-package.payload.skill.v1",
+          schema: "codepuppy.host-extension-package.payload.skill.v1",
           behavior: {
             targetDir: "alpha-skills",
             files: [
@@ -146,7 +146,7 @@ function fixtureOf(): Fixture {
       payloadRef: {
         sha256: sha(bytes),
         bytes: bytes.byteLength,
-        mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+        mediaType: `application/vnd.codepuppy.host-extension-package.${profileId}.v1+json`,
         url,
       },
     }
@@ -160,7 +160,7 @@ function fixtureOf(): Fixture {
 
   return {
     envelope: {
-      schema: "alpha.host-extension-package.v1",
+      schema: "codepuppy.host-extension-package.v1",
       prelude: { packageId: PACKAGE_ID, version: "1.0.0" },
       root: ROOT_AGENT_ID,
       presentation: { displayName: "Asset fetch gate", description: "REQ-128 #808 fixture" },

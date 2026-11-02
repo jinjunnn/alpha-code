@@ -53,7 +53,7 @@ const behavior = (overrides: Json = {}) => ({
 const decode = (value: Json, capabilities: string[] = []) =>
   decodePackageProfilePayloadV1(
     "cloud",
-    new TextEncoder().encode(JSON.stringify({ schema: "alpha.host-extension-package.payload.cloud.v1", behavior: value })),
+    new TextEncoder().encode(JSON.stringify({ schema: "codepuppy.host-extension-package.payload.cloud.v1", behavior: value })),
     capabilities as never,
   )
 const accepts = (value: Json) => decode(value).ok
@@ -71,7 +71,7 @@ describe("cloud@1 payload (REQ-235 F3)", () => {
     expect(decoded.payload).toEqual(corpusPayload)
     expect(derivePayloadCapabilitiesV1(decoded.payload)).toEqual([])
     // 组件自报的 token 必须等于派生集(空)—— 载荷不能借 cloud 偷带一个宿主能力。
-    expect(decode(behavior(), ["alpha.secret-prerequisite.v1"]).ok).toBe(false)
+    expect(decode(behavior(), ["codepuppy.secret-prerequisite.v1"]).ok).toBe(false)
   })
 
   test("the behavior key set is exactly the schema's, and every one of them is required", () => {
@@ -252,7 +252,7 @@ describe("cloud@1 payload (REQ-235 F3)", () => {
     // 形似标记的字符串是合法文本 —— 不在解码层「净化」,渲染层只作文本节点(见 cloud-form-box 判据)。
     const decoded = decode(behavior({ fields: [text({ label: "<img src=x onerror=alert(1)>" })] }))
     expect(decoded.ok).toBe(true)
-    if (decoded.ok && decoded.payload.schema === "alpha.host-extension-package.payload.cloud.v1")
+    if (decoded.ok && decoded.payload.schema === "codepuppy.host-extension-package.payload.cloud.v1")
       expect(decoded.payload.behavior.fields[0]!.label).toBe("<img src=x onerror=alert(1)>")
   })
 })

@@ -8,7 +8,7 @@ import {
   type PackageProfileRegistrationV1,
 } from "./registry"
 
-export const HOST_EXTENSION_PACKAGE_SCHEMA_V1 = "alpha.host-extension-package.v1"
+export const HOST_EXTENSION_PACKAGE_SCHEMA_V1 = "codepuppy.host-extension-package.v1"
 
 export type PackagePayloadRefV1 = {
   sha256: string
@@ -239,12 +239,12 @@ export type SkillAssetFileV1 = {
 export const SKILL_MD_PATH = "SKILL.md"
 
 export type SkillPayloadV1 = {
-  schema: "alpha.host-extension-package.payload.skill.v1"
+  schema: "codepuppy.host-extension-package.payload.skill.v1"
   behavior: { targetDir: "alpha-skills" | "global"; files: SkillAssetFileV1[] }
 }
 
 export type AgentPayloadV1 = {
-  schema: "alpha.host-extension-package.payload.agent.v1"
+  schema: "codepuppy.host-extension-package.payload.agent.v1"
   behavior: { targetDir: "alpha-agents" | "global"; asset: MarkdownAssetRefV1 }
 }
 
@@ -262,7 +262,7 @@ export type AgentPayloadV1 = {
  * (owner 2026-08-05 批 R3-1:枚举面之外,加法回补留待将来独立修订)。
  */
 export type CommandPayloadV1 = {
-  schema: "alpha.host-extension-package.payload.command.v1"
+  schema: "codepuppy.host-extension-package.payload.command.v1"
   behavior: {
     template: MarkdownAssetRefV1
     description?: string
@@ -273,7 +273,7 @@ export type CommandPayloadV1 = {
 }
 
 export type McpLocalPayloadV1 = {
-  schema: "alpha.host-extension-package.payload.mcp-local.v1"
+  schema: "codepuppy.host-extension-package.payload.mcp-local.v1"
   behavior: { command: string[]; environment: Record<string, string>; requiredSecrets: string[]; officialRecipe?: "dbhub-readonly-v1" }
 }
 
@@ -310,7 +310,7 @@ export type McpRemoteBehaviorV1 = {
 }
 
 export type McpRemotePayloadV1 = {
-  schema: "alpha.host-extension-package.payload.mcp-remote.v1"
+  schema: "codepuppy.host-extension-package.payload.mcp-remote.v1"
   behavior: McpRemoteBehaviorV1
 }
 
@@ -356,7 +356,7 @@ export type CloudBehaviorV1 = {
 }
 
 export type CloudPayloadV1 = {
-  schema: "alpha.host-extension-package.payload.cloud.v1"
+  schema: "codepuppy.host-extension-package.payload.cloud.v1"
   behavior: CloudBehaviorV1
 }
 
@@ -581,19 +581,19 @@ export function decodePackageProfilePayloadV1(
 export function derivePayloadCapabilitiesV1(payload: PackageProfilePayloadV1): PackageCapabilityV1[] {
   const capabilities: PackageCapabilityV1[] = []
   if ("officialRecipe" in payload.behavior && payload.behavior.officialRecipe)
-    capabilities.push("alpha.official-connectors.v1")
+    capabilities.push("codepuppy.official-connectors.v1")
   if (
-    (payload.schema === "alpha.host-extension-package.payload.mcp-local.v1" ||
-      payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1") &&
+    (payload.schema === "codepuppy.host-extension-package.payload.mcp-local.v1" ||
+      payload.schema === "codepuppy.host-extension-package.payload.mcp-remote.v1") &&
     payload.behavior.requiredSecrets.length
   )
-    capabilities.push("alpha.secret-prerequisite.v1")
+    capabilities.push("codepuppy.secret-prerequisite.v1")
   if (
-    payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1" &&
+    payload.schema === "codepuppy.host-extension-package.payload.mcp-remote.v1" &&
     payload.behavior.auth !== "none"
   ) {
-    if (payload.behavior.auth.kind === "mcp-oauth") capabilities.push("alpha.mcp-oauth.v1")
-    if (payload.behavior.auth.kind === "alpha-connection") capabilities.push("alpha.connection.v1")
+    if (payload.behavior.auth.kind === "mcp-oauth") capabilities.push("codepuppy.mcp-oauth.v1")
+    if (payload.behavior.auth.kind === "alpha-connection") capabilities.push("codepuppy.connection.v1")
   }
   return [...new Set(capabilities)].sort()
 }
@@ -1077,7 +1077,7 @@ function decodeSkillPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
     value,
-    "alpha.host-extension-package.payload.skill.v1",
+    "codepuppy.host-extension-package.payload.skill.v1",
     SKILL_BEHAVIOR_KEYS,
     errors,
   )
@@ -1090,7 +1090,7 @@ function decodeSkillPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   return {
     ok: true,
     payload: {
-      schema: "alpha.host-extension-package.payload.skill.v1",
+      schema: "codepuppy.host-extension-package.payload.skill.v1",
       behavior: { targetDir: targetDir as "alpha-skills" | "global", files },
     },
   }
@@ -1163,7 +1163,7 @@ function decodeAgentPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
     value,
-    "alpha.host-extension-package.payload.agent.v1",
+    "codepuppy.host-extension-package.payload.agent.v1",
     MARKDOWN_BEHAVIOR_KEYS,
     errors,
   )
@@ -1179,7 +1179,7 @@ function decodeAgentPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   return {
     ok: true,
     payload: {
-      schema: "alpha.host-extension-package.payload.agent.v1",
+      schema: "codepuppy.host-extension-package.payload.agent.v1",
       behavior: { targetDir: targetDir as "alpha-agents" | "global", asset: asset as MarkdownAssetRefV1 },
     },
   }
@@ -1195,7 +1195,7 @@ function decodeCommandPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
     value,
-    "alpha.host-extension-package.payload.command.v1",
+    "codepuppy.host-extension-package.payload.command.v1",
     COMMAND_BEHAVIOR_KEYS,
     errors,
   )
@@ -1229,7 +1229,7 @@ function decodeCommandPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   return {
     ok: true,
     payload: {
-      schema: "alpha.host-extension-package.payload.command.v1",
+      schema: "codepuppy.host-extension-package.payload.command.v1",
       behavior: {
         template: template as MarkdownAssetRefV1,
         ...(description ? { description } : {}),
@@ -1251,7 +1251,7 @@ function decodeCloudPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
     value,
-    "alpha.host-extension-package.payload.cloud.v1",
+    "codepuppy.host-extension-package.payload.cloud.v1",
     CLOUD_BEHAVIOR_KEYS,
     errors,
   )
@@ -1279,7 +1279,7 @@ function decodeCloudPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   return {
     ok: true,
     payload: {
-      schema: "alpha.host-extension-package.payload.cloud.v1",
+      schema: "codepuppy.host-extension-package.payload.cloud.v1",
       behavior: { pipelineKind, fields, fixed, holdUsd, upstreamData },
     },
   }
@@ -1352,7 +1352,7 @@ function decodeMcpLocalPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
     value,
-    "alpha.host-extension-package.payload.mcp-local.v1",
+    "codepuppy.host-extension-package.payload.mcp-local.v1",
     MCP_LOCAL_BEHAVIOR_KEYS,
     errors,
   )
@@ -1383,7 +1383,7 @@ function decodeMcpLocalPayload(value: unknown): PackageProfilePayloadDecodeV1 {
   return {
     ok: true,
     payload: {
-      schema: "alpha.host-extension-package.payload.mcp-local.v1",
+      schema: "codepuppy.host-extension-package.payload.mcp-local.v1",
       behavior: { command, environment, requiredSecrets, ...(behavior.officialRecipe === "dbhub-readonly-v1" ? { officialRecipe: behavior.officialRecipe } : {}) },
     },
   }
@@ -1393,7 +1393,7 @@ function decodeMcpRemotePayload(value: unknown): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
     value,
-    "alpha.host-extension-package.payload.mcp-remote.v1",
+    "codepuppy.host-extension-package.payload.mcp-remote.v1",
     MCP_REMOTE_BEHAVIOR_KEYS,
     errors,
   )
@@ -1425,7 +1425,7 @@ function decodeMcpRemotePayload(value: unknown): PackageProfilePayloadDecodeV1 {
   return {
     ok: true,
     payload: {
-      schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+      schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
       behavior: { url, headersTemplate, requiredSecrets, auth, ...(behavior.officialRecipe === "github-remote-v1" ? { officialRecipe: behavior.officialRecipe } : {}) },
     },
   }

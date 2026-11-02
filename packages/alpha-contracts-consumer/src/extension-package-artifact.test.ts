@@ -127,7 +127,7 @@ describe("alpha-web extension package producer artifact pin", () => {
       artifactSha256: string
       schema: string
     }
-    expect(pin.schema).toBe("alpha.host-extension-package.pin.v1")
+    expect(pin.schema).toBe("codepuppy.host-extension-package.pin.v1")
     expect(pin.repo).toBe("jinjunnn/alpha-code")
     expect(pin.artifactPath).toBe(liveManifest.artifactPath)
     expect(pin.artifactSha256).toBe(liveManifest.artifactSha256)
@@ -169,10 +169,10 @@ describe("alpha-web extension package producer artifact pin", () => {
     // `engine:plugin`,ADR-040 否决后由 `#830` / alpha-web#138 撤回；alpha-web#256 新增
     // official-connectors，现为四个。exact-set，不是 arrayContaining：未经宿主登记的 token 同样要红。
     expect(registry.capabilities.map((capability: { token: string }) => capability.token)).toEqual([
-      "alpha.connection.v1",
-      "alpha.mcp-oauth.v1",
-      "alpha.official-connectors.v1",
-      "alpha.secret-prerequisite.v1",
+      "codepuppy.connection.v1",
+      "codepuppy.mcp-oauth.v1",
+      "codepuppy.official-connectors.v1",
+      "codepuppy.secret-prerequisite.v1",
     ])
     expect(profiles.mappings.map((mapping: { host: { profileId: string } }) => mapping.host.profileId)).toEqual([
       "agent",
@@ -263,7 +263,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     const oauthComponent = oauth.envelope.components[0]
     const oauthBehavior = oauth.payloads[oauthComponent.id].behavior
     expect(oauthBehavior.auth.kind).toBe("mcp-oauth")
-    expect(oauthComponent.capabilities).toContain("alpha.mcp-oauth.v1")
+    expect(oauthComponent.capabilities).toContain("codepuppy.mcp-oauth.v1")
     expect(Object.keys(oauthBehavior.headersTemplate).map((key) => key.toLowerCase())).not.toContain(
       "authorization",
     )
@@ -273,7 +273,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     const connectionBehavior = connection.payloads[connectionComponent.id].behavior
     expect(connectionBehavior.auth.kind).toBe("alpha-connection")
     expect(connectionBehavior.auth.connectionHandlerId).toMatch(/^[a-z][a-z0-9-]{0,63}$/)
-    expect(connectionComponent.capabilities).toContain("alpha.connection.v1")
+    expect(connectionComponent.capabilities).toContain("codepuppy.connection.v1")
 
     // flat Bundle:root 在表内、root.dependencies 恰好是全部 non-root id、每个 leaf 的
     // dependencies 为空。这三条就是宿主 §4.1 的图文法,在**发布端产物**上直接成立。

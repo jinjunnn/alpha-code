@@ -63,7 +63,7 @@ const markdownPayload = (schema: string, targetDir: string, asset: Uint8Array, u
 
 /** `#828`:skill 载荷是文件清单。本夹具测的是 ADR-040 的 plugin 拒绝,skill 这条腿只需一条 SKILL.md。 */
 const skillPayloadOf = (asset: Uint8Array, url: string) => ({
-  schema: "alpha.host-extension-package.payload.skill.v1",
+  schema: "codepuppy.host-extension-package.payload.skill.v1",
   behavior: {
     targetDir: "alpha-skills",
     files: [{ path: "SKILL.md", sha256: sha(asset), bytes: asset.byteLength, url }],
@@ -71,14 +71,14 @@ const skillPayloadOf = (asset: Uint8Array, url: string) => ({
 })
 
 const MCP_LOCAL_PAYLOAD = {
-  schema: "alpha.host-extension-package.payload.mcp-local.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-local.v1",
   // 命令头必须过宿主的 `validateServer` 白名单(`ext-config.ts` 的 SAFE_COMMAND_HEADS)——
   // 夹具不绕过它,否则这条腿走的就不是生产那条路。
   behavior: { command: ["npx", "-y", "plugin-kit-local-server"], environment: {}, requiredSecrets: [] },
 }
 
 const MCP_REMOTE_PAYLOAD = {
-  schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
   behavior: { auth: "none", headersTemplate: {}, requiredSecrets: [], url: "https://plugin-kit.example.com/mcp" },
 }
 
@@ -99,7 +99,7 @@ const componentOf = (
   payloadRef: {
     sha256: sha(payloadBytes),
     bytes: payloadBytes.byteLength,
-    mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+    mediaType: `application/vnd.codepuppy.host-extension-package.${profileId}.v1+json`,
     url: `https://alphacodeone.com/catalog/assets/${id.replace(":", ".")}/1.0.0/alpha-package/payload.json`,
   },
 })
@@ -138,7 +138,7 @@ export function pluginKitFixture(options?: {
   const pluginAsset = options?.corruptPluginAsset ? utf8("export default () => ({})\n") : vendored
 
   const agentPayload = markdownPayload(
-    "alpha.host-extension-package.payload.agent.v1",
+    "codepuppy.host-extension-package.payload.agent.v1",
     "alpha-agents",
     agentAsset,
     "https://alphacodeone.com/catalog/assets/agent.plugin-kit-root/1.0.0/AGENT.md",
@@ -150,7 +150,7 @@ export function pluginKitFixture(options?: {
   // 宿主永远按**签名里的 sha256/bytes** 复验下载回来的字节 —— 所以 integrity 负例只要换字节、
   // 不动签名,就走的是生产那条真实的拒绝路径。
   const pluginPayload = {
-    schema: "alpha.host-extension-package.payload.opencode-plugin.v1",
+    schema: "codepuppy.host-extension-package.payload.opencode-plugin.v1",
     behavior: {
       asset: {
         sha256: sha(vendored),
@@ -198,7 +198,7 @@ export function pluginKitFixture(options?: {
   ]
 
   const envelope = {
-    schema: "alpha.host-extension-package.v1",
+    schema: "codepuppy.host-extension-package.v1",
     prelude: { packageId: PLUGIN_KIT_PACKAGE_ID, version: PLUGIN_KIT_VERSION },
     presentation: {
       description: "One component per registered host profile, including a managed OpenCode Plugin.",

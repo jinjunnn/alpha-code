@@ -44,7 +44,7 @@ type CorpusCase = {
 }
 
 type ArtifactManifestV1 = {
-  schema: "alpha.host-extension-package.artifact.v1"
+  schema: "codepuppy.host-extension-package.artifact.v1"
   artifactPath: typeof HOST_EXTENSION_PACKAGE_ARTIFACT_PATH
   artifactSha256: string
   files: Array<{ path: string; bytes: number; sha256: string }>
@@ -65,7 +65,7 @@ type ComponentSpec = {
 
 /** 单文件技能(`#828` 之前唯一能表达的形状)—— 这条语料**留着**,它是「多文件不许把单文件弄坏」的判据。 */
 const skillPayload = (slug: string) => ({
-  schema: "alpha.host-extension-package.payload.skill.v1",
+  schema: "codepuppy.host-extension-package.payload.skill.v1",
   behavior: {
     targetDir: "alpha-skills",
     files: [
@@ -84,7 +84,7 @@ const skillPayload = (slug: string) => ({
  * 这条语料带一层子目录与一个 `.py`,因为那正是旧形状**结构上表达不了**的东西。
  */
 const multiFileSkillPayload = (slug: string) => ({
-  schema: "alpha.host-extension-package.payload.skill.v1",
+  schema: "codepuppy.host-extension-package.payload.skill.v1",
   behavior: {
     targetDir: "alpha-skills",
     files: [
@@ -111,7 +111,7 @@ const multiFileSkillPayload = (slug: string) => ({
 })
 
 const agentPayload = (slug: string) => ({
-  schema: "alpha.host-extension-package.payload.agent.v1",
+  schema: "codepuppy.host-extension-package.payload.agent.v1",
   behavior: {
     targetDir: "alpha-agents",
     asset: {
@@ -129,7 +129,7 @@ const agentPayload = (slug: string) => ({
  * 无 `variant`(R3-1)。
  */
 const commandPayload = (slug: string) => ({
-  schema: "alpha.host-extension-package.payload.command.v1",
+  schema: "codepuppy.host-extension-package.payload.command.v1",
   behavior: {
     template: {
       sha256: "5".repeat(64),
@@ -150,7 +150,7 @@ const commandPayload = (slug: string) => ({
  * 的 string 字段(`prompt` trim 后 1–4000)与一个 enum 字段的投影。
  */
 const cloudPayload = () => ({
-  schema: "alpha.host-extension-package.payload.cloud.v1",
+  schema: "codepuppy.host-extension-package.payload.cloud.v1",
   behavior: {
     pipelineKind: "example-generate",
     fields: [
@@ -175,7 +175,7 @@ const cloudPayload = () => ({
 })
 
 const mcpLocalPayload = () => ({
-  schema: "alpha.host-extension-package.payload.mcp-local.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-local.v1",
   behavior: {
     command: ["bunx", "example-mcp"],
     environment: {},
@@ -188,7 +188,7 @@ const mcpRemotePayload = (
   requiredSecrets: string[] = [],
   headersTemplate: Record<string, string> = {},
 ) => ({
-  schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+  schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
   behavior: {
     url: "https://mcp.example.invalid/service",
     headersTemplate,
@@ -231,14 +231,14 @@ export function decoderCorpusBytesV1(): Uint8Array {
       ],
       [],
     ),
-    single("mcp-local-v1", "mcp-local", ["alpha.secret-prerequisite.v1"], mcpLocalPayload()),
+    single("mcp-local-v1", "mcp-local", ["codepuppy.secret-prerequisite.v1"], mcpLocalPayload()),
     single("mcp-remote-v1", "mcp-remote", [], mcpRemotePayload()),
     // OAuth 与 Connection 都携带一条额外 secret:auth 不豁免 requiredSecrets(rev3 不变量 5),
     // 两个 capability 必须同时出现在派生结果里。
     single(
       "mcp-remote-oauth-v1",
       "mcp-remote",
-      ["alpha.mcp-oauth.v1", "alpha.secret-prerequisite.v1"],
+      ["codepuppy.mcp-oauth.v1", "codepuppy.secret-prerequisite.v1"],
       mcpRemotePayload(
         { kind: "mcp-oauth", prerequisiteId: "example-oauth", required: true },
         ["TENANT_ID"],
@@ -248,7 +248,7 @@ export function decoderCorpusBytesV1(): Uint8Array {
     single(
       "mcp-remote-connection-v1",
       "mcp-remote",
-      ["alpha.connection.v1"],
+      ["codepuppy.connection.v1"],
       mcpRemotePayload({
         kind: "alpha-connection",
         prerequisiteId: "example-connection",
@@ -275,7 +275,7 @@ export function decoderCorpusBytesV1(): Uint8Array {
         id: "skill:unknown-capability",
         profileId: "skill",
         required: true,
-        capabilities: ["alpha.future.v1"],
+        capabilities: ["codepuppy.future.v1"],
         payload: null,
       },
     ]),
@@ -303,7 +303,7 @@ export function decoderCorpusBytesV1(): Uint8Array {
           id: "mcp-local:bundle-root",
           profileId: "mcp-local",
           required: true,
-          capabilities: ["alpha.secret-prerequisite.v1"],
+          capabilities: ["codepuppy.secret-prerequisite.v1"],
           payload: mcpLocalPayload(),
         },
         {
@@ -317,7 +317,7 @@ export function decoderCorpusBytesV1(): Uint8Array {
           id: "agent:bundle-unsupported-leaf",
           profileId: "future",
           required: false,
-          capabilities: ["alpha.future.v1"],
+          capabilities: ["codepuppy.future.v1"],
           payload: null,
         },
       ],
@@ -338,7 +338,7 @@ export function decoderCorpusBytesV1(): Uint8Array {
           id: "agent:bundle-capability-leaf",
           profileId: "agent",
           required: false,
-          capabilities: ["alpha.future.v1"],
+          capabilities: ["codepuppy.future.v1"],
           payload: null,
         },
       ],
@@ -360,7 +360,7 @@ export function decoderCorpusBytesV1(): Uint8Array {
           profileId: "agent",
           required: false,
           capabilities: [],
-          mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+          mediaType: "application/vnd.codepuppy.host-extension-package.skill.v1+json",
           payload: null,
         },
       ],
@@ -394,7 +394,7 @@ export function decoderCorpusBytesV1(): Uint8Array {
   cases.push(requiredChild)
 
   return canonicalArtifactJsonBytesV1({
-    schema: "alpha.host-extension-package.decoder-corpus.v1",
+    schema: "codepuppy.host-extension-package.decoder-corpus.v1",
     cases,
   })
 }
@@ -417,7 +417,7 @@ export async function buildHostExtensionPackageArtifactManifest(
     files,
   }
   return {
-    schema: "alpha.host-extension-package.artifact.v1",
+    schema: "codepuppy.host-extension-package.artifact.v1",
     ...identity,
     artifactSha256: sha256(canonicalArtifactJsonBytesV1(identity)),
   }
@@ -517,7 +517,7 @@ function bundle(
         mediaType:
           spec.mediaType ??
           registered?.mediaType ??
-          `application/vnd.alpha.host-extension-package.${spec.profileId}.v1+json`,
+          `application/vnd.codepuppy.host-extension-package.${spec.profileId}.v1+json`,
         url: `https://example.invalid/packages/${spec.id.replace(":", "/")}.json`,
       },
     }
@@ -527,7 +527,7 @@ function bundle(
     expect: "accepted",
     skipped,
     envelope: {
-      schema: "alpha.host-extension-package.v1",
+      schema: "codepuppy.host-extension-package.v1",
       prelude: { packageId: `package:${name}`, version: "1.0.0" },
       presentation: { displayName: name, description: `Synthetic ${name} decoder case` },
       ...(listing ? { listing } : {}),

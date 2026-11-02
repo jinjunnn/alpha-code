@@ -105,7 +105,7 @@ async function fixture(name: "github-official" | "dbhub-readonly" = "github-offi
   const payload: McpRemotePayloadV1 | McpLocalPayloadV1 =
     name === "github-official"
       ? {
-          schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+          schema: "codepuppy.host-extension-package.payload.mcp-remote.v1",
           behavior: {
             officialRecipe: "github-remote-v1",
             url: "https://api.githubcopilot.com/mcp/",
@@ -119,7 +119,7 @@ async function fixture(name: "github-official" | "dbhub-readonly" = "github-offi
           },
         }
       : {
-          schema: "alpha.host-extension-package.payload.mcp-local.v1",
+          schema: "codepuppy.host-extension-package.payload.mcp-local.v1",
           behavior: {
             officialRecipe: "dbhub-readonly-v1",
             command: ["npx", "-y", "@bytebase/dbhub@1.5.0", "--transport", "stdio"],
@@ -140,7 +140,7 @@ async function fixture(name: "github-official" | "dbhub-readonly" = "github-offi
         ...envelope.components[0]!.payloadRef,
         sha256: createHash("sha256").update(bytes).digest("hex"),
         bytes: bytes.length,
-        mediaType: `application/vnd.alpha.host-extension-package.${name === "github-official" ? "mcp-remote" : "mcp-local"}.v1+json`,
+        mediaType: `application/vnd.codepuppy.host-extension-package.${name === "github-official" ? "mcp-remote" : "mcp-local"}.v1+json`,
       },
     },
   ]
@@ -201,7 +201,7 @@ test("closed recipe and capability reject altered endpoint, argv, secret, auth a
       decodePackageProfilePayloadV1(f.envelope.components[0]!.profileId, f.bytes, f.envelope.capabilities).ok,
     ).toBe(true)
     expect(
-      decodePackageProfilePayloadV1(f.envelope.components[0]!.profileId, f.bytes, ["alpha.secret-prerequisite.v1"]).ok,
+      decodePackageProfilePayloadV1(f.envelope.components[0]!.profileId, f.bytes, ["codepuppy.secret-prerequisite.v1"]).ok,
     ).toBe(false)
     for (const change of [
       { officialRecipe: "unknown" },
@@ -225,7 +225,7 @@ test("closed recipe and capability reject altered endpoint, argv, secret, auth a
       ).toBe(false)
     }
     const unknown = structuredClone(f.envelope)
-    unknown.capabilities = ["alpha.unknown-official.v1"]
+    unknown.capabilities = ["codepuppy.unknown-official.v1"]
     unknown.components[0]!.capabilities = unknown.capabilities
     expect(
       (

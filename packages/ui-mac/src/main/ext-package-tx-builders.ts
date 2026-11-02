@@ -354,13 +354,13 @@ export function buildMcpTxItems(input: McpTxBuildInputV1): PackageTxBuildResultV
     ]),
   )
   const config = officialConfig?.config ?? (
-    input.payload.schema === "alpha.host-extension-package.payload.mcp-local.v1"
+    input.payload.schema === "codepuppy.host-extension-package.payload.mcp-local.v1"
       ? {
           type: "local",
           command: input.payload.behavior.command,
           environment: { ...input.payload.behavior.environment, ...refs },
         }
-      : input.payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1"
+      : input.payload.schema === "codepuppy.host-extension-package.payload.mcp-remote.v1"
         ? {
             type: "remote",
             url: input.payload.behavior.url,

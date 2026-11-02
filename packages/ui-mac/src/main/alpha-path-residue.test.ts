@@ -12,7 +12,7 @@
 // ── 这道闸**确切**守住什么 ────────────────────────────────────────────────────────────
 //
 // 守住:`git ls-files`(已跟踪 + 未被 .gitignore 忽略的新文件)列出的、路径匹配
-//       `packages/**/src/**` 的**每一个文件**(不限扩展名 —— 33 处 `vnd.alpha.*` 就住在
+//       `packages/**/src/**` 的**每一个文件**(不限扩展名 —— 残留的 `vnd.alpha.*` 就住在
 //       `.json` 里),排除 `*.test.ts` / `*.cases.ts` / `*.spec.ts`。
 //
 // 守不住(明说,别当成它守住了):
@@ -112,16 +112,16 @@ describe("`.alpha` 残留登记表双向门 (#1206)", () => {
     // 三个真的有残留的包都要进扫描面 —— 少一个,那个包上的禁令就恒真。
     for (const prefix of ["packages/ext/src/", "packages/ui-mac/src/main/", "packages/ui-mac/src/shared/"])
       expect(SCANNED.filter((path) => path.startsWith(prefix)).length, `${prefix} 一个文件都没扫到`).toBeGreaterThan(0)
-    // 非 .ts 文件必须在扫描面里:33 处媒体类型全住在 .json 中。
+    // 非 .ts 文件必须在扫描面里:残留的旧媒体类型全住在 .json 中。
     expect(SCANNED.some((path) => path.endsWith(".json"))).toBe(true)
   })
 
   test("扫描真的读到了内容(锚点文件在集合里且确实命中)", () => {
     // 两个独立包各取一个锚:一个是 retired-guard 代码行,一个是 media-type JSON 行。
+    // JSON 锚取 D5 历史目录样本:宿主契约族已按 alpha-web#283 改成 vnd.codepuppy.*,它是 src 下唯一
+    // 长期保留旧媒体类型的 JSON(随包签名快照里的那几处会随 RC 前的同步消失,不适合当锚)。
     expect(HIT_KEYS.has("packages/ext/src/project-config.ts:30")).toBe(true)
-    expect(
-      HITS.some((h) => h.path.endsWith("host-extension-package.registry.v1.json") && h.text.includes("vnd.alpha.")),
-    ).toBe(true)
+    expect(HITS.some((h) => h.path.endsWith("d5-old-catalog.json") && h.text.includes("vnd.alpha."))).toBe(true)
   })
 
   test("检测器认得出违规写法、且不误伤新名字(自我变异)", () => {

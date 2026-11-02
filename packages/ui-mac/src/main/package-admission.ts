@@ -631,7 +631,7 @@ async function resolvePreparedPackage(
       kind === "mcp" &&
       (retiredCommunityOfficeFor({ id: selected.prelude.packageId }) ||
         retiredCommunityOfficeFor({ id: component.id, name }) ||
-        (entry.payload.schema === "alpha.host-extension-package.payload.mcp-local.v1" &&
+        (entry.payload.schema === "codepuppy.host-extension-package.payload.mcp-local.v1" &&
           isRetiredOfficeMcp(name, { type: "local", command: entry.payload.behavior.command })))
     )
       return {
@@ -690,7 +690,7 @@ async function resolvePreparedPackage(
 
     // ── agent:一份 markdown,形状与 `#828` 之前逐字相同 ────────────────────────────────
     const agentRef =
-      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1"
+      entry.payload.schema === "codepuppy.host-extension-package.payload.agent.v1"
         ? entry.payload.behavior.asset
         : undefined
     const asset = agentRef ? await fetchVerified(agentRef) : undefined
@@ -704,7 +704,7 @@ async function resolvePreparedPackage(
     // **不解析任何 frontmatter**:provider 语义映射唯一真源在发布端(alpha-web),到达这里的
     // template 已是 provider-neutral 的纯模板字节。取用与双查走 agent 同一条 fetchVerified。
     const commandBehavior =
-      entry.payload.schema === "alpha.host-extension-package.payload.command.v1"
+      entry.payload.schema === "codepuppy.host-extension-package.payload.command.v1"
         ? entry.payload.behavior
         : undefined
     const commandTemplate = commandBehavior ? await fetchVerified(commandBehavior.template) : undefined
@@ -739,7 +739,7 @@ async function resolvePreparedPackage(
     // CAS 零写入。少了它而自己往 staging 写,`../` 这类路径在 `verifyStagedItem` 走目录**之前**
     // 就已经写到 staging 之外去了 —— 那道结构闸看不见已经逃出去的东西。
     const skillRefs =
-      entry.payload.schema === "alpha.host-extension-package.payload.skill.v1"
+      entry.payload.schema === "codepuppy.host-extension-package.payload.skill.v1"
         ? entry.payload.behavior.files
         : undefined
     let assetFiles: TxFileSpec[] | undefined

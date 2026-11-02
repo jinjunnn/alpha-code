@@ -28,7 +28,7 @@ import type {
  *    Releasing the last binding is not a reason to disconnect — revoking access is a separate,
  *    explicit user action, because the durable side effect lives at the provider, not here.
  */
-export const ALPHA_CONNECTION_PREREQUISITE_PROFILE_V1 = "alpha.connection.v1" as const
+export const ALPHA_CONNECTION_PREREQUISITE_PROFILE_V1 = "codepuppy.connection.v1" as const
 
 export const ALPHA_CONNECTION_RECORD_SCHEMA_V1 = "alpha.connection-record.v1" as const
 
@@ -211,7 +211,7 @@ export function decodePackageConnectionPrerequisiteProfileV1(
   payload: PackageProfilePayloadV1,
 ): PackageConnectionPrerequisiteProfileV1 {
   if (
-    payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1" ||
+    payload.schema !== "codepuppy.host-extension-package.payload.mcp-remote.v1" ||
     payload.behavior.auth === "none" ||
     payload.behavior.auth.kind !== "alpha-connection"
   )

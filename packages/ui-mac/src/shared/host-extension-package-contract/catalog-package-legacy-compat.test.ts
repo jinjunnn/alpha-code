@@ -17,7 +17,7 @@ describe("Catalog 浅壳解析：新增同级键与空 entries", () => {
     const catalog = {
       version: "2026-07-30.1",
       entries: [{ id: "skill:legacy-safe" }],
-      packages: [{ schema: "alpha.host-extension-package.v1" }],
+      packages: [{ schema: "codepuppy.host-extension-package.v1" }],
     }
     const root = await signedCache(catalog)
     const cached = readCachedCatalog(root, { pubKeyB64: publicKey })
@@ -29,7 +29,7 @@ describe("Catalog 浅壳解析：新增同级键与空 entries", () => {
     const root = await signedCache({
       version: "2026-07-30.1",
       entries: [],
-      packages: [{ schema: "alpha.host-extension-package.v1" }],
+      packages: [{ schema: "codepuppy.host-extension-package.v1" }],
     })
     expect(readCachedCatalog(root, { pubKeyB64: publicKey })).toBeNull()
   })

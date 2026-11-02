@@ -10,7 +10,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "alpha.host-extension-package.payload.agent.v1"
+      "const": "codepuppy.host-extension-package.payload.agent.v1"
     },
     "behavior": {
       "type": "object",
