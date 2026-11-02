@@ -38,8 +38,4 @@ packages/ui-mac/src/main/factory-skills.ts	181	historical	标注的是「拆 REQ
 packages/ui-mac/src/main/factory-skills.ts	191	retired-guard	字符串字面量(诊断 reason),不是注释;语义正确 —— 它说的就是退役的 `.alpha` symlink。
 packages/ui-mac/src/main/index.ts	728	historical	同 factory-skills.ts:181 的同一操作(boot 期先行 reconcile 拆存量退役链);与 index.ts:748 的字符串字面量成对。
 packages/ui-mac/src/main/index.ts	748	retired-guard	字符串字面量(boot 日志行),不是注释;语义正确 —— 拆掉的正是退役的 `.alpha` symlink。
-packages/ui-mac/src/renderer/extensions/alpha-catalog.json	1972	signed-snapshot	随包签名快照里的旧宿主媒体类型(application/vnd.alpha.*)。宿主契约已按 alpha-web#283 改为 vnd.codepuppy.*;快照禁手编,RC 构建前由 sync-catalog-snapshot --from-dir 从网站重签后的分支同步,届时这一行消失,须同步删除。
-packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2001	signed-snapshot	随包签名快照里的旧宿主媒体类型(application/vnd.alpha.*)。宿主契约已按 alpha-web#283 改为 vnd.codepuppy.*;快照禁手编,RC 构建前由 sync-catalog-snapshot --from-dir 从网站重签后的分支同步,届时这一行消失,须同步删除。
-packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2033	signed-snapshot	随包签名快照里的旧宿主媒体类型(application/vnd.alpha.*)。宿主契约已按 alpha-web#283 改为 vnd.codepuppy.*;快照禁手编,RC 构建前由 sync-catalog-snapshot --from-dir 从网站重签后的分支同步,届时这一行消失,须同步删除。
-packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2068	signed-snapshot	随包签名快照里的旧宿主媒体类型(application/vnd.alpha.*)。宿主契约已按 alpha-web#283 改为 vnd.codepuppy.*;快照禁手编,RC 构建前由 sync-catalog-snapshot --from-dir 从网站重签后的分支同步,届时这一行消失,须同步删除。
 packages/ui-mac/src/renderer/extensions/testvectors/d5-old-catalog.json	10	media-type	alpha-web#255 的 D5 目录样本取自 2026-08-31.2 owner-catalog.json(来源与 SHA-256 见 catalog-installable-view.test.ts:124);本行保留已发布包的 application/vnd.alpha.* 媒体类型及资产 URL 原值,不是退役项目根,改名会使回归样本偏离真实输入。

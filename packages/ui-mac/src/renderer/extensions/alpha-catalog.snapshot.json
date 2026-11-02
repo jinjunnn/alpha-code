@@ -1,9 +1,9 @@
 {
   "v": 1,
-  "version": "2026-10-31.1",
+  "version": "2026-11-01.1",
   "entries": 26,
-  "sha256": "4ffc5536f7b58c8c5209cb2f4a6e35e234e4268882ae9845b8c6376e6ba7248a",
-  "source": "https://codepuppy.cn/catalog/v1/catalog.json",
-  "fetchedAt": "2026-10-31T13:32:09.572Z",
+  "sha256": "13833e777cecf1fa3f4257ab80869474ca185e23b78a89432b20379c6df9f36a",
+  "source": "file:/Users/tide/app/alpha-web/.worktrees/web283/public/catalog/v1/catalog.json",
+  "fetchedAt": "2026-11-02T03:15:06.001Z",
   "_note": "由 scripts/sync-catalog-snapshot.mjs 生成;alpha-catalog.json 禁手编(REQ-046),上架/撤架唯一动作在 alpha-web catalog-src。"
 }

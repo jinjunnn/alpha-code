@@ -1,10 +1,10 @@
 {
   "v": 1,
-  "catalogVersion": "2026-10-31.1",
-  "lockSha256": "2c22a3caf0bd7ed531765b57d92360762df0b1426ec2abc30e158ef24264a916",
-  "noticeSha256": "9a9e109f1a4210e8e9c1e107daba32e6ba4be96fe961a9e50c9238385b3a6257",
+  "catalogVersion": "2026-11-01.1",
+  "lockSha256": "d1218a80fe0c866fa7ef42d3bb4fcee8b0f876c529f0e2f000d0d6eef7b4e13a",
+  "noticeSha256": "8ac4cc1d0ffb8e068888acdfefb36787c2b0d9bbefd382277a8bfb7dc5321211",
   "blobCount": 98,
   "blobBytes": 5670569,
-  "source": "remote",
+  "source": "alpha-web-checkout",
   "_note": "由 scripts/sync-extension-seed.mjs 生成;resources/extension-seed 禁手编(REQ-102 #194)。stable 晋级后必须重跑本脚本 + sync-catalog-snapshot.mjs(extension-seed-snapshot.test.ts 互钉守卫)。"
 }
