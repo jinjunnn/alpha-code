@@ -4,6 +4,12 @@
   "title": "Alpha Wire Contracts v1",
   "oneOf": [
     {
+      "$ref": "#/$defs/ImageGenerationInputV1"
+    },
+    {
+      "$ref": "#/$defs/ImageGenerationResultV1"
+    },
+    {
       "$ref": "#/$defs/TokenClaimsV1"
     },
     {
@@ -29,6 +35,12 @@
     },
     {
       "$ref": "#/$defs/ReservationResultV1"
+    },
+    {
+      "$ref": "#/$defs/PreauthCheckRequestV1"
+    },
+    {
+      "$ref": "#/$defs/PreauthCheckResultV1"
     },
     {
       "$ref": "#/$defs/PriceSnapshotV1"
@@ -65,6 +77,70 @@
     }
   ],
   "$defs": {
+    "ImageGenerationInputV1": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "ImageGenerationResultV1": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "const": "openai"
+        },
+        "model": {
+          "type": "string",
+          "const": "gpt-image-2.5-flare"
+        },
+        "width": {
+          "type": "number",
+          "const": 1024
+        },
+        "height": {
+          "type": "number",
+          "const": 1024
+        },
+        "image_count": {
+          "type": "number",
+          "const": 1
+        },
+        "reservation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "width",
+        "height",
+        "image_count",
+        "reservation_id",
+        "input_tokens",
+        "output_tokens"
+      ],
+      "additionalProperties": false
+    },
     "TokenClaimsV1": {
       "oneOf": [
         {
@@ -115,11 +191,11 @@
             },
             "iss": {
               "type": "string",
-              "const": "alpha-web"
+              "const": "codepuppy-web"
             },
             "aud": {
               "type": "string",
-              "const": "alpha-platform-api"
+              "const": "codepuppy-platform-api"
             },
             "token_use": {
               "type": "string",
@@ -204,11 +280,11 @@
             },
             "iss": {
               "type": "string",
-              "const": "alpha-web"
+              "const": "codepuppy-web"
             },
             "aud": {
               "type": "string",
-              "const": "alpha-platform-account"
+              "const": "codepuppy-platform-account"
             },
             "token_use": {
               "type": "string",
@@ -281,11 +357,11 @@
             },
             "iss": {
               "type": "string",
-              "const": "alpha-web"
+              "const": "codepuppy-web"
             },
             "aud": {
               "type": "string",
-              "const": "alpha-platform-upload"
+              "const": "codepuppy-platform-upload"
             },
             "token_use": {
               "type": "string",
@@ -433,11 +509,11 @@
             },
             "iss": {
               "type": "string",
-              "const": "alpha-platform"
+              "const": "codepuppy-platform"
             },
             "aud": {
               "type": "string",
-              "const": "alpha-platform-model"
+              "const": "codepuppy-platform-model"
             },
             "token_use": {
               "type": "string",
@@ -515,7 +591,7 @@
             },
             "iss": {
               "type": "string",
-              "const": "alpha-platform"
+              "const": "codepuppy-platform"
             },
             "aud": {
               "type": "string",
@@ -1227,6 +1303,29 @@
     "ReservationRequestV1": {
       "type": "object",
       "properties": {
+        "document": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "docx",
+                "xlsx",
+                "pptx",
+                "html"
+              ]
+            },
+            "input_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "format",
+            "input_sha256"
+          ],
+          "additionalProperties": false
+        },
         "schema_version": {
           "type": "number",
           "const": 1
@@ -1239,9 +1338,14 @@
         "action_id": {
           "type": "string",
           "enum": [
+            "tool.document_generate",
+            "tool.image_generate",
             "model.invoke.chat",
             "model.invoke.messages",
-            "tool.web_search"
+            "tool.web_search",
+            "tool.web_fetch",
+            "tool.vision",
+            "tool.decide"
           ]
         },
         "model_id": {
@@ -1302,6 +1406,39 @@
             "maxLength": 256
           }
         },
+        "multimodal_parts": {
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "part": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "file",
+                  "audio",
+                  "video"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 1000
+              },
+              "units": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000
+              }
+            },
+            "required": [
+              "part",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
         "job_id": {
           "type": "string",
           "minLength": 1,
@@ -1340,6 +1477,21 @@
         "code": {
           "type": "string",
           "enum": [
+            "document_request_invalid",
+            "document_backend_unavailable",
+            "document_quality_evidence_invalid",
+            "document_quality_package_invalid",
+            "document_quality_render_invalid",
+            "document_quality_content_mismatch",
+            "document_quality_review_rejected",
+            "document_data_invalid",
+            "image_request_invalid",
+            "image_backend_unavailable",
+            "image_upstream_failed",
+            "image_safety_rejected",
+            "image_region_rejected",
+            "image_artifact_failed",
+            "pipeline_output_empty",
             "job_max_iter_exceeded",
             "job_max_tokens_exceeded",
             "account_allowance_exhausted",
@@ -1364,23 +1516,489 @@
       ],
       "additionalProperties": false
     },
-    "PriceSnapshotV1": {
+    "PreauthCheckRequestV1": {
       "type": "object",
       "properties": {
         "schema_version": {
           "type": "number",
           "const": 1
         },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "action": {
+          "type": "object",
+          "properties": {
+            "action_id": {
+              "type": "string",
+              "enum": [
+                "tool.document_generate",
+                "tool.image_generate",
+                "model.invoke.chat",
+                "model.invoke.messages",
+                "tool.web_search",
+                "tool.web_fetch",
+                "tool.vision",
+                "tool.decide"
+              ]
+            },
+            "model_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "requested_max_tokens": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "document": {
+              "type": "object",
+              "properties": {
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "docx",
+                    "xlsx",
+                    "pptx",
+                    "html"
+                  ]
+                },
+                "input_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "format",
+                "input_sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action_id",
+            "model_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "tenant_id"
+      ],
+      "additionalProperties": false
+    },
+    "PreauthCheckResultV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "account": {
+          "type": "object",
+          "properties": {
+            "suspended": {
+              "type": "boolean"
+            },
+            "plan": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "none",
+                    "dev_bypass"
+                  ]
+                },
+                "tier": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "window5h": {
+                  "type": "object",
+                  "properties": {
+                    "remaining_credits": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "limit_credits": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "resets_in_min": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "remaining_credits",
+                    "limit_credits",
+                    "resets_in_min"
+                  ],
+                  "additionalProperties": false
+                },
+                "window7d": {
+                  "type": "object",
+                  "properties": {
+                    "remaining_credits": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "limit_credits": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "resets_in_min": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "remaining_credits",
+                    "limit_credits",
+                    "resets_in_min"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "status",
+                "tier"
+              ],
+              "additionalProperties": false
+            },
+            "wallet": {
+              "type": "object",
+              "properties": {
+                "balance_fen": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "available_fen": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "balance_fen",
+                "available_fen"
+              ],
+              "additionalProperties": false
+            },
+            "wallet_overflow": {
+              "type": "boolean"
+            },
+            "admission": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "boolean"
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "document_request_invalid",
+                    "document_backend_unavailable",
+                    "document_quality_evidence_invalid",
+                    "document_quality_package_invalid",
+                    "document_quality_render_invalid",
+                    "document_quality_content_mismatch",
+                    "document_quality_review_rejected",
+                    "document_data_invalid",
+                    "image_request_invalid",
+                    "image_backend_unavailable",
+                    "image_upstream_failed",
+                    "image_safety_rejected",
+                    "image_region_rejected",
+                    "image_artifact_failed",
+                    "pipeline_output_empty",
+                    "job_max_iter_exceeded",
+                    "job_max_tokens_exceeded",
+                    "account_allowance_exhausted",
+                    "account_wallet_insufficient",
+                    "account_suspended",
+                    "account_admission_rate_exceeded"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "ok"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "suspended",
+            "plan",
+            "wallet",
+            "wallet_overflow",
+            "admission"
+          ],
+          "additionalProperties": false
+        },
+        "action": {
+          "type": "object",
+          "properties": {
+            "action_id": {
+              "type": "string",
+              "enum": [
+                "tool.document_generate",
+                "tool.image_generate",
+                "model.invoke.chat",
+                "model.invoke.messages",
+                "tool.web_search",
+                "tool.web_fetch",
+                "tool.vision",
+                "tool.decide"
+              ]
+            },
+            "hold_fen": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "allowance_leg_fen": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "wallet_leg_fen": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "admission": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "boolean"
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "document_request_invalid",
+                    "document_backend_unavailable",
+                    "document_quality_evidence_invalid",
+                    "document_quality_package_invalid",
+                    "document_quality_render_invalid",
+                    "document_quality_content_mismatch",
+                    "document_quality_review_rejected",
+                    "document_data_invalid",
+                    "image_request_invalid",
+                    "image_backend_unavailable",
+                    "image_upstream_failed",
+                    "image_safety_rejected",
+                    "image_region_rejected",
+                    "image_artifact_failed",
+                    "pipeline_output_empty",
+                    "job_max_iter_exceeded",
+                    "job_max_tokens_exceeded",
+                    "account_allowance_exhausted",
+                    "account_wallet_insufficient",
+                    "account_suspended",
+                    "account_admission_rate_exceeded"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "ok"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action_id",
+            "hold_fen",
+            "allowance_leg_fen",
+            "wallet_leg_fen",
+            "admission"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "account"
+      ],
+      "additionalProperties": false
+    },
+    "PriceSnapshotV1": {
+      "type": "object",
+      "properties": {
+        "document_generation": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "const": "openai"
+            },
+            "upstream_model": {
+              "type": "string",
+              "const": "gpt-6.1-sol"
+            },
+            "service_tier": {
+              "type": "string",
+              "const": "default"
+            },
+            "input_usd_per_mtok": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cache_read_usd_per_mtok": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cache_write_usd_per_mtok": {
+              "type": "number",
+              "minimum": 0
+            },
+            "output_usd_per_mtok": {
+              "type": "number",
+              "minimum": 0
+            },
+            "container_usd_per_unit": {
+              "type": "number",
+              "minimum": 0
+            },
+            "container_memory": {
+              "type": "string",
+              "const": "1g"
+            },
+            "container_basis": {
+              "type": "string",
+              "const": "one-1gb-session-pending-verify"
+            },
+            "hold_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "hold_ttl_ms": {
+              "type": "number",
+              "const": 900000
+            },
+            "template_version": {
+              "type": "string",
+              "const": "v1"
+            },
+            "max_responses": {
+              "type": "number",
+              "const": 4
+            },
+            "output_caps": {
+              "type": "object",
+              "properties": {
+                "generate": {
+                  "type": "number",
+                  "const": 8000
+                },
+                "review": {
+                  "type": "number",
+                  "const": 2000
+                },
+                "repair": {
+                  "type": "number",
+                  "const": 8000
+                },
+                "final_review": {
+                  "type": "number",
+                  "const": 2000
+                }
+              },
+              "required": [
+                "generate",
+                "review",
+                "repair",
+                "final_review"
+              ],
+              "additionalProperties": false
+            },
+            "request": {
+              "type": "object",
+              "properties": {
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "docx",
+                    "xlsx",
+                    "pptx",
+                    "html"
+                  ]
+                },
+                "input_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "format",
+                "input_sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "provider",
+            "upstream_model",
+            "service_tier",
+            "input_usd_per_mtok",
+            "cache_read_usd_per_mtok",
+            "cache_write_usd_per_mtok",
+            "output_usd_per_mtok",
+            "container_usd_per_unit",
+            "container_memory",
+            "container_basis",
+            "hold_usd",
+            "hold_ttl_ms",
+            "template_version",
+            "max_responses",
+            "output_caps",
+            "request"
+          ],
+          "additionalProperties": false
+        },
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
         "formula_version": {
           "type": "string",
-          "const": "rev10"
+          "const": "rev11"
         },
         "action_id": {
           "type": "string",
           "enum": [
+            "tool.document_generate",
+            "tool.image_generate",
             "model.invoke.chat",
             "model.invoke.messages",
-            "tool.web_search"
+            "tool.web_search",
+            "tool.web_fetch",
+            "tool.vision",
+            "tool.decide"
           ]
         },
         "model_id": {
@@ -1392,7 +2010,11 @@
           "type": "string",
           "enum": [
             "model-route-pricing",
-            "web-search-unit"
+            "web-search-unit",
+            "vision-unit",
+            "decide-unit",
+            "image-generation-tokens",
+            "document-generation-usage"
           ]
         },
         "sell_fen_per_usd": {
@@ -1499,6 +2121,100 @@
                   "additionalProperties": false
                 }
               },
+              "multimodal": {
+                "maxItems": 4,
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "part": {
+                          "type": "string",
+                          "enum": [
+                            "image",
+                            "file",
+                            "audio",
+                            "video"
+                          ]
+                        },
+                        "count": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1000
+                        },
+                        "pricing": {
+                          "type": "string",
+                          "const": "token-covered"
+                        },
+                        "component_usd": {
+                          "type": "number",
+                          "const": 0
+                        }
+                      },
+                      "required": [
+                        "part",
+                        "count",
+                        "pricing",
+                        "component_usd"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "part": {
+                          "type": "string",
+                          "enum": [
+                            "image",
+                            "file",
+                            "audio",
+                            "video"
+                          ]
+                        },
+                        "count": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1000
+                        },
+                        "pricing": {
+                          "type": "string",
+                          "const": "per-unit"
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "page"
+                          ]
+                        },
+                        "units": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1000000
+                        },
+                        "usd_per_unit": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "component_usd": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "part",
+                        "count",
+                        "pricing",
+                        "unit",
+                        "units",
+                        "usd_per_unit",
+                        "component_usd"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
               "bound_usd": {
                 "type": "number",
                 "minimum": 0
@@ -1514,6 +2230,7 @@
               "max_out_tokens",
               "n_iter",
               "server_tool_caps",
+              "multimodal",
               "bound_usd"
             ],
             "additionalProperties": false
@@ -1522,6 +2239,62 @@
         "web_search_usd_per_call": {
           "type": "number",
           "minimum": 0
+        },
+        "vision_usd_per_call": {
+          "type": "number",
+          "minimum": 0
+        },
+        "decide_usd_per_call": {
+          "type": "number",
+          "minimum": 0
+        },
+        "image_generation": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "const": "openai"
+            },
+            "upstream_model": {
+              "type": "string",
+              "const": "gpt-image-2.5-flare"
+            },
+            "quality": {
+              "type": "string",
+              "const": "medium"
+            },
+            "size": {
+              "type": "string",
+              "const": "1024x1024"
+            },
+            "output_format": {
+              "type": "string",
+              "const": "png"
+            },
+            "text_input_usd_per_mtok": {
+              "type": "number",
+              "minimum": 0
+            },
+            "image_output_usd_per_mtok": {
+              "type": "number",
+              "minimum": 0
+            },
+            "hold_usd": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "provider",
+            "upstream_model",
+            "quality",
+            "size",
+            "output_format",
+            "text_input_usd_per_mtok",
+            "image_output_usd_per_mtok",
+            "hold_usd"
+          ],
+          "additionalProperties": false
         },
         "hold_fen": {
           "type": "integer",
@@ -1537,6 +2310,11 @@
               "maximum": 9007199254740991
             },
             "tool_component_fen": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "multimodal_component_fen": {
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -1579,6 +2357,7 @@
           "required": [
             "model_component_fen",
             "tool_component_fen",
+            "multimodal_component_fen",
             "allowance_leg_credits",
             "wallet_leg_fen",
             "window5_id",
@@ -1605,6 +2384,137 @@
     "SettlementRequestV1": {
       "type": "object",
       "properties": {
+        "document": {
+          "type": "object",
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "responses": {
+              "maxItems": 4,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "response_id": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "pattern": "^resp_[A-Za-z0-9]+$"
+                  },
+                  "model": {
+                    "type": "string",
+                    "const": "gpt-6.1-sol"
+                  },
+                  "usage": {
+                    "type": "object",
+                    "properties": {
+                      "input_tokens": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "input_tokens_details": {
+                        "type": "object",
+                        "properties": {
+                          "cached_tokens": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "cache_write_tokens": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "cached_tokens",
+                          "cache_write_tokens"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "output_tokens": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "output_tokens_details": {
+                        "type": "object",
+                        "properties": {
+                          "reasoning_tokens": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "reasoning_tokens"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "total_tokens": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "input_tokens",
+                      "input_tokens_details",
+                      "output_tokens",
+                      "output_tokens_details",
+                      "total_tokens"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "response_id",
+                  "model",
+                  "usage"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "containers": {
+              "minItems": 1,
+              "maxItems": 1,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "container_id": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "pattern": "^cntr_[A-Za-z0-9]+$"
+                  },
+                  "units": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "basis": {
+                    "type": "string",
+                    "const": "one-1gb-session-pending-verify"
+                  }
+                },
+                "required": [
+                  "container_id",
+                  "units",
+                  "basis"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "operation_id",
+            "responses",
+            "containers"
+          ],
+          "additionalProperties": false
+        },
         "schema_version": {
           "type": "number",
           "const": 1
@@ -1617,9 +2527,14 @@
         "action_id": {
           "type": "string",
           "enum": [
+            "tool.document_generate",
+            "tool.image_generate",
             "model.invoke.chat",
             "model.invoke.messages",
-            "tool.web_search"
+            "tool.web_search",
+            "tool.web_fetch",
+            "tool.vision",
+            "tool.decide"
           ]
         },
         "model_id": {
@@ -1734,21 +2649,18 @@
         },
         "type": {
           "type": "string",
-          "const": "settlement"
+          "const": "settlement_ref"
         },
-        "capability_token": {
+        "reservation_id": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 8192
-        },
-        "payload": {
-          "$ref": "#/$defs/SettlementRequestV1"
+          "maxLength": 256
         }
       },
       "required": [
         "schema_version",
         "type",
-        "payload"
+        "reservation_id"
       ],
       "additionalProperties": false
     },
@@ -2493,6 +3405,25 @@
             "schema_version",
             "allowed_tools",
             "denied_paths"
+          ],
+          "additionalProperties": false
+        },
+        "admitted_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "max_wall_clock_sec": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 3600
+            }
+          },
+          "required": [
+            "max_wall_clock_sec"
           ],
           "additionalProperties": false
         }

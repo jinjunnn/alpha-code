@@ -226,7 +226,7 @@ export type AccountPlan =
       renewsAt: string
       daysLeft: number
     }
-  // Inactive plan. `alpha.web-account.summary.v1` requires only { id, status } on a plan, leaves
+  // Inactive plan. `codepuppy.web-account.summary.v1` requires only { id, status } on a plan, leaves
   // `name` optional, and constrains `id` to any non-empty string — and alpha-platform#106's
   // emptyPlan() emits { id: "none", name: "None", status: "none" }. Narrowing this to a literal
   // `id: "none"` with no name would make every plan-less account decode as contract-incompatible.

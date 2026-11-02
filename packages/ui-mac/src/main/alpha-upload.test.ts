@@ -62,8 +62,8 @@ describe("main upload admission and one-shot consent", () => {
         const manifest = JSON.parse(input.manifestJson) as { manifest_id: string; egress: unknown }
         return jwt({
           schema_version: 1,
-          iss: "alpha-web",
-          aud: "alpha-platform-upload",
+          iss: "codepuppy-web",
+          aud: "codepuppy-platform-upload",
           sub: "tenant-a",
           token_use: "upload_consent",
           purpose: "artifact.upload",
@@ -133,8 +133,8 @@ describe("main upload admission and one-shot consent", () => {
         const manifest = JSON.parse(input.manifestJson) as { manifest_id: string; egress: unknown }
         return jwt({
           schema_version: 1,
-          iss: "alpha-web",
-          aud: "alpha-platform-upload",
+          iss: "codepuppy-web",
+          aud: "codepuppy-platform-upload",
           sub: "tenant-a",
           token_use: "upload_consent",
           purpose: "artifact.upload",
@@ -222,8 +222,8 @@ describe("main upload admission and one-shot consent", () => {
         const manifest = JSON.parse(input.manifestJson) as { manifest_id: string; egress: unknown }
         return jwt({
           schema_version: 1,
-          iss: "alpha-web",
-          aud: "alpha-platform-upload",
+          iss: "codepuppy-web",
+          aud: "codepuppy-platform-upload",
           sub: "tenant-a",
           token_use: "upload_consent",
           purpose: "artifact.upload",

@@ -59,11 +59,11 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "1b9a302e379c9cd467b57f9561e5e5420af4faf9e042df44b0d3606d11094f32",
+        "reportSha256": "0f3279f7156a6e2f825c85ebc0a8c500524127389478383cc1c01daa7b919359",
         "verdict": "compatible"
       },
       "componentId": "mcp:generic-remote-oauth",
-      "declarationSha256": "82a7b4fc8de30497685e9479339365a1b4d57360b1d9ec0adbdde07d2c243672",
+      "declarationSha256": "c7e739cf79e74df366670d2238ab1bb66d19f2288bcbb8f7bf480880bd642d14",
       "packageId": "package:generic-remote-oauth",
       "presentation": {
         "description": "Generic compiler corpus input with engine-owned MCP OAuth.",
@@ -76,7 +76,7 @@
       },
       "version": "1.0.0"
     },
-    "schema": "alpha.normalized-package-build-record.v1"
+    "schema": "codepuppy.normalized-package-build-record.v1"
   },
   "payloads": {
     "mcp:generic-remote-oauth": {
@@ -98,5 +98,5 @@
       "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
     }
   },
-  "schema": "alpha.extension-package.compiled-vector.v1"
+  "schema": "codepuppy.extension-package.compiled-vector.v1"
 }

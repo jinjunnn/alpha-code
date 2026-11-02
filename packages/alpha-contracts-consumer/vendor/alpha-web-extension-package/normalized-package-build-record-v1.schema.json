@@ -217,7 +217,7 @@
       "type": "object"
     },
     "schema": {
-      "const": "alpha.normalized-package-build-record.v1"
+      "const": "codepuppy.normalized-package-build-record.v1"
     }
   },
   "required": [

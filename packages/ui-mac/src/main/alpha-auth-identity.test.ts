@@ -7,8 +7,8 @@ const jwt = (value: unknown) =>
 
 const claims = (sub: unknown) => ({
   schema_version: 1,
-  iss: "alpha-web",
-  aud: "alpha-platform-api",
+  iss: "codepuppy-web",
+  aud: "codepuppy-platform-api",
   sub,
   token_use: "platform_access",
   purpose: "cloud.dispatch",

@@ -109,8 +109,8 @@ function jwt(purpose: RoutePurpose, generation = "old", sub = "tenant-a") {
   return `${Buffer.from("{}").toString("base64url")}.${Buffer.from(
     JSON.stringify({
       schema_version: 1,
-      iss: "alpha-web",
-      aud: "alpha-platform-api",
+      iss: "codepuppy-web",
+      aud: "codepuppy-platform-api",
       sub,
       token_use: "platform_access",
       purpose,

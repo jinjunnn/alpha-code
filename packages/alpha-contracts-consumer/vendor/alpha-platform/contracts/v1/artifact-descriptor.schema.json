@@ -130,40 +130,102 @@
       "additionalProperties": false
     },
     "provenance": {
-      "type": "object",
-      "properties": {
-        "producer": {
-          "type": "string",
-          "enum": [
-            "pipeline",
-            "bounded-agent"
-          ]
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "producer": {
+              "type": "string",
+              "enum": [
+                "pipeline",
+                "bounded-agent"
+              ]
+            },
+            "jobId": {
+              "type": "string",
+              "pattern": "^job_[a-z0-9_]{4,64}$"
+            },
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "step": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "createdAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "turn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "originLocator": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "generationSummary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "producer",
+            "jobId"
+          ],
+          "additionalProperties": false
         },
-        "jobId": {
-          "type": "string",
-          "pattern": "^job_[a-z0-9_]{4,64}$"
-        },
-        "kind": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "step": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "createdAt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
+        {
+          "type": "object",
+          "properties": {
+            "producer": {
+              "type": "string",
+              "const": "desktop"
+            },
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "step": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "createdAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "turn": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "originLocator": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "generationSummary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "producer"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "producer",
-        "jobId"
-      ],
-      "additionalProperties": false
+      ]
     }
   },
   "required": [

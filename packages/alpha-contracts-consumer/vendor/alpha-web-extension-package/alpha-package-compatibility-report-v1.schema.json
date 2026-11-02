@@ -47,7 +47,7 @@
           "const": "485f1de9f56b866431f87ce4b7956b73fb65d650c3b8abddd7dd4279c91326ab"
         },
         "commit": {
-          "const": "1167048b84a79c3deb7957cd65ec4a5fa3050835"
+          "const": "133f463d93664269db0cf91f1c1ff7d7887d6bf9"
         },
         "repo": {
           "const": "jinjunnn/alpha-code"
@@ -71,7 +71,7 @@
       "type": "string"
     },
     "schema": {
-      "const": "alpha.package-compatibility-report.v1"
+      "const": "codepuppy.package-compatibility-report.v1"
     },
     "verdict": {
       "enum": [

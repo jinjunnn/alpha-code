@@ -59,11 +59,11 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "38a0b75d30c24256605e86f8111aa62d02088fc5ec3534896319ffe2525ea460",
+        "reportSha256": "7316cac6b796b75f54a352ed26670aedd5cf9f94d34684a2205797ad5920b6d0",
         "verdict": "compatible"
       },
       "componentId": "mcp:generic-remote-connection",
-      "declarationSha256": "b4e243935100eb50e687c1f2aed347924eccd6e13827f8df7c27fd72a6340184",
+      "declarationSha256": "36ce49578d7888d0ee7f3cbc3b24b58a41fc520fa481ecb588dce12acba314aa",
       "packageId": "package:generic-remote-connection",
       "presentation": {
         "description": "Generic compiler corpus input with a host-owned Alpha Connection.",
@@ -76,7 +76,7 @@
       },
       "version": "1.0.0"
     },
-    "schema": "alpha.normalized-package-build-record.v1"
+    "schema": "codepuppy.normalized-package-build-record.v1"
   },
   "payloads": {
     "mcp:generic-remote-connection": {
@@ -98,5 +98,5 @@
       "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
     }
   },
-  "schema": "alpha.extension-package.compiled-vector.v1"
+  "schema": "codepuppy.extension-package.compiled-vector.v1"
 }

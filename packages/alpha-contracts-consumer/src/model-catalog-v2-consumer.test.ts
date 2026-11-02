@@ -77,12 +77,13 @@ describe("模型目录(V3 + BYOK v1)的独立 immutable pin", () => {
     }
 
     // 独立性的另一半:V1 bundle 的锁里**不再**有 model catalog,也没被这次代际切换重钉。
-    // (#400 把 V1 bundle 前移到 platform#255 的 9cf67bd —— 那是 V1 自己的合法跳,catalog pin 不动。)
+    // (#400 把 V1 bundle 前移到 platform#255 的 9cf67bd、alpha-web#283 再前移到 3f2f0dd —— 都是 V1 自己的
+    // 合法跳,catalog pin 不动。)
     const v1 = (await Bun.file(resolve(root, "alpha-platform-contract.lock.json")).json()) as {
       commit: string
       files: Array<{ path: string }>
     }
-    expect(v1.commit).toBe("9cf67bd994e4a44aad3af3fdd150df207f1a234f")
+    expect(v1.commit).toBe("3f2f0dda43066b42eac584d27e75844d42635369")
     expect(v1.files.some((file) => file.path.includes("model-catalog"))).toBe(false)
   })
 

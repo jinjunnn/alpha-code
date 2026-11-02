@@ -30,7 +30,9 @@ describe("immutable Alpha contract pin", () => {
     expect(lock.repo).toBe("jinjunnn/alpha-platform")
     // #400 / platform#255: idempotency_key becomes required, the public status enum gains
     // `cancelling`, and CloudJobCancelResultV1 appears. The desktop client moved in the same PR.
-    expect(lock.commit).toBe("9cf67bd994e4a44aad3af3fdd150df207f1a234f")
+    // alpha-web#283 (REQ-236): issuer/audience move to codepuppy-web / codepuppy-platform-*; the
+    // desktop decoder moved in the same PR (alpha-platform feat/283-codepuppy-identity @ 3f2f0dd).
+    expect(lock.commit).toBe("3f2f0dda43066b42eac584d27e75844d42635369")
     expect(ALPHA_CONTRACT_VERSION).toBe(1)
   })
 
@@ -145,7 +147,7 @@ describe("identity, account, and artifact fail closed", () => {
   })
 
   test("alpha auth rejects a non-platform-access TokenClaimsV1 union branch", async () => {
-    const value = { ...(await claims()), token_use: "job", aud: "alpha-cloud", iss: "alpha-platform" }
+    const value = { ...(await claims()), token_use: "job", aud: "alpha-cloud", iss: "codepuppy-platform" }
     expect(() => decodeTokenClaims(jwt(value))).toThrow(ContractIncompatibleError)
   })
 
@@ -181,7 +183,8 @@ describe("identity, account, and artifact fail closed", () => {
   // route purpose here.
   test("the platform_access branch still verifies unchanged, private issuer and all", async () => {
     const value = await claims()
-    expect(value.iss).toBe("alpha-web")
+    expect(value.iss).toBe("codepuppy-web")
+    expect(value.aud).toBe("codepuppy-platform-api")
     expect(value.token_use).toBe("platform_access")
     expect(() => decodeTokenClaims(jwt(value))).not.toThrow()
     const schema = (await Bun.file(
@@ -271,8 +274,8 @@ describe("identity, account, and artifact fail closed", () => {
   test("decodes the vendored alpha-web upload_consent branch and rejects a platform issuer", () => {
     const value: UploadConsentClaimsV1 = {
       schema_version: 1,
-      iss: "alpha-web",
-      aud: "alpha-platform-upload",
+      iss: "codepuppy-web",
+      aud: "codepuppy-platform-upload",
       sub: "tenant-a",
       token_use: "upload_consent",
       purpose: "artifact.upload",
@@ -285,7 +288,37 @@ describe("identity, account, and artifact fail closed", () => {
       egress: [{ egress_class: "explicit.file-upload", enforcement: "required" }],
     }
     expect(decodeUploadConsentClaims(jwt(value))).toEqual(value)
-    expect(() => decodeUploadConsentClaims(jwt({ ...value, iss: "alpha-platform" }))).toThrow(
+    expect(() => decodeUploadConsentClaims(jwt({ ...value, iss: "codepuppy-platform" }))).toThrow(
+      ContractIncompatibleError,
+    )
+  })
+
+  // alpha-web#283 (REQ-236, AC2): one cut-over, no dual acceptance. Each previous-brand value is
+  // swapped in alone onto an otherwise valid token, so a decoder that whitelists either the old
+  // issuer or the old audience again turns exactly one of these red.
+  test("previous-brand issuer or audience is rejected on both desktop credential paths", async () => {
+    const access = await claims()
+    expect(() => decodeTokenClaims(jwt(access))).not.toThrow()
+    expect(() => decodeTokenClaims(jwt({ ...access, iss: "alpha-web" }))).toThrow(ContractIncompatibleError)
+    expect(() => decodeTokenClaims(jwt({ ...access, aud: "alpha-platform-api" }))).toThrow(ContractIncompatibleError)
+    const consent = {
+      schema_version: 1,
+      iss: "codepuppy-web",
+      aud: "codepuppy-platform-upload",
+      sub: "tenant-a",
+      token_use: "upload_consent",
+      purpose: "artifact.upload",
+      scope: ["artifact.upload"],
+      iat: 1,
+      exp: 2,
+      jti: "consent-1",
+      manifest_id: "manifest-1",
+      manifest_sha256: "a".repeat(64),
+      egress: [{ egress_class: "explicit.file-upload", enforcement: "required" }],
+    }
+    expect(() => decodeUploadConsentClaims(jwt(consent))).not.toThrow()
+    expect(() => decodeUploadConsentClaims(jwt({ ...consent, iss: "alpha-web" }))).toThrow(ContractIncompatibleError)
+    expect(() => decodeUploadConsentClaims(jwt({ ...consent, aud: "alpha-platform-upload" }))).toThrow(
       ContractIncompatibleError,
     )
   })

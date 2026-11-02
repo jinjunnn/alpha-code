@@ -2,8 +2,8 @@ export type RoutePurpose = "model.invoke" | "cloud.dispatch" | "cloud.read" | "a
 
 export type TokenClaimsV1 = {
   schema_version: 1
-  iss: "alpha-web"
-  aud: "alpha-platform-api"
+  iss: "codepuppy-web"
+  aud: "codepuppy-platform-api"
   sub: string
   token_use: "platform_access"
   purpose: RoutePurpose
@@ -39,8 +39,8 @@ export type UploadManifestV1 = {
 
 export type UploadConsentClaimsV1 = {
   schema_version: 1
-  iss: "alpha-web"
-  aud: "alpha-platform-upload"
+  iss: "codepuppy-web"
+  aud: "codepuppy-platform-upload"
   sub: string
   token_use: "upload_consent"
   purpose: "artifact.upload"

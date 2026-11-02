@@ -157,11 +157,11 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "935e5f814164e3ef8c57c8a316d76ad5cdfc393cbf72afef26a39067bbc4c3b2",
+        "reportSha256": "5536978431fd7305158a1e55a894c94cc96c8583934f32fd19475489166d63aa",
         "verdict": "compatible"
       },
       "componentId": "agent:generic-bundle-agent",
-      "declarationSha256": "30a8ec893b96eb13e574e8149234981039736e53710272fae648e77a9ae2ee34",
+      "declarationSha256": "ae73fbf71a0f1f77a0dd468b6a4b4c14c3e94509ae872564a3f2cfd37d4c2891",
       "packageId": "package:generic-bundle",
       "presentation": {
         "description": "Generic flat Bundle corpus input: one agent root and three leaves.",
@@ -174,7 +174,7 @@
       },
       "version": "1.0.0"
     },
-    "schema": "alpha.normalized-package-build-record.v1"
+    "schema": "codepuppy.normalized-package-build-record.v1"
   },
   "payloads": {
     "agent:generic-bundle-agent": {
@@ -230,5 +230,5 @@
       "schema": "alpha.host-extension-package.payload.skill.v1"
     }
   },
-  "schema": "alpha.extension-package.compiled-vector.v1"
+  "schema": "codepuppy.extension-package.compiled-vector.v1"
 }

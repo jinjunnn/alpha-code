@@ -9,12 +9,12 @@
   "hostContract": {
     "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
     "artifactSha256": "485f1de9f56b866431f87ce4b7956b73fb65d650c3b8abddd7dd4279c91326ab",
-    "commit": "1167048b84a79c3deb7957cd65ec4a5fa3050835",
+    "commit": "133f463d93664269db0cf91f1c1ff7d7887d6bf9",
     "repo": "jinjunnn/alpha-code"
   },
-  "inputSha256": "ba5e55d84930546f798c8d4488dd139c79b61bffbf00064b3daa0bf0211133fa",
+  "inputSha256": "623f371b81804a0033be50dd651bee3c4c19dd95b56dbbeda2f2b6b877d0d8ee",
   "packageId": "package:generic-remote-mcp",
-  "schema": "alpha.package-compatibility-report.v1",
+  "schema": "codepuppy.package-compatibility-report.v1",
   "verdict": "compatible",
   "version": "1.0.0"
 }

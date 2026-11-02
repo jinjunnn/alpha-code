@@ -1,0 +1,98 @@
+{
+  "envelope": {
+    "capabilities": [],
+    "components": [
+      {
+        "capabilities": [],
+        "dependencies": [],
+        "id": "cloud:html",
+        "payloadRef": {
+          "bytes": 562,
+          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+          "sha256": "2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f.json"
+        },
+        "profileId": "cloud",
+        "profileVersion": 1,
+        "required": true
+      }
+    ],
+    "prelude": {
+      "packageId": "package:cloud-html",
+      "version": "1.0.0"
+    },
+    "presentation": {
+      "description": "…",
+      "displayName": "云端网页生成"
+    },
+    "root": "cloud:html",
+    "schema": "alpha.host-extension-package.v1"
+  },
+  "normalizedRecord": {
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/cloud.html/1.0.0",
+        "assetManifestSha256": null,
+        "capabilities": [],
+        "dependencies": [],
+        "id": "cloud:html",
+        "payloadRef": {
+          "bytes": 562,
+          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+          "sha256": "2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f.json"
+        },
+        "profileId": "cloud",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      }
+    ],
+    "root": {
+      "compatibility": {
+        "reportSha256": "94c9778175716416d82e5b34e0e97efb21ecc6d34ce09d534455a47fb157d879",
+        "verdict": "compatible"
+      },
+      "componentId": "cloud:html",
+      "declarationSha256": "eb9224209e51bc50728525f8a28901f2db6143667dbeb8b8780b9e7e20368bf1",
+      "packageId": "package:cloud-html",
+      "presentation": {
+        "description": "…",
+        "displayName": "云端网页生成"
+      },
+      "source": {
+        "kind": "alpha-native",
+        "publisher": "alpha",
+        "redistributable": true
+      },
+      "version": "1.0.0"
+    },
+    "schema": "codepuppy.normalized-package-build-record.v1"
+  },
+  "payloads": {
+    "cloud:html": {
+      "behavior": {
+        "fields": [
+          {
+            "control": "textarea",
+            "help": "…",
+            "label": "页面要求",
+            "maxChars": 4000,
+            "minChars": 1,
+            "name": "prompt",
+            "required": true
+          }
+        ],
+        "fixed": [],
+        "holdUsd": 0.3,
+        "pipelineKind": "image-generation",
+        "upstreamData": [
+          "发送你填写的页面要求(prompt)。",
+          "派发信封元数据:autonomy、kind;constraints.network 为 restricted;不带 budget"
+        ]
+      },
+      "schema": "alpha.host-extension-package.payload.cloud.v1"
+    }
+  },
+  "schema": "codepuppy.extension-package.compiled-vector.v1"
+}

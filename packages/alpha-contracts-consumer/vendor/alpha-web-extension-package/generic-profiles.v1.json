@@ -2,6 +2,16 @@
   "mappings": [
     {
       "declaration": {
+        "kind": "cloud"
+      },
+      "host": {
+        "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+        "profileId": "cloud",
+        "profileVersion": 1
+      }
+    },
+    {
+      "declaration": {
         "kind": "agent"
       },
       "host": {
@@ -53,5 +63,5 @@
       }
     }
   ],
-  "schema": "alpha.extension-package.generic-profiles.v1"
+  "schema": "codepuppy.extension-package.generic-profiles.v1"
 }

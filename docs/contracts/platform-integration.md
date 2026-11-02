@@ -38,7 +38,7 @@ The desktop consumes Alpha Platform v1 through
 `packages/alpha-contracts-consumer`. Its
 `alpha-platform-contract.lock.json` pins repository
 `jinjunnn/alpha-platform` at immutable commit
-`62c7aa6de5589cfcf2af00ecab69f1d3d176512b` and records the SHA-256 of every
+`3f2f0dda43066b42eac584d27e75844d42635369` and records the SHA-256 of every
 vendored schema, limit document, producer fixture, consumer fixture, and
 negative fixture. This pin is independent of `bun.lock`.
 
@@ -72,10 +72,10 @@ otherwise invalid versions fail closed; no compatibility shim is selected.
 
 The same package holds a second, independent pin for the surfaces `alpha-web`
 owns. `alpha-web-contract.lock.json` pins repository `jinjunnn/alpha-web` at
-immutable commit `b597f0d548db9ffafc6d6301e548dbd323c810ad` and records the
+immutable commit `6154104a4d48dec5943aa96d7d199b340650ef74` and records the
 SHA-256 of the two consumer fixtures that repository publishes for this desktop —
-endpoint discovery (`alpha.web-identity.endpoint-discovery.v1`) and the account
-summary display projection (`alpha.web-account.summary.v1`) — plus the account
+endpoint discovery (`codepuppy.web-identity.endpoint-discovery.v1`) and the account
+summary display projection (`codepuppy.web-account.summary.v1`) — plus the account
 summary schema itself. All three are vendored byte-identically under
 `vendor/alpha-web/`.
 
@@ -120,7 +120,9 @@ inactive-plan payloads.
    ID, and optionally a versioned endpoint discovery payload. Before
    persistence, the desktop decodes the JWT payload as the platform-access
    branch of `TokenClaimsV1` and requires v1 `iss`, `aud`, `token_use`,
-   `purpose`, and `scope` claims.
+   `purpose`, and `scope` claims. The issuer must be `codepuppy-web` and the
+   audience `codepuppy-platform-api`; the previous-brand values (`alpha-web`,
+   `alpha-platform-api`) are rejected, not accepted alongside (alpha-web#283).
 5. The desktop does not request or mint purpose-specific tokens in this
    requirement. It only consumes a received token, and each route asks for the
    matching purpose. A purpose/scope mismatch fails the route and publishes a
@@ -453,7 +455,7 @@ After confirmation, main reacquires a `cloud.dispatch` access token and
 requires the same valid `sub`, then calls the Alpha Web-owned
 `POST <web>/auth/upload-consent` issuance seam. The request carries the exact
 manifest JSON and its SHA-256. Alpha Web must return the vendored
-`upload_consent` JWT branch (`iss=alpha-web`, `aud=alpha-platform-upload`,
+`upload_consent` JWT branch (`iss=codepuppy-web`, `aud=codepuppy-platform-upload`,
 `token_use=upload_consent`, `purpose=artifact.upload`). Main checks its subject,
 expiry, manifest ID, manifest SHA-256, and egress declaration before sending
 the frozen request to Cloud Jobs with `X-Alpha-Upload-Consent`. The desktop

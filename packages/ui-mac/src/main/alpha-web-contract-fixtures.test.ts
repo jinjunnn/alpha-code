@@ -36,13 +36,15 @@ const accountSummaryFixture = () => fixture("contracts/web-account/fixtures/cons
 describe("alpha-web endpoint-discovery consumer fixture", () => {
   test("the pinned fixture decodes through the shipped decodeEndpointDiscovery", async () => {
     const published = await endpointDiscoveryFixture()
-    expect(published.contract).toBe("alpha.web-identity.endpoint-discovery.v1")
+    expect(published.contract).toBe("codepuppy.web-identity.endpoint-discovery.v1")
     expect(published.expect).toBe("valid")
 
+    // alpha-web#283 的 6154104 顺带带进了 #166 的品牌域名切换(web / account → codepuppy.cn);
+    // platform / cloud / mcp 的域名迁移归 alpha-platform#556,不在本 pin 里。
     expect(decodeEndpointDiscovery(published.value)).toEqual({
-      web: "https://alphacodeone.com",
+      web: "https://codepuppy.cn",
       platform: "https://alpha-gateway.tidelabs.click",
-      account: "https://account.alphacodeone.com",
+      account: "https://account.codepuppy.cn",
       cloud: "https://alpha-cloud.tidelabs.click",
       mcp: "https://alpha-cloud.tidelabs.click/mcp",
     })
@@ -63,7 +65,7 @@ describe("alpha-web endpoint-discovery consumer fixture", () => {
 describe("alpha-web account-summary consumer fixture", () => {
   test("the pinned fixture decodes through the shipped account-summary decoder", async () => {
     const published = await accountSummaryFixture()
-    expect(published.contract).toBe("alpha.web-account.summary.v1")
+    expect(published.contract).toBe("codepuppy.web-account.summary.v1")
     expect(published.expect).toBe("valid")
 
     // The production path receives a response body, so drive the decoder the way authedGet does.
@@ -96,7 +98,7 @@ describe("alpha-web account-summary consumer fixture", () => {
   test("the inactive-plan wire alpha-platform#106 emits decodes", () => {
     const wire = {
       schema_version: 1,
-      schema: "alpha.web-account.summary.v1",
+      schema: "codepuppy.web-account.summary.v1",
       balanceFen: 0,
       walletUsedFen: 0,
       plan: { id: "none", name: "None", status: "none" },
@@ -112,6 +114,28 @@ describe("alpha-web account-summary consumer fixture", () => {
     })
   })
 
+  // alpha-web#283 (REQ-236, AC1): the optional `schema` discriminator is constrained when present,
+  // and only the codepuppy ID is accepted — the previous-brand ID is a contract break, not a synonym.
+  test("an account summary carrying the previous-brand schema ID is contract-incompatible", () => {
+    const wire = {
+      schema_version: 1,
+      schema: "codepuppy.web-account.summary.v1",
+      balanceFen: 0,
+      walletUsedFen: 0,
+      plan: { id: "none", status: "none" },
+      usage: { todayTokens: 0, weekTokens: 0, tasksThisMonth: 0 },
+      usageSeries: [],
+    }
+    expect(() => decodeAccountSummary(JSON.stringify(wire))).not.toThrow()
+    let thrown: unknown
+    try {
+      decodeAccountSummary(JSON.stringify({ ...wire, schema: "alpha.web-account.summary.v1" }))
+    } catch (error) {
+      thrown = error
+    }
+    expect(isContractIncompatibleError(thrown)).toBe(true)
+  })
+
   // The class fix, not the instance: the schema permits EVERY plan property alongside
   // `status: "none"`, so a conforming payload carrying all of them must decode. What the inactive
   // AccountPlan variant cannot represent is discarded, never rejected.
@@ -119,7 +143,7 @@ describe("alpha-web account-summary consumer fixture", () => {
     const decoded = decodeAccountSummary(
       JSON.stringify({
         schema_version: 1,
-        schema: "alpha.web-account.summary.v1",
+        schema: "codepuppy.web-account.summary.v1",
         balanceFen: 0,
         walletUsedFen: 0,
         plan: {
@@ -188,7 +212,7 @@ describe("alpha-web account-summary consumer fixture", () => {
     ]
     const topOptional: Array<[string, unknown]> = [
       ["schema_version", 1],
-      ["schema", "alpha.web-account.summary.v1"],
+      ["schema", "codepuppy.web-account.summary.v1"],
     ]
     let checked = 0
     for (let p = 0; p < 1 << planOptional.length; p++)

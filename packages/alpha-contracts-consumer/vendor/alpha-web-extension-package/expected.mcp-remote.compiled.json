@@ -56,11 +56,11 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "e2588747cbbdef4608db95fb699fa4a2734d4c289fedef5f17893f331a42cd9f",
+        "reportSha256": "635f9c4f1d0006f7c492d2ebcb259c2d5c4d74eb76d0dd71f89abb25a0e5244d",
         "verdict": "compatible"
       },
       "componentId": "mcp:generic-remote",
-      "declarationSha256": "ba5e55d84930546f798c8d4488dd139c79b61bffbf00064b3daa0bf0211133fa",
+      "declarationSha256": "623f371b81804a0033be50dd651bee3c4c19dd95b56dbbeda2f2b6b877d0d8ee",
       "packageId": "package:generic-remote-mcp",
       "presentation": {
         "description": "Generic compiler corpus input.",
@@ -73,7 +73,7 @@
       },
       "version": "1.0.0"
     },
-    "schema": "alpha.normalized-package-build-record.v1"
+    "schema": "codepuppy.normalized-package-build-record.v1"
   },
   "payloads": {
     "mcp:generic-remote": {
@@ -92,5 +92,5 @@
       "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
     }
   },
-  "schema": "alpha.extension-package.compiled-vector.v1"
+  "schema": "codepuppy.extension-package.compiled-vector.v1"
 }

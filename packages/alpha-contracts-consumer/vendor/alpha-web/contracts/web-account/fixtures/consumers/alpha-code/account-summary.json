@@ -1,6 +1,6 @@
 {
   "kind": "schema",
-  "contract": "alpha.web-account.summary.v1",
+  "contract": "codepuppy.web-account.summary.v1",
   "expect": "valid",
   "note": "Synthetic values, real shape: the field set alpha-platform account-server summary() emits today for an active plan. It carries no schema_version/schema discriminator because the producer emits none; see contracts/web-account/CONTRACT.md.",
   "value": {

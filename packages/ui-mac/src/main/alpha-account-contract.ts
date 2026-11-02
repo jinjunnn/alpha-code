@@ -5,7 +5,7 @@
 // broken `AccountSummary` (NaN balances, `undefined.usedCredits`), and no test could see it.
 //
 // The accepted shape is alpha-web's published contract
-// `alpha.web-account.summary.v1` (contracts/web-account/account-summary.v1.schema.json).
+// `codepuppy.web-account.summary.v1` (contracts/web-account/account-summary.v1.schema.json).
 //
 // THE RULE, and it has exactly one exception: a payload the published schema allows is never
 // rejected. This decoder was twice too strict on the inactive-plan branch — first by demanding a
@@ -31,7 +31,7 @@
 import { ContractIncompatibleError } from "@alpha-code/contracts-consumer"
 import type { AccountPlan, AccountSummary, AccountWindow } from "../preload/types"
 
-/** Property sets declared by `alpha.web-account.summary.v1`; see the drift test named above. */
+/** Property sets declared by `codepuppy.web-account.summary.v1`; see the drift test named above. */
 export const SUMMARY_KEYS = ["schema_version", "schema", "balanceFen", "walletUsedFen", "plan", "usage", "usageSeries"]
 export const PLAN_KEYS = ["id", "name", "status", "window5h", "window7d", "renewsAt", "daysLeft"]
 export const WINDOW_KEYS = ["usedCredits", "limitCredits", "resetsInMin"]
@@ -128,7 +128,7 @@ export function decodeAccountSummary(text: string): AccountSummary {
   if (
     !onlyKeys(payload, SUMMARY_KEYS) ||
     (payload.schema_version !== undefined && payload.schema_version !== 1) ||
-    (payload.schema !== undefined && payload.schema !== "alpha.web-account.summary.v1") ||
+    (payload.schema !== undefined && payload.schema !== "codepuppy.web-account.summary.v1") ||
     !isCount(payload.balanceFen) ||
     !isCount(payload.walletUsedFen) ||
     !Array.isArray(payload.usageSeries)

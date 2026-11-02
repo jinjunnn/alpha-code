@@ -4,8 +4,8 @@
   "expect": "valid",
   "value": {
     "schema_version": 1,
-    "iss": "alpha-web",
-    "aud": "alpha-platform-api",
+    "iss": "codepuppy-web",
+    "aud": "codepuppy-platform-api",
     "sub": "tenant_fixture",
     "token_use": "platform_access",
     "purpose": "cloud.dispatch",
