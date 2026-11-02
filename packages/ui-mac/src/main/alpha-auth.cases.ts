@@ -873,7 +873,9 @@ describe("alpha-web#283 client id cut-over", () => {
     })
   }
 
-  test("login asks for client codepuppy with the codepuppy:// callback and records the client marker", async () => {
+  // 回调地址只经路由清单取(本文件不写 scheme 字面量 —— route-authority-ratchet 守这一条);
+  // 它的值是 `codepuppy://auth/callback`、旧 scheme 不再属于登录,由 route-manifest.test.ts 钉住。
+  test("login asks for client codepuppy with the manifest callback and records the client marker", async () => {
     initAuthEnv(dataPath)
     openedUrls.length = 0
     const exchanges: Record<string, unknown>[] = []
@@ -881,10 +883,10 @@ describe("alpha-web#283 client id cut-over", () => {
     await startAuth()
     const authorize = new URL(openedUrls.at(-1)!)
     expect(authorize.searchParams.get("client_id")).toBe("codepuppy")
-    expect(authorize.searchParams.get("redirect_uri")).toBe("codepuppy://auth/callback")
+    expect(authorize.searchParams.get("redirect_uri")).toBe(deepLinkFor.authCallback())
     const pkce: unknown = JSON.parse(readFileSync(join(dataPath, "alpha-pkce.json"), "utf8"))
     if (!isRecord(pkce) || typeof pkce.state !== "string") throw new Error("expected a persisted pkce state")
-    const callback = new URL("codepuppy://auth/callback")
+    const callback = new URL(deepLinkFor.authCallback())
     callback.searchParams.set("code", "code-1")
     callback.searchParams.set("state", pkce.state)
     expect(handleAuthDeepLink(callback.toString())).toBe(true)
@@ -894,13 +896,11 @@ describe("alpha-web#283 client id cut-over", () => {
       expect.objectContaining({
         grant_type: "authorization_code",
         client_id: "codepuppy",
-        redirect_uri: "codepuppy://auth/callback",
+        redirect_uri: deepLinkFor.authCallback(),
       }),
     ])
     expect(readStoredAuth()).toMatchObject({ clientId: "codepuppy" })
     expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "ready" })
-    // 旧回调 scheme 不再属于登录:不吞、不换 token。
-    expect(handleAuthDeepLink("code-puppy://auth/callback?code=old&state=old")).toBe(false)
   })
 
   test("credentials from the previous client are withheld from every platform seam until the forced refresh", async () => {
