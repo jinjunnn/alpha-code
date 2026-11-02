@@ -101,7 +101,7 @@ describe("#769 · check:vendor degrades without a producer checkout instead of b
         .some(
           (line) =>
             line.includes(`against ${LOCK}`) &&
-            line.includes("no staged checkout of jinjunnn/alpha-web@6154104a4d48dec5943aa96d7d199b340650ef74"),
+            line.includes("no staged checkout of jinjunnn/alpha-web@40520efbcd4871695f7749a792f839eb7882c0b9"),
         ),
     ).toBe(true)
     expect(clean.stdout).not.toContain("verified 36 contract artifacts from")

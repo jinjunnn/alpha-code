@@ -7,10 +7,10 @@
         "dependencies": [],
         "id": "cloud:html",
         "payloadRef": {
-          "bytes": 562,
-          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
-          "sha256": "2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f",
-          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f.json"
+          "bytes": 566,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.cloud.v1+json",
+          "sha256": "71c25bd220703e8a1d5638076ba840196915d58f9868d560bcfecf8993a79ff2",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/71c25bd220703e8a1d5638076ba840196915d58f9868d560bcfecf8993a79ff2.json"
         },
         "profileId": "cloud",
         "profileVersion": 1,
@@ -26,7 +26,7 @@
       "displayName": "云端网页生成"
     },
     "root": "cloud:html",
-    "schema": "alpha.host-extension-package.v1"
+    "schema": "codepuppy.host-extension-package.v1"
   },
   "normalizedRecord": {
     "components": [
@@ -37,10 +37,10 @@
         "dependencies": [],
         "id": "cloud:html",
         "payloadRef": {
-          "bytes": 562,
-          "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
-          "sha256": "2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f",
-          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/2eb903327b663aa8f69c35b7aa44eb99c89e6eb1b56ed1da7886eaf95e14fe8f.json"
+          "bytes": 566,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.cloud.v1+json",
+          "sha256": "71c25bd220703e8a1d5638076ba840196915d58f9868d560bcfecf8993a79ff2",
+          "url": "https://codepuppy.cn/catalog/assets/cloud.html/1.0.0/alpha-package/71c25bd220703e8a1d5638076ba840196915d58f9868d560bcfecf8993a79ff2.json"
         },
         "profileId": "cloud",
         "profileVersion": 1,
@@ -50,7 +50,7 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "94c9778175716416d82e5b34e0e97efb21ecc6d34ce09d534455a47fb157d879",
+        "reportSha256": "ba13ef1e68bb2c889e2ef40e464ee51558a2d5e6687915e6cc7afdecb7777229",
         "verdict": "compatible"
       },
       "componentId": "cloud:html",
@@ -91,7 +91,7 @@
           "派发信封元数据:autonomy、kind;constraints.network 为 restricted;不带 budget"
         ]
       },
-      "schema": "alpha.host-extension-package.payload.cloud.v1"
+      "schema": "codepuppy.host-extension-package.payload.cloud.v1"
     }
   },
   "schema": "codepuppy.extension-package.compiled-vector.v1"

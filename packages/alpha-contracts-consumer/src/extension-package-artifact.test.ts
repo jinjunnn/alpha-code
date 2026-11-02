@@ -45,9 +45,9 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "6154104a4d48dec5943aa96d7d199b340650ef74",
+      commit: "40520efbcd4871695f7749a792f839eb7882c0b9",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "359190f0279a15d9fdbbf64512ffd5c46085bc23392a5c03e42d35f63b1627f6",
+      artifactSha256: "862d5c7b766884fe0f0c6d744ff40ad015d482acd99f7bbcc05294897e65184b",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
@@ -57,7 +57,8 @@ describe("alpha-web extension package producer artifact pin", () => {
     // `#853` / alpha-web#98:36 → 40,增补的是 command 资产、Claude 发布端规则与两份负例。
     // `#1287` / alpha-web#194:40 → 40,只换 hostContract 自述与 republish 的宿主副本,不增不撤。
     // `#1527` / alpha-web#270:40 → 40,同上(宿主 registry 多了 cloud@1,producer 语料不增不撤)。
-    // alpha-web#283(6154104):40 → 42,带进 alpha-web#270 编译器半场的 cloud 正向语料与期望产物。
+    // alpha-web#283(6154104):40 → 42,带进 alpha-web#270 编译器半场的 cloud 正向语料与期望产物;
+    // 40520ef 按改名后的宿主合同重生语料,42 → 42。
     expect(lock.files.length).toBe(42)
     expect(lock.files.map((file) => file.path).sort()).toEqual(
       [...manifest.files.map((file) => file.path), "extension-package-producer-artifact.v1.json"].sort(),
@@ -158,8 +159,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     // 宿主 registry 是本仓自己的合同(`#1527` 起含 cloud@1),发布端只是逐字节 republish。
     // 标题里的「still excludes cloud」是冻结的 evidence key(见上),**事实已经变了**:alpha-web#270 的
     // 编译器半场(随 alpha-web#283 的 6154104 进来)把 cloud 转正 —— mappings 六个、excluded 里没有 cloud。
-    // capability 词表断言的是 alpha-web#283 之后的 `codepuppy.*`:发布端重钉本仓改名后的宿主合同之前,
-    // 这一条按设计是红的(与下面「宿主副本逐字节相同」那条同因)。
+    // capability 词表断言的是 alpha-web#283 之后的 `codepuppy.*`(发布端 40520ef 已重钉本仓改名后的宿主合同)。
     expect(registry.profiles.map((profile: { profileId: string }) => profile.profileId).sort()).toEqual([
       "agent",
       "cloud",

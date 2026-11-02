@@ -129,8 +129,9 @@ const UPSTREAMS = [
     // alpha-web#283(REQ-236):两份消费夹具与账户 schema 的契约 ID 改为 `codepuppy.*`;源为 alpha-web 分支
     // feat/283-codepuppy-identity 的 6154104(维护窗口内以 merge commit 合入,SHA 保持可达)。顺带吞下
     // b597f0d 之后从未 re-vendor 的端点发现品牌域名切换(web/account → codepuppy.cn)。
+    // 随后与扩展包一起前移到同一分支的 40520ef(这三份文件在 6154104..40520ef 之间字节不变)。
     repo: "jinjunnn/alpha-web",
-    commit: "6154104a4d48dec5943aa96d7d199b340650ef74",
+    commit: "40520efbcd4871695f7749a792f839eb7882c0b9",
     lock: "alpha-web-contract.lock.json",
     vendor: "vendor/alpha-web",
     sourceEnv: "ALPHA_WEB_CONTRACT_SOURCE",
@@ -150,7 +151,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "6154104a4d48dec5943aa96d7d199b340650ef74",
+    commit: "40520efbcd4871695f7749a792f839eb7882c0b9",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -158,7 +159,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "359190f0279a15d9fdbbf64512ffd5c46085bc23392a5c03e42d35f63b1627f6",
+    artifactSha256: "862d5c7b766884fe0f0c6d744ff40ad015d482acd99f7bbcc05294897e65184b",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
@@ -206,6 +207,9 @@ const UPSTREAMS = [
     // excluded 里),没有撤文件。**这一份仍按旧宿主合同(alpha.host-extension-package.*,宿主 aggregate
     // 485f1de9…)编译** —— 本仓同一分支把宿主合同改名之后,发布端要再钉一次本仓的宿主 artifact 并重生
     // 语料,然后这里再 re-vendor 一次;在那之前,读这份语料的消费侧用例按设计是红的。
+    // 发布端已重钉:同一分支的 40520ef 把 host pin 钉到本仓 59d64b185(宿主 aggregate 6aabd15c…)并按
+    // `codepuppy.host-extension-package.*` 重生语料,producer aggregate 862d5c7b…,语料 42 → 42
+    // (18 份改写,不增不撤)。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",

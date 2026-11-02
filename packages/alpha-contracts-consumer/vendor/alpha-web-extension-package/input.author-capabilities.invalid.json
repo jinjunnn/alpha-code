@@ -20,7 +20,7 @@
         "url": "https://MCP.EXAMPLE.COM"
       },
       "capabilities": [
-        "alpha.secret-prerequisite.v1"
+        "codepuppy.secret-prerequisite.v1"
       ],
       "id": "mcp:generic-remote",
       "kind": "mcp",

@@ -48,7 +48,7 @@ type StoredAuth = {
   /** access token 的签发寿命(ms)——B2 刷新提前量按它算(见 alpha-auth-clock.ts);旧凭证可缺。 */
   lifetimeMs?: number
   /** `#1195`(REQ-144 T2):登录铸的云 MCP 凭证(`token_use=mcp_access`,aud = …/mcp)。
-   *  不透明保存 —— 不经 `decodeTokenClaims`(那个 decoder 钉死 platform_access/alpha-platform-api,
+   *  不透明保存 —— 不经 `decodeTokenClaims`(那个 decoder 钉死 platform_access/codepuppy-platform-api,
    *  对本 token 结构性不适用);随每次信封轮换整体覆盖,信封缺席 ⇒ 清除(I6 fail-closed)。 */
   mcpAccessToken?: string
   /** REQ-160(`#1324`):对话存档上报面的凭证(alpha-web 令牌端点的**顶层兄弟字段**,不进
@@ -422,7 +422,7 @@ export function getAccessToken(purpose: RoutePurpose): string | undefined {
 }
 
 /** REQ-160(`#1324`)对话存档上报面的 bearer。MAIN-ONLY,与 `getAccessToken` 同样绝不给 renderer。
- *  它不经 `decodeTokenClaims` —— 那个 decoder 钉死 platform_access/alpha-platform-api,对本 token
+ *  它不经 `decodeTokenClaims` —— 那个 decoder 钉死 platform_access/codepuppy-platform-api,对本 token
  *  结构性不适用(与 `mcp_access_token` 同法)。缺席 = 不上报,不是报错。
  *
  *  R1 审计 BLOCKER:**已过期也当缺席**。信封整体轮换(TTL 15 分钟、约 10 分钟刷一轮),睡眠唤醒

@@ -1,12 +1,12 @@
 {
   "repo": "jinjunnn/alpha-web",
-  "commit": "6154104a4d48dec5943aa96d7d199b340650ef74",
+  "commit": "40520efbcd4871695f7749a792f839eb7882c0b9",
   "artifactPath": "contracts/extension-package/artifact",
-  "artifactSha256": "359190f0279a15d9fdbbf64512ffd5c46085bc23392a5c03e42d35f63b1627f6",
+  "artifactSha256": "862d5c7b766884fe0f0c6d744ff40ad015d482acd99f7bbcc05294897e65184b",
   "files": [
     {
       "path": "alpha-package-compatibility-report-v1.schema.json",
-      "sha256": "bb2c02077f4b61bc2af4b5c8ea29c62918c702948d25cf992483a0f8cea61e57"
+      "sha256": "6f0af78cc4a8adebf6db59130438ad3c96263232e9afe3d78177c949985b2292"
     },
     {
       "path": "alpha-package-declaration-v1.schema.json",
@@ -26,27 +26,27 @@
     },
     {
       "path": "claude-code.rules.v1.json",
-      "sha256": "793a9923eb184adea0538fc42ffe370c0dc4443b2269879fb18f81433d261d2d"
+      "sha256": "45eff4501633b4c259b9cb2628c68d7f43c87a3a3c1755221ac6245662aeb02d"
     },
     {
       "path": "expected.bundle.compiled.json",
-      "sha256": "d91ed0c5b6894aa5938dabd9957bb68d9c86e45b88a9758606cbe8b896664319"
+      "sha256": "f68fdb85e68b37d26eb8ac887220b7b3526e40892168332fd9d6d53cf5915019"
     },
     {
       "path": "expected.cloud.compiled.json",
-      "sha256": "98f2ea7214f4a5f9b303b608f61d21e0cd387f57e1bb38a6990ddc80b74208fe"
+      "sha256": "6153c4210b5a8c3595b14057ad1ffb91f9aeffb68b92953b720987c3ca3bb50c"
     },
     {
       "path": "expected.mcp-remote.compiled.json",
-      "sha256": "c54dce1edbcad521322be12238c9a26139a3b063f889f0df0e1403083fa78546"
+      "sha256": "7c4d1fb32a352dc936b015aeac675b78b6253c85896da820eb4ad5a8fccbc523"
     },
     {
       "path": "expected.remote-connection.compiled.json",
-      "sha256": "bc0215cd3323db97f50b4a804536fbb75f711a925b9ae9f66e8fcf27914f4ca3"
+      "sha256": "195f27355db8ae91a1de47fbd94c845fde9c45fbeb41d2aff1de81d5abc31e25"
     },
     {
       "path": "expected.remote-oauth.compiled.json",
-      "sha256": "592516d9ca12569cffd1d074b94c6c89a33f71272a20419f47beaa22eb639a93"
+      "sha256": "c5ebac03db69525e6894c19dd02a6fee0dcef9b97e18d0eb3d89b7ae6b4ddeb7"
     },
     {
       "path": "extension-package-error-v1.schema.json",
@@ -54,31 +54,31 @@
     },
     {
       "path": "extension-package-producer-artifact.v1.json",
-      "sha256": "cee3656fbc4759004e651e6c3ef652003d28e649d42e3bbc9ad49ab14cb3dff9"
+      "sha256": "9728a1c9b25f08ff49dd43204e6af7cb2cc5ad9817bdbda4b1a276a7b66ba939"
     },
     {
       "path": "generic-profiles.v1.json",
-      "sha256": "08dee649ba9d5936ca7e54df8b3c74d493ad58b4e0439e8003882a7e59b17c00"
+      "sha256": "e391e6bbc4f1134b812320a8b9ff00e3cd2ee4df4f8084789fec6f06416fc42e"
     },
     {
       "path": "generic-rules.v1.json",
-      "sha256": "34f4a5fd035d704f7424e9eb00076a2cf91e59bea83a4c837852a3912c47f1c5"
+      "sha256": "ade644313c3dface8402503f34003641e727d57f0dcfb00fd34d56ce13ce6b2c"
     },
     {
       "path": "host-contract-pin.v1.json",
-      "sha256": "89536f2014700158ef2e35d9ad3c3989190fcc97cee468348d28c5279e32c331"
+      "sha256": "cb19496e0e1ed82eb1e92e3601af615c951d77661ce03a95be1389a54f5b4f33"
     },
     {
       "path": "host-extension-package-artifact.v1.json",
-      "sha256": "b9c4d7cf35a0d72b87244af2f80455e5f9564c901674523e7125feebd37d7534"
+      "sha256": "ec194e98d3ffcdb3dcaadd5cb7f30eec04681261519ebbfa871d224c769065a6"
     },
     {
       "path": "host-extension-package.registry.v1.json",
-      "sha256": "0f8d8676de490f8a1860d41b372b4725f5af4fa779bf8b366f267e6dd562ca9a"
+      "sha256": "d17f4cbbf0bae0fd7acd71e2f792c0b05a25b01f472d63d963ac5cb903493005"
     },
     {
       "path": "input.author-capabilities.invalid.json",
-      "sha256": "8126b8bc569829afbfbdab0c506af8cc19989e0627da0fbc9f550bde978dfbda"
+      "sha256": "f0d6d0adc202d1f2d2692e3f2dcf1d98e70fad7a6576963449f3d9d4e7d8ea97"
     },
     {
       "path": "input.author-dependencies.invalid.json",
@@ -154,19 +154,19 @@
     },
     {
       "path": "normalized-package-build-record-v1.schema.json",
-      "sha256": "5a66b9f3f239081554d0a5b1b73ea551c5cccbd7c612957d4ecd61c98e145634"
+      "sha256": "a7b944bf83aeedcfb74e63a2317ecb32cc8c00f77e5716c162361cb93f187f3f"
     },
     {
       "path": "report.blocked.json",
-      "sha256": "2caf664114364430e66e7cb37ae5dd83f68b34b3e75a0f0d8fc10b14103b0fcf"
+      "sha256": "9fc29fd324673be8060bcd0ead6783d88f6cb616916a78d55b59126173d37d71"
     },
     {
       "path": "report.compatible.json",
-      "sha256": "635f9c4f1d0006f7c492d2ebcb259c2d5c4d74eb76d0dd71f89abb25a0e5244d"
+      "sha256": "d590edf2d2c77b5c55316e98f578f0227c4f0409c985dd090923cf97469437c6"
     },
     {
       "path": "report.review-required.json",
-      "sha256": "6f25a844b80d64a728f80e655be591786f85bc42ca9a6559ff4926d525e5de16"
+      "sha256": "390cbbaa5dfd3425fe434ee86d45ab26acc5d99c7148bcc25ffae2ee60a339e2"
     },
     {
       "path": "vectors.v1.json",

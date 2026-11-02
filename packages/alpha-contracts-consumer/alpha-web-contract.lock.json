@@ -1,6 +1,6 @@
 {
   "repo": "jinjunnn/alpha-web",
-  "commit": "6154104a4d48dec5943aa96d7d199b340650ef74",
+  "commit": "40520efbcd4871695f7749a792f839eb7882c0b9",
   "files": [
     {
       "path": "contracts/web-identity/fixtures/consumers/alpha-code/endpoint-discovery.json",

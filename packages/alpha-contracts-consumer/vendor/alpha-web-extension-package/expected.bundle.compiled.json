@@ -1,7 +1,7 @@
 {
   "envelope": {
     "capabilities": [
-      "alpha.secret-prerequisite.v1"
+      "codepuppy.secret-prerequisite.v1"
     ],
     "components": [
       {
@@ -13,10 +13,10 @@
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
-          "bytes": 372,
-          "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
-          "sha256": "ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8",
-          "url": "https://codepuppy.cn/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8.json"
+          "bytes": 376,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.agent.v1+json",
+          "sha256": "03c7e876474c1615547d812f9a2963be534a16c209ce8d0cb058c5b4bdcccbe2",
+          "url": "https://codepuppy.cn/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/03c7e876474c1615547d812f9a2963be534a16c209ce8d0cb058c5b4bdcccbe2.json"
         },
         "profileId": "agent",
         "profileVersion": 1,
@@ -27,10 +27,10 @@
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 386,
-          "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4",
-          "url": "https://codepuppy.cn/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4.json"
+          "bytes": 390,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+          "sha256": "295294afa6f25e1e0fa52964723e49d0e09508b6e564e9c1e4393f15d45cdb1c",
+          "url": "https://codepuppy.cn/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/295294afa6f25e1e0fa52964723e49d0e09508b6e564e9c1e4393f15d45cdb1c.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -38,15 +38,15 @@
       },
       {
         "capabilities": [
-          "alpha.secret-prerequisite.v1"
+          "codepuppy.secret-prerequisite.v1"
         ],
         "dependencies": [],
         "id": "mcp:generic-bundle-remote",
         "payloadRef": {
-          "bytes": 270,
-          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-          "sha256": "0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961",
-          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
+          "bytes": 274,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+          "sha256": "7338142e540aa0524244062ea9cd46e5987bcba260799b2bcba85021c179d4b2",
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/7338142e540aa0524244062ea9cd46e5987bcba260799b2bcba85021c179d4b2.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -57,10 +57,10 @@
         "dependencies": [],
         "id": "command:generic-bundle-command",
         "payloadRef": {
-          "bytes": 416,
-          "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
-          "sha256": "a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68",
-          "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68.json"
+          "bytes": 420,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.command.v1+json",
+          "sha256": "5e3a606c7bef93c86887dd5f16136245aafa31e34b6e2760d1279f5887d86e2e",
+          "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/5e3a606c7bef93c86887dd5f16136245aafa31e34b6e2760d1279f5887d86e2e.json"
         },
         "profileId": "command",
         "profileVersion": 1,
@@ -76,7 +76,7 @@
       "displayName": "Generic Bundle"
     },
     "root": "agent:generic-bundle-agent",
-    "schema": "alpha.host-extension-package.v1"
+    "schema": "codepuppy.host-extension-package.v1"
   },
   "normalizedRecord": {
     "components": [
@@ -91,10 +91,10 @@
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
-          "bytes": 372,
-          "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
-          "sha256": "ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8",
-          "url": "https://codepuppy.cn/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8.json"
+          "bytes": 376,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.agent.v1+json",
+          "sha256": "03c7e876474c1615547d812f9a2963be534a16c209ce8d0cb058c5b4bdcccbe2",
+          "url": "https://codepuppy.cn/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/03c7e876474c1615547d812f9a2963be534a16c209ce8d0cb058c5b4bdcccbe2.json"
         },
         "profileId": "agent",
         "profileVersion": 1,
@@ -108,10 +108,10 @@
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 386,
-          "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4",
-          "url": "https://codepuppy.cn/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4.json"
+          "bytes": 390,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.skill.v1+json",
+          "sha256": "295294afa6f25e1e0fa52964723e49d0e09508b6e564e9c1e4393f15d45cdb1c",
+          "url": "https://codepuppy.cn/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/295294afa6f25e1e0fa52964723e49d0e09508b6e564e9c1e4393f15d45cdb1c.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -122,15 +122,15 @@
         "assetDirectory": "catalog-src/assets/mcp.generic-bundle-remote/1.0.0",
         "assetManifestSha256": null,
         "capabilities": [
-          "alpha.secret-prerequisite.v1"
+          "codepuppy.secret-prerequisite.v1"
         ],
         "dependencies": [],
         "id": "mcp:generic-bundle-remote",
         "payloadRef": {
-          "bytes": 270,
-          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-          "sha256": "0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961",
-          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
+          "bytes": 274,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.mcp-remote.v1+json",
+          "sha256": "7338142e540aa0524244062ea9cd46e5987bcba260799b2bcba85021c179d4b2",
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/7338142e540aa0524244062ea9cd46e5987bcba260799b2bcba85021c179d4b2.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -144,10 +144,10 @@
         "dependencies": [],
         "id": "command:generic-bundle-command",
         "payloadRef": {
-          "bytes": 416,
-          "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
-          "sha256": "a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68",
-          "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68.json"
+          "bytes": 420,
+          "mediaType": "application/vnd.codepuppy.host-extension-package.command.v1+json",
+          "sha256": "5e3a606c7bef93c86887dd5f16136245aafa31e34b6e2760d1279f5887d86e2e",
+          "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/5e3a606c7bef93c86887dd5f16136245aafa31e34b6e2760d1279f5887d86e2e.json"
         },
         "profileId": "command",
         "profileVersion": 1,
@@ -157,7 +157,7 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "5536978431fd7305158a1e55a894c94cc96c8583934f32fd19475489166d63aa",
+        "reportSha256": "0abbdab75ab3a893ca216d788a983e724691d7e1a6417fc08b475ccb8cc9de8d",
         "verdict": "compatible"
       },
       "componentId": "agent:generic-bundle-agent",
@@ -187,7 +187,7 @@
         },
         "targetDir": "alpha-agents"
       },
-      "schema": "alpha.host-extension-package.payload.agent.v1"
+      "schema": "codepuppy.host-extension-package.payload.agent.v1"
     },
     "command:generic-bundle-command": {
       "behavior": {
@@ -200,7 +200,7 @@
           "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/COMMAND.md"
         }
       },
-      "schema": "alpha.host-extension-package.payload.command.v1"
+      "schema": "codepuppy.host-extension-package.payload.command.v1"
     },
     "mcp:generic-bundle-remote": {
       "behavior": {
@@ -213,7 +213,7 @@
         ],
         "url": "https://bundle.example.com/mcp"
       },
-      "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+      "schema": "codepuppy.host-extension-package.payload.mcp-remote.v1"
     },
     "skill:generic-bundle-skill": {
       "behavior": {
@@ -227,7 +227,7 @@
         ],
         "targetDir": "alpha-skills"
       },
-      "schema": "alpha.host-extension-package.payload.skill.v1"
+      "schema": "codepuppy.host-extension-package.payload.skill.v1"
     }
   },
   "schema": "codepuppy.extension-package.compiled-vector.v1"
